@@ -1,5 +1,19 @@
 # Voice
 
+## Agent skills
+
+### Issue tracker
+
+Use GitHub Issues. Before reading or publishing issues, read `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage labels and the additional `spec` label. Before labeling issues, read `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout. Before exploring the codebase, read `docs/agents/domain.md`.
+
 Voice is a minimal system-wide voice-to-text app. It captures speech, transcribes it, optionally cleans it up, and inserts the result into whatever app currently owns text focus.
 
 Think of it as a fast dictation layer for the desktop: press a shortcut, speak, release, and keep typing.
