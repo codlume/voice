@@ -214,6 +214,14 @@ test("packaged onboarding and Settings persist preferences and manage only an is
   const execute = promisify(execFile);
   const directory = await mkdtemp(join(tmpdir(), "voice-setup-"));
   const service = `com.codlume.voice.test.${createHash("sha256").update(join(directory, "Voice Test")).digest("hex")}`;
+  const readKeychainItem = async () =>
+    (
+      await execute(
+        "/usr/bin/security",
+        ["find-generic-password", "-s", service, "-a", "deepgram"],
+        { timeout: 5000 },
+      )
+    ).stdout.trim();
   let running: ElectronApplication | undefined;
   try {
     let { application, page } = await launch(directory);
@@ -242,6 +250,7 @@ test("packaged onboarding and Settings persist preferences and manage only an is
       page.getByText("Key saved in Keychain. Access is not verified.", { exact: true }),
     ).toBeVisible();
     await expect(page.getByLabel("Deepgram API key", { exact: true })).toHaveValue("");
+    expect(await readKeychainItem()).toContain(service);
     const replacement = randomUUID().replaceAll("-", "");
     await page.getByLabel("Deepgram API key", { exact: true }).fill(replacement);
     await page.getByRole("button", { name: "Replace key", exact: true }).click();
@@ -252,6 +261,7 @@ test("packaged onboarding and Settings persist preferences and manage only an is
       ok: true,
       setup: { credential: { presence: "saved", verification: "unverified" } },
     });
+    expect(await readKeychainItem()).toContain(service);
     await page.getByLabel("Hold to talk", { exact: true }).selectOption("Control+Option+Space");
     await page.getByLabel("Toggle dictation", { exact: true }).selectOption("Control+Shift+Space");
     await page.getByRole("button", { name: "Finish setup", exact: true }).click();
@@ -263,6 +273,7 @@ test("packaged onboarding and Settings persist preferences and manage only an is
     await page.getByRole("button", { name: "Refresh setup status" }).click();
     await expect(page.getByText("Setup status refreshed.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Replace key", exact: true })).toBeVisible();
+    expect(await readKeychainItem()).toContain(service);
     await expect(page.getByLabel("Hold to talk", { exact: true })).toHaveValue(
       "Control+Option+Space",
     );
@@ -275,7 +286,7 @@ test("packaged onboarding and Settings persist preferences and manage only an is
       execute("/usr/bin/security", ["find-generic-password", "-s", service, "-a", "deepgram"], {
         timeout: 5000,
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 44, killed: false });
     const after = await page.evaluate(() => window.voice.command({ type: "status.get" }));
     expect(after).toMatchObject({
       ok: true,
