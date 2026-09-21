@@ -67,7 +67,7 @@ export function SettingsPage({
         <div {...stylex.props(styles.brand)}>Voice / Preferences</div>
         <h1 {...stylex.props(styles.title)}>Make yourself at home.</h1>
         <p {...stylex.props(styles.description)}>A quieter place to set up your dictation.</p>
-        <section {...stylex.props(styles.panel)} aria-label="Appearance">
+        <section {...stylex.props(styles.panel)} aria-label="Voice settings">
           {children}
         </section>
       </div>

@@ -1,3 +1,4 @@
+import { SetupView } from "./setup";
 import { useEffect, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Atom } from "effect/unstable/reactivity";
@@ -89,6 +90,7 @@ export function SettingsView() {
   }
   return (
     <SettingsPage appearance={settings.appearance}>
+      <SetupView reply={reply} onReply={setReply} />
       <h2 {...stylex.props(styles.heading)}>Appearance</h2>
       <p {...stylex.props(styles.hint)}>Choose how Voice looks on your desktop.</p>
       <fieldset

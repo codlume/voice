@@ -13,8 +13,15 @@ export async function openSettings(options: { filename: string; migrations: stri
     const get = () =>
       runtime.runPromise(
         Effect.gen(function* () {
-          const rows = yield* db.select({ appearance: preferences.appearance }).from(preferences);
-          return decodeSettings(rows[0] ?? defaultSettings);
+          const rows = yield* db
+            .select({ appearance: preferences.appearance, setup: preferences.setup })
+            .from(preferences);
+          const row = rows[0];
+          return decodeSettings(
+            row
+              ? { appearance: row.appearance, ...(row.setup ? { setup: row.setup } : {}) }
+              : defaultSettings,
+          );
         }),
       );
     return {

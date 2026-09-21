@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "4c12cd60-2a11-46e1-bb93-e71500bbed47",
+  "prevIds": ["e0569976-98e1-4c7d-a4f7-6dc5c860e678"],
+  "ddl": [
+    {
+      "name": "preferences",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "preferences"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "setup",
+      "entityType": "columns",
+      "table": "preferences"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "appearance",
+      "entityType": "columns",
+      "table": "preferences"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "preferences_pk",
+      "table": "preferences",
+      "entityType": "pks"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "singleton",
+      "entityType": "checks",
+      "table": "preferences"
+    },
+    {
+      "value": "\"appearance\" in ('light', 'dark')",
+      "name": "appearance",
+      "entityType": "checks",
+      "table": "preferences"
+    }
+  ],
+  "renames": []
+}
