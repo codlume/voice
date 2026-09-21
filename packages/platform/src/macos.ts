@@ -112,7 +112,11 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
             fail();
             child.kill("SIGTERM");
           },
-          command.type === "permission.request" ? 120_000 : 10_000,
+          command.type === "permission.request" ||
+            command.type === "credential.set" ||
+            command.type === "credential.remove"
+            ? 120_000
+            : 10_000,
         );
         requests.set(id, { resolve, reject, timeout: requestTimeout });
         child.stdin.write(
