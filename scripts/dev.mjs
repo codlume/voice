@@ -5,24 +5,21 @@ import { createServer as createHttpServer } from "node:http";
 import electron from "electron";
 import { buildDesktop } from "./build-desktop.mjs";
 
-await buildDesktop({ renderer: false });
+const startup = new AbortController();
+let server;
 const httpServer = createHttpServer((request, response) => server.middlewares(request, response));
 const sockets = new Set();
 httpServer.on("connection", (socket) => {
   sockets.add(socket);
   socket.once("close", () => sockets.delete(socket));
 });
-const server = await createServer({
-  configFile: "apps/desktop/vite.config.ts",
-  server: { middlewareMode: true, hmr: { server: httpServer } },
-});
 let child;
 let stopping;
-async function stop() {
+async function stopApp() {
   if (stopping) return stopping;
   stopping = (async () => {
-    if (child && child.exitCode === null && child.signalCode === null) {
-      const closed = once(child, "exit");
+    if (child?.pid && child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "close");
       child.kill("SIGTERM");
       const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
       try {
@@ -31,20 +28,26 @@ async function stop() {
         clearTimeout(timeout);
       }
     }
-    await server.close();
-    for (const socket of sockets) socket.destroy();
-    if (httpServer.listening)
-      await new Promise((resolve, reject) =>
-        httpServer.close((error) => (error ? reject(error) : resolve())),
-      );
   })();
   return stopping;
 }
-process.on("SIGINT", () => void stop());
-process.on("SIGTERM", () => void stop());
+function cancel() {
+  startup.abort();
+  void stopApp();
+}
+process.on("SIGINT", cancel);
+process.on("SIGTERM", cancel);
 try {
+  await buildDesktop({ renderer: false, signal: startup.signal });
+  startup.signal.throwIfAborted();
+  server = await createServer({
+    configFile: "apps/desktop/vite.config.ts",
+    server: { middlewareMode: true, hmr: { server: httpServer } },
+  });
+  startup.signal.throwIfAborted();
   httpServer.listen(0, "127.0.0.1");
   await once(httpServer, "listening");
+  startup.signal.throwIfAborted();
   const address = httpServer.address();
   if (!address || typeof address === "string")
     throw new Error("Renderer server has no ready address");
@@ -65,12 +68,20 @@ try {
     }
   });
   const [code] = await once(child, "exit");
-  if (!stopping && code !== 0) process.exitCode = 1;
+  if (!startup.signal.aborted && code !== 0) process.exitCode = 1;
 } catch (error) {
-  console.error(error);
-  process.exitCode = 1;
+  if (!startup.signal.aborted) {
+    console.error(error);
+    process.exitCode = 1;
+  }
 } finally {
-  await stop();
+  await stopApp();
+  await server?.close();
+  for (const socket of sockets) socket.destroy();
+  if (httpServer.listening)
+    await new Promise((resolve, reject) =>
+      httpServer.close((error) => (error ? reject(error) : resolve())),
+    );
   process.disconnect?.();
   // Vite retains internal handles after middleware shutdown. All owned resources are closed above.
   process.exit(process.exitCode ?? 0);
