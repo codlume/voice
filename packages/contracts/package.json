@@ -1,0 +1,18 @@
+{
+  "name": "@voice/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./desktop": "./src/desktop.ts",
+    "./worker": "./src/worker.ts",
+    "./native": "./src/native.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.112"
+  }
+}
