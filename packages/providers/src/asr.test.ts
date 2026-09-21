@@ -4,10 +4,10 @@ import { result } from "./fixture";
 describe("stable transcript assembly", () => {
   it("orders and deduplicates stable segments and waits for the final tail", () => {
     const transcript = new Transcript();
+    transcript.accept(result(1, 1, "unfinished", false));
     transcript.accept(result(1, 1, "Final tail."));
     transcript.accept(result(0, 1, "Hello, Priya."));
     transcript.accept(result(0, 1, "Hello, Priya."));
-    transcript.accept(result(2, 0, "unfinished", false));
     transcript.accept({ type: "Metadata", duration: 2, channels: 1 });
     expect(transcript.finish(2)).toBe("Hello, Priya. Final tail.");
   });

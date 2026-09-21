@@ -86,7 +86,12 @@ export const ProviderRequest = Schema.Union([
 export type ProviderRequest = typeof ProviderRequest.Type;
 export const ProviderEvent = Schema.Union([
   Schema.Struct({
-    type: Schema.Literals(["stable", "partial"]),
+    type: Schema.Literal("partial"),
+    ...attempt,
+    text: Schema.String.check(Schema.isMaxLength(100_000)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("stable"),
     ...attempt,
     text: Schema.String.check(Schema.isMaxLength(100_000)),
   }),
