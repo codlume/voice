@@ -31,10 +31,10 @@ try {
   await assert.rejects(fetch(ready.url));
   console.log("Development readiness and owned-process/server teardown passed.");
 } finally {
-  clearTimeout(timeout);
   if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");
     await closed;
   }
+  clearTimeout(timeout);
   await rm(directory, { recursive: true, force: true });
 }
