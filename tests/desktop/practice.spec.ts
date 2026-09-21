@@ -70,23 +70,26 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
   try {
     await app.evaluate(async ({ clipboard, ClipboardItem }) => {
       const previous = await Promise.all(
-        (await clipboard.read()).map(
-          async (item) =>
-            new ClipboardItem(
-              Object.fromEntries(
-                await Promise.all(
-                  item.types.map(async (type) => [type, await item.getType(type)] as const),
+        (await clipboard.read())
+          .filter((item) => item.types.length > 0)
+          .map(
+            async (item) =>
+              new ClipboardItem(
+                Object.fromEntries(
+                  await Promise.all(
+                    item.types.map(async (type) => [type, await item.getType(type)] as const),
+                  ),
                 ),
               ),
-            ),
-        ),
+          ),
       );
       const scope = globalThis as typeof globalThis & {
         restoreTestClipboard?: () => Promise<void>;
       };
       scope.restoreTestClipboard = async () => {
-        if ((await clipboard.readText()) === "Hello, Priya. Do not deploy VX-204.")
-          await clipboard.write(previous);
+        if ((await clipboard.readText()) !== "Hello, Priya. Do not deploy VX-204.") return;
+        if (previous.length) await clipboard.write(previous);
+        else clipboard.clear();
       };
     });
     let page = await app.firstWindow();
