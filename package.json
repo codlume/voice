@@ -1,0 +1,42 @@
+{
+  "name": "voice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "lint": "vp lint --report-unused-disable-directives",
+    "typecheck": "vp run -r --concurrency-limit 2 typecheck",
+    "test": "vp run -r test",
+    "test:toolchain": "node scripts/test-toolchain.mjs",
+    "test:renderer": "playwright test --config tests/renderer/playwright.config.ts",
+    "test:native": "swift test --package-path packages/platform/native && node --test tests/native/helper.test.mjs",
+    "build:renderer": "vp build --config apps/desktop/vite.config.ts",
+    "build:desktop": "node scripts/build-desktop.mjs",
+    "package:desktop": "node scripts/package-desktop.mjs",
+    "test:desktop-smoke": "playwright test --config tests/desktop/playwright.config.ts",
+    "test:hmr": "playwright test --config tests/hmr/playwright.config.ts",
+    "prepare": "vp config --no-agent"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@playwright/test": "1.63.0",
+    "@stylexjs/eslint-plugin": "0.19.1",
+    "@stylexjs/unplugin": "0.19.1",
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "drizzle-kit": "1.0.0-rc.4",
+    "electron": "44.1.0",
+    "typescript": "7.0.2",
+    "unplugin": "2.3.11",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+    "vite-plus": "0.3.0"
+  },
+  "engines": {
+    "node": "24.21.0"
+  },
+  "packageManager": "pnpm@11.10.0"
+}

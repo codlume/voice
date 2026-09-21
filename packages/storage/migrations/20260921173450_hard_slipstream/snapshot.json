@@ -1,0 +1,52 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "e0569976-98e1-4c7d-a4f7-6dc5c860e678",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "preferences",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "preferences"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "appearance",
+      "entityType": "columns",
+      "table": "preferences"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "preferences_pk",
+      "table": "preferences",
+      "entityType": "pks"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "singleton",
+      "entityType": "checks",
+      "table": "preferences"
+    },
+    {
+      "value": "\"appearance\" in ('light', 'dark')",
+      "name": "appearance",
+      "entityType": "checks",
+      "table": "preferences"
+    }
+  ],
+  "renames": []
+}
