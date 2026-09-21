@@ -53,7 +53,10 @@ ${signal ? "setInterval(() => {}, 1000);" : "process.exit(42);"}
         }),
       ]);
       buildPid = Number(line);
-      assert.ok(Number.isInteger(buildPid) && buildPid > 0);
+      assert.ok(
+        Number.isInteger(buildPid) && buildPid > 0,
+        `Expected a native build PID, received ${JSON.stringify(line)}`,
+      );
       if (signal) child.kill(signal);
       const [code, exitSignal] = await closed;
       assert.equal(exitSignal, null);
