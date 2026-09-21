@@ -1,3 +1,4 @@
+import { SessionCommand, SessionSnapshot } from "./session";
 import { Schema } from "effect";
 import { SetupPreferences, SetupCommand, SetupStatus } from "./setup";
 
@@ -10,6 +11,7 @@ export type Settings = typeof Settings.Type;
 export const defaultSettings: Settings = { appearance: "light" };
 export const Command = Schema.Union([
   SetupCommand,
+  SessionCommand,
   Schema.Struct({ type: Schema.Literal("settings.get") }),
   Schema.Struct({ type: Schema.Literal("settings.set"), appearance: Appearance }),
   Schema.Struct({ type: Schema.Literal("status.get") }),
@@ -19,7 +21,7 @@ export type Command = typeof Command.Type;
 export const Status = Schema.Struct({
   storage: Schema.Literals(["starting", "ready", "failed"]),
   helper: Schema.Literals(["starting", "ready", "failed"]),
-  capture: Schema.Literal("unavailable"),
+  capture: Schema.Literals(["unavailable", "available", "active"]),
 });
 export type Status = typeof Status.Type;
 export const Reply = Schema.Union([
@@ -28,6 +30,7 @@ export const Reply = Schema.Union([
     settings: Settings,
     status: Status,
     setup: Schema.optionalKey(SetupStatus),
+    session: Schema.optionalKey(SessionSnapshot),
   }),
   Schema.Struct({
     ok: Schema.Literal(false),

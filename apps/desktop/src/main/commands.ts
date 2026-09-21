@@ -1,9 +1,11 @@
+import type { createSession } from "./session";
 import { decodeCommand, type Settings, type Reply, type Status } from "@voice/contracts/desktop";
 
 import { defaultSetupPreferences, type SetupPreferences } from "@voice/contracts/setup";
 import type { createSetup } from "./setup";
 
 export function createCommands<Sender>(options: {
+  session?: () => ReturnType<typeof createSession>;
   setup?: () => ReturnType<typeof createSetup>;
   isAuthorized: (sender: Sender) => boolean;
   initialSettings: Settings;
@@ -35,7 +37,14 @@ export function createCommands<Sender>(options: {
         return { ok: false, error: "invalid-command" };
       }
       try {
-        if (command.type === "settings.set") {
+        if (
+          command.type === "session.start" ||
+          command.type === "session.stop" ||
+          command.type === "session.cancel"
+        ) {
+          if (!options.session) return { ok: false, error: "native-unavailable" };
+          options.session().execute(command);
+        } else if (command.type === "settings.set") {
           if (options.status().storage !== "ready")
             return { ok: false, error: "storage-unavailable" };
           await write((current) => ({ ...current, appearance: command.appearance }));
@@ -43,12 +52,19 @@ export function createCommands<Sender>(options: {
           settings = await options.storage.restart();
         } else if (command.type !== "settings.get" && command.type !== "status.get") {
           if (!options.setup) return { ok: false, error: "native-unavailable" };
+          if (command.type === "credential.set" || command.type === "credential.remove")
+            options
+              .session?.()
+              .interrupted(
+                "Credential changed. Available work remains in memory; start again explicitly after repair.",
+              );
           await options.setup().execute(command);
         }
         return {
           ok: true,
           settings,
           status: options.status(),
+          ...(options.session ? { session: options.session().snapshot() } : {}),
           ...(options.setup ? { setup: options.setup().snapshot() } : {}),
         };
       } catch (error) {

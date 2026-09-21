@@ -342,9 +342,9 @@ export function SetupView({
             for inference.
           </p>
           <p {...stylex.props(styles.text)}>
-            Voice does not guarantee a spending cap. Retries can add billable audio. Only basic
-            punctuation and capitalization are planned; spoken formatting commands may remain
-            literal, and recognition mistakes need your correction.
+            Voice does not guarantee a spending cap. Retries can add billable audio. Voice provides
+            basic punctuation and capitalization; spoken formatting commands may remain literal, and
+            recognition mistakes need your correction.
           </p>
         </details>
         {!saved.completed && (

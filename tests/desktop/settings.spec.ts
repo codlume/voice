@@ -22,11 +22,17 @@ async function launch(directory: string) {
     args: [`--voice-test-data=${directory}`, `--log-net-log=${join(directory, "network.json")}`],
   });
   const page = await application.firstWindow();
+  // Host permission grants vary. Setup/status queries must keep the session idle.
   await expect
     .poll(() => page.evaluate(() => window.voice.command({ type: "status.get" })))
     .toMatchObject({
       ok: true,
-      status: { helper: "ready", storage: "ready", capture: "unavailable" },
+      status: {
+        helper: "ready",
+        storage: "ready",
+        capture: expect.stringMatching(/^(available|unavailable)$/),
+      },
+      session: { phase: "idle" },
     });
   return { application, page };
 }
@@ -138,7 +144,8 @@ test("packaged storage lock leaves main commands responsive, then worker crash i
     await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked();
     expect(await page.evaluate(() => window.voice.command({ type: "status.get" }))).toMatchObject({
       ok: true,
-      status: { capture: "unavailable", storage: "ready" },
+      status: { capture: expect.stringMatching(/^(available|unavailable)$/), storage: "ready" },
+      session: { phase: "idle" },
     });
     const rejected = await page.evaluate(async () => {
       try {
@@ -193,7 +200,8 @@ test("a migration failure never reports storage ready and an explicit repair can
     await expect(page.getByRole("alert")).toContainText("Settings storage is unavailable.");
     expect(await page.evaluate(() => window.voice.command({ type: "status.get" }))).toMatchObject({
       ok: true,
-      status: { storage: "failed", capture: "unavailable" },
+      status: { storage: "failed", capture: expect.stringMatching(/^(available|unavailable)$/) },
+      session: { phase: "idle" },
     });
     await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
     const repair = new DatabaseSync(filename);
@@ -236,7 +244,8 @@ test("packaged onboarding and Settings persist preferences and manage only an is
         credential: { presence: "missing", verification: "unverified" },
         provider: "unknown",
       },
-      status: { capture: "unavailable" },
+      status: { capture: expect.stringMatching(/^(available|unavailable)$/) },
+      session: { phase: "idle" },
     });
     expect(before.ok && before.setup?.native).not.toBeNull();
     const key = randomUUID().replaceAll("-", "");
@@ -291,7 +300,8 @@ test("packaged onboarding and Settings persist preferences and manage only an is
     expect(after).toMatchObject({
       ok: true,
       setup: { credential: { presence: "missing" } },
-      status: { capture: "unavailable" },
+      status: { capture: expect.stringMatching(/^(available|unavailable)$/) },
+      session: { phase: "idle" },
     });
     expect(JSON.stringify(after)).not.toContain(replacement);
     await page.screenshot({ path: "/tmp/voice-29-setup.png", fullPage: true });

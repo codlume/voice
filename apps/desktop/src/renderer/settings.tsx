@@ -1,3 +1,4 @@
+import { PracticeView } from "./practice";
 import { SetupView } from "./setup";
 import { useEffect, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
@@ -91,6 +92,7 @@ export function SettingsView() {
   return (
     <SettingsPage appearance={settings.appearance}>
       <SetupView reply={reply} onReply={setReply} />
+      <PracticeView reply={reply} onReply={setReply} />
       <h2 {...stylex.props(styles.heading)}>Appearance</h2>
       <p {...stylex.props(styles.hint)}>Choose how Voice looks on your desktop.</p>
       <fieldset
@@ -141,7 +143,10 @@ export function SettingsView() {
             </SaveButton>
           </p>
         )}
-      <p {...stylex.props(styles.notice)}>Development preview. Dictation is not available yet.</p>
+      <p {...stylex.props(styles.notice)}>
+        Development preview. Practice dictation is available after setup; system-wide dictation is
+        still in development.
+      </p>
     </SettingsPage>
   );
 }
