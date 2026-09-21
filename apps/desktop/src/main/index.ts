@@ -226,21 +226,29 @@ app
     app.quit();
   });
 
+async function showWindow() {
+  const current = window;
+  if (!current || current.isDestroyed()) {
+    await createWindow();
+    return;
+  }
+  if (current.webContents.isCrashed()) {
+    current.destroy();
+    await createWindow();
+    return;
+  }
+  current.show();
+  current.focus();
+}
 app.on("activate", () => {
-  if (closing) return;
-  if (!window || window.isDestroyed()) void createWindow();
-  else window.show();
+  if (!closing) void showWindow();
 });
 app.on("window-all-closed", () => {});
 app.on("before-quit", (event) => {
   if (closing) return;
   event.preventDefault();
   if (!quitConfirmed && practice.requestQuit()) {
-    if (!window || window.isDestroyed()) void createWindow();
-    else {
-      window.show();
-      window.focus();
-    }
+    void showWindow();
     return;
   }
   closing = true;

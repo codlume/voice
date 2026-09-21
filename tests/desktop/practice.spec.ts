@@ -66,6 +66,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
       VOICE_TEST_PROVIDER_URL: `ws://127.0.0.1:${address.port}`,
     },
   });
+  const appProcess = app.process();
   try {
     await app.evaluate(async ({ clipboard, ClipboardItem }) => {
       const previous = await Promise.all(
@@ -88,7 +89,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
           await clipboard.write(previous);
       };
     });
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     const start = page.getByRole("button", { name: "Start practice", exact: true });
     const status = page.getByTestId("practice-status");
     const field = page.getByRole("textbox", { name: "Practice transcript", exact: true });
@@ -139,7 +140,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(status).toContainText("Cancelled.");
     await expect(field).toHaveValue("Hello, Priya. Do not deploy VX-204.");
-    const recovery = page.getByRole("region", { name: "Temporary recovery" });
+    let recovery = page.getByRole("region", { name: "Temporary recovery" });
     for (let index = 1; index < 5; index++) {
       const next = attempts.length;
       await start.click();
@@ -178,9 +179,20 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     expect(
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible()),
     ).toBe(false);
-    await app.evaluate(({ app }) => app.emit("activate"));
+    await app.evaluate(({ app: application }) => application.emit("activate"));
     await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
-    await app.evaluate(({ app }) => app.quit());
+    await app.evaluate(
+      ({ BrowserWindow }) =>
+        new Promise<void>((done) => {
+          const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+          contents.once("render-process-gone", () => done());
+          contents.forcefullyCrashRenderer();
+        }),
+    );
+    const replacement = app.waitForEvent("window");
+    await app.evaluate(({ app: application }) => application.quit());
+    page = await replacement;
+    recovery = page.getByRole("region", { name: "Temporary recovery" });
     await expect(page.getByRole("alertdialog")).toBeVisible();
     await page.getByRole("alertdialog").screenshot({ path: "test-results/recovery-quit.png" });
     await page.getByRole("button", { name: "Return to recovery", exact: true }).click();
@@ -212,11 +224,33 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     });
     await page.getByRole("button", { name: "Quit Voice", exact: true }).click();
     await expect(page.getByRole("alertdialog")).toBeVisible();
-    const exited = once(app.process(), "exit");
+    const exited = once(appProcess, "exit");
     await page.getByRole("button", { name: "Quit and discard", exact: true }).click();
     await exited;
+    const reopened = await electron.launch({
+      executablePath,
+      args: [`--voice-test-data=${directory}`],
+      env: {
+        ...env,
+        VOICE_TEST_CAPTURE: "synthetic",
+        VOICE_TEST_PROVIDER_URL: `ws://127.0.0.1:${address.port}`,
+      },
+    });
+    try {
+      const fresh = await reopened.firstWindow();
+      await expect(
+        fresh.getByRole("button", { name: "Start practice", exact: true }),
+      ).toBeEnabled();
+      const state = await fresh.evaluate(() => window.voice.command({ type: "status.get" }));
+      expect(state).toMatchObject({
+        ok: true,
+        session: { recovery: [], latestSuccessful: null, practiceText: "" },
+      });
+    } finally {
+      await reopened.close();
+    }
   } finally {
-    if (app.process().exitCode === null) {
+    if (appProcess.exitCode === null) {
       await app
         .evaluate(async () => {
           const scope = globalThis as typeof globalThis & {
@@ -225,10 +259,8 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
           await scope.restoreTestClipboard?.();
         })
         .catch(() => {});
-      const page = await app.firstWindow();
-      await page.evaluate(() => window.voice.command({ type: "app.quit" })).catch(() => {});
-      await page.evaluate(() => window.voice.command({ type: "app.quit.confirm" })).catch(() => {});
-      await app.close();
+      // Failed assertions must also tear down this isolated app, even if its renderer crashed.
+      await app.evaluate(({ app: application }) => application.exit(0));
     }
     for (const socket of server.clients) socket.terminate();
     await new Promise<void>((done) => server.close(() => done()));

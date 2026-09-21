@@ -245,7 +245,7 @@ export function createSession(options: {
   return {
     snapshot: () => ({
       ...state,
-      recovery: [...retained.values()].map(({ entry }) => ({ ...entry })),
+      recovery: [...retained.values()].map(({ entry }) => Object.assign({}, entry)),
       canStart:
         !closed &&
         !state.quitWarning &&
