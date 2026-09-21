@@ -85,7 +85,7 @@ test("unsigned package persists settings through the actual Electron worker and 
     };
     const saved = read();
     expect(saved.rows).toEqual([{ appearance: "dark" }]);
-    expect(saved.migrations).toHaveLength(1);
+    expect(saved.migrations).toHaveLength(2);
     for (let restart = 0; restart < 2; restart += 1) {
       ({ application, page } = await launch(directory));
       running = application;
@@ -203,6 +203,106 @@ test("a migration failure never reports storage ready and an explicit repair can
     await expect(page.getByRole("status")).toHaveText("Settings restored.");
   } finally {
     if (running) await running.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("packaged onboarding and Settings persist preferences and manage only an isolated Keychain item", async () => {
+  const { createHash, randomUUID } = await import("node:crypto");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execute = promisify(execFile);
+  const directory = await mkdtemp(join(tmpdir(), "voice-setup-"));
+  const service = `com.codlume.voice.test.${createHash("sha256").update(join(directory, "Voice Test")).digest("hex")}`;
+  let running: ElectronApplication | undefined;
+  try {
+    let { application, page } = await launch(directory);
+    running = application;
+    await expect(page.getByRole("heading", { name: "Set up your first dictation" })).toBeVisible();
+    await page.getByRole("button", { name: "Refresh setup status" }).click();
+    await expect(page.getByText("Setup status refreshed.", { exact: true })).toBeVisible();
+    const before = await page.evaluate(() => window.voice.command({ type: "status.get" }));
+    expect(before).toMatchObject({
+      ok: true,
+      setup: {
+        credential: { presence: "missing", verification: "unverified" },
+        provider: "unknown",
+      },
+      status: { capture: "unavailable" },
+    });
+    expect(before.ok && before.setup?.native).not.toBeNull();
+    const key = randomUUID().replaceAll("-", "");
+    await page.getByLabel("Deepgram API key", { exact: true }).fill(key);
+    await expect(page.getByLabel("Deepgram API key", { exact: true })).toHaveAttribute(
+      "type",
+      "password",
+    );
+    await page.getByRole("button", { name: "Add key", exact: true }).click();
+    await expect(
+      page.getByText("Key saved in Keychain. Access is not verified.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Deepgram API key", { exact: true })).toHaveValue("");
+    const replacement = randomUUID().replaceAll("-", "");
+    await page.getByLabel("Deepgram API key", { exact: true }).fill(replacement);
+    await page.getByRole("button", { name: "Replace key", exact: true }).click();
+    await expect(
+      page.getByText("Key saved in Keychain. Access is not verified.", { exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => window.voice.command({ type: "status.get" }))).toMatchObject({
+      ok: true,
+      setup: { credential: { presence: "saved", verification: "unverified" } },
+    });
+    await page.getByLabel("Hold to talk", { exact: true }).selectOption("Control+Option+Space");
+    await page.getByLabel("Toggle dictation", { exact: true }).selectOption("Control+Shift+Space");
+    await page.getByRole("button", { name: "Finish setup", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Dictation setup", exact: true })).toBeVisible();
+    await shutdown(application);
+    running = undefined;
+    ({ application, page } = await launch(directory));
+    running = application;
+    await page.getByRole("button", { name: "Refresh setup status" }).click();
+    await expect(page.getByText("Setup status refreshed.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Replace key", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Hold to talk", { exact: true })).toHaveValue(
+      "Control+Option+Space",
+    );
+    await expect(page.getByLabel("Toggle dictation", { exact: true })).toHaveValue(
+      "Control+Shift+Space",
+    );
+    await page.getByRole("button", { name: "Remove key", exact: true }).click();
+    await expect(page.getByText("Key removed from Keychain.", { exact: true })).toBeVisible();
+    await expect(
+      execute("/usr/bin/security", ["find-generic-password", "-s", service, "-a", "deepgram"], {
+        timeout: 5000,
+      }),
+    ).rejects.toThrow();
+    const after = await page.evaluate(() => window.voice.command({ type: "status.get" }));
+    expect(after).toMatchObject({
+      ok: true,
+      setup: { credential: { presence: "missing" } },
+      status: { capture: "unavailable" },
+    });
+    expect(JSON.stringify(after)).not.toContain(replacement);
+    await page.screenshot({ path: "/tmp/voice-29-setup.png", fullPage: true });
+    await shutdown(application);
+    running = undefined;
+    const db = new DatabaseSync(join(directory, "Voice Test/settings.sqlite"));
+    try {
+      const rows = db.prepare("select * from preferences").all();
+      expect(JSON.stringify(rows)).not.toContain(key);
+      expect(JSON.stringify(rows)).not.toContain(replacement);
+      expect(rows).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    if (running) await running.close();
+    // Exact service + account, never a broad Keychain cleanup.
+    await execute(
+      "/usr/bin/security",
+      ["delete-generic-password", "-s", service, "-a", "deepgram"],
+      { timeout: 5000 },
+    ).catch(() => {});
     await rm(directory, { recursive: true, force: true });
   }
 });

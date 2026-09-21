@@ -53,3 +53,57 @@ for (const ending of ["shutdown", "disconnect"]) {
     },
   );
 }
+
+test(
+  "setup protocol reads native status without capture and rejects unvalidated operations",
+  { timeout: 10000 },
+  async () => {
+    const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const lines = createInterface({ input: child.stdout });
+    const closed = once(child, "exit");
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 8000);
+    const send = async (payload) => {
+      const response = once(lines, "line");
+      child.stdin.write(JSON.stringify(payload) + "\n");
+      return JSON.parse((await response)[0]);
+    };
+    try {
+      await send({ type: "hello", version: 1 });
+      const reply = await send({
+        type: "setup.request",
+        version: 1,
+        id: 1,
+        command: {
+          type: "setup.status",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+        },
+      });
+      assert.equal(reply.type, "setup.result");
+      assert.equal(reply.result.type, "setup");
+      assert.ok(Array.isArray(reply.result.status.devices));
+      assert.deepEqual(Object.keys(reply.result.status.permissions).toSorted(), [
+        "accessibility",
+        "inputMonitoring",
+        "microphone",
+      ]);
+      const invalid = await send({
+        type: "setup.request",
+        version: 1,
+        id: 2,
+        command: { type: "credential.remove", service: "unrelated" },
+      });
+      assert.deepEqual(invalid.result, { type: "error", error: "invalid-command" });
+      await send({ type: "shutdown", version: 1 });
+      await closed;
+    } finally {
+      clearTimeout(timeout);
+      lines.close();
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await closed;
+      }
+    }
+  },
+);

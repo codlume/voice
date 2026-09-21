@@ -12,6 +12,10 @@ const paths = await packager({
   arch: "arm64",
   electronVersion: "44.1.0",
   asar: { unpack: "**/native/voice-helper" },
+  extendInfo: {
+    NSMicrophoneUsageDescription:
+      "Voice uses the microphone only when you explicitly start dictation.",
+  },
   overwrite: true,
   prune: false,
 });

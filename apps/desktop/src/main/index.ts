@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, session, net, type IpcMainInvokeEvent } from "electron";
+import { createHash } from "node:crypto";
+import { createSetup } from "./setup";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
@@ -31,6 +33,7 @@ function notify() {
   if (window && !window.isDestroyed()) window.webContents.send("voice:changed");
 }
 const commands = createCommands<IpcMainInvokeEvent>({
+  setup: () => setup,
   initialSettings: defaultSettings,
   isAuthorized: (event) =>
     !!window &&
@@ -44,12 +47,25 @@ const commands = createCommands<IpcMainInvokeEvent>({
     capture: "unavailable",
   }),
 });
-ipcMain.handle(commandChannel, (event, payload: unknown) => commands.execute(event, payload));
+export const setup = createSetup({
+  native: (command) => {
+    if (!helper) return Promise.reject(new Error("native-unavailable"));
+    return helper.request(command);
+  },
+  preferences: commands.preferences,
+  save: commands.saveSetup,
+  connectivity: () => (net.isOnline() ? "online" : "offline"),
+  credentialChanged: () => notify(),
+});
+ipcMain.handle(commandChannel, async (event, payload: unknown) => {
+  const reply = await commands.execute(event, payload);
+  return reply;
+});
 
 async function createWindow() {
   window = new BrowserWindow({
     width: 820,
-    height: 600,
+    height: 820,
     minWidth: 560,
     minHeight: 440,
     title: "Voice",
@@ -94,8 +110,12 @@ app
         : join(__dirname, "../native/voice-helper"),
       () => {
         helperState = "failed";
+        setup.unavailable();
         notify();
       },
+      testDirectory
+        ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
+        : undefined,
     );
     void helper.ready.then(
       () => {
@@ -104,6 +124,7 @@ app
       },
       () => {
         helperState = "failed";
+        setup.unavailable();
         notify();
       },
     );
@@ -118,7 +139,9 @@ app
     if (closing) return;
     await createWindow();
     void Promise.all([helper.ready, storageReady]).then(
-      () => {
+      async () => {
+        await setup.refresh().catch(() => {});
+        notify();
         process.send?.({
           type: "ready",
           pid: process.pid,

@@ -62,3 +62,54 @@ it("reports invalid commands and failed storage without replacing the cached pre
     settings: { appearance: "dark" },
   });
 });
+
+it("authorizes setup commands before native operations and keeps status responsive during a key write", async () => {
+  const { createSetup } = await import("./setup");
+  const { decodeReply } = await import("@voice/contracts/desktop");
+  const { promise, resolve } = Promise.withResolvers<void>();
+  let present = false;
+  const commands = createCommands({
+    isAuthorized: (sender) => sender === "settings-window",
+    initialSettings: { appearance: "light" },
+    status: () => ({ storage: "ready", helper: "ready", capture: "unavailable" }),
+    storage: { set: async (value) => value, restart: async () => ({ appearance: "light" }) },
+    setup: () => setup,
+  });
+  const setup = createSetup({
+    native: async () => {
+      await promise;
+      present = true;
+      return { type: "credential", presence: "saved" };
+    },
+    preferences: commands.preferences,
+    save: commands.saveSetup,
+    connectivity: () => "online",
+    credentialChanged: () => {},
+  });
+  expect(
+    await commands.execute("other-window", { type: "credential.set", key: "synthetic-value" }),
+  ).toEqual({ ok: false, error: "unauthorized" });
+  expect(
+    await commands.execute("settings-window", {
+      type: "credential.set",
+      key: "synthetic-value",
+      service: "unrelated-item",
+    }),
+  ).toEqual({ ok: false, error: "invalid-command" });
+  expect(present).toBe(false);
+  const write = commands.execute("settings-window", {
+    type: "credential.set",
+    key: "synthetic-value",
+  });
+  const status = decodeReply(await commands.execute("settings-window", { type: "status.get" }));
+  expect(status).toMatchObject({
+    ok: true,
+    status: { capture: "unavailable" },
+    setup: { credential: { verification: "unverified" } },
+  });
+  resolve();
+  expect(await write).toMatchObject({ ok: true, setup: { credential: { presence: "saved" } } });
+  expect(
+    JSON.stringify(await commands.execute("settings-window", { type: "status.get" })),
+  ).not.toContain("synthetic-value");
+});
