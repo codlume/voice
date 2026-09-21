@@ -7,6 +7,11 @@ import { buildDesktop } from "./build-desktop.mjs";
 
 await buildDesktop({ renderer: false });
 const httpServer = createHttpServer((request, response) => server.middlewares(request, response));
+const sockets = new Set();
+httpServer.on("connection", (socket) => {
+  sockets.add(socket);
+  socket.once("close", () => sockets.delete(socket));
+});
 const server = await createServer({
   configFile: "apps/desktop/vite.config.ts",
   server: { middlewareMode: true, hmr: { server: httpServer } },
@@ -27,6 +32,7 @@ async function stop() {
       }
     }
     await server.close();
+    for (const socket of sockets) socket.destroy();
     if (httpServer.listening)
       await new Promise((resolve, reject) =>
         httpServer.close((error) => (error ? reject(error) : resolve())),
@@ -61,4 +67,7 @@ try {
   await once(child, "exit");
 } finally {
   await stop();
+  process.disconnect?.();
+  // Vite retains internal handles after middleware shutdown. All owned resources are closed above.
+  process.exit(0);
 }

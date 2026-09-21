@@ -10,7 +10,7 @@ const child = fork("scripts/dev.mjs", [`--voice-test-data=${directory}`], {
   stdio: ["inherit", "inherit", "inherit", "ipc"],
 });
 const closed = once(child, "exit");
-const timeout = setTimeout(() => child.kill("SIGTERM"), 30_000);
+const timeout = setTimeout(() => child.kill("SIGKILL"), 30_000);
 try {
   const [ready] = await Promise.race([
     once(child, "message"),
@@ -20,7 +20,9 @@ try {
   ]);
   assert.equal(ready.type, "ready");
   assert.equal(ready.capture, "unavailable");
-  assert.equal((await fetch(ready.url)).status, 200);
+  const response = await fetch(ready.url);
+  assert.equal(response.status, 200);
+  await response.text();
   child.kill("SIGTERM");
   const [code, signal] = await closed;
   assert.equal(signal, null);

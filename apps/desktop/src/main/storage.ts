@@ -11,6 +11,7 @@ export class StorageWorker {
     { resolve: (settings: Settings | undefined) => void; reject: (error: Error) => void }
   >();
   private opening: Promise<Settings> | undefined;
+  private rejectOpening: ((error: Error) => void) | undefined;
   constructor(
     private readonly options: { entry: string; filename: string; migrations: string },
     private readonly changed: () => void,
@@ -25,19 +26,23 @@ export class StorageWorker {
     });
     this.worker = worker;
     this.opening = new Promise<Settings>((resolve, reject) => {
+      this.rejectOpening = reject;
+      let failed = false;
       const timeout = setTimeout(() => fail(), 15_000);
       const fail = () => {
         clearTimeout(timeout);
-        if (this.worker !== worker) return;
+        if (this.worker !== worker || failed) return;
+        failed = true;
         this.state = "failed";
         const error = new Error("Settings storage unavailable");
         reject(error);
         for (const request of this.pending.values()) request.reject(error);
         this.pending.clear();
         this.changed();
+        void worker.terminate();
       };
       worker.on("message", (payload: unknown) => {
-        if (this.worker !== worker) return;
+        if (this.worker !== worker || failed) return;
         try {
           const event = decodeWorkerEvent(payload);
           if (event.type === "ready") {
@@ -90,6 +95,9 @@ export class StorageWorker {
         ]);
     } finally {
       clearTimeout(timer);
+      this.rejectOpening?.(new Error("Storage closed"));
+      this.rejectOpening = undefined;
+      this.state = "failed";
       this.worker = undefined;
       this.opening = undefined;
       for (const request of this.pending.values()) request.reject(new Error("Storage closed"));
