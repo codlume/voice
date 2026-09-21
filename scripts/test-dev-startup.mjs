@@ -29,7 +29,9 @@ for (const { name, signal, ignoreTermination } of [
         join(directory, "swift"),
         `#!/usr/bin/env node
 ${ignoreTermination ? 'process.on("SIGTERM", () => {});' : ""}
-process.stdout.write(String(process.pid) + "\\n");
+// Simulate Electron's first-use setup log without downloading anything.
+console.log("Downloading Electron binary...");
+process.stdout.write("voice-test-native-ready:" + process.pid + "\\n");
 ${signal ? "setInterval(() => {}, 1000);" : "process.exit(42);"}
 `,
         { mode: 0o755 },
@@ -46,16 +48,21 @@ ${signal ? "setInterval(() => {}, 1000);" : "process.exit(42);"}
       });
       closed = once(child, "exit");
       lines = createInterface({ input: child.stdout });
-      const [line] = await Promise.race([
-        once(lines, "line"),
+      const ready = new Promise((resolve) => {
+        lines.on("line", (line) => {
+          const match = /^voice-test-native-ready:(\d+)$/.exec(line);
+          if (match) resolve(Number(match[1]));
+        });
+      });
+      buildPid = await Promise.race([
+        ready,
         closed.then(() => {
           throw new Error("Development exited before the build started");
         }),
       ]);
-      buildPid = Number(line);
       assert.ok(
         Number.isInteger(buildPid) && buildPid > 0,
-        `Expected a native build PID, received ${JSON.stringify(line)}`,
+        `Expected a native build PID, received ${buildPid}`,
       );
       if (signal) child.kill(signal);
       const [code, exitSignal] = await closed;
