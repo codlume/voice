@@ -88,6 +88,24 @@ test(
         "inputMonitoring",
         "microphone",
       ]);
+      const conflict = await send({
+        type: "setup.request",
+        version: 1,
+        id: 3,
+        command: {
+          type: "setup.status",
+          shortcuts: { hold: "Fn", toggle: "Fn", cancel: "Escape" },
+        },
+      });
+      assert.equal(conflict.result.status.shortcuts.hold, "conflict");
+      assert.equal(conflict.result.status.shortcuts.toggle, "conflict");
+      const invalidPermission = await send({
+        type: "setup.request",
+        version: 1,
+        id: 4,
+        command: { type: "permission.request", permission: "screen" },
+      });
+      assert.deepEqual(invalidPermission.result, { type: "error", error: "invalid-command" });
       const invalid = await send({
         type: "setup.request",
         version: 1,

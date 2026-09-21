@@ -1,9 +1,9 @@
 import { Schema } from "effect";
 
 const boundedText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
-export const Permission = Schema.Literals(["microphone", "accessibility", "inputMonitoring"]);
-export type Permission = typeof Permission.Type;
 export const permissionNames = ["microphone", "accessibility", "inputMonitoring"] as const;
+export const Permission = Schema.Literals(permissionNames);
+export type Permission = typeof Permission.Type;
 export const PermissionState = Schema.Literals([
   "not-requested",
   "granted",
@@ -16,14 +16,15 @@ const Permissions = Schema.Struct({
   accessibility: PermissionState,
   inputMonitoring: PermissionState,
 });
-export const Binding = Schema.Literals([
+export const bindingOptions = [
   "Fn",
   "Fn+Space",
   "Escape",
   "Control+Option+Space",
   "Control+Shift+Space",
   "Control+Option+Escape",
-]);
+] as const;
+export const Binding = Schema.Literals(bindingOptions);
 export const Shortcuts = Schema.Struct({ hold: Binding, toggle: Binding, cancel: Binding });
 export const SetupPreferences = Schema.Struct({
   inputDevice: Schema.NullOr(boundedText),
@@ -53,6 +54,19 @@ export const Credential = Schema.Struct({
   presence: CredentialPresence,
   verification: Schema.Literals(["unverified", "authenticated", "rejected"]),
 });
+export const SetupBlocker = Schema.Literals([
+  "native-unavailable",
+  "permission-microphone",
+  "permission-accessibility",
+  "permission-inputMonitoring",
+  "input-device",
+  "shortcuts",
+  "key-missing",
+  "key-unavailable",
+  "key-rejected",
+  "quota-exhausted",
+]);
+export type SetupBlocker = typeof SetupBlocker.Type;
 export const SetupStatus = Schema.Struct({
   native: Schema.NullOr(NativeSetupStatus),
   credential: Credential,
@@ -65,9 +79,22 @@ export const SetupStatus = Schema.Struct({
     "quota-exhausted",
   ]),
   localCapture: Schema.Literals(["available", "unavailable"]),
-  blockers: Schema.Array(Schema.String),
+  blockers: Schema.Array(SetupBlocker),
 });
 export type SetupStatus = typeof SetupStatus.Type;
+const SetCredential = Schema.Struct({
+  type: Schema.Literal("credential.set"),
+  key: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(512),
+    Schema.isPattern(/^[\x21-\x7e]+$/),
+  ),
+});
+const RemoveCredential = Schema.Struct({ type: Schema.Literal("credential.remove") });
+const RequestPermission = Schema.Struct({
+  type: Schema.Literal("permission.request"),
+  permission: Permission,
+});
 export const SetupCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("setup.refresh") }),
   Schema.Struct({
@@ -76,31 +103,17 @@ export const SetupCommand = Schema.Union([
     shortcuts: Shortcuts,
     completed: Schema.Boolean,
   }),
-  Schema.Struct({ type: Schema.Literal("permission.request"), permission: Permission }),
-  Schema.Struct({
-    type: Schema.Literal("credential.set"),
-    key: Schema.String.check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(512),
-      Schema.isPattern(/^[\x21-\x7e]+$/),
-    ),
-  }),
-  Schema.Struct({ type: Schema.Literal("credential.remove") }),
+  RequestPermission,
+  SetCredential,
+  RemoveCredential,
 ]);
 export type SetupCommand = typeof SetupCommand.Type;
 export const NativeSetupCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("setup.status"), shortcuts: Shortcuts }),
-  Schema.Struct({ type: Schema.Literal("permission.request"), permission: Permission }),
+  RequestPermission,
   Schema.Struct({ type: Schema.Literal("credential.status") }),
-  Schema.Struct({
-    type: Schema.Literal("credential.set"),
-    key: Schema.String.check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(512),
-      Schema.isPattern(/^[\x21-\x7e]+$/),
-    ),
-  }),
-  Schema.Struct({ type: Schema.Literal("credential.remove") }),
+  SetCredential,
+  RemoveCredential,
 ]);
 export type NativeSetupCommand = typeof NativeSetupCommand.Type;
 export const NativeSetupResult = Schema.Union([

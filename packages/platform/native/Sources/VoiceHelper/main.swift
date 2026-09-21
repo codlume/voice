@@ -9,9 +9,12 @@ while let line = readLine() {
        let data = line.data(using: .utf8),
        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
        object["type"] as? String == "setup.request" {
-        let result = setup.receive(object)
-        let reply: [String: Any] = ["type": "setup.result", "version": 1, "id": object["id"] ?? 0, "result": result]
-        if let encoded = try? JSONSerialization.data(withJSONObject: reply) {
+        let request = SetupRequest(object)
+        let result = request.map { setup.receive($0.command) } ?? .error(.invalidCommand)
+        // Only valid numeric identities are reflected back into the reply.
+        let id = request?.id ?? (object["id"] as? Int).flatMap { $0 > 0 ? $0 : nil } ?? 0
+        let reply = SetupReply(id: id, result: result)
+        if let encoded = try? JSONEncoder().encode(reply) {
             FileHandle.standardOutput.write(encoded + Data("\n".utf8))
         }
         continue

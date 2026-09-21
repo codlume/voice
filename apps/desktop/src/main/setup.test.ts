@@ -138,3 +138,51 @@ it("marks a previously saved key unavailable when Keychain refuses a later opera
   expect(setup.snapshot().credential.presence).toBe("unavailable");
   expect(changes).toHaveLength(1);
 });
+
+it("persists explicit permission intent and refreshed grants without starting capture", async () => {
+  let preferences = defaultSetupPreferences;
+  let granted = false;
+  const received: string[] = [];
+  const setup = createSetup({
+    native: async (command) => {
+      received.push(command.type);
+      if (command.type === "permission.request") {
+        granted = true;
+        return { type: "permission" };
+      }
+      if (command.type === "credential.status") return { type: "credential", presence: "saved" };
+      return {
+        type: "setup",
+        status: {
+          permissions: {
+            microphone: granted ? "granted" : "not-requested",
+            accessibility: "granted",
+            inputMonitoring: "granted",
+          },
+          devices: [{ id: "fixture", name: "Synthetic input" }],
+          defaultDevice: "fixture",
+          shortcuts: { hold: "available", toggle: "available", cancel: "available" },
+        },
+      };
+    },
+    preferences: () => preferences,
+    save: async (value) => {
+      preferences = value;
+    },
+    connectivity: () => "online",
+    credentialChanged: () => {},
+  });
+  await setup.refresh();
+  expect(setup.snapshot().blockers).toEqual(["permission-microphone"]);
+  await setup.execute({ type: "permission.request", permission: "microphone" });
+  expect(preferences.requestedPermissions).toEqual(["microphone"]);
+  expect(preferences.grantedPermissions).toContain("microphone");
+  expect(setup.snapshot()).toMatchObject({ localCapture: "available", blockers: [] });
+  expect(received).toEqual([
+    "setup.status",
+    "credential.status",
+    "permission.request",
+    "setup.status",
+    "credential.status",
+  ]);
+});

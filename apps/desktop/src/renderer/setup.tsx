@@ -5,6 +5,8 @@ import { tokens } from "@voice/ui/tokens.stylex";
 import {
   defaultSetupPreferences,
   permissionNames,
+  bindingOptions,
+  type SetupBlocker,
   type SetupCommand,
   type SetupPreferences,
 } from "@voice/contracts/setup";
@@ -58,16 +60,8 @@ const permissionLabels = {
   accessibility: "Accessibility",
   inputMonitoring: "Input Monitoring",
 };
-const bindingOptions = [
-  "Fn",
-  "Fn+Space",
-  "Escape",
-  "Control+Option+Space",
-  "Control+Shift+Space",
-  "Control+Option+Escape",
-] as const;
 const bindingLabels = { hold: "Hold to talk", toggle: "Toggle dictation", cancel: "Cancel" };
-const repairs: Record<string, string> = {
+const repairs: Record<SetupBlocker, string> = {
   "native-unavailable": "Native services are unavailable. Quit and reopen Voice.",
   "permission-microphone": "Allow microphone access before dictating.",
   "permission-accessibility": "Allow Accessibility access for shortcuts and insertion.",
@@ -178,7 +172,7 @@ export function SetupView({
         )}
         <ul {...stylex.props(styles.list)}>
           {status?.blockers.map((blocker) => (
-            <li key={blocker}>{repairs[blocker] ?? blocker}</li>
+            <li key={blocker}>{repairs[blocker]}</li>
           ))}
         </ul>
         <SaveButton

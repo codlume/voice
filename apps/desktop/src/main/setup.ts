@@ -4,6 +4,7 @@ import {
   decodeCredentialChanged,
   permissionNames,
   type SetupPreferences,
+  type SetupBlocker,
   type SetupStatus,
   type NativeSetupCommand,
   type CredentialChanged,
@@ -39,7 +40,7 @@ export function createSetup(options: {
   function snapshot(): SetupStatus {
     const current = state.native;
     const preferences = options.preferences();
-    const blockers: string[] = [];
+    const blockers: SetupBlocker[] = [];
     if (!current) blockers.push("native-unavailable");
     else {
       for (const name of permissionNames) {

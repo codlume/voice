@@ -38,9 +38,12 @@ test("shared setup controls show repair actions, clear submitted secrets, and ke
   page,
 }) => {
   await page.addInitScript(() => {
+    let microphoneRequested = false;
     window.voice = {
       onChanged: () => () => {},
       command: async (command) => {
+        if (command.type === "permission.request" && command.permission === "microphone")
+          microphoneRequested = true;
         if (command.type === "credential.set") return { ok: false, error: "keychain-unavailable" };
         return {
           ok: true,
@@ -49,7 +52,7 @@ test("shared setup controls show repair actions, clear submitted secrets, and ke
           setup: {
             native: {
               permissions: {
-                microphone: "revoked",
+                microphone: microphoneRequested ? "granted" : "revoked",
                 accessibility: "not-requested",
                 inputMonitoring: "denied",
               },
@@ -75,7 +78,9 @@ test("shared setup controls show repair actions, clear submitted secrets, and ke
   });
   await page.goto("/");
   await expect(page.getByText("Microphone · revoked", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review Microphone", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Review Microphone", exact: true }).click();
+  await expect(page.getByText("Microphone · granted", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review Microphone", exact: true })).toBeDisabled();
   await expect(page.getByText("No input device found.", { exact: false })).toBeVisible();
   await expect(page.getByText("You are offline.", { exact: false })).toBeVisible();
   await expect(
