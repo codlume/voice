@@ -1,3 +1,9 @@
+import {
+  decodeCaptureCommand,
+  decodeCaptureEvent,
+  type CaptureCommand,
+  type CaptureEvent,
+} from "@voice/contracts/session";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { Schema } from "effect";
@@ -18,12 +24,19 @@ const decodeResult = Schema.decodeUnknownSync(
   { onExcessProperty: "error" },
 );
 
-export function launchHelper(executable: string, failed: () => void, testKeychainService?: string) {
+export function launchHelper(
+  executable: string,
+  failed: () => void,
+  testKeychainService?: string,
+  captureEvent?: (event: CaptureEvent) => void,
+  syntheticCapture = false,
+) {
   const child = spawn(executable, [], {
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       ...process.env,
       VOICE_TEST_KEYCHAIN_SERVICE: testKeychainService ?? "",
+      VOICE_TEST_CAPTURE: testKeychainService && syntheticCapture ? "synthetic" : "",
     },
   });
   const lines = createInterface({ input: child.stdout });
@@ -31,6 +44,22 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
   let exited = false;
   let broken = false;
   let nextId = 0;
+  const secrets = new Map<
+    number,
+    {
+      resolve: (key: string) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const decodeSecret = Schema.decodeUnknownSync(
+    Schema.Struct({
+      type: Schema.Literal("credential.secret"),
+      id: Schema.Number,
+      key: Schema.NullOr(Schema.String.check(Schema.isMaxLength(512))),
+    }),
+    { onExcessProperty: "error" },
+  );
   const requests = new Map<
     number,
     {
@@ -51,6 +80,7 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
     reject: rejectReady,
   } = Promise.withResolvers<void>();
   const fail = () => {
+    if (broken) return;
     clearTimeout(timeout);
     broken = true;
     const error = new Error("native-unavailable");
@@ -60,7 +90,15 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
       request.reject(error);
     }
     requests.clear();
-    if (!shuttingDown) failed();
+    for (const request of secrets.values()) {
+      clearTimeout(request.timeout);
+      request.reject(error);
+    }
+    secrets.clear();
+    if (!shuttingDown) {
+      child.kill("SIGTERM");
+      failed();
+    }
   };
   const timeout = setTimeout(fail, 10_000);
   child.once("error", fail);
@@ -72,6 +110,28 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
     try {
       const value: unknown = JSON.parse(line);
       if (
+        typeof value === "object" &&
+        value !== null &&
+        "type" in value &&
+        typeof value.type === "string" &&
+        value.type.startsWith("capture.")
+      ) {
+        captureEvent?.(decodeCaptureEvent(value));
+      } else if (
+        typeof value === "object" &&
+        value !== null &&
+        "type" in value &&
+        value.type === "credential.secret"
+      ) {
+        const reply = decodeSecret(value);
+        const pending = secrets.get(reply.id);
+        if (pending) {
+          secrets.delete(reply.id);
+          clearTimeout(pending.timeout);
+          if (reply.key) pending.resolve(reply.key);
+          else pending.reject(new Error("keychain-unavailable"));
+        }
+      } else if (
         typeof value === "object" &&
         value !== null &&
         "type" in value &&
@@ -100,6 +160,23 @@ export function launchHelper(executable: string, failed: () => void, testKeychai
   return {
     child,
     ready,
+    capture(input: CaptureCommand) {
+      if (broken || shuttingDown) throw new Error("native-unavailable");
+      child.stdin.write(JSON.stringify(decodeCaptureCommand(input)) + "\n");
+    },
+    async credential(): Promise<string> {
+      await ready;
+      if (broken || shuttingDown) throw new Error("native-unavailable");
+      const id = ++nextId;
+      return new Promise((resolve, reject) => {
+        const secretTimeout = setTimeout(() => {
+          secrets.delete(id);
+          reject(new Error("keychain-unavailable"));
+        }, 3_000);
+        secrets.set(id, { resolve, reject, timeout: secretTimeout });
+        child.stdin.write(JSON.stringify({ type: "credential.read", id }) + "\n");
+      });
+    },
     async request(input: NativeSetupCommand): Promise<typeof NativeSetupResult.Type> {
       const command = decodeNativeSetupCommand(input);
       await ready;

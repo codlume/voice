@@ -1,4 +1,6 @@
 import { app, BrowserWindow, ipcMain, session, net, type IpcMainInvokeEvent } from "electron";
+import { createSession } from "./session";
+import { createProvider } from "./provider";
 import { createHash } from "node:crypto";
 import { createSetup } from "./setup";
 import { join } from "node:path";
@@ -34,6 +36,7 @@ function notify() {
 }
 const commands = createCommands<IpcMainInvokeEvent>({
   setup: () => setup,
+  session: () => practice,
   initialSettings: defaultSettings,
   isAuthorized: (event) =>
     !!window &&
@@ -44,7 +47,7 @@ const commands = createCommands<IpcMainInvokeEvent>({
   status: () => ({
     storage: storage?.state ?? "starting",
     helper: helperState,
-    capture: "unavailable",
+    capture: practice.snapshot().phase === "recording" ? "active" : setup.snapshot().localCapture,
   }),
 });
 export const setup = createSetup({
@@ -56,6 +59,40 @@ export const setup = createSetup({
   save: commands.saveSetup,
   connectivity: () => (net.isOnline() ? "online" : "offline"),
   credentialChanged: () => notify(),
+});
+// Test capture and endpoint must be opted into together, with isolated storage and Keychain.
+const fixtureUrl =
+  testDirectory && process.env.VOICE_TEST_CAPTURE === "synthetic"
+    ? process.env.VOICE_TEST_PROVIDER_URL
+    : undefined;
+const provider = createProvider(
+  join(__dirname, "provider-worker.cjs"),
+  (event) => practice.providerEvent(event),
+  fixtureUrl,
+);
+export const practice = createSession({
+  available: () =>
+    helperState === "ready" &&
+    storage?.state === "ready" &&
+    (!!fixtureUrl || setup.snapshot().blockers.length === 0),
+  device: () => commands.preferences().inputDevice,
+  credential: () => helper?.credential() ?? Promise.reject(new Error("native-unavailable")),
+  capture: (command) => {
+    if (!helper) throw new Error("native-unavailable");
+    helper.capture(command);
+  },
+  provider: (command) => provider.send(command),
+  changed: notify,
+  access: (reason) => {
+    if (reason === "authenticated") setup.updateAccess("authenticated", "available");
+    else if (reason === "rejected") setup.updateAccess("rejected", "unknown");
+    else
+      setup.updateAccess(
+        setup.snapshot().credential.verification,
+        reason === "quota" ? "quota-exhausted" : "rate-limited",
+      );
+    notify();
+  },
 });
 ipcMain.handle(commandChannel, async (event, payload: unknown) => {
   const reply = await commands.execute(event, payload);
@@ -77,6 +114,12 @@ async function createWindow() {
       sandbox: true,
     },
   });
+  window.webContents.on("render-process-gone", () =>
+    practice.interrupted("The practice window stopped. Available work remains in memory."),
+  );
+  window.webContents.on("did-start-loading", () =>
+    practice.interrupted("The practice window reloaded. Available work remains in memory."),
+  );
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   await window.loadURL(expectedUrl);
@@ -111,11 +154,14 @@ app
       () => {
         helperState = "failed";
         setup.unavailable();
+        practice.helperFailed();
         notify();
       },
       testDirectory
         ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
         : undefined,
+      (event) => practice.captureEvent(event),
+      !!fixtureUrl,
     );
     void helper.ready.then(
       () => {
@@ -125,6 +171,7 @@ app
       () => {
         helperState = "failed";
         setup.unavailable();
+        practice.helperFailed();
         notify();
       },
     );
@@ -164,7 +211,10 @@ app.on("before-quit", (event) => {
   if (closing) return;
   event.preventDefault();
   closing = true;
-  void Promise.allSettled([storage?.close(), helper?.close()]).then(() => app.quit());
+  practice.close();
+  void Promise.allSettled([storage?.close(), helper?.close(), provider.close()]).then(() =>
+    app.quit(),
+  );
 });
 process.on("SIGTERM", () => app.quit());
 process.on("SIGINT", () => app.quit());

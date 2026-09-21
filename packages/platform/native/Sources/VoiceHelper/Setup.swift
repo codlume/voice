@@ -32,6 +32,19 @@ struct SetupService {
         }
     }
 
+    func readKey() -> String? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service, kSecAttrAccount as String: "deepgram",
+            kSecUseAuthenticationContext as String: context,
+            kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var value: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess,
+              let data = value as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     private func credential(type: String, key: String?) -> SetupResult {
         // Never allow status inspection to show a Keychain dialog on startup.
         let authentication = LAContext()

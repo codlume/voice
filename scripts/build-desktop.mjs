@@ -43,11 +43,14 @@ export async function buildDesktop({ renderer = true, signal } = {}) {
     ["main", "main/index.ts"],
     ["preload", "preload.ts"],
     ["storage-worker", "workers/storage.ts"],
+    ["provider-worker", "workers/provider.ts"],
   ]) {
     signal?.throwIfAborted();
     await build({
       configFile: false,
       logLevel: "warn",
+      // Desktop entry points must resolve Node exports, including the WebSocket transport.
+      resolve: { conditions: ["node"], mainFields: ["module", "main"] },
       build: {
         target: "node24",
         outDir: `${output}/electron`,

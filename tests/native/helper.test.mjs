@@ -125,3 +125,68 @@ test(
     }
   },
 );
+
+for (const ending of ["stop", "cancel", "disconnect"]) {
+  test(
+    `controlled native capture emits ordered nonempty PCM and ends on ${ending}`,
+    { timeout: 10_000 },
+    async () => {
+      const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          VOICE_TEST_KEYCHAIN_SERVICE: "com.codlume.voice.test.capture",
+          VOICE_TEST_CAPTURE: "synthetic",
+        },
+      });
+      const lines = createInterface({ input: child.stdout });
+      const closed = once(child, "exit");
+      const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+      const events = [];
+      const firstFrames = Promise.withResolvers();
+      const stopped = Promise.withResolvers();
+      lines.on("line", (line) => {
+        const event = JSON.parse(line);
+        events.push(event);
+        if (event.type === "capture.frame" && event.sequence === 4) firstFrames.resolve();
+        if (event.type === "capture.stopped") stopped.resolve(event);
+      });
+      const send = (message) => child.stdin.write(JSON.stringify(message) + "\n");
+      try {
+        const ready = once(lines, "line");
+        send({ type: "hello", version: 1 });
+        await ready;
+        assert.equal(
+          events.some((event) => event.type === "capture.frame"),
+          false,
+        );
+        send({ type: "capture.start", session: "synthetic", attempt: "one", device: null });
+        await firstFrames.promise;
+        if (ending === "disconnect") child.stdin.end();
+        else send({ type: `capture.${ending}`, session: "synthetic", attempt: "one" });
+        const result = await stopped.promise;
+        const frames = events.filter((event) => event.type === "capture.frame");
+        assert.deepEqual(
+          frames.map((frame) => frame.sequence),
+          frames.map((_, index) => index),
+        );
+        assert.equal(result.frames, frames.length);
+        assert.equal(
+          result.samples,
+          frames.reduce((count, frame) => count + Buffer.from(frame.pcm, "base64").length / 2, 0),
+        );
+        assert.ok(Buffer.from(frames[0].pcm, "base64").some((byte) => byte !== 0));
+        if (ending !== "disconnect") send({ type: "shutdown", version: 1 });
+        await closed;
+        assert.throws(() => process.kill(child.pid, 0));
+      } finally {
+        clearTimeout(timeout);
+        lines.close();
+        if (child.exitCode === null) {
+          child.kill("SIGKILL");
+          await closed;
+        }
+      }
+    },
+  );
+}

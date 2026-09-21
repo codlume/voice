@@ -4,10 +4,16 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./asr": "./src/asr.ts"
+    "./asr": "./src/asr.ts",
+    "./stream": "./src/stream.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@voice/contracts": "workspace:*",
+    "effect": "4.0.0-rc.112",
+    "ws": "8.21.3"
+  }
 }
