@@ -44,6 +44,8 @@ export function launchHelper(
   let exited = false;
   let broken = false;
   let nextId = 0;
+  let captureStopTimer: ReturnType<typeof setTimeout> | undefined;
+  let captureIdentity: { session: string; attempt: string } | undefined;
   const secrets = new Map<
     number,
     {
@@ -82,6 +84,7 @@ export function launchHelper(
   const fail = () => {
     if (broken) return;
     clearTimeout(timeout);
+    clearTimeout(captureStopTimer);
     broken = true;
     const error = new Error("native-unavailable");
     rejectReady(error);
@@ -116,7 +119,17 @@ export function launchHelper(
         typeof value.type === "string" &&
         value.type.startsWith("capture.")
       ) {
-        captureEvent?.(decodeCaptureEvent(value));
+        const event = decodeCaptureEvent(value);
+        if (
+          event.type !== "capture.frame" &&
+          captureIdentity?.session === event.session &&
+          captureIdentity.attempt === event.attempt
+        ) {
+          clearTimeout(captureStopTimer);
+          captureStopTimer = undefined;
+          captureIdentity = undefined;
+        }
+        captureEvent?.(event);
       } else if (
         typeof value === "object" &&
         value !== null &&
@@ -162,7 +175,17 @@ export function launchHelper(
     ready,
     capture(input: CaptureCommand) {
       if (broken || shuttingDown) throw new Error("native-unavailable");
-      child.stdin.write(JSON.stringify(decodeCaptureCommand(input)) + "\n");
+      const command = decodeCaptureCommand(input);
+      if (command.type === "capture.start") {
+        if (captureIdentity) throw new Error("native-unavailable");
+        captureIdentity = { session: command.session, attempt: command.attempt };
+      } else if (
+        captureIdentity?.session === command.session &&
+        captureIdentity.attempt === command.attempt
+      ) {
+        captureStopTimer ??= setTimeout(fail, 3_000);
+      }
+      child.stdin.write(JSON.stringify(command) + "\n");
     },
     async credential(): Promise<string> {
       await ready;

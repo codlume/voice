@@ -232,3 +232,49 @@ it("credential changes stop capture, preserve its final drained frames and ignor
   });
   owner.close();
 });
+it("selects the longer deadline when final drained frames cross 30 seconds, measured from Stop", async () => {
+  vi.useFakeTimers();
+  const { owner, capture } = fixture();
+  owner.execute({ type: "session.start" });
+  await Promise.resolve();
+  const { session, attempt } = capture[0]!;
+  for (let sequence = 0; sequence < 1500; sequence++)
+    owner.captureEvent({
+      type: "capture.frame",
+      session,
+      attempt,
+      sequence,
+      pcm: Buffer.alloc(640, 1).toString("base64"),
+    });
+  owner.execute({ type: "session.stop" });
+  await vi.advanceTimersByTimeAsync(100);
+  owner.captureEvent({
+    type: "capture.frame",
+    session,
+    attempt,
+    sequence: 1500,
+    pcm: Buffer.alloc(640, 1).toString("base64"),
+  });
+  owner.captureEvent({ type: "capture.stopped", session, attempt, frames: 1501, samples: 480320 });
+  await vi.advanceTimersByTimeAsync(29_899);
+  expect(owner.snapshot().phase).toBe("processing");
+  await vi.advanceTimersByTimeAsync(1);
+  expect(owner.snapshot().phase).toBe("failed");
+  owner.close();
+});
+it("does not accept or queue a new Start until cancelled native capture acknowledges shutdown", async () => {
+  const { owner, capture } = fixture();
+  owner.execute({ type: "session.start" });
+  await Promise.resolve();
+  const { session, attempt } = capture[0]!;
+  owner.execute({ type: "session.cancel" });
+  expect(owner.snapshot()).toMatchObject({ phase: "cancelled", canStart: false });
+  owner.execute({ type: "session.start" });
+  expect(capture.filter((command) => command.type === "capture.start")).toHaveLength(1);
+  owner.captureEvent({ type: "capture.stopped", session, attempt, frames: 0, samples: 0 });
+  expect(owner.snapshot().canStart).toBe(true);
+  expect(capture.filter((command) => command.type === "capture.start")).toHaveLength(1);
+  owner.execute({ type: "session.start" });
+  expect(capture.filter((command) => command.type === "capture.start")).toHaveLength(2);
+  owner.close();
+});

@@ -29,6 +29,7 @@ type Active = Attempt & {
   failure?: string;
   stopRequested: boolean;
   deadline?: number;
+  stopTime?: number;
 };
 export function createSession(options: {
   available: () => boolean;
@@ -49,6 +50,7 @@ export function createSession(options: {
     retainedCount: 0,
   };
   let active: Active | undefined;
+  let stoppingCapture: Attempt | undefined;
   // Recovery actions belong to #31. Until then, retain sources without offering a nonfunctional Retry.
   const retained: { audio: Uint8Array[]; text: string }[] = [];
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -79,7 +81,10 @@ export function createSession(options: {
     if (!current) return;
     active = undefined;
     clearTimers();
-    sendCapture("capture.cancel", current);
+    if (!current.stopped) {
+      stoppingCapture = { session: current.session, attempt: current.attempt };
+      sendCapture("capture.cancel", current);
+    }
     options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
     if (phase !== "complete" && (current.audio.length || current.text))
       retained.push({ audio: current.audio, text: current.text });
@@ -101,13 +106,17 @@ export function createSession(options: {
     const current = active;
     if (!current || current.stopRequested) return;
     current.stopRequested = true;
-    current.deadline = performance.now() + (current.samples <= 480_000 ? 10_000 : 30_000);
+    current.stopTime = performance.now();
+    current.deadline = current.stopTime + (current.samples <= 480_000 ? 10_000 : 30_000);
     update({ phase: "processing", warning: false, message: message ?? "Finishing transcription…" });
     sendCapture("capture.stop", current);
-    later(() => {
-      if (active === current)
-        fail("Processing timed out. Audio and available text remain in memory.");
-    }, current.deadline - performance.now());
+    const expire = () => {
+      if (active !== current || current.deadline === undefined) return;
+      const remaining = current.deadline - performance.now();
+      if (remaining > 0) later(expire, remaining);
+      else fail("Processing timed out. Audio and available text remain in memory.");
+    };
+    later(expire, current.deadline - performance.now());
   }
   function providerStop(current: Active) {
     if (current.failure) {
@@ -124,7 +133,7 @@ export function createSession(options: {
       });
   }
   function start() {
-    if (active) return;
+    if (active || stoppingCapture) return;
     if (!options.available() || retained.length >= 5) {
       update({
         phase: "failed",
@@ -197,7 +206,10 @@ export function createSession(options: {
       });
   }
   return {
-    snapshot: () => ({ ...state, canStart: !active && options.available() && retained.length < 5 }),
+    snapshot: () => ({
+      ...state,
+      canStart: !active && !stoppingCapture && options.available() && retained.length < 5,
+    }),
     execute(command: SessionCommand) {
       if (command.type === "session.start") start();
       else if (command.type === "session.stop") requestStop();
@@ -214,10 +226,18 @@ export function createSession(options: {
         fail("Invalid microphone data. Available work remains in memory.");
         return;
       }
+      if (stoppingCapture?.session === event.session && stoppingCapture.attempt === event.attempt) {
+        if (event.type === "capture.stopped" || event.type === "capture.failed") {
+          stoppingCapture = undefined;
+          options.changed();
+        }
+        return;
+      }
       const current = active;
       if (!current || event.session !== current.session || event.attempt !== current.attempt)
         return;
       if (event.type === "capture.failed") {
+        current.stopped = true;
         fail(
           "Microphone capture stopped. Check your device and permissions. Available work remains in memory.",
         );
@@ -226,6 +246,10 @@ export function createSession(options: {
       if (event.type === "capture.stopped") {
         if (!current.stopRequested) requestStop();
         current.stopped = true;
+        // The final duration includes frames already captured when Stop was requested.
+        // Reclassifying that duration never moves the original Stop time.
+        if (current.stopTime !== undefined)
+          current.deadline = current.stopTime + (current.samples <= 480_000 ? 10_000 : 30_000);
         if (event.frames !== current.audio.length || event.samples !== current.samples) {
           fail("Microphone audio was incomplete. Available work remains in memory.");
           return;
@@ -330,6 +354,8 @@ export function createSession(options: {
       if (current.stopped) fail(message);
     },
     helperFailed() {
+      stoppingCapture = undefined;
+      if (active) active.stopped = true;
       fail("Native services stopped. Available work remains in memory. Reopen Voice to repair.");
     },
     hasRetained: () => retained.length > 0,
