@@ -29,13 +29,19 @@ for (const { name, signal, ignoreTermination } of [
         join(directory, "swift"),
         `#!/usr/bin/env node
 ${ignoreTermination ? 'process.on("SIGTERM", () => {});' : ""}
-console.log(process.pid);
+process.stdout.write(String(process.pid) + "\\n");
 ${signal ? "setInterval(() => {}, 1000);" : "process.exit(42);"}
 `,
         { mode: 0o755 },
       );
       child = spawn(process.execPath, ["scripts/dev.mjs"], {
-        env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          // Keep the CI color environment in the regression path.
+          FORCE_COLOR: "1",
+          NO_COLOR: undefined,
+        },
         stdio: ["ignore", "pipe", "inherit"],
       });
       closed = once(child, "exit");
