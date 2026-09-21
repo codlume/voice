@@ -17,7 +17,8 @@
     "package:desktop": "node scripts/package-desktop.mjs",
     "test:desktop-smoke": "playwright test --config tests/desktop/playwright.config.ts",
     "test:hmr": "playwright test --config tests/hmr/playwright.config.ts",
-    "prepare": "vp config --no-agent"
+    "prepare": "vp config --no-agent",
+    "test:dev": "node scripts/test-dev.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

@@ -32,8 +32,17 @@ async function launch(directory: string) {
 }
 async function shutdown(application: ElectronApplication) {
   const pid = application.process().pid;
+  const helperPid = await application.evaluate(({ app }) => {
+    const { helper }: typeof import("../../apps/desktop/src/main/index") = process
+      .getBuiltinModule("module")
+      .createRequire(app.getAppPath() + "/package.json")("./electron/main.cjs");
+    return helper?.child.pid;
+  });
   await application.close();
-  if (pid) expect(() => process.kill(pid, 0)).toThrow();
+  for (const ownedPid of [pid, helperPid]) {
+    expect(ownedPid).toBeDefined();
+    if (ownedPid) expect(() => process.kill(ownedPid, 0)).toThrow();
+  }
 }
 
 test("unsigned package persists settings through the actual Electron worker and migrated restarts", async () => {

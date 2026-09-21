@@ -23,6 +23,10 @@ jobs:
           # The accepted action omits the package-manager version from its cache key.
           # Cache the pnpm store explicitly with all required separation below.
           cache: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.10.0
+          run_install: false
       - name: Locate pinned pnpm store
         id: store
         shell: bash
@@ -60,6 +64,10 @@ jobs:
           # The accepted action omits the package-manager version from its cache key.
           # Cache the pnpm store explicitly with all required separation below.
           cache: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.10.0
+          run_install: false
       - name: Locate pinned pnpm store
         id: store
         shell: bash
@@ -98,6 +106,10 @@ jobs:
           # The accepted action omits the package-manager version from its cache key.
           # Cache the pnpm store explicitly with all required separation below.
           cache: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.10.0
+          run_install: false
       - name: Locate pinned pnpm store
         id: store
         shell: bash
@@ -114,6 +126,7 @@ jobs:
       - run: pnpm build:desktop
       - run: pnpm package:desktop
       - run: pnpm test:desktop-smoke
+      - run: pnpm test:dev
       - name: Retain synthetic test diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

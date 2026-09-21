@@ -27,7 +27,7 @@ export default defineConfig({
     jsPlugins: [{ name: "stylex", specifier: "@stylexjs/eslint-plugin" }],
     overrides: [
       {
-        files: ["apps/desktop/src/main/storage.ts"],
+        files: ["apps/desktop/src/main/storage.ts", "apps/desktop/src/main/storage.test.ts"],
         rules: { "unicorn/require-post-message-target-origin": "off" },
       },
     ],
