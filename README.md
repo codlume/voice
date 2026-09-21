@@ -1,6 +1,6 @@
 # Voice
 
-Voice is a system-wide dictation app in development. This first slice provides a macOS settings window with a persistent appearance preference. Dictation, permissions, shortcuts, and provider setup are not available yet.
+Voice is a system-wide dictation app in development. The macOS development app provides setup, explicit practice dictation, and temporary recovery. System-wide dictation is still in development.
 
 ## Develop
 
@@ -39,6 +39,12 @@ The unsigned app is at `out/Voice Development-darwin-arm64/Voice Development.app
 Renderer tests use a simulated preload. Desktop smoke tests launch the actual packaged Electron runtime, storage worker, SQLite migrations, and Swift helper. They use synthetic preferences and injected failures, never microphone capture or live providers. These checks do not establish native dictation or target-app compatibility.
 
 The pre-commit hook formats staged files only. CI runs `Check`, `Test`, and `macOS Desktop`; no signing or publishing jobs are configured.
+
+## Recover a practice session
+
+Temporary recovery keeps up to five undelivered sessions and the latest successful transcript for this app run. Copy writes the selected text to the clipboard. For incomplete transcription, Copy keeps the unresolved recording; Discard removes both. At five unresolved sessions, resolve or discard one before starting another. External Paste and transcription Retry are not available yet.
+
+Closing the window keeps Voice and recovery alive. Reopen it from the Dock. Quit Voice warns before losing undelivered work and offers Return to recovery. Audio and transcripts are not saved as history and cannot be recovered after app exit or a crash.
 
 ## Pinned storage compatibility
 

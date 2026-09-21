@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import { WebSocketServer } from "ws";
 import { once } from "node:events";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
+import { mkdtemp, rm, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -67,6 +67,27 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     },
   });
   try {
+    await app.evaluate(async ({ clipboard, ClipboardItem }) => {
+      const previous = await Promise.all(
+        (await clipboard.read()).map(
+          async (item) =>
+            new ClipboardItem(
+              Object.fromEntries(
+                await Promise.all(
+                  item.types.map(async (type) => [type, await item.getType(type)] as const),
+                ),
+              ),
+            ),
+        ),
+      );
+      const scope = globalThis as typeof globalThis & {
+        restoreTestClipboard?: () => Promise<void>;
+      };
+      scope.restoreTestClipboard = async () => {
+        if ((await clipboard.readText()) === "Hello, Priya. Do not deploy VX-204.")
+          await clipboard.write(previous);
+      };
+    });
     const page = await app.firstWindow();
     const start = page.getByRole("button", { name: "Start practice", exact: true });
     const status = page.getByTestId("practice-status");
@@ -118,6 +139,53 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(status).toContainText("Cancelled.");
     await expect(field).toHaveValue("Hello, Priya. Do not deploy VX-204.");
+    const recovery = page.getByRole("region", { name: "Temporary recovery" });
+    for (let index = 1; index < 5; index++) {
+      const next = attempts.length;
+      await start.click();
+      await expect(status).toContainText("Recording.");
+      await expect.poll(() => attempts[next]?.length ?? 0).toBeGreaterThan(10);
+      await page.getByRole("button", { name: "Stop", exact: true }).click();
+      await expect(status).toContainText("incomplete");
+    }
+    await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(5);
+    await expect(start).toBeDisabled();
+    await page.reload();
+    await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(5);
+    await expect(start).toBeDisabled();
+    const first = recovery.getByRole("article", { name: "Recovery session 1", exact: true });
+    await app.evaluate(({ clipboard }) => {
+      const original = clipboard.writeText;
+      clipboard.writeText = async () => {
+        clipboard.writeText = original;
+        throw new Error("Injected clipboard failure");
+      };
+    });
+    await first.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect(page.getByTestId("recovery-status")).toContainText("Copy failed");
+    await expect(first.getByRole("textbox")).toHaveValue("Hello, Priya. Do not deploy VX-204.");
+    await first.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect(page.getByTestId("recovery-status")).toContainText("Copied available text");
+    expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(
+      "Hello, Priya. Do not deploy VX-204.",
+    );
+    await expect(start).toBeDisabled();
+    await first.screenshot({ path: "test-results/recovery-copied.png" });
+    await first.getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(start).toBeEnabled();
+    await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
+    expect(
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible()),
+    ).toBe(false);
+    await app.evaluate(({ app }) => app.emit("activate"));
+    await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
+    await app.evaluate(({ app }) => app.quit());
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await page.getByRole("alertdialog").screenshot({ path: "test-results/recovery-quit.png" });
+    await page.getByRole("button", { name: "Return to recovery", exact: true }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
     const snapshot = await page.evaluate(() => window.voice.command({ type: "status.get" }));
     expect(JSON.stringify(snapshot)).not.toContain("synthetic-fixture-key");
     const db = new DatabaseSync(join(directory, "Voice Test/settings.sqlite"));
@@ -126,9 +194,42 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     } finally {
       db.close();
     }
-    expect(await readdir(join(directory, "Voice Test"))).not.toContain("audio");
+    const files = await readdir(join(directory, "Voice Test"), {
+      recursive: true,
+      withFileTypes: true,
+    });
+    for (const file of files.filter((entry) => entry.isFile())) {
+      const content = await readFile(join(file.parentPath, file.name));
+      expect(content.includes(Buffer.from("Hello, Priya.")), file.name).toBe(false);
+      expect(content.includes(pcm.subarray(0, 640)), file.name).toBe(false);
+    }
+    await app.evaluate(async () => {
+      const scope = globalThis as typeof globalThis & {
+        restoreTestClipboard?: () => Promise<void>;
+      };
+      await scope.restoreTestClipboard?.();
+      delete scope.restoreTestClipboard;
+    });
+    await page.getByRole("button", { name: "Quit Voice", exact: true }).click();
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    const exited = once(app.process(), "exit");
+    await page.getByRole("button", { name: "Quit and discard", exact: true }).click();
+    await exited;
   } finally {
-    await app.close();
+    if (app.process().exitCode === null) {
+      await app
+        .evaluate(async () => {
+          const scope = globalThis as typeof globalThis & {
+            restoreTestClipboard?: () => Promise<void>;
+          };
+          await scope.restoreTestClipboard?.();
+        })
+        .catch(() => {});
+      const page = await app.firstWindow();
+      await page.evaluate(() => window.voice.command({ type: "app.quit" })).catch(() => {});
+      await page.evaluate(() => window.voice.command({ type: "app.quit.confirm" })).catch(() => {});
+      await app.close();
+    }
     for (const socket of server.clients) socket.terminate();
     await new Promise<void>((done) => server.close(() => done()));
     await rm(directory, { recursive: true, force: true });

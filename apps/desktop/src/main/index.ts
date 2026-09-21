@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, session, net, type IpcMainInvokeEvent } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  session,
+  net,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { createSession } from "./session";
 import { createProvider } from "./provider";
 import { createHash } from "node:crypto";
@@ -30,11 +38,16 @@ let window: BrowserWindow | undefined;
 export let helper: ReturnType<typeof launchHelper> | undefined;
 let helperState: Status["helper"] = "starting";
 let closing = false;
+let quitConfirmed = false;
 export let storage: StorageWorker;
 function notify() {
   if (window && !window.isDestroyed()) window.webContents.send("voice:changed");
 }
 const commands = createCommands<IpcMainInvokeEvent>({
+  quit: (confirmed) => {
+    quitConfirmed = confirmed;
+    app.quit();
+  },
   setup: () => setup,
   session: () => practice,
   initialSettings: defaultSettings,
@@ -83,6 +96,10 @@ export const practice = createSession({
   },
   provider: (command) => provider.send(command),
   changed: notify,
+  copy: async (text) => {
+    await clipboard.writeText(text);
+    return (await clipboard.readText()) === text;
+  },
   access: (reason) => {
     if (reason === "authenticated") setup.updateAccess("authenticated", "available");
     else if (reason === "rejected") setup.updateAccess("rejected", "unknown");
@@ -113,6 +130,12 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+  window.on("close", (event) => {
+    if (closing) return;
+    event.preventDefault();
+    practice.interrupted("The practice window closed. Available work remains in memory.");
+    window?.hide();
   });
   window.webContents.on("render-process-gone", () =>
     practice.interrupted("The practice window stopped. Available work remains in memory."),
@@ -204,12 +227,22 @@ app
   });
 
 app.on("activate", () => {
-  if (!closing && BrowserWindow.getAllWindows().length === 0) void createWindow();
+  if (closing) return;
+  if (!window || window.isDestroyed()) void createWindow();
+  else window.show();
 });
-app.on("window-all-closed", () => app.quit());
+app.on("window-all-closed", () => {});
 app.on("before-quit", (event) => {
   if (closing) return;
   event.preventDefault();
+  if (!quitConfirmed && practice.requestQuit()) {
+    if (!window || window.isDestroyed()) void createWindow();
+    else {
+      window.show();
+      window.focus();
+    }
+    return;
+  }
   closing = true;
   practice.close();
   void Promise.allSettled([storage?.close(), helper?.close(), provider.close()]).then(() =>
