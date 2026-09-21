@@ -64,10 +64,14 @@ try {
       console.error("Voice startup failed. Inspect Settings for the failed service.");
     }
   });
-  await once(child, "exit");
+  const [code] = await once(child, "exit");
+  if (!stopping && code !== 0) process.exitCode = 1;
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
 } finally {
   await stop();
   process.disconnect?.();
   // Vite retains internal handles after middleware shutdown. All owned resources are closed above.
-  process.exit(0);
+  process.exit(process.exitCode ?? 0);
 }
