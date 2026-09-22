@@ -100,6 +100,7 @@ test("packaged capture continues offline and through a dropped stream, replays t
     await start.click();
     await expect(status).toContainText("Offline. Recording continues");
     await expect.poll(menuStatus).toBe("Recording · offline");
+    await status.screenshot({ path: "test-results/practice-offline-recording.png" });
     await stop.click();
     await expect(status).toContainText("Waiting for a connection");
     expect(attempts).toHaveLength(0);
@@ -132,6 +133,7 @@ test("packaged capture continues offline and through a dropped stream, replays t
     const recovery = page.getByRole("region", { name: "Temporary recovery" });
     const entry = recovery.getByRole("article", { name: "Recovery session 1", exact: true });
     await expect(recovery).toContainText("a five-minute recording at least 240 seconds");
+    await entry.screenshot({ path: "test-results/recovery-retry-available.png" });
     const captures = await hook<number>(app, "captureStarts");
     await entry.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(status).toHaveText(
