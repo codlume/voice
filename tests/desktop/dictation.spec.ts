@@ -118,8 +118,15 @@ const panelState = (app: ElectronApplication) =>
     };
   });
 const isPanelPage = (page: Page) => page.url().includes("view=status");
-const panelPage = async (app: ElectronApplication) =>
-  app.windows().find(isPanelPage) ?? app.waitForEvent("window", { predicate: isPanelPage });
+// Playwright learns the bar's URL from its renderer, while Electron main records the same commit
+// over a separate channel. Wait until main can find the bar before callers inspect its window.
+const panelPage = async (app: ElectronApplication) => {
+  const page =
+    app.windows().find(isPanelPage) ??
+    (await app.waitForEvent("window", { predicate: isPanelPage }));
+  await expect.poll(async () => (await panelState(app)).visible).not.toBeNull();
+  return page;
+};
 
 test("packaged shortcut dictation runs one session per press, shows non-activating status, and keeps an unplaceable transcript in recovery", async () => {
   test.setTimeout(90_000);
