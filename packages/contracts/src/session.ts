@@ -68,6 +68,8 @@ export const Notice = Schema.Literals([
   "limit",
   "connection",
   "rate-limit",
+  // The provider worker stopped mid-capture; recording continues and the source is replayed once.
+  "worker",
   "no-speech",
   "incomplete",
   "setup",
@@ -99,6 +101,8 @@ export const SessionSnapshot = Schema.Struct({
   pendingPractice: Schema.NullOr(identity),
   // The recovery entry whose retained recording an explicit Retry is transcribing again.
   retrying: Schema.NullOr(identity),
+  // Why Retry is unavailable. "setup" means no saved key or native services to read it with.
+  retryBlocker: Schema.NullOr(StartBlocker),
   latestSuccessful: Schema.NullOr(Schema.Struct({ id: identity, text: Schema.String })),
   // The most recent transcript still held, delivered or not, for Copy/Paste last transcript.
   lastTranscript: Schema.NullOr(identity),
@@ -163,6 +167,8 @@ export const TargetSelected = Schema.Struct({
   status: TargetStatus,
 });
 export type TargetSelected = typeof TargetSelected.Type;
+export const CaptureFailure = Schema.Literals(["device", "permission"]);
+export type CaptureFailure = typeof CaptureFailure.Type;
 export const CaptureCommand = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("capture.start"),
@@ -189,7 +195,13 @@ export const CaptureEvent = Schema.Union([
     frames: count,
     samples: count,
   }),
-  Schema.Struct({ type: Schema.Literal("capture.failed"), ...attempt }),
+  Schema.Struct({
+    type: Schema.Literal("capture.failed"),
+    ...attempt,
+    // Set when the helper knows why capture ended: the input device went away or changed, or
+    // microphone access was revoked.
+    reason: Schema.optionalKey(CaptureFailure),
+  }),
 ]);
 export type CaptureEvent = typeof CaptureEvent.Type;
 export const ProviderFailure = Schema.Literals([

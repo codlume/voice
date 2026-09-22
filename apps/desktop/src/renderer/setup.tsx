@@ -62,7 +62,8 @@ const permissionLabels = {
 };
 const bindingLabels = { hold: "Hold to talk", toggle: "Toggle dictation", cancel: "Cancel" };
 const repairs: Record<SetupBlocker, string> = {
-  "native-unavailable": "Native services are unavailable. Quit and reopen Voice.",
+  "native-unavailable":
+    "Native services are unavailable. Voice restarts them automatically; if this persists, quit and reopen Voice.",
   "permission-microphone": "Allow microphone access before dictating.",
   "permission-accessibility": "Allow Accessibility access for shortcuts and insertion.",
   "permission-inputMonitoring": "Allow Input Monitoring for global shortcuts.",
@@ -71,13 +72,15 @@ const repairs: Record<SetupBlocker, string> = {
   "key-missing": "Add your Deepgram key.",
   "key-unavailable": "Unlock your login Keychain, then refresh setup or save your key again.",
   "key-rejected": "Deepgram rejected this key. Replace it with a working key.",
-  "quota-exhausted": "Your Deepgram quota is exhausted. Check billing in your Deepgram account.",
+  "quota-exhausted":
+    "Your Deepgram quota is exhausted. Add credit in your Deepgram account, then refresh setup status.",
 };
 const failures = {
   "invalid-command": "Check the input and try again.",
   unauthorized: "Reopen Voice to reconnect Settings.",
   "storage-unavailable": "Settings could not be saved. Restore settings storage and try again.",
-  "native-unavailable": "Native services are unavailable. Quit and reopen Voice.",
+  "native-unavailable":
+    "Native services are unavailable. Voice restarts them automatically; try again in a moment.",
   "keychain-unavailable":
     "Keychain could not complete the change. Unlock your login Keychain and try again. Your key was not confirmed saved or removed.",
   "shortcut-conflict":

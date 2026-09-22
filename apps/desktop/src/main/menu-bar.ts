@@ -79,7 +79,9 @@ export function statusLabel({ phase, armedPaste, blocker, notice }: SessionSnaps
       ? "Recording · offline"
       : notice === "rate-limit"
         ? "Recording · rate limited"
-        : "Recording";
+        : notice === "worker"
+          ? "Recording · transcription interrupted"
+          : "Recording";
   if (phase === "processing")
     return notice === "connection" ? "Transcribing · waiting for connection" : "Transcribing…";
   if (phase === "inserting") return "Inserting…";

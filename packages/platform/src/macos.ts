@@ -220,6 +220,12 @@ export function launchHelper(
       }
       child.stdin.write(JSON.stringify(command) + "\n");
     },
+    // Isolated synthetic capture only: makes the running capture fail as a lost input device or a
+    // revoked microphone permission would, through the helper's real stop path.
+    simulateCaptureFailure(failure: "device" | "permission") {
+      if (broken || shuttingDown || !testKeychainService || !options.syntheticCapture) return;
+      child.stdin.write(JSON.stringify({ type: "capture.simulate", failure }) + "\n");
+    },
     async credential(): Promise<string> {
       await ready;
       if (broken || shuttingDown) throw new Error("native-unavailable");

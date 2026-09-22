@@ -19,6 +19,7 @@ async function simulate(page: Page, initial: Partial<SessionSnapshot>) {
       quitWarning: false,
       pendingPractice: null,
       retrying: null,
+      retryBlocker: null,
       latestSuccessful: null,
       lastTranscript: null,
       lastUpdate: "session",
@@ -211,6 +212,7 @@ test("recovery offers Retry for retained recordings, explains the replay limit, 
   await setSession(page, {
     phase: "processing",
     blocker: "busy",
+    retryBlocker: "busy",
     retrying: "source",
     notice: null,
     message: "Retrying transcription from the retained recording. The microphone stays off.",
@@ -249,4 +251,51 @@ test("recovery offers Retry for retained recordings, explains the replay limit, 
   await setSession(page, { phase: "recording", notice: "connection", message: offline });
   await expect(page.getByTestId("panel-status")).toHaveText(offline);
   await page.screenshot({ path: "test-results/bar-offline-recording.png" });
+});
+
+test("Retry waits for a readable key, and a worker restart is shown as an interruption, never as ready", async ({
+  page,
+}) => {
+  const entry = {
+    id: "source",
+    text: "Available text.",
+    transcription: "incomplete" as const,
+    hasAudio: true,
+    cause:
+      "Your Deepgram key changed, so Voice stopped this session. The recording and available text remain in recovery; Retry sends them only when you choose.",
+    delivery: "undelivered" as const,
+  };
+  await simulate(page, {
+    phase: "failed",
+    origin: "practice",
+    notice: "incomplete",
+    message: entry.cause,
+    retryBlocker: "setup",
+    recovery: [entry],
+  });
+  await page.goto("/");
+  const recovery = page.getByRole("region", { name: "Temporary recovery" });
+  const first = recovery.getByRole("article", { name: "Recovery session 1", exact: true });
+  await expect(first.getByRole("button", { name: "Retry", exact: true })).toBeDisabled();
+  await expect(page.getByTestId("retry-blocker")).toContainText("needs a saved Deepgram key");
+  await expect(first.getByRole("button", { name: "Copy", exact: true })).toBeEnabled();
+  await setSession(page, { retryBlocker: null });
+  await expect(first.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
+  await expect(page.getByTestId("retry-blocker")).toHaveCount(0);
+  await recovery.screenshot({ path: "test-results/recovery-retry-needs-key.png" });
+
+  const interrupted =
+    "The transcription worker stopped. Recording continues and audio stays in memory; Voice replays the full recording once after you stop.";
+  await page.setViewportSize({ width: 480, height: 84 });
+  await page.goto("/?view=status");
+  await setSession(page, {
+    phase: "recording",
+    origin: "dictation",
+    blocker: "busy",
+    notice: "worker",
+    message: interrupted,
+  });
+  await expect(page.getByTestId("panel-status")).toHaveText(interrupted);
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Open recovery" })).toHaveCount(0);
 });

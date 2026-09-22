@@ -475,3 +475,200 @@ test(
     }
   },
 );
+
+for (const failure of ["device", "permission"]) {
+  test(
+    `a ${failure} loss fails synthetic capture with its reason and leaves the helper ready for an explicit start`,
+    { timeout: 10_000 },
+    async () => {
+      const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          VOICE_TEST_KEYCHAIN_SERVICE: `com.codlume.voice.test.${failure}`,
+          VOICE_TEST_CAPTURE: "synthetic",
+        },
+      });
+      const lines = createInterface({ input: child.stdout });
+      const closed = once(child, "exit");
+      const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+      const events = [];
+      const waiters = [];
+      lines.on("line", (line) => {
+        const event = JSON.parse(line);
+        events.push(event);
+        for (const waiter of waiters.splice(0)) waiter();
+      });
+      const until = (predicate) =>
+        new Promise((done) => {
+          const check = () => (predicate() ? done() : waiters.push(check));
+          check();
+        });
+      const send = (message) => child.stdin.write(JSON.stringify(message) + "\n");
+      try {
+        send({ type: "hello", version: 1 });
+        await until(() => events.some((event) => event.type === "ready"));
+        send({ type: "capture.start", session: "loss", attempt: "one", device: null });
+        await until(() => events.some((event) => event.type === "capture.frame"));
+        send({ type: "capture.simulate", failure });
+        await until(() => events.some((event) => event.type === "capture.failed"));
+        const ended = events.findIndex((event) => event.type === "capture.failed");
+        assert.deepEqual(events[ended], {
+          type: "capture.failed",
+          session: "loss",
+          attempt: "one",
+          reason: failure,
+        });
+        // Without an explicit start nothing resumes; a new start gets a fresh capture.
+        send({ type: "capture.simulate", failure });
+        send({ type: "capture.start", session: "fresh", attempt: "two", device: null });
+        await until(() => events.some((event) => event.session === "fresh"));
+        assert.equal(
+          events.slice(ended + 1).some((event) => event.session === "loss"),
+          false,
+        );
+        send({ type: "capture.cancel", session: "fresh", attempt: "two" });
+        await until(() => events.some((event) => event.type === "capture.stopped"));
+        send({ type: "shutdown", version: 1 });
+        await closed;
+      } finally {
+        clearTimeout(timeout);
+        lines.close();
+        if (child.exitCode === null) {
+          child.kill("SIGKILL");
+          await closed;
+        }
+      }
+    },
+  );
+}
+
+test(
+  "the helper stops capture and exits when the app process that owns it is killed",
+  { timeout: 15_000 },
+  async () => {
+    // A stand-in for Electron main: it launches the helper, starts synthetic capture, reports the
+    // helper's pid once frames flow, and is then killed without any shutdown.
+    const owner = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+        import { spawn } from "node:child_process";
+        import { createInterface } from "node:readline";
+        const helper = spawn(${JSON.stringify(resolve("packages/platform/native/.build/debug/voice-helper"))}, [], {
+          stdio: ["pipe", "pipe", "ignore"],
+          env: { ...process.env, VOICE_TEST_KEYCHAIN_SERVICE: "com.codlume.voice.test.owner", VOICE_TEST_CAPTURE: "synthetic" },
+        });
+        let reported = false;
+        createInterface({ input: helper.stdout }).on("line", (line) => {
+          const event = JSON.parse(line);
+          if (event.type === "ready")
+            helper.stdin.write(JSON.stringify({ type: "capture.start", session: "owned", attempt: "one", device: null }) + "\\n");
+          if (event.type === "capture.frame" && !reported) {
+            reported = true;
+            process.stdout.write(helper.pid + "\\n");
+          }
+        });
+        helper.stdin.write(JSON.stringify({ type: "hello", version: 1 }) + "\\n");
+        `,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    const exited = once(owner, "exit");
+    let helperPid;
+    try {
+      const [line] = await once(createInterface({ input: owner.stdout }), "line");
+      helperPid = Number(line);
+      assert.ok(Number.isInteger(helperPid) && helperPid > 0);
+      process.kill(helperPid, 0);
+      owner.kill("SIGKILL");
+      await exited;
+      const deadline = Date.now() + 5_000;
+      let alive = true;
+      while (alive && Date.now() < deadline) {
+        await new Promise((done) => setTimeout(done, 50));
+        try {
+          process.kill(helperPid, 0);
+        } catch {
+          alive = false;
+        }
+      }
+      assert.equal(alive, false, "the orphaned helper kept running after its app died");
+    } finally {
+      if (owner.exitCode === null && owner.signalCode === null) owner.kill("SIGKILL");
+      if (helperPid)
+        try {
+          process.kill(helperPid, "SIGKILL");
+        } catch {
+          /* Already gone, as required. */
+        }
+    }
+  },
+);
+
+test(
+  "a replacement helper adopts an Fn key already held and acts only on a fresh press",
+  { timeout: 10_000 },
+  async () => {
+    const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        VOICE_TEST_KEYCHAIN_SERVICE: "com.codlume.voice.test.held",
+        VOICE_TEST_CAPTURE: "synthetic",
+      },
+    });
+    const lines = createInterface({ input: child.stdout });
+    const closed = once(child, "exit");
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+    const actions = [];
+    const waiting = [];
+    lines.on("line", (line) => {
+      const event = JSON.parse(line);
+      if (event.type === "shortcut") actions.push(event.action);
+      else waiting.shift()?.(event);
+    });
+    const reply = (payload) =>
+      new Promise((done) => {
+        waiting.push(done);
+        child.stdin.write(JSON.stringify(payload) + "\n");
+      });
+    const press = (key, down, flags = []) =>
+      reply({ type: "shortcut.simulate", key, down, flags, repeat: false });
+    try {
+      await reply({ type: "hello", version: 1 });
+      // Fn went down before main configured this helper, as after a helper restart mid-hold.
+      await press("fn", true);
+      await reply({
+        type: "setup.request",
+        version: 1,
+        id: 1,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: false,
+          bar: null,
+        },
+      });
+      // Another flags change while Fn stays down, then its release: neither is a hold, and no
+      // stale press is replayed.
+      await press("fn", true);
+      await press("fn", false);
+      assert.deepEqual(actions, []);
+      await press("fn", true);
+      await press("fn", false);
+      assert.deepEqual(actions, ["hold.down", "hold.up"]);
+      await reply({ type: "shutdown", version: 1 });
+      await closed;
+    } finally {
+      clearTimeout(timeout);
+      lines.close();
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await closed;
+      }
+    }
+  },
+);

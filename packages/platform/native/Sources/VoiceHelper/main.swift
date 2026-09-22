@@ -9,7 +9,7 @@ let outputLock = NSLock()
 }
 let fixture = ProcessInfo.processInfo.environment["VOICE_TEST_CAPTURE"] == "synthetic" && ProcessInfo.processInfo.environment["VOICE_TEST_KEYCHAIN_SERVICE"]?.hasPrefix("com.codlume.voice.test.") == true
 let setup = SetupService()
-let shortcuts = ShortcutService(emit: output)
+let shortcuts = ShortcutService(emit: output, adoptsHeldKeys: !fixture)
 let targets = TargetService(emit: output)
 shortcuts.onInput = { targets.userInput() }
 let capture = CaptureService(fixture: fixture, emit: output)
@@ -38,6 +38,11 @@ let reader = Thread { [capture] in
                 let consumed = DispatchQueue.main.sync { MainActor.assumeIsolated { simulated.flatMap { shortcuts.simulate($0) } } }
                 let reply: [String: Any] = ["type": "pointer.simulated", "consumed": consumed as Any? ?? NSNull()]
                 if let data = try? JSONSerialization.data(withJSONObject: reply) { output(data) }
+                continue
+            }
+            if fixture, object["type"] as? String == "capture.simulate", Set(object.keys) == Set(["type", "failure"]),
+               let failure = object["failure"] as? String, ["device", "permission"].contains(failure) {
+                capture.simulateFailure(failure)
                 continue
             }
             if fixture, object["type"] as? String == "shortcut.simulate" {

@@ -10,6 +10,8 @@ final class CaptureService: @unchecked Sendable {
     private var inputBuffers = CaptureBuffers()
     private var stopping = false
     private var stopFailed = false
+    // Why capture failed, when known: "device" for a lost or changed input, "permission" for revoked access.
+    private var failureReason: String?
     private let queue = DispatchQueue(label: "voice.capture")
     private let emit: @Sendable (Data) -> Void
     private let fixture: Bool
@@ -30,7 +32,8 @@ final class CaptureService: @unchecked Sendable {
             if request.type == "capture.start" {
                 guard self.identity == nil else { return }
                 self.identity = request; self.frames = 0; self.samples = 0; self.fixtureFrames = 0
-                self.stopping = false; self.stopFailed = false; self.inputBuffers = CaptureBuffers(); self.lifetime.enter()
+                self.stopping = false; self.stopFailed = false; self.failureReason = nil
+                self.inputBuffers = CaptureBuffers(); self.lifetime.enter()
                 do { try self.start(device: request.device) } catch { self.finish(failed: true) }
             } else if self.identity?.session == request.session && self.identity?.attempt == request.attempt {
                 self.finish(failed: false)
@@ -38,6 +41,10 @@ final class CaptureService: @unchecked Sendable {
         }
     }
     func disconnect() { queue.sync { finish(failed: false) }; lifetime.wait() }
+    // Test-only: fails the running synthetic capture through the same path a real loss takes.
+    func simulateFailure(_ reason: String) {
+        queue.async { if self.fixture { self.finish(failed: true, reason: reason) } }
+    }
     private func send(_ type: String, extra: [String: Any] = [:]) {
         guard let identity else { return }
         var object = extra
@@ -63,7 +70,8 @@ final class CaptureService: @unchecked Sendable {
         watchdog.schedule(deadline: .now() + 1, repeating: 1)
         watchdog.setEventHandler { [weak self] in
             guard let self, self.identity != nil else { return }
-            if DispatchTime.now().uptimeNanoseconds - self.lastFrame.uptimeNanoseconds > 2_000_000_000 || (!self.fixture && AVCaptureDevice.authorizationStatus(for: .audio) != .authorized) { self.finish(failed: true) }
+            if !self.fixture && AVCaptureDevice.authorizationStatus(for: .audio) != .authorized { self.finish(failed: true, reason: "permission") }
+            else if DispatchTime.now().uptimeNanoseconds - self.lastFrame.uptimeNanoseconds > 2_000_000_000 { self.finish(failed: true) }
         }
         self.watchdog = watchdog; watchdog.resume()
         if fixture, ProcessInfo.processInfo.environment["VOICE_TEST_SAMPLE_RATE"] == "48000" {
@@ -130,7 +138,7 @@ final class CaptureService: @unchecked Sendable {
         self.converter = converter
         converter.primeMethod = .none
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
-            self?.queue.async { [weak self] in self?.finish(failed: true) }
+            self?.queue.async { [weak self] in self?.finish(failed: true, reason: "device") }
         }
         let captureID = identity?.attempt
         let accepted = inputBuffers
@@ -170,9 +178,10 @@ final class CaptureService: @unchecked Sendable {
         guard status != .error, error == nil, let pointer = output.int16ChannelData?[0] else { finish(failed: true); return }
         pcm(Data(bytes: pointer, count: Int(output.frameLength) * 2))
     }
-    private func finish(failed: Bool) {
+    private func finish(failed: Bool, reason: String? = nil) {
         guard identity != nil else { return }
         stopFailed = stopFailed || failed
+        if failed, failureReason == nil { failureReason = reason }
         guard !stopping else { return }
         stopping = true
         // Close admission before removing the tap. Already accepted copies own a group entry
@@ -202,7 +211,7 @@ final class CaptureService: @unchecked Sendable {
             if !drained { stopFailed = true }
         }
         converter = nil
-        if stopFailed { send("capture.failed") }
+        if stopFailed { send("capture.failed", extra: failureReason.map { ["reason": $0] } ?? [:]) }
         else { send("capture.stopped", extra: ["frames": frames, "samples": samples]) }
         identity = nil
         lifetime.leave()

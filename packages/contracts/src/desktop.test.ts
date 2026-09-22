@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { decodeCommand } from "./desktop";
-import { decodeBarPointerEvent, decodeShortcutEvent, decodeTargetSelected } from "./session";
+import {
+  decodeBarPointerEvent,
+  decodeCaptureEvent,
+  decodeShortcutEvent,
+  decodeTargetSelected,
+} from "./session";
 import { decodeNativeSetupCommand, decodeNativeSetupResult } from "./setup";
 
 describe("settings commands", () => {
@@ -81,5 +86,26 @@ describe("dictation contracts", () => {
     expect(() =>
       decodeNativeSetupResult({ type: "insertion", session: "s", outcome: "maybe" }),
     ).toThrow();
+  });
+});
+
+describe("capture failure contracts", () => {
+  it("carries a known device or permission reason and rejects anything else", () => {
+    const identity = { session: "s", attempt: "a" };
+    for (const reason of ["device", "permission"] as const)
+      expect(decodeCaptureEvent({ type: "capture.failed", ...identity, reason })).toEqual({
+        type: "capture.failed",
+        ...identity,
+        reason,
+      });
+    expect(decodeCaptureEvent({ type: "capture.failed", ...identity })).toEqual({
+      type: "capture.failed",
+      ...identity,
+    });
+    for (const payload of [
+      { type: "capture.failed", ...identity, reason: "network" },
+      { type: "capture.failed", ...identity, reason: "device", device: "Built-in Microphone" },
+    ])
+      expect(() => decodeCaptureEvent(payload)).toThrow();
   });
 });

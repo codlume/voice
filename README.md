@@ -62,7 +62,13 @@ Temporary recovery keeps up to five undelivered sessions and the latest successf
 
 **Retry** transcribes a retained recording again with the microphone off. The result stays in recovery for you to Copy or Paste, so text you already delivered is never replaced or pasted twice. A failed or cancelled Retry keeps the recording.
 
-Closing the window keeps Voice and recovery alive. Reopen it from the Dock. Quit Voice warns before losing undelivered work and offers Return to recovery. Audio and transcripts are not saved as history and cannot be recovered after app exit or a crash.
+Closing the window keeps Voice and recovery alive. Reopen it from the Dock. Quit Voice warns before losing undelivered work and offers Return to recovery. Audio and transcripts are not saved as history. Recovery survives a window reload and a restart of Voice's native helper or transcription worker, but not quitting Voice or a crash of the app itself.
+
+## When recording stops on its own
+
+Voice stops recording at once when it can no longer use what it records or sends: you add, replace, or remove your Deepgram key; Deepgram rejects the key or reports exhausted quota; the microphone disconnects or its access is revoked; or Voice's native helper stops. The recording and any text so far stay in Temporary recovery, marked incomplete. A key change is not a Cancel: the recording is kept. After you fix the cause, nothing resends or records by itself. Use **Retry**, which needs a saved key, or start a new session. After adding credit to an exhausted Deepgram account, click **Refresh setup status** before starting again.
+
+Voice restarts its native helper automatically. Shortcuts work again once setup shows it ready. A shortcut key held from before the restart starts nothing; release it and press again. A dropped connection, a rate limit, or a stopped transcription worker does not stop the recording. Voice replaces the worker and transcribes the full recording once after you stop, within the same time limit.
 
 ## Dictate without a connection
 

@@ -186,3 +186,36 @@ it("persists explicit permission intent and refreshed grants without starting ca
     "credential.status",
   ]);
 });
+
+it("a restarted helper keeps a key Deepgram rejected blocked until it is replaced", async () => {
+  const native: NativeSetupStatus = {
+    permissions: { microphone: "granted", accessibility: "granted", inputMonitoring: "granted" },
+    devices: [{ id: "synthetic-input", name: "Synthetic microphone" }],
+    defaultDevice: "synthetic-input",
+    shortcuts: { hold: "available", toggle: "available", cancel: "available" },
+  };
+  let running = true;
+  const setup = createSetup({
+    native: async (command) => {
+      if (!running) throw new Error("native-unavailable");
+      return command.type.startsWith("credential.")
+        ? { type: "credential", presence: "saved" }
+        : { type: "setup", status: native };
+    },
+    preferences: () => defaultSetupPreferences,
+    save: async () => {},
+    connectivity: () => "online",
+    credentialChanged: () => {},
+  });
+  await setup.refresh();
+  setup.updateAccess("rejected", "unknown");
+  expect(setup.snapshot().blockers).toEqual(["key-rejected"]);
+  running = false;
+  setup.unavailable();
+  expect(setup.snapshot().blockers).toEqual(["native-unavailable", "key-unavailable"]);
+  running = true;
+  await setup.refresh();
+  expect(setup.snapshot().blockers).toEqual(["key-rejected"]);
+  await setup.execute({ type: "credential.set", key: "synthetic-replacement" });
+  expect(setup.snapshot().blockers).toEqual([]);
+});

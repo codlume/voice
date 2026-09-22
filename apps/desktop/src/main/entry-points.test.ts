@@ -28,6 +28,7 @@ function fixture(
   const opened: View[] = [];
   const owner = createSession({
     available: overrides.available ?? (() => true),
+    transcribable: () => true,
     online: () => true,
     device: () => null,
     credential: async () => "synthetic",

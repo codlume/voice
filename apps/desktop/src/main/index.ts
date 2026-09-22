@@ -22,6 +22,7 @@ import {
   defaultSettings,
   commandChannel,
   revealChannel,
+  type Settings,
   type Status,
   type View,
 } from "@voice/contracts/desktop";
@@ -69,6 +70,7 @@ let engaged = false;
 let closing = false;
 let quitConfirmed = false;
 export let storage: StorageWorker;
+let storageReady: Promise<Settings> | undefined;
 const webPreferences = {
   preload: join(__dirname, "preload.cjs"),
   contextIsolation: true,
@@ -171,6 +173,8 @@ export const dictation = createSession({
     helperState === "ready" &&
     storage?.state === "ready" &&
     (!!fixtureUrl || setup.snapshot().blockers.length === 0),
+  transcribable: () =>
+    helperState === "ready" && (!!fixtureUrl || setup.snapshot().credential.presence === "saved"),
   // Isolated tests drive connectivity through the test hook, never the machine's network state.
   online: () => (fixtureUrl ? !testOffline : net.isOnline()),
   device: () => commands.preferences().inputDevice,
@@ -239,6 +243,16 @@ if (testDirectory) {
         testOffline = value === true;
       },
       captureStarts: () => testCaptureStarts,
+      // Subordinate faults, each confined to this isolated app: the helper process is killed as
+      // if it crashed, the provider worker is ended the same way, and the helper's synthetic
+      // capture is told to fail as a lost device or revoked permission would.
+      helper: () => ({ state: helperState, pid: helper?.child.pid }),
+      killHelper: () => helper?.child.kill("SIGKILL"),
+      killProvider: () => provider.kill(),
+      captureFailure: (reason: unknown) => {
+        if (fixtureUrl && (reason === "device" || reason === "permission"))
+          helper?.simulateCaptureFailure(reason);
+      },
       panelBounds: () => panel?.getBounds(),
       trayBounds: () => tray?.getBounds(),
     },
@@ -475,35 +489,10 @@ app
       },
       notify,
     );
-    const failedHelper = () => {
-      helperState = "failed";
-      shortcutState = "unavailable";
-      setup.unavailable();
-      dictation.helperFailed();
-      notify();
-    };
-    helper = launchHelper(
-      app.isPackaged
-        ? join(process.resourcesPath, "app.asar.unpacked/native/voice-helper")
-        : join(__dirname, "../native/voice-helper"),
-      failedHelper,
-      {
-        testKeychainService: testDirectory
-          ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
-          : undefined,
-        syntheticCapture: !!fixtureUrl,
-        captureEvent: (event) => dictation.captureEvent(event),
-        shortcut: (event) => dictation.shortcut(event.action),
-        barPointer: (event) => replayBarPointer(event),
-        targetSelected: (event) => dictation.targetSelected(event),
-      },
-    );
-    void helper.ready.then(() => {
-      helperState = "ready";
-      notify();
-    }, failedHelper);
-    const storageReady = storage.start();
-    void storageReady.then(
+    const firstHelper = superviseHelper();
+    const ready = storage.start();
+    storageReady = ready;
+    void ready.then(
       (settings) => {
         commands.updateSettings(settings);
         notify();
@@ -517,7 +506,7 @@ app
     screen.on("display-added", () => syncPanel(true));
     screen.on("display-removed", () => syncPanel(true));
     screen.on("display-metrics-changed", () => syncPanel(true));
-    void Promise.all([helper.ready, storageReady]).then(
+    void Promise.all([firstHelper, ready]).then(
       async () => {
         await setup.refresh().catch(() => {});
         await syncShortcuts();
@@ -535,6 +524,76 @@ app
     app.quit();
   });
 
+// Main supervises the helper. When it dies, its capture died with it: the session keeps the
+// recovery source and a replacement starts after a delay that grows until a helper stays up for
+// a minute. A replacement only restores availability and the event-tap state, from the saved
+// preferences; it never starts capture or replays a shortcut.
+let helperFailures = 0;
+let helperReadyAt = 0;
+let helperRestart: ReturnType<typeof setTimeout> | undefined;
+function superviseHelper() {
+  const current = launchHelper(
+    app.isPackaged
+      ? join(process.resourcesPath, "app.asar.unpacked/native/voice-helper")
+      : join(__dirname, "../native/voice-helper"),
+    () => failed(),
+    {
+      testKeychainService: testDirectory
+        ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
+        : undefined,
+      syntheticCapture: !!fixtureUrl,
+      captureEvent: (event) => {
+        dictation.captureEvent(event);
+        // A lost device or revoked permission changes availability; show it without waiting.
+        if (event.type === "capture.failed") void setup.refresh().then(notify, notify);
+      },
+      shortcut: (event) => dictation.shortcut(event.action),
+      barPointer: (event) => replayBarPointer(event),
+      targetSelected: (event) => dictation.targetSelected(event),
+    },
+  );
+  helper = current;
+  helperState = "starting";
+  let down = false;
+  function failed() {
+    if (down || helper !== current) return;
+    down = true;
+    helperState = "failed";
+    shortcutState = "unavailable";
+    setup.unavailable();
+    dictation.helperFailed();
+    notify();
+    if (closing) return;
+    if (helperReadyAt && performance.now() - helperReadyAt > 60_000) helperFailures = 0;
+    helperReadyAt = 0;
+    const delay = Math.min(30_000, 500 * 2 ** helperFailures++);
+    helperRestart = setTimeout(() => {
+      helperRestart = undefined;
+      if (closing) return;
+      void superviseHelper().then(
+        async () => {
+          await storageReady?.catch(() => {});
+          await setup.refresh().catch(() => {});
+          await syncShortcuts();
+          notify();
+        },
+        () => {},
+      );
+    }, delay);
+  }
+  return current.ready.then(
+    () => {
+      if (helper !== current || down) throw new Error("native-unavailable");
+      helperReadyAt = performance.now();
+      helperState = "ready";
+      notify();
+    },
+    (error: unknown) => {
+      failed();
+      throw error;
+    },
+  );
+}
 async function showWindow() {
   const current = window;
   if (!current || current.isDestroyed()) {
@@ -572,6 +631,7 @@ app.on("before-quit", (event) => {
   }
   closing = true;
   clearTimeout(panelTimer);
+  clearTimeout(helperRestart);
   dictation.close();
   if (panel && !panel.isDestroyed()) panel.destroy();
   tray?.destroy();

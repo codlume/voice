@@ -69,7 +69,12 @@ final class ShortcutService {
     private var barIsTopWindow: (CGPoint, UInt32) -> Bool = ShortcutService.topWindow
     private let emitQueue = DispatchQueue(label: "voice.shortcut.emit")
     var onInput: (() -> Void)?
-    init(emit: @escaping @Sendable (Data) -> Void) { self.emit = emit }
+    // Synthetic tests drive every key transition, so the physical keyboard's state is ignored.
+    private let adoptsHeldKeys: Bool
+    init(emit: @escaping @Sendable (Data) -> Void, adoptsHeldKeys: Bool = true) {
+        self.emit = emit
+        self.adoptsHeldKeys = adoptsHeldKeys
+    }
 
     // Applies the full desired state and reports whether the native tap is listening.
     func configure(_ bindings: SetupShortcuts, active: Bool, bar: BarRegion?) -> Bool {
@@ -139,6 +144,9 @@ final class ShortcutService {
                                           userInfo: Unmanaged.passUnretained(self).toOpaque()),
               let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else { return }
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        // A replacement helper can start while Fn is still held from before. Adopt that as the
+        // current state, so only a fresh press after its release becomes a hold.
+        if adoptsHeldKeys, CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn) { fnHeld = true }
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
         self.source = source
@@ -222,16 +230,16 @@ final class ShortcutService {
         // A click on the bar is not a destination choice for an armed paste.
         if pointer(type, event) { return true }
         if type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp { return false }
+        let flags = event.flags
+        // Fn is tracked before bindings exist, so a key already held when this helper was
+        // configured is never mistaken for a fresh press later.
+        let fnChanged = type == .flagsChanged && flags.contains(.maskSecondaryFn) != fnHeld
+        if fnChanged { fnHeld.toggle() }
         guard let bindings else { return false }
         onInput?()
-        let flags = event.flags
         switch type {
         case .flagsChanged:
-            let fnNow = flags.contains(.maskSecondaryFn)
-            if fnNow != fnHeld {
-                fnHeld = fnNow
-                if bindings.hold == .fn { if fnNow { holdDown() } else { holdUp() } }
-            }
+            if fnChanged, bindings.hold == .fn { if fnHeld { holdDown() } else { holdUp() } }
             if case .key(_, let modifiers, _) = trigger(bindings.hold), holdHeld, !modifiers.isEmpty,
                !flags.contains(modifiers) { holdUp() }
             return false
