@@ -27,14 +27,14 @@ const styles = stylex.create({
   },
   dot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0, backgroundColor: "#54677e" },
   recording: { backgroundColor: "#ff5f57" },
-  text: { margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box" },
+  text: {
+    margin: 0,
+    overflow: "hidden",
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 3,
+  },
 });
-const labels = {
-  starting: "Starting",
-  recording: "Recording",
-  processing: "Transcribing",
-  inserting: "Inserting",
-} as const;
 export function StatusView() {
   const [reply, setReply] = useState<Reply | undefined>(undefined);
   useEffect(() => {
@@ -58,19 +58,17 @@ export function StatusView() {
     };
   }, []);
   const session = reply?.ok ? reply.session : undefined;
-  const phase = session?.phase;
-  const label =
-    session?.armedPaste && phase !== "inserting"
-      ? "Paste"
-      : phase && phase in labels
-        ? labels[phase as keyof typeof labels]
-        : "Voice";
-  const message = session?.armedPaste ? session.recoveryMessage : session?.message;
+  const message = session?.armedPaste
+    ? `Paste: ${session.recoveryMessage}`
+    : (session?.message ?? "Ready.");
   return (
     <div role="status" aria-label="Dictation status" {...stylex.props(styles.panel)}>
-      <span aria-hidden {...stylex.props(styles.dot, phase === "recording" && styles.recording)} />
+      <span
+        aria-hidden
+        {...stylex.props(styles.dot, session?.phase === "recording" && styles.recording)}
+      />
       <p data-testid="panel-status" {...stylex.props(styles.text)}>
-        <strong>{label}</strong> · {message ?? "Ready."}
+        {message}
       </p>
     </div>
   );

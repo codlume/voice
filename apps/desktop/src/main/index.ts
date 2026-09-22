@@ -229,8 +229,8 @@ async function createWindow() {
 // A non-activating panel keeps the external target focused while it shows session status.
 async function createPanel() {
   panel = new BrowserWindow({
-    width: 340,
-    height: 64,
+    width: 420,
+    height: 84,
     show: false,
     frame: false,
     resizable: false,
