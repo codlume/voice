@@ -51,7 +51,11 @@ export function PracticeView({
   async function run(type: "session.start" | "session.stop" | "session.cancel") {
     setError("");
     try {
-      onReply(await window.voice.command({ type }));
+      onReply(
+        await window.voice.command(
+          type === "session.start" ? { type, origin: "practice" } : { type },
+        ),
+      );
     } catch {
       setError("Practice could not connect. Reopen Voice to repair.");
     }
@@ -64,7 +68,10 @@ export function PracticeView({
         field below. Recording never starts automatically.
       </p>
       <div {...stylex.props(styles.controls)}>
-        <SaveButton disabled={!session?.canStart} onClick={() => void run("session.start")}>
+        <SaveButton
+          disabled={!session || session.blocker !== null}
+          onClick={() => void run("session.start")}
+        >
           Start practice
         </SaveButton>
         <SaveButton

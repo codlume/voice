@@ -1,8 +1,10 @@
 import {
+  decodeBarPointerEvent,
   decodeCaptureCommand,
   decodeCaptureEvent,
   decodeShortcutEvent,
   decodeTargetSelected,
+  type BarPointerEvent,
   type CaptureCommand,
   type CaptureEvent,
   type ShortcutEvent,
@@ -36,6 +38,7 @@ export function launchHelper(
     syntheticCapture?: boolean;
     captureEvent?: (event: CaptureEvent) => void;
     shortcut?: (event: ShortcutEvent) => void;
+    barPointer?: (event: BarPointerEvent) => void;
     targetSelected?: (event: TargetSelected) => void;
   } = {},
 ) {
@@ -146,6 +149,13 @@ export function launchHelper(
         value.type === "shortcut"
       ) {
         options.shortcut?.(decodeShortcutEvent(value));
+      } else if (
+        typeof value === "object" &&
+        value !== null &&
+        "type" in value &&
+        value.type === "bar.pointer"
+      ) {
+        options.barPointer?.(decodeBarPointerEvent(value));
       } else if (
         typeof value === "object" &&
         value !== null &&

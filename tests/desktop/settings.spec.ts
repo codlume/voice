@@ -63,7 +63,7 @@ test("unsigned package persists settings through the actual Electron worker and 
         keys: Object.keys(window.voice).toSorted(),
         node: typeof Reflect.get(window, "require"),
       })),
-    ).toEqual({ keys: ["command", "onChanged"], node: "undefined" });
+    ).toEqual({ keys: ["command", "onChanged", "onReveal"], node: "undefined" });
     const paths = await application.evaluate(({ app }) => ({
       data: app.getPath("userData"),
       packaged: app.isPackaged,

@@ -46,7 +46,8 @@ import Foundation
 
 @Test func shortcutAndTargetRequestsRequireExactShapes() throws {
     let valid = [
-        (#"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true}}"#, "shortcut"),
+        (#"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":null}}"#, "shortcut"),
+        (#"{"type":"setup.request","version":1,"id":6,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":false,"bar":{"x":10,"y":900.5,"width":480,"height":84,"window":42}}}"#, "bar"),
         (#"{"type":"setup.request","version":1,"id":2,"command":{"type":"target.capture","session":"one"}}"#, "capture"),
         (#"{"type":"setup.request","version":1,"id":3,"command":{"type":"target.insert","session":"one","text":"Hello"}}"#, "insert"),
         (#"{"type":"setup.request","version":1,"id":4,"command":{"type":"target.arm","session":"one"}}"#, "arm"),
@@ -56,7 +57,10 @@ import Foundation
         let object = try #require(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         let request = try #require(SetupRequest(object), "\(kind)")
         switch (kind, request.command) {
-        case ("shortcut", .configureShortcuts(let bindings, let active)): #expect(bindings.hold == .fn && active)
+        case ("shortcut", .configureShortcuts(let bindings, let active, let bar)): #expect(bindings.hold == .fn && active && bar == nil)
+        case ("bar", .configureShortcuts(_, let active, let bar)):
+            #expect(!active && bar == BarRegion(x: 10, y: 900.5, width: 480, height: 84, window: 42))
+            #expect(bar?.contains(x: 10, y: 900.5) == true && bar?.contains(x: 490, y: 950) == false)
         case ("capture", .captureTarget("one")), ("arm", .armTarget("one")), ("release", .releaseTarget("one")): break
         case ("insert", .insertTarget("one", let text)): #expect(text == "Hello")
         default: Issue.record("Unexpected command for \(kind)")
@@ -64,7 +68,13 @@ import Foundation
     }
     let invalid = [
         #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"}}}"#,
-        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":1}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":1,"bar":null}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":{"x":0,"y":0,"width":0,"height":84,"window":42}}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":{"x":0,"y":0,"width":480,"height":84,"window":42,"screen":1}}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":{"x":0,"y":0,"width":480,"height":84}}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":{"x":0,"y":0,"width":480,"height":84,"window":1.5}}}"#,
+        #"{"type":"setup.request","version":1,"id":1,"command":{"type":"shortcut.configure","shortcuts":{"hold":"Fn","toggle":"Fn+Space","cancel":"Escape"},"active":true,"bar":{"x":true,"y":0,"width":480,"height":84,"window":42}}}"#,
         #"{"type":"setup.request","version":1,"id":1,"command":{"type":"target.capture"}}"#,
         #"{"type":"setup.request","version":1,"id":1,"command":{"type":"target.capture","session":""}}"#,
         #"{"type":"setup.request","version":1,"id":1,"command":{"type":"target.insert","session":"one","text":""}}"#,

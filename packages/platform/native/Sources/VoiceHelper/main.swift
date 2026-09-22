@@ -33,6 +33,13 @@ let reader = Thread { [capture] in
                 if let data = try? JSONSerialization.data(withJSONObject: reply) { output(data) }
                 continue
             }
+            if fixture, object["type"] as? String == "pointer.simulate" {
+                let simulated = SimulatedPointer(object)
+                let consumed = DispatchQueue.main.sync { MainActor.assumeIsolated { simulated.flatMap { shortcuts.simulate($0) } } }
+                let reply: [String: Any] = ["type": "pointer.simulated", "consumed": consumed as Any? ?? NSNull()]
+                if let data = try? JSONSerialization.data(withJSONObject: reply) { output(data) }
+                continue
+            }
             if fixture, object["type"] as? String == "shortcut.simulate" {
                 let simulated = SimulatedKey(object)
                 let consumed = DispatchQueue.main.sync { MainActor.assumeIsolated { simulated.flatMap { shortcuts.simulate($0) } } }
@@ -46,8 +53,8 @@ let reader = Thread { [capture] in
                 let result = request.map { request in
                     targets.receive(request.command) ?? DispatchQueue.main.sync {
                         MainActor.assumeIsolated {
-                            if case .configureShortcuts(let bindings, let active) = request.command {
-                                return SetupResult.shortcuts(listening: shortcuts.configure(bindings, active: active))
+                            if case .configureShortcuts(let bindings, let active, let bar) = request.command {
+                                return SetupResult.shortcuts(listening: shortcuts.configure(bindings, active: active, bar: bar))
                             }
                             return setup.receive(request.command)
                         }

@@ -3,7 +3,7 @@ import { Button } from "@base-ui/react/button";
 import type { ReactNode } from "react";
 import { tokens } from "./tokens.stylex";
 
-const dark = stylex.createTheme(tokens, {
+export const dark = stylex.createTheme(tokens, {
   background: "#17202e",
   panel: "#202e40",
   ink: "#e9eff7",

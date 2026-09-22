@@ -117,7 +117,7 @@ it("hold-to-talk starts once per press, remembers the target before audio, and i
     message: "Inserted.",
     recovery: [],
     latestSuccessful: { text: "Hello, Priya. Do not deploy VX-204." },
-    canStart: true,
+    blocker: null,
   });
   expect(engaged).toEqual([true, false]);
   complete("late duplicate");
@@ -271,7 +271,7 @@ it("explicit Paste inserts once into the deliberately selected destination and r
   if (!entry) throw new Error("Expected a recovery entry");
   engaged.length = 0;
   await owner.execute({ type: "recovery.paste", id: entry.id });
-  expect(owner.snapshot()).toMatchObject({ armedPaste: entry.id, canStart: false });
+  expect(owner.snapshot()).toMatchObject({ armedPaste: entry.id, blocker: "paste" });
   expect(targets.at(-1)).toBe(`arm:${entry.id}`);
   expect(engaged).toEqual([true]);
   owner.shortcut("hold.down");
@@ -296,7 +296,7 @@ it("explicit Paste inserts once into the deliberately selected destination and r
     recoveryMessage: "Inserted.",
     recovery: [],
     latestSuccessful: { id: entry.id, text: "Recovered text." },
-    canStart: true,
+    blocker: null,
   });
   expect(engaged).toEqual([true, false]);
   owner.targetSelected({

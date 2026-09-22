@@ -95,6 +95,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     let page = await app.firstWindow();
     const start = page.getByRole("button", { name: "Start practice", exact: true });
     const status = page.getByTestId("practice-status");
+    const practice = page.getByRole("region", { name: "Practice dictation" });
     const field = page.getByRole("textbox", { name: "Practice transcript", exact: true });
     await expect(start).toBeEnabled();
     expect(attempts).toHaveLength(0);
@@ -102,7 +103,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     await expect(status).toContainText("Recording.");
     await expect(field).toHaveValue("");
     await expect.poll(() => attempts[0]?.length ?? 0).toBeGreaterThan(10);
-    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await practice.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(status).toHaveText("Practice transcript ready.");
     await expect(field).toHaveValue("Hello, Priya. Do not deploy VX-204.");
     const pcm = Buffer.concat(attempts[0]!);
@@ -120,14 +121,14 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     await start.click();
     await expect(status).toContainText("Recording.");
     await expect.poll(() => attempts[1]?.length ?? 0).toBeGreaterThan(10);
-    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await practice.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(status).toHaveText("No speech detected");
     await expect(field).toHaveValue("Hello, Priya. Do not deploy VX-204.");
     mode = "incomplete";
     await start.click();
     await expect(status).toContainText("Recording.");
     await expect.poll(() => attempts[2]?.length ?? 0).toBeGreaterThan(20);
-    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await practice.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(status).toContainText("incomplete");
     await expect(
       page.getByRole("textbox", { name: "Available text, may be incomplete", exact: true }),
@@ -140,7 +141,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     expect(attempts).toHaveLength(3);
     await start.click();
     await expect(status).toContainText("Recording.");
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await practice.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(status).toContainText("Cancelled.");
     await expect(field).toHaveValue("Hello, Priya. Do not deploy VX-204.");
     let recovery = page.getByRole("region", { name: "Temporary recovery" });
@@ -149,7 +150,7 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
       await start.click();
       await expect(status).toContainText("Recording.");
       await expect.poll(() => attempts[next]?.length ?? 0).toBeGreaterThan(10);
-      await page.getByRole("button", { name: "Stop", exact: true }).click();
+      await practice.getByRole("button", { name: "Stop", exact: true }).click();
       await expect(status).toContainText("incomplete");
     }
     await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(5);

@@ -141,7 +141,12 @@ export function SetupView({
     !status?.native?.devices.some((device) => device.id === preferences.inputDevice);
   return (
     <>
-      <section {...stylex.props(styles.section)} aria-label="Dictation readiness">
+      <section
+        id="section-setup"
+        tabIndex={-1}
+        {...stylex.props(styles.section)}
+        aria-label="Dictation readiness"
+      >
         <h2 {...stylex.props(styles.heading)}>
           {saved.completed ? "Dictation setup" : "Set up your first dictation"}
         </h2>

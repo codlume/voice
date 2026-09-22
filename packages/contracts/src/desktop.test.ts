@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { decodeCommand } from "./desktop";
-import { decodeShortcutEvent, decodeTargetSelected } from "./session";
+import { decodeBarPointerEvent, decodeShortcutEvent, decodeTargetSelected } from "./session";
 import { decodeNativeSetupCommand, decodeNativeSetupResult } from "./setup";
 
 describe("settings commands", () => {
@@ -34,8 +34,31 @@ describe("dictation contracts", () => {
         type: "shortcut.configure",
         shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
         active: true,
+        bar: { x: 10, y: 900, width: 480, height: 84, window: 42 },
       }).type,
     ).toBe("shortcut.configure");
+    for (const bar of [
+      undefined,
+      { x: 0, y: 0, width: 0, height: 10, window: 42 },
+      { x: 0, y: 0, width: 480, height: 84 },
+    ])
+      expect(() =>
+        decodeNativeSetupCommand({
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: true,
+          bar,
+        }),
+      ).toThrow();
+    expect(decodeBarPointerEvent({ type: "bar.pointer", phase: "down", x: 12, y: 30 })).toEqual({
+      type: "bar.pointer",
+      phase: "down",
+      x: 12,
+      y: 30,
+    });
+    expect(() =>
+      decodeBarPointerEvent({ type: "bar.pointer", phase: "down", x: 12, y: 30, screen: 1 }),
+    ).toThrow();
     expect(
       decodeNativeSetupResult({ type: "insertion", session: "s", outcome: "uncertain" }),
     ).toMatchObject({ outcome: "uncertain" });

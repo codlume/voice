@@ -281,6 +281,7 @@ test(
           type: "shortcut.configure",
           shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
           active: false,
+          bar: null,
         },
       });
       assert.equal(configured.result.type, "shortcuts");
@@ -309,6 +310,7 @@ test(
             cancel: "Control+Option+Escape",
           },
           active: true,
+          bar: null,
         },
       });
       assert.equal(await press("space", true, ["control", "option"]), true);
@@ -328,6 +330,7 @@ test(
           type: "shortcut.configure",
           shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
           active: true,
+          bar: null,
         },
       });
       // The previous bindings stay in force until the held key is released.
@@ -372,6 +375,94 @@ test(
           captured.result.status,
         ),
       );
+      await reply({ type: "shutdown", version: 1 });
+      await closed;
+    } finally {
+      clearTimeout(timeout);
+      lines.close();
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await closed;
+      }
+    }
+  },
+);
+
+test(
+  "floating-bar clicks are taken over by the tap and forwarded relative to the bar",
+  { timeout: 10_000 },
+  async () => {
+    const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        VOICE_TEST_KEYCHAIN_SERVICE: "com.codlume.voice.test.pointer",
+        VOICE_TEST_CAPTURE: "synthetic",
+      },
+    });
+    const lines = createInterface({ input: child.stdout });
+    const closed = once(child, "exit");
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+    const pointers = [];
+    const pointerWaiters = [];
+    const waiting = [];
+    lines.on("line", (line) => {
+      const event = JSON.parse(line);
+      if (event.type === "bar.pointer") {
+        pointers.push(event);
+        pointerWaiters.shift()?.();
+      } else waiting.shift()?.(event);
+    });
+    const reply = (payload) =>
+      new Promise((done) => {
+        waiting.push(done);
+        child.stdin.write(JSON.stringify(payload) + "\n");
+      });
+    const pointer = (button, down, x, y, owned = true) =>
+      reply({ type: "pointer.simulate", button, down, x, y, owned }).then(
+        (event) => event.consumed,
+      );
+    const configure = (bar) =>
+      reply({
+        type: "setup.request",
+        version: 1,
+        id: 1,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: false,
+          bar,
+        },
+      });
+    const forwarded = (count) =>
+      pointers.length >= count
+        ? Promise.resolve()
+        : new Promise((done) => pointerWaiters.push(() => forwarded(count).then(done)));
+    try {
+      await reply({ type: "hello", version: 1 });
+      await configure({ x: 100, y: 800, width: 480, height: 84, window: 42 });
+      // A left click inside the bar is consumed and forwarded in screen points.
+      assert.equal(await pointer(0, true, 150.5, 830), true);
+      assert.equal(await pointer(0, false, 700, 20), true);
+      // Right clicks inside are consumed without forwarding; clicks outside pass through.
+      assert.equal(await pointer(1, true, 120, 810), true);
+      assert.equal(await pointer(1, false, 120, 810), true);
+      assert.equal(await pointer(0, true, 99, 830), false);
+      assert.equal(await pointer(0, false, 99, 830), false);
+      assert.equal(await pointer(0, true, 150, 884), false);
+      assert.equal(await pointer(0, false, 150, 884), false);
+      // A menu or alert drawn over the bar keeps its own click.
+      assert.equal(await pointer(0, true, 150, 830, false), false);
+      assert.equal(await pointer(0, false, 150, 830, false), false);
+      // A hidden bar takes over nothing.
+      await configure(null);
+      assert.equal(await pointer(0, true, 150, 830), false);
+      assert.equal(await pointer(0, false, 150, 830), false);
+      await forwarded(2);
+      assert.deepEqual(pointers, [
+        { type: "bar.pointer", phase: "down", x: 150.5, y: 830 },
+        { type: "bar.pointer", phase: "up", x: 700, y: 20 },
+      ]);
       await reply({ type: "shutdown", version: 1 });
       await closed;
     } finally {

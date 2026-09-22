@@ -6,24 +6,43 @@ import {
   type Attempt,
   type CaptureCommand,
   type InsertionOutcome,
+  type Notice,
+  type Origin,
   type ProviderRequest,
   type SessionCommand,
   type SessionSnapshot,
   type ProviderFailure,
   type RecoveryEntry,
   type ShortcutAction,
+  type StartBlocker,
   type TargetStatus,
 } from "@voice/contracts/session";
 
-const failureMessages: Record<ProviderFailure, string> = {
-  connection: "Connection lost. Audio remains in memory; transcription needs internet.",
-  rejected: "Deepgram rejected the key. Replace it in Settings.",
-  quota: "Deepgram quota is exhausted. Check your account billing.",
-  "rate-limit": "Deepgram is rate limiting requests. Try a new session later.",
-  incomplete: "Transcription was incomplete. Audio and available text remain in memory.",
-  protocol:
-    "The provider response did not match the required model or stream. Available work remains in memory.",
-  worker: "The transcription worker stopped. Available work remains in memory.",
+type Failure = { message: string; notice: Notice };
+const providerFailures: Record<ProviderFailure, Failure> = {
+  connection: {
+    message: "Connection lost. Audio remains in memory; transcription needs internet.",
+    notice: "connection",
+  },
+  rejected: { message: "Deepgram rejected the key. Replace it in Settings.", notice: "setup" },
+  quota: { message: "Deepgram quota is exhausted. Check your account billing.", notice: "setup" },
+  "rate-limit": {
+    message: "Deepgram is rate limiting requests. Try a new session later.",
+    notice: "incomplete",
+  },
+  incomplete: {
+    message: "Transcription was incomplete. Audio and available text remain in memory.",
+    notice: "incomplete",
+  },
+  protocol: {
+    message:
+      "The provider response did not match the required model or stream. Available work remains in memory.",
+    notice: "incomplete",
+  },
+  worker: {
+    message: "The transcription worker stopped. Available work remains in memory.",
+    notice: "incomplete",
+  },
 };
 const targetMessages: Record<Exclude<TargetStatus, "eligible">, string> = {
   none: "No text field was focused when dictation started.",
@@ -40,9 +59,12 @@ const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertai
   missing: "No destination was established.",
   failed: "The field rejected the insertion.",
 };
+const limitReached: Failure = {
+  message: "Recording reached the five-minute limit. Finishing transcription…",
+  notice: "limit",
+};
 const uncertainCause =
   "Check your target. Voice could not confirm the insertion and will not retry automatically.";
-type Origin = "practice" | "dictation";
 type Active = Attempt & {
   origin: Origin;
   mode: "hold" | "toggle";
@@ -51,12 +73,14 @@ type Active = Attempt & {
   text: string;
   providerStarted: boolean;
   stopped: boolean;
-  failure?: string;
+  failure?: Failure;
   stopRequested: boolean;
   deadline?: number;
   stopTime?: number;
   target?: TargetStatus;
   inserting: boolean;
+  // Capture stopped at the five-minute limit; the outcome says so.
+  limited?: boolean;
 };
 type Armed = { id: string; text: string; inserting: boolean };
 export function createSession(options: {
@@ -81,8 +105,8 @@ export function createSession(options: {
     phase: "idle",
     origin: null,
     armedPaste: null,
-    canStart: false,
-    warning: false,
+    blocker: null,
+    notice: null,
     message: "Ready.",
     practiceText: "",
     recovery: [],
@@ -90,6 +114,8 @@ export function createSession(options: {
     quitWarning: false,
     pendingPractice: null,
     latestSuccessful: null,
+    lastTranscript: null,
+    lastUpdate: "session",
   };
   let active: Active | undefined;
   let armed: Armed | undefined;
@@ -110,7 +136,9 @@ export function createSession(options: {
     timers.clear();
   }
   function update(change: Partial<SessionSnapshot>) {
-    state = { ...state, ...change };
+    const lastUpdate =
+      "message" in change ? "session" : "recoveryMessage" in change ? "recovery" : state.lastUpdate;
+    state = { ...state, ...change, lastUpdate };
     options.changed();
   }
   function engage() {
@@ -139,6 +167,23 @@ export function createSession(options: {
       audio,
       entry: { id, text, transcription, hasAudio: audio.length > 0, cause, delivery },
     });
+    if (text) state = { ...state, lastTranscript: id };
+  }
+  // The newest transcript that still has text: the recorded last one, else any remaining.
+  function lastTranscript() {
+    const kept = (id: string | null) =>
+      !!id && (state.latestSuccessful?.id === id || !!retained.get(id)?.entry.text);
+    if (kept(state.lastTranscript)) return state.lastTranscript;
+    const remaining = [...retained.values()].findLast(({ entry }) => entry.text)?.entry.id;
+    return remaining ?? state.latestSuccessful?.id ?? null;
+  }
+  function blocker(): StartBlocker | null {
+    if (closed || state.quitWarning) return "quitting";
+    if (active || stoppingCapture) return "busy";
+    if (armed) return "paste";
+    if (retained.size >= 5) return "recovery-full";
+    if (!options.available()) return "setup";
+    return null;
   }
   function sendCapture(type: "capture.stop" | "capture.cancel", current: Active) {
     try {
@@ -147,7 +192,11 @@ export function createSession(options: {
       /* The failed helper cannot continue capture. */
     }
   }
-  function end(phase: "failed" | "cancelled" | "complete", message: string) {
+  function end(
+    phase: "failed" | "cancelled" | "complete",
+    message: string,
+    notice: Notice | null = null,
+  ) {
     const current = active;
     if (!current) return;
     active = undefined;
@@ -166,10 +215,10 @@ export function createSession(options: {
     )
       retain(current.session, current.text, "incomplete", current.audio, message, "undelivered");
     engage();
-    update({ phase, message, warning: false });
+    update({ phase, message, notice });
   }
-  function fail(message: string) {
-    end("failed", message);
+  function fail(message: string, notice: Notice = "incomplete") {
+    end("failed", message, notice);
   }
   function recordingMessage(current: Active) {
     if (current.origin === "practice") return "Recording. Speak, then press Stop.";
@@ -180,13 +229,21 @@ export function createSession(options: {
     if (!current.target || current.target === "eligible") return control;
     return `${control} ${targetMessages[current.target]} The transcript will go to recovery.`;
   }
-  function requestStop(message?: string) {
+  // A connection warning stays visible for the rest of the capture.
+  function recordingStatus(current: Active): Failure | { message: string; notice: null } {
+    return current.failure ?? { message: recordingMessage(current), notice: null };
+  }
+  function requestStop(failure?: Failure) {
     const current = active;
     if (!current || current.stopRequested) return;
     current.stopRequested = true;
     current.stopTime = performance.now();
     current.deadline = current.stopTime + (current.samples <= 480_000 ? 10_000 : 30_000);
-    update({ phase: "processing", warning: false, message: message ?? "Finishing transcription…" });
+    update({
+      phase: "processing",
+      notice: failure?.notice ?? null,
+      message: failure?.message ?? "Finishing transcription…",
+    });
     sendCapture("capture.stop", current);
     const expire = () => {
       if (active !== current || current.deadline === undefined || current.inserting) return;
@@ -198,7 +255,7 @@ export function createSession(options: {
   }
   function providerStop(current: Active) {
     if (current.failure) {
-      fail(current.failure);
+      fail(current.failure.message, current.failure.notice);
       return;
     }
     if (current.providerStarted)
@@ -229,18 +286,21 @@ export function createSession(options: {
     if (state.pendingPractice === id) state = { ...state, pendingPractice: null };
   }
   function start(origin: Origin, mode: Active["mode"]) {
-    if (closed || active || armed || stoppingCapture || state.quitWarning) return;
-    if (!options.available() || retained.size >= 5) {
+    // Busy input shows the current status and is never queued.
+    const blocked = blocker();
+    if (blocked === "recovery-full" || blocked === "setup") {
       update({
         phase: "failed",
         origin,
+        notice: blocked,
         message:
-          retained.size >= 5
+          blocked === "recovery-full"
             ? "Recovery is full. Resolve or discard a session before starting another."
             : "Complete or repair dictation setup before starting.",
       });
       return;
     }
+    if (blocked) return;
     if (origin === "practice")
       interruptDelivery("Practice delivery was not confirmed before the next session.");
     const id = randomUUID();
@@ -273,22 +333,22 @@ export function createSession(options: {
     engage();
     if (!started) {
       state = { ...state, origin };
-      fail("Microphone capture could not start. Check your device and permissions.");
+      fail("Microphone capture could not start. Check your device and permissions.", "setup");
       return;
     }
-    update({ phase: "starting", origin, warning: false, message: "Starting microphone…" });
+    update({ phase: "starting", origin, notice: null, message: "Starting microphone…" });
     if (origin === "dictation") {
       // Remember the target focused at the shortcut. Capture startup never waits for this.
       const remember = (target: TargetStatus) => {
         if (active !== current) return;
         current.target = target;
-        if (state.phase === "recording") update({ message: recordingMessage(current) });
+        if (state.phase === "recording") update(recordingStatus(current));
       };
       options.target.capture(current.session).then(remember, () => remember("unavailable"));
     }
     later(() => {
       if (active === current && state.phase === "starting")
-        fail("The microphone did not provide audio. Check your device and permissions.");
+        fail("The microphone did not provide audio. Check your device and permissions.", "setup");
     }, 3_000);
     void options
       .credential()
@@ -313,9 +373,12 @@ export function createSession(options: {
       })
       .catch(() => {
         if (active !== current) return;
-        current.failure = "The saved key could not be read. Repair Keychain access in Settings.";
+        current.failure = {
+          message: "The saved key could not be read. Repair Keychain access in Settings.",
+          notice: "setup",
+        };
         requestStop(current.failure);
-        if (current.stopped) fail(current.failure);
+        if (current.stopped) fail(current.failure.message, current.failure.notice);
       });
   }
   function cancel() {
@@ -328,21 +391,27 @@ export function createSession(options: {
     interruptDelivery(message);
     const current = active;
     if (!current || current.inserting) return;
-    current.failure = message;
-    requestStop(message);
+    current.failure = { message, notice: "incomplete" };
+    requestStop(current.failure);
     options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
     if (current.stopped) fail(message);
   }
   function finishInsertion(current: Active, text: string, outcome: InsertionOutcome) {
     if (active !== current) return;
     if (outcome === "inserted") {
-      state = { ...state, latestSuccessful: { id: current.session, text } };
-      end("complete", "Inserted.");
+      state = {
+        ...state,
+        latestSuccessful: { id: current.session, text },
+        lastTranscript: current.session,
+      };
+      if (current.limited)
+        end("complete", "Inserted. Recording stopped at the five-minute limit.", "limit");
+      else end("complete", "Inserted.");
       return;
     }
     if (outcome === "uncertain") {
       retain(current.session, text, "complete", [], uncertainCause, "uncertain");
-      end("failed", "Check your target. The transcript is in recovery.");
+      end("failed", "Check your target. The transcript is in recovery.", "uncertain");
       return;
     }
     retain(
@@ -353,7 +422,11 @@ export function createSession(options: {
       `${insertionMessages[outcome]} Text kept for recovery.`,
       "failed",
     );
-    end("failed", `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`);
+    end(
+      "failed",
+      `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`,
+      "not-inserted",
+    );
   }
   function deliver(current: Active, text: string) {
     const target = current.target ?? "unavailable";
@@ -366,7 +439,11 @@ export function createSession(options: {
         `${targetMessages[target]} Text kept for recovery.`,
         "failed",
       );
-      end("failed", `Not inserted. ${targetMessages[target]} The transcript is in recovery.`);
+      end(
+        "failed",
+        `Not inserted. ${targetMessages[target]} The transcript is in recovery.`,
+        "not-inserted",
+      );
       return;
     }
     current.inserting = true;
@@ -451,14 +528,8 @@ export function createSession(options: {
     snapshot: () => ({
       ...state,
       recovery: [...retained.values()].map(({ entry }) => Object.assign({}, entry)),
-      canStart:
-        !closed &&
-        !state.quitWarning &&
-        !active &&
-        !armed &&
-        !stoppingCapture &&
-        options.available() &&
-        retained.size < 5,
+      blocker: blocker(),
+      lastTranscript: lastTranscript(),
     }),
     async execute(command: SessionCommand) {
       if (closed) return;
@@ -527,7 +598,7 @@ export function createSession(options: {
         });
         return;
       }
-      if (command.type === "session.start") start("practice", "toggle");
+      if (command.type === "session.start") start(command.origin, "toggle");
       else if (command.type === "session.stop") requestStop();
       else cancelCurrent();
     },
@@ -556,7 +627,7 @@ export function createSession(options: {
         if (current.origin !== "dictation" || current.stopRequested) return;
         if (current.mode === "hold") {
           current.mode = "toggle";
-          if (state.phase === "recording") update({ message: recordingMessage(current) });
+          if (state.phase === "recording") update(recordingStatus(current));
           return;
         }
         requestStop();
@@ -633,16 +704,19 @@ export function createSession(options: {
         return;
       }
       if (state.phase === "starting") {
-        update({ phase: "recording", message: recordingMessage(current) });
+        update({ phase: "recording", ...recordingStatus(current) });
         later(() => {
           if (active === current && !current.stopRequested)
             update({
-              warning: true,
+              notice: "limit",
               message: "30 seconds remaining. Recording stops at five minutes.",
             });
         }, 270_000);
         later(() => {
-          if (active === current) requestStop();
+          if (active === current) {
+            current.limited = true;
+            requestStop(limitReached);
+          }
         }, 300_000);
       }
       current.audio.push(pcm);
@@ -655,7 +729,10 @@ export function createSession(options: {
           sequence: event.sequence,
           pcm,
         });
-      if (current.samples === 4_800_000) requestStop();
+      if (current.samples === 4_800_000) {
+        current.limited = true;
+        requestStop(limitReached);
+      }
     },
     providerEvent(input: unknown) {
       let event;
@@ -683,19 +760,20 @@ export function createSession(options: {
         return;
       }
       if (event.type === "failed") {
-        current.failure = failureMessages[event.reason];
+        current.failure = providerFailures[event.reason];
         if (
           event.reason === "rejected" ||
           event.reason === "quota" ||
           event.reason === "rate-limit"
         )
           options.access(event.reason);
+        // An explicitly started capture continues with a visible connection warning.
         if (event.reason === "connection" && !current.stopRequested) {
-          update({ message: current.failure });
+          update(current.failure);
           return;
         }
         requestStop(current.failure);
-        if (current.stopped) fail(current.failure);
+        if (current.stopped) fail(current.failure.message, current.failure.notice);
         return;
       }
       if (!current.stopped || event.samples !== current.samples) {
@@ -708,7 +786,7 @@ export function createSession(options: {
       options.access("authenticated");
       current.audio = [];
       if (!event.text) {
-        end("complete", "No speech detected");
+        end("complete", "No speech detected", "no-speech");
         return;
       }
       if (current.origin === "dictation") {
@@ -763,6 +841,8 @@ export function createSession(options: {
         message: "Session ended.",
         quitWarning: false,
         armedPaste: null,
+        lastTranscript: null,
+        notice: null,
       };
     },
   };
