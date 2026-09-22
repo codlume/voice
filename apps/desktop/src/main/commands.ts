@@ -19,6 +19,8 @@ export function createCommands<Sender>(options: {
   session?: () => ReturnType<typeof createSession>;
   setup?: () => ReturnType<typeof createSetup>;
   isAuthorized: (sender: Sender) => boolean;
+  // Narrows the command surface for a sender that only needs to read state.
+  permitted?: (sender: Sender, command: Command["type"]) => boolean;
   initialSettings: Settings;
   status: () => Status;
   storage: { set: (settings: Settings) => Promise<Settings>; restart: () => Promise<Settings> };
@@ -47,6 +49,8 @@ export function createCommands<Sender>(options: {
       } catch {
         return { ok: false, error: "invalid-command" };
       }
+      if (options.permitted && !options.permitted(sender, command.type))
+        return { ok: false, error: "unauthorized" };
       try {
         if (command.type === "app.quit" || command.type === "app.quit.confirm") {
           if (command.type === "app.quit" || options.session?.().snapshot().quitWarning)

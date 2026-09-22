@@ -43,7 +43,6 @@ const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertai
 const uncertainCause =
   "Check your target. Voice could not confirm the insertion and will not retry automatically.";
 type Origin = "practice" | "dictation";
-type Target = { status: TargetStatus; app: string | null };
 type Active = Attempt & {
   origin: Origin;
   mode: "hold" | "toggle";
@@ -56,7 +55,7 @@ type Active = Attempt & {
   stopRequested: boolean;
   deadline?: number;
   stopTime?: number;
-  target?: Target;
+  target?: TargetStatus;
   inserting: boolean;
 };
 type Armed = { id: string; text: string; inserting: boolean };
@@ -70,7 +69,7 @@ export function createSession(options: {
   copy: (text: string) => Promise<boolean>;
   access: (reason: "authenticated" | "rejected" | "quota" | "rate-limit") => void;
   target: {
-    capture: (session: string) => Promise<Target>;
+    capture: (session: string) => Promise<TargetStatus>;
     arm: (session: string) => Promise<void>;
     insert: (session: string, text: string) => Promise<InsertionOutcome>;
     release: (session: string) => void;
@@ -178,8 +177,8 @@ export function createSession(options: {
       current.mode === "hold"
         ? "Recording. Release the shortcut to finish."
         : "Recording. Use the toggle shortcut or Stop to finish.";
-    if (!current.target || current.target.status === "eligible") return control;
-    return `${control} ${targetMessages[current.target.status]} The transcript will go to recovery.`;
+    if (!current.target || current.target === "eligible") return control;
+    return `${control} ${targetMessages[current.target]} The transcript will go to recovery.`;
   }
   function requestStop(message?: string) {
     const current = active;
@@ -259,8 +258,8 @@ export function createSession(options: {
       inserting: false,
     };
     active = current;
-    engage();
-    update({ phase: "starting", origin, warning: false, message: "Starting microphone…" });
+    // The capture command leaves first; UI updates and the helper's shortcut state follow it.
+    let started = true;
     try {
       options.capture({
         type: "capture.start",
@@ -269,19 +268,23 @@ export function createSession(options: {
         device: options.device(),
       });
     } catch {
+      started = false;
+    }
+    engage();
+    if (!started) {
+      state = { ...state, origin };
       fail("Microphone capture could not start. Check your device and permissions.");
       return;
     }
+    update({ phase: "starting", origin, warning: false, message: "Starting microphone…" });
     if (origin === "dictation") {
       // Remember the target focused at the shortcut. Capture startup never waits for this.
-      const remember = (target: Target) => {
+      const remember = (target: TargetStatus) => {
         if (active !== current) return;
         current.target = target;
         if (state.phase === "recording") update({ message: recordingMessage(current) });
       };
-      options.target
-        .capture(current.session)
-        .then(remember, () => remember({ status: "unavailable", app: null }));
+      options.target.capture(current.session).then(remember, () => remember("unavailable"));
     }
     later(() => {
       if (active === current && state.phase === "starting")
@@ -353,20 +356,17 @@ export function createSession(options: {
     end("failed", `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`);
   }
   function deliver(current: Active, text: string) {
-    const target = current.target ?? { status: "unavailable" as const, app: null };
-    if (target.status !== "eligible") {
+    const target = current.target ?? "unavailable";
+    if (target !== "eligible") {
       retain(
         current.session,
         text,
         "complete",
         [],
-        `${targetMessages[target.status]} Text kept for recovery.`,
+        `${targetMessages[target]} Text kept for recovery.`,
         "failed",
       );
-      end(
-        "failed",
-        `Not inserted. ${targetMessages[target.status]} The transcript is in recovery.`,
-      );
+      end("failed", `Not inserted. ${targetMessages[target]} The transcript is in recovery.`);
       return;
     }
     current.inserting = true;
@@ -375,6 +375,11 @@ export function createSession(options: {
       (outcome) => finishInsertion(current, text, outcome),
       () => finishInsertion(current, text, "uncertain"),
     );
+  }
+  // Escape and clickable Cancel share this path for both sessions and armed pastes.
+  function cancelCurrent() {
+    if (armed) disarm("Paste cancelled. The text remains in recovery.");
+    else cancel();
   }
   function disarm(message: string) {
     const current = armed;
@@ -524,8 +529,7 @@ export function createSession(options: {
       }
       if (command.type === "session.start") start("practice", "toggle");
       else if (command.type === "session.stop") requestStop();
-      else if (armed) disarm("Paste cancelled. The text remains in recovery.");
-      else cancel();
+      else cancelCurrent();
     },
     // Native shortcut transitions. Only a fresh press starts; held or repeated keys never restart.
     shortcut(action: ShortcutAction) {
@@ -558,8 +562,7 @@ export function createSession(options: {
         requestStop();
         return;
       }
-      if (armed) disarm("Paste cancelled. The text remains in recovery.");
-      else cancel();
+      cancelCurrent();
     },
     targetSelected(input: unknown) {
       let event;

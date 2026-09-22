@@ -32,18 +32,20 @@ final class ShortcutService {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var bindings: SetupShortcuts?
+    // Binding changes wait until a held hold key is released, so its release is still recognised.
+    private var pendingBindings: SetupShortcuts?
     private var active = false
     private var fnHeld = false
     private var holdHeld = false
     private var consumed = Set<Int64>()
-    private(set) var lastInput = DispatchTime.now()
-    var onInput: (@MainActor () -> Void)?
+    private let emitQueue = DispatchQueue(label: "voice.shortcut.emit")
+    var onInput: (() -> Void)?
     init(emit: @escaping @Sendable (Data) -> Void) { self.emit = emit }
 
     // Applies the full desired state and reports whether the native tap is listening.
     func configure(_ bindings: SetupShortcuts, active: Bool) -> Bool {
-        self.bindings = bindings
         self.active = active
+        if holdHeld, bindings != self.bindings { pendingBindings = bindings } else { self.bindings = bindings; pendingBindings = nil }
         if tap == nil { install() }
         return tap != nil
     }
@@ -111,8 +113,10 @@ final class ShortcutService {
         guard flags.intersection(relevant) == modifiers else { return false }
         return !fn || flags.contains(.maskSecondaryFn)
     }
+    // Writes leave the tap callback immediately; a slow reader must never stall system input.
     private func send(_ action: String) {
-        if let data = try? JSONSerialization.data(withJSONObject: ["type": "shortcut", "action": action]) { emit(data) }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["type": "shortcut", "action": action]) else { return }
+        emitQueue.async { [emit] in emit(data) }
     }
     private func holdDown() {
         guard !holdHeld else { return }
@@ -123,6 +127,7 @@ final class ShortcutService {
         guard holdHeld else { return }
         holdHeld = false
         send("hold.up")
+        if let pendingBindings { bindings = pendingBindings; self.pendingBindings = nil }
     }
     // Returns true when the event must not reach other applications.
     func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
@@ -131,7 +136,6 @@ final class ShortcutService {
             return false
         }
         guard let bindings else { return false }
-        lastInput = .now()
         onInput?()
         let flags = event.flags
         switch type {
@@ -153,8 +157,10 @@ final class ShortcutService {
             }
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return consumed.contains(code) }
             if matches(trigger(bindings.cancel), code: code, flags: flags) {
+                // Idle Escape belongs to the frontmost app; a hold in progress counts as a session
+                // even before main has confirmed it.
+                guard active || holdHeld else { return false }
                 send("cancel")
-                guard active else { return false }
                 consumed.insert(code)
                 return true
             }

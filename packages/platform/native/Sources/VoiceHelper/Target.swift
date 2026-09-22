@@ -5,8 +5,9 @@ import VoiceHelperProtocol
 // Remembers the external editable target for one session and inserts into it later.
 // It reads only element identity, role, and selection ranges. It never reads document text,
 // selection contents, or clipboard data, and it never activates another application.
-@MainActor
-final class TargetService {
+// All Accessibility calls run on a dedicated run-loop thread, so a slow or hung target app
+// can never stall the main thread that services the shortcut event tap.
+final class TargetService: @unchecked Sendable {
     private struct Watched {
         let session: String
         let pid: pid_t
@@ -14,31 +15,90 @@ final class TargetService {
         let element: AXUIElement
         var fault: InsertionOutcome?
     }
+    private final class Box<Value>: @unchecked Sendable { var value: Value? }
     private let emit: @Sendable (Data) -> Void
-    private let lastInput: () -> DispatchTime
+    private let loop: CFRunLoop
+    // Everything below is touched only on the service thread.
     private var watched: Watched?
     private var observer: AXObserver?
     private var activation: NSObjectProtocol?
     private var armed: (session: String, since: DispatchTime)?
-    private var pendingEvaluation: DispatchWorkItem?
+    private var lastInput = DispatchTime.now()
+    private var evaluation = 0
     // Terminals need a non-executing route, which is not established yet.
     private let terminals: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp",
         "io.alacritty", "org.alacritty", "com.github.wez.wezterm", "net.kovidgoyal.kitty",
         "com.mitchellh.ghostty", "co.zeit.hyper",
     ]
-    init(emit: @escaping @Sendable (Data) -> Void, lastInput: @escaping () -> DispatchTime) {
+    init(emit: @escaping @Sendable (Data) -> Void) {
         self.emit = emit
-        self.lastInput = lastInput
+        let box = Box<CFRunLoop>()
+        let started = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            RunLoop.current.add(Port(), forMode: .default)
+            box.value = CFRunLoopGetCurrent()
+            started.signal()
+            CFRunLoopRun()
+        }
+        thread.name = "voice.target"
+        thread.start()
+        started.wait()
+        guard let loop = box.value else { fatalError("Target thread did not start") }
+        self.loop = loop
     }
 
+    // Handles target commands on the service thread; other commands return nil without hopping.
     func receive(_ command: SetupCommand) -> SetupResult? {
+        switch command {
+        case .captureTarget, .armTarget, .releaseTarget, .insertTarget:
+            return perform { self.handle(command) }
+        default:
+            return nil
+        }
+    }
+    // Any user input after arming schedules a check; focus settles after the event reaches the app.
+    func userInput() {
+        schedule {
+            self.lastInput = .now()
+            guard self.armed != nil else { return }
+            self.evaluation += 1
+            let token = self.evaluation
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(150)) {
+                self.schedule { if self.evaluation == token { self.evaluateArmed() } }
+            }
+        }
+    }
+    func shutdown() {
+        perform { self.release() }
+        CFRunLoopStop(loop)
+    }
+
+    private func perform<Value: Sendable>(_ body: @escaping @Sendable () -> Value) -> Value {
+        if CFRunLoopGetCurrent() == loop { return body() }
+        let done = DispatchSemaphore(value: 0)
+        let result = Box<Value>()
+        CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue) {
+            result.value = body()
+            done.signal()
+        }
+        CFRunLoopWakeUp(loop)
+        done.wait()
+        guard let value = result.value else { fatalError("Target thread produced no result") }
+        return value
+    }
+    private func schedule(_ body: @escaping @Sendable () -> Void) {
+        CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue, body)
+        CFRunLoopWakeUp(loop)
+    }
+    private func handle(_ command: SetupCommand) -> SetupResult? {
         switch command {
         case .captureTarget(let session):
             release()
-            let (status, app, focus) = inspect()
-            if status == .eligible, let focus { watch(session, focus) }
-            return .target(session: session, status: status, app: app)
+            let (status, focus) = inspect()
+            // A target that cannot be watched for focus changes is not safe for automatic delivery.
+            if status == .eligible, let focus { return .target(session: session, status: watch(session, focus) ? .eligible : .unavailable) }
+            return .target(session: session, status: status)
         case .armTarget(let session):
             release()
             armed = (session, .now())
@@ -53,22 +113,13 @@ final class TargetService {
             return nil
         }
     }
-    // Any user input after arming schedules a check; focus settles after the event reaches the app.
-    func userInput() {
-        guard armed != nil else { return }
-        pendingEvaluation?.cancel()
-        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.evaluateArmed() } }
-        pendingEvaluation = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
-    }
-    func release() {
-        pendingEvaluation?.cancel()
-        pendingEvaluation = nil
+    private func release() {
+        evaluation += 1
         armed = nil
         watched = nil
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }
         activation = nil
-        if let observer { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode) }
+        if let observer { CFRunLoopRemoveSource(loop, AXObserverGetRunLoopSource(observer), .defaultMode) }
         observer = nil
     }
 
@@ -99,50 +150,54 @@ final class TargetService {
         AXUIElementSetMessagingTimeout(element, 1)
         return (error, element)
     }
-    private func inspect() -> (TargetStatus, String?, (AXUIElement, AXUIElement)?) {
-        guard let front = NSWorkspace.shared.frontmostApplication else { return (.unavailable, nil, nil) }
+    private func inspect() -> (TargetStatus, (AXUIElement, AXUIElement)?) {
+        guard let front = NSWorkspace.shared.frontmostApplication else { return (.unavailable, nil) }
         let pid = front.processIdentifier
-        let bundle = front.bundleIdentifier
-        if pid == getppid() || pid == ProcessInfo.processInfo.processIdentifier { return (.none, bundle, nil) }
-        if let bundle, terminals.contains(bundle) { return (.terminal, bundle, nil) }
+        if pid == getppid() || pid == ProcessInfo.processInfo.processIdentifier { return (.none, nil) }
+        if let bundle = front.bundleIdentifier, terminals.contains(bundle) { return (.terminal, nil) }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 1)
         let (error, element) = focused(application)
         guard let element else {
-            return (error == .apiDisabled || error == .cannotComplete || error == .notImplemented ? .unavailable : .none, bundle, nil)
+            return (error == .apiDisabled || error == .cannotComplete || error == .notImplemented ? .unavailable : .none, nil)
         }
-        if string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return (.protected, bundle, nil) }
+        if string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return (.protected, nil) }
         let role = string(element, kAXRoleAttribute)
         guard role == kAXTextAreaRole || role == kAXTextFieldRole,
-              settable(element, kAXSelectedTextAttribute), range(element) != nil else { return (.unsupported, bundle, nil) }
-        return (.eligible, bundle, (application, element))
+              settable(element, kAXSelectedTextAttribute), range(element) != nil else { return (.unsupported, nil) }
+        return (.eligible, (application, element))
     }
-    private func watch(_ session: String, _ focus: (AXUIElement, AXUIElement)) {
+    // Returns false, leaving nothing watched, when focus changes inside the app cannot be observed.
+    private func watch(_ session: String, _ focus: (AXUIElement, AXUIElement)) -> Bool {
         let (application, element) = focus
         var pid: pid_t = 0
         AXUIElementGetPid(element, &pid)
-        watched = Watched(session: session, pid: pid, application: application, element: element, fault: nil)
-        observeActivation(session)
         let callback: AXObserverCallback = { _, element, notification, refcon in
             guard let refcon else { return }
             let service = Unmanaged<TargetService>.fromOpaque(refcon).takeUnretainedValue()
-            let name = notification as String
-            MainActor.assumeIsolated { service.focusChanged(element, destroyed: name == kAXUIElementDestroyedNotification) }
+            service.focusChanged(element, destroyed: notification as String == kAXUIElementDestroyedNotification)
         }
         var created: AXObserver?
-        guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        AXObserverAddNotification(created, application, kAXFocusedUIElementChangedNotification as CFString, refcon)
-        AXObserverAddNotification(created, element, kAXUIElementDestroyedNotification as CFString, refcon)
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
+        guard AXObserverCreate(pid, callback, &created) == .success, let created,
+              AXObserverAddNotification(created, application, kAXFocusedUIElementChangedNotification as CFString, refcon) == .success,
+              AXObserverAddNotification(created, element, kAXUIElementDestroyedNotification as CFString, refcon) == .success else {
+            release()
+            return false
+        }
+        CFRunLoopAddSource(loop, AXObserverGetRunLoopSource(created), .defaultMode)
         observer = created
+        watched = Watched(session: session, pid: pid, application: application, element: element, fault: nil)
+        observeActivation(session)
+        return true
     }
     private func observeActivation(_ session: String) {
         activation = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
         ) { [weak self] note in
+            guard let service = self else { return }
             let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
-            MainActor.assumeIsolated { self?.activated(pid, session) }
+            service.schedule { service.activated(pid, session) }
         }
     }
     private func activated(_ pid: pid_t?, _ session: String) {
@@ -157,14 +212,14 @@ final class TargetService {
         watched = current
     }
     private func evaluateArmed() {
-        guard let armed, lastInput() > armed.since else { return }
-        let (status, app, focus) = inspect()
+        guard let armed, lastInput > armed.since else { return }
+        let (status, focus) = inspect()
         guard status == .eligible, let focus else { return }
         self.armed = nil
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }
         activation = nil
-        watch(armed.session, focus)
-        let event: [String: Any] = ["type": "target.selected", "session": armed.session, "status": status.rawValue, "app": app as Any? ?? NSNull()]
+        guard watch(armed.session, focus) else { return }
+        let event: [String: Any] = ["type": "target.selected", "session": armed.session, "status": status.rawValue]
         if let data = try? JSONSerialization.data(withJSONObject: event) { emit(data) }
     }
     private func insert(_ session: String, _ text: String) -> InsertionOutcome {

@@ -17,7 +17,11 @@ import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
 import { defaultSettings, commandChannel, type Status } from "@voice/contracts/desktop";
 import { decodeShortcutEvent } from "@voice/contracts/session";
-import { decodeNativeSetupResult, type NativeSetupCommand } from "@voice/contracts/setup";
+import {
+  decodeNativeSetupResult,
+  type NativeSetupCommand,
+  type NativeSetupResult,
+} from "@voice/contracts/setup";
 import { launchHelper } from "@voice/platform/macos";
 import { createCommands } from "./commands";
 import { StorageWorker } from "./storage";
@@ -41,6 +45,8 @@ if (devUrl && !/^http:\/\/127\.0\.0\.1:\d+\/$/.test(devUrl))
 let window: BrowserWindow | undefined;
 let panel: BrowserWindow | undefined;
 let panelHide: ReturnType<typeof setTimeout> | undefined;
+let panelSync: ReturnType<typeof setImmediate> | undefined;
+let panelShown = "";
 export let helper: ReturnType<typeof launchHelper> | undefined;
 let helperState: Status["helper"] = "starting";
 let shortcutState: Status["shortcuts"] = "unavailable";
@@ -57,24 +63,30 @@ const webPreferences = {
 function notify() {
   for (const target of [window, panel])
     if (target && !target.isDestroyed()) target.webContents.send("voice:changed");
-  syncPanel();
+  // Window presentation stays off the shortcut and capture path.
+  panelSync ??= setImmediate(() => {
+    panelSync = undefined;
+    syncPanel();
+  });
 }
-function request(command: NativeSetupCommand) {
-  if (!helper) return Promise.reject(new Error("native-unavailable"));
-  return helper.request(command);
+async function request<Kind extends NativeSetupResult["type"]>(
+  command: NativeSetupCommand,
+  kind: Kind,
+): Promise<Extract<NativeSetupResult, { type: Kind }>> {
+  if (!helper) throw new Error("native-unavailable");
+  const result = decodeNativeSetupResult(await helper.request(command));
+  if (result.type !== kind) throw new Error("native-unavailable");
+  return result as Extract<NativeSetupResult, { type: Kind }>;
 }
 // The helper holds the full desired shortcut state, so a restart or setup change resends it.
 async function syncShortcuts() {
   if (!helper || helperState !== "ready") return;
   try {
-    const result = decodeNativeSetupResult(
-      await request({
-        type: "shortcut.configure",
-        shortcuts: commands.preferences().shortcuts,
-        active: engaged,
-      }),
+    const result = await request(
+      { type: "shortcut.configure", shortcuts: commands.preferences().shortcuts, active: engaged },
+      "shortcuts",
     );
-    shortcutState = result.type === "shortcuts" && result.listening ? "listening" : "unavailable";
+    shortcutState = result.listening ? "listening" : "unavailable";
   } catch {
     shortcutState = "unavailable";
   }
@@ -100,6 +112,7 @@ const commands = createCommands<IpcMainInvokeEvent>({
         event.senderFrame === target.webContents.mainFrame &&
         event.senderFrame.url === url,
     ),
+  permitted: (event, command) => event.sender !== panel?.webContents || command === "status.get",
   storage: { set: (settings) => storage.set(settings), restart: () => storage.restart() },
   status: () => ({
     storage: storage?.state ?? "starting",
@@ -109,7 +122,8 @@ const commands = createCommands<IpcMainInvokeEvent>({
   }),
 });
 export const setup = createSetup({
-  native: request,
+  native: (command) =>
+    helper ? helper.request(command) : Promise.reject(new Error("native-unavailable")),
   preferences: commands.preferences,
   save: async (preferences) => {
     await commands.saveSetup(preferences);
@@ -156,26 +170,15 @@ export const dictation = createSession({
     notify();
   },
   target: {
-    capture: async (id) => {
-      const result = decodeNativeSetupResult(
-        await request({ type: "target.capture", session: id }),
-      );
-      if (result.type !== "target") throw new Error("native-unavailable");
-      return { status: result.status, app: result.app };
-    },
+    capture: async (id) =>
+      (await request({ type: "target.capture", session: id }, "target")).status,
     arm: async (id) => {
-      const result = decodeNativeSetupResult(await request({ type: "target.arm", session: id }));
-      if (result.type !== "armed") throw new Error("native-unavailable");
+      await request({ type: "target.arm", session: id }, "armed");
     },
-    insert: async (id, text) => {
-      const result = decodeNativeSetupResult(
-        await request({ type: "target.insert", session: id, text }),
-      );
-      if (result.type !== "insertion") throw new Error("native-unavailable");
-      return result.outcome;
-    },
+    insert: async (id, text) =>
+      (await request({ type: "target.insert", session: id, text }, "insertion")).outcome,
     release: (id) => {
-      void request({ type: "target.release", session: id }).catch(() => {});
+      void request({ type: "target.release", session: id }, "released").catch(() => {});
     },
   },
   engaged: (active) => {
@@ -267,7 +270,11 @@ function syncPanel() {
     ["starting", "recording", "processing", "inserting"].includes(snapshot.phase) ||
     snapshot.armedPaste !== null;
   const external = snapshot.origin === "dictation" || snapshot.armedPaste !== null;
-  if (busy && external) {
+  // Any new outcome from a shortcut session flashes briefly, including a refused start.
+  const shown = `${snapshot.phase}\n${snapshot.message}\n${snapshot.armedPaste ?? ""}`;
+  const changed = shown !== panelShown;
+  panelShown = shown;
+  if (external && (busy || changed)) {
     clearTimeout(panelHide);
     panelHide = undefined;
     if (!current.isVisible()) {
@@ -280,7 +287,9 @@ function syncPanel() {
       );
       current.showInactive();
     }
-  } else if (current.isVisible() && !panelHide) {
+    if (busy) return;
+  }
+  if (current.isVisible() && !panelHide) {
     panelHide = setTimeout(() => {
       panelHide = undefined;
       if (!current.isDestroyed()) current.hide();
@@ -322,12 +331,12 @@ app
         ? join(process.resourcesPath, "app.asar.unpacked/native/voice-helper")
         : join(__dirname, "../native/voice-helper"),
       failedHelper,
-      testDirectory
-        ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
-        : undefined,
-      (event) => dictation.captureEvent(event),
-      !!fixtureUrl,
       {
+        testKeychainService: testDirectory
+          ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
+          : undefined,
+        syntheticCapture: !!fixtureUrl,
+        captureEvent: (event) => dictation.captureEvent(event),
         shortcut: (event) => dictation.shortcut(event.action),
         targetSelected: (event) => dictation.targetSelected(event),
       },

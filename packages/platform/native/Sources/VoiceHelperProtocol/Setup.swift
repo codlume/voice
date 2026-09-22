@@ -17,7 +17,7 @@ public enum ShortcutBinding: String, Sendable {
     case fn = "Fn", fnSpace = "Fn+Space", escape = "Escape"
     case controlOptionSpace = "Control+Option+Space", controlShiftSpace = "Control+Shift+Space", controlOptionEscape = "Control+Option+Escape"
 }
-public struct SetupShortcuts: Sendable {
+public struct SetupShortcuts: Sendable, Equatable {
     public let hold: ShortcutBinding
     public let toggle: ShortcutBinding
     public let cancel: ShortcutBinding
@@ -126,11 +126,11 @@ public enum SetupError: String, Encodable, Sendable { case keychainUnavailable =
 public enum SetupResult: Encodable, Sendable {
     case setup(SetupStatus), credential(CredentialPresence), permission, error(SetupError)
     case shortcuts(listening: Bool)
-    case target(session: String, status: TargetStatus, app: String?)
+    case target(session: String, status: TargetStatus)
     case insertion(session: String, outcome: InsertionOutcome)
     case released(session: String)
     case armed(session: String)
-    private enum CodingKeys: String, CodingKey { case type, status, presence, error, listening, session, app, outcome }
+    private enum CodingKeys: String, CodingKey { case type, status, presence, error, listening, session, outcome }
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -139,9 +139,9 @@ public enum SetupResult: Encodable, Sendable {
         case .permission: try values.encode("permission", forKey: .type)
         case .error(let error): try values.encode("error", forKey: .type); try values.encode(error, forKey: .error)
         case .shortcuts(let listening): try values.encode("shortcuts", forKey: .type); try values.encode(listening, forKey: .listening)
-        case .target(let session, let status, let app):
+        case .target(let session, let status):
             try values.encode("target", forKey: .type); try values.encode(session, forKey: .session)
-            try values.encode(status, forKey: .status); try values.encode(app, forKey: .app)
+            try values.encode(status, forKey: .status)
         case .insertion(let session, let outcome):
             try values.encode("insertion", forKey: .type); try values.encode(session, forKey: .session); try values.encode(outcome, forKey: .outcome)
         case .released(let session): try values.encode("released", forKey: .type); try values.encode(session, forKey: .session)

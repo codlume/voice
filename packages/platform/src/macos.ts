@@ -31,20 +31,21 @@ const decodeResult = Schema.decodeUnknownSync(
 export function launchHelper(
   executable: string,
   failed: () => void,
-  testKeychainService?: string,
-  captureEvent?: (event: CaptureEvent) => void,
-  syntheticCapture = false,
-  native?: {
+  options: {
+    testKeychainService?: string;
+    syntheticCapture?: boolean;
+    captureEvent?: (event: CaptureEvent) => void;
     shortcut?: (event: ShortcutEvent) => void;
     targetSelected?: (event: TargetSelected) => void;
-  },
+  } = {},
 ) {
+  const { testKeychainService, captureEvent } = options;
   const child = spawn(executable, [], {
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       ...process.env,
       VOICE_TEST_KEYCHAIN_SERVICE: testKeychainService ?? "",
-      VOICE_TEST_CAPTURE: testKeychainService && syntheticCapture ? "synthetic" : "",
+      VOICE_TEST_CAPTURE: testKeychainService && options.syntheticCapture ? "synthetic" : "",
     },
   });
   const lines = createInterface({ input: child.stdout });
@@ -144,14 +145,14 @@ export function launchHelper(
         "type" in value &&
         value.type === "shortcut"
       ) {
-        native?.shortcut?.(decodeShortcutEvent(value));
+        options.shortcut?.(decodeShortcutEvent(value));
       } else if (
         typeof value === "object" &&
         value !== null &&
         "type" in value &&
         value.type === "target.selected"
       ) {
-        native?.targetSelected?.(decodeTargetSelected(value));
+        options.targetSelected?.(decodeTargetSelected(value));
       } else if (
         typeof value === "object" &&
         value !== null &&

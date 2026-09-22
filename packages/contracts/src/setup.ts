@@ -138,12 +138,7 @@ export const NativeSetupResult = Schema.Union([
   Schema.Struct({ type: Schema.Literal("credential"), presence: CredentialPresence }),
   Schema.Struct({ type: Schema.Literal("permission") }),
   Schema.Struct({ type: Schema.Literal("shortcuts"), listening: Schema.Boolean }),
-  Schema.Struct({
-    type: Schema.Literal("target"),
-    session: targetIdentity,
-    status: TargetStatus,
-    app: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
-  }),
+  Schema.Struct({ type: Schema.Literal("target"), session: targetIdentity, status: TargetStatus }),
   Schema.Struct({
     type: Schema.Literal("insertion"),
     session: targetIdentity,

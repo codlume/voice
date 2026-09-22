@@ -31,7 +31,7 @@ function fixture(
     target: {
       capture: async (id) => {
         targets.push(`capture:${id}`);
-        return { status: overrides.target ?? "eligible", app: "com.apple.TextEdit" };
+        return overrides.target ?? "eligible";
       },
       arm: async (id) => {
         targets.push(`arm:${id}`);
@@ -281,15 +281,13 @@ it("explicit Paste inserts once into the deliberately selected destination and r
     type: "target.selected",
     session: "other",
     status: "eligible",
-    app: null,
   });
-  owner.targetSelected({ type: "target.selected", session: entry.id, status: "none", app: null });
+  owner.targetSelected({ type: "target.selected", session: entry.id, status: "none" });
   expect(targets.some((item) => item.startsWith("insert:"))).toBe(false);
   owner.targetSelected({
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: "com.apple.TextEdit",
   });
   await settle();
   expect(targets.at(-1)).toBe(`insert:${entry.id}:Recovered text.`);
@@ -305,7 +303,6 @@ it("explicit Paste inserts once into the deliberately selected destination and r
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: null,
   });
   await settle();
   expect(targets.filter((item) => item.startsWith("insert:"))).toHaveLength(1);
@@ -324,7 +321,6 @@ it("Paste of the latest successful transcript keeps it, and uncertain or failed 
     type: "target.selected",
     session: latest.id,
     status: "eligible",
-    app: null,
   });
   await settle();
   expect(targets.at(-1)).toBe(`insert:${latest.id}:First.`);
@@ -339,7 +335,6 @@ it("Paste of the latest successful transcript keeps it, and uncertain or failed 
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: null,
   });
   await settle();
   expect(owner.snapshot()).toMatchObject({
@@ -352,7 +347,6 @@ it("Paste of the latest successful transcript keeps it, and uncertain or failed 
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: null,
   });
   await settle();
   expect(owner.snapshot()).toMatchObject({
@@ -379,7 +373,6 @@ it("Paste disarms on the cancel shortcut, Cancel, or timeout without authorizing
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: null,
   });
   await owner.execute({ type: "recovery.paste", id: entry.id });
   await owner.execute({ type: "session.cancel" });
@@ -394,7 +387,6 @@ it("Paste disarms on the cancel shortcut, Cancel, or timeout without authorizing
     type: "target.selected",
     session: entry.id,
     status: "eligible",
-    app: null,
   });
   await vi.advanceTimersByTimeAsync(0);
   expect(targets.some((item) => item.startsWith("insert:"))).toBe(false);

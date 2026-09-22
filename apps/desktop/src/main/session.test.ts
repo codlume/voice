@@ -15,7 +15,7 @@ function fixture() {
     copy: async () => true,
     access: () => {},
     target: {
-      capture: async () => ({ status: "eligible", app: null }),
+      capture: async () => "eligible",
       arm: async () => {},
       insert: async () => "inserted",
       release: () => {},

@@ -98,7 +98,6 @@ export const TargetSelected = Schema.Struct({
   type: Schema.Literal("target.selected"),
   session: identity,
   status: TargetStatus,
-  app: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
 });
 export type TargetSelected = typeof TargetSelected.Type;
 export const CaptureCommand = Schema.Union([

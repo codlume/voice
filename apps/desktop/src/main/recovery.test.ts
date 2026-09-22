@@ -23,7 +23,7 @@ function fixture(copy?: (text: string) => Promise<boolean>) {
     changed: () => {},
     access: () => {},
     target: {
-      capture: async () => ({ status: "eligible", app: null }),
+      capture: async () => "eligible",
       arm: async () => {},
       insert: async () => "inserted",
       release: () => {},

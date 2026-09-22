@@ -10,7 +10,7 @@ let outputLock = NSLock()
 let fixture = ProcessInfo.processInfo.environment["VOICE_TEST_CAPTURE"] == "synthetic" && ProcessInfo.processInfo.environment["VOICE_TEST_KEYCHAIN_SERVICE"]?.hasPrefix("com.codlume.voice.test.") == true
 let setup = SetupService()
 let shortcuts = ShortcutService(emit: output)
-let targets = TargetService(emit: output, lastInput: { shortcuts.lastInput })
+let targets = TargetService(emit: output)
 shortcuts.onInput = { targets.userInput() }
 let capture = CaptureService(fixture: fixture, emit: output)
 
@@ -42,13 +42,14 @@ let reader = Thread { [capture] in
             }
             if object["type"] as? String == "setup.request" {
                 let request = SetupRequest(object)
+                // Target work stays off the main thread; shortcut and setup work needs the main actor.
                 let result = request.map { request in
-                    DispatchQueue.main.sync {
+                    targets.receive(request.command) ?? DispatchQueue.main.sync {
                         MainActor.assumeIsolated {
                             if case .configureShortcuts(let bindings, let active) = request.command {
                                 return SetupResult.shortcuts(listening: shortcuts.configure(bindings, active: active))
                             }
-                            return targets.receive(request.command) ?? setup.receive(request.command)
+                            return setup.receive(request.command)
                         }
                     }
                 } ?? .error(.invalidCommand)
@@ -66,11 +67,9 @@ let reader = Thread { [capture] in
     }
     capture.disconnect()
     connection.disconnect()
+    targets.shutdown()
     DispatchQueue.main.async {
-        MainActor.assumeIsolated {
-            shortcuts.uninstall()
-            targets.release()
-        }
+        MainActor.assumeIsolated { shortcuts.uninstall() }
         CFRunLoopStop(CFRunLoopGetMain())
     }
 }

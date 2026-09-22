@@ -27,12 +27,7 @@ describe("dictation contracts", () => {
     });
     expect(decodeShortcutEvent({ type: "shortcut", action: "hold.down" }).action).toBe("hold.down");
     expect(
-      decodeTargetSelected({
-        type: "target.selected",
-        session: "s",
-        status: "eligible",
-        app: null,
-      }),
+      decodeTargetSelected({ type: "target.selected", session: "s", status: "eligible" }),
     ).toMatchObject({ session: "s", status: "eligible" });
     expect(
       decodeNativeSetupCommand({

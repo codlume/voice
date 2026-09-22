@@ -256,19 +256,17 @@ test(
     const closed = once(child, "exit");
     const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
     const actions = [];
-    const replies = [];
+    const waiting = [];
     lines.on("line", (line) => {
       const event = JSON.parse(line);
       if (event.type === "shortcut") actions.push(event.action);
-      else replies.push(event);
+      else waiting.shift()?.(event);
     });
-    const send = (payload) => child.stdin.write(JSON.stringify(payload) + "\n");
-    const reply = async (payload) => {
-      const before = replies.length;
-      send(payload);
-      while (replies.length === before) await new Promise((done) => setTimeout(done, 5));
-      return replies[before];
-    };
+    const reply = (payload) =>
+      new Promise((done) => {
+        waiting.push(done);
+        child.stdin.write(JSON.stringify(payload) + "\n");
+      });
     const press = (key, down, flags = [], repeat = false) =>
       reply({ type: "shortcut.simulate", key, down, flags, repeat }).then(
         (event) => event.consumed,
@@ -297,7 +295,8 @@ test(
       assert.equal(await press("escape", true), false);
       assert.equal(await press("a", true, ["fn"]), false);
       assert.equal(await press("space", true), false);
-      assert.deepEqual(actions, ["hold.down", "toggle", "hold.up", "cancel"]);
+      // Idle Escape belongs to the frontmost app and produces no action.
+      assert.deepEqual(actions, ["hold.down", "toggle", "hold.up"]);
       await reply({
         type: "setup.request",
         version: 1,
@@ -318,7 +317,31 @@ test(
       assert.equal(await press("space", true, ["control", "shift"]), true);
       assert.equal(await press("escape", true, ["control", "option"]), true);
       assert.equal(await press("escape", true), false);
-      assert.deepEqual(actions.slice(4), ["hold.down", "hold.up", "toggle", "cancel"]);
+      assert.deepEqual(actions.slice(3), ["hold.down", "hold.up", "toggle", "cancel"]);
+      // A binding change while the hold key is down waits for its release.
+      assert.equal(await press("space", true, ["control", "option"]), true);
+      await reply({
+        type: "setup.request",
+        version: 1,
+        id: 6,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: true,
+        },
+      });
+      // The previous bindings stay in force until the held key is released.
+      assert.equal(await press("escape", true, ["control", "option"]), true);
+      assert.equal(await press("space", false, ["control", "option"]), true);
+      assert.equal(await press("fn", true), false);
+      assert.equal(await press("fn", false), false);
+      assert.deepEqual(actions.slice(7), [
+        "hold.down",
+        "cancel",
+        "hold.up",
+        "hold.down",
+        "hold.up",
+      ]);
       const missing = await reply({
         type: "setup.request",
         version: 1,
