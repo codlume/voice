@@ -12,6 +12,7 @@ function fixture() {
     capture: (command) => capture.push(command),
     provider: (command) => provider.push(command),
     changed: () => {},
+    copy: async () => true,
     access: () => {},
   });
   return { owner, capture, provider };
@@ -39,7 +40,7 @@ it("starts explicitly, shows recording only on audio, and delivers one complete 
     attempt: identity.attempt,
     text: "Hello, Priya.",
   });
-  expect(owner.snapshot().retainedText).toBe("");
+  expect(owner.snapshot().recovery).toEqual([]);
   expect(owner.snapshot().practiceText).toBe("");
   owner.execute({ type: "session.stop" });
   owner.captureEvent({
@@ -84,8 +85,7 @@ it("cancels without delivering late results and preserves stable text", async ()
   owner.providerEvent({ type: "complete", session, attempt, text: "Deploy.", samples: 320 });
   expect(owner.snapshot()).toMatchObject({
     phase: "cancelled",
-    retainedText: "Do not deploy.",
-    retainedCount: 1,
+    recovery: [expect.objectContaining({ text: "Do not deploy.", hasAudio: false })],
     practiceText: "",
   });
   owner.close();
@@ -109,7 +109,10 @@ it("warns at 4:30, caps at five minutes and never queues busy starts", async () 
   expect(owner.snapshot().phase).toBe("processing");
   owner.execute({ type: "session.start" });
   await vi.advanceTimersByTimeAsync(10_000);
-  expect(owner.snapshot()).toMatchObject({ phase: "failed", retainedCount: 1 });
+  expect(owner.snapshot()).toMatchObject({
+    phase: "failed",
+    recovery: [expect.objectContaining({ hasAudio: true })],
+  });
   expect(capture.filter((command) => command.type === "capture.start")).toHaveLength(1);
   owner.close();
 });
@@ -135,7 +138,7 @@ it("partial results never extend a stop deadline, and stale completion cannot de
   expect(owner.snapshot()).toMatchObject({
     phase: "failed",
     practiceText: "",
-    retainedText: "Still processing.",
+    recovery: [expect.objectContaining({ text: "Still processing." })],
   });
   owner.close();
 });
@@ -155,7 +158,8 @@ it("does not evict failures when retention capacity is full", async () => {
     owner.helperFailed();
   }
   owner.execute({ type: "session.start" });
-  expect(owner.snapshot()).toMatchObject({ canStart: false, retainedCount: 5 });
+  expect(owner.snapshot().canStart).toBe(false);
+  expect(owner.snapshot().recovery).toHaveLength(5);
   expect(capture.filter((command) => command.type === "capture.start")).toHaveLength(5);
   owner.close();
 });
@@ -197,7 +201,10 @@ it("gives captures over 30 seconds a fixed 30-second processing deadline", async
   await vi.advanceTimersByTimeAsync(29_999);
   expect(owner.snapshot().phase).toBe("processing");
   await vi.advanceTimersByTimeAsync(1);
-  expect(owner.snapshot()).toMatchObject({ phase: "failed", retainedCount: 1 });
+  expect(owner.snapshot()).toMatchObject({
+    phase: "failed",
+    recovery: [expect.objectContaining({ hasAudio: true })],
+  });
   owner.close();
 });
 it("credential changes stop capture, preserve its final drained frames and ignore late delivery", async () => {
@@ -226,8 +233,7 @@ it("credential changes stop capture, preserve its final drained frames and ignor
   expect(provider.filter((command) => command.type === "audio")).toHaveLength(1);
   expect(owner.snapshot()).toMatchObject({
     phase: "failed",
-    retainedCount: 1,
-    retainedText: "Retain the unfinished thought",
+    recovery: [expect.objectContaining({ hasAudio: true, text: "Retain the unfinished thought" })],
     practiceText: "",
   });
   owner.close();

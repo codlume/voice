@@ -12,6 +12,7 @@ export const defaultSettings: Settings = { appearance: "light" };
 export const Command = Schema.Union([
   SetupCommand,
   SessionCommand,
+  Schema.Struct({ type: Schema.Literals(["app.quit", "app.quit.confirm"]) }),
   Schema.Struct({ type: Schema.Literal("settings.get") }),
   Schema.Struct({ type: Schema.Literal("settings.set"), appearance: Appearance }),
   Schema.Struct({ type: Schema.Literal("status.get") }),

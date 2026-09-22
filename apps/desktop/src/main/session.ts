@@ -8,6 +8,7 @@ import {
   type SessionCommand,
   type SessionSnapshot,
   type ProviderFailure,
+  type RecoveryEntry,
 } from "@voice/contracts/session";
 
 const failureMessages: Record<ProviderFailure, string> = {
@@ -38,6 +39,7 @@ export function createSession(options: {
   capture: (command: CaptureCommand) => void;
   provider: (command: ProviderRequest) => void;
   changed: () => void;
+  copy: (text: string) => Promise<boolean>;
   access: (reason: "authenticated" | "rejected" | "quota" | "rate-limit") => void;
 }) {
   let state: SessionSnapshot = {
@@ -46,13 +48,16 @@ export function createSession(options: {
     warning: false,
     message: "Ready for practice.",
     practiceText: "",
-    retainedText: "",
-    retainedCount: 0,
+    recovery: [],
+    recoveryMessage: "",
+    quitWarning: false,
+    pendingPractice: null,
+    latestSuccessful: null,
   };
   let active: Active | undefined;
+  let closed = false;
   let stoppingCapture: Attempt | undefined;
-  // Recovery actions belong to #31. Until then, retain sources without offering a nonfunctional Retry.
-  const retained: { audio: Uint8Array[]; text: string }[] = [];
+  const retained = new Map<string, { audio: Uint8Array[]; entry: RecoveryEntry }>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   function later(callback: () => void, delay: number) {
     const timer = setTimeout(() => {
@@ -87,16 +92,21 @@ export function createSession(options: {
     }
     options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
     if (phase !== "complete" && (current.audio.length || current.text))
-      retained.push({ audio: current.audio, text: current.text });
+      retained.set(current.session, {
+        audio: current.audio,
+        entry: {
+          id: current.session,
+          text: current.text,
+          transcription: "incomplete",
+          hasAudio: current.audio.length > 0,
+          cause: message,
+          delivery: "undelivered",
+        },
+      });
     update({
       phase,
       message,
       warning: false,
-      retainedCount: retained.length,
-      retainedText: retained
-        .map((entry) => entry.text)
-        .filter(Boolean)
-        .join("\n\n"),
     });
   }
   function fail(message: string) {
@@ -132,18 +142,37 @@ export function createSession(options: {
         samples: current.samples,
       });
   }
+  function interruptDelivery(message: string) {
+    const pending = state.pendingPractice && retained.get(state.pendingPractice);
+    if (!pending) return;
+    pending.entry = {
+      ...pending.entry,
+      delivery: "uncertain",
+      cause: `${message} Check your target.`,
+    };
+    update({ pendingPractice: null, practiceText: state.latestSuccessful?.text ?? "" });
+  }
+  function resolveText(id: string) {
+    const recovery = retained.get(id);
+    if (!recovery) return;
+    if (recovery.entry.transcription === "complete")
+      state = { ...state, latestSuccessful: { id, text: recovery.entry.text } };
+    if (!recovery.audio.length) retained.delete(id);
+    if (state.pendingPractice === id) state = { ...state, pendingPractice: null };
+  }
   function start() {
-    if (active || stoppingCapture) return;
-    if (!options.available() || retained.length >= 5) {
+    if (closed || active || stoppingCapture || state.quitWarning) return;
+    if (!options.available() || retained.size >= 5) {
       update({
         phase: "failed",
         message:
-          retained.length >= 5
-            ? "Recovery memory is full. Keep your retained text before quitting; recovery controls are not available yet."
+          retained.size >= 5
+            ? "Recovery is full. Resolve or discard a session before starting another."
             : "Complete or repair dictation setup before starting practice.",
       });
       return;
     }
+    interruptDelivery("Practice delivery was not confirmed before the next session.");
     const id = randomUUID();
     const current: Active = {
       session: id,
@@ -160,7 +189,6 @@ export function createSession(options: {
       phase: "starting",
       warning: false,
       message: "Starting microphone…",
-      retainedText: "",
     });
     try {
       options.capture({
@@ -205,12 +233,89 @@ export function createSession(options: {
         if (current.stopped) fail(current.failure);
       });
   }
+  function interrupt(message: string) {
+    interruptDelivery(message);
+    const current = active;
+    if (!current) return;
+    current.failure = message;
+    requestStop(message);
+    options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
+    if (current.stopped) fail(message);
+  }
   return {
     snapshot: () => ({
       ...state,
-      canStart: !active && !stoppingCapture && options.available() && retained.length < 5,
+      recovery: [...retained.values()].map(({ entry }) => Object.assign({}, entry)),
+      canStart:
+        !closed &&
+        !state.quitWarning &&
+        !active &&
+        !stoppingCapture &&
+        options.available() &&
+        retained.size < 5,
     }),
-    execute(command: SessionCommand) {
+    async execute(command: SessionCommand) {
+      if (closed) return;
+      if (command.type === "app.quit.cancel") {
+        update({ quitWarning: false });
+        return;
+      }
+      if (command.type === "practice.delivered") {
+        if (state.pendingPractice !== command.id) return;
+        resolveText(command.id);
+        update({ message: "Practice transcript ready." });
+        return;
+      }
+      if (command.type === "recovery.discard") {
+        if (state.latestSuccessful?.id === command.id) {
+          update({
+            latestSuccessful: null,
+            practiceText: state.pendingPractice ? state.practiceText : "",
+            recoveryMessage: "Discarded the latest successful transcript.",
+          });
+          return;
+        }
+        const discarded = retained.get(command.id);
+        if (!discarded) return;
+        discarded.audio = [];
+        retained.delete(command.id);
+        if (state.pendingPractice === command.id)
+          state = {
+            ...state,
+            pendingPractice: null,
+            practiceText: state.latestSuccessful?.text ?? "",
+          };
+        update({ recoveryMessage: "Discarded. Its audio and text have been released." });
+        return;
+      }
+      if (command.type === "recovery.copy") {
+        const recovery = retained.get(command.id);
+        const latest = state.latestSuccessful?.id === command.id ? state.latestSuccessful : null;
+        const text = recovery?.entry.text ?? latest?.text;
+        if (!text) return;
+        let copied = false;
+        try {
+          copied = await options.copy(text);
+        } catch {
+          /* Preserve work on clipboard failure. */
+        }
+        if (
+          closed ||
+          (recovery ? retained.get(command.id) !== recovery : state.latestSuccessful !== latest)
+        )
+          return;
+        if (recovery)
+          recovery.entry = { ...recovery.entry, delivery: copied ? "copied" : "failed" };
+        if (copied) resolveText(command.id);
+        update({
+          recoveryMessage: copied
+            ? recovery?.audio.length
+              ? "Copied available text. The incomplete recording still needs recovery or Discard."
+              : "Copied."
+            : "Copy failed. Your text and any recording remain available.",
+        });
+        return;
+      }
       if (command.type === "session.start") start();
       else if (command.type === "session.stop") requestStop();
       else if (active) {
@@ -342,26 +447,51 @@ export function createSession(options: {
       }
       current.text = event.text;
       options.access("authenticated");
-      if (event.text) update({ practiceText: event.text });
-      end("complete", event.text ? "Practice transcript ready." : "No speech detected");
+      current.audio = [];
+      if (event.text) {
+        retained.set(current.session, {
+          audio: [],
+          entry: {
+            id: current.session,
+            text: event.text,
+            transcription: "complete",
+            hasAudio: false,
+            cause: "Waiting for the practice field to confirm delivery.",
+            delivery: "undelivered",
+          },
+        });
+        update({ practiceText: event.text, pendingPractice: current.session });
+      }
+      end("complete", event.text ? "Delivering practice transcript…" : "No speech detected");
     },
-    interrupted(message: string) {
-      const current = active;
-      if (!current) return;
-      current.failure = message;
-      requestStop(message);
-      options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
-      if (current.stopped) fail(message);
-    },
+    interrupted: interrupt,
     helperFailed() {
       stoppingCapture = undefined;
       if (active) active.stopped = true;
       fail("Native services stopped. Available work remains in memory. Reopen Voice to repair.");
     },
-    hasRetained: () => retained.length > 0,
+    requestQuit() {
+      if (!active && !retained.size) return false;
+      interrupt("Quitting interrupted the session. Available work remains in memory.");
+      update({ quitWarning: true });
+      return true;
+    },
     close() {
       if (active) end("cancelled", "Session ended.");
       clearTimers();
+      closed = true;
+      for (const recovery of retained.values()) recovery.audio = [];
+      retained.clear();
+      state = {
+        ...state,
+        recovery: [],
+        practiceText: "",
+        latestSuccessful: null,
+        pendingPractice: null,
+        recoveryMessage: "",
+        message: "Session ended.",
+        quitWarning: false,
+      };
     },
   };
 }

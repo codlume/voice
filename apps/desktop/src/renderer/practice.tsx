@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { SaveButton } from "@voice/ui/settings";
 import { tokens } from "@voice/ui/tokens.stylex";
 import type { Reply } from "@voice/contracts/desktop";
-import type { SessionCommand } from "@voice/contracts/session";
 const styles = stylex.create({
   section: {
     borderBottomWidth: 1,
@@ -38,8 +37,18 @@ export function PracticeView({
 }) {
   const session = reply?.ok ? reply.session : undefined;
   const [error, setError] = useState("");
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!session?.pendingPractice || field.current?.value !== session.practiceText) return;
+    void window.voice
+      .command({ type: "practice.delivered", id: session.pendingPractice })
+      .then(onReply)
+      .catch(() => {
+        setError("Practice delivery could not be confirmed. Your transcript remains in recovery.");
+      });
+  }, [session?.pendingPractice, session?.practiceText, onReply]);
   const active = session && ["starting", "recording", "processing"].includes(session.phase);
-  async function run(type: SessionCommand["type"]) {
+  async function run(type: "session.start" | "session.stop" | "session.cancel") {
     setError("");
     try {
       onReply(await window.voice.command({ type }));
@@ -78,23 +87,13 @@ export function PracticeView({
       )}
       <label {...stylex.props(styles.label)}>
         Practice transcript
-        <textarea {...stylex.props(styles.field)} readOnly value={session?.practiceText ?? ""} />
+        <textarea
+          ref={field}
+          {...stylex.props(styles.field)}
+          readOnly
+          value={session?.practiceText ?? ""}
+        />
       </label>
-      {!!session?.retainedCount && (
-        <>
-          <p {...stylex.props(styles.text)}>
-            {session.retainedCount} unfinished session(s) remain in memory until Voice quits. Retry
-            and recovery controls are not available yet. You can select and copy the available text
-            below.
-          </p>
-          {!active && (
-            <label {...stylex.props(styles.label)}>
-              Available text, may be incomplete
-              <textarea {...stylex.props(styles.field)} readOnly value={session.retainedText} />
-            </label>
-          )}
-        </>
-      )}
       <p {...stylex.props(styles.text)}>
         Recognition can change names or identifiers, including the known "fix" to "fixed" error.
         Spoken formatting commands may remain literal. Check the transcript before using it.

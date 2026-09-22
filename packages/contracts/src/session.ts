@@ -7,10 +7,25 @@ const count = Schema.Number.check(
 );
 export const attempt = { session: identity, attempt: identity };
 export type Attempt = { readonly session: string; readonly attempt: string };
-export const SessionCommand = Schema.Struct({
-  type: Schema.Literals(["session.start", "session.stop", "session.cancel"]),
-});
+export const SessionCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literals(["session.start", "session.stop", "session.cancel", "app.quit.cancel"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["recovery.copy", "recovery.discard", "practice.delivered"]),
+    id: identity,
+  }),
+]);
 export type SessionCommand = typeof SessionCommand.Type;
+export const RecoveryEntry = Schema.Struct({
+  id: identity,
+  text: Schema.String,
+  transcription: Schema.Literals(["complete", "incomplete"]),
+  hasAudio: Schema.Boolean,
+  cause: Schema.String,
+  delivery: Schema.Literals(["undelivered", "copied", "failed", "uncertain"]),
+});
+export type RecoveryEntry = typeof RecoveryEntry.Type;
 export const SessionSnapshot = Schema.Struct({
   phase: Schema.Literals([
     "idle",
@@ -25,8 +40,11 @@ export const SessionSnapshot = Schema.Struct({
   warning: Schema.Boolean,
   message: Schema.String,
   practiceText: Schema.String,
-  retainedText: Schema.String,
-  retainedCount: count,
+  recovery: Schema.Array(RecoveryEntry),
+  recoveryMessage: Schema.String,
+  quitWarning: Schema.Boolean,
+  pendingPractice: Schema.NullOr(identity),
+  latestSuccessful: Schema.NullOr(Schema.Struct({ id: identity, text: Schema.String })),
 });
 export type SessionSnapshot = typeof SessionSnapshot.Type;
 export const CaptureCommand = Schema.Union([

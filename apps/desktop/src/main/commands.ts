@@ -5,6 +5,7 @@ import { defaultSetupPreferences, type SetupPreferences } from "@voice/contracts
 import type { createSetup } from "./setup";
 
 export function createCommands<Sender>(options: {
+  quit?: (confirmed: boolean) => void;
   session?: () => ReturnType<typeof createSession>;
   setup?: () => ReturnType<typeof createSetup>;
   isAuthorized: (sender: Sender) => boolean;
@@ -37,13 +38,20 @@ export function createCommands<Sender>(options: {
         return { ok: false, error: "invalid-command" };
       }
       try {
-        if (
+        if (command.type === "app.quit" || command.type === "app.quit.confirm") {
+          if (command.type === "app.quit" || options.session?.().snapshot().quitWarning)
+            options.quit?.(command.type === "app.quit.confirm");
+        } else if (
           command.type === "session.start" ||
           command.type === "session.stop" ||
-          command.type === "session.cancel"
+          command.type === "session.cancel" ||
+          command.type === "recovery.copy" ||
+          command.type === "recovery.discard" ||
+          command.type === "practice.delivered" ||
+          command.type === "app.quit.cancel"
         ) {
           if (!options.session) return { ok: false, error: "native-unavailable" };
-          options.session().execute(command);
+          await options.session().execute(command);
         } else if (command.type === "settings.set") {
           if (options.status().storage !== "ready")
             return { ok: false, error: "storage-unavailable" };
