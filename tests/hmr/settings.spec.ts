@@ -12,6 +12,7 @@ test("component and shared-token HMR preserve an unsaved React preference and th
     await page.addInitScript(() => {
       window.voice = {
         onChanged: () => () => {},
+        onReveal: () => () => {},
         command: async () => ({
           ok: true,
           settings: { appearance: "light" },

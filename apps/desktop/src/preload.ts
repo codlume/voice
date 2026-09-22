@@ -3,10 +3,12 @@ import {
   commandChannel,
   decodeCommand,
   decodeReply,
-  type DesktopApi,
+  decodeView,
+  revealChannel,
+  type PreloadApi,
 } from "@voice/contracts/desktop";
 
-const api: DesktopApi & { onChanged: (listener: () => void) => () => void } = {
+const api: PreloadApi = {
   command: async (command) => {
     let validated;
     try {
@@ -20,6 +22,17 @@ const api: DesktopApi & { onChanged: (listener: () => void) => () => void } = {
     const callback = () => listener();
     ipcRenderer.on("voice:changed", callback);
     return () => ipcRenderer.removeListener("voice:changed", callback);
+  },
+  onReveal(listener) {
+    const callback = (_event: unknown, view: unknown) => {
+      try {
+        listener(decodeView(view));
+      } catch {
+        /* Only known sections can be revealed. */
+      }
+    };
+    ipcRenderer.on(revealChannel, callback);
+    return () => ipcRenderer.removeListener(revealChannel, callback);
   },
 };
 contextBridge.exposeInMainWorld("voice", api);

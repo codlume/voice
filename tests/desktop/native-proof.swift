@@ -2,6 +2,7 @@
 // document's selection through Accessibility. It is not part of the app.
 import AppKit
 import ApplicationServices
+import Carbon
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 func fail(_ message: String) -> Never {
@@ -48,6 +49,12 @@ case "select":
     guard let value = AXValueCreate(.cfRange, &range) else { fail("range value failed") }
     let result = AXUIElementSetAttributeValue(unsafeDowncast(focused, to: AXUIElement.self), kAXSelectedTextRangeAttribute as CFString, value)
     guard result == .success else { fail("select failed: \(result.rawValue)") }
+case "frontmost":
+    // A fresh process reads the current frontmost app; System Events can report a stale one.
+    print(NSWorkspace.shared.frontmostApplication?.localizedName ?? "")
+case "secure":
+    // Whether another app holds secure keyboard input, which hides keys from event taps.
+    print(IsSecureEventInputEnabled() ? "on" : "off")
 default:
-    fail("usage: key|click|select")
+    fail("usage: key|click|select|frontmost|secure")
 }

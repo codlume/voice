@@ -5,6 +5,7 @@ import {
   type Settings,
   type Reply,
   type Status,
+  type View,
 } from "@voice/contracts/desktop";
 import type { SessionCommand } from "@voice/contracts/session";
 
@@ -14,13 +15,21 @@ import type { createSetup } from "./setup";
 
 const isSessionCommand = (command: Command): command is SessionCommand =>
   (sessionCommandTypes as readonly string[]).includes(command.type);
+// The floating bar only controls the dictation session and opens the main window.
+export const floatingBarPermits = (command: Command) =>
+  command.type === "status.get" ||
+  command.type === "session.stop" ||
+  command.type === "session.cancel" ||
+  command.type === "app.open" ||
+  (command.type === "session.start" && command.origin === "dictation");
 export function createCommands<Sender>(options: {
   quit?: (confirmed: boolean) => void;
+  open?: (view: View) => void;
   session?: () => ReturnType<typeof createSession>;
   setup?: () => ReturnType<typeof createSetup>;
   isAuthorized: (sender: Sender) => boolean;
-  // Narrows the command surface for a sender that only needs to read state.
-  permitted?: (sender: Sender, command: Command["type"]) => boolean;
+  // Narrows the command surface for a sender such as the floating bar.
+  permitted?: (sender: Sender, command: Command) => boolean;
   initialSettings: Settings;
   status: () => Status;
   storage: { set: (settings: Settings) => Promise<Settings>; restart: () => Promise<Settings> };
@@ -49,12 +58,14 @@ export function createCommands<Sender>(options: {
       } catch {
         return { ok: false, error: "invalid-command" };
       }
-      if (options.permitted && !options.permitted(sender, command.type))
+      if (options.permitted && !options.permitted(sender, command))
         return { ok: false, error: "unauthorized" };
       try {
         if (command.type === "app.quit" || command.type === "app.quit.confirm") {
           if (command.type === "app.quit" || options.session?.().snapshot().quitWarning)
             options.quit?.(command.type === "app.quit.confirm");
+        } else if (command.type === "app.open") {
+          options.open?.(command.view);
         } else if (isSessionCommand(command)) {
           if (!options.session) return { ok: false, error: "native-unavailable" };
           await options.session().execute(command);

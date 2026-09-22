@@ -9,18 +9,8 @@ import { useAtom } from "@effect/atom-react";
 import { Sun, Moon } from "lucide-react";
 import { SettingsPage, SaveButton } from "@voice/ui/settings";
 import { tokens } from "@voice/ui/tokens.stylex";
-import {
-  defaultSettings,
-  type DesktopApi,
-  type Reply,
-  type Settings,
-} from "@voice/contracts/desktop";
+import { defaultSettings, type Reply, type Settings } from "@voice/contracts/desktop";
 
-declare global {
-  interface Window {
-    voice: DesktopApi & { onChanged: (listener: () => void) => () => void };
-  }
-}
 const snapshot = Atom.make<Reply | undefined>(undefined);
 const styles = stylex.create({
   heading: { fontSize: 16, fontWeight: 600, marginBlock: 0 },
@@ -71,6 +61,16 @@ export function SettingsView() {
       unsubscribe();
     };
   }, [setReply]);
+  // Menu-bar and floating-bar actions open a section; move to it and give it focus.
+  useEffect(
+    () =>
+      window.voice.onReveal((view) => {
+        const section = document.getElementById(`section-${view}`);
+        section?.scrollIntoView({ block: "start" });
+        section?.focus({ preventScroll: true });
+      }),
+    [],
+  );
   async function save(retry = false) {
     setSaving(true);
     setMessage("");
@@ -94,7 +94,7 @@ export function SettingsView() {
   return (
     <SettingsPage appearance={settings.appearance}>
       <SetupView reply={reply} onReply={setReply} />
-      <DictationView reply={reply} />
+      <DictationView reply={reply} onReply={setReply} />
       <PracticeView reply={reply} onReply={setReply} />
       <RecoveryView reply={reply} onReply={setReply} />
       <h2 {...stylex.props(styles.heading)}>Appearance</h2>

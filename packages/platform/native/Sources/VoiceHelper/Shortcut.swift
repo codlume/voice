@@ -18,6 +18,28 @@ struct SimulatedKey: Sendable {
     }
 }
 
+// Test-only synthetic mouse button transition at a screen point. `owned` stands in for whether
+// the bar's window is topmost there, since a test process has no bar window.
+struct SimulatedPointer: Sendable {
+    let button: Int64
+    let down: Bool
+    let x: Double
+    let y: Double
+    let owned: Bool
+    init?(_ object: [String: Any]) {
+        guard Set(object.keys) == Set(["type", "button", "down", "x", "y", "owned"]),
+              let button = object["button"] as? Int, (0...2).contains(button),
+              let down = object["down"] as? Bool, let x = object["x"] as? Double, let y = object["y"] as? Double,
+              let owned = object["owned"] as? Bool
+        else { return nil }
+        self.button = Int64(button)
+        self.down = down
+        self.x = x
+        self.y = y
+        self.owned = owned
+    }
+}
+
 // Translates native key transitions into shortcut actions using the configured bindings.
 // The tap consumes only keys it interprets, so a toggle chord never types a space into the target
 // and the cancel key reaches the target app again as soon as no session or paste is active.
@@ -38,13 +60,21 @@ final class ShortcutService {
     private var fnHeld = false
     private var holdHeld = false
     private var consumed = Set<Int64>()
+    // Electron cannot make a window that takes clicks without activating Voice, which would move
+    // focus away from the target. So clicks on the floating bar never reach the window server:
+    // the tap consumes them and forwards left-button transitions in screen points to main, which
+    // replays them into the bar's web contents. Only the location is used.
+    private var bar: BarRegion?
+    private var barButtons = Set<Int64>()
+    private var barIsTopWindow: (CGPoint, UInt32) -> Bool = ShortcutService.topWindow
     private let emitQueue = DispatchQueue(label: "voice.shortcut.emit")
     var onInput: (() -> Void)?
     init(emit: @escaping @Sendable (Data) -> Void) { self.emit = emit }
 
     // Applies the full desired state and reports whether the native tap is listening.
-    func configure(_ bindings: SetupShortcuts, active: Bool) -> Bool {
+    func configure(_ bindings: SetupShortcuts, active: Bool, bar: BarRegion?) -> Bool {
         self.active = active
+        self.bar = bar
         if holdHeld, bindings != self.bindings { pendingBindings = bindings } else { self.bindings = bindings; pendingBindings = nil }
         if tap == nil { install() }
         return tap != nil
@@ -78,10 +108,26 @@ final class ShortcutService {
         return handle(key == "fn" ? .flagsChanged : down ? .keyDown : .keyUp, event)
     }
 
+    // Test-only path: feeds a synthetic mouse transition through the same bar handling as the tap.
+    func simulate(_ input: SimulatedPointer) -> Bool? {
+        let types: [(CGEventType, CGEventType, CGMouseButton)] = [
+            (.leftMouseDown, .leftMouseUp, .left), (.rightMouseDown, .rightMouseUp, .right), (.otherMouseDown, .otherMouseUp, .center),
+        ]
+        let (down, up, button) = types[Int(input.button)]
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: input.down ? down : up,
+                                  mouseCursorPosition: CGPoint(x: input.x, y: input.y), mouseButton: button) else { return nil }
+        let real = barIsTopWindow
+        barIsTopWindow = { _, _ in input.owned }
+        defer { barIsTopWindow = real }
+        return handle(input.down ? down : up, event)
+    }
+
     private func install() {
-        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
-            | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.leftMouseDown.rawValue)
-            | (1 << CGEventType.rightMouseDown.rawValue) | (1 << CGEventType.otherMouseDown.rawValue)
+        let types: [CGEventType] = [
+            .keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseUp, .rightMouseUp, .otherMouseUp,
+        ]
+        let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let service = Unmanaged<ShortcutService>.fromOpaque(refcon).takeUnretainedValue()
@@ -118,6 +164,44 @@ final class ShortcutService {
         guard let data = try? JSONSerialization.data(withJSONObject: ["type": "shortcut", "action": action]) else { return }
         emitQueue.async { [emit] in emit(data) }
     }
+    private func sendPointer(_ phase: String, _ event: CGEvent) {
+        let point = event.location
+        let message: [String: Any] = ["type": "bar.pointer", "phase": phase, "x": point.x, "y": point.y]
+        guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+        emitQueue.async { [emit] in emit(data) }
+    }
+    // Returns whether a mouse transition belongs to the floating bar, and forwards left clicks.
+    // A press that started on the bar keeps its release, wherever the pointer ends up.
+    private func pointer(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        let button = event.getIntegerValueField(.mouseEventButtonNumber)
+        switch type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            guard let bar, bar.contains(x: event.location.x, y: event.location.y),
+                  barIsTopWindow(event.location, bar.window) else { return false }
+            barButtons.insert(button)
+            if type == .leftMouseDown { sendPointer("down", event) }
+            return true
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            guard barButtons.remove(button) != nil else { return false }
+            if type == .leftMouseUp { sendPointer("up", event) }
+            return true
+        default:
+            return false
+        }
+    }
+    // A menu, alert, or other window drawn over the bar keeps its own clicks. Only window bounds
+    // and numbers are read, which needs no screen-recording access.
+    private nonisolated static func topWindow(_ point: CGPoint, _ number: UInt32) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] else { return false }
+        for window in windows {
+            guard let bounds = window[kCGWindowBounds as String] as? [String: Double],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), frame.contains(point),
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
+            return (window[kCGWindowNumber as String] as? UInt32) == number
+        }
+        return false
+    }
     private func holdDown() {
         guard !holdHeld else { return }
         holdHeld = true
@@ -135,6 +219,9 @@ final class ShortcutService {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         }
+        // A click on the bar is not a destination choice for an armed paste.
+        if pointer(type, event) { return true }
+        if type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp { return false }
         guard let bindings else { return false }
         onInput?()
         let flags = event.flags

@@ -60,7 +60,7 @@ function fixture(copy?: (text: string) => Promise<boolean>) {
     return reply.session;
   }
   async function start(text: string) {
-    await execute({ type: "session.start" });
+    await execute({ type: "session.start", origin: "practice" });
     const { session, attempt } = captures.findLast((command) => command.type === "capture.start")!;
     owner.captureEvent({
       type: "capture.frame",
@@ -101,8 +101,11 @@ it("keeps nonempty failures separate and blocks concurrent Start admission at fi
   expect(
     before.recovery.every((entry) => entry.hasAudio && entry.transcription === "incomplete"),
   ).toBe(true);
-  await Promise.all([f.execute({ type: "session.start" }), f.execute({ type: "session.start" })]);
-  expect((await f.snapshot()).canStart).toBe(false);
+  await Promise.all([
+    f.execute({ type: "session.start", origin: "practice" }),
+    f.execute({ type: "session.start", origin: "practice" }),
+  ]);
+  expect((await f.snapshot()).blocker).not.toBeNull();
   expect(f.captures.filter((command) => command.type === "capture.start")).toHaveLength(5);
   expect((await f.snapshot()).recovery).toEqual(before.recovery);
 });
@@ -138,11 +141,14 @@ it("reopens capacity only after the unresolved source is discarded and rejects u
     error: "invalid-command",
   });
   await f.execute({ type: "recovery.copy", id });
-  expect((await f.snapshot()).canStart).toBe(false);
+  expect((await f.snapshot()).blocker).not.toBeNull();
   await f.execute({ type: "recovery.discard", id });
-  expect((await f.snapshot()).canStart).toBe(true);
+  expect((await f.snapshot()).blocker).toBeNull();
   expect(f.captures.filter((command) => command.type === "capture.start")).toHaveLength(5);
-  await Promise.all([f.execute({ type: "session.start" }), f.execute({ type: "session.start" })]);
+  await Promise.all([
+    f.execute({ type: "session.start", origin: "practice" }),
+    f.execute({ type: "session.start", origin: "practice" }),
+  ]);
   expect(f.captures.filter((command) => command.type === "capture.start")).toHaveLength(6);
 });
 
@@ -218,7 +224,7 @@ it("warns before quit, returns to recovery without starting capture, and require
   await f.execute({ type: "app.quit" });
   expect((await f.snapshot()).quitWarning).toBe(true);
   expect(f.quit.confirmed).toBe(false);
-  await f.execute({ type: "session.start" });
+  await f.execute({ type: "session.start", origin: "practice" });
   expect(f.captures.filter((command) => command.type === "capture.start")).toHaveLength(1);
   await f.execute({ type: "app.quit.cancel" });
   expect((await f.snapshot()).quitWarning).toBe(false);

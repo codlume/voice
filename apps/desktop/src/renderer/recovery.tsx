@@ -84,7 +84,12 @@ export function RecoveryView({
       "Check your target. Text remains available and will not be pasted again automatically.",
   } as const;
   return (
-    <section {...stylex.props(styles.section)} aria-label="Temporary recovery">
+    <section
+      id="section-recovery"
+      tabIndex={-1}
+      {...stylex.props(styles.section)}
+      aria-label="Temporary recovery"
+    >
       <h2 {...stylex.props(styles.heading)}>Temporary recovery</h2>
       {session?.quitWarning && (
         <div

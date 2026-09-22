@@ -23,6 +23,18 @@ public struct SetupShortcuts: Sendable, Equatable {
     public let cancel: ShortcutBinding
     public var values: [ShortcutBinding] { [hold, toggle, cancel] }
 }
+// Where the helper takes floating-bar clicks over, in screen points with a top-left origin, and
+// the bar's CGWindowID.
+public struct BarRegion: Sendable, Equatable {
+    public let x: Double, y: Double, width: Double, height: Double
+    public let window: UInt32
+    public init(x: Double, y: Double, width: Double, height: Double, window: UInt32) {
+        self.x = x; self.y = y; self.width = width; self.height = height; self.window = window
+    }
+    public func contains(x px: Double, y py: Double) -> Bool {
+        px >= x && px < x + width && py >= y && py < y + height
+    }
+}
 public enum ShortcutAvailability: String, Encodable, Sendable { case available, conflict, unavailable }
 public struct SetupShortcutStatus: Encodable, Sendable {
     public let hold: ShortcutAvailability
@@ -58,7 +70,7 @@ public enum TargetStatus: String, Encodable, Sendable { case eligible, none, uns
 public enum InsertionOutcome: String, Encodable, Sendable { case inserted, changed, closed, protected, unsupported, missing, failed, uncertain }
 public enum SetupCommand: Sendable {
     case status(SetupShortcuts), requestPermission(SetupPermission), credentialStatus, setCredential(String), removeCredential
-    case configureShortcuts(SetupShortcuts, active: Bool)
+    case configureShortcuts(SetupShortcuts, active: Bool, bar: BarRegion?)
     case captureTarget(String), armTarget(String), releaseTarget(String), insertTarget(String, text: String)
 }
 private func shortcuts(_ value: Any?) -> SetupShortcuts? {
@@ -68,6 +80,21 @@ private func shortcuts(_ value: Any?) -> SetupShortcuts? {
           let toggle = bindings["toggle"].flatMap(ShortcutBinding.init),
           let cancel = bindings["cancel"].flatMap(ShortcutBinding.init) else { return nil }
     return SetupShortcuts(hold: hold, toggle: toggle, cancel: cancel)
+}
+private func number(_ value: Any?, _ range: ClosedRange<Double>) -> Double? {
+    guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+          range.contains(value.doubleValue) else { return nil }
+    return value.doubleValue
+}
+// nil for an invalid value; .some(nil) for an explicit null.
+private func barRegion(_ value: Any?) -> BarRegion?? {
+    if value is NSNull { return .some(nil) }
+    guard let region = value as? [String: Any], Set(region.keys) == Set(["x", "y", "width", "height", "window"]),
+          let x = number(region["x"], -100_000...100_000), let y = number(region["y"], -100_000...100_000),
+          let width = number(region["width"], .ulpOfOne...10_000), let height = number(region["height"], .ulpOfOne...10_000),
+          let window = number(region["window"], 1...Double(UInt32.max)), window.rounded() == window
+    else { return nil }
+    return .some(BarRegion(x: x, y: y, width: width, height: height, window: UInt32(window)))
 }
 private func identity(_ value: Any?) -> String? {
     guard let session = value as? String, !session.isEmpty, session.count <= 64 else { return nil }
@@ -94,9 +121,10 @@ public struct SetupRequest: Sendable {
             guard Set(command.keys) == Set(["type", "shortcuts"]), let bindings = shortcuts(command["shortcuts"]) else { return nil }
             self.command = .status(bindings)
         case "shortcut.configure":
-            guard Set(command.keys) == Set(["type", "shortcuts", "active"]), let bindings = shortcuts(command["shortcuts"]),
-                  let active = command["active"] as? NSNumber, CFGetTypeID(active) == CFBooleanGetTypeID() else { return nil }
-            self.command = .configureShortcuts(bindings, active: active.boolValue)
+            guard Set(command.keys) == Set(["type", "shortcuts", "active", "bar"]), let bindings = shortcuts(command["shortcuts"]),
+                  let active = command["active"] as? NSNumber, CFGetTypeID(active) == CFBooleanGetTypeID(),
+                  let bar = barRegion(command["bar"]) else { return nil }
+            self.command = .configureShortcuts(bindings, active: active.boolValue, bar: bar)
         case "target.capture", "target.arm", "target.release":
             guard Set(command.keys) == Set(["type", "session"]), let session = identity(command["session"]) else { return nil }
             self.command = type == "target.capture" ? .captureTarget(session) : type == "target.arm" ? .armTarget(session) : .releaseTarget(session)

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { InsertionOutcome, TargetStatus } from "./session";
+import { InsertionOutcome, TargetStatus, screenCoordinate } from "./session";
 
 const boundedText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 export const permissionNames = ["microphone", "accessibility", "inputMonitoring"] as const;
@@ -110,17 +110,30 @@ export const SetupCommand = Schema.Union([
 ]);
 export type SetupCommand = typeof SetupCommand.Type;
 const targetIdentity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
+const extent = Schema.Number.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(10_000));
+// The screen area where the helper takes clicks over, and the bar's CGWindowID. Only clicks whose
+// topmost window is the bar itself are taken over.
+export const BarRegion = Schema.Struct({
+  x: screenCoordinate,
+  y: screenCoordinate,
+  width: extent,
+  height: extent,
+  window: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+});
+export type BarRegion = typeof BarRegion.Type;
 export const NativeSetupCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("setup.status"), shortcuts: Shortcuts }),
   RequestPermission,
   Schema.Struct({ type: Schema.Literal("credential.status") }),
   SetCredential,
   RemoveCredential,
-  // Full desired shortcut state. `active` lets the helper consume the cancel key during a session.
+  // Full desired event-tap state. `active` lets the helper consume the cancel key during a
+  // session; `bar` is the floating bar's screen rectangle, whose clicks the helper takes over.
   Schema.Struct({
     type: Schema.Literal("shortcut.configure"),
     shortcuts: Shortcuts,
     active: Schema.Boolean,
+    bar: Schema.NullOr(BarRegion),
   }),
   Schema.Struct({
     type: Schema.Literals(["target.capture", "target.arm", "target.release"]),

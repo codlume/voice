@@ -25,6 +25,10 @@ final class TargetService: @unchecked Sendable {
     private var armed: (session: String, since: DispatchTime)?
     private var lastInput = DispatchTime.now()
     private var evaluation = 0
+    // Without NSApplication, NSWorkspace.frontmostApplication stays stale unless the process
+    // observes workspace activation. This observer keeps it current between sessions, so a
+    // session never remembers, or revalidates against, an app the user already left.
+    private var frontmost: NSObjectProtocol?
     // Terminals need a non-executing route, which is not established yet.
     private let terminals: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp",
@@ -46,6 +50,9 @@ final class TargetService: @unchecked Sendable {
         started.wait()
         guard let loop = box.value else { fatalError("Target thread did not start") }
         self.loop = loop
+        frontmost = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
+        ) { _ in }
     }
 
     // Handles target commands on the service thread; other commands return nil without hopping.

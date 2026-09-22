@@ -3,9 +3,12 @@ import {
   BrowserWindow,
   clipboard,
   ipcMain,
+  Menu,
+  nativeImage,
   screen,
   session,
   net,
+  Tray,
   type IpcMainInvokeEvent,
 } from "electron";
 import { createSession } from "./session";
@@ -15,17 +18,24 @@ import { createSetup } from "./setup";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
-import { defaultSettings, commandChannel, type Status } from "@voice/contracts/desktop";
-import { decodeShortcutEvent } from "@voice/contracts/session";
+import {
+  defaultSettings,
+  commandChannel,
+  revealChannel,
+  type Status,
+  type View,
+} from "@voice/contracts/desktop";
+import { decodeShortcutEvent, type BarPointerEvent } from "@voice/contracts/session";
 import {
   decodeNativeSetupResult,
   type NativeSetupCommand,
   type NativeSetupResult,
 } from "@voice/contracts/setup";
 import { launchHelper } from "@voice/platform/macos";
-import { createCommands } from "./commands";
+import { createCommands, floatingBarPermits } from "./commands";
 import { StorageWorker } from "./storage";
 import { dataDirectory } from "./data-directory";
+import { menuEntries, type MenuEntry } from "./menu-bar";
 
 const testDirectory = process.argv
   .find((argument) => argument.startsWith("--voice-test-data="))
@@ -44,9 +54,14 @@ if (devUrl && !/^http:\/\/127\.0\.0\.1:\d+\/$/.test(devUrl))
   throw new Error("Invalid development server");
 let window: BrowserWindow | undefined;
 let panel: BrowserWindow | undefined;
-let panelHide: ReturnType<typeof setTimeout> | undefined;
-let panelSync: ReturnType<typeof setImmediate> | undefined;
+let panelTimer: ReturnType<typeof setTimeout> | undefined;
+let presentation: ReturnType<typeof setImmediate> | undefined;
 let panelShown = "";
+let outcomeUntil = 0;
+let tray: Tray | undefined;
+let trayMenu: Menu | undefined;
+let trayRecording: boolean | undefined;
+let trayShown = "";
 export let helper: ReturnType<typeof launchHelper> | undefined;
 let helperState: Status["helper"] = "starting";
 let shortcutState: Status["shortcuts"] = "unavailable";
@@ -63,10 +78,11 @@ const webPreferences = {
 function notify() {
   for (const target of [window, panel])
     if (target && !target.isDestroyed()) target.webContents.send("voice:changed");
-  // Window presentation stays off the shortcut and capture path.
-  panelSync ??= setImmediate(() => {
-    panelSync = undefined;
+  // Window and menu presentation stays off the shortcut and capture path.
+  presentation ??= setImmediate(() => {
+    presentation = undefined;
     syncPanel();
+    syncTray();
   });
 }
 async function request<Kind extends NativeSetupResult["type"]>(
@@ -78,12 +94,17 @@ async function request<Kind extends NativeSetupResult["type"]>(
   if (result.type !== kind) throw new Error("native-unavailable");
   return result as Extract<NativeSetupResult, { type: Kind }>;
 }
-// The helper holds the full desired shortcut state, so a restart or setup change resends it.
+// The helper holds the full desired event-tap state, so a restart or any change resends it.
 async function syncShortcuts() {
   if (!helper || helperState !== "ready") return;
   try {
     const result = await request(
-      { type: "shortcut.configure", shortcuts: commands.preferences().shortcuts, active: engaged },
+      {
+        type: "shortcut.configure",
+        shortcuts: commands.preferences().shortcuts,
+        active: engaged,
+        bar: barRegion(),
+      },
       "shortcuts",
     );
     shortcutState = result.listening ? "listening" : "unavailable";
@@ -97,6 +118,7 @@ const commands = createCommands<IpcMainInvokeEvent>({
     quitConfirmed = confirmed;
     app.quit();
   },
+  open: (view) => void openView(view),
   setup: () => setup,
   session: () => dictation,
   initialSettings: defaultSettings,
@@ -112,7 +134,7 @@ const commands = createCommands<IpcMainInvokeEvent>({
         event.senderFrame === target.webContents.mainFrame &&
         event.senderFrame.url === url,
     ),
-  permitted: (event, command) => event.sender !== panel?.webContents || command === "status.get",
+  permitted: (event, command) => event.sender !== panel?.webContents || floatingBarPermits(command),
   storage: { set: (settings) => storage.set(settings), restart: () => storage.restart() },
   status: () => ({
     storage: storage?.state ?? "starting",
@@ -189,10 +211,26 @@ export const dictation = createSession({
 export const practice = dictation;
 if (testDirectory) {
   // Packaged tests drive the shortcut path without a native key tap. The real-key proof is separate.
+  // The menu hook reads and clicks the real menu-bar Menu; native menu clicks are proved separately.
   Object.assign(globalThis, {
     voiceTest: {
       shortcut: (action: unknown) =>
         dictation.shortcut(decodeShortcutEvent({ type: "shortcut", action }).action),
+      menu: () =>
+        trayMenu?.items.map(({ label, enabled, sublabel, type }) => ({
+          label,
+          enabled,
+          sublabel,
+          type,
+        })) ?? [],
+      menuClick: (label: string) => {
+        const item = trayMenu?.items.find((entry) => entry.label === label);
+        if (!item?.enabled) return false;
+        item.click();
+        return true;
+      },
+      panelBounds: () => panel?.getBounds(),
+      trayBounds: () => tray?.getBounds(),
     },
   });
 }
@@ -229,11 +267,12 @@ async function createWindow() {
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   await window.loadURL(expectedUrl);
 }
-// A non-activating panel keeps the external target focused while it shows session status.
+// The floating bar. It never takes focus, and its clicks arrive through replayBarPointer, so the
+// external target stays focused while the user controls a session from it.
 async function createPanel() {
   panel = new BrowserWindow({
-    width: 420,
-    height: 84,
+    width: compactSize.width,
+    height: compactSize.height,
     show: false,
     frame: false,
     resizable: false,
@@ -242,10 +281,13 @@ async function createPanel() {
     maximizable: false,
     fullscreenable: false,
     focusable: false,
+    // The helper takes real clicks on the bar over and replays them, so they never activate
+    // Voice. Without its event tap, a click still reaches the controls but activates Voice.
+    acceptFirstMouse: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: true,
-    backgroundColor: "#172b45",
+    backgroundColor: "#202e40",
     title: "Voice status",
     type: "panel",
     webPreferences,
@@ -262,7 +304,10 @@ async function createPanel() {
   });
   await panel.loadURL(panelUrl);
 }
-function syncPanel() {
+// The floating bar stays docked in compact form after setup. It expands while a session or paste
+// runs, briefly for a dictation outcome, and while setup or recovery blocks Start. Before setup
+// it appears only for shortcut dictation. Nothing animates, so an idle bar repaints nothing.
+function syncPanel(reposition = false) {
   const current = panel;
   if (!current || current.isDestroyed() || closing) return;
   const snapshot = dictation.snapshot();
@@ -270,31 +315,132 @@ function syncPanel() {
     ["starting", "recording", "processing", "inserting"].includes(snapshot.phase) ||
     snapshot.armedPaste !== null;
   const external = snapshot.origin === "dictation" || snapshot.armedPaste !== null;
-  // Any new outcome from a shortcut session flashes briefly, including a refused start.
-  const shown = `${snapshot.phase}\n${snapshot.message}\n${snapshot.armedPaste ?? ""}`;
-  const changed = shown !== panelShown;
+  // Any new outcome from a dictation session shows briefly, including a refused start, and so
+  // does a Copy or Paste outcome, which the menu has no other place to report.
+  const recovery = snapshot.lastUpdate === "recovery";
+  const shown = `${snapshot.phase}\n${snapshot.message}\n${snapshot.armedPaste ?? ""}\n${
+    recovery ? snapshot.recoveryMessage : ""
+  }`;
+  if (shown !== panelShown && (external || recovery) && !busy) outcomeUntil = Date.now() + 2_500;
   panelShown = shown;
-  if (external && (busy || changed)) {
-    clearTimeout(panelHide);
-    panelHide = undefined;
-    if (!current.isVisible()) {
-      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-      const { x, y, width, height } = display.workArea;
-      const [panelWidth, panelHeight] = current.getSize();
-      current.setPosition(
-        Math.round(x + (width - (panelWidth ?? 0)) / 2),
-        Math.round(y + height - (panelHeight ?? 0) - 24),
-      );
-      current.showInactive();
-    }
-    if (busy) return;
+  const docked = commands.preferences().completed;
+  const blocked = snapshot.blocker === "setup" || snapshot.blocker === "recovery-full";
+  const size =
+    (busy && (external || docked)) || Date.now() < outcomeUntil || (docked && blocked)
+      ? expandedSize
+      : docked
+        ? compactSize
+        : undefined;
+  clearTimeout(panelTimer);
+  panelTimer = undefined;
+  if (Date.now() < outcomeUntil)
+    panelTimer = setTimeout(() => syncPanel(), outcomeUntil - Date.now());
+  if (!size) {
+    if (current.isVisible()) current.hide();
+    syncBarRegion();
+    return;
   }
-  if (current.isVisible() && !panelHide) {
-    panelHide = setTimeout(() => {
-      panelHide = undefined;
-      if (!current.isDestroyed()) current.hide();
-    }, 2_500);
+  const bounds = current.getBounds();
+  if (!current.isVisible() || reposition || bounds.width !== size.width) {
+    // Anchor the bar to the bottom center of the display it is on, or the pointer's display.
+    const display = current.isVisible()
+      ? screen.getDisplayMatching(bounds)
+      : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const { x, y, width, height } = display.workArea;
+    current.setBounds({
+      x: Math.round(x + (width - size.width) / 2),
+      y: Math.round(y + height - size.height - 24),
+      ...size,
+    });
   }
+  if (!current.isVisible()) current.showInactive();
+  syncBarRegion();
+}
+let barShown = "";
+function syncBarRegion() {
+  const region = JSON.stringify(barRegion());
+  if (region === barShown) return;
+  barShown = region;
+  void syncShortcuts();
+}
+// Both bar sizes share a bottom-center anchor, so the expanded footprint covers the bar before
+// and after a resize and the helper's copy never lags behind it. The helper takes a click over
+// only when the bar's own window is topmost at that point.
+function barRegion() {
+  if (!panel || panel.isDestroyed() || !panel.isVisible()) return null;
+  const windowId = Number(panel.getMediaSourceId().split(":")[1]);
+  if (!Number.isInteger(windowId) || windowId <= 0) return null;
+  const { x, y, width, height } = panel.getBounds();
+  return {
+    x: Math.round(x + width / 2 - expandedSize.width / 2),
+    y: y + height - expandedSize.height,
+    ...expandedSize,
+    window: windowId,
+  };
+}
+// A real click the helper took over from the floating bar. Replaying it into the web contents,
+// rather than letting the window server deliver it, keeps Voice inactive and the target focused.
+function replayBarPointer(event: BarPointerEvent) {
+  if (!panel || panel.isDestroyed()) return;
+  const contents = panel.webContents;
+  const bounds = panel.getBounds();
+  const [x, y, phase] = [event.x - bounds.x, event.y - bounds.y, event.phase];
+  if (phase === "down") contents.sendInputEvent({ type: "mouseMove", x, y });
+  contents.sendInputEvent({
+    type: phase === "down" ? "mouseDown" : "mouseUp",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+}
+const compactSize = { width: 112, height: 40 };
+const expandedSize = { width: 480, height: 84 };
+function trayImage(recording: boolean) {
+  const image = nativeImage
+    .createFromNamedImage(
+      recording ? "NSTouchBarRecordStartTemplate" : "NSTouchBarAudioInputTemplate",
+    )
+    .resize({ height: 18 });
+  image.setTemplateImage(true);
+  return image;
+}
+function buildMenu(entries: MenuEntry[]) {
+  return Menu.buildFromTemplate(
+    entries.map((entry) =>
+      "type" in entry
+        ? entry
+        : {
+            label: entry.label,
+            enabled: entry.enabled,
+            ...(entry.sublabel ? { sublabel: entry.sublabel } : {}),
+            ...(entry.run ? { click: entry.run } : {}),
+          },
+    ),
+  );
+}
+// Menu-bar commands act on the same session as every other entry point.
+function syncTray() {
+  if (closing || !app.isReady()) return;
+  if (!tray || tray.isDestroyed()) tray = new Tray(trayImage(false));
+  const snapshot = dictation.snapshot();
+  const recording = snapshot.phase === "recording";
+  if (recording !== trayRecording) {
+    trayRecording = recording;
+    tray.setImage(trayImage(recording));
+    tray.setToolTip(recording ? "Voice · Recording" : "Voice");
+  }
+  const entries = menuEntries(snapshot, {
+    session: (command) => void dictation.execute(command),
+    open: (view) => void openView(view),
+    quit: () => app.quit(),
+  });
+  // Rebuild only when what the menu shows, or the transcript its Copy and Paste target, changed.
+  const shown = JSON.stringify([entries, snapshot.lastTranscript]);
+  if (shown === trayShown) return;
+  trayShown = shown;
+  trayMenu = buildMenu(entries);
+  tray.setContextMenu(trayMenu);
 }
 
 app
@@ -338,6 +484,7 @@ app
         syntheticCapture: !!fixtureUrl,
         captureEvent: (event) => dictation.captureEvent(event),
         shortcut: (event) => dictation.shortcut(event.action),
+        barPointer: (event) => replayBarPointer(event),
         targetSelected: (event) => dictation.targetSelected(event),
       },
     );
@@ -356,6 +503,10 @@ app
     if (closing) return;
     await createWindow();
     await createPanel();
+    syncTray();
+    screen.on("display-added", () => syncPanel(true));
+    screen.on("display-removed", () => syncPanel(true));
+    screen.on("display-metrics-changed", () => syncPanel(true));
     void Promise.all([helper.ready, storageReady]).then(
       async () => {
         await setup.refresh().catch(() => {});
@@ -388,6 +539,16 @@ async function showWindow() {
   current.show();
   current.focus();
 }
+// Opening a section is an explicit action; it may move focus to Voice, which disqualifies
+// automatic insertion for a running dictation session and keeps its transcript in recovery.
+async function openView(view: View) {
+  if (closing) return;
+  await showWindow();
+  // Menu-bar and floating-bar clicks leave another app active; this explicit request brings Voice.
+  app.focus({ steal: true });
+  const current = window;
+  if (current && !current.isDestroyed()) current.webContents.send(revealChannel, view);
+}
 app.on("activate", () => {
   if (!closing) void showWindow();
 });
@@ -400,9 +561,10 @@ app.on("before-quit", (event) => {
     return;
   }
   closing = true;
-  clearTimeout(panelHide);
+  clearTimeout(panelTimer);
   dictation.close();
   if (panel && !panel.isDestroyed()) panel.destroy();
+  tray?.destroy();
   void Promise.allSettled([storage?.close(), helper?.close(), provider.close()]).then(() =>
     app.quit(),
   );

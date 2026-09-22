@@ -8,6 +8,7 @@ test("production CSS and simulated preload save a preference and report a failed
     let writes = 0;
     window.voice = {
       onChanged: () => () => {},
+      onReveal: () => () => {},
       command: async (command) => {
         if (command.type === "settings.set") {
           writes += 1;
@@ -46,6 +47,7 @@ test("shared setup controls show repair actions, clear submitted secrets, and ke
     let microphoneRequested = false;
     window.voice = {
       onChanged: () => () => {},
+      onReveal: () => () => {},
       command: async (command) => {
         if (command.type === "permission.request" && command.permission === "microphone")
           microphoneRequested = true;
