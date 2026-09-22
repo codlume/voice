@@ -35,10 +35,15 @@ export function startStream(
     queue.length = 0;
     socket.terminate();
   }
-  function fail(reason: ProviderFailure) {
+  function fail(reason: ProviderFailure, retryAfter?: number) {
     if (ended) return;
     cancel();
-    emit({ type: "failed", ...identity, reason });
+    emit({
+      type: "failed",
+      ...identity,
+      reason,
+      ...(retryAfter === undefined ? {} : { retryAfter }),
+    });
   }
   function pump() {
     if (ended || !opened || timer) return;
@@ -76,16 +81,22 @@ export function startStream(
     pump();
   });
   socket.on("unexpected-response", (_request, response) => {
-    // An HTTP 429 is rate limiting, never evidence of exhausted account quota.
+    // An HTTP 429 is rate limiting, never evidence of exhausted account quota. Its Retry-After
+    // seconds, when present, tell the session how long to wait before its one automatic retry.
     response.resume();
+    if (response.statusCode === 429) {
+      const seconds = /^\d{1,4}$/.test(response.headers["retry-after"] ?? "")
+        ? Number(response.headers["retry-after"])
+        : undefined;
+      fail("rate-limit", seconds === undefined ? undefined : Math.min(seconds, 3_600) * 1_000);
+      return;
+    }
     fail(
       response.statusCode === 401 || response.statusCode === 403
         ? "rejected"
         : response.statusCode === 402
           ? "quota"
-          : response.statusCode === 429
-            ? "rate-limit"
-            : "connection",
+          : "connection",
     );
   });
   socket.on("error", () => fail("connection"));
@@ -105,6 +116,12 @@ export function startStream(
   });
   socket.on("close", (code) => {
     if (ended) return;
+    // An abnormal closure is a lost transport, which the session may replay once; any other
+    // early or unaccounted close is an incomplete provider result.
+    if (code === 1006) {
+      fail("connection");
+      return;
+    }
     try {
       if (!closeSent || code !== 1000 || sentSamples !== receivedSamples)
         throw new Error("incomplete-stream");

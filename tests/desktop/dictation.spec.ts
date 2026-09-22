@@ -118,8 +118,15 @@ const panelState = (app: ElectronApplication) =>
     };
   });
 const isPanelPage = (page: Page) => page.url().includes("view=status");
-const panelPage = async (app: ElectronApplication) =>
-  app.windows().find(isPanelPage) ?? app.waitForEvent("window", { predicate: isPanelPage });
+// Playwright learns the bar's URL from its renderer, while Electron main records the same commit
+// over a separate channel. Wait until main can find the bar before callers inspect its window.
+const panelPage = async (app: ElectronApplication) => {
+  const page =
+    app.windows().find(isPanelPage) ??
+    (await app.waitForEvent("window", { predicate: isPanelPage }));
+  await expect.poll(async () => (await panelState(app)).visible).not.toBeNull();
+  return page;
+};
 
 test("packaged shortcut dictation runs one session per press, shows non-activating status, and keeps an unplaceable transcript in recovery", async () => {
   test.setTimeout(90_000);
@@ -224,17 +231,25 @@ const panelWidth = (app: ElectronApplication) =>
       ).voiceTest.panelBounds().width,
   );
 // Counts repaints of each window while nothing happens; idle Voice should paint nothing.
-// Subscribing delivers the current frame once, so frames from a short settle window are dropped.
+// Subscribing delivers the current frame once, late on a loaded runner, so counting starts only
+// after every window has delivered it.
 const idleRepaints = (app: ElectronApplication, milliseconds: number) =>
   app.evaluate(async ({ BrowserWindow }, duration) => {
     const counts = BrowserWindow.getAllWindows().map((window) => {
       const count = { url: window.webContents.getURL(), frames: 0 };
+      const { promise: delivered, resolve: deliver } = Promise.withResolvers<void>();
       window.webContents.beginFrameSubscription(true, () => {
         count.frames += 1;
+        deliver();
       });
-      return { window, count };
+      return { window, count, delivered };
     });
-    await new Promise((done) => setTimeout(done, 500));
+    await Promise.race([
+      Promise.all(counts.map(({ delivered }) => delivered)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("A window never delivered its current frame")), 10_000),
+      ),
+    ]);
     for (const { count } of counts) count.frames = 0;
     await new Promise((done) => setTimeout(done, duration));
     for (const { window } of counts) window.webContents.endFrameSubscription();

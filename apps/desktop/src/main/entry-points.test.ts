@@ -28,6 +28,7 @@ function fixture(
   const opened: View[] = [];
   const owner = createSession({
     available: overrides.available ?? (() => true),
+    online: () => true,
     device: () => null,
     credential: async () => "synthetic",
     capture: (command) => capture.push(command),
@@ -304,7 +305,7 @@ it("full recovery and incomplete setup block Start from every entry point with t
 
 it("notices distinguish connection warnings, the time limit, no speech, and incomplete capture", async () => {
   vi.useFakeTimers();
-  const { owner, send, identity, frame, finish } = fixture();
+  const { owner, send, identity, frame, finish, provider } = fixture();
   await send("bar", { type: "session.start", origin: "dictation" });
   await vi.advanceTimersByTimeAsync(0);
   frame();
@@ -312,10 +313,19 @@ it("notices distinguish connection warnings, the time limit, no speech, and inco
   expect(owner.snapshot()).toMatchObject({
     phase: "recording",
     notice: "connection",
-    message: expect.stringContaining("transcription needs internet"),
+    message: expect.stringContaining("Recording continues"),
   });
   await send("bar", { type: "session.stop" });
   owner.captureEvent({ type: "capture.stopped", ...identity(), frames: 1, samples: 320 });
+  await vi.advanceTimersByTimeAsync(0);
+  const replay = provider.findLast((command) => command.type === "start");
+  if (!replay) throw new Error("No replay started");
+  owner.providerEvent({
+    type: "failed",
+    session: replay.session,
+    attempt: replay.attempt,
+    reason: "connection",
+  });
   expect(owner.snapshot()).toMatchObject({
     phase: "failed",
     notice: "connection",

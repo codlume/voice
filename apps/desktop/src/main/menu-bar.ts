@@ -74,8 +74,14 @@ export function menuEntries(
 export function statusLabel({ phase, armedPaste, blocker, notice }: SessionSnapshot) {
   if (armedPaste) return "Paste: click the destination field";
   if (phase === "starting") return "Starting microphone…";
-  if (phase === "recording") return notice === "connection" ? "Recording · offline" : "Recording";
-  if (phase === "processing") return "Transcribing…";
+  if (phase === "recording")
+    return notice === "connection"
+      ? "Recording · offline"
+      : notice === "rate-limit"
+        ? "Recording · rate limited"
+        : "Recording";
+  if (phase === "processing")
+    return notice === "connection" ? "Transcribing · waiting for connection" : "Transcribing…";
   if (phase === "inserting") return "Inserting…";
   if (blocker === "setup") return "Setup needs attention";
   if (blocker === "recovery-full") return "Recovery is full";

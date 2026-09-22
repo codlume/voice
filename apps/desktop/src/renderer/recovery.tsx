@@ -75,6 +75,13 @@ export function RecoveryView({
   }
   const latest = session?.latestSuccessful;
   const armed = session?.armedPaste ?? null;
+  const retrying = session?.retrying ?? null;
+  // Retry needs no microphone or free slot; it waits only for the current session or paste.
+  const retryBlocked =
+    !session ||
+    session.blocker === "busy" ||
+    session.blocker === "paste" ||
+    session.blocker === "quitting";
   const deliveryNotes = {
     undelivered: "",
     copied: "Text copied. The incomplete recording remains unresolved.",
@@ -123,6 +130,15 @@ export function RecoveryView({
           Recovery is full. Resolve or discard a session before starting another.
         </p>
       )}
+      {session?.recovery.some((entry) => entry.hasAudio) && (
+        <p {...stylex.props(styles.text)}>
+          Retry replays the complete recording with the microphone off, at no more than 1.25× real
+          time. It must finish within 10 seconds for recordings up to 30 seconds, or 30 seconds for
+          longer ones. A 30-second recording takes at least 24 seconds and a five-minute recording
+          at least 240 seconds before finalization, so a replay that cannot fit its limit times out
+          and the recording stays here.
+        </p>
+      )}
       {session?.recovery.map((entry, index) => (
         <article
           key={entry.id}
@@ -138,8 +154,9 @@ export function RecoveryView({
           <p {...stylex.props(styles.text)}>{entry.cause}</p>
           {entry.hasAudio && (
             <p {...stylex.props(styles.text)}>
-              The recording is retained. Copy and Paste resolve only the available text; Discard
-              also removes the recording.
+              {retrying === entry.id
+                ? "Retrying transcription from this recording. The microphone stays off."
+                : "The recording is retained. Copy and Paste resolve only the available text; Retry transcribes the recording again; Discard also removes the recording."}
             </p>
           )}
           {entry.delivery !== "undelivered" && (
@@ -158,6 +175,19 @@ export function RecoveryView({
             >
               Paste
             </SaveButton>
+            {entry.hasAudio &&
+              (retrying === entry.id ? (
+                <SaveButton disabled={busy} onClick={() => void run({ type: "session.cancel" })}>
+                  Cancel retry
+                </SaveButton>
+              ) : (
+                <SaveButton
+                  disabled={busy || retryBlocked}
+                  onClick={() => void run({ type: "recovery.retry", id: entry.id })}
+                >
+                  Retry
+                </SaveButton>
+              ))}
             <SaveButton
               disabled={busy}
               onClick={() => void run({ type: "recovery.discard", id: entry.id })}

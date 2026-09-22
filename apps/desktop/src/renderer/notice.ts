@@ -14,7 +14,7 @@ export function repairAction({
     notice === "not-inserted" ||
     notice === "uncertain" ||
     notice === "recovery-full" ||
-    (notice === "connection" && phase === "failed") ||
+    ((notice === "connection" || notice === "rate-limit") && phase === "failed") ||
     blocker === "recovery-full"
   )
     return { view: "recovery", label: "Open recovery" };
