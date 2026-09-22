@@ -29,6 +29,7 @@ struct SetupService {
         case .credentialStatus: return credential(type: "credential.status", key: nil)
         case .removeCredential: return credential(type: "credential.remove", key: nil)
         case .setCredential(let key): return credential(type: "credential.set", key: key)
+        default: return .error(.invalidCommand)
         }
     }
 

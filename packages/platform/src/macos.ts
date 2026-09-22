@@ -1,8 +1,12 @@
 import {
   decodeCaptureCommand,
   decodeCaptureEvent,
+  decodeShortcutEvent,
+  decodeTargetSelected,
   type CaptureCommand,
   type CaptureEvent,
+  type ShortcutEvent,
+  type TargetSelected,
 } from "@voice/contracts/session";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -30,6 +34,10 @@ export function launchHelper(
   testKeychainService?: string,
   captureEvent?: (event: CaptureEvent) => void,
   syntheticCapture = false,
+  native?: {
+    shortcut?: (event: ShortcutEvent) => void;
+    targetSelected?: (event: TargetSelected) => void;
+  },
 ) {
   const child = spawn(executable, [], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -130,6 +138,20 @@ export function launchHelper(
           captureIdentity = undefined;
         }
         captureEvent?.(event);
+      } else if (
+        typeof value === "object" &&
+        value !== null &&
+        "type" in value &&
+        value.type === "shortcut"
+      ) {
+        native?.shortcut?.(decodeShortcutEvent(value));
+      } else if (
+        typeof value === "object" &&
+        value !== null &&
+        "type" in value &&
+        value.type === "target.selected"
+      ) {
+        native?.targetSelected?.(decodeTargetSelected(value));
       } else if (
         typeof value === "object" &&
         value !== null &&

@@ -74,6 +74,15 @@ export function RecoveryView({
     }
   }
   const latest = session?.latestSuccessful;
+  const armed = session?.armedPaste ?? null;
+  const deliveryNotes = {
+    undelivered: "",
+    copied: "Text copied. The incomplete recording remains unresolved.",
+    inserted: "Text inserted. The incomplete recording remains unresolved.",
+    failed: "Delivery failed. Text remains available.",
+    uncertain:
+      "Check your target. Text remains available and will not be pasted again automatically.",
+  } as const;
   return (
     <section {...stylex.props(styles.section)} aria-label="Temporary recovery">
       <h2 {...stylex.props(styles.heading)}>Temporary recovery</h2>
@@ -124,17 +133,12 @@ export function RecoveryView({
           <p {...stylex.props(styles.text)}>{entry.cause}</p>
           {entry.hasAudio && (
             <p {...stylex.props(styles.text)}>
-              The recording is retained. Copy resolves only the available text; Discard also removes
-              the recording.
+              The recording is retained. Copy and Paste resolve only the available text; Discard
+              also removes the recording.
             </p>
           )}
-          {entry.delivery === "copied" && (
-            <p {...stylex.props(styles.text)}>
-              Text copied. The incomplete recording remains unresolved.
-            </p>
-          )}
-          {entry.delivery === "failed" && (
-            <p {...stylex.props(styles.text)}>Copy failed. Text remains available.</p>
+          {entry.delivery !== "undelivered" && (
+            <p {...stylex.props(styles.text)}>{deliveryNotes[entry.delivery]}</p>
           )}
           <div {...stylex.props(styles.controls)}>
             <SaveButton
@@ -142,6 +146,12 @@ export function RecoveryView({
               onClick={() => void run({ type: "recovery.copy", id: entry.id })}
             >
               Copy
+            </SaveButton>
+            <SaveButton
+              disabled={busy || !entry.text || !!armed}
+              onClick={() => void run({ type: "recovery.paste", id: entry.id })}
+            >
+              Paste
             </SaveButton>
             <SaveButton
               disabled={busy}
@@ -166,6 +176,12 @@ export function RecoveryView({
               Copy
             </SaveButton>
             <SaveButton
+              disabled={busy || !!armed}
+              onClick={() => void run({ type: "recovery.paste", id: latest.id })}
+            >
+              Paste
+            </SaveButton>
+            <SaveButton
               disabled={busy}
               onClick={() => void run({ type: "recovery.discard", id: latest.id })}
             >
@@ -177,6 +193,13 @@ export function RecoveryView({
       <p aria-live="polite" data-testid="recovery-status" {...stylex.props(styles.text)}>
         {error || session?.recoveryMessage}
       </p>
+      {armed && (
+        <div {...stylex.props(styles.controls)}>
+          <SaveButton disabled={busy} onClick={() => void run({ type: "session.cancel" })}>
+            Cancel paste
+          </SaveButton>
+        </div>
+      )}
       <SaveButton disabled={busy} onClick={() => void run({ type: "app.quit" })}>
         Quit Voice
       </SaveButton>

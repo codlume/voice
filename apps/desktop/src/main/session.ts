@@ -2,13 +2,17 @@ import { randomUUID } from "node:crypto";
 import {
   decodeCaptureEvent,
   decodeProviderEvent,
+  decodeTargetSelected,
   type Attempt,
   type CaptureCommand,
+  type InsertionOutcome,
   type ProviderRequest,
   type SessionCommand,
   type SessionSnapshot,
   type ProviderFailure,
   type RecoveryEntry,
+  type ShortcutAction,
+  type TargetStatus,
 } from "@voice/contracts/session";
 
 const failureMessages: Record<ProviderFailure, string> = {
@@ -21,7 +25,28 @@ const failureMessages: Record<ProviderFailure, string> = {
     "The provider response did not match the required model or stream. Available work remains in memory.",
   worker: "The transcription worker stopped. Available work remains in memory.",
 };
+const targetMessages: Record<Exclude<TargetStatus, "eligible">, string> = {
+  none: "No text field was focused when dictation started.",
+  unsupported: "The focused control does not support direct insertion.",
+  protected: "The focused field is protected.",
+  terminal: "Terminal insertion is not supported yet.",
+  unavailable: "The focused app could not be inspected. Check Accessibility access.",
+};
+const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertain">, string> = {
+  changed: "Focus moved away from the original field.",
+  closed: "The original field closed.",
+  protected: "The original field is protected.",
+  unsupported: "The original field no longer accepts direct insertion.",
+  missing: "No destination was established.",
+  failed: "The field rejected the insertion.",
+};
+const uncertainCause =
+  "Check your target. Voice could not confirm the insertion and will not retry automatically.";
+type Origin = "practice" | "dictation";
+type Target = { status: TargetStatus; app: string | null };
 type Active = Attempt & {
+  origin: Origin;
+  mode: "hold" | "toggle";
   audio: Uint8Array[];
   samples: number;
   text: string;
@@ -31,7 +56,10 @@ type Active = Attempt & {
   stopRequested: boolean;
   deadline?: number;
   stopTime?: number;
+  target?: Target;
+  inserting: boolean;
 };
+type Armed = { id: string; text: string; inserting: boolean };
 export function createSession(options: {
   available: () => boolean;
   device: () => string | null;
@@ -41,12 +69,22 @@ export function createSession(options: {
   changed: () => void;
   copy: (text: string) => Promise<boolean>;
   access: (reason: "authenticated" | "rejected" | "quota" | "rate-limit") => void;
+  target: {
+    capture: (session: string) => Promise<Target>;
+    arm: (session: string) => Promise<void>;
+    insert: (session: string, text: string) => Promise<InsertionOutcome>;
+    release: (session: string) => void;
+  };
+  // A session or armed paste is in progress, so the native cancel key belongs to Voice.
+  engaged: (active: boolean) => void;
 }) {
   let state: SessionSnapshot = {
     phase: "idle",
+    origin: null,
+    armedPaste: null,
     canStart: false,
     warning: false,
-    message: "Ready for practice.",
+    message: "Ready.",
     practiceText: "",
     recovery: [],
     recoveryMessage: "",
@@ -55,6 +93,8 @@ export function createSession(options: {
     latestSuccessful: null,
   };
   let active: Active | undefined;
+  let armed: Armed | undefined;
+  let held: string | undefined;
   let closed = false;
   let stoppingCapture: Attempt | undefined;
   const retained = new Map<string, { audio: Uint8Array[]; entry: RecoveryEntry }>();
@@ -74,6 +114,33 @@ export function createSession(options: {
     state = { ...state, ...change };
     options.changed();
   }
+  function engage() {
+    try {
+      options.engaged(!!active || !!armed);
+    } catch {
+      /* The helper owns nothing that changes session state. */
+    }
+  }
+  function releaseTarget(session: string) {
+    try {
+      options.target.release(session);
+    } catch {
+      /* A failed helper has no target to release. */
+    }
+  }
+  function retain(
+    id: string,
+    text: string,
+    transcription: RecoveryEntry["transcription"],
+    audio: Uint8Array[],
+    cause: string,
+    delivery: RecoveryEntry["delivery"],
+  ) {
+    retained.set(id, {
+      audio,
+      entry: { id, text, transcription, hasAudio: audio.length > 0, cause, delivery },
+    });
+  }
   function sendCapture(type: "capture.stop" | "capture.cancel", current: Active) {
     try {
       options.capture({ type, session: current.session, attempt: current.attempt });
@@ -91,26 +158,28 @@ export function createSession(options: {
       sendCapture("capture.cancel", current);
     }
     options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
-    if (phase !== "complete" && (current.audio.length || current.text))
-      retained.set(current.session, {
-        audio: current.audio,
-        entry: {
-          id: current.session,
-          text: current.text,
-          transcription: "incomplete",
-          hasAudio: current.audio.length > 0,
-          cause: message,
-          delivery: "undelivered",
-        },
-      });
-    update({
-      phase,
-      message,
-      warning: false,
-    });
+    if (current.origin === "dictation") releaseTarget(current.session);
+    // Delivery paths retain their own complete entry before ending; keep it intact.
+    if (
+      phase !== "complete" &&
+      !retained.has(current.session) &&
+      (current.audio.length || current.text)
+    )
+      retain(current.session, current.text, "incomplete", current.audio, message, "undelivered");
+    engage();
+    update({ phase, message, warning: false });
   }
   function fail(message: string) {
     end("failed", message);
+  }
+  function recordingMessage(current: Active) {
+    if (current.origin === "practice") return "Recording. Speak, then press Stop.";
+    const control =
+      current.mode === "hold"
+        ? "Recording. Release the shortcut to finish."
+        : "Recording. Use the toggle shortcut or Stop to finish.";
+    if (!current.target || current.target.status === "eligible") return control;
+    return `${control} ${targetMessages[current.target.status]} The transcript will go to recovery.`;
   }
   function requestStop(message?: string) {
     const current = active;
@@ -121,7 +190,7 @@ export function createSession(options: {
     update({ phase: "processing", warning: false, message: message ?? "Finishing transcription…" });
     sendCapture("capture.stop", current);
     const expire = () => {
-      if (active !== current || current.deadline === undefined) return;
+      if (active !== current || current.deadline === undefined || current.inserting) return;
       const remaining = current.deadline - performance.now();
       if (remaining > 0) later(expire, remaining);
       else fail("Processing timed out. Audio and available text remain in memory.");
@@ -160,36 +229,38 @@ export function createSession(options: {
     if (!recovery.audio.length) retained.delete(id);
     if (state.pendingPractice === id) state = { ...state, pendingPractice: null };
   }
-  function start() {
-    if (closed || active || stoppingCapture || state.quitWarning) return;
+  function start(origin: Origin, mode: Active["mode"]) {
+    if (closed || active || armed || stoppingCapture || state.quitWarning) return;
     if (!options.available() || retained.size >= 5) {
       update({
         phase: "failed",
+        origin,
         message:
           retained.size >= 5
             ? "Recovery is full. Resolve or discard a session before starting another."
-            : "Complete or repair dictation setup before starting practice.",
+            : "Complete or repair dictation setup before starting.",
       });
       return;
     }
-    interruptDelivery("Practice delivery was not confirmed before the next session.");
+    if (origin === "practice")
+      interruptDelivery("Practice delivery was not confirmed before the next session.");
     const id = randomUUID();
     const current: Active = {
       session: id,
       attempt: randomUUID(),
+      origin,
+      mode,
       audio: [],
       samples: 0,
       text: "",
       providerStarted: false,
       stopped: false,
       stopRequested: false,
+      inserting: false,
     };
     active = current;
-    update({
-      phase: "starting",
-      warning: false,
-      message: "Starting microphone…",
-    });
+    engage();
+    update({ phase: "starting", origin, warning: false, message: "Starting microphone…" });
     try {
       options.capture({
         type: "capture.start",
@@ -200,6 +271,17 @@ export function createSession(options: {
     } catch {
       fail("Microphone capture could not start. Check your device and permissions.");
       return;
+    }
+    if (origin === "dictation") {
+      // Remember the target focused at the shortcut. Capture startup never waits for this.
+      const remember = (target: Target) => {
+        if (active !== current) return;
+        current.target = target;
+        if (state.phase === "recording") update({ message: recordingMessage(current) });
+      };
+      options.target
+        .capture(current.session)
+        .then(remember, () => remember({ status: "unavailable", app: null }));
     }
     later(() => {
       if (active === current && state.phase === "starting")
@@ -233,14 +315,132 @@ export function createSession(options: {
         if (current.stopped) fail(current.failure);
       });
   }
+  function cancel() {
+    const current = active;
+    if (!current || current.inserting) return;
+    current.audio = [];
+    end("cancelled", "Cancelled. Any produced text remains in memory.");
+  }
   function interrupt(message: string) {
     interruptDelivery(message);
     const current = active;
-    if (!current) return;
+    if (!current || current.inserting) return;
     current.failure = message;
     requestStop(message);
     options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
     if (current.stopped) fail(message);
+  }
+  function finishInsertion(current: Active, text: string, outcome: InsertionOutcome) {
+    if (active !== current) return;
+    if (outcome === "inserted") {
+      state = { ...state, latestSuccessful: { id: current.session, text } };
+      end("complete", "Inserted.");
+      return;
+    }
+    if (outcome === "uncertain") {
+      retain(current.session, text, "complete", [], uncertainCause, "uncertain");
+      end("failed", "Check your target. The transcript is in recovery.");
+      return;
+    }
+    retain(
+      current.session,
+      text,
+      "complete",
+      [],
+      `${insertionMessages[outcome]} Text kept for recovery.`,
+      "failed",
+    );
+    end("failed", `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`);
+  }
+  function deliver(current: Active, text: string) {
+    const target = current.target ?? { status: "unavailable" as const, app: null };
+    if (target.status !== "eligible") {
+      retain(
+        current.session,
+        text,
+        "complete",
+        [],
+        `${targetMessages[target.status]} Text kept for recovery.`,
+        "failed",
+      );
+      end(
+        "failed",
+        `Not inserted. ${targetMessages[target.status]} The transcript is in recovery.`,
+      );
+      return;
+    }
+    current.inserting = true;
+    update({ phase: "inserting", message: "Inserting…" });
+    options.target.insert(current.session, text).then(
+      (outcome) => finishInsertion(current, text, outcome),
+      () => finishInsertion(current, text, "uncertain"),
+    );
+  }
+  function disarm(message: string) {
+    const current = armed;
+    if (!current) return;
+    armed = undefined;
+    releaseTarget(current.id);
+    engage();
+    update({ armedPaste: null, recoveryMessage: message });
+  }
+  function finishPaste(current: Armed, outcome: InsertionOutcome) {
+    if (armed !== current) return;
+    armed = undefined;
+    engage();
+    const recovery = retained.get(current.id);
+    if (outcome === "inserted") {
+      if (recovery) {
+        recovery.entry = { ...recovery.entry, delivery: "inserted" };
+        resolveText(current.id);
+      }
+      update({
+        armedPaste: null,
+        recoveryMessage: recovery?.audio.length
+          ? "Inserted available text. The incomplete recording still needs recovery or Discard."
+          : "Inserted.",
+      });
+      return;
+    }
+    if (outcome === "uncertain") {
+      if (recovery)
+        recovery.entry = { ...recovery.entry, delivery: "uncertain", cause: uncertainCause };
+      update({
+        armedPaste: null,
+        recoveryMessage:
+          "Check your target. Voice could not confirm the paste and will not retry. The text remains in recovery.",
+      });
+      return;
+    }
+    if (recovery) recovery.entry = { ...recovery.entry, delivery: "failed" };
+    update({
+      armedPaste: null,
+      recoveryMessage: `Not pasted. ${insertionMessages[outcome]} The text remains in recovery.`,
+    });
+  }
+  async function paste(id: string) {
+    const text =
+      retained.get(id)?.entry.text ??
+      (state.latestSuccessful?.id === id ? state.latestSuccessful.text : undefined);
+    if (!text || active || armed || stoppingCapture || state.quitWarning) return;
+    const current: Armed = { id, text, inserting: false };
+    armed = current;
+    engage();
+    update({
+      armedPaste: id,
+      recoveryMessage:
+        "Click into the field where the text should go. Voice pastes once, into that field. Press the cancel shortcut or Cancel paste to keep it in recovery.",
+    });
+    later(() => {
+      if (armed === current && !current.inserting)
+        disarm("Paste timed out. The text remains in recovery.");
+    }, 20_000);
+    try {
+      await options.target.arm(id);
+    } catch {
+      if (armed === current)
+        disarm("Paste is unavailable right now. The text remains in recovery.");
+    }
   }
   return {
     snapshot: () => ({
@@ -250,6 +450,7 @@ export function createSession(options: {
         !closed &&
         !state.quitWarning &&
         !active &&
+        !armed &&
         !stoppingCapture &&
         options.available() &&
         retained.size < 5,
@@ -266,7 +467,12 @@ export function createSession(options: {
         update({ message: "Practice transcript ready." });
         return;
       }
+      if (command.type === "recovery.paste") {
+        await paste(command.id);
+        return;
+      }
       if (command.type === "recovery.discard") {
+        if (armed?.id === command.id) disarm("Paste cancelled.");
         if (state.latestSuccessful?.id === command.id) {
           update({
             latestSuccessful: null,
@@ -316,12 +522,61 @@ export function createSession(options: {
         });
         return;
       }
-      if (command.type === "session.start") start();
+      if (command.type === "session.start") start("practice", "toggle");
       else if (command.type === "session.stop") requestStop();
-      else if (active) {
-        active.audio = [];
-        end("cancelled", "Cancelled. Any produced text remains in memory.");
+      else if (armed) disarm("Paste cancelled. The text remains in recovery.");
+      else cancel();
+    },
+    // Native shortcut transitions. Only a fresh press starts; held or repeated keys never restart.
+    shortcut(action: ShortcutAction) {
+      if (closed) return;
+      const current = active;
+      if (action === "hold.down") {
+        // A repeated or stale press changes nothing while work is in progress.
+        if (current || armed || stoppingCapture) return;
+        start("dictation", "hold");
+        held = active?.session;
+        return;
       }
+      if (action === "hold.up") {
+        if (current && current.session === held && current.mode === "hold") requestStop();
+        held = undefined;
+        return;
+      }
+      if (action === "toggle") {
+        if (armed) return;
+        if (!current) {
+          if (!stoppingCapture) start("dictation", "toggle");
+          return;
+        }
+        if (current.origin !== "dictation" || current.stopRequested) return;
+        if (current.mode === "hold") {
+          current.mode = "toggle";
+          if (state.phase === "recording") update({ message: recordingMessage(current) });
+          return;
+        }
+        requestStop();
+        return;
+      }
+      if (armed) disarm("Paste cancelled. The text remains in recovery.");
+      else cancel();
+    },
+    targetSelected(input: unknown) {
+      let event;
+      try {
+        event = decodeTargetSelected(input);
+      } catch {
+        return;
+      }
+      const current = armed;
+      if (!current || current.id !== event.session || current.inserting) return;
+      if (event.status !== "eligible") return;
+      current.inserting = true;
+      update({ recoveryMessage: "Inserting…" });
+      options.target.insert(current.id, current.text).then(
+        (outcome) => finishPaste(current, outcome),
+        () => finishPaste(current, "uncertain"),
+      );
     },
     captureEvent(input: unknown) {
       let event;
@@ -375,7 +630,7 @@ export function createSession(options: {
         return;
       }
       if (state.phase === "starting") {
-        update({ phase: "recording", message: "Recording. Speak, then press Stop." });
+        update({ phase: "recording", message: recordingMessage(current) });
         later(() => {
           if (active === current && !current.stopRequested)
             update({
@@ -412,7 +667,8 @@ export function createSession(options: {
         !current ||
         event.session !== current.session ||
         event.attempt !== current.attempt ||
-        current.failure
+        current.failure ||
+        current.inserting
       )
         return;
       if (current.deadline !== undefined && performance.now() >= current.deadline) {
@@ -448,35 +704,47 @@ export function createSession(options: {
       current.text = event.text;
       options.access("authenticated");
       current.audio = [];
-      if (event.text) {
-        retained.set(current.session, {
-          audio: [],
-          entry: {
-            id: current.session,
-            text: event.text,
-            transcription: "complete",
-            hasAudio: false,
-            cause: "Waiting for the practice field to confirm delivery.",
-            delivery: "undelivered",
-          },
-        });
-        update({ practiceText: event.text, pendingPractice: current.session });
+      if (!event.text) {
+        end("complete", "No speech detected");
+        return;
       }
-      end("complete", event.text ? "Delivering practice transcript…" : "No speech detected");
+      if (current.origin === "dictation") {
+        deliver(current, event.text);
+        return;
+      }
+      retain(
+        current.session,
+        event.text,
+        "complete",
+        [],
+        "Waiting for the practice field to confirm delivery.",
+        "undelivered",
+      );
+      update({ practiceText: event.text, pendingPractice: current.session });
+      end("complete", "Delivering practice transcript…");
     },
     interrupted: interrupt,
+    // Window lifecycle only affects practice work; shortcut dictation keeps its external target.
+    practiceInterrupted(message: string) {
+      interruptDelivery(message);
+      if (active?.origin === "practice") interrupt(message);
+    },
     helperFailed() {
       stoppingCapture = undefined;
+      disarm("Native services stopped. The text remains in recovery.");
       if (active) active.stopped = true;
+      if (active?.inserting) return;
       fail("Native services stopped. Available work remains in memory. Reopen Voice to repair.");
     },
     requestQuit() {
-      if (!active && !retained.size) return false;
+      if (!active && !armed && !retained.size) return false;
+      disarm("Quitting cancelled the paste. The text remains in recovery.");
       interrupt("Quitting interrupted the session. Available work remains in memory.");
       update({ quitWarning: true });
       return true;
     },
     close() {
+      disarm("Session ended.");
       if (active) end("cancelled", "Session ended.");
       clearTimers();
       closed = true;
@@ -491,6 +759,7 @@ export function createSession(options: {
         recoveryMessage: "",
         message: "Session ended.",
         quitWarning: false,
+        armedPaste: null,
       };
     },
   };

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { RegistryProvider } from "@effect/atom-react";
 import { SettingsView } from "./settings";
+import { StatusView } from "./status";
 import "./style.css";
 
 const rootRoute = createRootRoute({ component: Outlet });
@@ -23,8 +24,14 @@ const router = createRouter({
 });
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
+// The status panel window loads the same bundle with a view query instead of a route.
+const view = new URLSearchParams(window.location.search).get("view");
 createRoot(root).render(
-  <RegistryProvider>
-    <RouterProvider router={router} />
-  </RegistryProvider>,
+  view === "status" ? (
+    <StatusView />
+  ) : (
+    <RegistryProvider>
+      <RouterProvider router={router} />
+    </RegistryProvider>
+  ),
 );

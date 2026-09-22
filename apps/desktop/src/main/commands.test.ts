@@ -16,7 +16,12 @@ it("rejects unauthorized senders and stays responsive during a pending settings 
       restart: async () => ({ appearance: "light" }),
     },
     initialSettings: { appearance: "light" },
-    status: () => ({ storage: "ready", helper: "ready", capture: "unavailable" }),
+    status: () => ({
+      storage: "ready",
+      helper: "ready",
+      capture: "unavailable",
+      shortcuts: "unavailable",
+    }),
   });
   expect(await commands.execute("other-window", { type: "settings.get" })).toEqual({
     ok: false,
@@ -43,7 +48,12 @@ it("reports invalid commands and failed storage without replacing the cached pre
       },
     },
     initialSettings: { appearance: "dark" },
-    status: () => ({ storage: "ready", helper: "ready", capture: "unavailable" }),
+    status: () => ({
+      storage: "ready",
+      helper: "ready",
+      capture: "unavailable",
+      shortcuts: "unavailable",
+    }),
   });
   expect(await commands.execute(null, { type: "settings.set", appearance: "rainbow" })).toEqual({
     ok: false,
@@ -71,7 +81,12 @@ it("authorizes setup commands before native operations and keeps status responsi
   const commands = createCommands({
     isAuthorized: (sender) => sender === "settings-window",
     initialSettings: { appearance: "light" },
-    status: () => ({ storage: "ready", helper: "ready", capture: "unavailable" }),
+    status: () => ({
+      storage: "ready",
+      helper: "ready",
+      capture: "unavailable",
+      shortcuts: "unavailable",
+    }),
     storage: { set: async (value) => value, restart: async () => ({ appearance: "light" }) },
     setup: () => setup,
   });
@@ -104,7 +119,7 @@ it("authorizes setup commands before native operations and keeps status responsi
   const status = decodeReply(await commands.execute("settings-window", { type: "status.get" }));
   expect(status).toMatchObject({
     ok: true,
-    status: { capture: "unavailable" },
+    status: { capture: "unavailable", shortcuts: "unavailable" },
     setup: { credential: { verification: "unverified" } },
   });
   resolve();

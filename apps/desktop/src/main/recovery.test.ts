@@ -22,6 +22,13 @@ function fixture(copy?: (text: string) => Promise<boolean>) {
     provider: () => {},
     changed: () => {},
     access: () => {},
+    target: {
+      capture: async () => ({ status: "eligible", app: null }),
+      arm: async () => {},
+      insert: async () => "inserted",
+      release: () => {},
+    },
+    engaged: () => {},
     copy:
       copy ??
       (async (text) => {
@@ -39,7 +46,12 @@ function fixture(copy?: (text: string) => Promise<boolean>) {
     isAuthorized: (sender) => sender === "window",
     initialSettings: { appearance: "light" },
     storage: { set: async (value) => value, restart: async () => ({ appearance: "light" }) },
-    status: () => ({ storage: "ready", helper: "ready", capture: "available" }),
+    status: () => ({
+      storage: "ready",
+      helper: "ready",
+      capture: "available",
+      shortcuts: "unavailable",
+    }),
   });
   const execute = (payload: unknown) => commands.execute("window", payload);
   async function snapshot() {

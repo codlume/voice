@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   clipboard,
   ipcMain,
+  screen,
   session,
   net,
   type IpcMainInvokeEvent,
@@ -15,6 +16,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
 import { defaultSettings, commandChannel, type Status } from "@voice/contracts/desktop";
+import { decodeShortcutEvent } from "@voice/contracts/session";
+import { decodeNativeSetupResult, type NativeSetupCommand } from "@voice/contracts/setup";
 import { launchHelper } from "@voice/platform/macos";
 import { createCommands } from "./commands";
 import { StorageWorker } from "./storage";
@@ -32,16 +35,50 @@ app.setPath(
 app.setName(testDirectory ? "Voice Test" : "Voice Development");
 const renderer = pathToFileURL(join(__dirname, "../renderer/index.html")).href;
 const expectedUrl = devUrl ?? renderer;
+const panelUrl = `${expectedUrl}?view=status`;
 if (devUrl && !/^http:\/\/127\.0\.0\.1:\d+\/$/.test(devUrl))
   throw new Error("Invalid development server");
 let window: BrowserWindow | undefined;
+let panel: BrowserWindow | undefined;
+let panelHide: ReturnType<typeof setTimeout> | undefined;
 export let helper: ReturnType<typeof launchHelper> | undefined;
 let helperState: Status["helper"] = "starting";
+let shortcutState: Status["shortcuts"] = "unavailable";
+let engaged = false;
 let closing = false;
 let quitConfirmed = false;
 export let storage: StorageWorker;
+const webPreferences = {
+  preload: join(__dirname, "preload.cjs"),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+};
 function notify() {
-  if (window && !window.isDestroyed()) window.webContents.send("voice:changed");
+  for (const target of [window, panel])
+    if (target && !target.isDestroyed()) target.webContents.send("voice:changed");
+  syncPanel();
+}
+function request(command: NativeSetupCommand) {
+  if (!helper) return Promise.reject(new Error("native-unavailable"));
+  return helper.request(command);
+}
+// The helper holds the full desired shortcut state, so a restart or setup change resends it.
+async function syncShortcuts() {
+  if (!helper || helperState !== "ready") return;
+  try {
+    const result = decodeNativeSetupResult(
+      await request({
+        type: "shortcut.configure",
+        shortcuts: commands.preferences().shortcuts,
+        active: engaged,
+      }),
+    );
+    shortcutState = result.type === "shortcuts" && result.listening ? "listening" : "unavailable";
+  } catch {
+    shortcutState = "unavailable";
+  }
+  notify();
 }
 const commands = createCommands<IpcMainInvokeEvent>({
   quit: (confirmed) => {
@@ -49,27 +86,35 @@ const commands = createCommands<IpcMainInvokeEvent>({
     app.quit();
   },
   setup: () => setup,
-  session: () => practice,
+  session: () => dictation,
   initialSettings: defaultSettings,
   isAuthorized: (event) =>
-    !!window &&
-    event.sender === window.webContents &&
-    event.senderFrame === window.webContents.mainFrame &&
-    event.senderFrame.url === expectedUrl,
+    [
+      [window, expectedUrl],
+      [panel, panelUrl],
+    ].some(
+      ([target, url]) =>
+        target instanceof BrowserWindow &&
+        !target.isDestroyed() &&
+        event.sender === target.webContents &&
+        event.senderFrame === target.webContents.mainFrame &&
+        event.senderFrame.url === url,
+    ),
   storage: { set: (settings) => storage.set(settings), restart: () => storage.restart() },
   status: () => ({
     storage: storage?.state ?? "starting",
     helper: helperState,
-    capture: practice.snapshot().phase === "recording" ? "active" : setup.snapshot().localCapture,
+    capture: dictation.snapshot().phase === "recording" ? "active" : setup.snapshot().localCapture,
+    shortcuts: shortcutState,
   }),
 });
 export const setup = createSetup({
-  native: (command) => {
-    if (!helper) return Promise.reject(new Error("native-unavailable"));
-    return helper.request(command);
-  },
+  native: request,
   preferences: commands.preferences,
-  save: commands.saveSetup,
+  save: async (preferences) => {
+    await commands.saveSetup(preferences);
+    void syncShortcuts();
+  },
   connectivity: () => (net.isOnline() ? "online" : "offline"),
   credentialChanged: () => notify(),
 });
@@ -80,10 +125,10 @@ const fixtureUrl =
     : undefined;
 const provider = createProvider(
   join(__dirname, "provider-worker.cjs"),
-  (event) => practice.providerEvent(event),
+  (event) => dictation.providerEvent(event),
   fixtureUrl,
 );
-export const practice = createSession({
+export const dictation = createSession({
   available: () =>
     helperState === "ready" &&
     storage?.state === "ready" &&
@@ -110,7 +155,44 @@ export const practice = createSession({
       );
     notify();
   },
+  target: {
+    capture: async (id) => {
+      const result = decodeNativeSetupResult(
+        await request({ type: "target.capture", session: id }),
+      );
+      if (result.type !== "target") throw new Error("native-unavailable");
+      return { status: result.status, app: result.app };
+    },
+    arm: async (id) => {
+      const result = decodeNativeSetupResult(await request({ type: "target.arm", session: id }));
+      if (result.type !== "armed") throw new Error("native-unavailable");
+    },
+    insert: async (id, text) => {
+      const result = decodeNativeSetupResult(
+        await request({ type: "target.insert", session: id, text }),
+      );
+      if (result.type !== "insertion") throw new Error("native-unavailable");
+      return result.outcome;
+    },
+    release: (id) => {
+      void request({ type: "target.release", session: id }).catch(() => {});
+    },
+  },
+  engaged: (active) => {
+    engaged = active;
+    void syncShortcuts();
+  },
 });
+export const practice = dictation;
+if (testDirectory) {
+  // Packaged tests drive the shortcut path without a native key tap. The real-key proof is separate.
+  Object.assign(globalThis, {
+    voiceTest: {
+      shortcut: (action: unknown) =>
+        dictation.shortcut(decodeShortcutEvent({ type: "shortcut", action }).action),
+    },
+  });
+}
 ipcMain.handle(commandChannel, async (event, payload: unknown) => {
   const reply = await commands.execute(event, payload);
   return reply;
@@ -124,28 +206,86 @@ async function createWindow() {
     minHeight: 440,
     title: "Voice",
     backgroundColor: "#f3f6fa",
-    webPreferences: {
-      preload: join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+    webPreferences,
   });
   window.on("close", (event) => {
     if (closing) return;
     event.preventDefault();
-    practice.interrupted("The practice window closed. Available work remains in memory.");
+    dictation.practiceInterrupted("The practice window closed. Available work remains in memory.");
     window?.hide();
   });
   window.webContents.on("render-process-gone", () =>
-    practice.interrupted("The practice window stopped. Available work remains in memory."),
+    dictation.practiceInterrupted("The practice window stopped. Available work remains in memory."),
   );
   window.webContents.on("did-start-loading", () =>
-    practice.interrupted("The practice window reloaded. Available work remains in memory."),
+    dictation.practiceInterrupted(
+      "The practice window reloaded. Available work remains in memory.",
+    ),
   );
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   await window.loadURL(expectedUrl);
+}
+// A non-activating panel keeps the external target focused while it shows session status.
+async function createPanel() {
+  panel = new BrowserWindow({
+    width: 340,
+    height: 64,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    focusable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    backgroundColor: "#172b45",
+    title: "Voice status",
+    type: "panel",
+    webPreferences,
+  });
+  panel.setAlwaysOnTop(true, "floating");
+  panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  panel.on("close", (event) => {
+    if (!closing) event.preventDefault();
+  });
+  panel.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  panel.webContents.on("will-navigate", (event) => event.preventDefault());
+  panel.webContents.on("render-process-gone", () => {
+    if (!closing && panel && !panel.isDestroyed()) panel.webContents.reload();
+  });
+  await panel.loadURL(panelUrl);
+}
+function syncPanel() {
+  const current = panel;
+  if (!current || current.isDestroyed() || closing) return;
+  const snapshot = dictation.snapshot();
+  const busy =
+    ["starting", "recording", "processing", "inserting"].includes(snapshot.phase) ||
+    snapshot.armedPaste !== null;
+  const external = snapshot.origin === "dictation" || snapshot.armedPaste !== null;
+  if (busy && external) {
+    clearTimeout(panelHide);
+    panelHide = undefined;
+    if (!current.isVisible()) {
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      const { x, y, width, height } = display.workArea;
+      const [panelWidth, panelHeight] = current.getSize();
+      current.setPosition(
+        Math.round(x + (width - (panelWidth ?? 0)) / 2),
+        Math.round(y + height - (panelHeight ?? 0) - 24),
+      );
+      current.showInactive();
+    }
+  } else if (current.isVisible() && !panelHide) {
+    panelHide = setTimeout(() => {
+      panelHide = undefined;
+      if (!current.isDestroyed()) current.hide();
+    }, 2_500);
+  }
 }
 
 app
@@ -170,34 +310,32 @@ app
       },
       notify,
     );
+    const failedHelper = () => {
+      helperState = "failed";
+      shortcutState = "unavailable";
+      setup.unavailable();
+      dictation.helperFailed();
+      notify();
+    };
     helper = launchHelper(
       app.isPackaged
         ? join(process.resourcesPath, "app.asar.unpacked/native/voice-helper")
         : join(__dirname, "../native/voice-helper"),
-      () => {
-        helperState = "failed";
-        setup.unavailable();
-        practice.helperFailed();
-        notify();
-      },
+      failedHelper,
       testDirectory
         ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
         : undefined,
-      (event) => practice.captureEvent(event),
+      (event) => dictation.captureEvent(event),
       !!fixtureUrl,
-    );
-    void helper.ready.then(
-      () => {
-        helperState = "ready";
-        notify();
-      },
-      () => {
-        helperState = "failed";
-        setup.unavailable();
-        practice.helperFailed();
-        notify();
+      {
+        shortcut: (event) => dictation.shortcut(event.action),
+        targetSelected: (event) => dictation.targetSelected(event),
       },
     );
+    void helper.ready.then(() => {
+      helperState = "ready";
+      notify();
+    }, failedHelper);
     const storageReady = storage.start();
     void storageReady.then(
       (settings) => {
@@ -208,10 +346,11 @@ app
     );
     if (closing) return;
     await createWindow();
+    await createPanel();
     void Promise.all([helper.ready, storageReady]).then(
       async () => {
         await setup.refresh().catch(() => {});
-        notify();
+        await syncShortcuts();
         process.send?.({
           type: "ready",
           pid: process.pid,
@@ -247,12 +386,14 @@ app.on("window-all-closed", () => {});
 app.on("before-quit", (event) => {
   if (closing) return;
   event.preventDefault();
-  if (!quitConfirmed && practice.requestQuit()) {
+  if (!quitConfirmed && dictation.requestQuit()) {
     void showWindow();
     return;
   }
   closing = true;
-  practice.close();
+  clearTimeout(panelHide);
+  dictation.close();
+  if (panel && !panel.isDestroyed()) panel.destroy();
   void Promise.allSettled([storage?.close(), helper?.close(), provider.close()]).then(() =>
     app.quit(),
   );

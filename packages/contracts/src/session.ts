@@ -12,10 +12,25 @@ export const SessionCommand = Schema.Union([
     type: Schema.Literals(["session.start", "session.stop", "session.cancel", "app.quit.cancel"]),
   }),
   Schema.Struct({
-    type: Schema.Literals(["recovery.copy", "recovery.discard", "practice.delivered"]),
+    type: Schema.Literals([
+      "recovery.copy",
+      "recovery.discard",
+      "recovery.paste",
+      "practice.delivered",
+    ]),
     id: identity,
   }),
 ]);
+export const sessionCommandTypes = [
+  "session.start",
+  "session.stop",
+  "session.cancel",
+  "app.quit.cancel",
+  "recovery.copy",
+  "recovery.discard",
+  "recovery.paste",
+  "practice.delivered",
+] as const satisfies readonly SessionCommand["type"][];
 export type SessionCommand = typeof SessionCommand.Type;
 export const RecoveryEntry = Schema.Struct({
   id: identity,
@@ -23,7 +38,7 @@ export const RecoveryEntry = Schema.Struct({
   transcription: Schema.Literals(["complete", "incomplete"]),
   hasAudio: Schema.Boolean,
   cause: Schema.String,
-  delivery: Schema.Literals(["undelivered", "copied", "failed", "uncertain"]),
+  delivery: Schema.Literals(["undelivered", "copied", "inserted", "failed", "uncertain"]),
 });
 export type RecoveryEntry = typeof RecoveryEntry.Type;
 export const SessionSnapshot = Schema.Struct({
@@ -32,10 +47,13 @@ export const SessionSnapshot = Schema.Struct({
     "starting",
     "recording",
     "processing",
+    "inserting",
     "complete",
     "cancelled",
     "failed",
   ]),
+  origin: Schema.NullOr(Schema.Literals(["practice", "dictation"])),
+  armedPaste: Schema.NullOr(identity),
   canStart: Schema.Boolean,
   warning: Schema.Boolean,
   message: Schema.String,
@@ -47,6 +65,42 @@ export const SessionSnapshot = Schema.Struct({
   latestSuccessful: Schema.NullOr(Schema.Struct({ id: identity, text: Schema.String })),
 });
 export type SessionSnapshot = typeof SessionSnapshot.Type;
+// Native shortcut transitions after the helper applied the configured bindings.
+export const ShortcutAction = Schema.Literals(["hold.down", "hold.up", "toggle", "cancel"]);
+export type ShortcutAction = typeof ShortcutAction.Type;
+export const ShortcutEvent = Schema.Struct({
+  type: Schema.Literal("shortcut"),
+  action: ShortcutAction,
+});
+export type ShortcutEvent = typeof ShortcutEvent.Type;
+// Eligibility of the external editable target remembered for a session.
+export const TargetStatus = Schema.Literals([
+  "eligible",
+  "none",
+  "unsupported",
+  "protected",
+  "terminal",
+  "unavailable",
+]);
+export type TargetStatus = typeof TargetStatus.Type;
+export const InsertionOutcome = Schema.Literals([
+  "inserted",
+  "changed",
+  "closed",
+  "protected",
+  "unsupported",
+  "missing",
+  "failed",
+  "uncertain",
+]);
+export type InsertionOutcome = typeof InsertionOutcome.Type;
+export const TargetSelected = Schema.Struct({
+  type: Schema.Literal("target.selected"),
+  session: identity,
+  status: TargetStatus,
+  app: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
+});
+export type TargetSelected = typeof TargetSelected.Type;
 export const CaptureCommand = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("capture.start"),
@@ -123,6 +177,8 @@ export const ProviderEvent = Schema.Union([
 ]);
 export type ProviderEvent = typeof ProviderEvent.Type;
 const strict = { onExcessProperty: "error" } as const;
+export const decodeShortcutEvent = Schema.decodeUnknownSync(ShortcutEvent, strict);
+export const decodeTargetSelected = Schema.decodeUnknownSync(TargetSelected, strict);
 export const decodeCaptureCommand = Schema.decodeUnknownSync(CaptureCommand, strict);
 export const decodeCaptureEvent = Schema.decodeUnknownSync(CaptureEvent, strict);
 export const decodeProviderRequest = Schema.decodeUnknownSync(ProviderRequest, strict);

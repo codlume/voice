@@ -23,6 +23,7 @@ export const Status = Schema.Struct({
   storage: Schema.Literals(["starting", "ready", "failed"]),
   helper: Schema.Literals(["starting", "ready", "failed"]),
   capture: Schema.Literals(["unavailable", "available", "active"]),
+  shortcuts: Schema.Literals(["unavailable", "listening"]),
 });
 export type Status = typeof Status.Type;
 export const Reply = Schema.Union([
