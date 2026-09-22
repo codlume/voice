@@ -231,17 +231,25 @@ const panelWidth = (app: ElectronApplication) =>
       ).voiceTest.panelBounds().width,
   );
 // Counts repaints of each window while nothing happens; idle Voice should paint nothing.
-// Subscribing delivers the current frame once, so frames from a short settle window are dropped.
+// Subscribing delivers the current frame once, late on a loaded runner, so counting starts only
+// after every window has delivered it.
 const idleRepaints = (app: ElectronApplication, milliseconds: number) =>
   app.evaluate(async ({ BrowserWindow }, duration) => {
     const counts = BrowserWindow.getAllWindows().map((window) => {
       const count = { url: window.webContents.getURL(), frames: 0 };
+      const { promise: delivered, resolve: deliver } = Promise.withResolvers<void>();
       window.webContents.beginFrameSubscription(true, () => {
         count.frames += 1;
+        deliver();
       });
-      return { window, count };
+      return { window, count, delivered };
     });
-    await new Promise((done) => setTimeout(done, 500));
+    await Promise.race([
+      Promise.all(counts.map(({ delivered }) => delivered)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("A window never delivered its current frame")), 10_000),
+      ),
+    ]);
     for (const { count } of counts) count.frames = 0;
     await new Promise((done) => setTimeout(done, duration));
     for (const { window } of counts) window.webContents.endFrameSubscription();
