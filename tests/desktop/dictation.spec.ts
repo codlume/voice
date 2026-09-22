@@ -23,8 +23,10 @@ const model = {
   model_info: { version: "2025-04-17.21547" },
 };
 
-// Deterministic Deepgram stand-in: every attempt receives the same provider-final text.
+// Deterministic Deepgram stand-in: every attempt receives the same provider-final text. `hold`
+// keeps finalization pending until released, so a test can act while a session is processing.
 async function fixtureServer() {
+  let gate: Promise<void> = Promise.resolve();
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(server, "listening");
   const address = server.address();
@@ -39,6 +41,9 @@ async function fixtureServer() {
         return;
       }
       if (JSON.parse(data.toString()).type !== "CloseStream") return;
+      void gate.then(() => finalize());
+    });
+    function finalize() {
       const seconds = Buffer.concat(frames).length / 32_000;
       socket.send(
         JSON.stringify({
@@ -53,10 +58,18 @@ async function fixtureServer() {
       );
       socket.send(JSON.stringify({ type: "Metadata", duration: seconds, channels: 1 }));
       socket.close(1000);
-    });
+    }
   });
   return {
     attempts,
+    hold() {
+      const { promise, resolve: open } = Promise.withResolvers<void>();
+      gate = promise;
+      return () => {
+        gate = Promise.resolve();
+        open();
+      };
+    },
     url: `ws://127.0.0.1:${address.port}`,
     async close() {
       for (const socket of server.clients) socket.terminate();
@@ -345,8 +358,15 @@ test("packaged menu bar, floating bar, main window, and shortcut control one ses
     await bar.getByRole("button", { name: "Start dictation" }).click();
     await withoutTarget();
     await expect.poll(() => server.attempts[3]?.length ?? 0).toBeGreaterThan(10);
+    const release = server.hold();
     await bar.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).session.phase).toBe("processing");
     await menuClick(app, "Open recovery (1 of 5)");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.id))
+      .toBe("section-recovery");
+    expect((await snapshot(page)).session.phase).toBe("processing");
+    release();
     await expect(status).toContainText("Not inserted.");
     const second = (await snapshot(page)).session;
     expect(second.recovery).toHaveLength(2);
