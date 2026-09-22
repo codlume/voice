@@ -62,9 +62,16 @@ describe("dictation contracts", () => {
     expect(
       decodeNativeSetupResult({ type: "insertion", session: "s", outcome: "uncertain" }),
     ).toMatchObject({ outcome: "uncertain" });
+    expect(decodeCommand({ type: "recovery.retry", id: "entry" })).toEqual({
+      type: "recovery.retry",
+      id: "entry",
+    });
     for (const payload of [
       { type: "recovery.paste" },
       { type: "recovery.paste", id: "entry", target: "anywhere" },
+      // Retry names only the retained entry; it cannot carry audio, a device, or a target.
+      { type: "recovery.retry", id: "entry", device: "Built-in Microphone" },
+      { type: "recovery.retry", id: "entry", pcm: "AAAA" },
     ])
       expect(() => decodeCommand(payload)).toThrow();
     expect(() => decodeShortcutEvent({ type: "shortcut", action: "start" })).toThrow();

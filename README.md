@@ -58,9 +58,15 @@ Insertion happens only when that original field is still focused. If focus moved
 
 ## Recover a session
 
-Temporary recovery keeps up to five undelivered sessions and the latest successful transcript for this app run. Copy writes the selected text to the clipboard. Paste arms a single insertion: click into the field that should receive the text and Voice inserts it there once, or press Escape or **Cancel paste** to keep it. Paste waits at most 20 seconds and never uses a field you did not select after clicking Paste. For incomplete transcription, Copy and Paste keep the unresolved recording; Discard removes both. At five unresolved sessions, resolve or discard one before starting another. Transcription Retry is not available yet.
+Temporary recovery keeps up to five undelivered sessions and the latest successful transcript for this app run. Copy writes the selected text to the clipboard. Paste arms a single insertion: click into the field that should receive the text and Voice inserts it there once, or press Escape or **Cancel paste** to keep it. Paste waits at most 20 seconds and never uses a field you did not select after clicking Paste. For incomplete transcription, Copy and Paste keep the unresolved recording; Discard removes both. At five unresolved sessions, resolve or discard one before starting another.
+
+**Retry** transcribes a retained recording again with the microphone off. The result stays in recovery for you to Copy or Paste, so text you already delivered is never replaced or pasted twice. A failed or cancelled Retry keeps the recording.
 
 Closing the window keeps Voice and recovery alive. Reopen it from the Dock. Quit Voice warns before losing undelivered work and offers Return to recovery. Audio and transcripts are not saved as history and cannot be recovered after app exit or a crash.
+
+## Dictate without a connection
+
+Transcription needs internet, but a lost connection never stops a recording you started. Start works offline, and the status shows a connection warning until you stop. After Stop, Voice sends the whole recording once more on a new connection, as soon as the connection returns. That one automatic attempt, and any Retry, must finish within 10 seconds for recordings up to 30 seconds, or 30 seconds for longer ones. Replay runs at no more than 1.25× real time, so a 30-second recording needs at least 24 seconds and a five-minute recording at least 240 seconds. A replay that cannot fit its limit times out, and the recording stays in recovery with its audio and any available text, marked incomplete. A connection that returns later never resends, inserts, or starts recording on its own.
 
 ## Pinned storage compatibility
 

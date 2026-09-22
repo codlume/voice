@@ -27,8 +27,8 @@ const providerFailures: Record<ProviderFailure, Failure> = {
   rejected: { message: "Deepgram rejected the key. Replace it in Settings.", notice: "setup" },
   quota: { message: "Deepgram quota is exhausted. Check your account billing.", notice: "setup" },
   "rate-limit": {
-    message: "Deepgram is rate limiting requests. Try a new session later.",
-    notice: "incomplete",
+    message: "Deepgram is rate limiting requests. The recording remains in recovery; Retry later.",
+    notice: "rate-limit",
   },
   incomplete: {
     message: "Transcription was incomplete. Audio and available text remain in memory.",
@@ -59,20 +59,79 @@ const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertai
   missing: "No destination was established.",
   failed: "The field rejected the insertion.",
 };
+// Why the provider stream is down while an explicitly started capture continues. After Stop the
+// session replays the whole recording once, if connectivity returns and time remains.
+type Outage = "offline" | "connection" | "rate-limit";
+const outageWarnings: Record<Outage, Failure> = {
+  offline: {
+    message:
+      "Offline. Recording continues and audio stays in memory; Voice transcribes after you stop if the connection returns.",
+    notice: "connection",
+  },
+  connection: {
+    message:
+      "Connection lost. Recording continues and audio stays in memory; Voice replays the full recording once after you stop.",
+    notice: "connection",
+  },
+  "rate-limit": {
+    message:
+      "Deepgram is rate limiting requests. Recording continues; Voice retries once after you stop.",
+    notice: "rate-limit",
+  },
+};
+const outageFailures: Record<Outage, Failure> = {
+  offline: {
+    message:
+      "No connection was available. Audio remains in memory; Retry from recovery when you are online.",
+    notice: "connection",
+  },
+  connection: providerFailures.connection,
+  "rate-limit": providerFailures["rate-limit"],
+};
+const waitingForConnection: Failure = {
+  message: "Waiting for a connection to transcribe. Audio remains in memory.",
+  notice: "connection",
+};
+const waitingForBackoff: Failure = {
+  message: "Deepgram asked Voice to wait. Retrying once before the deadline…",
+  notice: "rate-limit",
+};
+const backoffTooLong: Failure = {
+  message:
+    "Deepgram asked Voice to wait past the processing deadline. The recording remains in recovery; Retry later.",
+  notice: "rate-limit",
+};
+const keyUnreadable: Failure = {
+  message: "The saved key could not be read. Repair Keychain access in Settings.",
+  notice: "setup",
+};
+// The original 10/30-second processing deadline by capture duration; 30 seconds is 480,000 samples.
+const deadlineFor = (samples: number) => (samples <= 480_000 ? 10_000 : 30_000);
 const limitReached: Failure = {
   message: "Recording reached the five-minute limit. Finishing transcription…",
   notice: "limit",
 };
 const uncertainCause =
   "Check your target. Voice could not confirm the insertion and will not retry automatically.";
+// The provider attempt of the current logical ASR operation. The live attempt shares the capture's
+// identity; each replay gets a fresh one, so late events from a superseded attempt never match.
+type Link =
+  | { state: "open"; attempt: string; replay: boolean; started: boolean; text: string }
+  | { state: "down"; outage: Outage | null; retryAt: number };
 type Active = Attempt & {
   origin: Origin;
   mode: "hold" | "toggle";
   audio: Uint8Array[];
   samples: number;
+  // The best text so far. A replay supersedes it only with complete output.
   text: string;
-  providerStarted: boolean;
+  // An explicit Retry of a retained recording: no capture, and failure or cancel keeps the source.
+  retry: boolean;
+  link: Link;
+  // Provider attempts spent: the original plus at most one automatic retry. Never reset.
+  attempts: number;
   stopped: boolean;
+  // A terminal failure that ends the session once capture stops.
   failure?: Failure;
   stopRequested: boolean;
   deadline?: number;
@@ -82,9 +141,16 @@ type Active = Attempt & {
   // Capture stopped at the five-minute limit; the outcome says so.
   limited?: boolean;
 };
+// A replay that never completed leaves the old best text; only when there was none does its
+// available text become the (incomplete) recovery text. Old and new text are never joined.
+const bestText = (current: Active) =>
+  current.text || (current.link.state === "open" ? current.link.text : "");
 type Armed = { id: string; text: string; inserting: boolean };
+type Retained = { audio: Uint8Array[]; origin: Origin; entry: RecoveryEntry };
 export function createSession(options: {
   available: () => boolean;
+  // False only when the device is known to be offline. Offline never blocks an explicit Start.
+  online: () => boolean;
   device: () => string | null;
   credential: () => Promise<string>;
   capture: (command: CaptureCommand) => void;
@@ -113,6 +179,7 @@ export function createSession(options: {
     recoveryMessage: "",
     quitWarning: false,
     pendingPractice: null,
+    retrying: null,
     latestSuccessful: null,
     lastTranscript: null,
     lastUpdate: "session",
@@ -122,7 +189,7 @@ export function createSession(options: {
   let held: string | undefined;
   let closed = false;
   let stoppingCapture: Attempt | undefined;
-  const retained = new Map<string, { audio: Uint8Array[]; entry: RecoveryEntry }>();
+  const retained = new Map<string, Retained>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   function later(callback: () => void, delay: number) {
     const timer = setTimeout(() => {
@@ -156,7 +223,7 @@ export function createSession(options: {
     }
   }
   function retain(
-    id: string,
+    { session: id, origin }: Active,
     text: string,
     transcription: RecoveryEntry["transcription"],
     audio: Uint8Array[],
@@ -165,6 +232,7 @@ export function createSession(options: {
   ) {
     retained.set(id, {
       audio,
+      origin,
       entry: { id, text, transcription, hasAudio: audio.length > 0, cause, delivery },
     });
     if (text) state = { ...state, lastTranscript: id };
@@ -205,20 +273,33 @@ export function createSession(options: {
       stoppingCapture = { session: current.session, attempt: current.attempt };
       sendCapture("capture.cancel", current);
     }
-    options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
-    if (current.origin === "dictation") releaseTarget(current.session);
-    // Delivery paths retain their own complete entry before ending; keep it intact.
-    if (
-      phase !== "complete" &&
-      !retained.has(current.session) &&
-      (current.audio.length || current.text)
-    )
-      retain(current.session, current.text, "incomplete", current.audio, message, "undelivered");
+    cancelStream(current);
+    if (current.origin === "dictation" && !current.retry) releaseTarget(current.session);
+    const text = bestText(current);
+    const kept = retained.get(current.session);
+    if (current.retry) {
+      // A failed or cancelled Retry keeps its whole source; only its explanation changes.
+      if (kept && phase !== "complete") {
+        kept.entry = { ...kept.entry, text, cause: message };
+        if (text) state = { ...state, lastTranscript: current.session };
+      }
+    } else if (phase !== "complete" && !kept && (current.audio.length || text))
+      // Delivery paths retain their own complete entry before ending; keep it intact.
+      retain(current, text, "incomplete", current.audio, message, "undelivered");
     engage();
     update({ phase, message, notice });
   }
   function fail(message: string, notice: Notice = "incomplete") {
     end("failed", message, notice);
+  }
+  // Cancelling also retires the provider worker, so nothing stays connected once an attempt ends.
+  function cancelStream(current: Active) {
+    const { link } = current;
+    options.provider({
+      type: "cancel",
+      session: current.session,
+      attempt: link.state === "open" ? link.attempt : current.attempt,
+    });
   }
   function recordingMessage(current: Active) {
     if (current.origin === "practice") return "Recording. Speak, then press Stop.";
@@ -231,41 +312,143 @@ export function createSession(options: {
   }
   // A connection warning stays visible for the rest of the capture.
   function recordingStatus(current: Active): Failure | { message: string; notice: null } {
-    return current.failure ?? { message: recordingMessage(current), notice: null };
+    const { link } = current;
+    return (
+      current.failure ??
+      (link.state === "down" && link.outage ? outageWarnings[link.outage] : undefined) ?? {
+        message: recordingMessage(current),
+        notice: null,
+      }
+    );
+  }
+  // Every wait, connection, replay, backoff and finalization shares one deadline. Nothing extends it.
+  function expireAt(current: Active) {
+    const expire = () => {
+      if (active !== current || current.deadline === undefined || current.inserting) return;
+      const remaining = current.deadline - performance.now();
+      if (remaining > 0) later(expire, remaining);
+      else timedOut(current);
+    };
+    later(expire, (current.deadline ?? 0) - performance.now());
+  }
+  function timedOut(current: Active) {
+    const { link } = current;
+    if (link.state === "open" && link.replay) {
+      const seconds = current.samples / 16_000;
+      fail(
+        `Processing timed out before the full replay finished. Replay runs at no more than 1.25× real time, so this ${Math.round(seconds)}-second recording needs at least ${Math.ceil(seconds / 1.25)} seconds before finalization. The recording and available text remain in recovery.`,
+      );
+      return;
+    }
+    if (link.state === "down" && !options.online()) {
+      fail(
+        "No connection before the processing deadline. Audio remains in memory; Retry from recovery when you are online.",
+        "connection",
+      );
+      return;
+    }
+    fail("Processing timed out. Audio and available text remain in memory.");
   }
   function requestStop(failure?: Failure) {
     const current = active;
     if (!current || current.stopRequested) return;
     current.stopRequested = true;
     current.stopTime = performance.now();
-    current.deadline = current.stopTime + (current.samples <= 480_000 ? 10_000 : 30_000);
+    current.deadline = current.stopTime + deadlineFor(current.samples);
     update({
       phase: "processing",
       notice: failure?.notice ?? null,
       message: failure?.message ?? "Finishing transcription…",
     });
     sendCapture("capture.stop", current);
-    const expire = () => {
-      if (active !== current || current.deadline === undefined || current.inserting) return;
-      const remaining = current.deadline - performance.now();
-      if (remaining > 0) later(expire, remaining);
-      else fail("Processing timed out. Audio and available text remain in memory.");
-    };
-    later(expire, current.deadline - performance.now());
+    expireAt(current);
   }
+  // Capture has stopped, or a Retry has begun: finish the open stream, or replay the whole source.
   function providerStop(current: Active) {
     if (current.failure) {
       fail(current.failure.message, current.failure.notice);
       return;
     }
-    if (current.providerStarted)
+    const { link } = current;
+    if (link.state === "down") replay(current);
+    else if (link.started)
       options.provider({
         type: "stop",
         session: current.session,
-        attempt: current.attempt,
+        attempt: link.attempt,
         frames: current.audio.length,
         samples: current.samples,
       });
+  }
+  // Opens a provider attempt and sends every retained frame in order. A replay is always the
+  // whole source on a fresh stream with fresh assembly; the adapter paces it at no more than 1.25x.
+  function connect(current: Active, full: boolean) {
+    const link: Link = {
+      state: "open",
+      attempt: full ? randomUUID() : current.attempt,
+      replay: full,
+      started: false,
+      text: "",
+    };
+    current.link = link;
+    current.attempts++;
+    void options
+      .credential()
+      .then((key) => {
+        if (active !== current || current.link !== link) return;
+        link.started = true;
+        options.provider({ type: "start", session: current.session, attempt: link.attempt, key });
+        for (const [sequence, pcm] of current.audio.entries())
+          options.provider({
+            type: "audio",
+            session: current.session,
+            attempt: link.attempt,
+            sequence,
+            pcm,
+          });
+        if (current.stopped) providerStop(current);
+      })
+      .catch(() => {
+        if (active !== current || current.link !== link) return;
+        current.failure = keyUnreadable;
+        if (current.retry) {
+          fail(keyUnreadable.message, keyUnreadable.notice);
+          return;
+        }
+        requestStop(current.failure);
+        if (current.stopped) fail(keyUnreadable.message, keyUnreadable.notice);
+      });
+  }
+  // The one automatic retry, or an explicit Retry's first attempt. It waits for connectivity and
+  // for provider backoff that fits the deadline; a failed connection attempt still counts.
+  function replay(current: Active) {
+    const { link } = current;
+    if (active !== current || link.state !== "down" || current.deadline === undefined) return;
+    if (current.attempts >= 2) {
+      const failure = outageFailures[link.outage ?? "connection"];
+      fail(failure.message, failure.notice);
+      return;
+    }
+    const now = performance.now();
+    if (link.retryAt >= current.deadline) {
+      fail(backoffTooLong.message, backoffTooLong.notice);
+      return;
+    }
+    const wait =
+      link.retryAt > now ? waitingForBackoff : options.online() ? undefined : waitingForConnection;
+    if (wait) {
+      if (state.message !== wait.message) update({ phase: "processing", ...wait });
+      later(() => replay(current), link.retryAt > now ? link.retryAt - now : 500);
+      return;
+    }
+    update({
+      phase: "processing",
+      notice: null,
+      message: current.retry
+        ? "Retrying transcription from the retained recording. The microphone stays off."
+        : "Transcribing the full recording again…",
+    });
+    connect(current, true);
   }
   function interruptDelivery(message: string) {
     const pending = state.pendingPractice && retained.get(state.pendingPractice);
@@ -312,7 +495,9 @@ export function createSession(options: {
       audio: [],
       samples: 0,
       text: "",
-      providerStarted: false,
+      retry: false,
+      link: { state: "down", outage: null, retryAt: 0 },
+      attempts: 0,
       stopped: false,
       stopRequested: false,
       inserting: false,
@@ -350,40 +535,86 @@ export function createSession(options: {
       if (active === current && state.phase === "starting")
         fail("The microphone did not provide audio. Check your device and permissions.", "setup");
     }, 3_000);
-    void options
-      .credential()
-      .then((key) => {
-        if (active !== current) return;
-        current.providerStarted = true;
-        options.provider({
-          type: "start",
-          session: current.session,
-          attempt: current.attempt,
-          key,
-        });
-        for (const [sequence, pcm] of current.audio.entries())
-          options.provider({
-            type: "audio",
-            session: current.session,
-            attempt: current.attempt,
-            sequence,
-            pcm,
-          });
-        if (current.stopped) providerStop(current);
-      })
-      .catch(() => {
-        if (active !== current) return;
-        current.failure = {
-          message: "The saved key could not be read. Repair Keychain access in Settings.",
-          notice: "setup",
-        };
-        requestStop(current.failure);
-        if (current.stopped) fail(current.failure.message, current.failure.notice);
-      });
+    // Offline counts as the original attempt; the one full replay follows Stop.
+    if (options.online()) connect(current, false);
+    else {
+      current.attempts = 1;
+      current.link = { state: "down", outage: "offline", retryAt: 0 };
+    }
+  }
+  // Explicit Retry transcribes the complete retained recording on a fresh stream. The microphone
+  // stays off, the 10/30-second deadline starts now, and any result stays in recovery for an
+  // explicit Copy or Paste, so already delivered text is never replaced or duplicated.
+  function retry(id: string) {
+    const source = retained.get(id);
+    if (!source?.audio.length || closed || state.quitWarning || active || armed || stoppingCapture)
+      return;
+    const samples = source.audio.reduce((total, pcm) => total + pcm.byteLength / 2, 0);
+    const now = performance.now();
+    const current: Active = {
+      session: id,
+      attempt: randomUUID(),
+      origin: source.origin,
+      mode: "toggle",
+      audio: source.audio,
+      samples,
+      text: source.entry.text,
+      retry: true,
+      link: { state: "down", outage: null, retryAt: 0 },
+      attempts: 0,
+      stopped: true,
+      stopRequested: true,
+      stopTime: now,
+      deadline: now + deadlineFor(samples),
+      inserting: false,
+    };
+    active = current;
+    engage();
+    update({
+      phase: "processing",
+      origin: source.origin,
+      notice: null,
+      recoveryMessage: "",
+      message: "Retrying transcription from the retained recording. The microphone stays off.",
+    });
+    expireAt(current);
+    replay(current);
+  }
+  function finishRetry(current: Active, text: string) {
+    const kept = retained.get(current.session);
+    if (!kept) return;
+    kept.audio = [];
+    current.audio = [];
+    if (!text) {
+      retained.delete(current.session);
+      end(
+        "complete",
+        "Retry complete. No speech was detected, so the recording was released.",
+        "no-speech",
+      );
+      return;
+    }
+    const delivered = ["copied", "inserted", "uncertain"].includes(kept.entry.delivery);
+    kept.entry = {
+      ...kept.entry,
+      text,
+      transcription: "complete",
+      hasAudio: false,
+      delivery: "undelivered",
+      cause: delivered
+        ? "Retry produced the complete transcript. Earlier available text was already delivered; check the destination before pasting so nothing is duplicated."
+        : "Retry produced the complete transcript. Copy or Paste it.",
+    };
+    state = { ...state, lastTranscript: current.session };
+    end("complete", "Retry complete. The transcript is in recovery; Copy or Paste it.");
   }
   function cancel() {
     const current = active;
     if (!current || current.inserting) return;
+    if (current.retry) {
+      end("cancelled", "Retry cancelled. The recording and its text remain in recovery.");
+      return;
+    }
     current.audio = [];
     end("cancelled", "Cancelled. Any produced text remains in memory.");
   }
@@ -393,7 +624,9 @@ export function createSession(options: {
     if (!current || current.inserting) return;
     current.failure = { message, notice: "incomplete" };
     requestStop(current.failure);
-    options.provider({ type: "cancel", session: current.session, attempt: current.attempt });
+    cancelStream(current);
+    current.text = bestText(current);
+    current.link = { state: "down", outage: null, retryAt: 0 };
     if (current.stopped) fail(message);
   }
   function finishInsertion(current: Active, text: string, outcome: InsertionOutcome) {
@@ -410,12 +643,12 @@ export function createSession(options: {
       return;
     }
     if (outcome === "uncertain") {
-      retain(current.session, text, "complete", [], uncertainCause, "uncertain");
+      retain(current, text, "complete", [], uncertainCause, "uncertain");
       end("failed", "Check your target. The transcript is in recovery.", "uncertain");
       return;
     }
     retain(
-      current.session,
+      current,
       text,
       "complete",
       [],
@@ -432,7 +665,7 @@ export function createSession(options: {
     const target = current.target ?? "unavailable";
     if (target !== "eligible") {
       retain(
-        current.session,
+        current,
         text,
         "complete",
         [],
@@ -528,6 +761,7 @@ export function createSession(options: {
     snapshot: () => ({
       ...state,
       recovery: [...retained.values()].map(({ entry }) => Object.assign({}, entry)),
+      retrying: active?.retry ? active.session : null,
       blocker: blocker(),
       lastTranscript: lastTranscript(),
     }),
@@ -547,8 +781,14 @@ export function createSession(options: {
         await paste(command.id);
         return;
       }
+      if (command.type === "recovery.retry") {
+        retry(command.id);
+        return;
+      }
       if (command.type === "recovery.discard") {
         if (armed?.id === command.id) disarm("Paste cancelled.");
+        if (active?.retry && active.session === command.id)
+          end("cancelled", "Retry cancelled because its recording was discarded.");
         if (state.latestSuccessful?.id === command.id) {
           update({
             latestSuccessful: null,
@@ -683,7 +923,7 @@ export function createSession(options: {
         // The final duration includes frames already captured when Stop was requested.
         // Reclassifying that duration never moves the original Stop time.
         if (current.stopTime !== undefined)
-          current.deadline = current.stopTime + (current.samples <= 480_000 ? 10_000 : 30_000);
+          current.deadline = current.stopTime + deadlineFor(current.samples);
         if (event.frames !== current.audio.length || event.samples !== current.samples) {
           fail("Microphone audio was incomplete. Available work remains in memory.");
           return;
@@ -721,11 +961,12 @@ export function createSession(options: {
       }
       current.audio.push(pcm);
       current.samples += pcm.length / 2;
-      if (current.providerStarted && !current.failure)
+      const { link } = current;
+      if (link.state === "open" && link.started && !current.failure)
         options.provider({
           type: "audio",
           session: current.session,
-          attempt: current.attempt,
+          attempt: link.attempt,
           sequence: event.sequence,
           pcm,
         });
@@ -743,35 +984,46 @@ export function createSession(options: {
         return;
       }
       const current = active;
+      const link = current?.link;
       if (
         !current ||
+        link?.state !== "open" ||
         event.session !== current.session ||
-        event.attempt !== current.attempt ||
+        event.attempt !== link.attempt ||
         current.failure ||
         current.inserting
       )
         return;
       if (current.deadline !== undefined && performance.now() >= current.deadline) {
-        fail("Processing timed out. Audio and available text remain in memory.");
+        timedOut(current);
         return;
       }
       if (event.type === "stable" || event.type === "partial") {
-        current.text = event.text;
+        link.text = event.text;
+        if (!link.replay) current.text = event.text;
         return;
       }
       if (event.type === "failed") {
-        current.failure = providerFailures[event.reason];
         if (
           event.reason === "rejected" ||
           event.reason === "quota" ||
           event.reason === "rate-limit"
         )
           options.access(event.reason);
-        // An explicitly started capture continues with a visible connection warning.
-        if (event.reason === "connection" && !current.stopRequested) {
-          update(current.failure);
+        if (event.reason === "connection" || event.reason === "rate-limit") {
+          // Transient: an explicitly started capture continues with a visible warning, and the
+          // whole source is replayed once after Stop within the original deadline.
+          current.text = bestText(current);
+          current.link = {
+            state: "down",
+            outage: event.reason,
+            retryAt: event.retryAfter === undefined ? 0 : performance.now() + event.retryAfter,
+          };
+          if (!current.stopRequested) update(recordingStatus(current));
+          else if (current.stopped) replay(current);
           return;
         }
+        current.failure = providerFailures[event.reason];
         requestStop(current.failure);
         if (current.stopped) fail(current.failure.message, current.failure.notice);
         return;
@@ -784,6 +1036,10 @@ export function createSession(options: {
       }
       current.text = event.text;
       options.access("authenticated");
+      if (current.retry) {
+        finishRetry(current, event.text);
+        return;
+      }
       current.audio = [];
       if (!event.text) {
         end("complete", "No speech detected", "no-speech");
@@ -794,7 +1050,7 @@ export function createSession(options: {
         return;
       }
       retain(
-        current.session,
+        current,
         event.text,
         "complete",
         [],
@@ -808,7 +1064,7 @@ export function createSession(options: {
     // Window lifecycle only affects practice work; shortcut dictation keeps its external target.
     practiceInterrupted(message: string) {
       interruptDelivery(message);
-      if (active?.origin === "practice") interrupt(message);
+      if (active?.origin === "practice" && !active.retry) interrupt(message);
     },
     helperFailed() {
       stoppingCapture = undefined;

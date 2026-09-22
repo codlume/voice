@@ -18,6 +18,7 @@ async function simulate(page: Page, initial: Partial<SessionSnapshot>) {
       recoveryMessage: "",
       quitWarning: false,
       pendingPractice: null,
+      retrying: null,
       latestSuccessful: null,
       lastTranscript: null,
       lastUpdate: "session",
@@ -174,4 +175,78 @@ test("compact bar shows only Start and the main window disables Start with the c
     { type: "session.start", origin: "dictation" },
     { type: "session.cancel" },
   ]);
+});
+
+test("recovery offers Retry for retained recordings, explains the replay limit, and shows the shared offline warning", async ({
+  page,
+}) => {
+  const entry = {
+    id: "source",
+    text: "Available text.",
+    transcription: "incomplete" as const,
+    hasAudio: true,
+    cause: "Connection lost. Audio remains in memory; transcription needs internet.",
+    delivery: "undelivered" as const,
+  };
+  await simulate(page, {
+    phase: "failed",
+    origin: "practice",
+    notice: "connection",
+    message: entry.cause,
+    blocker: "recovery-full",
+    recovery: [
+      entry,
+      ...[1, 2, 3, 4].map((index) => Object.assign({}, entry, { id: `other-${index}` })),
+    ],
+  });
+  await page.goto("/");
+  const recovery = page.getByRole("region", { name: "Temporary recovery" });
+  await expect(recovery).toContainText(
+    "A 30-second recording takes at least 24 seconds and a five-minute recording at least 240 seconds",
+  );
+  const first = recovery.getByRole("article", { name: "Recovery session 1", exact: true });
+  // A full recovery blocks new capture, not Retry of a recording already held.
+  await expect(first.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
+  await first.getByRole("button", { name: "Retry", exact: true }).click();
+  await setSession(page, {
+    phase: "processing",
+    blocker: "busy",
+    retrying: "source",
+    notice: null,
+    message: "Retrying transcription from the retained recording. The microphone stays off.",
+  });
+  await expect(first).toContainText("The microphone stays off.");
+  await expect(
+    recovery
+      .getByRole("article", { name: "Recovery session 2", exact: true })
+      .getByRole("button", { name: "Retry", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByTestId("practice-status")).toHaveText(
+    "Retrying transcription from the retained recording. The microphone stays off.",
+  );
+  await first.screenshot({ path: "test-results/recovery-retrying.png" });
+  await first.getByRole("button", { name: "Cancel retry", exact: true }).click();
+  const offline =
+    "Offline. Recording continues and audio stays in memory; Voice transcribes after you stop if the connection returns.";
+  await setSession(page, {
+    phase: "recording",
+    retrying: null,
+    notice: "connection",
+    message: offline,
+    recovery: [],
+  });
+  await expect(page.getByTestId("practice-status")).toHaveText(offline);
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { sent: Command[] }).sent.filter(
+        (command) => command.type !== "settings.get" && command.type !== "status.get",
+      ),
+    ),
+  ).toEqual([{ type: "recovery.retry", id: "source" }, { type: "session.cancel" }]);
+
+  await page.setViewportSize({ width: 480, height: 84 });
+  await page.goto("/?view=status");
+  await setSession(page, { phase: "recording", notice: "connection", message: offline });
+  await expect(page.getByTestId("panel-status")).toHaveText(offline);
+  await page.screenshot({ path: "test-results/bar-offline-recording.png" });
 });

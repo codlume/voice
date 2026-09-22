@@ -87,11 +87,6 @@ export function PracticeView({
       <p aria-live="polite" data-testid="practice-status" {...stylex.props(styles.text)}>
         {error || session?.message || "Complete setup to start practice."}
       </p>
-      {reply?.ok && reply.setup?.connectivity === "offline" && active && (
-        <p {...stylex.props(styles.text)}>
-          You are offline. Audio stays in memory; transcription needs internet.
-        </p>
-      )}
       <label {...stylex.props(styles.label)}>
         Practice transcript
         <textarea

@@ -20,6 +20,7 @@ export const SessionCommand = Schema.Union([
       "recovery.copy",
       "recovery.discard",
       "recovery.paste",
+      "recovery.retry",
       "practice.delivered",
     ]),
     id: identity,
@@ -33,6 +34,7 @@ export const sessionCommandTypes = [
   "recovery.copy",
   "recovery.discard",
   "recovery.paste",
+  "recovery.retry",
   "practice.delivered",
 ] as const satisfies readonly SessionCommand["type"][];
 export type SessionCommand = typeof SessionCommand.Type;
@@ -65,6 +67,7 @@ export const startBlockerMessages: Record<StartBlocker, string> = {
 export const Notice = Schema.Literals([
   "limit",
   "connection",
+  "rate-limit",
   "no-speech",
   "incomplete",
   "setup",
@@ -94,6 +97,8 @@ export const SessionSnapshot = Schema.Struct({
   recoveryMessage: Schema.String,
   quitWarning: Schema.Boolean,
   pendingPractice: Schema.NullOr(identity),
+  // The recovery entry whose retained recording an explicit Retry is transcribing again.
+  retrying: Schema.NullOr(identity),
   latestSuccessful: Schema.NullOr(Schema.Struct({ id: identity, text: Schema.String })),
   // The most recent transcript still held, delivered or not, for Copy/Paste last transcript.
   lastTranscript: Schema.NullOr(identity),
@@ -230,7 +235,19 @@ export const ProviderEvent = Schema.Union([
     text: Schema.String.check(Schema.isMaxLength(100_000)),
     samples: count,
   }),
-  Schema.Struct({ type: Schema.Literal("failed"), ...attempt, reason: ProviderFailure }),
+  Schema.Struct({
+    type: Schema.Literal("failed"),
+    ...attempt,
+    reason: ProviderFailure,
+    // Provider-requested wait before another attempt, in milliseconds, for rate limits.
+    retryAfter: Schema.optionalKey(
+      Schema.Number.check(
+        Schema.isInt(),
+        Schema.isGreaterThanOrEqualTo(0),
+        Schema.isLessThanOrEqualTo(3_600_000),
+      ),
+    ),
+  }),
 ]);
 export type ProviderEvent = typeof ProviderEvent.Type;
 const strict = { onExcessProperty: "error" } as const;

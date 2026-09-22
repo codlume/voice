@@ -7,6 +7,7 @@ function fixture() {
   const provider: ProviderRequest[] = [];
   const owner = createSession({
     available: () => true,
+    online: () => true,
     device: () => null,
     credential: async () => "synthetic",
     capture: (command) => capture.push(command),

@@ -159,6 +159,8 @@ const fixtureUrl =
   testDirectory && process.env.VOICE_TEST_CAPTURE === "synthetic"
     ? process.env.VOICE_TEST_PROVIDER_URL
     : undefined;
+let testOffline = false;
+let testCaptureStarts = 0;
 const provider = createProvider(
   join(__dirname, "provider-worker.cjs"),
   (event) => dictation.providerEvent(event),
@@ -169,11 +171,14 @@ export const dictation = createSession({
     helperState === "ready" &&
     storage?.state === "ready" &&
     (!!fixtureUrl || setup.snapshot().blockers.length === 0),
+  // Isolated tests drive connectivity through the test hook, never the machine's network state.
+  online: () => (fixtureUrl ? !testOffline : net.isOnline()),
   device: () => commands.preferences().inputDevice,
   credential: () => helper?.credential() ?? Promise.reject(new Error("native-unavailable")),
   capture: (command) => {
     if (!helper) throw new Error("native-unavailable");
     helper.capture(command);
+    if (testDirectory && command.type === "capture.start") testCaptureStarts++;
   },
   provider: (command) => provider.send(command),
   changed: notify,
@@ -212,6 +217,7 @@ export const practice = dictation;
 if (testDirectory) {
   // Packaged tests drive the shortcut path without a native key tap. The real-key proof is separate.
   // The menu hook reads and clicks the real menu-bar Menu; native menu clicks are proved separately.
+  // The offline hook stands in for network state, and captureStarts counts microphone starts.
   Object.assign(globalThis, {
     voiceTest: {
       shortcut: (action: unknown) =>
@@ -229,6 +235,10 @@ if (testDirectory) {
         item.click();
         return true;
       },
+      offline: (value: unknown) => {
+        testOffline = value === true;
+      },
+      captureStarts: () => testCaptureStarts,
       panelBounds: () => panel?.getBounds(),
       trayBounds: () => tray?.getBounds(),
     },

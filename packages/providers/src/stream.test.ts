@@ -125,6 +125,72 @@ it.each([
     }
   },
 );
+it.each([
+  ["7", 7_000],
+  [undefined, undefined],
+  ["Wed, 21 Oct 2026 07:28:00 GMT", undefined],
+] as const)(
+  "reports rate-limit Retry-After %s as backoff for the session",
+  async (header, retryAfter) => {
+    const { createServer } = await import("node:http");
+    const server = createServer((_request, response) => {
+      response.writeHead(429, header ? { "Retry-After": header } : {});
+      response.end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing address");
+    const done = Promise.withResolvers<ProviderEvent>();
+    const stream = startStream(
+      { session: "limit", attempt: "one", key: "synthetic" },
+      (event) => done.resolve(event),
+      `ws://127.0.0.1:${address.port}`,
+    );
+    try {
+      expect(await done.promise).toEqual({
+        type: "failed",
+        session: "limit",
+        attempt: "one",
+        reason: "rate-limit",
+        ...(retryAfter === undefined ? {} : { retryAfter }),
+      });
+    } finally {
+      stream.cancel();
+      server.close();
+    }
+  },
+);
+it("reports a dropped transport as a connection loss, not an incomplete result", async () => {
+  const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await once(server, "listening");
+  const address = server.address();
+  if (typeof address === "string" || !address) throw new Error("missing address");
+  server.on("connection", (socket) =>
+    socket.on("message", () => {
+      socket.send(JSON.stringify(result(0, 0.02, "Keep this.")));
+      socket.terminate();
+    }),
+  );
+  const events: ProviderEvent[] = [];
+  const done = Promise.withResolvers<ProviderEvent>();
+  const stream = startStream(
+    { session: "drop", attempt: "one", key: "synthetic" },
+    (event) => {
+      events.push(event);
+      if (event.type === "failed") done.resolve(event);
+    },
+    `ws://127.0.0.1:${address.port}`,
+  );
+  try {
+    stream.audio(0, new Uint8Array(640).fill(1));
+    expect(await done.promise).toMatchObject({ type: "failed", reason: "connection" });
+    expect(events.some((event) => event.type === "complete")).toBe(false);
+  } finally {
+    stream.cancel();
+    server.close();
+  }
+});
 it("paces buffered audio at no more than 1.25x under a controlled clock", async () => {
   const { vi } = await import("vite-plus/test");
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });

@@ -14,6 +14,7 @@ function fixture(copy?: (text: string) => Promise<boolean>) {
   const quit = { confirmed: false };
   const owner = createSession({
     available: () => true,
+    online: () => true,
     device: () => null,
     credential: async () => "synthetic",
     capture: (command) => {
