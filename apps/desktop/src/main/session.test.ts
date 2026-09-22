@@ -14,6 +14,13 @@ function fixture() {
     changed: () => {},
     copy: async () => true,
     access: () => {},
+    target: {
+      capture: async () => "eligible",
+      arm: async () => {},
+      insert: async () => "inserted",
+      release: () => {},
+    },
+    engaged: () => {},
   });
   return { owner, capture, provider };
 }

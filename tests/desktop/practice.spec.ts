@@ -178,16 +178,26 @@ test("packaged practice uses native PCM, the provider worker, and one final prac
     await first.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(start).toBeEnabled();
     await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close());
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => !w.webContents.getURL().includes("view=status"))!
+        .close(),
+    );
     expect(
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible()),
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => !w.webContents.getURL().includes("view=status"))!
+          .isVisible(),
+      ),
     ).toBe(false);
     await app.evaluate(({ app: application }) => application.emit("activate"));
     await expect(recovery.getByRole("article", { name: /^Recovery session/ })).toHaveCount(4);
     await app.evaluate(
       ({ BrowserWindow }) =>
         new Promise<void>((done) => {
-          const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+          const contents = BrowserWindow.getAllWindows().find(
+            (w) => !w.webContents.getURL().includes("view=status"),
+          )!.webContents;
           contents.once("render-process-gone", () => done());
           contents.forcefullyCrashRenderer();
         }),

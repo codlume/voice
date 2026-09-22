@@ -4,8 +4,8 @@ import CoreFoundation
 public enum SetupPermission: String, Codable, Sendable {
     case microphone, accessibility, inputMonitoring
 }
-public enum PermissionState: String, Encodable { case notRequested = "not-requested", granted, denied, unavailable }
-public struct SetupPermissions: Encodable {
+public enum PermissionState: String, Encodable, Sendable { case notRequested = "not-requested", granted, denied, unavailable }
+public struct SetupPermissions: Encodable, Sendable {
     public let microphone: PermissionState
     public let accessibility: PermissionState
     public let inputMonitoring: PermissionState
@@ -17,14 +17,14 @@ public enum ShortcutBinding: String, Sendable {
     case fn = "Fn", fnSpace = "Fn+Space", escape = "Escape"
     case controlOptionSpace = "Control+Option+Space", controlShiftSpace = "Control+Shift+Space", controlOptionEscape = "Control+Option+Escape"
 }
-public struct SetupShortcuts: Sendable {
+public struct SetupShortcuts: Sendable, Equatable {
     public let hold: ShortcutBinding
     public let toggle: ShortcutBinding
     public let cancel: ShortcutBinding
     public var values: [ShortcutBinding] { [hold, toggle, cancel] }
 }
-public enum ShortcutAvailability: String, Encodable { case available, conflict, unavailable }
-public struct SetupShortcutStatus: Encodable {
+public enum ShortcutAvailability: String, Encodable, Sendable { case available, conflict, unavailable }
+public struct SetupShortcutStatus: Encodable, Sendable {
     public let hold: ShortcutAvailability
     public let toggle: ShortcutAvailability
     public let cancel: ShortcutAvailability
@@ -32,12 +32,12 @@ public struct SetupShortcutStatus: Encodable {
         self.hold = hold; self.toggle = toggle; self.cancel = cancel
     }
 }
-public struct SetupDevice: Encodable {
+public struct SetupDevice: Encodable, Sendable {
     public let id: String
     public let name: String
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
-public struct SetupStatus: Encodable {
+public struct SetupStatus: Encodable, Sendable {
     public let permissions: SetupPermissions
     public let devices: [SetupDevice]
     public let defaultDevice: String?
@@ -54,10 +54,26 @@ public struct SetupStatus: Encodable {
         try values.encode(shortcuts, forKey: .shortcuts)
     }
 }
+public enum TargetStatus: String, Encodable, Sendable { case eligible, none, unsupported, protected, terminal, unavailable }
+public enum InsertionOutcome: String, Encodable, Sendable { case inserted, changed, closed, protected, unsupported, missing, failed, uncertain }
 public enum SetupCommand: Sendable {
     case status(SetupShortcuts), requestPermission(SetupPermission), credentialStatus, setCredential(String), removeCredential
+    case configureShortcuts(SetupShortcuts, active: Bool)
+    case captureTarget(String), armTarget(String), releaseTarget(String), insertTarget(String, text: String)
 }
-public struct SetupRequest {
+private func shortcuts(_ value: Any?) -> SetupShortcuts? {
+    guard let bindings = value as? [String: String],
+          Set(bindings.keys) == Set(["hold", "toggle", "cancel"]),
+          let hold = bindings["hold"].flatMap(ShortcutBinding.init),
+          let toggle = bindings["toggle"].flatMap(ShortcutBinding.init),
+          let cancel = bindings["cancel"].flatMap(ShortcutBinding.init) else { return nil }
+    return SetupShortcuts(hold: hold, toggle: toggle, cancel: cancel)
+}
+private func identity(_ value: Any?) -> String? {
+    guard let session = value as? String, !session.isEmpty, session.count <= 64 else { return nil }
+    return session
+}
+public struct SetupRequest: Sendable {
     public let id: Int
     public let command: SetupCommand
     // JSON's untyped representation is confined to the strict decoding boundary.
@@ -75,13 +91,19 @@ public struct SetupRequest {
         self.id = number.intValue
         switch type {
         case "setup.status":
-            guard Set(command.keys) == Set(["type", "shortcuts"]),
-                  let bindings = command["shortcuts"] as? [String: String],
-                  Set(bindings.keys) == Set(["hold", "toggle", "cancel"]),
-                  let hold = bindings["hold"].flatMap(ShortcutBinding.init),
-                  let toggle = bindings["toggle"].flatMap(ShortcutBinding.init),
-                  let cancel = bindings["cancel"].flatMap(ShortcutBinding.init) else { return nil }
-            self.command = .status(SetupShortcuts(hold: hold, toggle: toggle, cancel: cancel))
+            guard Set(command.keys) == Set(["type", "shortcuts"]), let bindings = shortcuts(command["shortcuts"]) else { return nil }
+            self.command = .status(bindings)
+        case "shortcut.configure":
+            guard Set(command.keys) == Set(["type", "shortcuts", "active"]), let bindings = shortcuts(command["shortcuts"]),
+                  let active = command["active"] as? NSNumber, CFGetTypeID(active) == CFBooleanGetTypeID() else { return nil }
+            self.command = .configureShortcuts(bindings, active: active.boolValue)
+        case "target.capture", "target.arm", "target.release":
+            guard Set(command.keys) == Set(["type", "session"]), let session = identity(command["session"]) else { return nil }
+            self.command = type == "target.capture" ? .captureTarget(session) : type == "target.arm" ? .armTarget(session) : .releaseTarget(session)
+        case "target.insert":
+            guard Set(command.keys) == Set(["type", "session", "text"]), let session = identity(command["session"]),
+                  let text = command["text"] as? String, !text.isEmpty, text.utf8.count <= 400_000, text.count <= 100_000 else { return nil }
+            self.command = .insertTarget(session, text: text)
         case "permission.request":
             guard Set(command.keys) == Set(["type", "permission"]),
                   let name = command["permission"] as? String,
@@ -99,11 +121,16 @@ public struct SetupRequest {
         }
     }
 }
-public enum CredentialPresence: String, Encodable { case missing, saved }
-public enum SetupError: String, Encodable { case keychainUnavailable = "keychain-unavailable", invalidCommand = "invalid-command" }
-public enum SetupResult: Encodable {
+public enum CredentialPresence: String, Encodable, Sendable { case missing, saved }
+public enum SetupError: String, Encodable, Sendable { case keychainUnavailable = "keychain-unavailable", invalidCommand = "invalid-command" }
+public enum SetupResult: Encodable, Sendable {
     case setup(SetupStatus), credential(CredentialPresence), permission, error(SetupError)
-    private enum CodingKeys: String, CodingKey { case type, status, presence, error }
+    case shortcuts(listening: Bool)
+    case target(session: String, status: TargetStatus)
+    case insertion(session: String, outcome: InsertionOutcome)
+    case released(session: String)
+    case armed(session: String)
+    private enum CodingKeys: String, CodingKey { case type, status, presence, error, listening, session, outcome }
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -111,6 +138,14 @@ public enum SetupResult: Encodable {
         case .credential(let presence): try values.encode("credential", forKey: .type); try values.encode(presence, forKey: .presence)
         case .permission: try values.encode("permission", forKey: .type)
         case .error(let error): try values.encode("error", forKey: .type); try values.encode(error, forKey: .error)
+        case .shortcuts(let listening): try values.encode("shortcuts", forKey: .type); try values.encode(listening, forKey: .listening)
+        case .target(let session, let status):
+            try values.encode("target", forKey: .type); try values.encode(session, forKey: .session)
+            try values.encode(status, forKey: .status)
+        case .insertion(let session, let outcome):
+            try values.encode("insertion", forKey: .type); try values.encode(session, forKey: .session); try values.encode(outcome, forKey: .outcome)
+        case .released(let session): try values.encode("released", forKey: .type); try values.encode(session, forKey: .session)
+        case .armed(let session): try values.encode("armed", forKey: .type); try values.encode(session, forKey: .session)
         }
     }
 }

@@ -1,5 +1,6 @@
 import { RecoveryView } from "./recovery";
 import { PracticeView } from "./practice";
+import { DictationView } from "./dictation";
 import { SetupView } from "./setup";
 import { useEffect, useState } from "react";
 import * as stylex from "@stylexjs/stylex";
@@ -93,6 +94,7 @@ export function SettingsView() {
   return (
     <SettingsPage appearance={settings.appearance}>
       <SetupView reply={reply} onReply={setReply} />
+      <DictationView reply={reply} />
       <PracticeView reply={reply} onReply={setReply} />
       <RecoveryView reply={reply} onReply={setReply} />
       <h2 {...stylex.props(styles.heading)}>Appearance</h2>
@@ -146,8 +148,8 @@ export function SettingsView() {
           </p>
         )}
       <p {...stylex.props(styles.notice)}>
-        Development preview. Practice dictation is available after setup; system-wide dictation is
-        still in development.
+        Development preview. After setup, shortcuts dictate into native text fields such as
+        TextEdit. Browser, editor, and terminal support is still in development.
       </p>
     </SettingsPage>
   );

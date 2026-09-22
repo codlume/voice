@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { InsertionOutcome, TargetStatus } from "./session";
 
 const boundedText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 export const permissionNames = ["microphone", "accessibility", "inputMonitoring"] as const;
@@ -108,18 +109,42 @@ export const SetupCommand = Schema.Union([
   RemoveCredential,
 ]);
 export type SetupCommand = typeof SetupCommand.Type;
+const targetIdentity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
 export const NativeSetupCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("setup.status"), shortcuts: Shortcuts }),
   RequestPermission,
   Schema.Struct({ type: Schema.Literal("credential.status") }),
   SetCredential,
   RemoveCredential,
+  // Full desired shortcut state. `active` lets the helper consume the cancel key during a session.
+  Schema.Struct({
+    type: Schema.Literal("shortcut.configure"),
+    shortcuts: Shortcuts,
+    active: Schema.Boolean,
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["target.capture", "target.arm", "target.release"]),
+    session: targetIdentity,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("target.insert"),
+    session: targetIdentity,
+    text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)),
+  }),
 ]);
 export type NativeSetupCommand = typeof NativeSetupCommand.Type;
 export const NativeSetupResult = Schema.Union([
   Schema.Struct({ type: Schema.Literal("setup"), status: NativeSetupStatus }),
   Schema.Struct({ type: Schema.Literal("credential"), presence: CredentialPresence }),
   Schema.Struct({ type: Schema.Literal("permission") }),
+  Schema.Struct({ type: Schema.Literal("shortcuts"), listening: Schema.Boolean }),
+  Schema.Struct({ type: Schema.Literal("target"), session: targetIdentity, status: TargetStatus }),
+  Schema.Struct({
+    type: Schema.Literal("insertion"),
+    session: targetIdentity,
+    outcome: InsertionOutcome,
+  }),
+  Schema.Struct({ type: Schema.Literals(["released", "armed"]), session: targetIdentity }),
   Schema.Struct({
     type: Schema.Literal("error"),
     error: Schema.Literals(["keychain-unavailable", "native-unavailable", "invalid-command"]),

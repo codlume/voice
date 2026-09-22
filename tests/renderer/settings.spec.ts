@@ -17,7 +17,12 @@ test("production CSS and simulated preload save a preference and report a failed
         return {
           ok: true,
           settings,
-          status: { storage: "ready", helper: "ready", capture: "unavailable" },
+          status: {
+            storage: "ready",
+            helper: "ready",
+            capture: "unavailable",
+            shortcuts: "unavailable",
+          },
         };
       },
     };
@@ -48,7 +53,12 @@ test("shared setup controls show repair actions, clear submitted secrets, and ke
         return {
           ok: true,
           settings: { appearance: "light" },
-          status: { storage: "ready", helper: "ready", capture: "unavailable" },
+          status: {
+            storage: "ready",
+            helper: "ready",
+            capture: "unavailable",
+            shortcuts: "unavailable",
+          },
           setup: {
             native: {
               permissions: {

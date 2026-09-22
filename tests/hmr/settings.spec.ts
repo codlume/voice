@@ -15,7 +15,12 @@ test("component and shared-token HMR preserve an unsaved React preference and th
         command: async () => ({
           ok: true,
           settings: { appearance: "light" },
-          status: { storage: "ready", helper: "ready", capture: "unavailable" },
+          status: {
+            storage: "ready",
+            helper: "ready",
+            capture: "unavailable",
+            shortcuts: "unavailable",
+          },
         }),
       };
     });

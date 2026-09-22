@@ -239,3 +239,148 @@ test(
     }
   },
 );
+
+test(
+  "shortcut translation emits one action per transition and consumes only interpreted keys",
+  { timeout: 10_000 },
+  async () => {
+    const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        VOICE_TEST_KEYCHAIN_SERVICE: "com.codlume.voice.test.shortcuts",
+        VOICE_TEST_CAPTURE: "synthetic",
+      },
+    });
+    const lines = createInterface({ input: child.stdout });
+    const closed = once(child, "exit");
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+    const actions = [];
+    const waiting = [];
+    lines.on("line", (line) => {
+      const event = JSON.parse(line);
+      if (event.type === "shortcut") actions.push(event.action);
+      else waiting.shift()?.(event);
+    });
+    const reply = (payload) =>
+      new Promise((done) => {
+        waiting.push(done);
+        child.stdin.write(JSON.stringify(payload) + "\n");
+      });
+    const press = (key, down, flags = [], repeat = false) =>
+      reply({ type: "shortcut.simulate", key, down, flags, repeat }).then(
+        (event) => event.consumed,
+      );
+    try {
+      await reply({ type: "hello", version: 1 });
+      const configured = await reply({
+        type: "setup.request",
+        version: 1,
+        id: 1,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: false,
+        },
+      });
+      assert.equal(configured.result.type, "shortcuts");
+      // Listening depends on the runner's Accessibility grant; the translation below does not.
+      assert.equal(typeof configured.result.listening, "boolean");
+      assert.equal(await press("fn", true), false);
+      assert.equal(await press("fn", true), false);
+      assert.equal(await press("space", true, ["fn"]), true);
+      assert.equal(await press("space", true, ["fn"], true), true);
+      assert.equal(await press("space", false, ["fn"]), true);
+      assert.equal(await press("fn", false), false);
+      assert.equal(await press("escape", true), false);
+      assert.equal(await press("a", true, ["fn"]), false);
+      assert.equal(await press("space", true), false);
+      // Idle Escape belongs to the frontmost app and produces no action.
+      assert.deepEqual(actions, ["hold.down", "toggle", "hold.up"]);
+      await reply({
+        type: "setup.request",
+        version: 1,
+        id: 2,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: {
+            hold: "Control+Option+Space",
+            toggle: "Control+Shift+Space",
+            cancel: "Control+Option+Escape",
+          },
+          active: true,
+        },
+      });
+      assert.equal(await press("space", true, ["control", "option"]), true);
+      assert.equal(await press("space", true, ["control", "option"], true), true);
+      assert.equal(await press("space", false, ["control", "option"]), true);
+      assert.equal(await press("space", true, ["control", "shift"]), true);
+      assert.equal(await press("escape", true, ["control", "option"]), true);
+      assert.equal(await press("escape", true), false);
+      assert.deepEqual(actions.slice(3), ["hold.down", "hold.up", "toggle", "cancel"]);
+      // A binding change while the hold key is down waits for its release.
+      assert.equal(await press("space", true, ["control", "option"]), true);
+      await reply({
+        type: "setup.request",
+        version: 1,
+        id: 6,
+        command: {
+          type: "shortcut.configure",
+          shortcuts: { hold: "Fn", toggle: "Fn+Space", cancel: "Escape" },
+          active: true,
+        },
+      });
+      // The previous bindings stay in force until the held key is released.
+      assert.equal(await press("escape", true, ["control", "option"]), true);
+      assert.equal(await press("space", false, ["control", "option"]), true);
+      assert.equal(await press("fn", true), false);
+      assert.equal(await press("fn", false), false);
+      assert.deepEqual(actions.slice(7), [
+        "hold.down",
+        "cancel",
+        "hold.up",
+        "hold.down",
+        "hold.up",
+      ]);
+      const missing = await reply({
+        type: "setup.request",
+        version: 1,
+        id: 3,
+        command: { type: "target.insert", session: "nobody", text: "Hello" },
+      });
+      assert.deepEqual(missing.result, {
+        type: "insertion",
+        session: "nobody",
+        outcome: "missing",
+      });
+      const released = await reply({
+        type: "setup.request",
+        version: 1,
+        id: 4,
+        command: { type: "target.release", session: "nobody" },
+      });
+      assert.deepEqual(released.result, { type: "released", session: "nobody" });
+      const captured = await reply({
+        type: "setup.request",
+        version: 1,
+        id: 5,
+        command: { type: "target.capture", session: "probe" },
+      });
+      assert.equal(captured.result.type, "target");
+      assert.ok(
+        ["eligible", "none", "unsupported", "protected", "terminal", "unavailable"].includes(
+          captured.result.status,
+        ),
+      );
+      await reply({ type: "shutdown", version: 1 });
+      await closed;
+    } finally {
+      clearTimeout(timeout);
+      lines.close();
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+        await closed;
+      }
+    }
+  },
+);

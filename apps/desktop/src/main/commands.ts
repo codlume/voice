@@ -1,14 +1,26 @@
 import type { createSession } from "./session";
-import { decodeCommand, type Settings, type Reply, type Status } from "@voice/contracts/desktop";
+import {
+  decodeCommand,
+  type Command,
+  type Settings,
+  type Reply,
+  type Status,
+} from "@voice/contracts/desktop";
+import type { SessionCommand } from "@voice/contracts/session";
 
 import { defaultSetupPreferences, type SetupPreferences } from "@voice/contracts/setup";
+import { sessionCommandTypes } from "@voice/contracts/session";
 import type { createSetup } from "./setup";
 
+const isSessionCommand = (command: Command): command is SessionCommand =>
+  (sessionCommandTypes as readonly string[]).includes(command.type);
 export function createCommands<Sender>(options: {
   quit?: (confirmed: boolean) => void;
   session?: () => ReturnType<typeof createSession>;
   setup?: () => ReturnType<typeof createSetup>;
   isAuthorized: (sender: Sender) => boolean;
+  // Narrows the command surface for a sender that only needs to read state.
+  permitted?: (sender: Sender, command: Command["type"]) => boolean;
   initialSettings: Settings;
   status: () => Status;
   storage: { set: (settings: Settings) => Promise<Settings>; restart: () => Promise<Settings> };
@@ -37,19 +49,13 @@ export function createCommands<Sender>(options: {
       } catch {
         return { ok: false, error: "invalid-command" };
       }
+      if (options.permitted && !options.permitted(sender, command.type))
+        return { ok: false, error: "unauthorized" };
       try {
         if (command.type === "app.quit" || command.type === "app.quit.confirm") {
           if (command.type === "app.quit" || options.session?.().snapshot().quitWarning)
             options.quit?.(command.type === "app.quit.confirm");
-        } else if (
-          command.type === "session.start" ||
-          command.type === "session.stop" ||
-          command.type === "session.cancel" ||
-          command.type === "recovery.copy" ||
-          command.type === "recovery.discard" ||
-          command.type === "practice.delivered" ||
-          command.type === "app.quit.cancel"
-        ) {
+        } else if (isSessionCommand(command)) {
           if (!options.session) return { ok: false, error: "native-unavailable" };
           await options.session().execute(command);
         } else if (command.type === "settings.set") {
