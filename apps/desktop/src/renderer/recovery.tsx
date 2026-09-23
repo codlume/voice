@@ -76,12 +76,9 @@ export function RecoveryView({
   const latest = session?.latestSuccessful;
   const armed = session?.armedPaste ?? null;
   const retrying = session?.retrying ?? null;
-  // Retry needs no microphone or free slot; it waits only for the current session or paste.
-  const retryBlocked =
-    !session ||
-    session.blocker === "busy" ||
-    session.blocker === "paste" ||
-    session.blocker === "quitting";
+  // Retry needs no microphone or free slot. Main says when it must wait for the current work or
+  // for a readable key, so no surface offers a Retry that cannot send anything.
+  const retryBlocked = !session || session.retryBlocker !== null;
   const deliveryNotes = {
     undelivered: "",
     copied: "Text copied. The incomplete recording remains unresolved.",
@@ -128,6 +125,12 @@ export function RecoveryView({
       {session?.recovery.length === 5 && (
         <p {...stylex.props(styles.text)}>
           Recovery is full. Resolve or discard a session before starting another.
+        </p>
+      )}
+      {session?.retryBlocker === "setup" && session.recovery.some((entry) => entry.hasAudio) && (
+        <p data-testid="retry-blocker" {...stylex.props(styles.text)}>
+          Retry unavailable: it needs a saved Deepgram key and running native services. Repair setup
+          above, then Retry. Recordings stay here meanwhile.
         </p>
       )}
       {session?.recovery.some((entry) => entry.hasAudio) && (

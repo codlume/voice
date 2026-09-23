@@ -90,10 +90,14 @@ it.each(["missing-tail", "malformed", "early-close", "wrong-duration"])(
     }
   },
 );
+// Only explicit authentication and payment answers are account failures; a service error is a
+// connection problem the session may retry, never evidence about the key or quota.
 it.each([
   [401, "rejected"],
+  [403, "rejected"],
   [402, "quota"],
   [429, "rate-limit"],
+  [503, "connection"],
 ] as const)(
   "classifies HTTP %s without exposing provider response bodies",
   async (status, reason) => {
@@ -228,5 +232,31 @@ it("paces buffered audio at no more than 1.25x under a controlled clock", async 
     vi.useRealTimers();
     for (const client of server.clients) client.terminate();
     server.close();
+  }
+});
+
+it("reports an unreachable service as a connection failure, not a rejected key or quota", async () => {
+  const { createServer } = await import("node:net");
+  const probe = createServer();
+  probe.listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const address = probe.address();
+  if (!address || typeof address === "string") throw new Error("missing address");
+  await new Promise<void>((done) => probe.close(() => done()));
+  const done = Promise.withResolvers<ProviderEvent>();
+  const stream = startStream(
+    { session: "unreachable", attempt: "one", key: "synthetic" },
+    (event) => done.resolve(event),
+    `ws://127.0.0.1:${address.port}`,
+  );
+  try {
+    expect(await done.promise).toEqual({
+      type: "failed",
+      session: "unreachable",
+      attempt: "one",
+      reason: "connection",
+    });
+  } finally {
+    stream.cancel();
   }
 });

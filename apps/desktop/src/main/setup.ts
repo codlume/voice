@@ -149,12 +149,17 @@ export function createSetup(options: {
     snapshot,
     execute,
     refresh: () => execute({ type: "setup.refresh" }),
+    // Native services stopped. What Deepgram last reported about the key stays known, so a
+    // restarted helper cannot turn a rejected key back into an available one.
     unavailable() {
       state = {
         ...state,
         native: null,
-        credential: { presence: "unavailable", verification: "unverified" },
+        credential: { ...state.credential, presence: "unavailable" },
       };
+    },
+    forgetQuota() {
+      if (state.provider === "quota-exhausted") state = { ...state, provider: "unknown" };
     },
     // The future ASR adapter reports evidence, never infers authentication from key storage.
     updateAccess(

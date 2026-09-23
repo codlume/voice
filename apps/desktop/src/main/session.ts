@@ -5,6 +5,7 @@ import {
   decodeTargetSelected,
   type Attempt,
   type CaptureCommand,
+  type CaptureFailure,
   type InsertionOutcome,
   type Notice,
   type Origin,
@@ -44,6 +45,25 @@ const providerFailures: Record<ProviderFailure, Failure> = {
     notice: "incomplete",
   },
 };
+// Capture ends on these without the user's Stop. Collected audio and text go to recovery, and the
+// repair is explicit: nothing restarts capture or resends once the device or access returns.
+const captureFailures: Record<CaptureFailure | "unknown", Failure> = {
+  device: {
+    message:
+      "The microphone disconnected or changed, so recording stopped. Available work remains in recovery. Reconnect it or choose another input in Settings, then start again.",
+    notice: "setup",
+  },
+  permission: {
+    message:
+      "Microphone access was revoked, so recording stopped. Available work remains in recovery. Allow access in System Settings, then start again.",
+    notice: "setup",
+  },
+  unknown: {
+    message:
+      "Microphone capture stopped. Check your device and permissions. Available work remains in memory.",
+    notice: "incomplete",
+  },
+};
 const targetMessages: Record<Exclude<TargetStatus, "eligible">, string> = {
   none: "No text field was focused when dictation started.",
   unsupported: "The focused control does not support direct insertion.",
@@ -60,8 +80,9 @@ const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertai
   failed: "The field rejected the insertion.",
 };
 // Why the provider stream is down while an explicitly started capture continues. After Stop the
-// session replays the whole recording once, if connectivity returns and time remains.
-type Outage = "offline" | "connection" | "rate-limit";
+// session replays the whole recording once, if connectivity returns and time remains. A crashed
+// provider worker is replaced only for that same replay, so it never adds an attempt or time.
+type Outage = "offline" | "connection" | "rate-limit" | "worker";
 const outageWarnings: Record<Outage, Failure> = {
   offline: {
     message:
@@ -78,6 +99,11 @@ const outageWarnings: Record<Outage, Failure> = {
       "Deepgram is rate limiting requests. Recording continues; Voice retries once after you stop.",
     notice: "rate-limit",
   },
+  worker: {
+    message:
+      "The transcription worker stopped. Recording continues and audio stays in memory; Voice replays the full recording once after you stop.",
+    notice: "worker",
+  },
 };
 const outageFailures: Record<Outage, Failure> = {
   offline: {
@@ -87,6 +113,7 @@ const outageFailures: Record<Outage, Failure> = {
   },
   connection: providerFailures.connection,
   "rate-limit": providerFailures["rate-limit"],
+  worker: providerFailures.worker,
 };
 const waitingForConnection: Failure = {
   message: "Waiting for a connection to transcribe. Audio remains in memory.",
@@ -102,7 +129,8 @@ const backoffTooLong: Failure = {
   notice: "rate-limit",
 };
 const keyUnreadable: Failure = {
-  message: "The saved key could not be read. Repair Keychain access in Settings.",
+  message:
+    "The saved key could not be read. Check Keychain access and native services in Settings.",
   notice: "setup",
 };
 // The original 10/30-second processing deadline by capture duration; 30 seconds is 480,000 samples.
@@ -148,7 +176,10 @@ const bestText = (current: Active) =>
 type Armed = { id: string; text: string; inserting: boolean };
 type Retained = { audio: Uint8Array[]; origin: Origin; entry: RecoveryEntry };
 export function createSession(options: {
+  // Local capture, setup, and storage allow a new capture.
   available: () => boolean;
+  // A retained recording can be sent now: native services can read a saved key.
+  transcribable: () => boolean;
   // False only when the device is known to be offline. Offline never blocks an explicit Start.
   online: () => boolean;
   device: () => string | null;
@@ -180,6 +211,7 @@ export function createSession(options: {
     quitWarning: false,
     pendingPractice: null,
     retrying: null,
+    retryBlocker: null,
     latestSuccessful: null,
     lastTranscript: null,
     lastUpdate: "session",
@@ -251,6 +283,14 @@ export function createSession(options: {
     if (armed) return "paste";
     if (retained.size >= 5) return "recovery-full";
     if (!options.available()) return "setup";
+    return null;
+  }
+  // Retry needs no microphone or free slot; it waits for the current work and a readable key.
+  function retryBlocker(): StartBlocker | null {
+    if (closed || state.quitWarning) return "quitting";
+    if (active || stoppingCapture) return "busy";
+    if (armed) return "paste";
+    if (!options.transcribable()) return "setup";
     return null;
   }
   function sendCapture(type: "capture.stop" | "capture.cancel", current: Active) {
@@ -392,9 +432,8 @@ export function createSession(options: {
     };
     current.link = link;
     current.attempts++;
-    void options
-      .credential()
-      .then((key) => {
+    void options.credential().then(
+      (key) => {
         if (active !== current || current.link !== link) return;
         link.started = true;
         options.provider({ type: "start", session: current.session, attempt: link.attempt, key });
@@ -407,8 +446,8 @@ export function createSession(options: {
             pcm,
           });
         if (current.stopped) providerStop(current);
-      })
-      .catch(() => {
+      },
+      () => {
         if (active !== current || current.link !== link) return;
         current.failure = keyUnreadable;
         if (current.retry) {
@@ -417,7 +456,8 @@ export function createSession(options: {
         }
         requestStop(current.failure);
         if (current.stopped) fail(keyUnreadable.message, keyUnreadable.notice);
-      });
+      },
+    );
   }
   // The one automatic retry, or an explicit Retry's first attempt. It waits for connectivity and
   // for provider backoff that fits the deadline; a failed connection attempt still counts.
@@ -547,8 +587,14 @@ export function createSession(options: {
   // explicit Copy or Paste, so already delivered text is never replaced or duplicated.
   function retry(id: string) {
     const source = retained.get(id);
-    if (!source?.audio.length || closed || state.quitWarning || active || armed || stoppingCapture)
-      return;
+    if (!source?.audio.length) return;
+    const blocked = retryBlocker();
+    if (blocked === "setup")
+      update({
+        recoveryMessage:
+          "Retry needs a saved Deepgram key and running native services. Repair setup, then Retry.",
+      });
+    if (blocked) return;
     const samples = source.audio.reduce((total, pcm) => total + pcm.byteLength / 2, 0);
     const now = performance.now();
     const current: Active = {
@@ -615,15 +661,21 @@ export function createSession(options: {
       end("cancelled", "Retry cancelled. The recording and its text remain in recovery.");
       return;
     }
+    // A key change or access failure is already stopping this capture to keep its recording for
+    // recovery. That stop finishes the session once the final frames drain; a Cancel racing it
+    // must not release or truncate what the stop preserves.
+    if (current.failure) return;
     current.audio = [];
     end("cancelled", "Cancelled. Any produced text remains in memory.");
   }
   function interrupt(message: string) {
     interruptDelivery(message);
     const current = active;
+    // A transcript already being inserted needs no provider or microphone; its outcome stands.
     if (!current || current.inserting) return;
     current.failure = { message, notice: "incomplete" };
-    requestStop(current.failure);
+    if (!current.stopRequested) requestStop(current.failure);
+    else if (!current.stopped) update({ phase: "processing", ...current.failure });
     cancelStream(current);
     current.text = bestText(current);
     current.link = { state: "down", outage: null, retryAt: 0 };
@@ -688,8 +740,10 @@ export function createSession(options: {
   }
   // Escape and clickable Cancel share this path for both sessions and armed pastes.
   function cancelCurrent() {
-    if (armed) disarm("Paste cancelled. The text remains in recovery.");
-    else cancel();
+    // Like a session insertion, a paste already dispatched cannot be taken back; its outcome stands.
+    if (armed) {
+      if (!armed.inserting) disarm("Paste cancelled. The text remains in recovery.");
+    } else cancel();
   }
   function disarm(message: string) {
     const current = armed;
@@ -763,6 +817,7 @@ export function createSession(options: {
       recovery: [...retained.values()].map(({ entry }) => Object.assign({}, entry)),
       retrying: active?.retry ? active.session : null,
       blocker: blocker(),
+      retryBlocker: retryBlocker(),
       lastTranscript: lastTranscript(),
     }),
     async execute(command: SessionCommand) {
@@ -912,9 +967,9 @@ export function createSession(options: {
         return;
       if (event.type === "capture.failed") {
         current.stopped = true;
-        fail(
-          "Microphone capture stopped. Check your device and permissions. Available work remains in memory.",
-        );
+        // A safety stop already in progress keeps its own explanation and repair.
+        const failure = current.failure ?? captureFailures[event.reason ?? "unknown"];
+        fail(failure.message, failure.notice);
         return;
       }
       if (event.type === "capture.stopped") {
@@ -1010,9 +1065,14 @@ export function createSession(options: {
           event.reason === "rate-limit"
         )
           options.access(event.reason);
-        if (event.reason === "connection" || event.reason === "rate-limit") {
+        if (
+          event.reason === "connection" ||
+          event.reason === "rate-limit" ||
+          event.reason === "worker"
+        ) {
           // Transient: an explicitly started capture continues with a visible warning, and the
-          // whole source is replayed once after Stop within the original deadline.
+          // whole source is replayed once after Stop within the original deadline. A crashed
+          // worker is replaced for that replay only; it shares the same allowance and deadline.
           current.text = bestText(current);
           current.link = {
             state: "down",
@@ -1066,12 +1126,22 @@ export function createSession(options: {
       interruptDelivery(message);
       if (active?.origin === "practice" && !active.retry) interrupt(message);
     },
+    // The helper process died, and any capture died with it. Main keeps every recovery source;
+    // a replacement helper only restores availability and never resumes this session.
     helperFailed() {
       stoppingCapture = undefined;
-      disarm("Native services stopped. The text remains in recovery.");
-      if (active) active.stopped = true;
-      if (active?.inserting) return;
-      fail("Native services stopped. Available work remains in memory. Reopen Voice to repair.");
+      held = undefined;
+      // A paste already dispatched may have landed; it is uncertain, never retried.
+      if (armed?.inserting) finishPaste(armed, "uncertain");
+      else disarm("Native services stopped. The text remains in recovery.");
+      const current = active;
+      if (!current || current.inserting) return;
+      // Work that no longer needs the helper finishes: a Retry, or practice whose capture stopped.
+      if (current.stopped && (current.retry || current.origin === "practice")) return;
+      current.stopped = true;
+      fail(
+        "Native services stopped, so recording ended. Available work remains in recovery. Voice restarts native services; start again when setup is ready.",
+      );
     },
     requestQuit() {
       if (!active && !armed && !retained.size) return false;

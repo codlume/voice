@@ -32,6 +32,7 @@ function fixture(overrides: { insert?: () => Promise<InsertionOutcome> } = {}) {
   const network = { online: true };
   const owner = createSession({
     available: () => true,
+    transcribable: () => true,
     online: () => network.online,
     device: () => null,
     credential: async () => "synthetic",
@@ -522,6 +523,7 @@ it("replays the complete source in order over a fresh loopback stream after the 
   const capture: CaptureCommand[] = [];
   const owner = createSession({
     available: () => true,
+    transcribable: () => true,
     online: () => true,
     device: () => null,
     credential: async () => "synthetic",

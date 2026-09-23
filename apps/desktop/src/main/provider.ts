@@ -7,6 +7,9 @@ import {
   type Attempt,
 } from "@voice/contracts/session";
 
+// Each provider attempt runs in a fresh worker. A worker that crashes, exits, or sends an invalid
+// message reports one `worker` failure for its attempt and is retired; only the session's next
+// attempt, within its existing allowance and deadline, starts a replacement.
 export function createProvider(
   entry: string,
   receive: (event: ProviderEvent) => void,
@@ -20,19 +23,30 @@ export function createProvider(
     identity = undefined;
     if (old) void old.terminate();
   }
+  // Reports the one failure of a still-current attempt and retires its worker.
+  function failed(attempt: Attempt) {
+    if (identity !== attempt) return;
+    retire();
+    receive({ type: "failed", ...attempt, reason: "worker" });
+  }
   return {
     send(input: ProviderRequest) {
       const command = decodeProviderRequest(input);
       if (command.type === "start") {
         retire();
-        identity = { session: command.session, attempt: command.attempt };
-        const current = new Worker(entry, { workerData: fixtureUrl ? { fixtureUrl } : {} });
+        const attempt = { session: command.session, attempt: command.attempt };
+        identity = attempt;
+        let current: Worker;
+        try {
+          current = new Worker(entry, { workerData: fixtureUrl ? { fixtureUrl } : {} });
+        } catch {
+          // Report asynchronously, as a crash would, so the session never re-enters itself.
+          setImmediate(() => failed(attempt));
+          return;
+        }
         worker = current;
         const fail = () => {
-          if (worker !== current || !identity) return;
-          const event: ProviderEvent = { type: "failed", ...identity, reason: "worker" };
-          retire();
-          receive(event);
+          if (worker === current) failed(attempt);
         };
         current.on("message", (payload: unknown) => {
           if (worker !== current) return;
@@ -52,6 +66,10 @@ export function createProvider(
       // This is a Node worker port, not a browser Window.
       // oxlint-disable-next-line unicorn/require-post-message-target-origin
       worker?.postMessage(command);
+    },
+    // Test hook: ends the running worker the way a crash would, without retiring it first.
+    kill() {
+      void worker?.terminate();
     },
     async close() {
       const old = worker;

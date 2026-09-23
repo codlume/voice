@@ -81,9 +81,12 @@ export function createCommands<Sender>(options: {
             options
               .session?.()
               .interrupted(
-                "Credential changed. Available work remains in memory; start again explicitly after repair.",
+                "Your Deepgram key changed, so Voice stopped this session. The recording and available text remain in recovery; Retry sends them only when you choose.",
               );
           await options.setup().execute(command);
+          // An explicit, successful refresh after the user repaired billing lets the next session
+          // find out again; setup's own refreshes keep what Deepgram last reported.
+          if (command.type === "setup.refresh") options.setup().forgetQuota();
         }
         return {
           ok: true,
