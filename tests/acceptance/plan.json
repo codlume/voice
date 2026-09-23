@@ -157,7 +157,9 @@
         "rejected-key-stops",
         "cancel-discards",
         "silence-inserts-nothing"
-      ]
+      ],
+      "fixtures": ["request", "negative_silence"],
+      "seed": 0
     }
   ],
   "caps": {
