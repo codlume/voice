@@ -5,6 +5,7 @@
 //   cost --manifest <file>                    worst-case requests and reservation for live caps
 //   run --manifest <file> [--target textedit|recovery] [--authorization <file>] [--network <text>]
 //   verify --run <dir>                        recheck hashes and recompute the report offline
+//   report --run <dir>                        report an interrupted run from its ledger
 //   resources                                 whole-app memory, idle CPU, and repaint run (loopback)
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -366,15 +367,15 @@ async function runFaults(stage, voice, target, server, byId, record) {
   }
 }
 
-async function finish(directory, manifest, ledger) {
+async function finish(directory, manifest, ledger, interrupted = false) {
   const report = summarize(manifest, ledger);
   await writeJson(join(directory, "report.json"), report);
-  await writeFile(join(directory, "REPORT.md"), markdown(manifest, report));
+  await writeFile(join(directory, "REPORT.md"), markdown(manifest, report, interrupted));
   await checksum(directory);
 }
 
 const ms = (value) => (value === undefined ? "–" : `${Math.round(value)} ms`);
-function markdown(manifest, report) {
+function markdown(manifest, report, interrupted) {
   const rows = Object.entries(report.classes).map(
     ([name, item]) =>
       `| ${name} | ${item.metric ?? "outcome"} | ${item.attempts} | ${item.successes}/${item.required ?? 0} | ${ms(item.medianMs)} | ${ms(item.p95Ms)} | ${item.threshold.medianMs ? `median ≤${item.threshold.medianMs}, ` : ""}${item.threshold.p95Ms ? `p95 ≤${item.threshold.p95Ms}` : "–"} | ${item.meets === undefined ? "not established" : item.meets ? "meets" : "fails"} |`,
@@ -389,7 +390,7 @@ function markdown(manifest, report) {
 
 Manifest \`${report.manifestSha256}\`, commit \`${manifest.build.commit}\`${manifest.build.dirty ? " (uncommitted changes)" : ""}.
 
-${manifest.mode === "live" ? "Live Deepgram run." : "**Dry run against a loopback provider. It establishes no live quality, insertion timing, or whole-app acceptance.**"} Input is virtual synthetic capture, not a physical microphone. Shortcuts use main's test hook, not a native key tap.
+${interrupted ? "**Interrupted before every stage ran. Stages without attempts are absent, and a stage with too few successes is not established.**\n\n" : ""}${manifest.mode === "live" ? "Live Deepgram run." : "**Dry run against a loopback provider. It establishes no live quality, insertion timing, or whole-app acceptance.**"} Input is virtual synthetic capture, not a physical microphone. Shortcuts use main's test hook, not a native key tap.
 
 | Stage | Metric | Attempts | Successes | Median | p95 (nearest rank) | Accepted | Result |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
@@ -530,17 +531,32 @@ async function checksum(directory) {
   await writeFile(join(directory, "ARTIFACTS.sha256"), lines.join("\n") + "\n");
 }
 
+// An interrupted run keeps every attempt already appended to its ledger; report exactly those.
+async function reportCommand() {
+  const directory = options.run;
+  if (existsSync(join(directory, "ARTIFACTS.sha256"))) throw new Error("run is already reported");
+  const manifest = await readJson(join(directory, "manifest.json"));
+  const ledger = (await readFile(join(directory, "ledger.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  await finish(directory, manifest, ledger, true);
+  console.log(directory);
+}
+
 const commands = {
   recover: async () => console.log(`${await recover()} fixtures verified`),
   manifest: manifestCommand,
   cost: costCommand,
   run: runCommand,
   verify: verifyCommand,
+  report: reportCommand,
   resources: resourcesCommand,
 };
 const command = commands[positionals[0]];
 if (!command) {
-  console.error("usage: cli.mjs recover|manifest|cost|run|verify|resources");
+  console.error("usage: cli.mjs recover|manifest|cost|run|verify|report|resources");
   process.exit(2);
 }
 await command();

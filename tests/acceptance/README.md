@@ -15,6 +15,7 @@ pnpm build:desktop && pnpm package:desktop
 node scripts/acceptance/cli.mjs manifest --mode dry-run [--stages a,b] [--successes n] [--max-attempts n]
 node scripts/acceptance/cli.mjs run --manifest <file> [--target textedit]
 node scripts/acceptance/cli.mjs verify --run .acceptance/runs/<run>
+node scripts/acceptance/cli.mjs report --run .acceptance/runs/<run>   # report an interrupted run from its ledger
 node scripts/acceptance/cli.mjs cost --manifest <file>
 node scripts/acceptance/cli.mjs resources     # loopback memory, idle CPU, and repaint run (~13 min)
 node --test scripts/acceptance/*.test.mjs
