@@ -181,7 +181,7 @@ export function authorize(manifest, authorization, stageName) {
   if (!authorization) return [...problems, "no authorization file"];
   if (authorization.manifestSha256 !== hashOf(manifest))
     problems.push("authorization does not match this manifest");
-  if (authorization.stage !== stageName)
+  if (!authorization.stages?.includes(stageName))
     problems.push(`authorization is not for stage ${stageName}`);
   if (authorization.approved !== true) problems.push("authorization is not approved");
   if (

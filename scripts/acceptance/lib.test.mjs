@@ -103,7 +103,7 @@ test("the live manifest binds build, fixtures, provider pin, order, caps, and co
 test("live dispatch needs an approved authorization for this exact manifest and stage", () => {
   const good = {
     manifestSha256: hashOf(live),
-    stage: "normal-short",
+    stages: ["normal-short"],
     approved: true,
     decision: "https://github.com/codlume/voice/issues/38#issuecomment-1",
     caps: plan.caps,
@@ -152,7 +152,7 @@ test("reports count only confirmed single-request insertions and keep every fail
   });
   const ledger = [
     {
-      stage: "normal-short",
+      stages: ["normal-short"],
       slot: 0,
       fixture: "request",
       outcome: "inserted",
@@ -163,7 +163,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "match",
     },
     {
-      stage: "normal-short",
+      stages: ["normal-short"],
       slot: 1,
       fixture: "identifier",
       outcome: "inserted",
@@ -174,7 +174,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "known-exception",
     },
     {
-      stage: "normal-short",
+      stages: ["normal-short"],
       slot: 2,
       fixture: "date",
       outcome: "recovery-incomplete",
@@ -183,7 +183,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "review",
     },
     {
-      stage: "normal-short",
+      stages: ["normal-short"],
       slot: 3,
       fixture: "list",
       outcome: "inserted",

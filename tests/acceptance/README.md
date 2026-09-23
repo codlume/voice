@@ -43,7 +43,7 @@ A live manifest (`--mode live`) comes only from the unmodified plan, on a clean 
 ```json
 {
   "manifestSha256": "<exact manifest hash>",
-  "stage": "<stage name>",
+  "stages": ["<every paid stage this approval covers>"],
   "approved": true,
   "decision": "https://github.com/codlume/voice/issues/<n>#issuecomment-<id>",
   "caps": { "maxRequests": 0, "maxAudioSeconds": 0, "maxReplays": 0 }
