@@ -156,6 +156,7 @@ export const NativeSetupResult = Schema.Union([
     type: Schema.Literal("insertion"),
     session: targetIdentity,
     outcome: InsertionOutcome,
+    clipboard: Schema.optionalKey(Schema.Literal("unrestored")),
   }),
   Schema.Struct({ type: Schema.Literals(["released", "armed"]), session: targetIdentity }),
   Schema.Struct({

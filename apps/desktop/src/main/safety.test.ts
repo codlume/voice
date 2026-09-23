@@ -74,7 +74,7 @@ async function fixture(
       arm: async () => {},
       insert: async (_id, text) => {
         inserted.push(text);
-        return overrides.insert ? overrides.insert(text) : "inserted";
+        return { outcome: overrides.insert ? await overrides.insert(text) : "inserted" };
       },
       release: () => {},
     },

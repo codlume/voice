@@ -1,10 +1,14 @@
 import AppKit
 @preconcurrency import ApplicationServices
+import Carbon
+import VoiceHelperInsertion
 import VoiceHelperProtocol
 
 // Remembers the external editable target for one session and inserts into it later.
-// It reads only element identity, role, and selection ranges. It never reads document text,
-// selection contents, or clipboard data, and it never activates another application.
+// It reads only element identity, role, and selection ranges. It never reads document text or
+// selection contents, and it never activates another application. A field without an
+// Accessibility text write gets a clipboard paste instead, whose prior clipboard contents stay
+// inside `Clipboard` for the duration of that one paste.
 // All Accessibility calls run on a dedicated run-loop thread, so a slow or hung target app
 // can never stall the main thread that services the shortcut event tap.
 final class TargetService: @unchecked Sendable {
@@ -18,6 +22,7 @@ final class TargetService: @unchecked Sendable {
     private final class Box<Value>: @unchecked Sendable { var value: Value? }
     private let emit: @Sendable (Data) -> Void
     private let loop: CFRunLoop
+    private let clipboard = Clipboard(.general)
     // Everything below is touched only on the service thread.
     private var watched: Watched?
     private var observer: AXObserver?
@@ -80,6 +85,8 @@ final class TargetService: @unchecked Sendable {
         perform { self.release() }
         CFRunLoopStop(loop)
     }
+    // For a helper that is being terminated mid-paste: put back a clipboard Voice still owns.
+    func abandonPaste() { _ = clipboard.restore() }
 
     private func perform<Value: Sendable>(_ body: @escaping @Sendable () -> Value) -> Value {
         if CFRunLoopGetCurrent() == loop { return body() }
@@ -115,7 +122,7 @@ final class TargetService: @unchecked Sendable {
             if watched?.session == session || armed?.session == session { release() }
             return .released(session: session)
         case .insertTarget(let session, let text):
-            return .insertion(session: session, outcome: insert(session, text))
+            return .insertion(session: session, result: insert(session, text))
         default:
             return nil
         }
@@ -170,8 +177,8 @@ final class TargetService: @unchecked Sendable {
         }
         if string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return (.protected, nil) }
         let role = string(element, kAXRoleAttribute)
-        guard role == kAXTextAreaRole || role == kAXTextFieldRole,
-              settable(element, kAXSelectedTextAttribute), range(element) != nil else { return (.unsupported, nil) }
+        // A readable selection is required either way: it confirms a native write or a paste.
+        guard role == kAXTextAreaRole || role == kAXTextFieldRole, range(element) != nil else { return (.unsupported, nil) }
         return (.eligible, (application, element))
     }
     // Returns false, leaving nothing watched, when focus changes inside the app cannot be observed.
@@ -229,26 +236,83 @@ final class TargetService: @unchecked Sendable {
         let event: [String: Any] = ["type": "target.selected", "session": armed.session, "status": status.rawValue]
         if let data = try? JSONSerialization.data(withJSONObject: event) { emit(data) }
     }
-    private func insert(_ session: String, _ text: String) -> InsertionOutcome {
+    // Why the remembered target may not receive text now, or nil when it still may.
+    private func refusal(_ session: String) -> InsertionOutcome? {
         guard let current = watched, current.session == session else { return .missing }
-        defer { release() }
         if let fault = current.fault { return fault }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == current.pid else { return .changed }
         let (error, element) = focused(current.application)
         guard let element, CFEqual(element, current.element) else { return error == .invalidUIElement ? .closed : .changed }
         if string(current.element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return .protected }
-        guard settable(current.element, kAXSelectedTextAttribute) else { return .unsupported }
-        let before = range(current.element)
-        let result = AXUIElementSetAttributeValue(current.element, kAXSelectedTextAttribute as CFString, text as CFString)
-        switch result {
-        case .success:
-            // Confirm placement from the collapsed selection after the insert, not from document text.
-            guard let before, let after = range(current.element), after.length == 0,
-                  after.location == before.location + text.utf16.count else { return .uncertain }
-            return .inserted
-        case .invalidUIElement: return .closed
-        case .cannotComplete, .failure: return .uncertain
-        default: return .failed
+        return nil
+    }
+    private func insert(_ session: String, _ text: String) -> InsertionResult {
+        guard let current = watched, current.session == session else { return InsertionResult(.missing) }
+        defer { release() }
+        if let refusal = refusal(session) { return InsertionResult(refusal) }
+        let length = text.utf16.count
+        // Placement is confirmed from the collapsed selection after the insert, never from text.
+        func advanced(_ before: CFRange?) -> Bool {
+            guard let before, let after = range(current.element) else { return false }
+            return after.length == 0 && after.location == before.location + length
+        }
+        let native: (() -> InsertionOutcome?)? = settable(current.element, kAXSelectedTextAttribute) ? {
+            let before = self.range(current.element)
+            let result = AXUIElementSetAttributeValue(current.element, kAXSelectedTextAttribute as CFString, text as CFString)
+            return nativeOutcome(result, confirmed: result == .success && advanced(before))
+        } : nil
+        var before: CFRange?
+        return deliver(text, native: native, clipboard: clipboard, steps: PasteSteps(
+            ready: {
+                // Deliver focus notifications that arrived meanwhile; a focus change stays a fault.
+                CFRunLoopRunInMode(.defaultMode, 0, false)
+                if let refusal = self.refusal(session) { return refusal }
+                before = self.range(current.element)
+                return before == nil ? .unsupported : nil
+            },
+            paste: { self.paste(to: current.pid) },
+            consumed: {
+                // The target has taken the paste once its selection lands right after the text.
+                // Past the bound the result is uncertain and the clipboard is still restored: a
+                // target that handles the paste even later would paste the user's own content,
+                // which is less harmful than leaving the transcript over it.
+                let deadline = DispatchTime.now() + .milliseconds(1500)
+                while DispatchTime.now() < deadline {
+                    if advanced(before) { return true }
+                    CFRunLoopRunInMode(.defaultMode, 0.01, false)
+                }
+                return advanced(before)
+            }
+        ))
+    }
+    // Command-V delivered to the target process only, from a private event source so keys the
+    // user is holding do not change it. The key is the one typing "v" in the current layout.
+    private func paste(to pid: pid_t) -> Bool {
+        let key = DispatchQueue.main.sync { TargetService.key(typing: "v") } ?? CGKeyCode(kVK_ANSI_V)
+        let source = CGEventSource(stateID: .privateState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.postToPid(pid)
+        up.postToPid(pid)
+        return true
+    }
+    private static func key(typing character: String) -> CGKeyCode? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+        return data.withUnsafeBytes { bytes -> CGKeyCode? in
+            guard let layout = bytes.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return nil }
+            for code in 0..<128 {
+                var dead: UInt32 = 0
+                var length = 0
+                var characters = [UniChar](repeating: 0, count: 4)
+                let status = UCKeyTranslate(layout, UInt16(code), UInt16(kUCKeyActionDown), 0, UInt32(LMGetKbdType()),
+                                            OptionBits(kUCKeyTranslateNoDeadKeysBit), &dead, characters.count, &length, &characters)
+                if status == noErr, length == 1, String(utf16CodeUnits: characters, count: 1) == character { return CGKeyCode(code) }
+            }
+            return nil
         }
     }
 }

@@ -84,7 +84,7 @@ import Foundation
         let object = try #require(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         #expect(SetupRequest(object) == nil, "\(line)")
     }
-    let encoded = try JSONEncoder().encode(SetupReply(id: 9, result: .insertion(session: "one", outcome: .uncertain)))
+    let encoded = try JSONEncoder().encode(SetupReply(id: 9, result: .insertion(session: "one", result: InsertionResult(.uncertain))))
     let reply = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
     #expect(reply["type"] as? String == "setup.result")
     #expect((reply["result"] as? [String: Any])?["outcome"] as? String == "uncertain")

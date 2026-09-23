@@ -19,7 +19,7 @@ function fixture() {
     target: {
       capture: async () => "eligible",
       arm: async () => {},
-      insert: async () => "inserted",
+      insert: async () => ({ outcome: "inserted" }),
       release: () => {},
     },
     engaged: () => {},

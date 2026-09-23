@@ -46,7 +46,7 @@ function fixture(overrides: { insert?: () => Promise<InsertionOutcome> } = {}) {
       arm: async () => {},
       insert: async (_id, text) => {
         inserted.push(text);
-        return overrides.insert ? overrides.insert() : "inserted";
+        return { outcome: overrides.insert ? await overrides.insert() : "inserted" };
       },
       release: () => {},
     },
@@ -550,7 +550,7 @@ it("replays the complete source in order over a fresh loopback stream after the 
     target: {
       capture: async () => "eligible",
       arm: async () => {},
-      insert: async () => "inserted",
+      insert: async () => ({ outcome: "inserted" }),
       release: () => {},
     },
     engaged: () => {},

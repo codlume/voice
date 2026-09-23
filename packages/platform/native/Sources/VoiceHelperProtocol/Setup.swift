@@ -67,7 +67,15 @@ public struct SetupStatus: Encodable, Sendable {
     }
 }
 public enum TargetStatus: String, Encodable, Sendable { case eligible, none, unsupported, protected, terminal, unavailable }
-public enum InsertionOutcome: String, Encodable, Sendable { case inserted, changed, closed, protected, unsupported, missing, failed, uncertain }
+// `pasted` is a confirmed clipboard-paste insertion; `unpreserved` means paste was needed but the
+// clipboard could not be preserved, so nothing was changed or delivered.
+public enum InsertionOutcome: String, Encodable, Sendable { case inserted, pasted, changed, closed, protected, unsupported, unpreserved, missing, failed, uncertain }
+public struct InsertionResult: Sendable, Equatable {
+    public let outcome: InsertionOutcome
+    // False only when a paste fallback replaced the clipboard and could not put it back.
+    public let restored: Bool
+    public init(_ outcome: InsertionOutcome, restored: Bool = true) { self.outcome = outcome; self.restored = restored }
+}
 public enum SetupCommand: Sendable {
     case status(SetupShortcuts), requestPermission(SetupPermission), credentialStatus, setCredential(String), removeCredential
     case configureShortcuts(SetupShortcuts, active: Bool, bar: BarRegion?)
@@ -155,10 +163,10 @@ public enum SetupResult: Encodable, Sendable {
     case setup(SetupStatus), credential(CredentialPresence), permission, error(SetupError)
     case shortcuts(listening: Bool)
     case target(session: String, status: TargetStatus)
-    case insertion(session: String, outcome: InsertionOutcome)
+    case insertion(session: String, result: InsertionResult)
     case released(session: String)
     case armed(session: String)
-    private enum CodingKeys: String, CodingKey { case type, status, presence, error, listening, session, outcome }
+    private enum CodingKeys: String, CodingKey { case type, status, presence, error, listening, session, outcome, clipboard }
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -170,8 +178,9 @@ public enum SetupResult: Encodable, Sendable {
         case .target(let session, let status):
             try values.encode("target", forKey: .type); try values.encode(session, forKey: .session)
             try values.encode(status, forKey: .status)
-        case .insertion(let session, let outcome):
-            try values.encode("insertion", forKey: .type); try values.encode(session, forKey: .session); try values.encode(outcome, forKey: .outcome)
+        case .insertion(let session, let result):
+            try values.encode("insertion", forKey: .type); try values.encode(session, forKey: .session); try values.encode(result.outcome, forKey: .outcome)
+            if !result.restored { try values.encode("unrestored", forKey: .clipboard) }
         case .released(let session): try values.encode("released", forKey: .type); try values.encode(session, forKey: .session)
         case .armed(let session): try values.encode("armed", forKey: .type); try values.encode(session, forKey: .session)
         }
