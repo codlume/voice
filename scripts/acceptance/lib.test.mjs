@@ -13,6 +13,7 @@ import {
   nearestRank,
   quality,
   summarize,
+  summarizeResources,
   wav,
   wavPcm,
   worstCase,
@@ -230,4 +231,54 @@ test("WAV round trip keeps samples and refuses other formats", () => {
   const stereo = wav(pcm);
   stereo.writeUInt16LE(2, 22);
   assert.throws(() => wavPcm(stereo), /wav-format/);
+});
+
+test("resource summary sums the process tree and judges idle, peak, and a held backlog", () => {
+  const MiB = 2 ** 20;
+  const sample = (phase, at, main, helper, cpuNs = 0) => ({
+    phase,
+    at,
+    processes: [
+      { pid: 1, name: "Voice", footprint: main * MiB, cpuNs },
+      { pid: 2, name: "voice-helper", footprint: helper * MiB, cpuNs: 0 },
+    ],
+  });
+  const samples = [
+    sample("idle", 0, 300, 20, 0),
+    sample("idle", 1000, 310, 20, 1e7),
+    sample("five-minute", 2000, 600, 40),
+    sample("idle-after", 3000, 320, 20, 2e7),
+    sample("idle-after", 4000, 320, 20, 2e7),
+  ];
+  const events = [
+    { phase: "idle", paint: [{ url: "/", layouts: 4, styles: 4, taskMs: 1 }] },
+    { phase: "idle.end", paint: [{ url: "/", layouts: 4, styles: 6, taskMs: 3, animations: 0 }] },
+    { phase: "backlog.full", recovery: 5 },
+    { phase: "retry.end", recovery: 5 },
+    { phase: "worker-restart.end", recovery: 4 },
+  ];
+  const report = summarizeResources({
+    samples,
+    events,
+    thresholds: { idleMiB: 500, peakMiB: 750 },
+    intervalMs: 100,
+  });
+  assert.equal(report.idle.peakMiB, 340);
+  assert.equal(report.idle.meets, true);
+  assert.equal(report.idle.cpu.idle.percent, 1);
+  assert.deepEqual(report.idle.paint.idle[0].styles, 2);
+  assert.equal(report.peak.peakMiB, 640);
+  assert.equal(report.peak.meets, true);
+  assert.equal(report.backlogHeld.meets, false, "an evicted entry fails the run");
+  assert.equal(report.growth.meanMiB, 15);
+  assert.equal(report.maxGapMs, 1000);
+  assert.equal(
+    summarizeResources({
+      samples,
+      events,
+      thresholds: { idleMiB: 300, peakMiB: 600 },
+      intervalMs: 100,
+    }).peak.meets,
+    false,
+  );
 });

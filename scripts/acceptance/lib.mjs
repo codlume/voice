@@ -328,3 +328,98 @@ export function worstCase(manifest) {
   }
   return capped;
 }
+
+// Resource run summary. Each sample sums the physical footprint of every process in main's tree
+// at that instant; a process that starts and exits between two samples is never observed.
+const mib = (bytes) => bytes / 2 ** 20;
+export function summarizeResources({ samples, events, thresholds, intervalMs }) {
+  const total = (sample) => mib(sample.processes.reduce((sum, item) => sum + item.footprint, 0));
+  const phases = {};
+  for (const sample of samples) (phases[sample.phase] ??= []).push(sample);
+  const summary = Object.fromEntries(
+    Object.entries(phases).map(([name, list]) => {
+      const totals = list.map(total);
+      const gaps = list.slice(1).map((sample, index) => sample.at - list[index].at);
+      const peak = list[totals.indexOf(Math.max(...totals))];
+      return [
+        name,
+        {
+          samples: list.length,
+          peakMiB: Math.max(...totals),
+          meanMiB: totals.reduce((sum, value) => sum + value, 0) / totals.length,
+          lastMiB: totals.at(-1),
+          maxGapMs: gaps.length ? Math.max(...gaps) : undefined,
+          processes: list.at(-1).processes.length,
+          atPeak: peak.processes.map(({ pid, name, footprint }) => ({
+            pid,
+            name,
+            MiB: mib(footprint),
+          })),
+        },
+      ];
+    }),
+  );
+  // CPU across an idle phase, in percent of one core, from processes present at both ends.
+  const cpu = (name) => {
+    const list = phases[name];
+    if (!list || list.length < 2) return undefined;
+    const [first, last] = [list[0], list.at(-1)];
+    const seconds = (last.at - first.at) / 1000;
+    const perProcess = last.processes.flatMap((item) => {
+      const start = first.processes.find((entry) => entry.pid === item.pid);
+      return start
+        ? [{ name: item.name, percent: (item.cpuNs - start.cpuNs) / 1e7 / seconds }]
+        : [];
+    });
+    return {
+      seconds,
+      percent: perProcess.reduce((sum, item) => sum + item.percent, 0),
+      perProcess,
+    };
+  };
+  const event = (name) => events.find((entry) => entry.phase === name);
+  const paint = (name) => {
+    const [start, end] = [event(name)?.paint, event(`${name}.end`)?.paint];
+    if (!start || !end) return undefined;
+    return end.map((window) => {
+      const before = start.find((entry) => entry.url === window.url) ?? {};
+      return {
+        url: window.url,
+        visible: window.visible,
+        animations: window.animations,
+        layouts: window.layouts - (before.layouts ?? 0),
+        styles: window.styles - (before.styles ?? 0),
+        taskMs: window.taskMs - (before.taskMs ?? 0),
+      };
+    });
+  };
+  const idleNames = ["idle", "idle-after"].filter((name) => summary[name]);
+  const idlePeak = Math.max(...idleNames.map((name) => summary[name].peakMiB));
+  const peak = Math.max(...Object.values(summary).map((item) => item.peakMiB));
+  const held = ["backlog.full", "retry.end", "worker-restart.end"].map((name) => ({
+    phase: name,
+    recovery: event(name)?.recovery,
+  }));
+  const maxGapMs = Math.max(...Object.values(summary).map((item) => item.maxGapMs ?? 0));
+  return {
+    intervalMs,
+    maxGapMs,
+    phases: summary,
+    idle: {
+      peakMiB: idlePeak,
+      meets: idlePeak <= thresholds.idleMiB,
+      cpu: Object.fromEntries(idleNames.map((name) => [name, cpu(name)])),
+      paint: Object.fromEntries(idleNames.map((name) => [name, paint(name)])),
+    },
+    peak: { peakMiB: peak, meets: peak <= thresholds.peakMiB },
+    // Recovery must stay full through Retry and subordinate restarts: no eviction to fit a budget.
+    backlogHeld: { phases: held, meets: held.every((item) => item.recovery === 5) },
+    growth:
+      summary.idle && summary["idle-after"]
+        ? {
+            meanMiB: summary["idle-after"].meanMiB - summary.idle.meanMiB,
+            processes: summary["idle-after"].processes - summary.idle.processes,
+          }
+        : undefined,
+  };
+}

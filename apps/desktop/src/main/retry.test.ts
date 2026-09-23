@@ -601,3 +601,19 @@ it("replays the complete source in order over a fresh loopback stream after the 
     server.close();
   }
 });
+
+// Structured clone copies a frame's whole backing buffer. Small decoded Buffers share Node's 8 KiB
+// pool, so a pooled frame made each worker message, and the retained source, pin a whole slab.
+it("retains and replays each frame in a buffer of exactly its own size", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const id = await f.retained("", 3);
+  await f.owner.execute({ type: "recovery.retry", id });
+  await vi.advanceTimersByTimeAsync(0);
+  const frames = f.provider.filter(
+    (command): command is Extract<ProviderRequest, { type: "audio" }> => command.type === "audio",
+  );
+  expect(frames.length).toBeGreaterThan(0);
+  for (const { pcm } of frames) expect(pcm.buffer.byteLength).toBe(640);
+  f.owner.close();
+});

@@ -15,11 +15,13 @@ pnpm build:desktop && pnpm package:desktop
 node scripts/acceptance/cli.mjs manifest --mode dry-run [--stages a,b] [--successes n] [--max-attempts n]
 node scripts/acceptance/cli.mjs run --manifest <file> [--target textedit]
 node scripts/acceptance/cli.mjs verify --run .acceptance/runs/<run>
+node scripts/acceptance/cli.mjs report --run .acceptance/runs/<run>   # report an interrupted run from its ledger
 node scripts/acceptance/cli.mjs cost --manifest <file>
+node scripts/acceptance/cli.mjs resources     # loopback memory, idle CPU, and repaint run (~13 min)
 node --test scripts/acceptance/*.test.mjs
 ```
 
-`recover` needs `gh` signed in to fetch the private attachments. The held-out archive (`heldout-01`) has no attachment URL yet. Until the maintainer attaches it to [#38](https://github.com/codlume/voice/issues/38) and records the URL in `fixtures.json`, put that exact file in `.acceptance/archives/`. Regenerating it with macOS `say` produces different hashes, so a regenerated set is a new fixture set, not a recovery.
+`recover` needs `gh` signed in to fetch the private attachments. The original held-out archive (`heldout-01`) was never published and is gone. `heldout-02` regenerates it from the same `heldout.json` on macOS 27. Its `say` voices changed, so every speech hash differs, which makes it a new fixture set rather than a recovery ([#39](https://github.com/codlume/voice/issues/39)). It has no attachment URL yet. Until the maintainer attaches it to [#38](https://github.com/codlume/voice/issues/38) and records the URL in `fixtures.json`, put that exact file in `.acceptance/archives/`. Regenerating it again on another macOS version gives yet another set.
 
 A manifest binds the commit, a clean or dirty tree, the packaged `app.asar` and helper hashes, the exact Deepgram URL and model pin, and every fixture hash. It also binds the run order, duration classes, expected outcomes, caps, and declared conditions. `run` refuses a manifest whose build or fixtures differ.
 
@@ -68,7 +70,9 @@ Timing stages (`plan.json`):
 
 Launch and first-frame timing do not depend on the provider, so those stages use loopback and cost nothing. Ready is main's own mark after the helper, storage, setup refresh, and shortcut sync. It is measured from the runner's clock just before launch, on the same monotonic clock.
 
-Resource runs (#39) use the same packaged build and fresh test storage:
+A dry-run manifest verifies only the fixtures its stages use, so loopback-only stages such as `cold-launch,warm-start` run without the held-out archive. A live manifest uses the full plan and still needs every fixture.
+
+Resource runs (#39, `resources`) use the same packaged build and fresh test storage. The sampler (`footprint.swift`, compiled into `.acceptance/bin`) reads `proc_pid_rusage` physical footprint and CPU time for every process in main's tree. The provider and storage workers are threads inside main, so main's figure includes them. Paint activity comes from Chromium's per-window layout and style counters and the running animation count. The run covers:
 
 - Sum the OS physical footprint of every Voice-owned process: main, renderers, GPU/utility, workers, and helper. Sample at 100 ms, with snapshots at scenario boundaries. Disclose the sampling limit.
 - Quiet idle for 60 s: ≤500 MiB, CPU and repaint activity reported, no continuous animation.

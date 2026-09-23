@@ -5,6 +5,8 @@
 //   cost --manifest <file>                    worst-case requests and reservation for live caps
 //   run --manifest <file> [--target textedit|recovery] [--authorization <file>] [--network <text>]
 //   verify --run <dir>                        recheck hashes and recompute the report offline
+//   report --run <dir>                        report an interrupted run from its ledger
+//   resources                                 whole-app memory, idle CPU, and repaint run (loopback)
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
@@ -24,8 +26,10 @@ import {
   quality,
   sha256,
   summarize,
+  summarizeResources,
   worstCase,
 } from "./lib.mjs";
+import { intervalMs, resources } from "./resources.mjs";
 import { fixturePath, loadCatalog, recover, root, verify, work } from "./fixtures.mjs";
 import {
   dictate,
@@ -75,7 +79,6 @@ async function manifestCommand() {
   if (mode !== "dry-run" && mode !== "live") throw new Error("--mode dry-run|live");
   const plan = await readJson(join(root, "tests/acceptance/plan.json"));
   const catalog = await loadCatalog();
-  await verify(catalog);
   if (mode === "live" && (options.stages || options.successes || options["max-attempts"]))
     throw new Error(
       "A live manifest uses the frozen plan; revise plan.json through a recorded decision.",
@@ -96,6 +99,10 @@ async function manifestCommand() {
     build: await build(),
     mode,
   });
+  await verify(
+    catalog,
+    manifest.fixtures.map((fixture) => fixture.id),
+  );
   if (mode === "live" && manifest.build.dirty)
     throw new Error("A live manifest needs a clean, committed build.");
   await mkdir(join(work, "manifests"), { recursive: true });
@@ -138,7 +145,10 @@ async function runCommand() {
     if (current[key] !== manifest.build[key])
       throw new Error(`build ${key} differs from the manifest`);
   const catalog = await loadCatalog();
-  await verify(catalog);
+  await verify(
+    catalog,
+    manifest.fixtures.map((fixture) => fixture.id),
+  );
   for (const fixture of manifest.fixtures)
     if (catalog.fixtures.find((item) => item.id === fixture.id)?.sha256 !== fixture.sha256)
       throw new Error(`${fixture.id} changed since the manifest`);
@@ -357,18 +367,15 @@ async function runFaults(stage, voice, target, server, byId, record) {
   }
 }
 
-async function finish(directory, manifest, ledger) {
+async function finish(directory, manifest, ledger, interrupted = false) {
   const report = summarize(manifest, ledger);
   await writeJson(join(directory, "report.json"), report);
-  await writeFile(join(directory, "REPORT.md"), markdown(manifest, report));
-  const files = (await readdir(directory)).filter((name) => name !== "ARTIFACTS.sha256").toSorted();
-  const lines = [];
-  for (const name of files) lines.push(`${sha256(await readFile(join(directory, name)))}  ${name}`);
-  await writeFile(join(directory, "ARTIFACTS.sha256"), lines.join("\n") + "\n");
+  await writeFile(join(directory, "REPORT.md"), markdown(manifest, report, interrupted));
+  await checksum(directory);
 }
 
 const ms = (value) => (value === undefined ? "–" : `${Math.round(value)} ms`);
-function markdown(manifest, report) {
+function markdown(manifest, report, interrupted) {
   const rows = Object.entries(report.classes).map(
     ([name, item]) =>
       `| ${name} | ${item.metric ?? "outcome"} | ${item.attempts} | ${item.successes}/${item.required ?? 0} | ${ms(item.medianMs)} | ${ms(item.p95Ms)} | ${item.threshold.medianMs ? `median ≤${item.threshold.medianMs}, ` : ""}${item.threshold.p95Ms ? `p95 ≤${item.threshold.p95Ms}` : "–"} | ${item.meets === undefined ? "not established" : item.meets ? "meets" : "fails"} |`,
@@ -383,7 +390,7 @@ function markdown(manifest, report) {
 
 Manifest \`${report.manifestSha256}\`, commit \`${manifest.build.commit}\`${manifest.build.dirty ? " (uncommitted changes)" : ""}.
 
-${manifest.mode === "live" ? "Live Deepgram run." : "**Dry run against a loopback provider. It establishes no live quality, insertion timing, or whole-app acceptance.**"} Input is virtual synthetic capture, not a physical microphone. Shortcuts use main's test hook, not a native key tap.
+${interrupted ? "**Interrupted before every stage ran. Stages without attempts are absent, and a stage with too few successes is not established.**\n\n" : ""}${manifest.mode === "live" ? "Live Deepgram run." : "**Dry run against a loopback provider. It establishes no live quality, insertion timing, or whole-app acceptance.**"} Input is virtual synthetic capture, not a physical microphone. Shortcuts use main's test hook, not a native key tap.
 
 | Stage | Metric | Attempts | Successes | Median | p95 (nearest rank) | Accepted | Result |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
@@ -435,16 +442,121 @@ async function verifyCommand() {
   );
 }
 
+// Resource runs need no provider spend: the loopback stand-in answers every request.
+async function resourcesCommand() {
+  const plan = await readJson(join(root, "tests/acceptance/plan.json"));
+  const directory = join(
+    work,
+    "runs",
+    `${new Date().toISOString().replaceAll(/[:.]/g, "-")}-resources`,
+  );
+  await mkdir(directory, { recursive: true });
+  await writeJson(join(directory, "run.json"), {
+    kind: "resources",
+    build: await build(),
+    environment: await osVersion(),
+    provider: "loopback stand-in; no Deepgram requests",
+    input: "virtual synthetic capture; no physical microphone",
+    sampling: `proc_pid_rusage phys_footprint of main's process tree every ${intervalMs} ms`,
+    startedAt: new Date().toISOString(),
+  });
+  const events = await resources({ directory });
+  const samples = (await readFile(join(directory, "samples.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const report = summarizeResources({
+    samples,
+    events,
+    thresholds: plan.thresholds.memory,
+    intervalMs,
+  });
+  await writeJson(join(directory, "report.json"), report);
+  await writeFile(join(directory, "REPORT.md"), resourcesMarkdown(report, plan.thresholds.memory));
+  await checksum(directory);
+  console.log(directory);
+}
+
+const mb = (value) => (value === undefined ? "–" : `${value.toFixed(1)} MiB`);
+function resourcesMarkdown(report, thresholds) {
+  const verdict = (meets) => (meets ? "meets" : "fails");
+  const phases = Object.entries(report.phases).map(
+    ([name, item]) =>
+      `| ${name} | ${item.samples} | ${mb(item.meanMiB)} | ${mb(item.peakMiB)} | ${item.processes} | ${item.maxGapMs ?? "–"} ms |`,
+  );
+  const cpu = Object.entries(report.idle.cpu).map(
+    ([name, item]) =>
+      `- ${name}: ${item.percent.toFixed(2)}% of one core over ${item.seconds.toFixed(0)} s (${item.perProcess
+        .map((process) => `${process.name} ${process.percent.toFixed(2)}%`)
+        .join(", ")})`,
+  );
+  const paint = Object.entries(report.idle.paint).flatMap(([name, windows]) =>
+    (windows ?? []).map(
+      (window) =>
+        `- ${name} ${window.url || "/"} (${window.visible}): ${window.layouts} layouts, ${window.styles} style recalcs, ${window.taskMs.toFixed(1)} ms main-thread tasks, ${window.animations} running animations`,
+    ),
+  );
+  return `# Voice resource run
+
+Loopback provider, virtual synthetic capture, packaged build. Each sample sums the OS physical footprint (\`proc_pid_rusage\` \`phys_footprint\`) of every process in main's tree: main, renderers, GPU and utility processes, provider and storage workers, and the helper.
+
+| Budget | Measured | Accepted | Result |
+| --- | ---: | ---: | --- |
+| Idle, all processes | ${mb(report.idle.peakMiB)} peak | ≤${thresholds.idleMiB} MiB | ${verdict(report.idle.meets)} |
+| Peak, every scenario | ${mb(report.peak.peakMiB)} | ≤${thresholds.peakMiB} MiB | ${verdict(report.peak.meets)} |
+| Backlog held through Retry and restarts | ${report.backlogHeld.phases.map((item) => `${item.phase} ${item.recovery ?? "?"}`).join(", ")} | 5 entries | ${verdict(report.backlogHeld.meets)} |
+
+| Phase | Samples | Mean | Peak | Processes | Largest gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+${phases.join("\n")}
+
+## Quiet idle
+
+${cpu.join("\n")}
+
+${paint.join("\n")}
+
+Growth from the first idle to idle after recovery release and 20 repeated sessions: ${mb(report.growth?.meanMiB)} mean, ${report.growth?.processes ?? "?"} processes.
+
+## Sampling limits
+
+Samples are ${report.intervalMs} ms apart; the largest observed gap was ${report.maxGapMs} ms. A spike shorter than one gap, or a process that starts and exits between samples, is not observed. Footprint is read from outside each process, so it includes memory the process has freed but the allocator still holds. The sampler itself is not part of the tree.
+`;
+}
+
+async function checksum(directory) {
+  const files = (await readdir(directory)).filter((name) => name !== "ARTIFACTS.sha256").toSorted();
+  const lines = [];
+  for (const name of files) lines.push(`${sha256(await readFile(join(directory, name)))}  ${name}`);
+  await writeFile(join(directory, "ARTIFACTS.sha256"), lines.join("\n") + "\n");
+}
+
+// An interrupted run keeps every attempt already appended to its ledger; report exactly those.
+async function reportCommand() {
+  const directory = options.run;
+  if (existsSync(join(directory, "ARTIFACTS.sha256"))) throw new Error("run is already reported");
+  const manifest = await readJson(join(directory, "manifest.json"));
+  const ledger = (await readFile(join(directory, "ledger.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  await finish(directory, manifest, ledger, true);
+  console.log(directory);
+}
+
 const commands = {
   recover: async () => console.log(`${await recover()} fixtures verified`),
   manifest: manifestCommand,
   cost: costCommand,
   run: runCommand,
   verify: verifyCommand,
+  report: reportCommand,
+  resources: resourcesCommand,
 };
 const command = commands[positionals[0]];
 if (!command) {
-  console.error("usage: cli.mjs recover|manifest|cost|run|verify");
+  console.error("usage: cli.mjs recover|manifest|cost|run|verify|report|resources");
   process.exit(2);
 }
 await command();
