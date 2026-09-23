@@ -80,6 +80,7 @@ jobs:
           key: pnpm-${{ runner.os }}-${{ runner.arch }}-11.10.0-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      - run: pnpm test:acceptance
       - run: pnpm build:renderer
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:renderer

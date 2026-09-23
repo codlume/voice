@@ -36,6 +36,8 @@ export function launchHelper(
   options: {
     testKeychainService?: string;
     syntheticCapture?: boolean;
+    // Isolated live acceptance only: synthetic capture reads the real key from the test Keychain.
+    testCredential?: boolean;
     captureEvent?: (event: CaptureEvent) => void;
     shortcut?: (event: ShortcutEvent) => void;
     barPointer?: (event: BarPointerEvent) => void;
@@ -49,6 +51,7 @@ export function launchHelper(
       ...process.env,
       VOICE_TEST_KEYCHAIN_SERVICE: testKeychainService ?? "",
       VOICE_TEST_CAPTURE: testKeychainService && options.syntheticCapture ? "synthetic" : "",
+      VOICE_TEST_CREDENTIAL: testKeychainService && options.testCredential ? "keychain" : "",
     },
   });
   const lines = createInterface({ input: child.stdout });
@@ -225,6 +228,12 @@ export function launchHelper(
     simulateCaptureFailure(failure: "device" | "permission") {
       if (broken || shuttingDown || !testKeychainService || !options.syntheticCapture) return;
       child.stdin.write(JSON.stringify({ type: "capture.simulate", failure }) + "\n");
+    },
+    // Isolated synthetic capture only: later captures play this 16 kHz mono PCM16 WAV at real
+    // time and then silence, or the default tone when null. A refused file fails the next start.
+    captureSource(path: string | null) {
+      if (broken || shuttingDown || !testKeychainService || !options.syntheticCapture) return;
+      child.stdin.write(JSON.stringify({ type: "capture.source", path }) + "\n");
     },
     async credential(): Promise<string> {
       await ready;
