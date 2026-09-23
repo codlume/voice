@@ -20,7 +20,7 @@ node scripts/acceptance/cli.mjs resources     # loopback memory, idle CPU, and r
 node --test scripts/acceptance/*.test.mjs
 ```
 
-`recover` needs `gh` signed in to fetch the private attachments. The held-out archive (`heldout-01`) has no attachment URL yet. Until the maintainer attaches it to [#38](https://github.com/codlume/voice/issues/38) and records the URL in `fixtures.json`, put that exact file in `.acceptance/archives/`. Regenerating it with macOS `say` produces different hashes, so a regenerated set is a new fixture set, not a recovery.
+`recover` needs `gh` signed in to fetch the private attachments. The original held-out archive (`heldout-01`) was never published and is gone. `heldout-02` regenerates it from the same `heldout.json` on macOS 27. Its `say` voices changed, so every speech hash differs, which makes it a new fixture set rather than a recovery ([#39](https://github.com/codlume/voice/issues/39)). It has no attachment URL yet. Until the maintainer attaches it to [#38](https://github.com/codlume/voice/issues/38) and records the URL in `fixtures.json`, put that exact file in `.acceptance/archives/`. Regenerating it again on another macOS version gives yet another set.
 
 A manifest binds the commit, a clean or dirty tree, the packaged `app.asar` and helper hashes, the exact Deepgram URL and model pin, and every fixture hash. It also binds the run order, duration classes, expected outcomes, caps, and declared conditions. `run` refuses a manifest whose build or fixtures differ.
 

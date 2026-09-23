@@ -37,12 +37,12 @@
     },
     {
       "name": "heldout",
-      "part": "01",
+      "part": "02",
       "url": null,
-      "bytes": 10519750,
-      "sha256": "8996ca595708ee3920ba701e14ea9c12d5a0d7b047f1af6c965ee79fb832f8ff",
+      "bytes": 10550684,
+      "sha256": "bd9eecf7126d96516398639abfa7bb61792f1ee75900452242a9b733cece9deb",
       "publishedIn": null,
-      "note": "Frozen held-out set. Until the maintainer attaches it to issue #38 and records the URL here, recover needs this exact file at .acceptance/archives/heldout-01.tgz."
+      "note": "Regenerated held-out set (the heldout-01 archive was never published and could not be recovered). Same heldout.json text, voices, pauses, and noise seeds; this Mac's macOS 27 say voices produce different audio, so the hashes differ from heldout-01. Until it is attached to issue #38 and the URL is recorded here, recover needs this exact file at .acceptance/archives/heldout-02.tgz."
     }
   ],
   "fixtures": [
@@ -650,7 +650,7 @@
     },
     {
       "id": "heldout_pauses",
-      "sha256": "70cc2eef1b725431ca1af45eef52dfb4a0237e22ade09e1b2535e9b350705749",
+      "sha256": "8e487566d4de530e75028c3f202b4397bacd45a7cd9febdbb7465dab1be2377b",
       "seconds": 16,
       "coverage": "pauses and false starts",
       "voice": "Karen",
@@ -667,7 +667,7 @@
     },
     {
       "id": "heldout_request_negation",
-      "sha256": "7b4340c28de0e98e032605715d1a72f2ce4a648835249da3376a6c3c67324bae",
+      "sha256": "14aabeb16f8fac5173fa9b354344f94ca77b3491f6527bd2bfadb33b55ccc9ae",
       "seconds": 9,
       "coverage": "requests and negation",
       "voice": "Moira",
@@ -684,7 +684,7 @@
     },
     {
       "id": "heldout_names_acronyms",
-      "sha256": "4124eccd9d70f77c8dcb9894cf259bff14582080b5fd1c8f868b909378d22c26",
+      "sha256": "0bd821b768c91b7909b2bf2edb4139b3130da009833727df29a94f8d130443d6",
       "seconds": 10,
       "coverage": "names and acronyms",
       "voice": "Rishi",
@@ -701,7 +701,7 @@
     },
     {
       "id": "heldout_numbers_dates",
-      "sha256": "7e6bf4d0a1aac2875121c443d52acf6caab189e7f8b47a313dcb2ad97809181b",
+      "sha256": "082a83bf4f796d0e4c4f8b98f22b462af541343cc44d10ad6813e2fe0bcf78da",
       "seconds": 11,
       "coverage": "numbers and dates",
       "voice": "Tessa",
@@ -718,7 +718,7 @@
     },
     {
       "id": "heldout_url_email",
-      "sha256": "65a5b0443edc34e50bcc7aa060e0f9602ffd56d06ba3e93887d95f43f123872a",
+      "sha256": "d693ef48637b0f35c7d48ee2e868dc1cd74248d322d90d8ddaebdd4bc824fd66",
       "seconds": 11,
       "coverage": "URLs and email addresses",
       "voice": "Samantha",
@@ -735,7 +735,7 @@
     },
     {
       "id": "heldout_punctuation_paragraph",
-      "sha256": "8e7aa0707d671c8dc8bcc8d953000dab3b9c415660ceaf68ee989e5dbba7b6be",
+      "sha256": "e614d11f8effee331bcff34e0f89529babd23d8b7b9157bffe9450a74dfff053",
       "seconds": 10,
       "coverage": "punctuation and paragraph boundaries",
       "voice": "Daniel",
@@ -752,7 +752,7 @@
     },
     {
       "id": "heldout_request_noise",
-      "sha256": "123129d3e158e494d8b7ec43a18663309258d86a4564bb5bdadf226de0aa8981",
+      "sha256": "7c3f94d4aafcb8464065a46b9c2c255dfd2da4de8f8ee224307e9fcd07dfb3e9",
       "seconds": 9,
       "coverage": "background noise over speech",
       "voice": "Moira",
@@ -786,7 +786,7 @@
     },
     {
       "id": "heldout_intermediate",
-      "sha256": "10d8cf1a5f370406c3f1361b5350b1ae834e40fcfea8268c5df67e59120945ab",
+      "sha256": "e8ded31d771f9b2e6f1cd3c5ad708093da7a7fb23310a52daa73de3156ef1f43",
       "seconds": 60,
       "coverage": "intermediate dictation with numbers, names, and a correction",
       "voice": "Karen",
@@ -803,7 +803,7 @@
     },
     {
       "id": "heldout_five_minute",
-      "sha256": "76f439263ec0f2ee422a16cefa698882c5547c48a4aff21faebc81ba144a1fd0",
+      "sha256": "6f64fff5316099b62445b24bbf5838d22935a898fff3ce91993e317f4436663a",
       "seconds": 300,
       "coverage": "five-minute distinct speech, reaching the capture cap",
       "voice": "Tessa",
