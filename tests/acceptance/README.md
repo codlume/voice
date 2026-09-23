@@ -16,6 +16,7 @@ node scripts/acceptance/cli.mjs manifest --mode dry-run [--stages a,b] [--succes
 node scripts/acceptance/cli.mjs run --manifest <file> [--target textedit]
 node scripts/acceptance/cli.mjs verify --run .acceptance/runs/<run>
 node scripts/acceptance/cli.mjs cost --manifest <file>
+node scripts/acceptance/cli.mjs resources     # loopback memory, idle CPU, and repaint run (~13 min)
 node --test scripts/acceptance/*.test.mjs
 ```
 
@@ -68,7 +69,9 @@ Timing stages (`plan.json`):
 
 Launch and first-frame timing do not depend on the provider, so those stages use loopback and cost nothing. Ready is main's own mark after the helper, storage, setup refresh, and shortcut sync. It is measured from the runner's clock just before launch, on the same monotonic clock.
 
-Resource runs (#39) use the same packaged build and fresh test storage:
+A dry-run manifest verifies only the fixtures its stages use, so loopback-only stages such as `cold-launch,warm-start` run without the held-out archive. A live manifest uses the full plan and still needs every fixture.
+
+Resource runs (#39, `resources`) use the same packaged build and fresh test storage. The sampler (`footprint.swift`, compiled into `.acceptance/bin`) reads `proc_pid_rusage` physical footprint and CPU time for every process in main's tree. The provider and storage workers are threads inside main, so main's figure includes them. Paint activity comes from Chromium's per-window layout and style counters and the running animation count. The run covers:
 
 - Sum the OS physical footprint of every Voice-owned process: main, renderers, GPU/utility, workers, and helper. Sample at 100 ms, with snapshots at scenario boundaries. Disclose the sampling limit.
 - Quiet idle for 60 s: ≤500 MiB, CPU and repaint activity reported, no continuous animation.
