@@ -8,7 +8,8 @@ import VoiceHelperProtocol
 // It reads only element identity, role, and selection ranges. It never reads document text or
 // selection contents, and it never activates another application. A field without an
 // Accessibility text write gets a clipboard paste instead, whose prior clipboard contents stay
-// inside `Clipboard` for the duration of that one paste.
+// inside `Clipboard` for the duration of that one paste. A terminal gets typed, single-line text
+// (see `terminalLine`), so dictation can never run a command.
 // All Accessibility calls run on a dedicated run-loop thread, so a slow or hung target app
 // can never stall the main thread that services the shortcut event tap.
 final class TargetService: @unchecked Sendable {
@@ -34,7 +35,8 @@ final class TargetService: @unchecked Sendable {
     // observes workspace activation. This observer keeps it current between sessions, so a
     // session never remembers, or revalidates against, an app the user already left.
     private var frontmost: NSObjectProtocol?
-    // Terminals need a non-executing route, which is not established yet.
+    // Terminals take typed text only. Their Accessibility view is a scrollback buffer, not an
+    // editable field, so they are recognised by bundle rather than by role.
     private let terminals: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "dev.warp.Warp",
         "io.alacritty", "org.alacritty", "com.github.wez.wezterm", "net.kovidgoyal.kitty",
@@ -168,14 +170,19 @@ final class TargetService: @unchecked Sendable {
         guard let front = NSWorkspace.shared.frontmostApplication else { return (.unavailable, nil) }
         let pid = front.processIdentifier
         if pid == getppid() || pid == ProcessInfo.processInfo.processIdentifier { return (.none, nil) }
-        if let bundle = front.bundleIdentifier, terminals.contains(bundle) { return (.terminal, nil) }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 1)
+        // Electron apps (Slack, VS Code, Notion) and Chromium build their Accessibility tree only
+        // once an assistive client asks; without it the focused element is the bare window. Apps
+        // that do not know the attribute reject it harmlessly.
+        AXUIElementSetAttributeValue(application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         let (error, element) = focused(application)
         guard let element else {
             return (error == .apiDisabled || error == .cannotComplete || error == .notImplemented ? .unavailable : .none, nil)
         }
         if string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return (.protected, nil) }
+        // Secure keyboard entry (a password prompt, or the Terminal menu setting) withholds typing.
+        if terminal(pid) { return IsSecureEventInputEnabled() ? (.protected, nil) : (.eligible, (application, element)) }
         let role = string(element, kAXRoleAttribute)
         // A readable selection is required either way: it confirms a native write or a paste.
         guard role == kAXTextAreaRole || role == kAXTextFieldRole, range(element) != nil else { return (.unsupported, nil) }
@@ -236,6 +243,9 @@ final class TargetService: @unchecked Sendable {
         let event: [String: Any] = ["type": "target.selected", "session": armed.session, "status": status.rawValue]
         if let data = try? JSONSerialization.data(withJSONObject: event) { emit(data) }
     }
+    private func terminal(_ pid: pid_t) -> Bool {
+        NSRunningApplication(processIdentifier: pid)?.bundleIdentifier.map(terminals.contains) ?? false
+    }
     // Why the remembered target may not receive text now, or nil when it still may.
     private func refusal(_ session: String) -> InsertionOutcome? {
         guard let current = watched, current.session == session else { return .missing }
@@ -244,12 +254,16 @@ final class TargetService: @unchecked Sendable {
         let (error, element) = focused(current.application)
         guard let element, CFEqual(element, current.element) else { return error == .invalidUIElement ? .closed : .changed }
         if string(current.element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole { return .protected }
+        if terminal(current.pid), IsSecureEventInputEnabled() { return .protected }
         return nil
     }
     private func insert(_ session: String, _ text: String) -> InsertionResult {
         guard let current = watched, current.session == session else { return InsertionResult(.missing) }
         defer { release() }
         if let refusal = refusal(session) { return InsertionResult(refusal) }
+        // A terminal gives no evidence of what it received without reading its buffer, so typed
+        // text is always uncertain: "Check your target", never retyped.
+        if terminal(current.pid) { return InsertionResult(type(terminalLine(text), to: current.pid) ? .uncertain : .failed) }
         let length = text.utf16.count
         // Placement is confirmed from the collapsed selection after the insert, never from text.
         func advanced(_ before: CFRange?) -> Bool {
@@ -296,6 +310,21 @@ final class TargetService: @unchecked Sendable {
         up.flags = .maskCommand
         down.postToPid(pid)
         up.postToPid(pid)
+        return true
+    }
+    // Unicode keyboard events to the target process only, so no key code or modifier the user is
+    // holding reinterprets them. Printable characters only; see `terminalLine`.
+    private func type(_ text: String, to pid: pid_t) -> Bool {
+        let source = CGEventSource(stateID: .privateState)
+        for chunk in typingChunks(text) {
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return false }
+            for event in [down, up] {
+                event.flags = []
+                chunk.withUnsafeBufferPointer { event.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: $0.baseAddress) }
+                event.postToPid(pid)
+            }
+        }
         return true
     }
     private static func key(typing character: String) -> CGKeyCode? {

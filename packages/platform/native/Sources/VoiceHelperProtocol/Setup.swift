@@ -66,7 +66,7 @@ public struct SetupStatus: Encodable, Sendable {
         try values.encode(shortcuts, forKey: .shortcuts)
     }
 }
-public enum TargetStatus: String, Encodable, Sendable { case eligible, none, unsupported, protected, terminal, unavailable }
+public enum TargetStatus: String, Encodable, Sendable { case eligible, none, unsupported, protected, unavailable }
 // `pasted` is a confirmed clipboard-paste insertion; `unpreserved` means paste was needed but the
 // clipboard could not be preserved, so nothing was changed or delivered.
 public enum InsertionOutcome: String, Encodable, Sendable { case inserted, pasted, changed, closed, protected, unsupported, unpreserved, missing, failed, uncertain }

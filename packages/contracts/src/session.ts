@@ -146,7 +146,6 @@ export const TargetStatus = Schema.Literals([
   "none",
   "unsupported",
   "protected",
-  "terminal",
   "unavailable",
 ]);
 export type TargetStatus = typeof TargetStatus.Type;

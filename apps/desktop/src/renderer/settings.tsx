@@ -148,8 +148,8 @@ export function SettingsView() {
           </p>
         )}
       <p {...stylex.props(styles.notice)}>
-        Development preview. After setup, shortcuts dictate into native text fields such as
-        TextEdit. Browser, editor, and terminal support is still in development.
+        Development preview. After setup, shortcuts dictate into text fields in native apps,
+        browsers, editors, and terminals.
       </p>
     </SettingsPage>
   );

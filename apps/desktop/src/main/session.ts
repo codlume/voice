@@ -69,7 +69,6 @@ const targetMessages: Record<Exclude<TargetStatus, "eligible">, string> = {
   none: "No text field was focused when dictation started.",
   unsupported: "The focused control does not support direct insertion.",
   protected: "The focused field is protected.",
-  terminal: "Terminal insertion is not supported yet.",
   unavailable: "The focused app could not be inspected. Check Accessibility access.",
 };
 const insertionMessages: Record<
