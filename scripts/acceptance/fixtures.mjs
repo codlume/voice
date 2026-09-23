@@ -49,9 +49,13 @@ export async function recover() {
   }
   return verify(catalog);
 }
-export async function verify(catalog) {
+// `ids` limits the check to the fixtures a manifest uses; recovery checks the whole catalog.
+export async function verify(catalog, ids) {
   const problems = [];
-  for (const fixture of catalog.fixtures) {
+  const fixtures = ids
+    ? catalog.fixtures.filter((item) => ids.includes(item.id))
+    : catalog.fixtures;
+  for (const fixture of fixtures) {
     const file = fixturePath(fixture);
     if (!existsSync(file)) {
       problems.push(`${fixture.id}: missing ${file}`);
@@ -63,7 +67,7 @@ export async function verify(catalog) {
       problems.push(`${fixture.id}: duration`);
   }
   if (problems.length) throw new Error(problems.join("\n"));
-  return catalog.fixtures.length;
+  return fixtures.length;
 }
 
 async function speak(voice, text, directory, index) {

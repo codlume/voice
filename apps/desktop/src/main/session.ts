@@ -1035,7 +1035,9 @@ export function createSession(options: {
         providerStop(current);
         return;
       }
-      const pcm = Buffer.from(event.pcm, "base64");
+      // A decoded Buffer is a view on a shared 64 KiB allocation, and structured clone copies the
+      // whole backing buffer; an exact-size copy keeps retained audio and each replay message small.
+      const pcm = new Uint8Array(Buffer.from(event.pcm, "base64"));
       if (
         current.stopped ||
         event.sequence !== current.audio.length ||
