@@ -152,7 +152,7 @@ test("reports count only confirmed single-request insertions and keep every fail
   });
   const ledger = [
     {
-      stages: ["normal-short"],
+      stage: "normal-short",
       slot: 0,
       fixture: "request",
       outcome: "inserted",
@@ -163,7 +163,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "match",
     },
     {
-      stages: ["normal-short"],
+      stage: "normal-short",
       slot: 1,
       fixture: "identifier",
       outcome: "inserted",
@@ -174,7 +174,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "known-exception",
     },
     {
-      stages: ["normal-short"],
+      stage: "normal-short",
       slot: 2,
       fixture: "date",
       outcome: "recovery-incomplete",
@@ -183,7 +183,7 @@ test("reports count only confirmed single-request insertions and keep every fail
       quality: "review",
     },
     {
-      stages: ["normal-short"],
+      stage: "normal-short",
       slot: 3,
       fixture: "list",
       outcome: "inserted",
