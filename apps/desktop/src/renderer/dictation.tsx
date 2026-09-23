@@ -62,7 +62,8 @@ export function DictationView({
       <p {...stylex.props(styles.text)}>
         Voice inserts only into the field that was focused when you started. If focus moves, the
         field closes, or the insertion cannot be confirmed, the transcript waits in Temporary
-        recovery. Terminals are not supported yet.
+        recovery. In a terminal, Voice types the text as one line and never presses Return, so a
+        command runs only when you press it.
       </p>
       <p {...stylex.props(styles.text)}>
         Starting here keeps the transcript in recovery, because this window is in front.

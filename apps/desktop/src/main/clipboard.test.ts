@@ -228,15 +228,3 @@ it("an explicit Paste interrupted by a helper failure is uncertain and warns abo
   expect(inserts).toHaveLength(2);
   owner.close();
 });
-
-it("a terminal target never reaches insertion or the clipboard", async () => {
-  const { owner, inserts, copies, dictate } = fixture({ target: "terminal" });
-  await dictate();
-  expect(owner.snapshot()).toMatchObject({
-    phase: "failed",
-    message: expect.stringContaining("Terminal insertion is not supported yet."),
-  });
-  expect(inserts).toEqual([]);
-  expect(copies).toEqual([]);
-  owner.close();
-});

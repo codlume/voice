@@ -371,7 +371,7 @@ test(
       });
       assert.equal(captured.result.type, "target");
       assert.ok(
-        ["eligible", "none", "unsupported", "protected", "terminal", "unavailable"].includes(
+        ["eligible", "none", "unsupported", "protected", "unavailable"].includes(
           captured.result.status,
         ),
       );
