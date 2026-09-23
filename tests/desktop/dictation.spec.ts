@@ -7,7 +7,8 @@ import {
 } from "@playwright/test";
 import { WebSocketServer } from "ws";
 import { once } from "node:events";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { mkdtemp, mkdir, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -777,6 +778,304 @@ test("real clicks on the floating bar and menu bar keep TextEdit focused and ins
     await osascript('tell application "TextEdit" to close front document saving no').catch(
       () => {},
     );
+    if (appProcess.exitCode === null)
+      await app.evaluate(({ app: application }) => application.exit(0)).catch(() => {});
+    await server.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// The scratch paste target: a throwaway AppKit window whose field "a" has no Accessibility text
+// write, so Voice must use its clipboard paste. The target keeps the user's clipboard in its own
+// memory and puts it back when it exits; it reports only synthetic fixture checks as booleans.
+async function scratchTarget() {
+  await mkdir("test-results", { recursive: true });
+  const binary = resolve("test-results/clipboard-target");
+  const source = resolve("tests/desktop/clipboard-target.swift");
+  const [built, sourceInfo] = await Promise.all([stat(binary).catch(() => null), stat(source)]);
+  if (!built || built.mtimeMs < sourceInfo.mtimeMs)
+    await run("swiftc", ["-O", "-o", binary, source]);
+  const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"] });
+  const replies: ((value: Record<string, unknown>) => void)[] = [];
+  let pastes = 0;
+  const waiting: (() => void)[] = [];
+  createInterface({ input: child.stdout }).on("line", (line) => {
+    const value = JSON.parse(line) as Record<string, unknown>;
+    if (value.event === "paste") {
+      pastes++;
+      for (const done of waiting.splice(0)) done();
+    } else replies.shift()?.(value);
+  });
+  const next = () =>
+    new Promise<Record<string, unknown>>((done) => {
+      replies.push(done);
+    });
+  const exited = once(child, "exit");
+  const ready = await next();
+  if (ready.ready !== true) throw new Error(String(ready.reason));
+  return {
+    pid: child.pid ?? 0,
+    send(command: Record<string, unknown>) {
+      const reply = next();
+      child.stdin.write(JSON.stringify(command) + "\n");
+      return reply;
+    },
+    // Resolves on the next paste the target receives, or at once when one arrived since `since`.
+    paste(since: number) {
+      if (pastes > since) return Promise.resolve();
+      return new Promise<void>((done) => {
+        waiting.push(done);
+      });
+    },
+    get pastes() {
+      return pastes;
+    },
+    async close() {
+      if (child.exitCode !== null) return;
+      child.stdin.write(JSON.stringify({ cmd: "exit" }) + "\n");
+      child.stdin.end();
+      await exited;
+    },
+  };
+}
+
+// Real-Mac proof of the clipboard paste fallback: real Accessibility target checks and a real
+// Command-V into a scratch AppKit field, with real clipboard formats on the general pasteboard.
+// Synthetic audio and a loopback provider; sessions start through the test hook. Opt in with
+// VOICE_NATIVE_PROOF=1 on a Mac where the launching terminal holds Accessibility.
+test("real clipboard paste fallback keeps plain, rich, and nontext clipboards and a concurrent copy", async () => {
+  test.skip(!process.env.VOICE_NATIVE_PROOF, "Set VOICE_NATIVE_PROOF=1 on a prepared Mac.");
+  test.setTimeout(300_000);
+  const tool = await proofTool();
+  const steps: Record<string, unknown>[] = [];
+  const evidence: Record<string, unknown> = {
+    ...(await proofEnvironment()),
+    insertion:
+      "real: clipboard paste by the packaged helper, Command-V posted to a scratch AppKit field without an Accessibility text write",
+    clipboard:
+      "real general pasteboard with synthetic fixtures only; the user's clipboard stayed in the scratch target's memory and was put back at the end, and none of it is recorded here",
+    steps,
+  };
+  const target = await scratchTarget();
+  const directory = await mkdtemp(join(tmpdir(), "voice-clipboard-proof-"));
+  const server = await fixtureServer();
+  const app = await launch(directory, server.url);
+  const appProcess = app.process();
+  try {
+    const page = await app.firstWindow();
+    await expect(page.getByRole("button", { name: "Start practice", exact: true })).toBeEnabled();
+    const session = async () => (await snapshot(page)).session;
+    const helper = () =>
+      app.evaluate(() =>
+        (
+          globalThis as unknown as { voiceTest: { helper: () => { state: string; pid: number } } }
+        ).voiceTest.helper(),
+      );
+    const verify = (kind: string) => target.send({ cmd: "verify", kind, text: transcript });
+    const field = async () => String((await target.send({ cmd: "state" })).a);
+    // Evidence records field text only when it is synthetic; text someone typed into the scratch
+    // window is never recorded or echoed by an assertion.
+    const synthetic = (text: string) => text.replace(transcript, "") === "alpha omega";
+    const fieldEvidence = async () => {
+      const text = await field();
+      return synthetic(text) ? text : "unexpected text, not recorded";
+    };
+    async function focus(name: "a" | "b") {
+      await osascript(
+        `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
+      );
+      expect(await target.send({ cmd: "focus", field: name })).toEqual({ ok: true });
+      await expect.poll(async () => (await target.send({ cmd: "state" })).frontmost).toBe(true);
+    }
+    async function prepare(fixture: string, mode = "normal") {
+      await focus("a");
+      // The caret is placed once the field has focus, so activation cannot move it.
+      await target.send({ cmd: "reset", a: "alpha omega", b: "", mode, caret: 6 });
+      if ((await target.send({ cmd: "fixture", kind: fixture })).ok !== true)
+        throw new Error(
+          "Someone copied during the proof. Their copy was left on the clipboard. Rerun without using the Mac.",
+        );
+    }
+    async function dictate(during?: () => Promise<void>, stopped?: () => Promise<void>) {
+      await expect.poll(async () => (await helper()).state, { timeout: 15_000 }).toBe("ready");
+      await shortcut(app, "toggle");
+      await expect.poll(async () => (await session()).phase).toBe("recording");
+      await expect.poll(() => server.attempts.at(-1)?.length ?? 0).toBeGreaterThan(10);
+      await during?.();
+      await shortcut(app, "toggle");
+      await stopped?.();
+      await expect
+        .poll(async () => (await session()).phase, { timeout: 15_000 })
+        .toMatch(/complete|failed/);
+      // Voice rightly refuses delivery when another app takes focus; name that cause directly.
+      if (!(await target.send({ cmd: "state" })).frontmost)
+        throw new Error(
+          "Another app came to the front during this step. Rerun without using the Mac.",
+        );
+      return session();
+    }
+    async function discard() {
+      for (const { id } of (await session()).recovery)
+        await page.evaluate(
+          (entry) => window.voice.command({ type: "recovery.discard", id: entry }),
+          id,
+        );
+      expect((await session()).recovery).toEqual([]);
+    }
+    const inserted = `alpha ${transcript}omega`;
+    const kept =
+      "Inserted with a clipboard paste. Your clipboard still holds what you last copied.";
+
+    // 1-4. Plain, rich, multi-item nontext, and empty clipboards: pasted at the caret, each
+    //      clipboard put back exactly, Voice's marked value gone.
+    for (const fixture of ["plain", "rich", "nontext", "empty"]) {
+      await prepare(fixture);
+      const result = await dictate();
+      const clipboard = await verify(fixture);
+      steps.push({
+        step: `paste over the ${fixture} clipboard`,
+        message: result.message,
+        field: await fieldEvidence(),
+        clipboard,
+      });
+      expect(result.message).toBe(kept);
+      expect((await field()) === inserted, "transcript pasted at the caret").toBe(true);
+      expect(clipboard).toMatchObject({ matches: true, voice: false });
+    }
+
+    // 5. A copy made after Voice wrote its value and before it restores survives.
+    await prepare("plain", "copy");
+    let result = await dictate();
+    let clipboard = await verify("concurrent");
+    steps.push({
+      step: "concurrent copy during paste",
+      message: result.message,
+      field: await fieldEvidence(),
+      clipboard,
+    });
+    expect(result.message).toBe(kept);
+    expect((await field()) === inserted, "transcript pasted at the caret").toBe(true);
+    expect(clipboard).toMatchObject({ matches: true, voice: false });
+
+    // 6-7. Promised data that fails to materialize, and a concealed value, cannot be preserved:
+    //      the clipboard stays untouched and the transcript waits for explicit Copy.
+    for (const fixture of ["lazy", "concealed"]) {
+      await prepare(fixture);
+      result = await dictate();
+      clipboard = await verify(fixture);
+      steps.push({
+        step: `unpreservable ${fixture} clipboard`,
+        message: result.message,
+        field: await fieldEvidence(),
+        clipboard,
+      });
+      expect(result.message).toMatch(/^Not inserted\. This field needs a clipboard paste/);
+      expect((await field()) === "alpha omega", "field untouched").toBe(true);
+      expect(clipboard).toMatchObject({ matches: true, unchanged: true, voice: false });
+      expect(result.recovery.at(-1)).toMatchObject({ text: transcript, delivery: "failed" });
+    }
+    // Explicit Copy reports only copied.
+    const [copyEntry] = (await session()).recovery;
+    if (!copyEntry) throw new Error("Expected a recovery entry to copy");
+    await page.evaluate((id) => window.voice.command({ type: "recovery.copy", id }), copyEntry.id);
+    await expect.poll(async () => (await session()).recoveryMessage).toBe("Copied.");
+    steps.push({ step: "explicit Copy", message: (await session()).recoveryMessage });
+
+    // 8. Explicit Paste into a deliberately clicked field uses the same fallback and resolves it.
+    await focus("a");
+    await target.send({ cmd: "reset", a: "alpha omega", b: "", caret: 11 });
+    await target.send({ cmd: "fixture", kind: "rich" });
+    const [pasteEntry] = (await session()).recovery;
+    if (!pasteEntry) throw new Error("Expected a recovery entry to paste");
+    await page.evaluate(
+      (id) => window.voice.command({ type: "recovery.paste", id }),
+      pasteEntry.id,
+    );
+    await expect.poll(async () => (await session()).armedPaste).toBe(pasteEntry.id);
+    const { x, y } = (await target.send({ cmd: "frame", field: "a" })) as { x: number; y: number };
+    await run(tool, ["click", String(x), String(y)]);
+    await expect.poll(async () => (await session()).recovery.length, { timeout: 15_000 }).toBe(0);
+    clipboard = await verify("rich");
+    steps.push({
+      step: "explicit Paste after a real click",
+      message: (await session()).recoveryMessage,
+      field: await fieldEvidence(),
+      clipboard,
+    });
+    expect((await session()).recoveryMessage).toBe(kept);
+    expect(synthetic(await field()), "transcript pasted once into the field").toBe(true);
+    expect(clipboard).toMatchObject({ matches: true, voice: false });
+
+    // 9. Focus moves to another field during the session: nothing is pasted anywhere and the
+    //    clipboard is never touched.
+    await prepare("plain");
+    result = await dictate(() => focus("b"));
+    const state = await target.send({ cmd: "state" });
+    clipboard = await verify("plain");
+    steps.push({
+      step: "focus change during session",
+      message: result.message,
+      untouched: state.a === "alpha omega" && state.b === "",
+      clipboard,
+    });
+    expect(result.message).toContain("Focus moved away from the original field.");
+    expect(state.a === "alpha omega" && state.b === "", "both fields untouched").toBe(true);
+    expect(state.pastes).toBe(0);
+    expect(clipboard).toMatchObject({ matches: true, unchanged: true });
+    await discard();
+
+    // 10. The target takes the paste event but never inserts: uncertain, clipboard restored,
+    //     and no second attempt.
+    await prepare("rich", "ignore");
+    result = await dictate();
+    clipboard = await verify("rich");
+    const attempts = (await target.send({ cmd: "state" })).pastes;
+    steps.push({
+      step: "unconfirmed paste",
+      message: result.message,
+      field: await fieldEvidence(),
+      pastes: attempts,
+      clipboard,
+    });
+    expect(result.message).toBe("Check your target. The transcript is in recovery.");
+    expect((await field()) === "alpha omega", "field untouched").toBe(true);
+    expect(clipboard).toMatchObject({ matches: true, voice: false });
+    expect(result.recovery).toEqual([
+      expect.objectContaining({ text: transcript, delivery: "uncertain" }),
+    ]);
+    expect(attempts).toBe(1);
+    await discard();
+
+    // 11-12. The helper is terminated while it waits for the paste to land. SIGTERM lets it put
+    //        the clipboard back; SIGKILL cannot, so the marked transcript remains and Voice
+    //        warns about it. Either way the transcript is uncertain and kept.
+    for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+      await prepare("nontext", "ignore");
+      const since = target.pastes;
+      result = await dictate(undefined, async () => {
+        await target.paste(since);
+        // The helper delivering this paste; the previous iteration's helper was replaced.
+        process.kill((await helper()).pid, signal);
+      });
+      clipboard = await verify(signal === "SIGTERM" ? "nontext" : "transcript");
+      steps.push({
+        step: `helper ${signal} mid-paste`,
+        message: result.message,
+        field: await fieldEvidence(),
+        clipboard,
+      });
+      expect(result.message).toContain("Check your target.");
+      expect(result.message).toContain("your clipboard may still hold this transcript");
+      expect(result.recovery).toEqual([
+        expect.objectContaining({ text: transcript, delivery: "uncertain" }),
+      ]);
+      expect(clipboard).toMatchObject({ matches: true });
+      await discard();
+    }
+    evidence.result = "passed";
+  } finally {
+    await writeFile("test-results/clipboard-proof.json", JSON.stringify(evidence, null, 2));
+    await target.close();
     if (appProcess.exitCode === null)
       await app.evaluate(({ app: application }) => application.exit(0)).catch(() => {});
     await server.close();

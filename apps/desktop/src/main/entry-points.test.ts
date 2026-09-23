@@ -47,7 +47,7 @@ function fixture(
       },
       insert: async (id, text) => {
         targets.push(`insert:${id}:${text}`);
-        return overrides.insert ? overrides.insert() : "inserted";
+        return { outcome: overrides.insert ? await overrides.insert() : "inserted" };
       },
       release: () => {},
     },

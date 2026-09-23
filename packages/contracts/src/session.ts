@@ -150,17 +150,28 @@ export const TargetStatus = Schema.Literals([
   "unavailable",
 ]);
 export type TargetStatus = typeof TargetStatus.Type;
+// `pasted` is a confirmed clipboard-paste insertion. `unpreserved`: the field needed a paste, but
+// the clipboard could not be preserved exactly, so Voice changed nothing and delivered nothing.
 export const InsertionOutcome = Schema.Literals([
   "inserted",
+  "pasted",
   "changed",
   "closed",
   "protected",
   "unsupported",
+  "unpreserved",
   "missing",
   "failed",
   "uncertain",
 ]);
 export type InsertionOutcome = typeof InsertionOutcome.Type;
+// What the helper knows about the clipboard after a delivery. `unrestored`: a paste replaced it
+// and could not put the previous contents back. Main adds `unknown` when the helper stopped
+// mid-delivery, so a paste may have left the transcript there.
+export type InsertionResult = {
+  readonly outcome: InsertionOutcome;
+  readonly clipboard?: "unrestored" | "unknown";
+};
 export const TargetSelected = Schema.Struct({
   type: Schema.Literal("target.selected"),
   session: identity,

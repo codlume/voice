@@ -206,8 +206,12 @@ export const dictation = createSession({
     arm: async (id) => {
       await request({ type: "target.arm", session: id }, "armed");
     },
-    insert: async (id, text) =>
-      (await request({ type: "target.insert", session: id, text }, "insertion")).outcome,
+    insert: async (id, text) => {
+      const result = await request({ type: "target.insert", session: id, text }, "insertion");
+      return result.clipboard
+        ? { outcome: result.outcome, clipboard: result.clipboard }
+        : { outcome: result.outcome };
+    },
     release: (id) => {
       void request({ type: "target.release", session: id }, "released").catch(() => {});
     },

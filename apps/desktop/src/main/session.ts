@@ -7,6 +7,7 @@ import {
   type CaptureCommand,
   type CaptureFailure,
   type InsertionOutcome,
+  type InsertionResult,
   type Notice,
   type Origin,
   type ProviderRequest,
@@ -71,14 +72,38 @@ const targetMessages: Record<Exclude<TargetStatus, "eligible">, string> = {
   terminal: "Terminal insertion is not supported yet.",
   unavailable: "The focused app could not be inspected. Check Accessibility access.",
 };
-const insertionMessages: Record<Exclude<InsertionOutcome, "inserted" | "uncertain">, string> = {
+const insertionMessages: Record<
+  Exclude<InsertionOutcome, "inserted" | "pasted" | "uncertain">,
+  string
+> = {
   changed: "Focus moved away from the original field.",
   closed: "The original field closed.",
   protected: "The original field is protected.",
   unsupported: "The original field no longer accepts direct insertion.",
+  unpreserved:
+    "This field needs a clipboard paste, and Voice could not keep your current clipboard exactly, so it left the clipboard untouched. Use Copy to paste the text yourself.",
   missing: "No destination was established.",
   failed: "The field rejected the insertion.",
 };
+const clipboardNotes: Record<NonNullable<InsertionResult["clipboard"]>, string> = {
+  unrestored: "Voice could not put back what was on your clipboard before.",
+  unknown:
+    "Native services stopped during insertion. If Voice was pasting, your clipboard may still hold this transcript.",
+};
+const noteClipboard = (message: string, { clipboard }: InsertionResult) =>
+  clipboard ? `${message} ${clipboardNotes[clipboard]}` : message;
+// Clipboard-paste insertion is always named, so the user knows the clipboard was involved.
+const insertedMessage = (result: InsertionResult) =>
+  result.outcome === "inserted"
+    ? "Inserted."
+    : noteClipboard(
+        result.clipboard
+          ? "Inserted with a clipboard paste."
+          : "Inserted with a clipboard paste. Your clipboard still holds what you last copied.",
+        result,
+      );
+// A helper that stopped mid-delivery gives no result; a paste may already have happened.
+const helperStopped: InsertionResult = { outcome: "uncertain", clipboard: "unknown" };
 // Why the provider stream is down while an explicitly started capture continues. After Stop the
 // session replays the whole recording once, if connectivity returns and time remains. A crashed
 // provider worker is replaced only for that same replay, so it never adds an attempt or time.
@@ -192,7 +217,7 @@ export function createSession(options: {
   target: {
     capture: (session: string) => Promise<TargetStatus>;
     arm: (session: string) => Promise<void>;
-    insert: (session: string, text: string) => Promise<InsertionOutcome>;
+    insert: (session: string, text: string) => Promise<InsertionResult>;
     release: (session: string) => void;
   };
   // A session or armed paste is in progress, so the native cancel key belongs to Voice.
@@ -681,22 +706,31 @@ export function createSession(options: {
     current.link = { state: "down", outage: null, retryAt: 0 };
     if (current.stopped) fail(message);
   }
-  function finishInsertion(current: Active, text: string, outcome: InsertionOutcome) {
+  function finishInsertion(current: Active, text: string, result: InsertionResult) {
     if (active !== current) return;
-    if (outcome === "inserted") {
+    const { outcome } = result;
+    if (outcome === "inserted" || outcome === "pasted") {
       state = {
         ...state,
         latestSuccessful: { id: current.session, text },
         lastTranscript: current.session,
       };
       if (current.limited)
-        end("complete", "Inserted. Recording stopped at the five-minute limit.", "limit");
-      else end("complete", "Inserted.");
+        end(
+          "complete",
+          `${insertedMessage(result)} Recording stopped at the five-minute limit.`,
+          "limit",
+        );
+      else end("complete", insertedMessage(result));
       return;
     }
     if (outcome === "uncertain") {
-      retain(current, text, "complete", [], uncertainCause, "uncertain");
-      end("failed", "Check your target. The transcript is in recovery.", "uncertain");
+      retain(current, text, "complete", [], noteClipboard(uncertainCause, result), "uncertain");
+      end(
+        "failed",
+        noteClipboard("Check your target. The transcript is in recovery.", result),
+        "uncertain",
+      );
       return;
     }
     retain(
@@ -704,12 +738,15 @@ export function createSession(options: {
       text,
       "complete",
       [],
-      `${insertionMessages[outcome]} Text kept for recovery.`,
+      noteClipboard(`${insertionMessages[outcome]} Text kept for recovery.`, result),
       "failed",
     );
     end(
       "failed",
-      `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`,
+      noteClipboard(
+        `Not inserted. ${insertionMessages[outcome]} The transcript is in recovery.`,
+        result,
+      ),
       "not-inserted",
     );
   }
@@ -734,8 +771,8 @@ export function createSession(options: {
     current.inserting = true;
     update({ phase: "inserting", message: "Inserting…" });
     options.target.insert(current.session, text).then(
-      (outcome) => finishInsertion(current, text, outcome),
-      () => finishInsertion(current, text, "uncertain"),
+      (result) => finishInsertion(current, text, result),
+      () => finishInsertion(current, text, helperStopped),
     );
   }
   // Escape and clickable Cancel share this path for both sessions and armed pastes.
@@ -753,12 +790,13 @@ export function createSession(options: {
     engage();
     update({ armedPaste: null, recoveryMessage: message });
   }
-  function finishPaste(current: Armed, outcome: InsertionOutcome) {
+  function finishPaste(current: Armed, result: InsertionResult) {
     if (armed !== current) return;
     armed = undefined;
     engage();
+    const { outcome } = result;
     const recovery = retained.get(current.id);
-    if (outcome === "inserted") {
+    if (outcome === "inserted" || outcome === "pasted") {
       if (recovery) {
         recovery.entry = { ...recovery.entry, delivery: "inserted" };
         resolveText(current.id);
@@ -766,25 +804,37 @@ export function createSession(options: {
       update({
         armedPaste: null,
         recoveryMessage: recovery?.audio.length
-          ? "Inserted available text. The incomplete recording still needs recovery or Discard."
-          : "Inserted.",
+          ? noteClipboard(
+              `Inserted available text${outcome === "pasted" ? " with a clipboard paste" : ""}. The incomplete recording still needs recovery or Discard.`,
+              result,
+            )
+          : insertedMessage(result),
       });
       return;
     }
     if (outcome === "uncertain") {
       if (recovery)
-        recovery.entry = { ...recovery.entry, delivery: "uncertain", cause: uncertainCause };
+        recovery.entry = {
+          ...recovery.entry,
+          delivery: "uncertain",
+          cause: noteClipboard(uncertainCause, result),
+        };
       update({
         armedPaste: null,
-        recoveryMessage:
+        recoveryMessage: noteClipboard(
           "Check your target. Voice could not confirm the paste and will not retry. The text remains in recovery.",
+          result,
+        ),
       });
       return;
     }
     if (recovery) recovery.entry = { ...recovery.entry, delivery: "failed" };
     update({
       armedPaste: null,
-      recoveryMessage: `Not pasted. ${insertionMessages[outcome]} The text remains in recovery.`,
+      recoveryMessage: noteClipboard(
+        `Not pasted. ${insertionMessages[outcome]} The text remains in recovery.`,
+        result,
+      ),
     });
   }
   async function paste(id: string) {
@@ -943,8 +993,8 @@ export function createSession(options: {
       current.inserting = true;
       update({ recoveryMessage: "Inserting…" });
       options.target.insert(current.id, current.text).then(
-        (outcome) => finishPaste(current, outcome),
-        () => finishPaste(current, "uncertain"),
+        (result) => finishPaste(current, result),
+        () => finishPaste(current, helperStopped),
       );
     },
     captureEvent(input: unknown) {
@@ -1132,7 +1182,7 @@ export function createSession(options: {
       stoppingCapture = undefined;
       held = undefined;
       // A paste already dispatched may have landed; it is uncertain, never retried.
-      if (armed?.inserting) finishPaste(armed, "uncertain");
+      if (armed?.inserting) finishPaste(armed, helperStopped);
       else disarm("Native services stopped. The text remains in recovery.");
       const current = active;
       if (!current || current.inserting) return;

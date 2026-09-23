@@ -86,6 +86,19 @@ describe("dictation contracts", () => {
     expect(() =>
       decodeNativeSetupResult({ type: "insertion", session: "s", outcome: "maybe" }),
     ).toThrow();
+    // A paste result says only whether the clipboard was put back; it never carries contents.
+    expect(
+      decodeNativeSetupResult({
+        type: "insertion",
+        session: "s",
+        outcome: "pasted",
+        clipboard: "unrestored",
+      }),
+    ).toMatchObject({ outcome: "pasted", clipboard: "unrestored" });
+    for (const extra of [{ clipboard: "restored" }, { clipboard: "unrestored", previous: "text" }])
+      expect(() =>
+        decodeNativeSetupResult({ type: "insertion", session: "s", outcome: "pasted", ...extra }),
+      ).toThrow();
   });
 });
 

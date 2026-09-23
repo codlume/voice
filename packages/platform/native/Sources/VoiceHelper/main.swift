@@ -13,6 +13,20 @@ let shortcuts = ShortcutService(emit: output, adoptsHeldKeys: !fixture)
 let targets = TargetService(emit: output)
 shortcuts.onInput = { targets.userInput() }
 let capture = CaptureService(fixture: fixture, emit: output)
+// Electron main terminates a helper it no longer trusts. One terminated mid-paste first puts back
+// a clipboard it still owns. SIGKILL cannot be handled; main then warns that the clipboard may
+// hold the transcript.
+let terminations = [SIGTERM, SIGINT, SIGHUP].map { number in
+    signal(number, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+    // Explicitly Sendable: a closure inheriting main-actor isolation would trap on this queue.
+    source.setEventHandler { @Sendable [targets] in
+        targets.abandonPaste()
+        exit(128 + number)
+    }
+    source.resume()
+    return source
+}
 
 // The main thread runs the run loop that services the event tap and accessibility observers.
 // Commands arrive on a reader thread and hop to the main actor; capture keeps its own queue.

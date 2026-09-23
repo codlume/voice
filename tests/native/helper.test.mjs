@@ -672,3 +672,36 @@ test(
     }
   },
 );
+
+// Main terminates a helper it no longer trusts. The helper's termination handler, which puts back
+// a clipboard it still owns mid-paste, must itself exit cleanly; the paste case is proved on a
+// real scratch target by the opt-in clipboard proof.
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+  test(
+    `the helper exits cleanly on ${signal} through its termination handler`,
+    { timeout: 10_000 },
+    async () => {
+      const child = spawn(resolve("packages/platform/native/.build/debug/voice-helper"), [], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const lines = createInterface({ input: child.stdout });
+      const closed = once(child, "exit");
+      const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+      try {
+        const ready = once(lines, "line");
+        child.stdin.write(JSON.stringify({ type: "hello", version: 1 }) + "\n");
+        assert.equal(JSON.parse((await ready)[0]).type, "ready");
+        child.kill(signal);
+        const code = { SIGTERM: 15, SIGINT: 2, SIGHUP: 1 }[signal];
+        assert.deepEqual(await closed, [128 + code, null]);
+      } finally {
+        clearTimeout(timeout);
+        lines.close();
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+          await closed;
+        }
+      }
+    },
+  );
+}
