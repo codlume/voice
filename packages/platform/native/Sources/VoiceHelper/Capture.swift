@@ -22,6 +22,9 @@ final class CaptureService: @unchecked Sendable {
     private var observer: NSObjectProtocol?
     private var identity: CaptureRequest?
     private var fixtureFrames = 0
+    // Test-only: the WAV samples the next synthetic captures play, or a refused file.
+    private var fixtureSource: Data?
+    private var fixtureSourceInvalid = false
     private var frames = 0
     private var samples = 0
     private var lastFrame = DispatchTime.now()
@@ -44,6 +47,14 @@ final class CaptureService: @unchecked Sendable {
     // Test-only: fails the running synthetic capture through the same path a real loss takes.
     func simulateFailure(_ reason: String) {
         queue.async { if self.fixture { self.finish(failed: true, reason: reason) } }
+    }
+    // Test-only: later synthetic captures play this file's samples at real time, then silence.
+    func source(_ path: String?) {
+        queue.async {
+            guard self.fixture else { return }
+            self.fixtureSource = path.flatMap { FileManager.default.contents(atPath: $0) }.flatMap(FixtureWave.pcm)
+            self.fixtureSourceInvalid = path != nil && self.fixtureSource == nil
+        }
     }
     private func send(_ type: String, extra: [String: Any] = [:]) {
         guard let identity else { return }
@@ -97,6 +108,7 @@ final class CaptureService: @unchecked Sendable {
             self.timer = timer; timer.resume(); return
         }
         if fixture {
+            guard !fixtureSourceInvalid else { throw CaptureError.unavailable }
             guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true),
                   let converter = AVAudioConverter(from: format, to: format) else { throw CaptureError.unavailable }
             self.converter = converter
@@ -105,7 +117,12 @@ final class CaptureService: @unchecked Sendable {
             timer.schedule(deadline: .now() + .milliseconds(20), repeating: .milliseconds(20))
             timer.setEventHandler { [weak self] in
                 guard let self else { return }
-                let values = (0..<320).map { index in Int16(sin(Double(self.samples + index) * 2 * .pi * 440 / 16000) * 8000).littleEndian }
+                let values = (0..<320).map { index -> Int16 in
+                    guard let source = self.fixtureSource else { return Int16(sin(Double(self.samples + index) * 2 * .pi * 440 / 16000) * 8000).littleEndian }
+                    let byte = (self.samples + index) * 2
+                    guard byte + 1 < source.count else { return 0 }
+                    return Int16(bitPattern: UInt16(source[source.startIndex + byte]) | UInt16(source[source.startIndex + byte + 1]) << 8)
+                }
                 guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 320), let destination = buffer.int16ChannelData?[0] else { self.finish(failed: true); return }
                 buffer.frameLength = 320
                 values.withUnsafeBufferPointer { source in if let base = source.baseAddress { destination.update(from: base, count: 320) } }

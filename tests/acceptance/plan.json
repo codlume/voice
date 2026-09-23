@@ -1,0 +1,185 @@
+{
+  "kind": "voice-acceptance-plan",
+  "version": 1,
+  "note": "Frozen before running. A changed stage, fixture mix, cap, or condition is a new manifest and needs its own recorded decision.",
+  "provider": {
+    "name": "deepgram",
+    "url": "wss://api.eu.deepgram.com/v1/listen",
+    "modelUuid": "40bd3654-e622-47c4-a111-63a61b23bfe8",
+    "version": "2025-04-17.21547",
+    "controls": "see packages/providers/src/asr.ts deepgramUrl; bound by hash in the manifest",
+    "substitution": "forbidden: no latest alias, other region, or other provider"
+  },
+  "thresholds": {
+    "short": {
+      "medianMs": 700,
+      "p95Ms": 2000
+    },
+    "long": {
+      "p95Ms": 5000
+    },
+    "launch": {
+      "p95Ms": 3000
+    },
+    "firstFrame": {
+      "p95Ms": 150
+    },
+    "deadline": {
+      "shortMs": 10000,
+      "longMs": 30000
+    },
+    "memory": {
+      "idleMiB": 500,
+      "peakMiB": 750
+    }
+  },
+  "conditions": {
+    "machine": "maintainer M1 Pro, 16 GB, macOS 27; release-mode packaged development build; fresh isolated test data directory",
+    "network": "declared by the operator in the run record: connection type, no VPN, no concurrent large transfers; one connectivity probe recorded before dispatch",
+    "workload": "no foreground apps besides the scratch TextEdit document; no other dictation; runs sequential, one session at a time",
+    "input": "virtual: synthetic WAV played by the helper's synthetic capture at real time. Not physical microphone proof.",
+    "shortcut": "test hook into main's shortcut handler. Not native key-tap proof; that is #40."
+  },
+  "knownException": {
+    "fixture": "identifier",
+    "expected": "fix slash",
+    "observed": "fixed slash",
+    "reported": "separately as a failure; never a changed expected answer"
+  },
+  "stages": [
+    {
+      "name": "normal-short",
+      "kind": "normal",
+      "threshold": "short",
+      "provider": "deepgram",
+      "successes": 20,
+      "maxAttempts": 27,
+      "seed": 7,
+      "fixtures": [
+        "request",
+        "correction",
+        "negation",
+        "date",
+        "list",
+        "fillers",
+        "names",
+        "amount",
+        "url",
+        "quoted_instruction",
+        "injection",
+        "punctuation",
+        "identifier",
+        "quantity_correction",
+        "uncertainty",
+        "emphasis",
+        "literal_word",
+        "address",
+        "negation_noise",
+        "names_noise",
+        "heldout_pauses",
+        "heldout_request_negation",
+        "heldout_names_acronyms",
+        "heldout_numbers_dates",
+        "heldout_url_email",
+        "heldout_punctuation_paragraph",
+        "heldout_request_noise"
+      ]
+    },
+    {
+      "name": "normal-intermediate",
+      "kind": "normal",
+      "threshold": "long",
+      "provider": "deepgram",
+      "successes": 20,
+      "maxAttempts": 22,
+      "seed": 3,
+      "fixtures": [
+        "release_note",
+        "travel_plan",
+        "incident",
+        "purchasing",
+        "accessibility",
+        "editorial",
+        "heldout_intermediate"
+      ]
+    },
+    {
+      "name": "normal-five-minute",
+      "kind": "normal",
+      "threshold": "long",
+      "provider": "deepgram",
+      "successes": 20,
+      "maxAttempts": 22,
+      "seed": 1,
+      "fixtures": ["long_1", "long_2", "long_3", "long_4", "heldout_five_minute"]
+    },
+    {
+      "name": "negative",
+      "kind": "quality",
+      "provider": "deepgram",
+      "successes": 0,
+      "maxAttempts": 6,
+      "seed": 0,
+      "fixtures": [
+        "negative_silence",
+        "negative_white_low",
+        "negative_white_high",
+        "negative_hum",
+        "negative_clicks",
+        "heldout_negative_noise"
+      ]
+    },
+    {
+      "name": "cold-launch",
+      "kind": "cold-launch",
+      "threshold": "launch",
+      "provider": "loopback",
+      "successes": 20,
+      "maxAttempts": 24
+    },
+    {
+      "name": "warm-start",
+      "kind": "warm-start",
+      "threshold": "firstFrame",
+      "provider": "loopback",
+      "successes": 20,
+      "maxAttempts": 24
+    },
+    {
+      "name": "faults",
+      "kind": "faults",
+      "provider": "loopback",
+      "successes": 0,
+      "maxAttempts": 5,
+      "scenarios": [
+        "transient-drop-replays-once",
+        "deadline-expires-recoverable",
+        "rejected-key-stops",
+        "cancel-discards",
+        "silence-inserts-nothing"
+      ]
+    }
+  ],
+  "caps": {
+    "maxRequests": 81,
+    "maxAudioSeconds": 9924,
+    "maxReplays": 4
+  },
+  "dryRunCaps": {
+    "maxRequests": 1000,
+    "maxAudioSeconds": 100000,
+    "maxReplays": 100
+  },
+  "cost": {
+    "promotionalRate": 0.0048,
+    "regularRate": 0.0077,
+    "ratesCheckedAt": "2026-09-23",
+    "ratesSource": "https://deepgram.com/pricing (Nova-3 monolingual streaming, Pay As You Go)",
+    "taxAllowance": 1.0,
+    "workingAllowance": 8.0,
+    "reserve": 2.0,
+    "ceiling": 10.0,
+    "heldAllocation": 6.873087,
+    "allocationSource": "https://github.com/codlume/voice/issues/23#issuecomment-5761193088"
+  }
+}

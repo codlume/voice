@@ -157,22 +157,39 @@ export const setup = createSetup({
   credentialChanged: () => notify(),
 });
 // Test capture and endpoint must be opted into together, with isolated storage and Keychain.
+const syntheticCapture = !!testDirectory && process.env.VOICE_TEST_CAPTURE === "synthetic";
+// Live acceptance instead sends synthetic capture to the pinned Deepgram endpoint with the key
+// saved in the isolated test Keychain. Key, quota, and helper blockers still apply.
+const liveAcceptance = syntheticCapture && process.env.VOICE_ACCEPTANCE_PROVIDER === "deepgram";
 const fixtureUrl =
-  testDirectory && process.env.VOICE_TEST_CAPTURE === "synthetic"
-    ? process.env.VOICE_TEST_PROVIDER_URL
-    : undefined;
+  syntheticCapture && !liveAcceptance ? process.env.VOICE_TEST_PROVIDER_URL : undefined;
+const localBlocker = /^(permission-|input-device$|shortcuts$)/;
 let testOffline = false;
 let testCaptureStarts = 0;
+// Acceptance runs read monotonic stage marks from here. Each is one push, only in tests.
+const timeline: { mark: string; at: number; session?: string; detail?: string }[] = [];
+let capturedFrames = 0;
+let frameWaiters: { frames: number; done: () => void }[] = [];
+function mark(name: string, id?: string, detail?: string) {
+  if (testDirectory)
+    timeline.push({ mark: name, at: Number(process.hrtime.bigint()) / 1e6, session: id, detail });
+}
 const provider = createProvider(
   join(__dirname, "provider-worker.cjs"),
-  (event) => dictation.providerEvent(event),
+  (event) => {
+    if (event.type === "complete" || event.type === "failed")
+      mark(`provider-${event.type}`, event.session, event.type === "failed" ? event.reason : "");
+    dictation.providerEvent(event);
+  },
   fixtureUrl,
 );
 export const dictation = createSession({
   available: () =>
     helperState === "ready" &&
     storage?.state === "ready" &&
-    (!!fixtureUrl || setup.snapshot().blockers.length === 0),
+    (!!fixtureUrl ||
+      setup.snapshot().blockers.filter((blocker) => !liveAcceptance || !localBlocker.test(blocker))
+        .length === 0),
   transcribable: () =>
     helperState === "ready" && (!!fixtureUrl || setup.snapshot().credential.presence === "saved"),
   // Isolated tests drive connectivity through the test hook, never the machine's network state.
@@ -184,7 +201,10 @@ export const dictation = createSession({
     helper.capture(command);
     if (testDirectory && command.type === "capture.start") testCaptureStarts++;
   },
-  provider: (command) => provider.send(command),
+  provider: (command) => {
+    if (command.type === "start") mark("provider-start", command.session, command.attempt);
+    provider.send(command);
+  },
   changed: notify,
   copy: async (text) => {
     await clipboard.writeText(text);
@@ -208,6 +228,7 @@ export const dictation = createSession({
     },
     insert: async (id, text) => {
       const result = await request({ type: "target.insert", session: id, text }, "insertion");
+      mark("insertion", id, result.outcome);
       return result.clipboard
         ? { outcome: result.outcome, clipboard: result.clipboard }
         : { outcome: result.outcome };
@@ -228,8 +249,11 @@ if (testDirectory) {
   // The offline hook stands in for network state, and captureStarts counts microphone starts.
   Object.assign(globalThis, {
     voiceTest: {
-      shortcut: (action: unknown) =>
-        dictation.shortcut(decodeShortcutEvent({ type: "shortcut", action }).action),
+      shortcut: (action: unknown) => {
+        const decoded = decodeShortcutEvent({ type: "shortcut", action }).action;
+        mark("shortcut", undefined, decoded);
+        dictation.shortcut(decoded);
+      },
       menu: () =>
         trayMenu?.items.map(({ label, enabled, sublabel, type }) => ({
           label,
@@ -257,6 +281,17 @@ if (testDirectory) {
         if (fixtureUrl && (reason === "device" || reason === "permission"))
           helper?.simulateCaptureFailure(reason);
       },
+      // Acceptance runs: the synthetic capture source, a wait for that many captured frames of the
+      // current capture, and the stage marks recorded since the last read.
+      captureSource: (path: unknown) => {
+        if (path === null || typeof path === "string") helper?.captureSource(path);
+      },
+      captured: (frames: unknown) =>
+        new Promise<void>((done) => {
+          if (typeof frames !== "number" || capturedFrames >= frames) done();
+          else frameWaiters.push({ frames, done });
+        }),
+      timeline: () => timeline.splice(0),
       panelBounds: () => panel?.getBounds(),
       trayBounds: () => tray?.getBounds(),
     },
@@ -514,6 +549,7 @@ app
       async () => {
         await setup.refresh().catch(() => {});
         await syncShortcuts();
+        mark("ready");
         process.send?.({
           type: "ready",
           pid: process.pid,
@@ -545,8 +581,23 @@ function superviseHelper() {
       testKeychainService: testDirectory
         ? `com.codlume.voice.test.${createHash("sha256").update(app.getPath("userData")).digest("hex")}`
         : undefined,
-      syntheticCapture: !!fixtureUrl,
+      syntheticCapture: !!fixtureUrl || liveAcceptance,
+      testCredential: liveAcceptance,
       captureEvent: (event) => {
+        if (testDirectory) {
+          if (event.type !== "capture.frame") {
+            mark(event.type, event.session);
+            // A stopped or failed capture produces no more frames; release anyone waiting.
+            capturedFrames = 0;
+            for (const waiter of frameWaiters.splice(0)) waiter.done();
+          } else {
+            if (event.sequence === 0) mark("first-frame", event.session);
+            capturedFrames = event.sequence + 1;
+            const due = frameWaiters.filter((waiter) => waiter.frames <= capturedFrames);
+            frameWaiters = frameWaiters.filter((waiter) => waiter.frames > capturedFrames);
+            for (const waiter of due) waiter.done();
+          }
+        }
         dictation.captureEvent(event);
         // A lost device or revoked permission changes availability; show it without waiting.
         if (event.type === "capture.failed") void setup.refresh().then(notify, notify);

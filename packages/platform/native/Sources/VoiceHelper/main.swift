@@ -42,7 +42,7 @@ let reader = Thread { [capture] in
            line.utf8.count <= 16384 || object["type"] as? String == "setup.request" {
             if let request = CaptureRequest(object) { capture.receive(request); continue }
             if object["type"] as? String == "credential.read", Set(object.keys) == Set(["type", "id"]), let id = object["id"] as? Int {
-                let key = fixture ? "synthetic-fixture-key" : DispatchQueue.main.sync { MainActor.assumeIsolated { setup.readKey() } }
+                let key = fixture && ProcessInfo.processInfo.environment["VOICE_TEST_CREDENTIAL"] != "keychain" ? "synthetic-fixture-key" : DispatchQueue.main.sync { MainActor.assumeIsolated { setup.readKey() } }
                 let reply: [String: Any] = ["type": "credential.secret", "id": id, "key": key as Any? ?? NSNull()]
                 if let data = try? JSONSerialization.data(withJSONObject: reply) { output(data) }
                 continue
@@ -57,6 +57,11 @@ let reader = Thread { [capture] in
             if fixture, object["type"] as? String == "capture.simulate", Set(object.keys) == Set(["type", "failure"]),
                let failure = object["failure"] as? String, ["device", "permission"].contains(failure) {
                 capture.simulateFailure(failure)
+                continue
+            }
+            if fixture, object["type"] as? String == "capture.source", Set(object.keys) == Set(["type", "path"]),
+               object["path"] is NSNull || (object["path"] as? String)?.hasPrefix("/") == true {
+                capture.source(object["path"] as? String)
                 continue
             }
             if fixture, object["type"] as? String == "shortcut.simulate" {
