@@ -24,6 +24,8 @@ pnpm dev
 
 `pnpm dev` builds the Swift helper, starts the renderer dev server on port 5783, and opens the Voice window and the floating pill. Renderer edits reload in place. Main-process and preload edits restart Electron. To pass flags to Electron, add them after `--`, for example `pnpm dev -- --remote-debugging-port=9333`. Press Ctrl+C or quit Voice to stop everything `pnpm dev` started.
 
+In development, macOS attributes permissions to "Electron", so you grant Microphone and Accessibility to Electron once. The packaged app asks as Voice.
+
 ## Check
 
 ```sh

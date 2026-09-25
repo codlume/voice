@@ -20,6 +20,9 @@ const helperBuild = spawnSync("swift", ["build", "--package-path", "native/voice
 if (helperBuild.status !== 0) process.exit(helperBuild.status ?? 1);
 
 const electronPath = createRequire(join(desktopDir, "package.json"))("electron");
+// macOS charges permission prompts to the app that launched the terminal, which may not be allowed
+// the microphone at all. disclaim makes Electron answer for itself, as the packaged Voice.app does.
+const disclaimPath = join(repoDir, "native/voice-helper/.build/debug/disclaim");
 const children = new Set();
 let electron = null;
 let stopping = false;
@@ -65,7 +68,7 @@ function launchElectron() {
   const env = { ...process.env, VITE_DEV_SERVER_URL: devServerUrl };
   // Set when the dev loop itself runs under Electron (for example inside an Electron-based IDE).
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = start(electronPath, [".", ...electronArgs], { env });
+  const child = start(disclaimPath, [electronPath, ".", ...electronArgs], { env });
   electron = child;
   child.on("exit", (code) => {
     if (electron === child) stop(code ?? 0);

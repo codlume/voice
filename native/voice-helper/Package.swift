@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "voice-helper", targets: ["VoiceHelper"]),
         .executable(name: "fnpost", targets: ["FnPost"]),
+        .executable(name: "disclaim", targets: ["Disclaim"]),
         .library(name: "VoiceHelperCore", targets: ["VoiceHelperCore"]),
     ],
     dependencies: [
@@ -25,6 +26,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(name: "FnPost"),
+        .executableTarget(name: "Disclaim"),
         .testTarget(name: "VoiceHelperCoreTests", dependencies: ["VoiceHelperCore"]),
     ]
 )
