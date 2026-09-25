@@ -73,6 +73,7 @@ final class Helper {
     @MainActor
     func shutdown() {
         capture.shutdown()
+        insertion.shutdown()
     }
 }
 
@@ -110,6 +111,15 @@ let reader = Thread {
 }
 reader.name = "stdin"
 reader.start()
+
+// SIGTERM ends the helper the way stdin EOF does, so a pending clipboard restore still runs.
+signal(SIGTERM, SIG_IGN)
+let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+sigterm.setEventHandler {
+    MainActor.assumeIsolated { helper.shutdown() }
+    exit(0)
+}
+sigterm.resume()
 
 helper.installHotkeyTap()
 RunLoop.main.run()

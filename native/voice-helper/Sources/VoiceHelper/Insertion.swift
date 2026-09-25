@@ -126,23 +126,37 @@ final class Insertion {
         }
 
         // The target handles Cmd+V asynchronously. The result gives it a moment to land but
-        // does not wait for the restore, which only protects the user's clipboard.
+        // does not wait for the restore, which only protects the user's clipboard. A slow
+        // target (Electron under load, a remote desktop) can read the pasteboard well after the
+        // keystroke, so the restore waits a full second.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
             output.emit(.insertResult(id: id, method: .paste, reason: nil))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
             guard let saved = clipboard.restore(write: ourChange, changeCount: pasteboard.changeCount) else {
                 output.log(.info, "clipboard changed during paste; not restoring previous contents")
                 return
             }
-            pasteboard.clearContents()
-            let items = saved.map { entries in
-                let restored = NSPasteboardItem()
-                for (type, data) in entries { restored.setData(data, forType: type) }
-                return restored
-            }
-            if !items.isEmpty { pasteboard.writeObjects(items) }
+            restore(saved, to: pasteboard)
         }
+    }
+
+    /// Runs a restore still waiting on its timer, so an exit inside the window does not leave
+    /// the transcript on the user's clipboard.
+    func shutdown() {
+        let pasteboard = NSPasteboard.general
+        guard let saved = clipboard.flush(changeCount: pasteboard.changeCount) else { return }
+        restore(saved, to: pasteboard)
+    }
+
+    private func restore(_ saved: [[(NSPasteboard.PasteboardType, Data)]], to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        let items = saved.map { entries in
+            let restored = NSPasteboardItem()
+            for (type, data) in entries { restored.setData(data, forType: type) }
+            return restored
+        }
+        if !items.isEmpty { pasteboard.writeObjects(items) }
     }
 }
 

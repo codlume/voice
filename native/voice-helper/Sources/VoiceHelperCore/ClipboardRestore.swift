@@ -25,4 +25,11 @@ public struct ClipboardRestore<Contents> {
         self.pending = nil
         return changeCount == write ? pending.saved : nil
     }
+
+    /// The contents to put back right now, for a helper exiting before the scheduled restore
+    /// ran. Nil when nothing is pending or the clipboard no longer holds our write.
+    public mutating func flush(changeCount: Int) -> Contents? {
+        guard let pending else { return nil }
+        return restore(write: pending.write, changeCount: changeCount)
+    }
 }

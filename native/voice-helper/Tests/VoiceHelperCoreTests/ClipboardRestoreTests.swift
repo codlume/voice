@@ -40,3 +40,17 @@ import Testing
     _ = restore.restore(write: 2, changeCount: 2)
     #expect(restore.contentsToSave(changeCount: 3) { "restored user" } == "restored user")
 }
+
+@Test func aPendingRestoreFlushedAtShutdownPutsTheUserClipboardBack() {
+    var restore = ClipboardRestore<String>()
+    restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
+    #expect(restore.flush(changeCount: 2) == "user")
+    #expect(restore.restore(write: 2, changeCount: 2) == nil)
+}
+
+@Test func flushBacksOffWhenTheClipboardChangedOrNothingIsPending() {
+    var restore = ClipboardRestore<String>()
+    #expect(restore.flush(changeCount: 1) == nil)
+    restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
+    #expect(restore.flush(changeCount: 3) == nil)
+}
