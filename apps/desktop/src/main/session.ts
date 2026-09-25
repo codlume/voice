@@ -124,7 +124,9 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "captureCancelled":
       return same;
     case "transcript": {
-      if (state.phase !== "transcribing") return same;
+      // Recording is included because the helper stops a capture by itself at its length cap
+      // and then transcribes, while the user may still be holding the key.
+      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       const raw = event.text.trim();
       if (raw === "") return finish(state.id, { kind: "empty" });
       if (!event.cleanup) return insert(state.id, raw, raw);

@@ -186,6 +186,21 @@ describe("transcript", () => {
     ]);
   });
 
+  test("a transcript while still recording proceeds like a normal stop and the later release is ignored", () => {
+    const { state, effects } = run([...toRecording, transcript("long dictation", false, 600_000)]);
+    expect(state).toEqual({
+      phase: "inserting",
+      id: ID,
+      raw: "long dictation",
+      text: "long dictation",
+    });
+    expect(effects).toEqual([
+      { type: "remember", raw: "long dictation", text: "long dictation" },
+      { type: "insert", id: ID, text: "long dictation" },
+    ]);
+    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
+  });
+
   test("transcription failure ends failed", () => {
     const { state } = run([
       ...toTranscribing,
