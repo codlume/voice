@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import type { ModelStatus } from "../shared/api.ts";
 
 import {
+  ASR_DOWNLOADING_MESSAGE,
   ASR_MISSING_MESSAGE,
   HELPER_EXITED_MESSAGE,
   HELPER_TIMEOUT_MESSAGE,
@@ -50,7 +51,7 @@ const types = (effects: Effect[]) => effects.map((effect) => effect.type);
 describe("starting a session", () => {
   test("hotkey down in idle starts capture", () => {
     const { state, effects } = run([down(0)]);
-    expect(state).toEqual({ phase: "starting", id: ID, released: false, pressedAt: 0 });
+    expect(state).toEqual({ phase: "starting", id: ID, pressedAt: 0, releasedAt: null });
     expect(effects).toEqual([{ type: "startCapture", id: ID }]);
   });
 
@@ -60,7 +61,7 @@ describe("starting a session", () => {
       [{ type: "insertResult", id: ID, method: "paste", reason: null }, 2100],
       [{ type: "hotkeyDown", id: "s2", asr: "ready" }, 2200],
     ]);
-    expect(state).toEqual({ phase: "starting", id: "s2", released: false, pressedAt: 2200 });
+    expect(state).toEqual({ phase: "starting", id: "s2", pressedAt: 2200, releasedAt: null });
     expect(effects).toEqual([{ type: "startCapture", id: "s2" }]);
   });
 
@@ -78,12 +79,19 @@ describe("starting a session", () => {
     },
   );
 
-  test.each(["downloading", "loading"] as const)(
-    "hotkey down with ASR %s starts capture",
-    (asr) => {
-      expect(run([down(0, asr)]).effects).toEqual([{ type: "startCapture", id: ID }]);
-    },
-  );
+  test("hotkey down with ASR downloading never starts capture and says so", () => {
+    const { state, all } = run([down(0, "downloading")]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: ASR_DOWNLOADING_MESSAGE },
+    });
+    expect(types(all)).not.toContain("startCapture");
+  });
+
+  test("hotkey down with ASR loading starts capture", () => {
+    expect(run([down(0, "loading")]).effects).toEqual([{ type: "startCapture", id: ID }]);
+  });
 
   test("a second hotkey down mid-session is ignored", () => {
     for (const path of [[down(0)], toRecording, toTranscribing, toCleaning, toInserting]) {
@@ -104,12 +112,35 @@ describe("hold and release", () => {
   });
 
   test("release before capture.started stops as soon as capture starts", () => {
-    const afterUp = run([down(0), up(100)]);
-    expect(afterUp.state).toEqual({ phase: "starting", id: ID, released: true, pressedAt: 0 });
+    const afterUp = run([down(0), up(300)]);
+    expect(afterUp.state).toEqual({ phase: "starting", id: ID, pressedAt: 0, releasedAt: 300 });
     expect(afterUp.effects).toEqual([]);
-    const { state, effects } = run([down(0), up(100), started(150)]);
+    const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID });
     expect(effects).toEqual([{ type: "stopCapture", id: ID }]);
+  });
+
+  test("a tap released before capture.started is tooShort once capture starts", () => {
+    const { state, effects } = run([down(0), up(249), started(400)]);
+    expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
+    expect(effects).toEqual([
+      { type: "cancelCapture", id: ID },
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
+    expect(types(effects)).not.toContain("stopCapture");
+  });
+
+  test("capture that never starts times out failed and cancels the helper", () => {
+    const { state, effects } = run([down(0), [{ type: "timedOut", id: ID }, 3000]]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
+    });
+    expect(effects).toEqual([
+      { type: "cancelCapture", id: ID },
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
   });
 
   test("a hold shorter than 250 ms cancels capture as tooShort", () => {
@@ -323,14 +354,28 @@ describe("idle and stale events", () => {
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
   });
 
-  test("a transcription that never answers times out as failed", () => {
+  test("a transcription that never answers times out as failed and cancels the helper", () => {
     const { state, effects } = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]);
     expect(state).toEqual({
       phase: "done",
       id: ID,
       outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
     });
-    expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+    expect(effects).toEqual([
+      { type: "cancelCapture", id: ID },
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
+  });
+
+  test("a transcript that lands after the timeout is remembered but not inserted", () => {
+    const timedOut = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]).state;
+    const { state, effects } = run([transcript("late words", true, 41_000)], timedOut);
+    expect(state).toBe(timedOut);
+    expect(effects).toEqual([{ type: "remember", raw: "late words", text: "late words" }]);
+    expect(run([transcript("   ", true, 41_000)], timedOut).effects).toEqual([]);
+    expect(
+      step(timedOut, { type: "transcript", id: "s2", text: "x", cleanup: false }, 41_000),
+    ).toEqual({ state: timedOut, effects: [] });
   });
 
   test("an insert that never answers times out as notInserted with the text remembered", () => {

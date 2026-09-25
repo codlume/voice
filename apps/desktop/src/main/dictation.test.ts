@@ -6,7 +6,9 @@ import {
   CLEANUP_MAX_MS,
   CLEANUP_PER_WORD_MS,
   INSERT_TIMEOUT_MS,
+  START_TIMEOUT_MS,
   TRANSCRIBE_TIMEOUT_MS,
+  TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
 } from "./dictation.ts";
@@ -265,7 +267,7 @@ describe("createDictation", () => {
     expect(h.store.state.last).toEqual({ raw: "stuck", text: "stuck" });
   });
 
-  test("a transcription the helper never answers ends failed after the watchdog", () => {
+  test("a transcription the helper never answers ends failed, cancels the capture, and still keeps a late transcript", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
@@ -274,17 +276,48 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "late", audioMs: 800, asrMs: 100 });
+    expect(h.store.state.last).toEqual({ raw: "late", text: "late" });
+    expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
   });
 
-  test("the transcription watchdog is not armed while the speech model is still downloading", () => {
-    const h = harness({ asrModel: { state: "downloading" } });
+  test("a capture the helper never starts ends failed and cancels it after the watchdog", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    expect(h.store.state.session.phase).toBe("starting");
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands).toEqual([
+      { type: "capture.start", id },
+      { type: "capture.cancel", id },
+    ]);
+  });
+
+  test("the transcription watchdog waits longer while the speech model is still loading", () => {
+    const h = harness({ asrModel: { state: "loading" } });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS * 3);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
     expect(h.store.state.session).toEqual({ phase: "transcribing", id });
+    vi.advanceTimersByTime(TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS - TRANSCRIBE_TIMEOUT_MS);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+  });
+
+  test("hotkey down while the speech model downloads sends nothing and names the download", () => {
+    const h = harness({ asrModel: { state: "downloading", progress: 0.3 } });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands).toEqual([]);
+    expect(toSnapshot(h.store.state).session).toEqual({
+      kind: "done",
+      outcome: { kind: "failed", message: "The speech model is still downloading" },
+    });
   });
 
   test("hotkey down with the ASR model missing sends nothing to the helper", () => {

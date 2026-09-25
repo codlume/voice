@@ -2,7 +2,7 @@ import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
 export type Session =
   | { phase: "idle" }
-  | { phase: "starting"; id: string; released: boolean; pressedAt: number }
+  | { phase: "starting"; id: string; pressedAt: number; releasedAt: number | null }
   | { phase: "recording"; id: string; pressedAt: number }
   | { phase: "transcribing"; id: string }
   | { phase: "cleaning"; id: string; raw: string }
@@ -42,6 +42,7 @@ const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
+export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
 export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
 
@@ -53,6 +54,13 @@ function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
     state: { phase: "done", id, outcome },
     effects: [...effects, { type: "scheduleIdle", id, ms }],
   };
+}
+
+function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
+  if (releasedAt - pressedAt < MIN_HOLD_MS) {
+    return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
+  }
+  return { state: { phase: "transcribing", id }, effects: [{ type: "stopCapture", id }] };
 }
 
 function insert(id: string, raw: string, text: string): Step {
@@ -79,21 +87,18 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (event.asr === "missing" || event.asr === "failed") {
         return finish(event.id, { kind: "failed", message: ASR_MISSING_MESSAGE });
       }
+      if (event.asr === "downloading") {
+        return finish(event.id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
+      }
       return {
-        state: { phase: "starting", id: event.id, released: false, pressedAt: now },
+        state: { phase: "starting", id: event.id, pressedAt: now, releasedAt: null },
         effects: [{ type: "startCapture", id: event.id }],
       };
     }
     case "hotkeyUp": {
-      if (state.phase === "starting") return { state: { ...state, released: true }, effects: [] };
+      if (state.phase === "starting") return { state: { ...state, releasedAt: now }, effects: [] };
       if (state.phase !== "recording") return same;
-      if (now - state.pressedAt < MIN_HOLD_MS) {
-        return finish(state.id, { kind: "tooShort" }, { type: "cancelCapture", id: state.id });
-      }
-      return {
-        state: { phase: "transcribing", id: state.id },
-        effects: [{ type: "stopCapture", id: state.id }],
-      };
+      return stopOrCancel(state.id, state.pressedAt, now);
     }
     case "cancel": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
@@ -101,11 +106,8 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStarted": {
       if (state.phase !== "starting") return same;
-      if (state.released) {
-        return {
-          state: { phase: "transcribing", id: state.id },
-          effects: [{ type: "stopCapture", id: state.id }],
-        };
+      if (state.releasedAt !== null) {
+        return stopOrCancel(state.id, state.pressedAt, state.releasedAt);
       }
       return {
         state: { phase: "recording", id: state.id, pressedAt: state.pressedAt },
@@ -117,8 +119,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return finish(state.id, { kind: "failed", message: event.message });
     }
     case "transcript": {
-      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       const raw = event.text.trim();
+      // A transcript that lands after the session already timed out is still the user's words.
+      if (state.phase === "done") {
+        return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
+      }
+      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       if (raw === "") return finish(state.id, { kind: "empty" });
       if (!event.cleanup) return insert(state.id, raw, raw);
       return {
@@ -155,8 +161,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return finish(state.id, { kind: "failed", message: HELPER_EXITED_MESSAGE });
     }
     case "timedOut": {
-      if (state.phase === "transcribing") {
-        return finish(state.id, { kind: "failed", message: HELPER_TIMEOUT_MESSAGE });
+      if (state.phase === "starting" || state.phase === "transcribing") {
+        return finish(
+          state.id,
+          { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
+          { type: "cancelCapture", id: state.id },
+        );
       }
       if (state.phase === "inserting") {
         return finish(state.id, { kind: "notInserted", reason: "failed" });

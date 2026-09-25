@@ -23,7 +23,10 @@ export function cleanupBudgetMs(raw: string): number {
   return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
 }
 
+export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
+// A release while the speech model is still loading waits for the load and the transcription.
+export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const INSERT_TIMEOUT_MS = 5000;
 
 export type Dictation = {
@@ -69,10 +72,13 @@ export function createDictation(options: DictationOptions): Dictation {
     const arm = (id: string, ms: number) => {
       watchdog = setTimeout(() => dispatch({ type: "timedOut", id }), ms);
     };
-    if (state.phase === "inserting") {
+    if (state.phase === "starting") {
+      arm(state.id, START_TIMEOUT_MS);
+    } else if (state.phase === "transcribing") {
+      const ready = store.state.models.asr.state === "ready";
+      arm(state.id, ready ? TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS);
+    } else if (state.phase === "inserting") {
       arm(state.id, INSERT_TIMEOUT_MS);
-    } else if (state.phase === "transcribing" && store.state.models.asr.state === "ready") {
-      arm(state.id, TRANSCRIBE_TIMEOUT_MS);
     }
   }
 
