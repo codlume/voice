@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   assert,
@@ -37,7 +40,16 @@ const sentinel = `voice clipboard sentinel ${randomUUID()}`;
 execFileSync("pbcopy", { input: sentinel });
 const clipboardBefore = clipboardSha256();
 
-osascript('tell application "TextEdit"\nactivate\nmake new document\nend tell');
+// A named file, as in scripts/e2e.mjs. An untitled document can fail to appear on a cold launch,
+// and closing one can raise a save sheet that blocks every later AppleEvent.
+const dir = mkdtempSync(join(tmpdir(), "voice-insert-smoke-"));
+const name = `insert-${mode}-${randomUUID()}.txt`;
+const file = join(dir, name);
+const document = `document ${JSON.stringify(name)}`;
+writeFileSync(file, "");
+osascript(
+  `tell application "TextEdit"\nopen POSIX file ${JSON.stringify(file)}\nactivate\nend tell`,
+);
 try {
   await withHelper(
     { env: mode === "paste" ? { VOICE_HELPER_FORCE_PASTE: "1" } : {} },
@@ -61,7 +73,7 @@ try {
       // insert.result can arrive before TextEdit handles the pasted Cmd+V, and the helper
       // restores the clipboard only after that, so both are awaited rather than read once.
       const actual = await settle(
-        () => osascript('tell application "TextEdit" to get text of document 1'),
+        () => osascript(`tell application "TextEdit" to get text of ${document}`),
         expected,
       );
       assert(
@@ -84,6 +96,13 @@ try {
     },
   );
 } finally {
-  osascript('tell application "TextEdit" to close document 1 saving no');
-  if (!textEditWasRunning) osascript('tell application "TextEdit" to quit');
+  try {
+    osascript(`tell application "TextEdit" to close ${document} saving no`);
+    // Quitting over a document this script did not open, such as a restored autosave, raises a
+    // save sheet, so TextEdit stays up unless this script launched it and nothing else is open.
+    const remaining = Number(osascript('tell application "TextEdit" to count documents'));
+    if (!textEditWasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
