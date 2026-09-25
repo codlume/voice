@@ -19,7 +19,6 @@ const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback
 const record = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
-// Field by field: a bad or partial file keeps whatever it got right and defaults the rest.
 export function parseSettings(raw: unknown): Settings {
   const r = record(raw);
   const c = record(r.cleanup);

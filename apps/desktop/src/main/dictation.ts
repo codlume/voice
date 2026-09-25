@@ -36,7 +36,7 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
-// Per-session latency record, logged once when the session ends. Never holds transcript text.
+// Logged verbatim, so it must never hold transcript text.
 type Timing = {
   id: string;
   pressedAt: number;
@@ -50,8 +50,6 @@ type Timing = {
   insertMs?: number;
 };
 
-// Runs the session reducer against the live app: turns helper events into session events,
-// applies the returned state, and executes effects against the helper, cleanup, and timers.
 export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;

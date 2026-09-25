@@ -85,7 +85,6 @@ function createPillWindow() {
   return pill;
 }
 
-// Bottom-center of whichever display holds the cursor, just above the Dock.
 function positionPill(pill: BrowserWindow) {
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   pill.setBounds({
