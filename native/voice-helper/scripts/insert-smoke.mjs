@@ -15,6 +15,16 @@ function clipboardSha256() {
   return createHash("sha256").update(content).digest("hex");
 }
 
+async function settle(read, expected, timeoutMs = 3_000) {
+  const deadline = Date.now() + timeoutMs;
+  let value = read();
+  while (value !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    value = read();
+  }
+  return value;
+}
+
 const textEditWasRunning = osascript('application "TextEdit" is running') === "true";
 const sentinel = `voice clipboard sentinel ${randomUUID()}`;
 execFileSync("pbcopy", { input: sentinel });
@@ -41,13 +51,17 @@ try {
         result.method === expectedMethod,
         `insert.result method ${result.method} reason ${result.reason ?? ""}`,
       );
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      const actual = osascript('tell application "TextEdit" to get text of document 1');
+      // insert.result can arrive before TextEdit handles the pasted Cmd+V, and the helper
+      // restores the clipboard only after that, so both are awaited rather than read once.
+      const actual = await settle(
+        () => osascript('tell application "TextEdit" to get text of document 1'),
+        expected,
+      );
       assert(
         actual === expected,
         `document text ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`,
       );
-      const clipboardAfter = clipboardSha256();
+      const clipboardAfter = await settle(clipboardSha256, clipboardBefore);
       assert(
         clipboardAfter === clipboardBefore,
         `clipboard sha256 changed ${clipboardBefore} -> ${clipboardAfter}`,
