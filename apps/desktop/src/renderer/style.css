@@ -1,0 +1,11 @@
+@layer reset {
+  html,
+  body {
+    margin: 0;
+    background: transparent;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
