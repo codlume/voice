@@ -120,6 +120,7 @@ async function main() {
 
   const cleanup = createCleanup({
     modelsDir,
+    enabled: () => store.state.settings.cleanup.enabled,
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
   });
 
@@ -218,6 +219,10 @@ async function main() {
     }
     if (state.last !== previous.last) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
+    const cleanupEnabled = state.settings.cleanup.enabled;
+    if (cleanupEnabled !== previous.settings.cleanup.enabled) {
+      void (cleanupEnabled ? cleanup.loadIfDownloaded() : cleanup.dispose());
+    }
   });
 
   let saving: Promise<void> = Promise.resolve();

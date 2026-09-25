@@ -20,6 +20,8 @@ export type Cleanup = {
 
 export type CleanupOptions = {
   modelsDir: string;
+  // The model is only loaded, and only downloaded, while cleanup is switched on.
+  enabled: () => boolean;
   onStatus: (status: ModelStatus) => void;
   loadModule?: () => Promise<CleanupModule>;
 };
@@ -38,16 +40,37 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 type Model =
   | { phase: "none" }
   | { phase: "loading"; model: S1Mini }
-  | { phase: "loaded"; model: S1Mini };
+  | { phase: "loaded"; model: S1Mini }
+  // Left behind by dispose so a load or download still in flight does not bring the model back.
+  | { phase: "disposed" };
+
+const held = (model: Model): model is Extract<Model, { model: S1Mini }> =>
+  model.phase === "loading" || model.phase === "loaded";
 
 export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
   let model: Model = { phase: "none" };
-  let inFlight: Promise<void> | null = null;
+  let chain: Promise<void> = Promise.resolve();
 
-  const owns = (candidate: S1Mini) => model.phase !== "none" && model.model === candidate;
+  const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
+
+  // Loads, downloads, and the wait for a dispose run one at a time, so switching cleanup off
+  // and back on during a load frees the first model before the second one is created.
+  function serialize(work: () => Promise<void>) {
+    const run = chain.then(work);
+    chain = run.catch(() => undefined);
+    return run;
+  }
+
+  // True when a load may start: cleanup is on and no model is held or being loaded.
+  function begin(): boolean {
+    if (!options.enabled()) return false;
+    if (model.phase === "disposed") model = { phase: "none" };
+    return model.phase === "none";
+  }
 
   async function loadModel(module: CleanupModule) {
+    if (model.phase !== "none") return;
     options.onStatus({ state: "loading" });
     const created = module.createS1Mini({
       modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
@@ -66,18 +89,10 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     if (owns(created)) options.onStatus({ state: "ready" });
   }
 
-  function once(work: () => Promise<void>) {
-    if (inFlight) return inFlight;
-    inFlight = work().finally(() => {
-      inFlight = null;
-    });
-    return inFlight;
-  }
-
   return {
     loadIfDownloaded: () =>
-      once(async () => {
-        if (model.phase !== "none") return;
+      serialize(async () => {
+        if (!begin()) return;
         const module = await loadModule();
         try {
           await access(NodePath.join(options.modelsDir, module.S1_MINI_FILE));
@@ -88,8 +103,8 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         await loadModel(module);
       }),
     downloadAndLoad: () =>
-      once(async () => {
-        if (model.phase !== "none") return;
+      serialize(async () => {
+        if (!begin()) return;
         options.onStatus({ state: "downloading", progress: 0 });
         const module = await loadModule();
         try {
@@ -108,11 +123,12 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
       return model.model.clean(raw, style, signal);
     },
-    async dispose() {
-      if (model.phase === "none") return;
-      const current = model.model;
-      model = { phase: "none" };
-      await current.dispose();
+    dispose() {
+      const current = model;
+      model = { phase: "disposed" };
+      // Disposing right away aborts a running warm-up instead of waiting behind it.
+      const freed = held(current) ? current.model.dispose() : Promise.resolve();
+      return serialize(() => freed);
     },
   };
 }
