@@ -8,7 +8,7 @@ import type { Store } from "./store.ts";
 export type DictationOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
-  cleanup: Pick<Cleanup, "clean">;
+  cleanup: Pick<Cleanup, "clean" | "loaded">;
   onLevel: (level: number) => void;
   log: (message: string) => void;
   now?: () => number;
@@ -197,8 +197,7 @@ export function createDictation(options: DictationOptions): Dictation {
           timing.audioMs = event.audioMs;
           timing.asrMs = event.asrMs;
         }
-        const { settings, models } = store.state;
-        const runCleanup = settings.cleanup.enabled && models.cleanup.state === "ready";
+        const runCleanup = store.state.settings.cleanup.enabled && cleanup.loaded();
         if (runCleanup && cleaning)
           log("cleanup still busy with an earlier session, inserting raw");
         dispatch({

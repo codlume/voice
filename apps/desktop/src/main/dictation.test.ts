@@ -17,7 +17,7 @@ import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {
   asrModel?: ModelStatus;
-  cleanupModel?: ModelStatus;
+  cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
   cleanFails?: boolean;
   cleanHangs?: boolean;
@@ -29,7 +29,7 @@ function harness(opts: Options = {}) {
     permissions: { microphone: "granted", accessibility: "granted" },
     models: {
       asr: opts.asrModel ?? { state: "ready" },
-      cleanup: opts.cleanupModel ?? { state: "ready" },
+      cleanup: { state: "ready" },
     },
     settings: {
       ...DEFAULT_SETTINGS,
@@ -48,6 +48,7 @@ function harness(opts: Options = {}) {
     store,
     send: (command) => commands.push(command),
     cleanup: {
+      loaded: () => opts.cleanupLoaded ?? true,
       clean: async (raw) => {
         cleans.push(raw);
         if (opts.cleanFails) throw new Error("model crashed");
@@ -115,8 +116,7 @@ describe("createDictation", () => {
 
   test.each([
     ["cleanup is disabled", { cleanupEnabled: false }],
-    ["the cleanup model is missing", { cleanupModel: { state: "missing" } as ModelStatus }],
-    ["the cleanup model is still loading", { cleanupModel: { state: "loading" } as ModelStatus }],
+    ["the cleanup model is not loaded", { cleanupLoaded: false }],
   ])("inserts the raw transcript when %s", async (_name, opts) => {
     const h = harness(opts);
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
@@ -134,6 +134,20 @@ describe("createDictation", () => {
     await flush();
     expect(h.cleans).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "raw words" });
+  });
+
+  test("a transcript during the cleanup warm-up is cleaned, not inserted raw", async () => {
+    const h = harness();
+    h.store.update((s) => ({ ...s, models: { ...s.models, cleanup: { state: "loading" } } }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "hi", audioMs: 800, asrMs: 100 });
+    await flush();
+    expect(h.cleans).toEqual(["hi"]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hi." });
   });
 
   test("a cleanup crash inserts the raw transcript", async () => {

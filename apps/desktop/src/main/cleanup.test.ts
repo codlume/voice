@@ -10,7 +10,14 @@ import { createCleanup, type CleanupModule } from "./cleanup.ts";
 
 const style: CleanupStyle = { styling: "formal", structure: "lists", context: "email" };
 
-function fakeModule(behavior: { loadError?: string; downloadError?: string } = {}) {
+type Behavior = {
+  loadError?: string;
+  downloadError?: string;
+  warmUpError?: string;
+  warmUpGate?: Promise<void>;
+};
+
+function fakeModule(behavior: Behavior = {}) {
   const calls = { downloads: 0, loads: 0, cleans: [] as [string, CleanupStyle][] };
   const module: CleanupModule = {
     S1_MINI_FILE,
@@ -29,6 +36,10 @@ function fakeModule(behavior: { loadError?: string; downloadError?: string } = {
       },
       async clean(raw, s) {
         calls.cleans.push([raw, s]);
+        if (calls.cleans.length === 1) {
+          await behavior.warmUpGate;
+          if (behavior.warmUpError) throw new Error(behavior.warmUpError);
+        }
         return raw.toUpperCase();
       },
       async dispose() {},
@@ -52,6 +63,7 @@ describe("createCleanup", () => {
     await cleanup.load();
     expect(statuses).toEqual([{ state: "missing" }]);
     expect(fake.calls.loads).toBe(0);
+    expect(cleanup.loaded()).toBe(false);
     await expect(cleanup.clean("hi", style)).rejects.toThrow("not ready");
   });
 
@@ -62,7 +74,34 @@ describe("createCleanup", () => {
     await cleanup.load();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     await expect(cleanup.clean("hello", style)).resolves.toBe("HELLO");
-    expect(fake.calls.cleans).toEqual([["hello", style]]);
+    expect(fake.calls.cleans.at(-1)).toEqual(["hello", style]);
+  });
+
+  test("reports ready only after a warm-up clean, and a clean during warm-up is not refused", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishWarmUp!: () => void;
+    const fake = fakeModule({ warmUpGate: new Promise((resolve) => (finishWarmUp = resolve)) });
+    const cleanup = createCleanup({ modelsDir: dir, onStatus: (s) => statuses.push(s), ...fake });
+    const loading = cleanup.load();
+    await expect.poll(() => fake.calls.cleans.length).toBe(1);
+    expect(statuses).toEqual([{ state: "loading" }]);
+    expect(cleanup.loaded()).toBe(true);
+    const session = cleanup.clean("hello", style);
+
+    finishWarmUp();
+    await loading;
+    expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
+    await expect(session).resolves.toBe("HELLO");
+    expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
+  });
+
+  test("a failed warm-up still reports ready with the model loaded", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const fake = fakeModule({ warmUpError: "implausible output" });
+    const cleanup = createCleanup({ modelsDir: dir, onStatus: (s) => statuses.push(s), ...fake });
+    await cleanup.load();
+    expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
+    await expect(cleanup.clean("hello", style)).resolves.toBe("HELLO");
   });
 
   test("a load failure reports failed with the error message", async () => {
@@ -71,6 +110,7 @@ describe("createCleanup", () => {
     const cleanup = createCleanup({ modelsDir: dir, onStatus: (s) => statuses.push(s), ...fake });
     await cleanup.load();
     expect(statuses).toEqual([{ state: "loading" }, { state: "failed", message: "bad gguf" }]);
+    expect(fake.calls.cleans).toEqual([]);
     await expect(cleanup.clean("hi", style)).rejects.toThrow();
   });
 

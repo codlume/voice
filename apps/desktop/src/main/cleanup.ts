@@ -17,6 +17,8 @@ export type Cleanup = {
   load(): Promise<void>;
   /** Downloads and loads the model. A second call while in flight joins the first. */
   setup(): Promise<void>;
+  /** True once the model is in memory, including during warm-up, when clean() queues behind it. */
+  loaded(): boolean;
   clean(raw: string, style: CleanupStyle): Promise<string>;
   dispose(): Promise<void>;
 };
@@ -29,6 +31,15 @@ export type CleanupOptions = {
 
 const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
 
+// The first generation after load pays one-time costs (about 600 ms against 250 ms warm), so a
+// throwaway clean runs before the model reports ready instead of inside the first session.
+const WARM_UP_TEXT = "um so this is a quick warm up";
+const WARM_UP_STYLE: CleanupStyle = {
+  styling: "semi-formal",
+  structure: "prose",
+  context: "general",
+};
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function createCleanup(options: CleanupOptions): Cleanup {
@@ -38,16 +49,19 @@ export function createCleanup(options: CleanupOptions): Cleanup {
 
   async function loadModel(module: CleanupModule) {
     options.onStatus({ state: "loading" });
+    const created = module.createS1Mini({
+      modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
+    });
     try {
-      const created = module.createS1Mini({
-        modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
-      });
       await created.load();
-      engine = created;
-      options.onStatus({ state: "ready" });
     } catch (error) {
       options.onStatus({ state: "failed", message: message(error) });
+      return;
     }
+    engine = created;
+    // Only the one-time cost matters here. A real clean that fails the same way falls back to raw.
+    await created.clean(WARM_UP_TEXT, WARM_UP_STYLE).catch(() => undefined);
+    if (engine === created) options.onStatus({ state: "ready" });
   }
 
   function once(work: () => Promise<void>) {
@@ -87,6 +101,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         }
         await loadModel(module);
       }),
+    loaded: () => engine !== null,
     clean(raw, style) {
       if (!engine) return Promise.reject(new Error("cleanup model is not ready"));
       return engine.clean(raw, style);
