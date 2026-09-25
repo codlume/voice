@@ -83,8 +83,7 @@ final class HotkeyTap {
         let keyEvent = KeyEvent(
             kind: kind,
             keycode: event.getIntegerValueField(.keyboardEventKeycode),
-            flags: event.flags.rawValue,
-            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            flags: event.flags.rawValue
         )
         let decision = interpreter.handle(keyEvent, captureActive: captureActive())
         if let action = decision.action {

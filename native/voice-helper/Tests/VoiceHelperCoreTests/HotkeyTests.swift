@@ -6,8 +6,8 @@ private let rightOptionBits: UInt64 = 0x8_0000 | 0x40
 private let leftOptionBits: UInt64 = 0x8_0000 | 0x20
 private let rightCommandBits: UInt64 = 0x10_0000 | 0x10
 
-private func fnDown(repeat isRepeat: Bool = false) -> KeyEvent {
-    KeyEvent(kind: .flagsChanged, keycode: 63, flags: fnMask, isRepeat: isRepeat)
+private func fnDown() -> KeyEvent {
+    KeyEvent(kind: .flagsChanged, keycode: 63, flags: fnMask)
 }
 private let fnUp = KeyEvent(kind: .flagsChanged, keycode: 63, flags: 0)
 private let deleteDown = KeyEvent(kind: .keyDown, keycode: 51, flags: fnMask)
@@ -24,14 +24,13 @@ private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask
 @Test func repeatedDownWhileHeldEmitsNothing() {
     var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
     _ = hotkey.handle(fnDown(), captureActive: false)
-    #expect(hotkey.handle(fnDown(repeat: true), captureActive: true) == .none)
     #expect(hotkey.handle(fnDown(), captureActive: true) == .none)
     #expect(hotkey.handle(fnUp, captureActive: true).action == .up)
 }
 
 @Test func staleHoldAtInstallIsIgnoredUntilReleased() {
     var hotkey = HotkeyInterpreter(key: .fn, initialFlags: fnMask)
-    #expect(hotkey.handle(fnDown(repeat: true), captureActive: false) == .none)
+    #expect(hotkey.handle(fnDown(), captureActive: false) == .none)
     #expect(hotkey.handle(fnUp, captureActive: false) == .none)
     #expect(hotkey.handle(fnDown(), captureActive: false).action == .down)
     #expect(hotkey.handle(fnUp, captureActive: true).action == .up)

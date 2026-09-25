@@ -5,13 +5,11 @@ public struct KeyEvent: Equatable, Sendable {
     public var keycode: Int64
     /// Raw `CGEventFlags` bits, including the device-side left/right modifier bits.
     public var flags: UInt64
-    public var isRepeat: Bool
 
-    public init(kind: Kind, keycode: Int64, flags: UInt64, isRepeat: Bool = false) {
+    public init(kind: Kind, keycode: Int64, flags: UInt64) {
         self.kind = kind
         self.keycode = keycode
         self.flags = flags
-        self.isRepeat = isRepeat
     }
 }
 

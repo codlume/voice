@@ -85,13 +85,9 @@ final class Capture {
         }
     }
 
+    // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.
     func stop(id: String) {
         switch state {
-        case .starting(let session) where session.id == id:
-            stopSource()
-            state = .transcribing(session)
-            lastTarget = (session.id, session.frontmostPid)
-            finish(session, with: .transcript(id: session.id, text: "", audioMs: 0, asrMs: 0))
         case .recording(let recording) where recording.session.id == id:
             stopSource()
             let session = recording.session
