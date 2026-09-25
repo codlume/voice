@@ -1,0 +1,33 @@
+{
+  "name": "@voice/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "vp build && vp pack",
+    "dist:mac": "vp build && vp pack && electron-builder --mac --config electron-builder.yml",
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --passWithNoTests"
+  },
+  "dependencies": {
+    "@stylexjs/stylex": "catalog:",
+    "node-llama-cpp": "3.21.1"
+  },
+  "devDependencies": {
+    "@stylexjs/unplugin": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "catalog:",
+    "@voice/cleanup": "workspace:*",
+    "electron": "44.4.5",
+    "electron-builder": "26.15.6",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "productName": "Voice"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "voice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "vp config --no-agent",
+    "dev": "node scripts/dev.mjs",
+    "build": "vp run -r build",
+    "build:helper": "swift build -c release --package-path native/voice-helper",
+    "dist:mac": "pnpm build:helper && vp run --filter @voice/desktop dist:mac",
+    "fmt": "vp fmt",
+    "fmt:check": "vp fmt --check",
+    "lint": "vp lint --report-unused-disable-directives",
+    "typecheck": "vp run -r typecheck",
+    "test": "vp run -r test"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": "24.21.0"
+  },
+  "packageManager": "pnpm@11.10.0"
+}
