@@ -14,18 +14,6 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
-    /// Chromium and Electron apps expose no focused element until a client sets
-    /// `AXManualAccessibility`, and then take about two seconds to build the tree. Opting in when
-    /// capture starts keeps that wait off the release-to-insert path. Other apps report the
-    /// attribute as unsupported. The call is synchronous IPC with the target, so it runs off the
-    /// main thread.
-    func prepare(target pid: pid_t) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            AXUIElementSetAttributeValue(
-                AXUIElementCreateApplication(pid), "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        }
-    }
-
     func insert(id: String, text: String, target: (id: String, pid: pid_t?)?) {
         guard let target, target.id == id else {
             output.log(.error, "insert \(id) refused: no finished capture with that id")
@@ -64,9 +52,9 @@ final class Insertion {
     private func insertViaAccessibility(pid: pid_t, text: String) -> AccessibilityOutcome {
         var focusedRef: CFTypeRef?
         let app = AXUIElementCreateApplication(pid)
-        // No focused element is not proof that nothing is focused: Chromium answers that way
-        // until its tree is built, and apps without a tree cannot answer at all. A paste
-        // keystroke reaches both.
+        // No focused element is not proof that nothing is focused: Chromium and Electron answer
+        // that way without an accessibility client opt-in, and apps without a tree cannot
+        // answer at all. A paste keystroke reaches both.
         guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
             let focusedRef
         else {

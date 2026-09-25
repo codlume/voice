@@ -48,7 +48,6 @@ final class Helper {
         case .captureStart(let id):
             let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
             capture.start(id: id, frontmostPid: target, receivedAt: receivedAt)
-            if let target { insertion.prepare(target: target) }
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
