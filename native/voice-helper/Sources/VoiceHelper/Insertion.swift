@@ -7,6 +7,7 @@ import VoiceHelperCore
 final class Insertion {
     private let output: Output
     private let forcePaste: Bool
+    private var clipboard = ClipboardRestore<[[(NSPasteboard.PasteboardType, Data)]]>()
 
     init(output: Output, forcePaste: Bool) {
         self.output = output
@@ -104,8 +105,10 @@ final class Insertion {
 
     private func paste(id: String, text: String) {
         let pasteboard = NSPasteboard.general
-        let saved = (pasteboard.pasteboardItems ?? []).map { item in
-            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
+            (pasteboard.pasteboardItems ?? []).map { item in
+                item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+            }
         }
         pasteboard.clearContents()
         let item = NSPasteboardItem()
@@ -114,6 +117,7 @@ final class Insertion {
         item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
         pasteboard.writeObjects([item])
         let ourChange = pasteboard.changeCount
+        clipboard.wrote(ourChange, saved: saved)
 
         let source = CGEventSource(stateID: .combinedSessionState)
         for down in [true, false] {
@@ -122,19 +126,23 @@ final class Insertion {
             event.post(tap: .cghidEventTap)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [output] in
-            if pasteboard.changeCount == ourChange {
-                pasteboard.clearContents()
-                let items = saved.map { entries in
-                    let restored = NSPasteboardItem()
-                    for (type, data) in entries { restored.setData(data, forType: type) }
-                    return restored
-                }
-                if !items.isEmpty { pasteboard.writeObjects(items) }
-            } else {
-                output.log(.info, "clipboard changed during paste; not restoring previous contents")
-            }
+        // The target handles Cmd+V asynchronously. The result gives it a moment to land but
+        // does not wait for the restore, which only protects the user's clipboard.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
             output.emit(.insertResult(id: id, method: .paste, reason: nil))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [self] in
+            guard let saved = clipboard.restore(write: ourChange, changeCount: pasteboard.changeCount) else {
+                output.log(.info, "clipboard changed during paste; not restoring previous contents")
+                return
+            }
+            pasteboard.clearContents()
+            let items = saved.map { entries in
+                let restored = NSPasteboardItem()
+                for (type, data) in entries { restored.setData(data, forType: type) }
+                return restored
+            }
+            if !items.isEmpty { pasteboard.writeObjects(items) }
         }
     }
 }
