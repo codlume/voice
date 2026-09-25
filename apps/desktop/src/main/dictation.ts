@@ -181,7 +181,6 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "captureFailed", id: event.id, message: event.message });
         return;
       case "capture.cancelled":
-        dispatch({ type: "captureCancelled", id: event.id });
         return;
       case "transcript": {
         if (timing?.id === event.id) {

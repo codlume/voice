@@ -18,8 +18,6 @@ function outcomeView(outcome: Outcome): PillView {
   switch (outcome.kind) {
     case "inserted":
       return { kind: "inserted" };
-    case "cancelled":
-      return { kind: "idle" };
     case "empty":
       return { kind: "message", text: "Nothing heard" };
     case "tooShort":

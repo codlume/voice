@@ -7,7 +7,6 @@ export type Outcome =
   | { kind: "notInserted"; reason: "focusChanged" | "noFocusedField" | "secureInput" | "failed" }
   | { kind: "empty" }
   | { kind: "tooShort" }
-  | { kind: "cancelled" }
   | { kind: "failed"; message: string };
 
 export type PillState =

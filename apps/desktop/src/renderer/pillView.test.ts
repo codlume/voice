@@ -18,10 +18,6 @@ describe("pillView", () => {
     expect(done({ kind: "notInserted", reason: "failed" })).not.toEqual({ kind: "inserted" });
   });
 
-  test("a cancelled session renders the idle pill", () => {
-    expect(done({ kind: "cancelled" })).toEqual({ kind: "idle" });
-  });
-
   test.each<[Outcome, string]>([
     [{ kind: "empty" }, "Nothing heard"],
     [{ kind: "tooShort" }, "Too short. Hold to talk"],

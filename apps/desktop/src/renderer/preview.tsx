@@ -43,7 +43,6 @@ const pillScenes: Record<string, PillState> = {
     kind: "failed",
     message: "The speech model stopped unexpectedly while transcribing this recording",
   }),
-  cancelled: done({ kind: "cancelled" }),
 };
 
 const hubScenes: Record<string, Snapshot> = {

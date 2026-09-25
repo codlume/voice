@@ -18,7 +18,6 @@ export type SessionEvent =
   | { type: "cancel" }
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
-  | { type: "captureCancelled"; id: string }
   | { type: "transcript"; id: string; text: string; cleanup: boolean }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
@@ -117,8 +116,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       return finish(state.id, { kind: "failed", message: event.message });
     }
-    case "captureCancelled":
-      return same;
     case "transcript": {
       if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       const raw = event.text.trim();
