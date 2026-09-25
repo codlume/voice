@@ -1,4 +1,3 @@
-// Drives a built voice-helper over NDJSON for the smoke scripts and later e2e.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -129,7 +128,6 @@ export async function prepareAsr(helper, { download = false } = {}) {
   return performance.now() - startedAt;
 }
 
-// Streams a fixture through the test source until it ends, then stops and returns the transcript.
 export async function dictateFixture(helper, name, id) {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;

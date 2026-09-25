@@ -17,8 +17,6 @@ final class HotkeyTap {
         interpreter = HotkeyInterpreter(key: .fn, initialFlags: currentFlags())
     }
 
-    var isInstalled: Bool { tap != nil }
-
     func configure(_ key: HotkeyKey) {
         self.key = key
         interpreter = HotkeyInterpreter(key: key, initialFlags: currentFlags())

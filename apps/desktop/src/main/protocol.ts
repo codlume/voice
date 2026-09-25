@@ -11,7 +11,7 @@ export type HelperCommand =
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean };
 
-export type AsrState = "missing" | "downloading" | "loading" | "ready" | "failed";
+type AsrState = "missing" | "downloading" | "loading" | "ready" | "failed";
 
 export type HelperEvent =
   | { type: "ready"; version: number }

@@ -1,10 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
 import { parseHelperEvent, type HelperCommand, type HelperEvent } from "./protocol.ts";
 
 export const RESTART_MIN_MS = 250;
-export const RESTART_MAX_MS = 5000;
+const RESTART_MAX_MS = 5000;
 // A run this long counts as healthy, so the next crash restarts at the minimum delay again.
 const HEALTHY_RUN_MS = 10_000;
 
@@ -25,20 +25,18 @@ export type Helper = {
 };
 
 export function startHelper(options: HelperOptions): Helper {
-  let child: ChildProcess | null = null;
+  let child: ChildProcessWithoutNullStreams | null = null;
   let restartTimer: NodeJS.Timeout | null = null;
   let restartDelay = RESTART_MIN_MS;
   let stopping = false;
 
   function launch() {
     const startedAt = Date.now();
-    const proc = spawn(options.binary, ["--models-dir", options.modelsDir], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const proc = spawn(options.binary, ["--models-dir", options.modelsDir]);
     child = proc;
     let ended = false;
 
-    createInterface({ input: proc.stdout! }).on("line", (line) => {
+    createInterface({ input: proc.stdout }).on("line", (line) => {
       if (line.trim() === "") return;
       const event = parseHelperEvent(line);
       if (!event) {
@@ -52,7 +50,7 @@ export function startHelper(options: HelperOptions): Helper {
       }
       options.onEvent(event);
     });
-    createInterface({ input: proc.stderr! }).on("line", (line) => options.log(`helper: ${line}`));
+    createInterface({ input: proc.stderr }).on("line", (line) => options.log(`helper: ${line}`));
 
     const onEnd = (reason: string) => {
       if (ended) return;
@@ -70,7 +68,7 @@ export function startHelper(options: HelperOptions): Helper {
   }
 
   function send(command: HelperCommand) {
-    if (!child?.stdin?.writable) {
+    if (!child?.stdin.writable) {
       options.log(`helper: dropped ${command.type} while not running`);
       return;
     }
@@ -83,7 +81,7 @@ export function startHelper(options: HelperOptions): Helper {
     const proc = child;
     if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
     const exited = new Promise<void>((resolve) => proc.once("close", () => resolve()));
-    proc.stdin?.end();
+    proc.stdin.end();
     const force = setTimeout(() => proc.kill("SIGKILL"), 2000);
     await exited;
     clearTimeout(force);

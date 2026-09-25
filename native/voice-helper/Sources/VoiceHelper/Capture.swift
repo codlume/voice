@@ -38,7 +38,7 @@ private let silenceFloor = 1e-4 as Float
 final class Capture {
     private let output: Output
     private let transcriber: Transcriber
-    private(set) var state: CaptureState = .idle
+    private var state: CaptureState = .idle
     private var source: CaptureSource?
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     /// Test hook: when set, sessions read this WAV instead of the microphone.

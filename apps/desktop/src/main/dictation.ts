@@ -161,9 +161,9 @@ export function createDictation(options: DictationOptions): Dictation {
           ? undefined
           : finishedAt - t.releasedAt,
     };
-    const parts = Object.entries(fields)
-      .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => `${key}=${Math.round(value!)}`);
+    const parts = Object.entries(fields).flatMap(([key, value]) =>
+      value === undefined ? [] : [`${key}=${Math.round(value)}`],
+    );
     log(`session ${id.slice(0, 8)} outcome=${outcome} ${parts.join(" ")}`);
   }
 

@@ -23,7 +23,7 @@ export type ChecklistRow = {
   action?: { label: "Grant" | "Open" | "Download" | "Retry"; command: SetupCommand };
 };
 
-export type Checklist = { ready: boolean; rows: ChecklistRow[] };
+type Checklist = { ready: boolean; rows: ChecklistRow[] };
 
 export const hotkeyLabels: Record<Hotkey, string> = {
   fn: "fn",
@@ -114,7 +114,7 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };
 }
 
-export type Styling = Settings["cleanup"]["styling"];
+type Styling = Settings["cleanup"]["styling"];
 
 export const stylings: { value: Styling; label: string; example: string }[] = [
   { value: "casual", label: "Casual", example: "yeah sounds good, see you at 3" },

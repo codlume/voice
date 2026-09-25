@@ -205,7 +205,6 @@ export function launchVoice(userData, { port, env: extraEnv = {} }) {
   return { child, logs };
 }
 
-// A terminal Ctrl+C or a kill stops every child before the script exits.
 export function stopChildrenOnSignal() {
   let shuttingDown = false;
   for (const signal of ["SIGINT", "SIGTERM"]) {

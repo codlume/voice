@@ -25,7 +25,7 @@ type Config = {
 
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
-let recording: { id: string; since: number; levels: NodeJS.Timeout } | null = null;
+let recording: { since: number; levels: NodeJS.Timeout } | null = null;
 
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -66,7 +66,7 @@ function handle(command: Record<string, unknown>) {
           () => emit({ type: "capture.level", id, level: Math.random() }),
           33,
         );
-        recording = { id, since: Date.now(), levels };
+        recording = { since: Date.now(), levels };
       }, config.startMs ?? 30);
       return;
     case "capture.stop": {

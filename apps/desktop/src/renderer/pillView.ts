@@ -1,6 +1,6 @@
 import type { Outcome, PillState } from "../shared/api.ts";
 
-export type PillView =
+type PillView =
   | { kind: "idle" }
   | { kind: "listening" }
   | { kind: "processing" }

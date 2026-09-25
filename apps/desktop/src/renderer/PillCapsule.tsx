@@ -129,8 +129,8 @@ function Wave() {
   }, []);
   return (
     <div {...stylex.props(styles.content, styles.wave)}>
-      {barKeys.map((key, i) => (
-        <div key={key} {...stylex.props(styles.bar, styles.barScale(scales[i]!))} />
+      {scales.map((scale, i) => (
+        <div key={barKeys[i]} {...stylex.props(styles.bar, styles.barScale(scale))} />
       ))}
     </div>
   );

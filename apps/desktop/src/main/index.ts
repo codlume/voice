@@ -2,13 +2,7 @@ import * as NodePath from "node:path";
 
 import { app, BrowserWindow, clipboard, ipcMain, Menu, screen, shell, Tray } from "electron";
 
-import {
-  Channel,
-  type PermissionKind,
-  type Settings,
-  type SettingsPatch,
-  type Snapshot,
-} from "../shared/api.ts";
+import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
 import { createCleanup } from "./cleanup.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
@@ -235,7 +229,7 @@ async function main() {
   // Saves are serialized so two quick edits cannot race on the temp file or land out of order.
   let saving: Promise<void> = Promise.resolve();
   function updateSettings(patch: SettingsPatch) {
-    const previous: Settings = store.state.settings;
+    const previous = store.state.settings;
     const next = applyPatch(previous, patch);
     store.update((s) => ({ ...s, settings: next }));
     if (next.hotkey !== previous.hotkey)
@@ -253,17 +247,15 @@ async function main() {
     helper.send({ type: "permissions.request", kind });
   }
 
-  function setupModels() {
-    helper.send({ type: "asr.prepare", download: true });
-    void cleanup.setup();
-  }
-
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (kind in PERMISSION_PANES) requestPermission(kind);
   });
-  ipcMain.handle(Channel.setupModels, () => setupModels());
+  ipcMain.handle(Channel.setupModels, () => {
+    helper.send({ type: "asr.prepare", download: true });
+    void cleanup.setup();
+  });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
   });

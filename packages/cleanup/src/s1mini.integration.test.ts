@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 import type { CleanupStyle } from "./prompt.ts";
 import { createS1Mini, type S1Mini } from "./s1mini.ts";
 
-const modelPath = process.env.VOICE_S1_MODEL;
+const modelPath = process.env.VOICE_S1_MODEL ?? "";
 const prose: CleanupStyle = { styling: "semi-formal", structure: "prose", context: "general" };
 
 describe.skipIf(!modelPath)("S1-mini on the real model", () => {
@@ -19,7 +19,7 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   };
 
   beforeAll(async () => {
-    s1 = createS1Mini({ modelPath: modelPath! });
+    s1 = createS1Mini({ modelPath });
     const start = performance.now();
     await s1.load();
     console.log(`[s1-mini] load: ${Math.round(performance.now() - start)} ms`);
@@ -84,7 +84,7 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     const raw = `${lines.join(". ")}. and finally call ada on monday.`;
     const { getLlama } = await import("node-llama-cpp");
     const llama = await getLlama();
-    const vocab = await llama.loadModel({ modelPath: modelPath!, vocabOnly: true });
+    const vocab = await llama.loadModel({ modelPath, vocabOnly: true });
     const rawTokens = vocab.tokenize(raw).length;
     await llama.dispose();
     expect(rawTokens).toBeGreaterThan(1000);
