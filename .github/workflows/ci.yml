@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Format
+        run: vp run fmt:check
+
+      - name: Lint
+        run: vp run lint
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Test
+        run: vp run test
+
+      - name: Build desktop
+        run: vp run build
+
+      - name: Build helper
+        run: swift build --package-path native/voice-helper
+
+      - name: Test helper
+        run: swift test --package-path native/voice-helper
