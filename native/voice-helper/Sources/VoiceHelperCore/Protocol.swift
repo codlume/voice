@@ -4,7 +4,7 @@ public enum HotkeyKey: String, Codable, Sendable { case fn, rightOption, rightCo
 public enum HotkeyAction: String, Codable, Sendable { case down, up, cancel }
 public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
-public enum CaptureFailure: String, Codable, Sendable { case permission, device, unknown }
+public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, failed }

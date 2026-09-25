@@ -56,6 +56,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
         (.captureFailed(id: "s", reason: .device, message: "gone"),
          ["type": "capture.failed", "id": "s", "reason": "device", "message": "gone"]),
+        (.captureFailed(id: "s2", reason: .busy, message: "busy"),
+         ["type": "capture.failed", "id": "s2", "reason": "busy", "message": "busy"]),
         (.captureCancelled(id: "s"), ["type": "capture.cancelled", "id": "s"]),
         (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80),
          ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80]),

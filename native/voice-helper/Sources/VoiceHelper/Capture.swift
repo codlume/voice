@@ -56,7 +56,7 @@ final class Capture {
 
     func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime) {
         guard case .idle = state else {
-            output.log(.error, "capture.start \(id) ignored: capture is busy")
+            output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
         }
         let session = CaptureSession(id: id, frontmostPid: frontmostPid, commandedAt: receivedAt)
