@@ -36,6 +36,10 @@ export default defineConfig({
   base: "./",
   plugins: [stylex.vite({ useCSSLayers: true }), react()],
   server: { port: 5783, strictPort: true },
+  // StyleX's dev transform calls this.load() on each import, so a *.stylex.ts file requested
+  // during the first crawl waits on a pre-bundled dependency, which by default waits for the
+  // crawl to end. That cycle leaves every window blank on a cold start.
+  optimizeDeps: { holdUntilCrawlEnd: false },
   build: {
     outDir: `${appDir}dist/renderer`,
     emptyOutDir: true,
