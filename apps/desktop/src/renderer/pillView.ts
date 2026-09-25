@@ -37,10 +37,12 @@ export function pillView(session: PillState): PillView {
 
 export const BAR_COUNT = 11;
 export const MIN_BAR_SCALE = 0.18;
+const LEVEL_RISE_RATE = 0.6;
+const LEVEL_FALL_RATE = 0.25;
 
 export function smoothLevel(previous: number, next: number): number {
   const target = Math.min(1, Math.max(0, next));
-  const rate = target > previous ? 0.6 : 0.25;
+  const rate = target > previous ? LEVEL_RISE_RATE : LEVEL_FALL_RATE;
   return previous + (target - previous) * rate;
 }
 
