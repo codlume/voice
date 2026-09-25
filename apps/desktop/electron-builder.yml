@@ -1,0 +1,23 @@
+appId: com.voice.app
+productName: Voice
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asarUnpack:
+  - node_modules/node-llama-cpp/**
+  - node_modules/@node-llama-cpp/**
+# node-llama-cpp ships prebuilt N-API binaries, which need no rebuild for Electron.
+npmRebuild: false
+extraResources:
+  - from: ../../native/voice-helper/.build/release/voice-helper
+    to: bin/voice-helper
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Voice records your speech only while you hold the dictation shortcut.

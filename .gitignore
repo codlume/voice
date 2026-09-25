@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-electron
+release
+.build
+*.tsbuildinfo
+.DS_Store
+*.log
+.audit/
+models/
+test-results/
+test-fixtures/audio/
