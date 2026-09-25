@@ -1,29 +1,57 @@
 import ApplicationServices
 import Foundation
 
-// Posts a synthetic hotkey press so the hotkey smoke test can drive voice-helper
-// without a human at the keyboard.
+// Posts synthetic key events so the smoke and e2e scripts can drive voice-helper without a
+// human at the keyboard.
+//   fnpost [fn|rightOption|rightCommand]            press and release
+//   fnpost [fn|rightOption|rightCommand] down|up    one edge of the hold
+//   fnpost escape                                   press and release Escape
 let keys: [String: (keycode: CGKeyCode, flags: CGEventFlags)] = [
     "fn": (63, .maskSecondaryFn),
     "rightOption": (61, CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x40)),
     "rightCommand": (54, CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x10)),
 ]
+let escapeKeycode: CGKeyCode = 53
 
-let name = CommandLine.arguments.dropFirst().first ?? "fn"
-guard let key = keys[name] else {
-    FileHandle.standardError.write(Data("usage: fnpost [fn|rightOption|rightCommand]\n".utf8))
+func usage() -> Never {
+    FileHandle.standardError.write(
+        Data("usage: fnpost [fn|rightOption|rightCommand] [down|up] | fnpost escape\n".utf8))
     exit(64)
 }
 
-let source = CGEventSource(stateID: .hidSystemState)
-for flags: CGEventFlags in [key.flags, []] {
-    guard let event = CGEvent(keyboardEventSource: source, virtualKey: key.keycode, keyDown: !flags.isEmpty) else {
+func post(_ event: CGEvent?) {
+    guard let event else {
         FileHandle.standardError.write(Data("fnpost: CGEvent creation failed\n".utf8))
         exit(1)
     }
-    event.type = .flagsChanged
-    event.flags = flags
     event.post(tap: .cghidEventTap)
     usleep(50_000)
 }
-print("posted \(name) down/up")
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+let name = arguments.first ?? "fn"
+let source = CGEventSource(stateID: .hidSystemState)
+
+if name == "escape" {
+    for down in [true, false] {
+        post(CGEvent(keyboardEventSource: source, virtualKey: escapeKeycode, keyDown: down))
+    }
+    print("posted escape")
+    exit(0)
+}
+
+guard let key = keys[name] else { usage() }
+let edges: [Bool]
+switch arguments.dropFirst().first {
+case nil: edges = [true, false]
+case "down": edges = [true]
+case "up": edges = [false]
+default: usage()
+}
+for down in edges {
+    let event = CGEvent(keyboardEventSource: source, virtualKey: key.keycode, keyDown: down)
+    event?.type = .flagsChanged
+    event?.flags = down ? key.flags : []
+    post(event)
+}
+print("posted \(name) \(edges.map { $0 ? "down" : "up" }.joined(separator: "/"))")

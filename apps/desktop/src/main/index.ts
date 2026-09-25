@@ -34,6 +34,11 @@ const log = (message: string) => console.log(`[voice] ${message}`);
 if (!app.isPackaged) {
   app.setPath("userData", NodePath.join(app.getPath("appData"), "Voice Development"));
 }
+// The e2e harness runs against a throwaway userData. Only the helper's test flag unlocks
+// the override, so the variable alone can never redirect a normal launch.
+if (process.env.VOICE_HELPER_TEST === "1" && process.env.VOICE_USER_DATA_DIR) {
+  app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
+}
 
 if (app.requestSingleInstanceLock()) {
   void main();

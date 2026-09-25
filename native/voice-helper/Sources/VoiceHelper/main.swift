@@ -17,6 +17,7 @@ final class Helper {
         testMode = environment["VOICE_HELPER_TEST"] == "1"
         transcriber = Transcriber(modelsDir: modelsDir, output: output)
         let capture = Capture(output: output, transcriber: transcriber)
+        if testMode { capture.testAudioPath = environment["VOICE_HELPER_TEST_AUDIO"] }
         self.capture = capture
         insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
         let hotkeyTap = HotkeyTap(output: output) { capture.isActive }
