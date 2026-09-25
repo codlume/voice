@@ -36,8 +36,7 @@ async function settle(read, expected, timeoutMs = 3_000) {
 }
 
 const textEditWasRunning = osascript('application "TextEdit" is running') === "true";
-const sentinel = `voice clipboard sentinel ${randomUUID()}`;
-execFileSync("pbcopy", { input: sentinel });
+// The helper must hand back whatever the developer already had, so the smoke never writes it.
 const clipboardBefore = clipboardSha256();
 
 // A named file, as in scripts/e2e.mjs. An untitled document can fail to appear on a cold launch,
