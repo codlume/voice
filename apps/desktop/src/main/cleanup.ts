@@ -11,8 +11,8 @@ export type CleanupModule = Pick<
 >;
 
 export type Cleanup = {
-  load(): Promise<void>;
-  setup(): Promise<void>;
+  loadIfDownloaded(): Promise<void>;
+  downloadAndLoad(): Promise<void>;
   loaded(): boolean;
   clean(raw: string, style: CleanupStyle): Promise<string>;
   dispose(): Promise<void>;
@@ -75,7 +75,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   }
 
   return {
-    load: () =>
+    loadIfDownloaded: () =>
       once(async () => {
         if (model.phase !== "none") return;
         const module = await loadModule();
@@ -87,7 +87,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         }
         await loadModel(module);
       }),
-    setup: () =>
+    downloadAndLoad: () =>
       once(async () => {
         if (model.phase !== "none") return;
         options.onStatus({ state: "downloading", progress: 0 });

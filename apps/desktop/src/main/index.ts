@@ -247,7 +247,7 @@ async function main() {
   });
   ipcMain.handle(Channel.setupModels, () => {
     helper.send({ type: "asr.prepare", download: true });
-    void cleanup.setup();
+    void cleanup.downloadAndLoad();
   });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
@@ -283,5 +283,5 @@ async function main() {
   });
 
   showHub();
-  void cleanup.load();
+  void cleanup.loadIfDownloaded();
 }
