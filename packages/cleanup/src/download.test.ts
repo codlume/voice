@@ -60,7 +60,7 @@ test("downloads the model with its LICENSE and NOTICE and reports progress up to
   expect(await readFile(join(dir, "model.gguf.LICENSE"), "utf8")).toBe("/LICENSE text");
   expect(await readFile(join(dir, "model.gguf.NOTICE"), "utf8")).toBe("/NOTICE text");
   expect(progress.at(-1)).toBe(1);
-  expect(progress).toEqual([...progress].sort((a, b) => a - b));
+  expect(progress).toEqual(progress.toSorted((a, b) => a - b));
   expect(progress.length).toBeLessThanOrEqual(1001);
 });
 

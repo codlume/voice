@@ -11,8 +11,8 @@ const S1_MINI = {
 
 export type DownloadOptions = {
   dir: string;
-  onProgress?: (fraction: number) => void;
-  signal?: AbortSignal;
+  onProgress?: ((fraction: number) => void) | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 export function downloadS1Mini(options: DownloadOptions): Promise<string> {
@@ -53,11 +53,7 @@ async function sizeOf(path: string): Promise<number | undefined> {
 async function fetchToFile(
   url: string,
   path: string,
-  {
-    bytes,
-    onProgress,
-    signal,
-  }: { bytes?: number; onProgress?: (fraction: number) => void; signal?: AbortSignal },
+  { bytes, onProgress, signal }: Omit<DownloadOptions, "dir"> & { bytes?: number },
 ): Promise<void> {
   const response = await fetch(url, { signal: signal ?? null });
   if (!response.ok || !response.body)
