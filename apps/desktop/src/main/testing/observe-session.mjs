@@ -47,7 +47,11 @@ ws.addEventListener("message", ({ data }) => {
 function evaluate(expression) {
   const id = nextId++;
   ws.send(
-    JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true } }),
+    JSON.stringify({
+      id,
+      method: "Runtime.evaluate",
+      params: { expression, returnByValue: true, awaitPromise: true },
+    }),
   );
   return new Promise((resolve) => pending.set(id, (result) => resolve(result.result.value)));
 }
@@ -61,19 +65,26 @@ await evaluate(`
 `);
 await new Promise((resolve) => setTimeout(resolve, 300));
 
-const socket = connect(control);
-await new Promise((resolve, reject) => {
-  socket.once("connect", resolve);
-  socket.once("error", reject);
-});
+// A control path of "-" means no fake helper: only report the snapshot the real helper produced.
 const t0 = Date.now();
-for (const { action, wait } of steps) {
-  socket.write(`${action}\n`);
-  await new Promise((resolve) => setTimeout(resolve, wait));
+if (control !== "-") {
+  const socket = connect(control);
+  await new Promise((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
+  for (const { action, wait } of steps) {
+    socket.write(`${action}\n`);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  socket.end();
 }
-await new Promise((resolve) => setTimeout(resolve, 3500));
-socket.end();
 
+const status = await evaluate(
+  "window.voice.getSnapshot().then((s) => JSON.stringify({ permissions: s.permissions, models: s.models, last: s.last }))",
+);
+console.log(`snapshot ${status}`);
 const seq = await evaluate("JSON.stringify(window.__seq)");
 for (const entry of JSON.parse(seq)) {
   const outcome = entry.outcome ? `(${entry.outcome})` : "";
