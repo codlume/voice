@@ -24,13 +24,18 @@ const PERMISSION_PANES: Record<PermissionKind, string> = {
 
 const log = (message: string) => console.log(`[voice] ${message}`);
 
+// The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
+// only. A packaged app ignores them and never hands them to its helper.
+const development = !app.isPackaged;
+const testMode = development && process.env.VOICE_HELPER_TEST === "1";
+
 // Development must never touch the packaged app's storage. This has to run before the single
 // instance lock and before ready, because both live under userData.
-if (!app.isPackaged) {
+if (development) {
   app.setPath("userData", NodePath.join(app.getPath("appData"), "Voice Development"));
-}
-if (process.env.VOICE_HELPER_TEST === "1" && process.env.VOICE_USER_DATA_DIR) {
-  app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
+  if (testMode && process.env.VOICE_USER_DATA_DIR) {
+    app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
+  }
 }
 
 if (app.requestSingleInstanceLock()) {
@@ -40,9 +45,18 @@ if (app.requestSingleInstanceLock()) {
 }
 
 function helperBinary(): string {
-  if (process.env.VOICE_HELPER_PATH) return process.env.VOICE_HELPER_PATH;
-  if (app.isPackaged) return NodePath.join(process.resourcesPath, "bin", "voice-helper");
-  return NodePath.join(app.getAppPath(), "../../native/voice-helper/.build/debug/voice-helper");
+  if (!development) return NodePath.join(process.resourcesPath, "bin", "voice-helper");
+  return (
+    process.env.VOICE_HELPER_PATH ??
+    NodePath.join(app.getAppPath(), "../../native/voice-helper/.build/debug/voice-helper")
+  );
+}
+
+function helperEnv(): NodeJS.ProcessEnv {
+  if (development) return process.env;
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith("VOICE_")),
+  );
 }
 
 const preload = NodePath.join(__dirname, "preload.cjs");
@@ -132,6 +146,7 @@ async function main() {
   const helper: Helper = startHelper({
     binary: helperBinary(),
     modelsDir,
+    env: helperEnv(),
     onEvent: (event) => dictation.onHelperEvent(event),
     onExit: () => dictation.dispatch({ type: "helperExited" }),
     configure: () => [
@@ -248,7 +263,7 @@ async function main() {
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
-    if (kind in PERMISSION_PANES) requestPermission(kind);
+    if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
   });
   ipcMain.handle(Channel.setupModels, () => {
     helper.send({ type: "asr.prepare", download: true });

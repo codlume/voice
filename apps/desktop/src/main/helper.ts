@@ -10,6 +10,7 @@ const HEALTHY_RUN_MS = 10_000;
 export type HelperOptions = {
   binary: string;
   modelsDir: string;
+  env: NodeJS.ProcessEnv;
   onEvent: (event: HelperEvent) => void;
   onExit: () => void;
   configure: () => HelperCommand[];
@@ -29,7 +30,7 @@ export function startHelper(options: HelperOptions): Helper {
 
   function launch() {
     const startedAt = Date.now();
-    const proc = spawn(options.binary, ["--models-dir", options.modelsDir]);
+    const proc = spawn(options.binary, ["--models-dir", options.modelsDir], { env: options.env });
     child = proc;
     let ended = false;
 
