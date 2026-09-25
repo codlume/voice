@@ -43,7 +43,7 @@ export type Effect =
 export type Step = { state: Session; effects: Effect[] };
 
 export const MIN_HOLD_MS = 250;
-export const IDLE_AFTER_INSERTED_MS = 1200;
+export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
