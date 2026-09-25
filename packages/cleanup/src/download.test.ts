@@ -1,16 +1,19 @@
+import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
-import { downloadModel, downloadS1Mini, S1_MINI_FILE } from "./download.ts";
+import { downloadModel, S1_MINI } from "./download.ts";
 
 const BYTES = 256 * 1024;
 const MODEL = Buffer.from(Array.from({ length: BYTES }, (_, i) => (i * 31 + 7) % 256));
+const SHA256 = createHash("sha256").update(MODEL).digest("hex");
+const CORRUPT = Buffer.from(MODEL.map((byte, i) => (i === BYTES / 2 ? byte ^ 1 : byte)));
 
-type Behavior = "complete" | "short" | "stall" | "missing";
+type Behavior = "complete" | "short" | "stall" | "missing" | "corrupt";
 
 let dir: string;
 let behavior: Behavior;
@@ -28,6 +31,7 @@ beforeEach(async () => {
     modelRequests++;
     if (behavior === "missing") return res.writeHead(404).end();
     if (behavior === "short") return res.end(MODEL.subarray(0, BYTES - 10));
+    if (behavior === "corrupt") return res.end(CORRUPT);
     if (behavior === "stall") {
       res.writeHead(200, { "content-length": BYTES });
       res.write(MODEL.subarray(0, BYTES / 2));
@@ -48,7 +52,7 @@ afterEach(async () => {
 
 const download = (
   options: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
-) => downloadModel({ dir, baseUrl, file: "model.gguf", bytes: BYTES, ...options });
+) => downloadModel({ dir, baseUrl, file: "model.gguf", bytes: BYTES, sha256: SHA256, ...options });
 
 test("downloads the model with its LICENSE and NOTICE and reports progress up to 1", async () => {
   const progress: number[] = [];
@@ -115,16 +119,30 @@ test("replaces an existing model of the wrong size", async () => {
   expect((await readFile(path)).equals(MODEL)).toBe(true);
 });
 
+test("replaces an existing model of the right size whose content does not match the hash", async () => {
+  await writeFile(join(dir, "model.gguf"), CORRUPT);
+
+  const path = await download();
+
+  expect(modelRequests).toBe(1);
+  expect((await readFile(path)).equals(MODEL)).toBe(true);
+});
+
+test("rejects a download whose content does not match the hash and keeps no model", async () => {
+  behavior = "corrupt";
+
+  await expect(download()).rejects.toThrow("does not match the expected SHA-256");
+  expect(await readdir(dir)).not.toContain("model.gguf");
+  expect(await readdir(dir)).not.toContain("model.gguf.part");
+});
+
 test("rejects an HTTP error", async () => {
   behavior = "missing";
 
   await expect(download()).rejects.toThrow("HTTP 404");
 });
 
-test("downloadS1Mini returns an already-present S1-mini file without touching the network", async () => {
-  const path = join(dir, S1_MINI_FILE);
-  await writeFile(path, "");
-  await truncate(path, 484_219_808);
-
-  await expect(downloadS1Mini({ dir })).resolves.toBe(path);
+test("S1-mini is pinned to a commit revision with a full SHA-256, never to a moving branch", () => {
+  expect(S1_MINI.baseUrl).toMatch(/\/resolve\/[0-9a-f]{40}$/);
+  expect(S1_MINI.sha256).toMatch(/^[0-9a-f]{64}$/);
 });

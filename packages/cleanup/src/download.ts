@@ -1,13 +1,22 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 export const S1_MINI_FILE = "s1-mini-q4_k_m.gguf";
 
-const S1_MINI = {
-  baseUrl: "https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/main",
+// Pinned to a commit of superwhisper/s1-mini-GGUF rather than `main`, so the weights the app
+// verifies against this hash cannot change under it.
+export const S1_MINI = {
+  baseUrl:
+    "https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/34add00a48a2e5d24e5a4ee5405a99620a3a240c",
   file: S1_MINI_FILE,
   bytes: 484_219_808,
+  sha256: "3b41ebe2502cbd03e811d5d16b022f5ab551eda58d62597d152f89535003c634",
 };
+
+export type ModelSource = { baseUrl: string; file: string; bytes: number; sha256: string };
 
 export type DownloadOptions = {
   dir: string;
@@ -27,32 +36,42 @@ export async function downloadModel({
   baseUrl,
   file,
   bytes,
+  sha256,
   onProgress,
   signal,
-}: DownloadOptions & { baseUrl: string; file: string; bytes: number }): Promise<string> {
+}: DownloadOptions & ModelSource): Promise<string> {
   const path = join(dir, file);
-  if ((await sizeOf(path)) === bytes) return path;
+  if (await matches(path, bytes, sha256)) return path;
 
   await mkdir(dir, { recursive: true });
   for (const name of LEGAL_FILES) {
     await fetchToFile(`${baseUrl}/${name}`, join(dir, `${file}.${name}`), { signal });
   }
-  await fetchToFile(`${baseUrl}/${file}`, path, { bytes, onProgress, signal });
+  await fetchToFile(`${baseUrl}/${file}`, path, { bytes, sha256, onProgress, signal });
   return path;
 }
 
-async function sizeOf(path: string): Promise<number | undefined> {
+// Size first, because hashing half a gigabyte is the expensive half of the check.
+async function matches(path: string, bytes: number, sha256: string): Promise<boolean> {
   try {
-    return (await stat(path)).size;
+    if ((await stat(path)).size !== bytes) return false;
   } catch {
-    return undefined;
+    return false;
   }
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(path), hash);
+  return hash.digest("hex") === sha256;
 }
 
 async function fetchToFile(
   url: string,
   path: string,
-  { bytes, onProgress, signal }: Omit<DownloadOptions, "dir"> & { bytes?: number },
+  {
+    bytes,
+    sha256,
+    onProgress,
+    signal,
+  }: Omit<DownloadOptions, "dir"> & Partial<Pick<ModelSource, "bytes" | "sha256">>,
 ): Promise<void> {
   const response = await fetch(url, { signal: signal ?? null });
   if (!response.ok || !response.body)
@@ -61,10 +80,12 @@ async function fetchToFile(
   const part = `${path}.part`;
   const handle = await open(part, "w");
   try {
+    const hash = createHash("sha256");
     let received = 0;
     let reported = -1;
     for await (const chunk of response.body) {
       await handle.write(chunk);
+      hash.update(chunk);
       received += chunk.byteLength;
       if (bytes !== undefined && received > bytes) break;
       const permille = bytes ? Math.floor((received / bytes) * 1000) : 0;
@@ -75,6 +96,9 @@ async function fetchToFile(
     }
     if (bytes !== undefined && received !== bytes) {
       throw new Error(`Download of ${url} returned ${received} bytes, expected ${bytes}`);
+    }
+    if (sha256 !== undefined && hash.digest("hex") !== sha256) {
+      throw new Error(`Download of ${url} does not match the expected SHA-256`);
     }
     await handle.sync();
     await handle.close();
