@@ -46,6 +46,8 @@ pnpm e2e
 
 It needs Accessibility granted to the app that launches it, such as your terminal or IDE, and it briefly brings TextEdit to the front. It uses a throwaway userData directory and expects Parakeet at `/tmp/voice-spike-swift/models/parakeet-tdt-0.6b-v3`. S1-mini is linked from `/tmp/voice-spike-s1/` or downloaded.
 
+`node scripts/idle-footprint.mjs` launches the built app the same way, waits for both models and 10 more seconds, then prints the average RSS and CPU of each process in the app's tree over 20 seconds.
+
 ## Package
 
 ```sh
