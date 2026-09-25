@@ -160,12 +160,14 @@ final class Capture {
         }
     }
 
+    // The engine stops delivering audio on a configuration change. Mid-recording the samples so
+    // far are still the user's words, so the change ends the session like a key release.
     private func deviceChanged(during session: CaptureSession) {
         switch state {
         case .starting(let current) where current.id == session.id:
             fail(current, reason: .device, message: "audio device configuration changed")
         case .recording(let recording) where recording.session.id == session.id:
-            fail(recording.session, reason: .device, message: "audio device configuration changed")
+            stop(id: session.id)
         default:
             break
         }
