@@ -120,6 +120,18 @@ describe("startHelper", () => {
     expect(h.exits).toEqual([]);
   });
 
+  test("a helper speaking another protocol version is refused, never configured, and not restarted", async () => {
+    const h = boot({ version: 2 });
+    helper = h.helper;
+    await expect
+      .poll(() => h.logs.join("\n"))
+      .toMatch(/helper: speaks protocol v2 but this build expects v1; refusing/);
+    await sleep(RESTART_MIN_MS + 150);
+    expect(h.events).toEqual([]);
+    expect(h.exits).toEqual([]);
+    expect(h.logs.join("\n")).not.toContain("hotkey configured");
+  });
+
   test("reports scripted hotkey actions in order", async () => {
     const h = boot({
       script: [

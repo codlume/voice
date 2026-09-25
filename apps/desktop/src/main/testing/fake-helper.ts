@@ -12,6 +12,7 @@ type Config = {
   startMs?: number;
   script?: { at: number; action: Action }[];
   control?: string;
+  version?: number;
 };
 
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
@@ -100,7 +101,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: 1 });
+const ready = () => emit({ type: "ready", version: config.version ?? 1 });
 
 if (config.control) {
   const path = config.control;

@@ -54,6 +54,14 @@ describe("parseHelperEvent", () => {
     ).toEqual({ type: "capture.failed", id: "a", message: "m" });
   });
 
+  test("accepts a busy capture failure, which the helper reports while it still holds a capture", () => {
+    expect(
+      parseHelperEvent(
+        line({ type: "capture.failed", id: "a", reason: "busy", message: "still capturing" }),
+      ),
+    ).toEqual({ type: "capture.failed", id: "a", message: "still capturing" });
+  });
+
   test("clamps levels into 0..1", () => {
     expect(parseHelperEvent(line({ type: "capture.level", id: "a", level: 3 }))).toEqual({
       type: "capture.level",

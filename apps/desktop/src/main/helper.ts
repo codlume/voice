@@ -1,7 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
-import { parseHelperEvent, type HelperCommand, type HelperEvent } from "./protocol.ts";
+import {
+  HELPER_PROTOCOL_VERSION,
+  parseHelperEvent,
+  type HelperCommand,
+  type HelperEvent,
+} from "./protocol.ts";
 
 export const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 5000;
@@ -43,6 +48,14 @@ export function startHelper(options: HelperOptions): Helper {
         return;
       }
       if (event.type === "ready") {
+        if (event.version !== HELPER_PROTOCOL_VERSION) {
+          // A restart would only meet the same binary, so this ends the helper for good.
+          options.log(
+            `helper: speaks protocol v${event.version} but this build expects v${HELPER_PROTOCOL_VERSION}; refusing to use it`,
+          );
+          void stop();
+          return;
+        }
         for (const command of options.configure()) send(command);
       }
       options.onEvent(event);
