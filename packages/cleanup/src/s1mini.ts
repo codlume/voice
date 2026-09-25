@@ -1,0 +1,127 @@
+import type { Llama, LlamaCompletion, LlamaModel } from "node-llama-cpp";
+
+import { chunkTranscript } from "./chunk.ts";
+import { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
+
+const CONTEXT_SIZE = 4096;
+const CHUNK_TOKENS = 1000;
+
+export type S1Mini = {
+  load(): Promise<void>;
+  clean(raw: string, style: CleanupStyle): Promise<string>;
+  dispose(): Promise<void>;
+};
+
+type Engine = { llama: Llama; model: LlamaModel; completion: LlamaCompletion };
+
+export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
+  let engine: Promise<Engine> | undefined;
+  let queue: Promise<unknown> = Promise.resolve();
+
+  function load(): Promise<Engine> {
+    if (engine) return engine;
+    const loading: Promise<Engine> = openEngine(modelPath).catch((error: unknown) => {
+      if (engine === loading) engine = undefined;
+      throw error;
+    });
+    engine = loading;
+    return loading;
+  }
+
+  // One context sequence can run one generation at a time, and dispose must not free it mid-run.
+  function serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  }
+
+  return {
+    load: async () => {
+      await load();
+    },
+    clean: (raw, style) =>
+      serialize(async () => {
+        const { model, completion } = await load();
+        const countTokens = (text: string) => model.tokenize(text).length;
+        const outputs: string[] = [];
+        for (const chunk of chunkTranscript(raw, CHUNK_TOKENS, countTokens)) {
+          // Special-token parsing makes <|im_start|> and friends the trained control tokens, not literal text.
+          const prompt = model.tokenize(buildS1MiniPrompt(chunk, style), true);
+          const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
+            temperature: 0,
+            customStopTriggers: ["<|im_end|>"],
+            // Tied to the guard's 3x rule so a looping generation stops early instead of running on.
+            maxTokens: Math.min(3 * countTokens(chunk) + 32, CONTEXT_SIZE - prompt.length),
+          });
+          const output = response.trim();
+          assertPlausibleCleanup(chunk, output, metadata.stopReason === "maxTokens");
+          if (output) outputs.push(output);
+        }
+        return outputs.join(
+          style.structure === "lists" ? "\n" : style.context === "email" ? "\n\n" : " ",
+        );
+      }),
+    dispose: () =>
+      serialize(async () => {
+        const pending = engine;
+        engine = undefined;
+        const loaded = await pending?.catch(() => undefined);
+        await loaded?.model.dispose();
+        await loaded?.llama.dispose();
+      }),
+  };
+}
+
+async function openEngine(modelPath: string): Promise<Engine> {
+  // A static import breaks the CJS Electron bundle, because node-llama-cpp uses top-level await.
+  const { getLlama, LlamaCompletion } = await import("node-llama-cpp");
+  const llama = await getLlama();
+  try {
+    const model = await llama.loadModel({ modelPath });
+    const context = await model.createContext({ contextSize: CONTEXT_SIZE });
+    return {
+      llama,
+      model,
+      completion: new LlamaCompletion({ contextSequence: context.getSequence() }),
+    };
+  } catch (error) {
+    await llama.dispose();
+    throw error;
+  }
+}
+
+// Phrases that open an assistant reply rather than a cleaned transcript, compared without punctuation.
+const CHAT_OPENERS = [
+  "sorry",
+  "im sorry",
+  "i am sorry",
+  "i cannot",
+  "i cant",
+  "as an ai",
+  "sure",
+  "certainly",
+  "of course",
+  "here is",
+  "heres",
+];
+
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .replaceAll(/['’]/g, "")
+    .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+// Catches only obviously broken output so the caller falls back to the raw transcript.
+// An empty output is valid: S1-mini returns "" for filler-only speech.
+export function assertPlausibleCleanup(input: string, output: string, truncated: boolean): void {
+  if (truncated) throw new Error("Cleanup output was cut off at the token limit");
+  if (output.length > 3 * input.length)
+    throw new Error("Cleanup output is over 3x the input length");
+  if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
+    throw new Error("Cleanup output contains chat template markup");
+  const said = ` ${words(input)} `;
+  const opener = CHAT_OPENERS.find((phrase) => ` ${words(output)} `.startsWith(` ${phrase} `));
+  if (opener && !said.includes(` ${opener} `))
+    throw new Error("Cleanup output reads like a chat reply");
+}
