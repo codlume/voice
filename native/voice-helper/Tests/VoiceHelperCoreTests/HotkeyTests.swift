@@ -89,6 +89,45 @@ private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask
     #expect(hotkey.handle(KeyEvent(kind: .flagsChanged, keycode: 55, flags: 0x10_0000 | 0x8), captureActive: false) == .none)
 }
 
+@Test func reconcileEmitsUpForAHoldWhoseKeyIsNoLongerDown() {
+    var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
+    _ = hotkey.handle(fnDown(), captureActive: false)
+    #expect(hotkey.awaitingRelease)
+    #expect(hotkey.reconcile(flags: 0) == .up)
+    #expect(!hotkey.awaitingRelease)
+    #expect(hotkey.handle(fnDown(), captureActive: false).action == .down)
+}
+
+@Test func reconcileKeepsAHoldWhoseKeyIsStillDown() {
+    var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
+    _ = hotkey.handle(fnDown(), captureActive: false)
+    #expect(hotkey.reconcile(flags: fnMask) == nil)
+    #expect(hotkey.handle(fnUp, captureActive: true).action == .up)
+}
+
+@Test func reconcileNeverStartsAHoldFromAPressItDidNotSee() {
+    var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
+    #expect(hotkey.reconcile(flags: fnMask) == nil)
+    #expect(!hotkey.awaitingRelease)
+    #expect(hotkey.handle(fnUp, captureActive: false) == .none)
+    #expect(hotkey.handle(fnDown(), captureActive: false).action == .down)
+}
+
+@Test func reconcileUnsticksACancelledHoldWithoutEmitting() {
+    var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
+    _ = hotkey.handle(fnDown(), captureActive: false)
+    _ = hotkey.handle(deleteDown, captureActive: true)
+    #expect(hotkey.reconcile(flags: 0) == nil)
+    #expect(hotkey.handle(fnDown(), captureActive: false).action == .down)
+}
+
+@Test func reconcileTreatsAnyOptionBitAsRightOptionStillDown() {
+    var hotkey = HotkeyInterpreter(key: .rightOption, initialFlags: 0)
+    _ = hotkey.handle(KeyEvent(kind: .flagsChanged, keycode: 61, flags: rightOptionBits), captureActive: false)
+    #expect(hotkey.reconcile(flags: 0x8_0000) == nil)
+    #expect(hotkey.reconcile(flags: 0) == .up)
+}
+
 @Test func hotkeyEventsAreNeverConsumed() {
     var hotkey = HotkeyInterpreter(key: .fn, initialFlags: 0)
     #expect(hotkey.handle(fnDown(), captureActive: false).consume == false)

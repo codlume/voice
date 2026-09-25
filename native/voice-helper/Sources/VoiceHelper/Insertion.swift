@@ -65,6 +65,9 @@ final class Insertion {
     private func insertViaAccessibility(pid: pid_t, text: String) -> AccessibilityOutcome {
         var focusedRef: CFTypeRef?
         let app = AXUIElementCreateApplication(pid)
+        // Every AX call is synchronous IPC with the target. The default 6 s timeout would hold
+        // the transcript hostage to an unresponsive app; paste is the better answer by then.
+        AXUIElementSetMessagingTimeout(app, axMessagingTimeout)
         // No focused element is not proof that nothing is focused: Chromium and Electron answer
         // that way without an accessibility client opt-in, and apps without a tree cannot
         // answer at all. A paste keystroke reaches both.
@@ -74,6 +77,7 @@ final class Insertion {
             return .unverified
         }
         let focused = focusedRef as! AXUIElement
+        AXUIElementSetMessagingTimeout(focused, axMessagingTimeout)
         // The app describes the focused element, and it takes no text (a button, a list, a
         // window): pasting there inserts nothing and may trigger the app's own paste action.
         guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
@@ -170,6 +174,8 @@ final class Insertion {
         if !items.isEmpty { pasteboard.writeObjects(items) }
     }
 }
+
+private let axMessagingTimeout: Float = 0.3
 
 private func currentLayoutData() -> Data? {
     guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),

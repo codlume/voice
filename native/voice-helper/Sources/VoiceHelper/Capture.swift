@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import VoiceHelperCore
+import os
 
 struct CaptureSession {
     let id: String
@@ -34,10 +35,22 @@ private let chunkFrames = 1600
 private let maxSamples = 600 * 16_000
 private let silenceFloor = 1e-4 as Float
 
+/// Owned by the main thread. `isActive` is the one reader on another thread: the hotkey tap
+/// asks it before consuming Escape.
 final class Capture {
     private let output: Output
     private let transcriber: Transcriber
-    private var state: CaptureState = .idle
+    private var state: CaptureState = .idle {
+        didSet {
+            let active: Bool
+            switch state {
+            case .starting, .recording: active = true
+            case .idle, .transcribing: active = false
+            }
+            activeFlag.withLock { $0 = active }
+        }
+    }
+    private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var source: CaptureSource?
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
@@ -47,12 +60,7 @@ final class Capture {
         self.transcriber = transcriber
     }
 
-    var isActive: Bool {
-        switch state {
-        case .starting, .recording: return true
-        case .idle, .transcribing: return false
-        }
-    }
+    var isActive: Bool { activeFlag.withLock { $0 } }
 
     func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime) {
         guard case .idle = state else {

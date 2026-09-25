@@ -43,6 +43,17 @@ extension HotkeyKey {
         case .rightCommand: return 0x10
         }
     }
+
+    /// Bits that must all be clear in the live modifier state before the key is known to be
+    /// up. The generic option/command bit is included so a poll never declares a release on
+    /// evidence weaker than the flagsChanged event would carry.
+    public var releasedMask: UInt64 {
+        switch self {
+        case .fn: return flagMask
+        case .rightOption: return flagMask | 0x8_0000
+        case .rightCommand: return flagMask | 0x10_0000
+        }
+    }
 }
 
 public struct HotkeyInterpreter: Sendable {
@@ -54,6 +65,20 @@ public struct HotkeyInterpreter: Sendable {
     public init(key: HotkeyKey, initialFlags: UInt64) {
         self.key = key
         hold = initialFlags & key.flagMask != 0 ? .staleHeld : .released
+    }
+
+    /// True while the key may still be down, so the live state deserves a periodic check.
+    public var awaitingRelease: Bool { hold != .released }
+
+    /// Re-derives the hold from the live modifier state after events may have been missed: a
+    /// tap disabled by timeout, or a release that never reached the tap. Emits `up` for a hold
+    /// that was live. Never emits `down`, since a press seen only through polling is not a
+    /// deliberate press.
+    public mutating func reconcile(flags: UInt64) -> HotkeyAction? {
+        guard flags & key.releasedMask == 0, hold != .released else { return nil }
+        let wasHeld = hold == .held
+        hold = .released
+        return wasHeld ? .up : nil
     }
 
     public mutating func handle(_ event: KeyEvent, captureActive: Bool) -> HotkeyDecision {
