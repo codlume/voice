@@ -8,6 +8,8 @@ type Reply = { response: string; stopReason?: string };
 const native = vi.hoisted(() => ({
   getLlamaCalls: 0,
   failNextLoad: false,
+  // A stalled generation only ends when its signal aborts, like a long real one.
+  stall: false,
   active: 0,
   maxActive: 0,
   events: [] as string[],
@@ -33,12 +35,28 @@ vi.mock("node-llama-cpp", () => {
       };
     },
     LlamaCompletion: class {
-      async generateCompletionWithMeta(tokens: string[]) {
+      async generateCompletionWithMeta(tokens: string[], { signal }: { signal?: AbortSignal }) {
         const raw = /\]\n([\s\S]*)<\|im_end\|>\n<\|im_start\|>assistant/.exec(tokens.join(""))![1]!;
         native.active++;
         native.maxActive = Math.max(native.maxActive, native.active);
         native.events.push(`generate ${raw.slice(0, 12)}`);
-        await new Promise(setImmediate);
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const finish = native.stall ? null : setImmediate(resolve);
+            signal?.addEventListener(
+              "abort",
+              () => {
+                if (finish) clearImmediate(finish);
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          });
+        } catch (error) {
+          native.active--;
+          native.events.push("aborted");
+          throw error;
+        }
         native.active--;
         native.events.push("done");
         const { response, stopReason = "eogToken" } = native.reply(raw);
@@ -54,6 +72,7 @@ beforeEach(() => {
   Object.assign(native, {
     getLlamaCalls: 0,
     failNextLoad: false,
+    stall: false,
     active: 0,
     maxActive: 0,
     events: [],
@@ -129,13 +148,34 @@ test("list chunks are rejoined on separate lines", async () => {
   expect(cleaned.split("\n").every((line) => line.startsWith("- "))).toBe(true);
 });
 
-test("dispose waits for the running cleanup, then frees the model", async () => {
+test("an aborted clean stops the generation and rejects with the reason, and the next clean runs", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  native.stall = true;
+  const controller = new AbortController();
 
-  const [cleaned] = await Promise.all([s1.clean("call ada", style), s1.dispose()]);
+  const aborted = s1.clean("call ada", style, controller.signal);
+  await expect.poll(() => native.events).toContain("generate call ada");
+  controller.abort(new Error("over budget"));
 
-  expect(cleaned).toBe("CALL ADA");
-  expect(native.events).toEqual(["generate call ada", "done", "model.dispose", "llama.dispose"]);
+  await expect(aborted).rejects.toThrow("over budget");
+  expect(native.events).toEqual(["generate call ada", "aborted"]);
+  native.stall = false;
+  await expect(s1.clean("second", style)).resolves.toBe("SECOND");
+});
+
+test("dispose aborts the running and queued cleans instead of waiting, then frees the model", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  native.stall = true;
+
+  const running = s1.clean("call ada", style);
+  const queued = s1.clean("second", style);
+  await expect.poll(() => native.events).toContain("generate call ada");
+  const disposing = s1.dispose();
+
+  await expect(running).rejects.toThrow("disposed");
+  await expect(queued).rejects.toThrow("disposed");
+  await disposing;
+  expect(native.events).toEqual(["generate call ada", "aborted", "model.dispose", "llama.dispose"]);
 });
 
 test("the model reloads after dispose", async () => {

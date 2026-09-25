@@ -14,7 +14,7 @@ export type Cleanup = {
   loadIfDownloaded(): Promise<void>;
   downloadAndLoad(): Promise<void>;
   loaded(): boolean;
-  clean(raw: string, style: CleanupStyle): Promise<string>;
+  clean(raw: string, style: CleanupStyle, signal: AbortSignal): Promise<string>;
   dispose(): Promise<void>;
 };
 
@@ -104,9 +104,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         await loadModel(module);
       }),
     loaded: () => model.phase === "loaded",
-    clean(raw, style) {
+    clean(raw, style, signal) {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
-      return model.model.clean(raw, style);
+      return model.model.clean(raw, style, signal);
     },
     async dispose() {
       if (model.phase === "none") return;

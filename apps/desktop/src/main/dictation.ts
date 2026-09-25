@@ -53,7 +53,6 @@ export function createDictation(options: DictationOptions): Dictation {
   let idleTimer: NodeJS.Timeout | null = null;
   let timing: Timing | null = null;
   let watchdog: NodeJS.Timeout | null = null;
-  let cleaning = false;
 
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
@@ -100,34 +99,28 @@ export function createDictation(options: DictationOptions): Dictation {
         const startedAt = now();
         if (timing) timing.cleanupStartedAt = startedAt;
         const { enabled: _enabled, ...style } = store.state.settings.cleanup;
-        let settled = false;
-        cleaning = true;
+        const budgetMs = cleanupBudgetMs(effect.raw);
+        // The raw text goes in at the deadline whether or not the model has honored the abort yet.
+        const controller = new AbortController();
         const budget = setTimeout(() => {
-          settled = true;
-          log(`cleanup timed out after ${cleanupBudgetMs(effect.raw)} ms`);
+          controller.abort(new Error(`cleanup timed out after ${budgetMs} ms`));
+          log(`cleanup timed out after ${budgetMs} ms`);
           dispatch({ type: "cleanupFailed", id: effect.id });
-        }, cleanupBudgetMs(effect.raw));
-        void cleanup
-          .clean(effect.raw, style)
-          .finally(() => {
-            cleaning = false;
-          })
-          .then(
-            (text) => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(budget);
-              if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
-              dispatch({ type: "cleaned", id: effect.id, text });
-            },
-            (error: unknown) => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(budget);
-              log(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
-              dispatch({ type: "cleanupFailed", id: effect.id });
-            },
-          );
+        }, budgetMs);
+        void cleanup.clean(effect.raw, style, controller.signal).then(
+          (text) => {
+            if (controller.signal.aborted) return;
+            clearTimeout(budget);
+            if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
+            dispatch({ type: "cleaned", id: effect.id, text });
+          },
+          (error: unknown) => {
+            if (controller.signal.aborted) return;
+            clearTimeout(budget);
+            log(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+            dispatch({ type: "cleanupFailed", id: effect.id });
+          },
+        );
         return;
       }
       case "insert":
@@ -193,14 +186,11 @@ export function createDictation(options: DictationOptions): Dictation {
           timing.audioMs = event.audioMs;
           timing.asrMs = event.asrMs;
         }
-        const runCleanup = store.state.settings.cleanup.enabled && cleanup.loaded();
-        if (runCleanup && cleaning)
-          log("cleanup still busy with an earlier session, inserting raw");
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup: runCleanup && !cleaning,
+          cleanup: store.state.settings.cleanup.enabled && cleanup.loaded(),
         });
         return;
       }

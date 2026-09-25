@@ -41,6 +41,7 @@ function harness(opts: Options = {}) {
   });
   const commands: HelperCommand[] = [];
   const cleans: string[] = [];
+  const signals: AbortSignal[] = [];
   const hung: ((text: string) => void)[] = [];
   const levels: number[] = [];
   const logs: string[] = [];
@@ -51,8 +52,9 @@ function harness(opts: Options = {}) {
     send: (command) => commands.push(command),
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
-      clean: async (raw) => {
+      clean: async (raw, _style, signal) => {
         cleans.push(raw);
+        signals.push(signal);
         if (opts.cleanFails) throw new Error("model crashed");
         if (opts.cleanHangs) return new Promise<string>((resolve) => hung.push(resolve));
         return `${raw}.`;
@@ -66,7 +68,7 @@ function harness(opts: Options = {}) {
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
-  return { store, commands, cleans, hung, levels, logs, phases, dictation, id };
+  return { store, commands, cleans, signals, hung, levels, logs, phases, dictation, id };
 }
 
 async function flush() {
@@ -171,7 +173,7 @@ describe("createDictation", () => {
     expect(h.store.state.last).toEqual({ raw: "keep me", text: "keep me" });
   });
 
-  test("a cleanup that overruns its budget inserts the raw text and ignores the late result", async () => {
+  test("a cleanup that overruns its budget is aborted, inserts the raw text, and ignores the late result", async () => {
     const h = harness({ cleanHangs: true });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
@@ -189,7 +191,9 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual(["one two three"]);
     await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one two three") - 1);
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
+    expect(h.signals[0]!.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
+    expect(h.signals[0]!.aborted).toBe(true);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three" });
     expect(h.logs).toContainEqual(expect.stringContaining("cleanup timed out"));
     h.hung[0]!("late polished text");
@@ -206,7 +210,7 @@ describe("createDictation", () => {
     expect(cleanupBudgetMs("w ".repeat(1000))).toBe(CLEANUP_MAX_MS);
   });
 
-  test("a transcript arriving while an earlier cleanup still runs goes in raw", async () => {
+  test("the next session is cleaned even when the earlier aborted cleanup has not settled yet", async () => {
     const h = harness({ cleanHangs: true });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const first = h.id();
@@ -237,14 +241,15 @@ describe("createDictation", () => {
       asrMs: 100,
     });
     await flush();
-    expect(h.cleans).toEqual(["one"]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id: second, text: "two" });
+    expect(h.cleans).toEqual(["one", "two"]);
+    expect(h.signals.map((s) => s.aborted)).toEqual([true, false]);
 
     h.hung[0]!("ONE");
+    h.hung[1]!("Two.");
     await flush();
     expect(h.commands.filter((c) => c.type === "insert").map((c) => c.text)).toEqual([
       "one",
-      "two",
+      "Two.",
     ]);
   });
 
