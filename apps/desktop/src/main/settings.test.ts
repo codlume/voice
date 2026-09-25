@@ -21,8 +21,14 @@ describe("parseSettings", () => {
       }),
     ).toEqual({
       hotkey: "rightOption",
-      cleanup: { enabled: false, styling: "semi-casual", structure: "lists", context: "general" },
+      cleanup: { enabled: false, styling: "semi-formal", structure: "lists", context: "general" },
     });
+  });
+
+  test("keeps a saved styling that differs from the default", () => {
+    expect(parseSettings({ cleanup: { styling: "semi-casual" } }).cleanup.styling).toBe(
+      "semi-casual",
+    );
   });
 
   test.each([null, "text", 42, [], { cleanup: "no" }])("falls back to defaults for %j", (raw) => {
@@ -35,7 +41,7 @@ describe("applyPatch", () => {
     const next = applyPatch(DEFAULT_SETTINGS, { cleanup: { context: "email" } });
     expect(next).toEqual({
       hotkey: "fn",
-      cleanup: { enabled: true, styling: "semi-casual", structure: "prose", context: "email" },
+      cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "email" },
     });
     expect(DEFAULT_SETTINGS.cleanup.context).toBe("general");
   });

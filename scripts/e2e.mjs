@@ -45,7 +45,10 @@ const cases = [
     end: "audio",
     target: "textedit",
     outcome: "inserted",
-    check: ({ text }) => assert(hasSpeech(text), `document lacks Anna/Thursday: ${show(text)}`),
+    check: ({ text }) => {
+      assert(hasSpeech(text), `document lacks Anna/Thursday: ${show(text)}`);
+      assert(/^\p{Lu}/u.test(text), `document does not start with a capital: ${show(text)}`);
+    },
   },
   {
     name: "b-list-structure",

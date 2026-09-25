@@ -14,7 +14,7 @@ const base: Snapshot = {
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
-    cleanup: { enabled: true, styling: "semi-casual", structure: "prose", context: "general" },
+    cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
   },
   last: null,
 };

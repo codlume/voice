@@ -5,7 +5,7 @@ import type { Settings, SettingsPatch } from "../shared/api.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
-  cleanup: { enabled: true, styling: "semi-casual", structure: "prose", context: "general" },
+  cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
 };
 
 const HOTKEYS = ["fn", "rightOption", "rightCommand"] as const;
