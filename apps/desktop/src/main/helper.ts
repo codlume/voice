@@ -42,7 +42,9 @@ export function startHelper(options: HelperOptions): Helper {
       if (line.trim() === "") return;
       const event = parseHelperEvent(line);
       if (!event) {
-        options.log(`helper: unparseable line ${line.slice(0, 200)}`);
+        // Only the type and size: a malformed transcript line would otherwise leak its text.
+        const type = /"type"\s*:\s*"([^"]*)"/.exec(line)?.[1] ?? "?";
+        options.log(`helper: unparseable ${type} line (${line.length} chars)`);
         return;
       }
       if (event.type === "ready") {

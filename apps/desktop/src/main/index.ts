@@ -227,13 +227,16 @@ async function main() {
     if (state.permissions !== previous.permissions) syncPermissionPolling();
   });
 
-  async function updateSettings(patch: SettingsPatch) {
+  // Saves are serialized so two quick edits cannot race on the temp file or land out of order.
+  let saving: Promise<void> = Promise.resolve();
+  function updateSettings(patch: SettingsPatch) {
     const previous: Settings = store.state.settings;
     const next = applyPatch(previous, patch);
     store.update((s) => ({ ...s, settings: next }));
     if (next.hotkey !== previous.hotkey)
       helper.send({ type: "hotkey.configure", key: next.hotkey });
-    await saveSettings(settingsFile, next);
+    saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
+    return saving;
   }
 
   function requestPermission(kind: PermissionKind) {
@@ -262,7 +265,7 @@ async function main() {
 
   app.on("second-instance", showHub);
   app.on("activate", showHub);
-  // The tray keeps the app alive; closing the hub only hides it.
+  // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
   app.on("before-quit", () => {
     void helper.stop();

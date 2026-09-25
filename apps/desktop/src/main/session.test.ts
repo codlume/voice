@@ -5,6 +5,7 @@ import type { ModelStatus } from "../shared/api.ts";
 import {
   ASR_MISSING_MESSAGE,
   HELPER_EXITED_MESSAGE,
+  HELPER_TIMEOUT_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
   idle,
@@ -306,6 +307,38 @@ describe("idle and stale events", () => {
       outcome: { kind: "failed", message: HELPER_EXITED_MESSAGE },
     });
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+  });
+
+  test("a transcription that never answers times out as failed", () => {
+    const { state, effects } = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
+    });
+    expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+  });
+
+  test("an insert that never answers times out as notInserted with the text remembered", () => {
+    const { state, all } = run([...toInserting, [{ type: "timedOut", id: ID }, 8000]]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "failed" },
+    });
+    expect(all).toContainEqual({ type: "remember", raw: "hello world", text: "hello world" });
+  });
+
+  test("a timeout while recording or for another session changes nothing", () => {
+    expect(run([...toRecording, [{ type: "timedOut", id: ID }, 500]]).state).toEqual({
+      phase: "recording",
+      id: ID,
+      pressedAt: 0,
+    });
+    expect(run([...toTranscribing, [{ type: "timedOut", id: "old" }, 500]]).state).toEqual({
+      phase: "transcribing",
+      id: ID,
+    });
   });
 
   test("helper exit while idle or done changes nothing", () => {

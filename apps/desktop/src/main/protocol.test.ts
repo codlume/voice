@@ -11,10 +11,10 @@ describe("parseHelperEvent", () => {
       { type: "hotkey", action: "down" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
-      { type: "capture.failed", id: "a", reason: "permission", message: "denied" },
+      { type: "capture.failed", id: "a", message: "denied" },
       { type: "capture.cancelled", id: "a" },
       { type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300 },
-      { type: "transcript.failed", id: "a", reason: "asrUnavailable", message: "no model" },
+      { type: "transcript.failed", id: "a", message: "no model" },
       { type: "insert.result", id: "a", method: "accessibility", reason: null },
       { type: "insert.result", id: "a", method: "none", reason: "focusChanged" },
       { type: "permissions", microphone: "granted", accessibility: "denied" },
@@ -42,6 +42,18 @@ describe("parseHelperEvent", () => {
     });
   });
 
+  test("accepts method none without a reason, as the spec marks reason optional", () => {
+    expect(parseHelperEvent(line({ type: "insert.result", id: "a", method: "none" }))).toEqual({
+      type: "insert.result",
+      id: "a",
+      method: "none",
+      reason: null,
+    });
+    expect(
+      parseHelperEvent(line({ type: "capture.failed", id: "a", reason: "novel", message: "m" })),
+    ).toEqual({ type: "capture.failed", id: "a", message: "m" });
+  });
+
   test("clamps levels into 0..1", () => {
     expect(parseHelperEvent(line({ type: "capture.level", id: "a", level: 3 }))).toEqual({
       type: "capture.level",
@@ -58,7 +70,6 @@ describe("parseHelperEvent", () => {
     ["a wrong field type", line({ type: "transcript", id: "a", text: 5, audioMs: 1, asrMs: 1 })],
     ["an unknown enum value", line({ type: "hotkey", action: "sideways" })],
     ["a NaN number", '{"type":"capture.level","id":"a","level":NaN}'],
-    ["method none without a reason", line({ type: "insert.result", id: "a", method: "none" })],
     [
       "an unknown permission state",
       line({ type: "permissions", microphone: "maybe", accessibility: "granted" }),

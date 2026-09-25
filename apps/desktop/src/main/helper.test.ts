@@ -1,3 +1,5 @@
+import { connect } from "node:net";
+import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
 import { afterEach, describe, expect, test } from "vite-plus/test";
@@ -144,6 +146,25 @@ describe("startHelper", () => {
     expect(secondGap).toBeLessThan(RESTART_MIN_MS * 4);
     expect(h.of("asr.status").length).toBeGreaterThanOrEqual(3);
     expect(h.logs.some((line) => line.includes("exited (3)"))).toBe(true);
+  });
+
+  test("logs a malformed line by type and size only, never its text", async () => {
+    const control = NodePath.join(tmpdir(), `voice-fake-${process.pid}.sock`);
+    const h = boot({ control });
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "ready");
+    const socket = connect(control);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    socket.end('{"type":"transcript","id":"x","text":"secret words"}\n');
+    for (let i = 0; i < 50 && !h.logs.some((l) => l.includes("unparseable")); i += 1) {
+      await sleep(20);
+    }
+    const line = h.logs.find((l) => l.includes("unparseable"));
+    expect(line).toBe("helper: unparseable transcript line (52 chars)");
+    expect(h.logs.join("\n")).not.toContain("secret");
   });
 
   test("drops commands while the helper is down instead of throwing", async () => {

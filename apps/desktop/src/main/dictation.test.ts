@@ -5,6 +5,8 @@ import {
   CLEANUP_BASE_MS,
   CLEANUP_MAX_MS,
   CLEANUP_PER_WORD_MS,
+  INSERT_TIMEOUT_MS,
+  TRANSCRIBE_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
 } from "./dictation.ts";
@@ -14,6 +16,7 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {
+  asrModel?: ModelStatus;
   cleanupModel?: ModelStatus;
   cleanupEnabled?: boolean;
   cleanFails?: boolean;
@@ -24,7 +27,10 @@ function harness(opts: Options = {}) {
   const store = createStore({
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
-    models: { asr: { state: "ready" }, cleanup: opts.cleanupModel ?? { state: "ready" } },
+    models: {
+      asr: opts.asrModel ?? { state: "ready" },
+      cleanup: opts.cleanupModel ?? { state: "ready" },
+    },
     settings: {
       ...DEFAULT_SETTINGS,
       cleanup: { ...DEFAULT_SETTINGS.cleanup, enabled: opts.cleanupEnabled ?? true },
@@ -182,6 +188,89 @@ describe("createDictation", () => {
     expect(cleanupBudgetMs("")).toBe(CLEANUP_BASE_MS);
     expect(cleanupBudgetMs("a b c")).toBe(CLEANUP_BASE_MS + 3 * CLEANUP_PER_WORD_MS);
     expect(cleanupBudgetMs("w ".repeat(1000))).toBe(CLEANUP_MAX_MS);
+  });
+
+  test("a transcript arriving while an earlier cleanup still runs goes in raw", async () => {
+    const h = harness({ cleanHangs: true });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const first = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id: first,
+      text: "one",
+      audioMs: 800,
+      asrMs: 100,
+    });
+    await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one"));
+    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
+
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const second = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id: second,
+      text: "two",
+      audioMs: 800,
+      asrMs: 100,
+    });
+    await flush();
+    expect(h.cleans).toEqual(["one"]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id: second, text: "two" });
+
+    h.hung[0]!("ONE");
+    await flush();
+    expect(h.commands.filter((c) => c.type === "insert").map((c) => c.text)).toEqual([
+      "one",
+      "two",
+    ]);
+  });
+
+  test("an insert the helper never answers ends notInserted after the watchdog", () => {
+    const h = harness({ cleanupEnabled: false });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "stuck", audioMs: 800, asrMs: 100 });
+    vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
+    expect(h.store.state.session.phase).toBe("inserting");
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toEqual({
+      phase: "done",
+      id,
+      outcome: { kind: "notInserted", reason: "failed" },
+    });
+    expect(h.store.state.last).toEqual({ raw: "stuck", text: "stuck" });
+  });
+
+  test("a transcription the helper never answers ends failed after the watchdog", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+  });
+
+  test("the transcription watchdog is not armed while the speech model is still downloading", () => {
+    const h = harness({ asrModel: { state: "downloading" } });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS * 3);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id });
   });
 
   test("hotkey down with the ASR model missing sends nothing to the helper", () => {

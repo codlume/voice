@@ -18,15 +18,10 @@ export type HelperEvent =
   | { type: "hotkey"; action: "down" | "up" | "cancel" }
   | { type: "capture.started"; id: string; startMs: number }
   | { type: "capture.level"; id: string; level: number }
-  | {
-      type: "capture.failed";
-      id: string;
-      reason: "permission" | "device" | "unknown";
-      message: string;
-    }
+  | { type: "capture.failed"; id: string; message: string }
   | { type: "capture.cancelled"; id: string }
   | { type: "transcript"; id: string; text: string; audioMs: number; asrMs: number }
-  | { type: "transcript.failed"; id: string; reason: "asrUnavailable" | "unknown"; message: string }
+  | { type: "transcript.failed"; id: string; message: string }
   | { type: "insert.result"; id: string; method: InsertMethod; reason: InsertFailure | null }
   | { type: "permissions"; microphone: PermissionState; accessibility: PermissionState }
   | { type: "asr.status"; state: AsrState; message: string | null }
@@ -73,8 +68,8 @@ export function parseHelperEvent(line: string): HelperEvent | null {
         ? { type: "capture.level", id: r.id, level: Math.min(1, Math.max(0, r.level)) }
         : null;
     case "capture.failed":
-      return str(r.id) && oneOf(["permission", "device", "unknown"])(r.reason) && str(r.message)
-        ? { type: "capture.failed", id: r.id, reason: r.reason, message: r.message }
+      return str(r.id) && str(r.message)
+        ? { type: "capture.failed", id: r.id, message: r.message }
         : null;
     case "capture.cancelled":
       return str(r.id) ? { type: "capture.cancelled", id: r.id } : null;
@@ -83,13 +78,12 @@ export function parseHelperEvent(line: string): HelperEvent | null {
         ? { type: "transcript", id: r.id, text: r.text, audioMs: r.audioMs, asrMs: r.asrMs }
         : null;
     case "transcript.failed":
-      return str(r.id) && oneOf(["asrUnavailable", "unknown"])(r.reason) && str(r.message)
-        ? { type: "transcript.failed", id: r.id, reason: r.reason, message: r.message }
+      return str(r.id) && str(r.message)
+        ? { type: "transcript.failed", id: r.id, message: r.message }
         : null;
     case "insert.result": {
       if (!str(r.id) || !insertMethod(r.method)) return null;
       const reason = insertFailure(r.reason) ? r.reason : null;
-      if (r.method === "none" && reason === null) return null;
       return { type: "insert.result", id: r.id, method: r.method, reason };
     }
     case "permissions":

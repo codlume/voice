@@ -29,6 +29,7 @@ export type SessionEvent =
   | { type: "cleanupFailed"; id: string }
   | { type: "insertResult"; id: string; method: InsertMethod; reason: InsertFailure | null }
   | { type: "helperExited" }
+  | { type: "timedOut"; id: string }
   | { type: "idleTimeout"; id: string };
 
 export type Effect =
@@ -47,6 +48,7 @@ export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
+export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
 
 export const idle: Session = { phase: "idle" };
 
@@ -158,6 +160,15 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "helperExited": {
       if (state.phase === "idle" || state.phase === "done") return same;
       return finish(state.id, { kind: "failed", message: HELPER_EXITED_MESSAGE });
+    }
+    case "timedOut": {
+      if (state.phase === "transcribing") {
+        return finish(state.id, { kind: "failed", message: HELPER_TIMEOUT_MESSAGE });
+      }
+      if (state.phase === "inserting") {
+        return finish(state.id, { kind: "notInserted", reason: "failed" });
+      }
+      return same;
     }
     case "idleTimeout":
       return state.phase === "done" ? { state: idle, effects: [] } : same;

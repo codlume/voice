@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Cleanup } from "./cleanup.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
-import { step, type Effect, type SessionEvent } from "./session.ts";
+import { step, type Effect, type Session, type SessionEvent } from "./session.ts";
 import type { Store } from "./store.ts";
 
 export type DictationOptions = {
@@ -24,6 +24,12 @@ export function cleanupBudgetMs(raw: string): number {
   const words = raw.split(/\s+/).filter(Boolean).length;
   return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
 }
+
+// After capture stops, the helper owes a transcript and later an insert result. A helper
+// that never answers must not hold the session forever. Transcription is only watched when
+// the speech model is ready, because before that the helper legitimately waits on it.
+export const TRANSCRIBE_TIMEOUT_MS = 30_000;
+export const INSERT_TIMEOUT_MS = 5000;
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -51,13 +57,34 @@ export function createDictation(options: DictationOptions): Dictation {
   const now = options.now ?? Date.now;
   let idleTimer: NodeJS.Timeout | null = null;
   let timing: Timing | null = null;
+  let watchdog: NodeJS.Timeout | null = null;
+  // The cleanup package runs one generation at a time, so a transcript that arrives while a
+  // timed-out generation is still running would queue behind it. It goes in raw instead.
+  let cleaning = false;
 
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
-    if (state !== before) store.update((s) => ({ ...s, session: state }));
+    // Helper commands go out before the snapshot fans out to the windows.
     for (const effect of effects) run(effect);
+    if (state !== before) {
+      store.update((s) => ({ ...s, session: state }));
+      armWatchdog(state);
+    }
     if (state.phase === "done" && before.phase !== "done") logTiming(state.id, state.outcome.kind);
+  }
+
+  function armWatchdog(state: Session) {
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = null;
+    const arm = (id: string, ms: number) => {
+      watchdog = setTimeout(() => dispatch({ type: "timedOut", id }), ms);
+    };
+    if (state.phase === "inserting") {
+      arm(state.id, INSERT_TIMEOUT_MS);
+    } else if (state.phase === "transcribing" && store.state.models.asr.state === "ready") {
+      arm(state.id, TRANSCRIBE_TIMEOUT_MS);
+    }
   }
 
   function run(effect: Effect) {
@@ -79,27 +106,33 @@ export function createDictation(options: DictationOptions): Dictation {
         if (timing) timing.cleanupStartedAt = startedAt;
         const { enabled: _enabled, ...style } = store.state.settings.cleanup;
         let settled = false;
+        cleaning = true;
         const budget = setTimeout(() => {
           settled = true;
           log(`cleanup timed out after ${cleanupBudgetMs(effect.raw)} ms`);
           dispatch({ type: "cleanupFailed", id: effect.id });
         }, cleanupBudgetMs(effect.raw));
-        void cleanup.clean(effect.raw, style).then(
-          (text) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(budget);
-            if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
-            dispatch({ type: "cleaned", id: effect.id, text });
-          },
-          (error: unknown) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(budget);
-            log(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
-            dispatch({ type: "cleanupFailed", id: effect.id });
-          },
-        );
+        void cleanup
+          .clean(effect.raw, style)
+          .finally(() => {
+            cleaning = false;
+          })
+          .then(
+            (text) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(budget);
+              if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
+              dispatch({ type: "cleaned", id: effect.id, text });
+            },
+            (error: unknown) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(budget);
+              log(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+              dispatch({ type: "cleanupFailed", id: effect.id });
+            },
+          );
         return;
       }
       case "insert":
@@ -168,7 +201,14 @@ export function createDictation(options: DictationOptions): Dictation {
         }
         const { settings, models } = store.state;
         const runCleanup = settings.cleanup.enabled && models.cleanup.state === "ready";
-        dispatch({ type: "transcript", id: event.id, text: event.text, cleanup: runCleanup });
+        if (runCleanup && cleaning)
+          log("cleanup still busy with an earlier session, inserting raw");
+        dispatch({
+          type: "transcript",
+          id: event.id,
+          text: event.text,
+          cleanup: runCleanup && !cleaning,
+        });
         return;
       }
       case "transcript.failed":

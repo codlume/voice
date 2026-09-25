@@ -102,11 +102,11 @@ function handle(command: Record<string, unknown>) {
   }
 }
 
-emit({ type: "ready", version: 1 });
-
 for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
+
+const ready = () => emit({ type: "ready", version: 1 });
 
 if (config.control) {
   const path = config.control;
@@ -124,7 +124,10 @@ if (config.control) {
     });
   });
   server.unref();
-  server.listen(path);
+  // Ready means the control socket accepts connections too.
+  server.listen(path, ready);
+} else {
+  ready();
 }
 
 createInterface({ input: process.stdin })
