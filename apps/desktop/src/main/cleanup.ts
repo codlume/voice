@@ -42,26 +42,38 @@ const WARM_UP_STYLE: CleanupStyle = {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+// A model has an owner from the moment its load starts, so dispose() can take over a load that
+// is still in flight instead of letting it finish after the app has torn down.
+type Model =
+  | { phase: "none" }
+  | { phase: "loading"; model: S1Mini }
+  | { phase: "loaded"; model: S1Mini };
+
 export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
-  let engine: S1Mini | null = null;
+  let model: Model = { phase: "none" };
   let inFlight: Promise<void> | null = null;
+
+  const owns = (candidate: S1Mini) => model.phase !== "none" && model.model === candidate;
 
   async function loadModel(module: CleanupModule) {
     options.onStatus({ state: "loading" });
     const created = module.createS1Mini({
       modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
     });
+    model = { phase: "loading", model: created };
     try {
       await created.load();
     } catch (error) {
+      if (owns(created)) model = { phase: "none" };
       options.onStatus({ state: "failed", message: message(error) });
       return;
     }
-    engine = created;
+    if (!owns(created)) return;
+    model = { phase: "loaded", model: created };
     // Only the one-time cost matters here. A real clean that fails the same way falls back to raw.
     await created.clean(WARM_UP_TEXT, WARM_UP_STYLE).catch(() => undefined);
-    if (engine === created) options.onStatus({ state: "ready" });
+    if (owns(created)) options.onStatus({ state: "ready" });
   }
 
   function once(work: () => Promise<void>) {
@@ -75,7 +87,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   return {
     load: () =>
       once(async () => {
-        if (engine) return;
+        if (model.phase !== "none") return;
         const module = await loadModule();
         try {
           await access(NodePath.join(options.modelsDir, module.S1_MINI_FILE));
@@ -87,7 +99,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       }),
     setup: () =>
       once(async () => {
-        if (engine) return;
+        if (model.phase !== "none") return;
         options.onStatus({ state: "downloading", progress: 0 });
         const module = await loadModule();
         try {
@@ -101,15 +113,17 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         }
         await loadModel(module);
       }),
-    loaded: () => engine !== null,
+    loaded: () => model.phase === "loaded",
     clean(raw, style) {
-      if (!engine) return Promise.reject(new Error("cleanup model is not ready"));
-      return engine.clean(raw, style);
+      if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
+      return model.model.clean(raw, style);
     },
+    // The adapter's dispose waits for a load that is still in flight, then frees it.
     async dispose() {
-      const current = engine;
-      engine = null;
-      await current?.dispose();
+      if (model.phase === "none") return;
+      const current = model.model;
+      model = { phase: "none" };
+      await current.dispose();
     },
   };
 }

@@ -14,11 +14,12 @@ type Behavior = {
   loadError?: string;
   downloadError?: string;
   warmUpError?: string;
+  loadGate?: Promise<void>;
   warmUpGate?: Promise<void>;
 };
 
 function fakeModule(behavior: Behavior = {}) {
-  const calls = { downloads: 0, loads: 0, cleans: [] as [string, CleanupStyle][] };
+  const calls = { downloads: 0, loads: 0, disposes: 0, cleans: [] as [string, CleanupStyle][] };
   const module: CleanupModule = {
     S1_MINI_FILE,
     async downloadS1Mini({ dir, onProgress }) {
@@ -32,6 +33,7 @@ function fakeModule(behavior: Behavior = {}) {
     createS1Mini: () => ({
       async load() {
         calls.loads += 1;
+        await behavior.loadGate;
         if (behavior.loadError) throw new Error(behavior.loadError);
       },
       async clean(raw, s) {
@@ -42,7 +44,11 @@ function fakeModule(behavior: Behavior = {}) {
         }
         return raw.toUpperCase();
       },
-      async dispose() {},
+      // Like the real adapter: a dispose during load settles after the load does.
+      async dispose() {
+        await behavior.loadGate;
+        calls.disposes += 1;
+      },
     }),
   };
   return { calls, loadModule: async () => module };
@@ -93,6 +99,24 @@ describe("createCleanup", () => {
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     await expect(session).resolves.toBe("HELLO");
     expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
+  });
+
+  test("dispose during load frees the model once it loads and never reports ready", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishLoad!: () => void;
+    const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
+    const cleanup = createCleanup({ modelsDir: dir, onStatus: (s) => statuses.push(s), ...fake });
+    const loading = cleanup.load();
+    await expect.poll(() => statuses).toEqual([{ state: "loading" }]);
+
+    const disposing = cleanup.dispose();
+    finishLoad();
+    await Promise.all([loading, disposing]);
+
+    expect(fake.calls.disposes).toBe(1);
+    expect(fake.calls.cleans).toEqual([]);
+    expect(statuses).toEqual([{ state: "loading" }]);
+    expect(cleanup.loaded()).toBe(false);
   });
 
   test("a failed warm-up still reports ready with the model loaded", async () => {

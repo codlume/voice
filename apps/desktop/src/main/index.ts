@@ -21,6 +21,7 @@ const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
 const PILL_BOTTOM_MARGIN = 12;
 const PERMISSION_POLL_MS = 2000;
+const SHUTDOWN_TIMEOUT_MS = 3000;
 
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
@@ -271,9 +272,29 @@ async function main() {
   app.on("activate", showHub);
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
-  app.on("before-quit", () => {
-    void helper.stop();
-    void cleanup.dispose();
+
+  // node-llama-cpp frees the model on a native worker. If Electron tears Node down while that
+  // worker is in flight, its completion callback throws into a dying environment and the
+  // process aborts. So the first quit only starts the shutdown; the quit that follows it passes.
+  let lifecycle: "running" | "stopping" | "stopped" = "running";
+  async function shutdown() {
+    const timeout = new Promise<"timeout">((resolve) =>
+      setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout"),
+    );
+    const stopped = Promise.allSettled([helper.stop(), cleanup.dispose()]);
+    if ((await Promise.race([stopped, timeout])) === "timeout") {
+      log(`quit: shutdown still running after ${SHUTDOWN_TIMEOUT_MS} ms`);
+    }
+  }
+  app.on("before-quit", (event) => {
+    if (lifecycle === "stopped") return;
+    event.preventDefault();
+    if (lifecycle === "stopping") return;
+    lifecycle = "stopping";
+    void shutdown().then(() => {
+      lifecycle = "stopped";
+      app.quit();
+    });
   });
 
   showHub();
