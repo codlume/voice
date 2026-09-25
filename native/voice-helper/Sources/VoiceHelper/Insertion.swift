@@ -118,8 +118,9 @@ final class Insertion {
         clipboard.wrote(ourChange, saved: saved)
 
         let source = CGEventSource(stateID: .combinedSessionState)
+        let key = currentLayoutData().flatMap { PasteKey.keycode(typing: "v", in: $0) } ?? PasteKey.ansiV
         for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: down) else { continue }
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
             event.flags = .maskCommand
             event.post(tap: .cghidEventTap)
         }
@@ -143,4 +144,11 @@ final class Insertion {
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
     }
+}
+
+private func currentLayoutData() -> Data? {
+    guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+        let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+    else { return nil }
+    return Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
 }
