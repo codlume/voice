@@ -1,26 +1,16 @@
 import { access } from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { ModelStatus, Settings } from "../shared/api.ts";
+import type { CleanupStyle, S1Mini } from "@voice/cleanup";
 
-export type CleanupStyle = Omit<Settings["cleanup"], "enabled">;
+import type { ModelStatus } from "../shared/api.ts";
 
-// The @voice/cleanup contract. The package is imported lazily because loading it pulls in
-// node-llama-cpp, which must stay off the startup and hotkey paths.
-export type CleanupModule = {
-  downloadS1Mini(opts: { dir: string; onProgress?: (fraction: number) => void }): Promise<string>;
-  createS1Mini(opts: { modelPath: string }): {
-    load(): Promise<void>;
-    clean(raw: string, style: CleanupStyle): Promise<string>;
-    dispose(): Promise<void>;
-  };
-};
-
-// Mirrors S1_MINI_FILE in @voice/cleanup, kept local so the existence check at startup does
-// not need to import the package.
-export const S1_MINI_FILE = "s1-mini-q4_k_m.gguf";
-
-type Engine = ReturnType<CleanupModule["createS1Mini"]>;
+// The package is reached through a dynamic import so node-llama-cpp, which it loads lazily,
+// stays off the startup and hotkey paths and out of the CJS bundle's static graph.
+export type CleanupModule = Pick<
+  typeof import("@voice/cleanup"),
+  "S1_MINI_FILE" | "createS1Mini" | "downloadS1Mini"
+>;
 
 export type Cleanup = {
   /** Loads the model when its file is present, otherwise reports missing. */
@@ -37,21 +27,21 @@ export type CleanupOptions = {
   loadModule?: () => Promise<CleanupModule>;
 };
 
-const importModule = (): Promise<CleanupModule> =>
-  import("@voice/cleanup") as unknown as Promise<CleanupModule>;
+const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
-  const modelPath = NodePath.join(options.modelsDir, S1_MINI_FILE);
-  let engine: Engine | null = null;
+  let engine: S1Mini | null = null;
   let inFlight: Promise<void> | null = null;
 
-  async function loadModel() {
+  async function loadModel(module: CleanupModule) {
     options.onStatus({ state: "loading" });
     try {
-      const created = (await loadModule()).createS1Mini({ modelPath });
+      const created = module.createS1Mini({
+        modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
+      });
       await created.load();
       engine = created;
       options.onStatus({ state: "ready" });
@@ -72,22 +62,22 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     load: () =>
       once(async () => {
         if (engine) return;
+        const module = await loadModule();
         try {
-          await access(modelPath);
+          await access(NodePath.join(options.modelsDir, module.S1_MINI_FILE));
         } catch {
           options.onStatus({ state: "missing" });
           return;
         }
-        await loadModel();
+        await loadModel(module);
       }),
     setup: () =>
       once(async () => {
         if (engine) return;
         options.onStatus({ state: "downloading", progress: 0 });
+        const module = await loadModule();
         try {
-          await (
-            await loadModule()
-          ).downloadS1Mini({
+          await module.downloadS1Mini({
             dir: options.modelsDir,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
           });
@@ -95,7 +85,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           options.onStatus({ state: "failed", message: message(error) });
           return;
         }
-        await loadModel();
+        await loadModel(module);
       }),
     clean(raw, style) {
       if (!engine) return Promise.reject(new Error("cleanup model is not ready"));

@@ -2,16 +2,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
+import { S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
-import { createCleanup, S1_MINI_FILE, type CleanupModule, type CleanupStyle } from "./cleanup.ts";
+import { createCleanup, type CleanupModule } from "./cleanup.ts";
 
 const style: CleanupStyle = { styling: "formal", structure: "lists", context: "email" };
 
 function fakeModule(behavior: { loadError?: string; downloadError?: string } = {}) {
-  const calls = { imports: 0, downloads: 0, loads: 0, cleans: [] as [string, CleanupStyle][] };
+  const calls = { downloads: 0, loads: 0, cleans: [] as [string, CleanupStyle][] };
   const module: CleanupModule = {
+    S1_MINI_FILE,
     async downloadS1Mini({ dir, onProgress }) {
       calls.downloads += 1;
       if (behavior.downloadError) throw new Error(behavior.downloadError);
@@ -32,13 +34,7 @@ function fakeModule(behavior: { loadError?: string; downloadError?: string } = {
       async dispose() {},
     }),
   };
-  return {
-    calls,
-    loadModule: async () => {
-      calls.imports += 1;
-      return module;
-    },
-  };
+  return { calls, loadModule: async () => module };
 }
 
 describe("createCleanup", () => {
@@ -50,12 +46,12 @@ describe("createCleanup", () => {
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
-  test("load without a model file reports missing and never imports the package", async () => {
+  test("load without a model file reports missing and never loads a model", async () => {
     const fake = fakeModule();
     const cleanup = createCleanup({ modelsDir: dir, onStatus: (s) => statuses.push(s), ...fake });
     await cleanup.load();
     expect(statuses).toEqual([{ state: "missing" }]);
-    expect(fake.calls.imports).toBe(0);
+    expect(fake.calls.loads).toBe(0);
     await expect(cleanup.clean("hi", style)).rejects.toThrow("not ready");
   });
 
