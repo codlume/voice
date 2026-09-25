@@ -13,6 +13,18 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
+    /// Chromium and Electron apps expose no focused element until a client sets
+    /// `AXManualAccessibility`, and then take about two seconds to build the tree. Opting in when
+    /// capture starts keeps that wait off the release-to-insert path. Other apps report the
+    /// attribute as unsupported. The call is synchronous IPC with the target, so it runs off the
+    /// main thread.
+    func prepare(target pid: pid_t) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            AXUIElementSetAttributeValue(
+                AXUIElementCreateApplication(pid), "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        }
+    }
+
     func insert(id: String, text: String, target: (id: String, pid: pid_t?)?) {
         guard let target, target.id == id else {
             output.log(.error, "insert \(id) refused: no finished capture with that id")
@@ -27,8 +39,9 @@ final class Insertion {
             output.emit(.insertResult(id: id, method: .none, reason: .secureInput))
             return
         }
-        guard let pid = target.pid else {
-            output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
+        // Without accessibility neither the AX write nor the Cmd+V keystroke can reach the app.
+        guard let pid = target.pid, AXIsProcessTrusted() else {
+            output.emit(.insertResult(id: id, method: .none, reason: .failed))
             return
         }
         if forcePaste {
@@ -38,33 +51,47 @@ final class Insertion {
         switch insertViaAccessibility(pid: pid, text: text) {
         case .inserted:
             output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
-        case .noFocusedField:
+        case .notEditable:
             output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
         case .unverified:
             paste(id: id, text: text)
         }
     }
 
-    private enum AccessibilityOutcome { case inserted, noFocusedField, unverified }
+    private enum AccessibilityOutcome { case inserted, notEditable, unverified }
 
     private func insertViaAccessibility(pid: pid_t, text: String) -> AccessibilityOutcome {
         var focusedRef: CFTypeRef?
         let app = AXUIElementCreateApplication(pid)
+        // No focused element is not proof that nothing is focused: Chromium answers that way
+        // until its tree is built, and apps without a tree cannot answer at all. A paste
+        // keystroke reaches both.
         guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
             let focusedRef
         else {
-            return .noFocusedField
-        }
-        let focused = focusedRef as! AXUIElement
-        let before = stringValue(of: focused)
-        guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
-        else {
             return .unverified
         }
-        let after = stringValue(of: focused)
-        // Some views report success and change nothing; only an observable change counts.
-        if let before, let after, before == after { return .unverified }
+        let focused = focusedRef as! AXUIElement
+        // The app describes the focused element, and it takes no text (a button, a list, a
+        // window): pasting there inserts nothing and may trigger the app's own paste action.
+        guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
+            return .notEditable
+        }
+        // A write that cannot be read back cannot be verified, and pasting after an unverified
+        // write would insert twice.
+        guard let before = stringValue(of: focused) else { return .unverified }
+        guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success,
+            let after = stringValue(of: focused), after != before
+        else {
+            // Chromium reports success for this write and changes nothing.
+            return .unverified
+        }
         return .inserted
+    }
+
+    private func isSettable(_ element: AXUIElement, _ attribute: String) -> Bool {
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success && settable.boolValue
     }
 
     private func stringValue(of element: AXUIElement) -> String? {

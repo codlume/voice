@@ -1,5 +1,4 @@
 import AVFoundation
-import AppKit
 import Foundation
 import VoiceHelperCore
 
@@ -57,16 +56,12 @@ final class Capture {
         }
     }
 
-    func start(id: String, receivedAt: DispatchTime) {
+    func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime) {
         guard case .idle = state else {
             output.log(.error, "capture.start \(id) ignored: capture is busy")
             return
         }
-        let session = CaptureSession(
-            id: id,
-            frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-            commandedAt: receivedAt
-        )
+        let session = CaptureSession(id: id, frontmostPid: frontmostPid, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
             if let testAudioPath {

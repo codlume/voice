@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import VoiceHelperCore
@@ -45,7 +46,9 @@ final class Helper {
         case .hotkeyConfigure(let key):
             hotkeyTap.configure(key)
         case .captureStart(let id):
-            capture.start(id: id, receivedAt: receivedAt)
+            let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            capture.start(id: id, frontmostPid: target, receivedAt: receivedAt)
+            if let target { insertion.prepare(target: target) }
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
