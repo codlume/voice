@@ -36,6 +36,16 @@ swift test --package-path native/voice-helper
 
 `pnpm fmt` fixes formatting. The pre-commit hook formats staged files.
 
+## End to end
+
+```sh
+pnpm e2e
+```
+
+`pnpm e2e` builds the helper, the audio fixtures, and the app, then drives the built app through the real hotkey path without a microphone. It posts a synthetic Fn press, streams a fixture WAV through the helper instead of the microphone, and reads the inserted text back from a TextEdit document and from a scratch Electron window. It prints one JSON line per case with the session timings.
+
+It needs Accessibility granted to the app that launches it, such as your terminal or IDE, and it briefly brings TextEdit to the front. It uses a throwaway userData directory and expects Parakeet at `/tmp/voice-spike-swift/models/parakeet-tdt-0.6b-v3`. S1-mini is linked from `/tmp/voice-spike-s1/` or downloaded.
+
 ## Package
 
 ```sh
