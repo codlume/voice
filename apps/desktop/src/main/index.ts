@@ -304,4 +304,6 @@ async function main() {
 
   showHub();
   void cleanup.loadIfDownloaded();
+  // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
+  if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
 }
