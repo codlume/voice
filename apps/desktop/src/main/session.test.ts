@@ -18,7 +18,6 @@ import {
 
 const ID = "s1";
 
-// Replays events in order, each stamped with the given time, and returns the final step.
 function run(events: [SessionEvent, number][], from: Session = idle) {
   let state = from;
   let effects: Effect[] = [];

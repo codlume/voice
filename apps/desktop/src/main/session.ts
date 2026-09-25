@@ -1,7 +1,5 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
-// One shortcut-triggered dictation cycle. Every phase after idle carries the session id so
-// helper events from an earlier session can be dropped by id alone.
 export type Session =
   | { phase: "idle" }
   | { phase: "starting"; id: string; released: boolean; pressedAt: number }
@@ -14,8 +12,6 @@ export type Session =
 export type InsertMethod = "accessibility" | "paste" | "none";
 export type InsertFailure = "focusChanged" | "noFocusedField" | "secureInput" | "failed";
 
-// Events carry the environment the decision needs (ASR state, whether cleanup should run) so
-// the reducer stays a pure function of (state, event, now) and an event log replays as-is.
 export type SessionEvent =
   | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
   | { type: "hotkeyUp" }
@@ -124,8 +120,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "captureCancelled":
       return same;
     case "transcript": {
-      // Recording is included because the helper stops a capture by itself at its length cap
-      // and then transcribes, while the user may still be holding the key.
       if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       const raw = event.text.trim();
       if (raw === "") return finish(state.id, { kind: "empty" });
@@ -179,8 +173,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
 
 export function toPillState(session: Session): PillState {
   switch (session.phase) {
-    // Capture is requested but the mic is not delivering frames yet, so the pill must not
-    // claim to be listening.
     case "idle":
     case "starting":
       return { kind: "idle" };

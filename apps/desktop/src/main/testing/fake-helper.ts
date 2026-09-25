@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-// A stand-in for voice-helper that speaks the NDJSON protocol without a microphone, ASR, or
-// accessibility. Configure it through the VOICE_FAKE_HELPER env var (JSON):
-//   transcript   text emitted on capture.stop (default "hello world")
-//   insert       { method, reason? } emitted on insert (default accessibility)
-//   asr          asr.status state reported on asr.prepare (default "ready")
-//   permissions  { microphone, accessibility } (default both granted)
-//   startMs      delay before capture.started (default 30)
-//   script       [{ at, action }] hotkey actions ("down" | "up" | "cancel") or "exit", timed from start
-//   control      path of a unix socket; each line received is an action or a raw JSON event to emit
 import { createInterface } from "node:readline";
 import { createServer } from "node:net";
 import { unlinkSync } from "node:fs";
@@ -112,9 +103,7 @@ if (config.control) {
   const path = config.control;
   try {
     unlinkSync(path);
-  } catch {
-    // No stale socket to remove.
-  }
+  } catch {}
   const server = createServer((socket) => {
     createInterface({ input: socket }).on("line", (line) => {
       const trimmed = line.trim();
@@ -124,7 +113,6 @@ if (config.control) {
     });
   });
   server.unref();
-  // Ready means the control socket accepts connections too.
   server.listen(path, ready);
 } else {
   ready();

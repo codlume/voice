@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Idle cost of the built app: launch it like `pnpm e2e` (no microphone), wait for both models
-// plus a settle period, then sample RSS and CPU of every process in the app's tree with ps.
 import { execFileSync, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -149,7 +147,6 @@ async function main() {
   try {
     const { child } = launchVoice(userData, { port });
     const { permissions } = await waitForModels();
-    // The hub opens at launch and polls permissions while any is missing.
     note(`models ready, permissions ${JSON.stringify(permissions)}; settling ${settleMs / 1000} s`);
     await sleep(settleMs);
     note(`sampling ${sampleMs / 1000} s`);

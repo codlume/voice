@@ -5,16 +5,13 @@ import { parseHelperEvent, type HelperCommand, type HelperEvent } from "./protoc
 
 export const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 5000;
-// A run this long counts as healthy, so the next crash restarts at the minimum delay again.
 const HEALTHY_RUN_MS = 10_000;
 
 export type HelperOptions = {
   binary: string;
   modelsDir: string;
   onEvent: (event: HelperEvent) => void;
-  /** Called on every unexpected exit, before the restart is scheduled. */
   onExit: () => void;
-  /** Commands to send after every `ready`, so a restarted helper is configured again. */
   configure: () => HelperCommand[];
   log: (message: string) => void;
 };
@@ -40,7 +37,6 @@ export function startHelper(options: HelperOptions): Helper {
       if (line.trim() === "") return;
       const event = parseHelperEvent(line);
       if (!event) {
-        // Only the type and size: a malformed transcript line would otherwise leak its text.
         const type = /"type"\s*:\s*"([^"]*)"/.exec(line)?.[1] ?? "?";
         options.log(`helper: unparseable ${type} line (${line.length} chars)`);
         return;

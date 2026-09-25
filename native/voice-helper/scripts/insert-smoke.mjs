@@ -1,6 +1,3 @@
-// Insertion smoke against a real TextEdit document.
-// Usage: node scripts/insert-smoke.mjs ax|paste
-// `paste` forces the clipboard path (VOICE_HELPER_FORCE_PASTE=1) and checks the clipboard survives.
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
@@ -31,7 +28,6 @@ try {
       await prepareAsr(helper);
       const id = `insert-${mode}`;
       const expected = `Voice ${mode} insert ${randomUUID()}`;
-      // The capture records TextEdit as the frontmost app; silence keeps the transcript step short.
       await dictateFixture(helper, "silence.wav", id);
       helper.send({ type: "insert", id, text: expected });
       const result = await helper.waitFor(
@@ -45,7 +41,6 @@ try {
         result.method === expectedMethod,
         `insert.result method ${result.method} reason ${result.reason ?? ""}`,
       );
-      // Give TextEdit a moment to apply the paste keystroke and the helper to restore the clipboard.
       await new Promise((resolve) => setTimeout(resolve, 600));
       const actual = osascript('tell application "TextEdit" to get text of document 1');
       assert(

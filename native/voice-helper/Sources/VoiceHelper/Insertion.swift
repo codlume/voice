@@ -78,8 +78,6 @@ final class Insertion {
         guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
             return .notEditable
         }
-        // A write that cannot be read back cannot be verified, and pasting after an unverified
-        // write would insert twice.
         guard let before = stringValue(of: focused) else { return .unverified }
         guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success,
             let after = stringValue(of: focused), after != before

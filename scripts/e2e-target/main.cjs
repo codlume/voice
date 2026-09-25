@@ -1,5 +1,3 @@
-// Throwaway Electron window with one focused textarea. The e2e harness inserts into it to
-// prove Chromium targets work, and reads the value back over this process's CDP port.
 const { app, BrowserWindow } = require("electron");
 const { join } = require("node:path");
 

@@ -41,8 +41,6 @@ const insertMethod = oneOf(["accessibility", "paste", "none"]);
 const insertFailure = oneOf(["focusChanged", "noFocusedField", "secureInput", "failed"]);
 const asrState = oneOf(["missing", "downloading", "loading", "ready", "failed"]);
 
-// The helper is the only untyped input into main. Everything past this function trusts
-// HelperEvent, so each variant is checked field by field here.
 export function parseHelperEvent(line: string): HelperEvent | null {
   let raw: unknown;
   try {

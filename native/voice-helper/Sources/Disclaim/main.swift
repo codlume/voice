@@ -1,10 +1,5 @@
 import Darwin
 
-// Runs a command as its own responsible process:
-//   disclaim <command> [args...]
-// Stdio is inherited, SIGTERM, SIGINT and SIGHUP are forwarded, and the exit code is the
-// child's (128 + signal when it was killed).
-//
 // macOS charges every microphone or accessibility request to the responsible process. For a
 // terminal-launched Electron that is the terminal app, and a hardened-runtime terminal without
 // the audio-input entitlement makes tccd deny the request before any prompt. Disclaiming

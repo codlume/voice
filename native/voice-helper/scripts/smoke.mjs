@@ -1,5 +1,3 @@
-// Transcription smoke: ready -> asr.prepare -> stream a fixture through test.audioFile -> transcript.
-// Usage: node scripts/smoke.mjs   (runs short.wav and silence.wav)
 import { assert, dictateFixture, prepareAsr, withHelper } from "./helper.mjs";
 
 await withHelper({}, async (helper) => {

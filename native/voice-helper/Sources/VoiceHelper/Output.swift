@@ -2,8 +2,6 @@ import Darwin
 import Foundation
 import VoiceHelperCore
 
-/// The only writer of the NDJSON stream. Safe from any thread; the audio tap
-/// emits levels directly.
 final class Output: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()

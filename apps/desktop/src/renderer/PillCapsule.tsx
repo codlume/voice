@@ -83,7 +83,6 @@ const styles = stylex.create({
     animationTimingFunction: "ease-in-out",
   },
   dotDelay: (delay: number) => ({ animationDelay: `${delay}ms` }),
-  // Purely visual: main still owns when the session returns to idle.
   checkFade: {
     animationName: `${fadeIn}, ${fadeOut}`,
     animationDuration: "180ms, 260ms",

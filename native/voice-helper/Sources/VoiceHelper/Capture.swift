@@ -34,14 +34,12 @@ private let chunkFrames = 1600
 private let maxSamples = 600 * 16_000
 private let silenceFloor = 1e-4 as Float
 
-/// Owns the capture state machine. Every transition happens on the main thread.
 final class Capture {
     private let output: Output
     private let transcriber: Transcriber
     private var state: CaptureState = .idle
     private var source: CaptureSource?
     private(set) var lastTarget: (id: String, pid: pid_t?)?
-    /// Test hook: when set, sessions read this WAV instead of the microphone.
     var testAudioPath: String?
 
     init(output: Output, transcriber: Transcriber) {
@@ -241,7 +239,6 @@ private final class MicSource: CaptureSource {
     }
 }
 
-/// Feeds a WAV file through the same append path at real-time pace.
 private final class FileSource: CaptureSource {
     private let samples: [Float]
     private let sink: ([Float]) -> Void

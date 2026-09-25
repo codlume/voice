@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// End-to-end proof of shortcut -> capture -> ASR -> cleanup -> insertion through the built app.
-// No microphone and no human: the helper streams a fixture WAV per capture and fnpost presses
-// the real hotkey through the HID event tap. Needs Accessibility for the app that launches
-// this script, and briefly brings TextEdit to the front.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,9 +22,6 @@ const ports = { voice: 9345, target: 9346 };
 
 const hasSpeech = (text) => text.includes("Anna") && text.includes("Thursday");
 
-// One row per case. `end` is how the hold ends: after the fixture has streamed, as soon as the
-// pill listens, or with Escape while listening. `outcome` null means the session was cancelled
-// and the pill went straight back to idle.
 const cases = [
   {
     name: "a-short-cleanup",
@@ -356,7 +349,6 @@ async function main() {
     await teardown();
   }
 
-  // Each step runs even if an earlier one fails, and none may hide the error that got us here.
   async function teardown() {
     const steps = [
       ...pages.map((page) => () => page.close()),

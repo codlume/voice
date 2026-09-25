@@ -102,7 +102,6 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
       ...modelState(models.asr),
     },
   ];
-  // With cleanup off the cleanup model is never used, so it cannot block readiness.
   if (settings.cleanup.enabled) {
     rows.push({
       id: "cleanup",

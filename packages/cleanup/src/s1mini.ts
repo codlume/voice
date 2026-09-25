@@ -28,7 +28,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return loading;
   }
 
-  // One context sequence can run one generation at a time, and dispose must not free it mid-run.
   function serialize<T>(task: () => Promise<T>): Promise<T> {
     const run = queue.then(task);
     queue = run.catch(() => undefined);
@@ -50,7 +49,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
             temperature: 0,
             customStopTriggers: ["<|im_end|>"],
-            // Tied to the guard's 3x rule so a looping generation stops early instead of running on.
             maxTokens: Math.min(3 * countTokens(chunk) + 32, CONTEXT_SIZE - prompt.length),
           });
           const output = response.trim();
@@ -90,7 +88,6 @@ async function openEngine(modelPath: string): Promise<Engine> {
   }
 }
 
-// Phrases that open an assistant reply rather than a cleaned transcript, compared without punctuation.
 const CHAT_OPENERS = [
   "sorry",
   "im sorry",
@@ -112,7 +109,6 @@ const words = (text: string) =>
     .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 
-// Catches only obviously broken output so the caller falls back to the raw transcript.
 // An empty output is valid: S1-mini returns "" for filler-only speech.
 export function assertPlausibleCleanup(input: string, output: string, truncated: boolean): void {
   if (truncated) throw new Error("Cleanup output was cut off at the token limit");

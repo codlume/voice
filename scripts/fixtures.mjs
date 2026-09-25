@@ -1,5 +1,3 @@
-// Generates synthetic 16 kHz mono WAV fixtures with `say` + `ffmpeg` into test-fixtures/audio/.
-// Idempotent: a fixture that already exists is skipped. Never touches the microphone.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

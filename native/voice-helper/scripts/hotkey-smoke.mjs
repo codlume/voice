@@ -1,5 +1,3 @@
-// Hotkey smoke: a synthetic key posted to the HID event tap must surface as hotkey down then up.
-// Usage: node scripts/hotkey-smoke.mjs [fn|rightOption|rightCommand]
 import { execFileSync } from "node:child_process";
 
 import { assert, helperBinary, withHelper } from "./helper.mjs";

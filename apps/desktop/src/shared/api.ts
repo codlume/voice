@@ -49,7 +49,6 @@ export type Snapshot = {
 export type VoiceApi = {
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
-  /** 0..1 microphone level, ~30 Hz while recording. */
   onLevel(listener: (level: number) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;

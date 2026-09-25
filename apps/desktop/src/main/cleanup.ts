@@ -5,19 +5,14 @@ import type { CleanupStyle, S1Mini } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 
-// The package is reached through a dynamic import so node-llama-cpp, which it loads lazily,
-// stays off the startup and hotkey paths and out of the CJS bundle's static graph.
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
   "S1_MINI_FILE" | "createS1Mini" | "downloadS1Mini"
 >;
 
 export type Cleanup = {
-  /** Loads the model when its file is present, otherwise reports missing. */
   load(): Promise<void>;
-  /** Downloads and loads the model. A second call while in flight joins the first. */
   setup(): Promise<void>;
-  /** True once the model is in memory, including during warm-up, when clean() queues behind it. */
   loaded(): boolean;
   clean(raw: string, style: CleanupStyle): Promise<string>;
   dispose(): Promise<void>;
@@ -31,8 +26,6 @@ export type CleanupOptions = {
 
 const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
 
-// The first generation after load pays one-time costs (about 600 ms against 250 ms warm), so a
-// throwaway clean runs before the model reports ready instead of inside the first session.
 const WARM_UP_TEXT = "um so this is a quick warm up";
 const WARM_UP_STYLE: CleanupStyle = {
   styling: "semi-formal",
@@ -42,8 +35,6 @@ const WARM_UP_STYLE: CleanupStyle = {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-// A model has an owner from the moment its load starts, so dispose() can take over a load that
-// is still in flight instead of letting it finish after the app has torn down.
 type Model =
   | { phase: "none" }
   | { phase: "loading"; model: S1Mini }
@@ -71,7 +62,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     }
     if (!owns(created)) return;
     model = { phase: "loaded", model: created };
-    // Only the one-time cost matters here. A real clean that fails the same way falls back to raw.
     await created.clean(WARM_UP_TEXT, WARM_UP_STYLE).catch(() => undefined);
     if (owns(created)) options.onStatus({ state: "ready" });
   }
@@ -118,7 +108,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
       return model.model.clean(raw, style);
     },
-    // The adapter's dispose waits for a load that is still in flight, then frees it.
     async dispose() {
       if (model.phase === "none") return;
       const current = model.model;

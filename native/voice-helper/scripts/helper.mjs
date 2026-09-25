@@ -14,8 +14,6 @@ export function helperBinary(name = "voice-helper") {
   return join(packageDir, ".build/debug", name);
 }
 
-// One per-machine cache of the test models, outside the repo so a reboot or a fresh clone
-// keeps it. `pnpm e2e` fills it on first run.
 export function modelsDir() {
   const dir =
     process.env.VOICE_TEST_MODELS_DIR ??
@@ -65,8 +63,6 @@ export class Helper {
     this.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
-  // Resolves with the first event after the previous match that satisfies the predicate.
-  // Events are consumed in order, so a script reads the protocol as a conversation.
   waitFor(predicate, { timeoutMs = 15_000, label = predicate.toString() } = {}) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
@@ -116,7 +112,6 @@ export async function withHelper(options, body) {
   }
 }
 
-// Returns the milliseconds from asr.prepare to asr.status ready.
 export async function prepareAsr(helper, { download = false } = {}) {
   const startedAt = performance.now();
   helper.send({ type: "asr.prepare", download });

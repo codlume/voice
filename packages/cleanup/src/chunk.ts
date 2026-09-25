@@ -15,10 +15,6 @@ function pieces(text: string, maxTokens: number, countTokens: CountTokens, level
   );
 }
 
-// Packs whole sentences into chunks of at most `maxTokens`. Only a sentence that alone exceeds
-// the limit is split, at word boundaries first and graphemes as a last resort.
-// Callers pass the real tokenizer: bytes per Qwen3 token ranges from about 4 in English to 2 in
-// Polish and 1 in spoken digits, so no fixed estimate is both safe and useful.
 export function chunkTranscript(
   text: string,
   maxTokens: number,

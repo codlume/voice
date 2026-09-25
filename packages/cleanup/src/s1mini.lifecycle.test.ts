@@ -5,8 +5,6 @@ import { createS1Mini } from "./s1mini.ts";
 
 type Reply = { response: string; stopReason?: string };
 
-// A stand-in for the native binding. Tokens are characters, and the reply is computed from the
-// raw transcript inside the prompt, so tests observe what the adapter sent and how it sequenced it.
 const native = vi.hoisted(() => ({
   getLlamaCalls: 0,
   failNextLoad: false,

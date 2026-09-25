@@ -1,6 +1,3 @@
-// Dev loop: build the helper once, serve the renderer, rebuild main/preload on change, and
-// restart Electron after each rebuild. Extra args are passed to Electron, for example
-// `pnpm dev -- --remote-debugging-port=9333`.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, watch } from "node:fs";
 import { createRequire } from "node:module";
@@ -44,9 +41,7 @@ function start(command, args, options = {}) {
 function signalGroup(child, signal) {
   try {
     process.kill(-child.pid, signal);
-  } catch {
-    // The group already exited.
-  }
+  } catch {}
 }
 
 function stop(code) {
@@ -90,9 +85,7 @@ async function waitForDevServer() {
   for (;;) {
     try {
       if ((await fetch(new URL("hub.html", devServerUrl))).ok) return;
-    } catch {
-      // Not listening yet.
-    }
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
@@ -108,7 +101,6 @@ for (const args of [["dev"], ["pack", "--watch"]]) {
 const devServerReady = waitForDevServer();
 let settleTimer = null;
 let relaunch = Promise.resolve();
-// Both pack entries write within a few milliseconds; relaunch once the output is quiet.
 watch(distDir, () => {
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => {

@@ -1,5 +1,3 @@
-// Dev-only gallery: the vite dev server serves this page, the production build never lists it.
-// It renders every pill state and the hub against a fake `window.voice`.
 import { createRoot } from "react-dom/client";
 
 import type { Outcome, PillState, Snapshot, VoiceApi } from "../shared/api.ts";
@@ -61,7 +59,6 @@ const hubScenes: Record<string, Snapshot> = {
   ready,
 };
 
-// A fake main process: one session loop, mirroring the timings main is expected to use.
 const cycle: [PillState, number][] = [
   [{ kind: "idle" }, 1200],
   [{ kind: "listening" }, 2600],
@@ -100,7 +97,6 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     },
     onLevel: (listener) => {
       const start = performance.now();
-      // Syllable-like bursts under a slow phrase envelope, at the ~10 Hz main sends.
       const timer = setInterval(() => {
         const t = (performance.now() - start) / 1000;
         const phrase = 0.5 + 0.5 * Math.sin(t * 1.3);

@@ -34,7 +34,6 @@ export async function downloadModel({
   if ((await sizeOf(path)) === bytes) return path;
 
   await mkdir(dir, { recursive: true });
-  // Legal files land before the model because the model's presence marks the download complete.
   for (const name of LEGAL_FILES) {
     await fetchToFile(`${baseUrl}/${name}`, join(dir, `${file}.${name}`), { signal });
   }
@@ -69,7 +68,6 @@ async function fetchToFile(
       received += chunk.byteLength;
       if (bytes !== undefined && received > bytes) break;
       const permille = bytes ? Math.floor((received / bytes) * 1000) : 0;
-      // Throttled to at most 1000 calls so a 484 MB download does not flood the caller.
       if (onProgress && permille > reported) {
         reported = permille;
         onProgress(permille / 1000);

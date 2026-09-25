@@ -38,15 +38,12 @@ export function pillView(session: PillState): PillView {
 export const BAR_COUNT = 11;
 export const MIN_BAR_SCALE = 0.18;
 
-// Rises fast so speech onsets feel immediate, falls slower so the bars settle instead of flickering.
 export function smoothLevel(previous: number, next: number): number {
   const target = Math.min(1, Math.max(0, next));
   const rate = target > previous ? 0.6 : 0.25;
   return previous + (target - previous) * rate;
 }
 
-// Center bars reach higher; the tick shifts a slow ripple across the bars so a steady level
-// still reads as a moving waveform rather than a pulsing block.
 export function barScales(level: number, tick: number): number[] {
   const loud = Math.sqrt(Math.min(1, Math.max(0, level)));
   return Array.from({ length: BAR_COUNT }, (_, i) => {

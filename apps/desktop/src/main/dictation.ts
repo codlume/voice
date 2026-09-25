@@ -14,8 +14,6 @@ export type DictationOptions = {
   now?: () => number;
 };
 
-// A looping generation must not hold the session: give cleanup a budget proportional to the
-// input, then insert the raw text and ignore the late result.
 export const CLEANUP_BASE_MS = 2000;
 export const CLEANUP_PER_WORD_MS = 20;
 export const CLEANUP_MAX_MS = 8000;
@@ -25,9 +23,6 @@ export function cleanupBudgetMs(raw: string): number {
   return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
 }
 
-// After capture stops, the helper owes a transcript and later an insert result. A helper
-// that never answers must not hold the session forever. Transcription is only watched when
-// the speech model is ready, because before that the helper legitimately waits on it.
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 export const INSERT_TIMEOUT_MS = 5000;
 
@@ -36,7 +31,6 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
-// Logged verbatim, so it must never hold transcript text.
 type Timing = {
   id: string;
   pressedAt: number;
@@ -56,14 +50,11 @@ export function createDictation(options: DictationOptions): Dictation {
   let idleTimer: NodeJS.Timeout | null = null;
   let timing: Timing | null = null;
   let watchdog: NodeJS.Timeout | null = null;
-  // The cleanup package runs one generation at a time, so a transcript that arrives while a
-  // timed-out generation is still running would queue behind it. It goes in raw instead.
   let cleaning = false;
 
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
-    // Helper commands go out before the snapshot fans out to the windows.
     for (const effect of effects) run(effect);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));

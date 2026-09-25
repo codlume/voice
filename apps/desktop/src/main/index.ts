@@ -29,8 +29,6 @@ const log = (message: string) => console.log(`[voice] ${message}`);
 if (!app.isPackaged) {
   app.setPath("userData", NodePath.join(app.getPath("appData"), "Voice Development"));
 }
-// The e2e harness runs against a throwaway userData. Only the helper's test flag unlocks
-// the override, so the variable alone can never redirect a normal launch.
 if (process.env.VOICE_HELPER_TEST === "1" && process.env.VOICE_USER_DATA_DIR) {
   app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
 }
@@ -129,8 +127,6 @@ async function main() {
   const pill = createPillWindow();
   positionPill(pill);
 
-  // The helper and the dictation runtime reference each other; the helper is created first
-  // and dictation reaches it through `send`, which only runs after both exist.
   let dictation: Dictation;
   const helper: Helper = startHelper({
     binary: helperBinary(),
@@ -156,8 +152,6 @@ async function main() {
 
   const hubVisible = () => hub !== undefined && !hub.isDestroyed() && hub.isVisible();
 
-  // The hub shows a setup checklist, so while it is open and something is not granted the
-  // helper re-checks every 2 s. Otherwise nothing polls.
   let permissionPoll: NodeJS.Timeout | null = null;
   function syncPermissionPolling() {
     const wanted = hubVisible() && !allGranted(store.state);
@@ -226,7 +220,6 @@ async function main() {
     if (state.permissions !== previous.permissions) syncPermissionPolling();
   });
 
-  // Saves are serialized so two quick edits cannot race on the temp file or land out of order.
   let saving: Promise<void> = Promise.resolve();
   function updateSettings(patch: SettingsPatch) {
     const previous = store.state.settings;

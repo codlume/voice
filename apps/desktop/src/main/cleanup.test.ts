@@ -44,7 +44,6 @@ function fakeModule(behavior: Behavior = {}) {
         }
         return raw.toUpperCase();
       },
-      // Like the real adapter: a dispose during load settles after the load does.
       async dispose() {
         await behavior.loadGate;
         calls.disposes += 1;

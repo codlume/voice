@@ -1,7 +1,5 @@
 import { nativeImage, type NativeImage } from "electron";
 
-// A microphone glyph in unit coordinates: a capsule, an open ring below it, a stem, and a
-// base. Rasterized at runtime so the menu bar icon needs no binary asset.
 function insideGlyph(x: number, y: number): boolean {
   const dx = Math.abs(x - 0.5);
   const capsule =
@@ -15,7 +13,6 @@ function insideGlyph(x: number, y: number): boolean {
   return capsule || ring || stem || base;
 }
 
-// BGRA, black with coverage as alpha, 4x4 supersampled.
 function rasterize(size: number): Buffer {
   const samples = 4;
   const pixels = Buffer.alloc(size * size * 4);

@@ -1,11 +1,6 @@
 import ApplicationServices
 import Foundation
 
-// Posts synthetic key events so the smoke and e2e scripts can drive voice-helper without a
-// human at the keyboard.
-//   fnpost [fn|rightOption|rightCommand]            press and release
-//   fnpost [fn|rightOption|rightCommand] down|up    one edge of the hold
-//   fnpost escape                                   press and release Escape
 let keys: [String: (keycode: CGKeyCode, flags: CGEventFlags)] = [
     "fn": (63, .maskSecondaryFn),
     "rightOption": (61, CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x40)),

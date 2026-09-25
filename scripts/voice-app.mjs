@@ -1,5 +1,3 @@
-// Launches the built app the way the scripted checks need it: a throwaway userData with the
-// models linked in, the helper in test mode so no microphone is opened, and a CDP port.
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -19,8 +17,6 @@ export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
-// An ordered log of observations with one cursor, so a script reads the run as a conversation
-// and a stale match from an earlier case can never satisfy a later wait.
 export class Stream {
   items = [];
   #cursor = 0;
@@ -68,9 +64,7 @@ export class Page {
         const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
         const target = targets.find((t) => t.type === "page" && t.url.includes(urlPart));
         if (target) return await Page.open(target.webSocketDebuggerUrl);
-      } catch {
-        // Not listening yet.
-      }
+      } catch {}
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error(`no ${urlPart} page on CDP port ${port} after ${timeoutMs} ms`);
@@ -150,13 +144,9 @@ export async function stopChildren() {
 function signalGroup(child, signal) {
   try {
     process.kill(-child.pid, signal);
-  } catch {
-    // The group already exited.
-  }
+  } catch {}
 }
 
-// Fills the test-models cache through the app's own download paths, which skip what is already
-// complete. The built debug helper checks and fetches Parakeet.
 export async function prepareTestModels() {
   const dir = modelsDir();
   console.error(`preparing test models in ${dir}`);

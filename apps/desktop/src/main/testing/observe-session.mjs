@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Drives one dictation session through the fake helper's control socket and records the
-// pill page's snapshot sequence over CDP. Run the app first:
-//   VOICE_HELPER_PATH=src/main/testing/fake-helper.ts \
-//   VOICE_FAKE_HELPER='{"control":"/tmp/voice-fake.sock"}' \
-//   pnpm dev -- --remote-debugging-port=9333
-// then: node src/main/testing/observe-session.mjs 9333 /tmp/voice-fake.sock down:900,up
-// Steps are "action[:waitMs]" pairs sent to the fake helper: down, up, cancel, or exit.
 import { connect } from "node:net";
 
 const [port = "9333", control = "/tmp/voice-fake.sock", script = "down:900,up"] =
@@ -21,9 +14,7 @@ async function pillTarget() {
       const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
       const pill = targets.find((t) => t.type === "page" && t.url.includes("pill"));
       if (pill) return pill;
-    } catch {
-      // Electron is not listening yet.
-    }
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error("pill page not found over CDP");
@@ -65,7 +56,6 @@ await evaluate(`
 `);
 await new Promise((resolve) => setTimeout(resolve, 300));
 
-// A control path of "-" means no fake helper: only report the snapshot the real helper produced.
 const t0 = Date.now();
 if (control !== "-") {
   const socket = connect(control);

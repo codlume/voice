@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Quit regression: launch the built app, wait until the cleanup model is loading or ready, call
-// app.quit() in the main process over the inspector, and check that Electron exits cleanly.
-// node-llama-cpp frees the model on a native worker; a quit that tears Node down while that
-// worker is still in flight ends in SIGABRT. Runs N trials per mode and fails on any abort,
-// non-zero exit, or an exit that takes longer than 10 s. Needs `pnpm build` first.
-//
-//   node scripts/quit-smoke.mjs [--trials N] [--mode ready|loading]
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -66,14 +59,10 @@ function launch(userData) {
   return { child, exited, text: () => output.join("") };
 }
 
-// A stale helper from an aborted Electron would otherwise outlive the trial. The app leads its
-// own process group, so this reaches only what that launch spawned.
 function reapGroup(child) {
   try {
     process.kill(-child.pid, "SIGKILL");
-  } catch {
-    // The group already exited.
-  }
+  } catch {}
 }
 
 async function quitMain() {
