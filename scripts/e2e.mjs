@@ -9,6 +9,7 @@ import {
   launchVoice,
   Page,
   prepareUserData,
+  refuseIfVoiceIsRunning,
   repoDir,
   start,
   stopChildren,
@@ -301,6 +302,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
 }
 
 async function main() {
+  refuseIfVoiceIsRunning();
   run("swift", ["build", "--package-path", helperDir]);
   run("node", [join(repoDir, "scripts/fixtures.mjs")]);
   run("pnpm", ["build"]);

@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 
-import { assert, helperBinary, withHelper } from "./helper.mjs";
+import { assert, helperBinary, refuseIfVoiceIsRunning, withHelper } from "./helper.mjs";
 
+refuseIfVoiceIsRunning();
 const key = process.argv[2] ?? "fn";
 
 await withHelper({}, async (helper) => {

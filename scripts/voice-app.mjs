@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
 import { downloadS1Mini, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
 
+export { refuseIfVoiceIsRunning } from "../native/voice-helper/scripts/helper.mjs";
+
 export const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 export const electronPath = createRequire(join(desktopDir, "package.json"))("electron");

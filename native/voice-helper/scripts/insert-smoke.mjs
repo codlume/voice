@@ -1,10 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
-import { assert, dictateFixture, prepareAsr, withHelper } from "./helper.mjs";
+import {
+  assert,
+  dictateFixture,
+  prepareAsr,
+  refuseIfVoiceIsRunning,
+  withHelper,
+} from "./helper.mjs";
 
 const mode = process.argv[2];
 assert(mode === "ax" || mode === "paste", `usage: insert-smoke.mjs ax|paste (got ${mode})`);
+refuseIfVoiceIsRunning();
 
 function osascript(script) {
   return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();

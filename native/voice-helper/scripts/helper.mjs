@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +30,23 @@ export function fixture(name) {
 
 export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
+}
+
+// Call before posting key events or installing a hotkey tap. A dev session or Voice.app runs its
+// own helper with real microphone permission, and its tap hears synthetic presses too, so it
+// records the room into the test documents. The pattern matches a helper binary but not script
+// paths under native/voice-helper/.
+export function refuseIfVoiceIsRunning() {
+  const pgrep = spawnSync("pgrep", ["-lf", "(^|/)voice-helper( |$)|scripts/dev\\.mjs( |$)"], {
+    encoding: "utf8",
+  });
+  if (pgrep.status === 1) return;
+  if (pgrep.status !== 0) throw new Error(`pgrep exited ${pgrep.status}: ${pgrep.stderr}`);
+  console.error(pgrep.stdout.trimEnd());
+  console.error(
+    "refusing to run: another Voice helper is running and would record from the real microphone",
+  );
+  process.exit(1);
 }
 
 export class Helper {
