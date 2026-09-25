@@ -12,10 +12,16 @@ describe("pillView", () => {
     expect(pillView({ kind: "idle" })).toEqual({ kind: "idle" });
   });
 
-  test("shows the check only when text was inserted", () => {
-    expect(done({ kind: "inserted", method: "accessibility" })).toEqual({ kind: "inserted" });
-    expect(done({ kind: "inserted", method: "paste" })).toEqual({ kind: "inserted" });
-    expect(done({ kind: "notInserted", reason: "failed" })).not.toEqual({ kind: "inserted" });
+  test("shows the check only when text was inserted, and says so when it went through paste", () => {
+    expect(done({ kind: "inserted", method: "accessibility" })).toEqual({
+      kind: "inserted",
+      method: "accessibility",
+    });
+    expect(done({ kind: "inserted", method: "paste" })).toEqual({
+      kind: "inserted",
+      method: "paste",
+    });
+    expect(done({ kind: "notInserted", reason: "failed" }).kind).not.toBe("inserted");
   });
 
   test.each<[Outcome, string]>([

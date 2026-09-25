@@ -83,6 +83,7 @@ const styles = stylex.create({
     animationTimingFunction: "ease-in-out",
   },
   dotDelay: (delay: number) => ({ animationDelay: `${delay}ms` }),
+  check: { gap: 6 },
   checkFade: {
     animationName: `${fadeIn}, ${fadeOut}`,
     animationDuration: "180ms, 260ms",
@@ -97,16 +98,18 @@ const styles = stylex.create({
     animationTimingFunction: settle,
     animationFillMode: "both",
   },
-  message: {
-    display: "block",
-    maxWidth: "100%",
-    paddingInline: 14,
+  text: {
     color: "rgba(255, 255, 255, 0.92)",
     fontFamily: font.sans,
     fontSize: 12.5,
     fontWeight: 500,
     letterSpacing: "0.01em",
     whiteSpace: "nowrap",
+  },
+  message: {
+    display: "block",
+    maxWidth: "100%",
+    paddingInline: 14,
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
@@ -145,25 +148,23 @@ function Dots() {
   );
 }
 
-function Check() {
+// A paste went through the clipboard, and the user should know that is what happened.
+function Check({ pasted }: { pasted: boolean }) {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      aria-label="Inserted"
-      {...stylex.props(styles.checkFade)}
-    >
-      <path
-        d="M3.5 8.5l3 3 6-7"
-        fill="none"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        {...stylex.props(styles.checkStroke)}
-      />
-    </svg>
+    <div {...stylex.props(styles.content, styles.check, styles.checkFade)}>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-label={pasted ? "Pasted" : "Inserted"}>
+        <path
+          d="M3.5 8.5l3 3 6-7"
+          fill="none"
+          stroke="white"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          {...stylex.props(styles.checkStroke)}
+        />
+      </svg>
+      {pasted && <span {...stylex.props(styles.text)}>Pasted</span>}
+    </div>
   );
 }
 
@@ -182,9 +183,9 @@ export function PillCapsule({ session }: { session: PillState }) {
       >
         {view.kind === "listening" && <Wave />}
         {view.kind === "processing" && <Dots />}
-        {view.kind === "inserted" && <Check />}
+        {view.kind === "inserted" && <Check pasted={view.method === "paste"} />}
         {view.kind === "message" && (
-          <div {...stylex.props(styles.content, styles.message)}>{view.text}</div>
+          <div {...stylex.props(styles.content, styles.text, styles.message)}>{view.text}</div>
         )}
       </div>
     </div>

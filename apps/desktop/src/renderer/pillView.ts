@@ -4,7 +4,7 @@ type PillView =
   | { kind: "idle" }
   | { kind: "listening" }
   | { kind: "processing" }
-  | { kind: "inserted" }
+  | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
   | { kind: "message"; text: string };
 
 const notInsertedText: Record<Extract<Outcome, { kind: "notInserted" }>["reason"], string> = {
@@ -17,7 +17,7 @@ const notInsertedText: Record<Extract<Outcome, { kind: "notInserted" }>["reason"
 function outcomeView(outcome: Outcome): PillView {
   switch (outcome.kind) {
     case "inserted":
-      return { kind: "inserted" };
+      return { kind: "inserted", method: outcome.method };
     case "empty":
       return { kind: "message", text: "Nothing heard" };
     case "tooShort":

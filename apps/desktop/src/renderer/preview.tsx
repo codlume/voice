@@ -34,6 +34,7 @@ const pillScenes: Record<string, PillState> = {
   listening: { kind: "listening" },
   processing: { kind: "processing" },
   inserted: done({ kind: "inserted", method: "accessibility" }),
+  pasted: done({ kind: "inserted", method: "paste" }),
   empty: done({ kind: "empty" }),
   tooShort: done({ kind: "tooShort" }),
   focusChanged: done({ kind: "notInserted", reason: "focusChanged" }),
