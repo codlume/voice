@@ -1,30 +1,27 @@
 // Drives a built voice-helper over NDJSON for the smoke scripts and later e2e.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, symlinkSync } from "node:fs";
-import { createInterface } from "node:readline";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 export const packageDir = fileURLToPath(new URL("..", import.meta.url));
 export const repoDir = join(packageDir, "../..");
 export const fixturesDir = join(repoDir, "test-fixtures/audio");
 
-const spikeModel = "/tmp/voice-spike-swift/models/parakeet-tdt-0.6b-v3";
-
 export function helperBinary(name = "voice-helper") {
   if (name === "voice-helper" && process.env.VOICE_HELPER_BIN) return process.env.VOICE_HELPER_BIN;
   return join(packageDir, ".build/debug", name);
 }
 
-// A models dir holding parakeet-tdt-0.6b-v3. Defaults to a symlink onto the spike's copy so
-// nothing is downloaded.
+// One per-machine cache of the test models, outside the repo so a reboot or a fresh clone
+// keeps it. `pnpm e2e` fills it on first run.
 export function modelsDir() {
-  const dir = process.env.VOICE_MODELS_DIR ?? "/tmp/voice-helper-models";
-  const model = join(dir, "parakeet-tdt-0.6b-v3");
-  if (!existsSync(model) && existsSync(spikeModel)) {
-    mkdirSync(dir, { recursive: true });
-    symlinkSync(spikeModel, model);
-  }
+  const dir =
+    process.env.VOICE_TEST_MODELS_DIR ??
+    join(homedir(), "Library/Caches/Voice Development/test-models");
+  mkdirSync(dir, { recursive: true });
   return dir;
 }
 
@@ -121,12 +118,12 @@ export async function withHelper(options, body) {
 }
 
 // Returns the milliseconds from asr.prepare to asr.status ready.
-export async function prepareAsr(helper) {
+export async function prepareAsr(helper, { download = false } = {}) {
   const startedAt = performance.now();
-  helper.send({ type: "asr.prepare", download: false });
+  helper.send({ type: "asr.prepare", download });
   const status = await helper.waitFor(
     (event) => event.type === "asr.status" && ["ready", "missing", "failed"].includes(event.state),
-    { timeoutMs: 60_000, label: "asr.status ready" },
+    { timeoutMs: download ? 30 * 60_000 : 60_000, label: "asr.status ready" },
   );
   assert(status.state === "ready", `asr.status is ${status.state}: ${status.message ?? ""}`);
   return performance.now() - startedAt;

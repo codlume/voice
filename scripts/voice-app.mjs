@@ -1,22 +1,19 @@
 // Launches the built app the way the scripted checks need it: a throwaway userData with the
 // models linked in, the helper in test mode so no microphone is opened, and a CDP port.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
+import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
 import { downloadS1Mini, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
 
 export const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 export const electronPath = createRequire(join(desktopDir, "package.json"))("electron");
-const spike = {
-  parakeet: "/tmp/voice-spike-swift/models/parakeet-tdt-0.6b-v3",
-  s1Mini: "/tmp/voice-spike-s1/s1-mini-q4_k_m.gguf",
-};
 
 export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
@@ -158,19 +155,27 @@ function signalGroup(child, signal) {
   }
 }
 
+// Fills the test-models cache through the app's own download paths, which skip what is already
+// complete. The built debug helper checks and fetches Parakeet.
+export async function prepareTestModels() {
+  const dir = modelsDir();
+  console.error(`preparing test models in ${dir}`);
+  await Promise.all([
+    downloadS1Mini({ dir }),
+    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
+  ]);
+  return dir;
+}
+
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
+  const cache = await prepareTestModels();
   const userData = join(tmpdir(), name);
   rmSync(userData, { recursive: true, force: true });
   const models = join(userData, "models");
   mkdirSync(models, { recursive: true });
-  assert(existsSync(spike.parakeet), `Parakeet is missing at ${spike.parakeet}`);
-  symlinkSync(spike.parakeet, join(models, "parakeet-tdt-0.6b-v3"));
-  if (existsSync(spike.s1Mini)) {
-    symlinkSync(spike.s1Mini, join(models, S1_MINI_FILE));
-  } else {
-    console.error(`downloading S1-mini into ${models}`);
-    await downloadS1Mini({ dir: models });
+  for (const model of ["parakeet-tdt-0.6b-v3", S1_MINI_FILE]) {
+    symlinkSync(join(cache, model), join(models, model));
   }
   return userData;
 }

@@ -44,7 +44,7 @@ pnpm e2e
 
 `pnpm e2e` builds the helper, the audio fixtures, and the app, then drives the built app through the real hotkey path without a microphone. It posts a synthetic Fn press, streams a fixture WAV through the helper instead of the microphone, and reads the inserted text back from a TextEdit document and from a scratch Electron window. It prints one JSON line per case with the session timings.
 
-It needs Accessibility granted to the app that launches it, such as your terminal or IDE, and it briefly brings TextEdit to the front. It uses a throwaway userData directory and expects Parakeet at `/tmp/voice-spike-swift/models/parakeet-tdt-0.6b-v3`. S1-mini is linked from `/tmp/voice-spike-s1/` or downloaded.
+It needs Accessibility granted to the app that launches it, such as your terminal or IDE, and it briefly brings TextEdit to the front. It uses a throwaway userData directory and links the models from `~/Library/Caches/Voice Development/test-models`, or from `VOICE_TEST_MODELS_DIR` when set. The first run downloads about 950 MB of models into that directory.
 
 `node scripts/idle-footprint.mjs` launches the built app the same way, waits for both models and 10 more seconds, then prints the average RSS and CPU of each process in the app's tree over 20 seconds.
 
