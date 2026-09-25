@@ -44,10 +44,23 @@ final class Insertion {
             output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
         case .unverified:
             paste(id: id, text: text)
+        case .unchanged(let focused, let before):
+            // Some apps apply the write after returning. One re-read separates a slow app from
+            // Chromium's silent no-op before the paste fallback risks a second copy.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+                if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
+                    output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
+                } else {
+                    paste(id: id, text: text)
+                }
+            }
         }
     }
 
-    private enum AccessibilityOutcome { case inserted, notEditable, unverified }
+    private enum AccessibilityOutcome {
+        case inserted, notEditable, unverified
+        case unchanged(AXUIElement, before: AXTextState)
+    }
 
     private func insertViaAccessibility(pid: pid_t, text: String) -> AccessibilityOutcome {
         var focusedRef: CFTypeRef?
@@ -66,14 +79,15 @@ final class Insertion {
         guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
             return .notEditable
         }
-        guard let before = stringValue(of: focused) else { return .unverified }
-        guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success,
-            let after = stringValue(of: focused), after != before
+        let before = textState(of: focused)
+        guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
         else {
-            // Chromium reports success for this write and changes nothing.
             return .unverified
         }
-        return .inserted
+        switch AXWriteVerdict(before: before, after: textState(of: focused)) {
+        case .inserted: return .inserted
+        case .unchanged: return .unchanged(focused, before: before)
+        }
     }
 
     private func isSettable(_ element: AXUIElement, _ attribute: String) -> Bool {
@@ -81,12 +95,21 @@ final class Insertion {
         return AXUIElementIsAttributeSettable(element, attribute as CFString, &settable) == .success && settable.boolValue
     }
 
-    private func stringValue(of element: AXUIElement) -> String? {
+    private func textState(of element: AXUIElement) -> AXTextState {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success else {
-            return nil
+        var range: CFTypeRef?
+        let text = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
+            ? value as? String : nil
+        var selection: AXTextRange?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+            let range, CFGetTypeID(range) == AXValueGetTypeID()
+        {
+            var cfRange = CFRange()
+            if AXValueGetValue(range as! AXValue, .cfRange, &cfRange) {
+                selection = AXTextRange(location: cfRange.location, length: cfRange.length)
+            }
         }
-        return value as? String
+        return AXTextState(value: text, selection: selection)
     }
 
     private func paste(id: String, text: String) {
