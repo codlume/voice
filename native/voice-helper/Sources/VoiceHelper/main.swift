@@ -66,12 +66,9 @@ final class Helper {
         }
     }
 
-    /// Stops the microphone at once; a model load in flight still publishes
-    /// its final status so the parent never sees a load vanish silently.
     @MainActor
-    func shutdown() async {
+    func shutdown() {
         capture.shutdown()
-        await transcriber.drain()
     }
 }
 
@@ -102,8 +99,8 @@ let reader = Thread {
             MainActor.assumeIsolated { helper.handle(line: line, receivedAt: receivedAt) }
         }
     }
-    Task { @MainActor in
-        await helper.shutdown()
+    DispatchQueue.main.async {
+        MainActor.assumeIsolated { helper.shutdown() }
         exit(0)
     }
 }

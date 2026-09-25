@@ -20,7 +20,6 @@ final class Transcriber {
     private let directory: URL
     private let output: Output
     private var load: AsrLoad = .missing
-    private var publish: Task<Void, Never>?
 
     init(modelsDir: URL, output: Output) {
         directory = modelsDir.appendingPathComponent("parakeet-tdt-0.6b-v3")
@@ -61,7 +60,7 @@ final class Transcriber {
         }
         load = needsDownload ? .downloading(task) : .loading(task)
         output.emit(.asrStatus(state: needsDownload ? .downloading : .loading, message: nil))
-        publish = Task { @MainActor in
+        Task { @MainActor in
             do {
                 let manager = try await task.value
                 load = .ready(manager)
@@ -72,10 +71,6 @@ final class Transcriber {
                 output.emit(.asrStatus(state: .failed, message: message))
             }
         }
-    }
-
-    func drain() async {
-        await publish?.value
     }
 
     func transcribe(_ samples: [Float]) async throws -> (text: String, asrMs: Double) {
