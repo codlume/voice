@@ -167,6 +167,22 @@ describe("startHelper", () => {
     expect(h.logs.join("\n")).not.toContain("secret");
   });
 
+  test("a write still in flight when the helper exits is logged and dropped, not thrown", async () => {
+    const h = boot({
+      script: [
+        { at: 10, action: "stall" },
+        { at: 150, action: "exit" },
+      ],
+    });
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "ready");
+    await sleep(60);
+    const text = "x".repeat(1 << 20);
+    expect(() => h.helper.send({ type: "insert", id: "s1", text })).not.toThrow();
+    await expect.poll(() => h.logs.join("\n")).toMatch(/helper: stdin .*EPIPE/);
+    await expect.poll(() => h.exits.length).toBeGreaterThanOrEqual(1);
+  });
+
   test("drops commands while the helper is down instead of throwing", async () => {
     const h = boot({ script: [{ at: 10, action: "exit" }] });
     helper = h.helper;

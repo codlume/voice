@@ -47,6 +47,9 @@ export function startHelper(options: HelperOptions): Helper {
       options.onEvent(event);
     });
     createInterface({ input: proc.stderr }).on("line", (line) => options.log(`helper: ${line}`));
+    // A write racing the helper's exit fails with EPIPE; without a listener that would throw
+    // out of the event loop and take main down with it. The close handler does the recovery.
+    proc.stdin.on("error", (error) => options.log(`helper: stdin ${error.message}`));
 
     const onEnd = (reason: string) => {
       if (ended) return;

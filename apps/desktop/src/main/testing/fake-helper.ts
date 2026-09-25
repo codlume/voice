@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { createServer } from "node:net";
 import { unlinkSync } from "node:fs";
 
-type Action = "down" | "up" | "cancel" | "exit";
+type Action = "down" | "up" | "cancel" | "exit" | "stall";
 type Config = {
   transcript?: string;
   insert?: { method: string; reason?: string };
@@ -28,6 +28,9 @@ function stopLevels() {
 
 function act(action: Action) {
   if (action === "exit") process.exit(3);
+  // Stops reading commands, so a large write from main is still in flight when a later exit
+  // closes the pipe and the write fails with EPIPE.
+  if (action === "stall") return process.stdin.pause();
   emit({ type: "hotkey", action });
 }
 
