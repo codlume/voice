@@ -5,6 +5,8 @@ import { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
 
 const CONTEXT_SIZE = 4096;
 const CHUNK_TOKENS = 1000;
+const MAX_OUTPUT_RATIO = 3;
+const OUTPUT_TOKEN_SLACK = 32;
 
 export type S1Mini = {
   load(): Promise<void>;
@@ -49,7 +51,10 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
             temperature: 0,
             customStopTriggers: ["<|im_end|>"],
-            maxTokens: Math.min(3 * countTokens(chunk) + 32, CONTEXT_SIZE - prompt.length),
+            maxTokens: Math.min(
+              MAX_OUTPUT_RATIO * countTokens(chunk) + OUTPUT_TOKEN_SLACK,
+              CONTEXT_SIZE - prompt.length,
+            ),
           });
           const output = response.trim();
           assertPlausibleCleanup(chunk, output, metadata.stopReason === "maxTokens");
@@ -112,8 +117,8 @@ const words = (text: string) =>
 // An empty output is valid: S1-mini returns "" for filler-only speech.
 export function assertPlausibleCleanup(input: string, output: string, truncated: boolean): void {
   if (truncated) throw new Error("Cleanup output was cut off at the token limit");
-  if (output.length > 3 * input.length)
-    throw new Error("Cleanup output is over 3x the input length");
+  if (output.length > MAX_OUTPUT_RATIO * input.length)
+    throw new Error(`Cleanup output is over ${MAX_OUTPUT_RATIO}x the input length`);
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
   const said = ` ${words(input)} `;
