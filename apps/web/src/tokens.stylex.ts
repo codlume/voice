@@ -13,7 +13,6 @@ export const radius = stylex.defineVars({
 export const space = stylex.defineVars({
   sm: "8px",
   md: "12px",
-  lg: "20px",
   xl: "32px",
   xxl: "48px",
 });
