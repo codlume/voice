@@ -13,6 +13,11 @@ import {
 } from "./settings.ts";
 
 describe("parseSettings", () => {
+  test("uses the installed channel for old settings and preserves an explicit selection", () => {
+    expect(parseSettings({}, "nightly").updateChannel).toBe("nightly");
+    expect(parseSettings({ updateChannel: "beta" }, "nightly").updateChannel).toBe("nightly");
+    expect(parseSettings({ updateChannel: "stable" }, "nightly").updateChannel).toBe("stable");
+  });
   test("keeps valid fields and defaults the rest, field by field", () => {
     expect(
       parseSettings({
@@ -21,6 +26,7 @@ describe("parseSettings", () => {
       }),
     ).toEqual({
       hotkey: "rightOption",
+      updateChannel: "stable",
       cleanup: { enabled: false, styling: "semi-formal", structure: "lists", context: "general" },
     });
   });
@@ -41,6 +47,7 @@ describe("applyPatch", () => {
     const next = applyPatch(DEFAULT_SETTINGS, { cleanup: { context: "email" } });
     expect(next).toEqual({
       hotkey: "fn",
+      updateChannel: "stable",
       cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "email" },
     });
     expect(DEFAULT_SETTINGS.cleanup.context).toBe("general");
@@ -74,6 +81,7 @@ describe("load and save", () => {
     const file = NodePath.join(dir, "nested", "settings.json");
     const settings = applyPatch(DEFAULT_SETTINGS, {
       hotkey: "rightOption",
+      updateChannel: "nightly",
       cleanup: { enabled: false },
     });
     await saveSettings(file, settings);

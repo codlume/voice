@@ -12,7 +12,10 @@ const rendererDir = `${appDir}src/renderer`;
 // await, so the CJS bundle can only reach it through `await import("node-llama-cpp")`;
 // a static import compiles to require() and fails with ERR_REQUIRE_ASYNC_MODULE.
 const isExternal = (id: string) =>
-  id === "electron" || id.startsWith("electron/") || id === "node-llama-cpp";
+  id === "electron" ||
+  id.startsWith("electron/") ||
+  id === "node-llama-cpp" ||
+  id === "electron-updater";
 
 const electronEntry = (name: "main" | "preload", entry: string) => ({
   entry: { [name]: entry },

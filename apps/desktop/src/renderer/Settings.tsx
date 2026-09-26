@@ -1,9 +1,16 @@
 import * as stylex from "@stylexjs/stylex";
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
-import type { Hotkey, Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
+import type {
+  Hotkey,
+  Settings as SettingsValue,
+  SettingsPatch,
+  UpdateChannel,
+  UpdatesSnapshot,
+} from "../shared/api.ts";
 import { hotkeyLabels, stylings } from "./checklist.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { updateStatusText } from "./updateStatus.ts";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
@@ -105,6 +112,7 @@ const styles = stylex.create({
   radio: { position: "absolute", opacity: 0, pointerEvents: "none" },
   example: { margin: 0, color: color.muted, fontSize: 13 },
   hint: { margin: 0, color: color.muted, fontSize: 12.5 },
+  error: { margin: 0, color: color.failed, fontSize: 12.5 },
 });
 
 const isHotkey = (value: string): value is Hotkey => value in hotkeyLabels;
@@ -207,8 +215,24 @@ function StylePicker({ cleanup }: { cleanup: SettingsValue["cleanup"] }) {
   );
 }
 
-export function Settings({ settings }: { settings: SettingsValue }) {
+export function Settings({
+  settings,
+  updates,
+}: {
+  settings: SettingsValue;
+  updates: UpdatesSnapshot;
+}) {
   const { cleanup } = settings;
+  const [updateError, setUpdateError] = useState("");
+
+  async function changeChannel(channel: UpdateChannel) {
+    setUpdateError("");
+    try {
+      await window.voice.updateSettings({ updateChannel: channel });
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
+    }
+  }
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Settings</h1>
@@ -286,6 +310,55 @@ export function Settings({ settings }: { settings: SettingsValue }) {
               onChange={(on) => update({ cleanup: { context: on ? "email" : "general" } })}
             />
           </Row>
+        </div>
+      </section>
+
+      <section aria-labelledby="updates" {...stylex.props(styles.section)}>
+        <h2 id="updates" {...stylex.props(styles.sectionLabel)}>
+          Updates
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-update-channel"
+            title="Update channel"
+            detail="Stable gets regular releases. Nightly gets early builds."
+            disabled={updates.status.kind === "installing"}
+          >
+            <select
+              id="setting-update-channel"
+              value={updates.channel}
+              disabled={updates.status.kind === "installing"}
+              onChange={(event) => {
+                const channel = event.currentTarget.value;
+                if (channel === "stable" || channel === "nightly") void changeChannel(channel);
+              }}
+              {...stylex.props(styles.select)}
+            >
+              <option value="stable">Stable</option>
+              <option value="nightly">Nightly</option>
+            </select>
+          </Row>
+          <div {...stylex.props(styles.row)}>
+            <div {...stylex.props(styles.rowText)}>
+              <span {...stylex.props(styles.rowTitle)}>Installed version</span>
+              <p {...stylex.props(styles.rowDetail)}>
+                {updates.version} · {updates.installedChannel === "nightly" ? "Nightly" : "Stable"}
+              </p>
+            </div>
+          </div>
+          <div {...stylex.props(styles.row)}>
+            <div {...stylex.props(styles.rowText)}>
+              <span {...stylex.props(styles.rowTitle)}>Update status</span>
+              <p role="status" aria-live="polite" {...stylex.props(styles.rowDetail)}>
+                {updateStatusText(updates.status)}
+              </p>
+              {updateError && (
+                <p role="alert" {...stylex.props(styles.error)}>
+                  {updateError}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </section>
     </div>

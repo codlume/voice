@@ -41,6 +41,9 @@ jobs:
       - name: Test
         run: vp run test
 
+      - name: Test release scripts
+        run: node --test scripts/release-*.test.mjs
+
       - name: Build desktop
         run: vp run build
 

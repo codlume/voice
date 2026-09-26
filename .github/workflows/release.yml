@@ -1,0 +1,235 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-please-main
+      cancel-in-progress: false
+    outputs:
+      stable: ${{ steps.detect.outputs.stable }}
+      stable_version: ${{ steps.detect.outputs.stable_version }}
+      stable_sha: ${{ steps.detect.outputs.stable_sha }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Detect stable release
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION_RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
+          ACTION_RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          ACTION_RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${ACTION_RELEASE_CREATED}" == true ]]; then
+            tag="${ACTION_RELEASE_TAG}"
+          else
+            tag="v$(node -p 'require("./package.json").version')"
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            [[ "${ACTION_RELEASE_CREATED}" != true ]] && exit 0
+            echo "release-please reported a release without a tag" >&2
+            exit 1
+          fi
+          sha="$(git rev-list -n 1 "${tag}")"
+          if [[ "${ACTION_RELEASE_CREATED}" == true ]]; then
+            [[ "${sha}" == "${ACTION_RELEASE_SHA}" ]] || exit 1
+          else
+            [[ "${sha}" == "${GITHUB_SHA}" ]] || exit 0
+          fi
+          version="$(git show "${tag}:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          desktop_version="$(git show "${tag}:apps/desktop/package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
+          [[ "${version}" == "${desktop_version}" && "${tag}" == "v${version}" ]] || exit 1
+          gh release view "${tag}" --json tagName >/dev/null
+          echo "stable=true" >> "${GITHUB_OUTPUT}"
+          echo "stable_version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "stable_sha=${sha}" >> "${GITHUB_OUTPUT}"
+
+  nightly-build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      RELEASE_CHANNEL: nightly
+      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Install AWS CLI
+        run: brew install awscli
+      - name: Resolve version
+        run: echo "RELEASE_VERSION=$(node scripts/release-version.mjs nightly)" >> "$GITHUB_ENV"
+      - name: Check published version
+        id: preflight
+        run: node scripts/release-preflight.mjs
+      - name: Import Developer ID certificate
+        if: steps.preflight.outputs.skip != 'true'
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash scripts/release-keychain.sh
+      - name: Build, sign, notarize, and verify
+        if: steps.preflight.outputs.skip != 'true'
+        run: node scripts/release-build.mjs
+      - uses: actions/upload-artifact@v4
+        if: steps.preflight.outputs.skip != 'true'
+        with:
+          name: nightly-mac-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove temporary keychain
+        if: always()
+        run: bash scripts/release-keychain.sh cleanup
+    outputs:
+      skip: ${{ steps.preflight.outputs.skip }}
+
+  stable-build:
+    needs: release-please
+    if: needs.release-please.outputs.stable == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      RELEASE_CHANNEL: stable
+      RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
+      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.stable_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Install AWS CLI
+        run: brew install awscli
+      - name: Check published version
+        id: preflight
+        run: node scripts/release-preflight.mjs
+      - name: Import Developer ID certificate
+        if: steps.preflight.outputs.skip != 'true'
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash scripts/release-keychain.sh
+      - name: Build, sign, notarize, and verify
+        if: steps.preflight.outputs.skip != 'true'
+        run: node scripts/release-build.mjs
+      - uses: actions/upload-artifact@v4
+        if: steps.preflight.outputs.skip != 'true'
+        with:
+          name: stable-mac-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove temporary keychain
+        if: always()
+        run: bash scripts/release-keychain.sh cleanup
+    outputs:
+      skip: ${{ steps.preflight.outputs.skip }}
+
+  nightly-publish:
+    needs: nightly-build
+    if: needs.nightly-build.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-nightly
+      cancel-in-progress: false
+    env:
+      RELEASE_CHANNEL: nightly
+      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - run: aws --version
+      - run: echo "RELEASE_VERSION=$(node scripts/release-version.mjs nightly)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: nightly-mac-arm64
+          path: apps/desktop/release/
+      - run: node scripts/release-publish.mjs
+
+  stable-publish:
+    needs: [release-please, stable-build]
+    if: needs.stable-build.result == 'success' && needs.stable-build.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-stable
+      cancel-in-progress: false
+    env:
+      RELEASE_CHANNEL: stable
+      RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
+      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.stable_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - run: aws --version
+      - uses: actions/download-artifact@v4
+        with:
+          name: stable-mac-arm64
+          path: apps/desktop/release/
+      - run: node scripts/release-publish.mjs

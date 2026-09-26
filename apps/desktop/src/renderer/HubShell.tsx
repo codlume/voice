@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
 import { Settings } from "./Settings.tsx";
+import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const pages = [
@@ -25,6 +26,9 @@ const styles = stylex.create({
     WebkitFontSmoothing: "antialiased",
   },
   sidebar: {
+    position: "sticky",
+    top: 0,
+    height: "100vh",
     flexShrink: 0,
     width: 196,
     paddingBlock: space.lg,
@@ -33,6 +37,8 @@ const styles = stylex.create({
     borderRightWidth: 1,
     borderRightStyle: "solid",
     borderRightColor: color.border,
+    display: "flex",
+    flexDirection: "column",
   },
   brand: {
     margin: 0,
@@ -43,6 +49,7 @@ const styles = stylex.create({
     fontWeight: 500,
   },
   nav: { display: "flex", flexDirection: "column", gap: 2 },
+  footer: { marginTop: "auto", paddingTop: space.lg },
   navItem: {
     paddingBlock: 7,
     paddingInline: space.md,
@@ -87,13 +94,16 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
             </button>
           ))}
         </nav>
+        <div {...stylex.props(styles.footer)}>
+          <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+        </div>
       </aside>
       <main {...stylex.props(styles.main)}>
         <div {...stylex.props(styles.column)}>
           {page === "home" ? (
             <Home snapshot={snapshot} />
           ) : (
-            <Settings settings={snapshot.settings} />
+            <Settings settings={snapshot.settings} updates={snapshot.updates} />
           )}
         </div>
       </main>

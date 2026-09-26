@@ -1,6 +1,18 @@
 import * as NodePath from "node:path";
+import { readFile } from "node:fs/promises";
 
-import { app, BrowserWindow, clipboard, ipcMain, Menu, screen, shell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  screen,
+  shell,
+  Tray,
+} from "electron";
+import { autoUpdater } from "electron-updater";
 
 import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
 import { createCleanup } from "./cleanup.ts";
@@ -10,6 +22,7 @@ import { idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
+import { createUpdates, parseReleaseConfig } from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -122,13 +135,40 @@ async function main() {
   const settingsFile = NodePath.join(userData, "settings.json");
   log(`userData ${userData}`);
 
-  const [settings] = await Promise.all([loadSettings(settingsFile), app.whenReady()]);
+  const manifest: unknown = JSON.parse(
+    await readFile(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
+  );
+  const release =
+    !development && typeof manifest === "object" && manifest !== null && "voiceRelease" in manifest
+      ? parseReleaseConfig(manifest.voiceRelease)
+      : null;
+  const installedChannel = release?.channel ?? "stable";
+  const [settings] = await Promise.all([
+    loadSettings(settingsFile, installedChannel),
+    app.whenReady(),
+  ]);
+  let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
+  let saving: Promise<void> = Promise.resolve();
 
   const store = createStore({
     session: idle,
     permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
     models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
     settings,
+    updates: {
+      version: app.getVersion(),
+      installedChannel,
+      channel: settings.updateChannel,
+      status:
+        release && process.platform === "darwin" && process.arch === "arm64"
+          ? { kind: "idle" }
+          : {
+              kind: "disabled",
+              reason: development
+                ? "Updates are disabled in development builds."
+                : "Updates are unavailable in this build.",
+            },
+    },
     last: null,
   });
 
@@ -147,8 +187,12 @@ async function main() {
     binary: helperBinary(),
     modelsDir,
     env: helperEnv(),
-    onEvent: (event) => dictation.onHelperEvent(event),
-    onExit: () => dictation.dispatch({ type: "helperExited" }),
+    onEvent: (event) => {
+      if (lifecycle === "running") dictation.onHelperEvent(event);
+    },
+    onExit: () => {
+      if (lifecycle === "running") dictation.dispatch({ type: "helperExited" });
+    },
     configure: () => [
       { type: "hotkey.configure", key: store.state.settings.hotkey },
       { type: "permissions.check" },
@@ -166,11 +210,78 @@ async function main() {
     log,
   });
 
+  const updates = createUpdates({
+    engine: store.state.updates.status.kind === "disabled" ? null : autoUpdater,
+    release,
+    initial: store.state.updates,
+    onChange: (value) => store.update((s) => ({ ...s, updates: value })),
+    canRestart: () =>
+      lifecycle === "running" &&
+      (store.state.session.phase === "idle" || store.state.session.phase === "done") &&
+      store.state.settings.updateChannel === store.state.updates.channel,
+    confirmRestart: async () => {
+      const last = store.state.last;
+      const session = store.state.session;
+      const needsRecovery =
+        last !== null && session.phase === "done" && session.outcome.kind !== "inserted";
+      const buttons = last
+        ? needsRecovery
+          ? ["Cancel", "Copy transcript and restart"]
+          : ["Cancel", "Restart", "Copy transcript and restart"]
+        : ["Cancel", "Restart"];
+      const { response } = await dialog.showMessageBox({
+        type: "question",
+        message: "Restart Voice to install the update?",
+        detail: last
+          ? "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents."
+          : "Voice will close and reopen with the downloaded version.",
+        buttons,
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (response === 0) return false;
+      if (last !== store.state.last) return false;
+      if (last && buttons[response] === "Copy transcript and restart")
+        clipboard.writeText(last.text || last.raw);
+      return true;
+    },
+    prepareRestart: async () => {
+      lifecycle = "stopping";
+      try {
+        await saving;
+      } catch (error) {
+        lifecycle = "running";
+        throw error;
+      }
+      stopPermissionPolling();
+      try {
+        await shutdown(true);
+      } catch (error) {
+        lifecycle = "failed";
+        throw error;
+      }
+      lifecycle = "stopped";
+    },
+    onRestartFailure: () => {
+      if (lifecycle === "running") return;
+      dialog.showErrorBox(
+        "Voice update",
+        "The update could not be installed. Voice will reopen its current version so you can keep dictating and try again.",
+      );
+      app.relaunch();
+      app.quit();
+    },
+  });
+
   const hubVisible = () => hub !== undefined && !hub.isDestroyed() && hub.isVisible();
 
   let permissionPoll: NodeJS.Timeout | null = null;
+  function stopPermissionPolling() {
+    if (permissionPoll) clearInterval(permissionPoll);
+    permissionPoll = null;
+  }
   function syncPermissionPolling() {
-    const wanted = hubVisible() && !allGranted(store.state);
+    const wanted = lifecycle === "running" && hubVisible() && !allGranted(store.state);
     if (wanted && !permissionPoll) {
       permissionPoll = setInterval(
         () => helper.send({ type: "permissions.check" }),
@@ -221,6 +332,23 @@ async function main() {
           click: () => copyLast("text"),
         },
         { type: "separator" },
+        {
+          label:
+            state.updates.status.kind === "ready" ? "Restart to update…" : "Check for updates…",
+          enabled:
+            state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
+          click: () => {
+            showHub();
+            void (
+              state.updates.status.kind === "ready" ? updates.restart() : updates.check()
+            ).catch((error: unknown) =>
+              dialog.showErrorBox(
+                "Voice update",
+                error instanceof Error ? error.message : "Update failed.",
+              ),
+            );
+          },
+        },
         { label: "Quit", role: "quit" },
       ]),
     );
@@ -232,7 +360,7 @@ async function main() {
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
-    if (state.last !== previous.last) refreshTray(state);
+    if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     const cleanupEnabled = state.settings.cleanup.enabled;
     if (cleanupEnabled !== previous.settings.cleanup.enabled) {
@@ -240,15 +368,18 @@ async function main() {
     }
   });
 
-  let saving: Promise<void> = Promise.resolve();
-  function updateSettings(patch: SettingsPatch) {
+  async function updateSettings(patch: SettingsPatch) {
+    if (lifecycle !== "running" || store.state.updates.status.kind === "installing")
+      throw new Error("Voice is restarting.");
     const previous = store.state.settings;
     const next = applyPatch(previous, patch);
     store.update((s) => ({ ...s, settings: next }));
     if (next.hotkey !== previous.hotkey)
       helper.send({ type: "hotkey.configure", key: next.hotkey });
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
-    return saving;
+    await saving;
+    if (next.updateChannel === store.state.settings.updateChannel)
+      await updates.setChannel(next.updateChannel);
   }
 
   function requestPermission(kind: PermissionKind) {
@@ -261,6 +392,8 @@ async function main() {
   }
 
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
+  ipcMain.handle(Channel.checkForUpdates, () => updates.check());
+  ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
@@ -281,14 +414,20 @@ async function main() {
   // node-llama-cpp frees the model on a native worker. If Electron tears Node down while that
   // worker is in flight, its completion callback throws into a dying environment and the
   // process aborts. So the first quit only starts the shutdown; the quit that follows it passes.
-  let lifecycle: "running" | "stopping" | "stopped" = "running";
-  async function shutdown() {
-    const timeout = new Promise<"timeout">((resolve) =>
-      setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout"),
-    );
-    const stopped = Promise.allSettled([helper.stop(), cleanup.dispose()]);
-    if ((await Promise.race([stopped, timeout])) === "timeout") {
+  async function shutdown(forUpdate = false) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
+    });
+    const stopped = Promise.allSettled([saving, helper.stop(), cleanup.dispose()]);
+    const result = await Promise.race([stopped, timeout]);
+    clearTimeout(timer);
+    if (result === "timeout") {
       log(`quit: shutdown still running after ${SHUTDOWN_TIMEOUT_MS} ms`);
+      if (forUpdate)
+        throw new Error("Voice is still stopping. Quit and reopen Voice before updating.");
+    } else if (forUpdate && result.some((item) => item.status === "rejected")) {
+      throw new Error("Voice could not stop safely. Quit and reopen Voice before updating.");
     }
   }
   app.on("before-quit", (event) => {
@@ -296,6 +435,8 @@ async function main() {
     event.preventDefault();
     if (lifecycle === "stopping") return;
     lifecycle = "stopping";
+    updates.dispose();
+    stopPermissionPolling();
     void shutdown().then(() => {
       lifecycle = "stopped";
       app.quit();
@@ -303,6 +444,7 @@ async function main() {
   });
 
   showHub();
+  updates.start();
   void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
   if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });

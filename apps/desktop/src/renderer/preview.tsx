@@ -1,17 +1,24 @@
 import { createRoot } from "react-dom/client";
 
-import type { Outcome, PillState, Snapshot, VoiceApi } from "../shared/api.ts";
+import type { Outcome, PillState, Snapshot, UpdateStatus, VoiceApi } from "../shared/api.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
 import { useSnapshot } from "./useSnapshot.ts";
 
 const base: Snapshot = {
+  updates: {
+    version: "1.4.2",
+    installedChannel: "stable",
+    channel: "stable",
+    status: { kind: "idle" },
+  },
   session: { kind: "idle" },
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
+    updateChannel: "stable",
     cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
   },
   last: null,
@@ -46,6 +53,15 @@ const pillScenes: Record<string, PillState> = {
   }),
 };
 
+const updateScenes: Record<string, UpdateStatus> = {
+  checking: { kind: "checking" },
+  current: { kind: "current" },
+  downloading: { kind: "downloading", version: "1.5.0", percent: 48 },
+  ready: { kind: "ready", version: "1.5.0" },
+  failed: { kind: "failed", message: "Could not check for updates. Try again." },
+  disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
+};
+
 const hubScenes: Record<string, Snapshot> = {
   fresh: base,
   progress: {
@@ -57,6 +73,20 @@ const hubScenes: Record<string, Snapshot> = {
     },
   },
   ready,
+  ...Object.fromEntries(
+    Object.entries(updateScenes).map(([name, status]) => [
+      name,
+      {
+        ...ready,
+        updates: { ...ready.updates, status },
+      },
+    ]),
+  ),
+  nightly: {
+    ...ready,
+    settings: { ...ready.settings, updateChannel: "nightly" },
+    updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
+  },
 };
 
 const cycle: [PillState, number][] = [
@@ -90,6 +120,23 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
   }
 
   return {
+    checkForUpdates: async () => {
+      set({ ...snapshot, updates: { ...snapshot.updates, status: { kind: "checking" } } });
+      setTimeout(
+        () => set({ ...snapshot, updates: { ...snapshot.updates, status: { kind: "current" } } }),
+        500,
+      );
+    },
+    restartForUpdate: async () => {
+      if (snapshot.updates.status.kind !== "ready") throw new Error("No update is ready.");
+      set({
+        ...snapshot,
+        updates: {
+          ...snapshot.updates,
+          status: { kind: "installing", version: snapshot.updates.status.version },
+        },
+      });
+    },
     getSnapshot: async () => snapshot,
     onSnapshot: (listener) => {
       listeners.add(listener);
@@ -110,8 +157,16 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         ...snapshot,
         settings: {
           hotkey: patch.hotkey ?? snapshot.settings.hotkey,
+          updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
         },
+        updates: patch.updateChannel
+          ? {
+              ...snapshot.updates,
+              channel: patch.updateChannel,
+              status: { kind: "idle" },
+            }
+          : snapshot.updates,
       });
     },
     requestPermission: async (kind) => {

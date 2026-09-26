@@ -1,10 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { Settings, SettingsPatch } from "../shared/api.ts";
+import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
+  updateChannel: "stable",
   cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
 };
 
@@ -19,12 +20,13 @@ const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback
 const record = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
-export function parseSettings(raw: unknown): Settings {
+export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "stable"): Settings {
   const r = record(raw);
   const c = record(r.cleanup);
   const d = DEFAULT_SETTINGS.cleanup;
   return {
     hotkey: pick(HOTKEYS, r.hotkey, DEFAULT_SETTINGS.hotkey),
+    updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),
@@ -37,21 +39,25 @@ export function parseSettings(raw: unknown): Settings {
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   return parseSettings({
     hotkey: patch.hotkey ?? settings.hotkey,
+    updateChannel: patch.updateChannel ?? settings.updateChannel,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
   });
 }
 
-export async function loadSettings(file: string): Promise<Settings> {
+export async function loadSettings(
+  file: string,
+  defaultChannel: UpdateChannel = "stable",
+): Promise<Settings> {
   let text: string;
   try {
     text = await readFile(file, "utf8");
   } catch {
-    return DEFAULT_SETTINGS;
+    return parseSettings(null, defaultChannel);
   }
   try {
-    return parseSettings(JSON.parse(text));
+    return parseSettings(JSON.parse(text), defaultChannel);
   } catch {
-    return DEFAULT_SETTINGS;
+    return parseSettings(null, defaultChannel);
   }
 }
 
