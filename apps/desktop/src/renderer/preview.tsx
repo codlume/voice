@@ -19,6 +19,7 @@ const base: Snapshot = {
   settings: {
     hotkey: "fn",
     updateChannel: "stable",
+    theme: "system",
     cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
   },
   last: null,
@@ -158,6 +159,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         settings: {
           hotkey: patch.hotkey ?? snapshot.settings.hotkey,
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
+          theme: patch.theme ?? snapshot.settings.theme,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
         },
         updates: patch.updateChannel

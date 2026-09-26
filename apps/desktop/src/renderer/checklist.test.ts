@@ -16,6 +16,7 @@ const fresh: Snapshot = {
   settings: {
     hotkey: "fn",
     updateChannel: "stable",
+    theme: "system",
     cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
   },
   last: null,

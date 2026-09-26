@@ -2,6 +2,7 @@ export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
 export type Hotkey = "fn" | "rightOption" | "rightCommand";
 export type UpdateChannel = "stable" | "nightly";
+export type Theme = "system" | "light" | "dark";
 
 export type UpdateStatus =
   | { kind: "disabled"; reason: string }
@@ -43,6 +44,7 @@ export type ModelStatus =
 export type Settings = {
   hotkey: Hotkey;
   updateChannel: UpdateChannel;
+  theme: Theme;
   cleanup: {
     enabled: boolean;
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
@@ -54,6 +56,7 @@ export type Settings = {
 export type SettingsPatch = {
   hotkey?: Hotkey;
   updateChannel?: UpdateChannel;
+  theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
 };
 

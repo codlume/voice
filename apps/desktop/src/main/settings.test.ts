@@ -27,6 +27,7 @@ describe("parseSettings", () => {
     ).toEqual({
       hotkey: "rightOption",
       updateChannel: "stable",
+      theme: "system",
       cleanup: { enabled: false, styling: "semi-formal", structure: "lists", context: "general" },
     });
   });
@@ -35,6 +36,11 @@ describe("parseSettings", () => {
     expect(parseSettings({ cleanup: { styling: "semi-casual" } }).cleanup.styling).toBe(
       "semi-casual",
     );
+  });
+
+  test("keeps a saved theme and falls back to system for an unknown one", () => {
+    expect(parseSettings({ theme: "dark" }).theme).toBe("dark");
+    expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
   test.each([null, "text", 42, [], { cleanup: "no" }])("falls back to defaults for %j", (raw) => {
@@ -48,6 +54,7 @@ describe("applyPatch", () => {
     expect(next).toEqual({
       hotkey: "fn",
       updateChannel: "stable",
+      theme: "system",
       cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "email" },
     });
     expect(DEFAULT_SETTINGS.cleanup.context).toBe("general");
@@ -55,6 +62,13 @@ describe("applyPatch", () => {
 
   test("changes the hotkey alone", () => {
     expect(applyPatch(DEFAULT_SETTINGS, { hotkey: "rightCommand" }).hotkey).toBe("rightCommand");
+  });
+
+  test("changes the theme alone and keeps other fields", () => {
+    expect(applyPatch(DEFAULT_SETTINGS, { theme: "light" })).toEqual({
+      ...DEFAULT_SETTINGS,
+      theme: "light",
+    });
   });
 });
 
@@ -82,6 +96,7 @@ describe("load and save", () => {
     const settings = applyPatch(DEFAULT_SETTINGS, {
       hotkey: "rightOption",
       updateChannel: "nightly",
+      theme: "dark",
       cleanup: { enabled: false },
     });
     await saveSettings(file, settings);

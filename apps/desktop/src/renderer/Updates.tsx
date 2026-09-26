@@ -8,8 +8,8 @@ import { color, radius, space } from "./tokens.stylex.ts";
 const styles = stylex.create({
   sidebar: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: space.sm },
   sidebarLine: { display: "flex", alignItems: "center", gap: space.sm },
-  status: { margin: 0, color: color.muted, fontSize: 12, textAlign: "right" },
-  failed: { color: color.failed },
+  status: { margin: 0, color: color.mutedForeground, fontSize: 12, textAlign: "right" },
+  failed: { color: color.errorForeground },
   iconButton: {
     flexShrink: 0,
     display: "grid",
@@ -21,8 +21,8 @@ const styles = stylex.create({
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.small,
-    backgroundColor: { default: "transparent", ":hover": color.hover },
-    color: color.ink,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    color: color.foreground,
     cursor: { default: "pointer", ":disabled": "default" },
   },
   action: {
@@ -32,13 +32,13 @@ const styles = stylex.create({
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.small,
-    backgroundColor: { default: color.panel, ":hover": color.hover },
-    color: color.ink,
+    backgroundColor: { default: color.card, ":hover": color.accent },
+    color: color.foreground,
     font: "inherit",
     fontSize: 12,
     cursor: { default: "pointer", ":disabled": "default" },
   },
-  error: { margin: 0, color: color.failed, fontSize: 12, textAlign: "right" },
+  error: { margin: 0, color: color.errorForeground, fontSize: 12, textAlign: "right" },
 });
 
 function errorMessage(error: unknown): string {
