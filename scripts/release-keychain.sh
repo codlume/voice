@@ -29,5 +29,5 @@ if [[ -z "${identity}" || "${identity}" != *"(${APPLE_TEAM_ID})" ]]; then
   exit 1
 fi
 echo "CSC_KEYCHAIN=${keychain}" >> "${GITHUB_ENV:?}"
-echo "CSC_NAME=${identity}" >> "${GITHUB_ENV}"
+echo "CSC_NAME=${identity#Developer ID Application: }" >> "${GITHUB_ENV}"
 echo "APPLE_SIGN_IDENTITY=${identity}" >> "${GITHUB_ENV}"
