@@ -5,7 +5,9 @@ packages:
 allowBuilds:
   electron: true
   electron-winstaller: false
+  esbuild: false
   node-llama-cpp: true
+  workerd: false
 
 catalog:
   "@stylexjs/stylex": 0.19.1
