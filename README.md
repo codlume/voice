@@ -70,3 +70,5 @@ pnpm --filter @voice/web run deploy
 ```
 
 `preview` serves the output of `build` locally in workerd, the Workers runtime. `deploy` builds and runs `wrangler deploy`. It needs `wrangler login` or a `CLOUDFLARE_API_TOKEN` in the environment.
+
+The Deploy website workflow deploys the site when a push to `main` changes `apps/web` or the workspace dependencies. Run it manually from GitHub Actions to redeploy. It needs a `CLOUDFLARE_API_TOKEN` repository secret that can edit Workers scripts and the `voice.codlume.com` custom domain, and a `CLOUDFLARE_ACCOUNT_ID` repository variable. A new Voice release needs no deploy, because the page reads the stable feed on each request.
