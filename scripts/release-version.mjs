@@ -24,7 +24,8 @@ export function compareVersions(left, right) {
   if (a.nightly === null) return b.nightly === null ? 0 : 1;
   if (b.nightly === null) return -1;
   for (let index = 0; index < Math.min(a.nightly.length, b.nightly.length); index += 1) {
-    if (a.nightly[index] !== b.nightly[index]) return Math.sign(a.nightly[index] - b.nightly[index]);
+    if (a.nightly[index] !== b.nightly[index])
+      return Math.sign(a.nightly[index] - b.nightly[index]);
   }
   return Math.sign(a.nightly.length - b.nightly.length);
 }
