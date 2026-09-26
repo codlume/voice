@@ -1,0 +1,191 @@
+name: PR Size
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    name: Label PR size
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: pr-size-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # This privileged job only inspects PR commits as Git data. Never check out
+      # or execute PR code, install dependencies, or restore contributor caches.
+      - name: Checkout base repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Sync PR size label
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { execFileSync } = require("node:child_process");
+
+            const issueNumber = context.payload.pull_request.number;
+            const baseSha = context.payload.pull_request.base.sha;
+            const headSha = context.payload.pull_request.head.sha;
+            const headTrackingRef = `refs/remotes/pr-size/${issueNumber}`;
+            const sizeBands = [
+              {
+                maxLines: 10,
+                name: "size:XS",
+                color: "0e8a16",
+                description: "0-9 effective changed lines (test files excluded in mixed PRs).",
+              },
+              {
+                maxLines: 30,
+                name: "size:S",
+                color: "5ebd3e",
+                description: "10-29 effective changed lines (test files excluded in mixed PRs).",
+              },
+              {
+                maxLines: 100,
+                name: "size:M",
+                color: "fbca04",
+                description: "30-99 effective changed lines (test files excluded in mixed PRs).",
+              },
+              {
+                maxLines: 500,
+                name: "size:L",
+                color: "fe7d37",
+                description: "100-499 effective changed lines (test files excluded in mixed PRs).",
+              },
+              {
+                maxLines: 1000,
+                name: "size:XL",
+                color: "d93f0b",
+                description: "500-999 effective changed lines (test files excluded in mixed PRs).",
+              },
+              {
+                maxLines: Infinity,
+                name: "size:XXL",
+                color: "b60205",
+                description: "1,000+ effective changed lines (test files excluded in mixed PRs).",
+              },
+            ];
+            const managedLabelNames = new Set(sizeBands.map((label) => label.name));
+            const testExcludePathspecs = [
+              ":(glob,exclude)**/tests/**",
+              ":(glob,exclude)**/*.test.*",
+              ":(glob,exclude)native/voice-helper/Tests/**",
+            ];
+            const sumNumstat = (text) =>
+              text
+                .split("\n")
+                .filter(Boolean)
+                .reduce((total, line) => {
+                  const [additions, deletions] = line.split("\t");
+                  return (
+                    total +
+                    (additions === "-" ? 0 : Number(additions)) +
+                    (deletions === "-" ? 0 : Number(deletions))
+                  );
+                }, 0);
+
+            execFileSync("git", ["fetch", "--no-tags", "origin", baseSha], {
+              stdio: "inherit",
+            });
+            execFileSync(
+              "git",
+              ["fetch", "--no-tags", "origin", `+refs/pull/${issueNumber}/head:${headTrackingRef}`],
+              { stdio: "inherit" },
+            );
+            const resolvedHeadSha = execFileSync("git", ["rev-parse", headTrackingRef], {
+              encoding: "utf8",
+            }).trim();
+
+            if (resolvedHeadSha !== headSha) {
+              core.warning(
+                `Fetched head ${resolvedHeadSha} differs from event head ${headSha}; skipping stale PR size run.`,
+              );
+              return;
+            }
+
+            const diffArgs = [
+              "diff",
+              "--numstat",
+              "--no-ext-diff",
+              "--no-textconv",
+              "--ignore-all-space",
+              "--ignore-blank-lines",
+              `${baseSha}...${headSha}`,
+            ];
+            const totalChangedLines = sumNumstat(
+              execFileSync("git", diffArgs, { encoding: "utf8" }),
+            );
+            const nonTestChangedLines = sumNumstat(
+              execFileSync("git", [...diffArgs, "--", ".", ...testExcludePathspecs], {
+                encoding: "utf8",
+              }),
+            );
+            const testChangedLines = Math.max(0, totalChangedLines - nonTestChangedLines);
+            const changedLines = nonTestChangedLines === 0 ? testChangedLines : nonTestChangedLines;
+            const nextLabelName = sizeBands.find((band) => changedLines < band.maxLines).name;
+
+            for (const { name, color, description } of sizeBands) {
+              const label = { ...context.repo, name, color, description };
+              let existing;
+              try {
+                ({ data: existing } = await github.rest.issues.getLabel({ ...context.repo, name }));
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+
+                try {
+                  ({ data: existing } = await github.rest.issues.createLabel(label));
+                } catch (createError) {
+                  if (createError.status !== 422) {
+                    throw createError;
+                  }
+
+                  try {
+                    ({ data: existing } = await github.rest.issues.getLabel({ ...context.repo, name }));
+                  } catch (lookupError) {
+                    throw lookupError.status === 404 ? createError : lookupError;
+                  }
+                }
+              }
+
+              if (existing.color !== color || (existing.description ?? "") !== description) {
+                await github.rest.issues.updateLabel(label);
+              }
+            }
+
+            const issue = { ...context.repo, issue_number: issueNumber };
+            const currentLabels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              ...issue,
+              per_page: 100,
+            });
+
+            if (!currentLabels.some((label) => label.name === nextLabelName)) {
+              await github.rest.issues.addLabels({ ...issue, labels: [nextLabelName] });
+            }
+
+            for (const label of currentLabels) {
+              if (!managedLabelNames.has(label.name) || label.name === nextLabelName) {
+                continue;
+              }
+
+              try {
+                await github.rest.issues.removeLabel({ ...issue, name: label.name });
+              } catch (removeError) {
+                if (removeError.status !== 404) {
+                  throw removeError;
+                }
+              }
+            }
+
+            core.info(
+              `PR #${issueNumber}: ${nonTestChangedLines} non-test lines, ${testChangedLines} test lines, ${changedLines} effective lines -> ${nextLabelName}`,
+            );
