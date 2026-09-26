@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/codlume/voice/compare/v0.3.0...v0.4.0) (2026-09-26)
+
+
+### Features
+
+* **desktop:** ship the new app icon ([#61](https://github.com/codlume/voice/issues/61)) ([799a82c](https://github.com/codlume/voice/commit/799a82c43d696ae2ab7597157a60d8b4807067b0))
+* **desktop:** show app icon in sidebar ([#63](https://github.com/codlume/voice/issues/63)) ([#72](https://github.com/codlume/voice/issues/72)) ([61ef47c](https://github.com/codlume/voice/commit/61ef47c76bfb6573380a2605d91bd7be4689bd92))
+* **desktop:** style the DMG install window ([#62](https://github.com/codlume/voice/issues/62)) ([#71](https://github.com/codlume/voice/issues/71)) ([14edb53](https://github.com/codlume/voice/commit/14edb535822b1b462e4d36724e7899ac7fabc68d))
+
+
+### Bug Fixes
+
+* **ci:** allow size labels on pull requests ([#69](https://github.com/codlume/voice/issues/69)) ([02b9c88](https://github.com/codlume/voice/commit/02b9c882647aff15c7b6663b8302f45610073a4c))
+
 ## [0.3.0](https://github.com/codlume/voice/compare/v0.2.0...v0.3.0) (2026-09-26)
 
 
