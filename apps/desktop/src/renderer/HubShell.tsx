@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 
+import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
 import { Settings } from "./Settings.tsx";
@@ -13,6 +14,10 @@ const pages = [
 ] as const;
 
 type Page = (typeof pages)[number]["id"];
+
+const brandIconVisibleSize = 24;
+const macIconGridMargin = 100 / 1024;
+const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
 const styles = stylex.create({
   shell: {
@@ -41,12 +46,20 @@ const styles = stylex.create({
     flexDirection: "column",
   },
   brand: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
     margin: 0,
     paddingInline: space.md,
     paddingBottom: space.lg,
     fontFamily: font.serif,
     fontSize: 20,
     fontWeight: 500,
+  },
+  brandIcon: {
+    width: brandIconSize,
+    height: brandIconSize,
+    margin: -(brandIconSize - brandIconVisibleSize) / 2,
   },
   nav: { display: "flex", flexDirection: "column", gap: 2 },
   footer: { marginTop: "auto", paddingTop: space.lg },
@@ -80,7 +93,10 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   return (
     <div {...stylex.props(styles.shell)}>
       <aside {...stylex.props(styles.sidebar)}>
-        <p {...stylex.props(styles.brand)}>Voice</p>
+        <p {...stylex.props(styles.brand)}>
+          <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
+          Voice
+        </p>
         <nav aria-label="Voice" {...stylex.props(styles.nav)}>
           {pages.map(({ id, label }) => (
             <button
