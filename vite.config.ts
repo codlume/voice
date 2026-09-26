@@ -21,7 +21,7 @@ export default defineConfig({
     "*": "vp fmt --no-error-on-unmatched-pattern",
   },
   fmt: {
-    ignorePatterns,
+    ignorePatterns: [...ignorePatterns, "CHANGELOG.md"],
     sortPackageJson: {},
   },
   lint: {
