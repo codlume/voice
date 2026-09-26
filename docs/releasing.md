@@ -46,7 +46,9 @@ The workflow builds a DMG for manual installation and a ZIP for updates.
 Both live at `/releases/<version>/mac-arm64/`. After promotion, the workflow
 also attaches the DMG to a GitHub release. Stable uses the release-please
 release. Each Nightly gets its own prerelease tagged `v<version>` on the
-built commit. Nightly prereleases are kept, not pruned; the six-hour
+built commit, such as `v0.1.1-nightly.20260926.42` for the UTC date and
+workflow run number. Its notes list the pull requests merged since the
+previous Nightly. Nightly prereleases are kept, not pruned; the six-hour
 schedule bounds how many accumulate. Release-please ignores these tags
 because it only matches the version in `.release-please-manifest.json`. The
 app embeds the build channel and `RELEASE_BASE_URL`. Each channel has its

@@ -42,11 +42,20 @@ function memoryStore() {
   };
 }
 
-test("nightly versions use the next patch and ordered run number", () => {
-  assert.equal(nightlyVersion("0.0.1", 184), "0.0.2-nightly.184");
-  assert.equal(nightlyVersion("1.4.0", 185), "1.4.1-nightly.185");
-  assert.equal(compareVersions("1.4.1-nightly.185", "1.4.1"), -1);
-  assert.equal(compareVersions("1.4.1-nightly.186", "1.4.1-nightly.185"), 1);
+test("nightly versions use the next patch, UTC date, and run number", () => {
+  assert.equal(nightlyVersion("0.0.1", "20260926", 184), "0.0.2-nightly.20260926.184");
+  assert.equal(nightlyVersion("1.4.0", "20261231", 185), "1.4.1-nightly.20261231.185");
+  assert.throws(() => nightlyVersion("1.4.0", "2026-12-31", 185), /YYYYMMDD/);
+  assert.equal(compareVersions("1.4.1-nightly.20260926.185", "1.4.1"), -1);
+  assert.equal(compareVersions("1.4.1-nightly.20260926.186", "1.4.1-nightly.20260926.185"), 1);
+  assert.equal(compareVersions("1.4.1-nightly.20260927.1", "1.4.1-nightly.20260926.185"), 1);
+  assert.equal(compareVersions("1.4.1-nightly.20260926.185", "1.4.1-nightly.20260926.185"), 0);
+});
+
+test("dated nightlies supersede the legacy run-number nightly on the feed", () => {
+  assert.equal(compareVersions("0.1.1-nightly.20260927.4", "0.1.1-nightly.3"), 1);
+  assert.equal(compareVersions("0.1.1-nightly.3", "0.1.1-nightly.20260927.4"), -1);
+  assert.equal(compareVersions("0.1.1-nightly.4", "0.1.1-nightly.3"), 1);
 });
 
 test("publishes artifacts first, then promotes a verified feed", async () => {

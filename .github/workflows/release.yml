@@ -72,6 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       due: ${{ steps.due.outputs.due }}
+      previous: ${{ steps.due.outputs.previous }}
+      version: ${{ steps.due.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -80,7 +82,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
-        run: bash scripts/release-nightly-due.sh >> "${GITHUB_OUTPUT}"
+        # Resolve the version once so build and publish agree across midnight UTC.
+        run: |
+          bash scripts/release-nightly-due.sh >> "${GITHUB_OUTPUT}"
+          version="$(node scripts/release-version.mjs nightly)"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
   nightly-build:
     needs: nightly-due
@@ -89,6 +95,7 @@ jobs:
     timeout-minutes: 90
     env:
       RELEASE_CHANNEL: nightly
+      RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
@@ -106,8 +113,6 @@ jobs:
           run-install: true
       - name: Install AWS CLI
         run: brew install awscli
-      - name: Resolve version
-        run: echo "RELEASE_VERSION=$(node scripts/release-version.mjs nightly)" >> "$GITHUB_ENV"
       - name: Check published version
         id: preflight
         run: node scripts/release-preflight.mjs
@@ -194,7 +199,7 @@ jobs:
       skip: ${{ steps.preflight.outputs.skip }}
 
   nightly-publish:
-    needs: nightly-build
+    needs: [nightly-due, nightly-build]
     if: needs.nightly-build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -202,6 +207,7 @@ jobs:
       cancel-in-progress: false
     env:
       RELEASE_CHANNEL: nightly
+      RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
@@ -215,7 +221,6 @@ jobs:
           cache: true
           run-install: true
       - run: aws --version
-      - run: echo "RELEASE_VERSION=$(node scripts/release-version.mjs nightly)" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           name: nightly-mac-arm64
@@ -229,6 +234,7 @@ jobs:
         if: steps.publish.outputs.result != 'skipped-older'
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIOUS_NIGHTLY: ${{ needs.nightly-due.outputs.previous }}
         shell: bash
         run: |
           set -euo pipefail
@@ -236,10 +242,13 @@ jobs:
           if gh release view "${tag}" --json tagName >/dev/null 2>&1; then
             gh release upload "${tag}" apps/desktop/release/*.dmg --clobber
           else
+            since=()
+            if [[ -n "${PREVIOUS_NIGHTLY}" ]]; then since=(--notes-start-tag "${PREVIOUS_NIGHTLY}"); fi
             gh release create "${tag}" apps/desktop/release/*.dmg \
               --prerelease \
               --target "${GITHUB_SHA}" \
               --title "Voice Nightly ${RELEASE_VERSION} (${GITHUB_SHA::12})" \
+              --generate-notes "${since[@]}" \
               --notes "Unstable build of ${GITHUB_SHA}. Installed Nightlies update themselves."
           fi
 
