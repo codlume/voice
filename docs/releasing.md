@@ -41,7 +41,11 @@ are already configured. Signing and upload secrets still need to be added.
    The workflow uses the custom token only for release-please.
 
 The workflow builds a DMG for manual installation and a ZIP for updates.
-Both live at `/releases/<version>/mac-arm64/`. The app embeds the build
+Both live at `/releases/<version>/mac-arm64/`. After promotion, the workflow
+also attaches the DMG to a GitHub release. Stable uses the release-please
+release. Each Nightly gets its own prerelease tagged `v<version>` on the built
+commit. Release-please ignores these tags because it only matches the version
+in `.release-please-manifest.json`. The app embeds the build
 channel and `RELEASE_BASE_URL`. Each channel has its own
 `/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
 absolute URLs for immutable release artifacts.
@@ -62,7 +66,9 @@ or publish a new version.
 Merge to `main` to publish a Nightly. Merge the release-please PR to publish
 Stable. Watch both jobs in the Release workflow. A successful run ends with
 `published`, `already-published`, or `skipped-older`. To recover from a
-failed run, rerun that workflow from GitHub Actions. If a run uploaded
+failed run, rerun that workflow from GitHub Actions. If only the GitHub
+release step failed, use **Re-run failed jobs**. A full rerun skips the
+already-published version and does not retry the GitHub upload. If a run uploaded
 immutable artifacts but failed before promoting the feed, rebuilding the
 same version can produce different bytes. Keep the existing objects and
 publish a new version in that case.
