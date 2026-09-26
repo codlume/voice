@@ -51,7 +51,8 @@ final class Capture {
         }
     }
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
-    private var source: CaptureSource?
+    private var mic: MicSource?
+    private var file: FileSource?
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
 
@@ -75,17 +76,17 @@ final class Capture {
                     self?.output.log(.info, "test.audioFile ended")
                 }
                 state = .starting(session)
-                source = file
+                self.file = file
                 file.start()
                 return
             }
             guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
                 throw CaptureError(reason: .permission, message: "microphone access is not granted")
             }
-            let mic = try MicSource(sink: sink) { [weak self] in self?.deviceChanged(during: session) }
+            let mic = try self.mic ?? makeMic()
+            self.mic = mic
             state = .starting(session)
-            source = mic
-            try mic.start()
+            try mic.start(sink: sink)
         } catch let error as CaptureError {
             fail(session, reason: error.reason, message: error.message)
         } catch {
@@ -139,11 +140,27 @@ final class Capture {
         default:
             output.log(.error, "capture.cancel \(id) ignored: no such active session")
         }
+        prepareIdleMic()
     }
 
     func shutdown() {
-        stopSource()
+        file?.stop()
+        file = nil
+        disposeMic()
         state = .idle
+    }
+
+    func prepareIdleMic() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, case .idle = state, testAudioPath == nil,
+                AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            else { return }
+            do throws(CaptureError) {
+                if let mic { mic.prepare() } else { mic = try makeMic() }
+            } catch {
+                output.log(.error, "microphone warmup failed: \(error.message)")
+            }
+        }
     }
 
     private func ingest(_ chunk: [Float], for session: CaptureSession) {
@@ -168,49 +185,67 @@ final class Capture {
         }
     }
 
+    private func makeMic() throws(CaptureError) -> MicSource {
+        try MicSource { [weak self] changed in self?.micInvalidated(changed) }
+    }
+
+    private func disposeMic() {
+        mic?.dispose()
+        mic = nil
+    }
+
     // The engine stops delivering audio on a configuration change. Mid-recording the samples so
     // far are still the user's words, so the change ends the session like a key release.
-    private func deviceChanged(during session: CaptureSession) {
+    private func micInvalidated(_ changed: MicSource) {
+        guard changed === mic else { return }
+        disposeMic()
         switch state {
-        case .starting(let current) where current.id == session.id:
-            fail(current, reason: .device, message: "audio device configuration changed")
-        case .recording(let recording) where recording.session.id == session.id:
-            stop(id: session.id)
-        default:
-            break
+        case .starting(let session):
+            fail(session, reason: .device, message: "audio device configuration changed")
+        case .recording(let recording):
+            stop(id: recording.session.id)
+        case .idle, .transcribing:
+            prepareIdleMic()
         }
     }
 
     private func fail(_ session: CaptureSession, reason: CaptureFailure, message: String) {
+        disposeMic()
         stopSource()
         state = .idle
         output.emit(.captureFailed(id: session.id, reason: reason, message: message))
+        prepareIdleMic()
     }
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.id == session.id else { return }
         output.emit(event)
         state = .idle
+        prepareIdleMic()
     }
 
     private func stopSource() {
-        source?.stop()
-        source = nil
+        file?.stop()
+        file = nil
+        mic?.stop()
     }
 }
 
-private protocol CaptureSource: AnyObject {
-    func stop()
-}
+private let defaultInputAddress = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain)
 
 private let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
 
-private final class MicSource: CaptureSource {
+private final class MicSource {
     private let engine = AVAudioEngine()
+    private let converter: AVAudioConverter
+    private let sink = OSAllocatedUnfairLock<(([Float]) -> Void)?>(uncheckedState: nil)
     private var observer: NSObjectProtocol?
+    private var defaultInputListener: AudioObjectPropertyListenerBlock?
 
-    init(sink: @escaping ([Float]) -> Void, onConfigurationChange: @escaping () -> Void) throws {
+    init(onConfigurationChange: @escaping (MicSource) -> Void) throws(CaptureError) {
         let input = engine.inputNode
         let hardware = input.outputFormat(forBus: 0)
         guard hardware.sampleRate > 0, hardware.channelCount > 0, let targetFormat,
@@ -218,18 +253,38 @@ private final class MicSource: CaptureSource {
         else {
             throw CaptureError(reason: .device, message: "no usable audio input device")
         }
+        self.converter = converter
+        let sink = sink
         input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(chunkFrames), format: hardware) { buffer, _ in
+            guard let deliver = sink.withLockUnchecked({ $0 }) else { return }
             if let chunk = resample(buffer, with: converter, to: targetFormat, endOfStream: false) {
-                sink(chunk)
+                deliver(chunk)
             }
         }
         observer = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
-        ) { _ in onConfigurationChange() }
+        ) { [weak self] _ in
+            if let self { onConfigurationChange(self) }
+        }
+        // A stopped engine gets no configuration change when the default input switches, so a
+        // warm engine would otherwise start on the previous device.
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            if let self { onConfigurationChange(self) }
+        }
+        var address = defaultInputAddress
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener) == noErr {
+            defaultInputListener = listener
+        }
+        engine.prepare()
     }
 
-    func start() throws {
+    func prepare() {
         engine.prepare()
+    }
+
+    func start(sink deliver: @escaping ([Float]) -> Void) throws(CaptureError) {
+        converter.reset()
+        sink.withLockUnchecked { $0 = deliver }
         do {
             try engine.start()
         } catch {
@@ -238,14 +293,25 @@ private final class MicSource: CaptureSource {
     }
 
     func stop() {
+        sink.withLockUnchecked { $0 = nil }
+        engine.stop()
+    }
+
+    func dispose() {
+        sink.withLockUnchecked { $0 = nil }
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
+        if let defaultInputListener {
+            var address = defaultInputAddress
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, defaultInputListener)
+        }
+        defaultInputListener = nil
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
     }
 }
 
-private final class FileSource: CaptureSource {
+private final class FileSource {
     private let samples: [Float]
     private let sink: ([Float]) -> Void
     private let onEnd: () -> Void
