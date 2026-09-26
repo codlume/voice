@@ -55,21 +55,23 @@ It checks the builder's SHA-512 and size fields before uploading. It writes
 the channel feed last. A rerun cannot replace different bytes under an
 existing version. An older run cannot move a feed backward. The promotion
 job is serialized per channel, and a failed upload leaves the prior feed
-in place. Builds run independently; only promotion is serialized. A rerun
-skips building when the channel already serves a newer version, or the same
-version with verified artifacts. Missing or corrupt published artifacts stop
+in place. Nightly builds wait for release-please to rule out a Stable
+release, then run independently of Stable; only promotion is serialized.
+A Nightly that finishes after a newer one gets `skipped-older` and no GitHub
+prerelease. A rerun skips building when the channel already serves a newer
+version, or the same version with verified artifacts. Missing or corrupt published artifacts stop
 the run; restore the exact original files from the retained workflow artifact
 or publish a new version.
 
 ## Publish and recover
 
 Merge to `main` to publish a Nightly. Merge the release-please PR to publish
-Stable. Watch both jobs in the Release workflow. A successful run ends with
-`published`, `already-published`, or `skipped-older`. To recover from a
-failed run, rerun that workflow from GitHub Actions. If only the GitHub
-release step failed, use **Re-run failed jobs**. A full rerun skips the
-already-published version and does not retry the GitHub upload. If a run uploaded
-immutable artifacts but failed before promoting the feed, rebuilding the
+Stable; that run skips the Nightly build. Watch the Release workflow. A
+successful run ends with `published`, `already-published`, or
+`skipped-older`. To recover from a failed run, rerun that workflow from
+GitHub Actions. If only the GitHub release step failed, use **Re-run failed
+jobs**. A full rerun skips the already-published version and does not retry
+the GitHub upload. If a run uploaded immutable artifacts but failed before promoting the feed, rebuilding the
 same version can produce different bytes. Keep the existing objects and
 publish a new version in that case.
 

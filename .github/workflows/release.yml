@@ -66,8 +66,8 @@ jobs:
 
   nightly-build:
     needs: release-please
-    # A release commit is the Stable build; a Nightly of it would duplicate Stable.
-    if: needs.release-please.outputs.stable != 'true'
+    # A release commit is the Stable build. A failed release-please run still gets a Nightly.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release-please.outputs.stable != 'true' }}
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -203,8 +203,13 @@ jobs:
         with:
           name: nightly-mac-arm64
           path: apps/desktop/release/
-      - run: node scripts/release-publish.mjs
+      - id: publish
+        run: |
+          result="$(node scripts/release-publish.mjs)"
+          echo "${result}"
+          echo "result=${result}" >> "${GITHUB_OUTPUT}"
       - name: Publish GitHub prerelease
+        if: steps.publish.outputs.result != 'skipped-older'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
