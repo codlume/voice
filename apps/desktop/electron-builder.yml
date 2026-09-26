@@ -27,5 +27,18 @@ mac:
   notarize: false
   extendInfo:
     NSMicrophoneUsageDescription: Voice records your speech only while you hold the dictation shortcut.
+# These positions and iconSize drive build/background*.png. Rerun `pnpm -C apps/desktop brand` after changing them.
+dmg:
+  title: Voice
+  background: build/background.png
+  iconSize: 128
+  contents:
+    - x: 170
+      y: 190
+      type: file
+    - x: 490
+      y: 190
+      type: link
+      path: /Applications
 afterPack: ../../scripts/release-sign-nested.mjs
 generateUpdatesFilesForAllChannels: false
