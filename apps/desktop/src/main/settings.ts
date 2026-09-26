@@ -29,7 +29,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   return {
     hotkey: pick(HOTKEYS, r.hotkey, DEFAULT_SETTINGS.hotkey),
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
-    theme: pick(THEMES, r.theme, "system"),
+    theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),

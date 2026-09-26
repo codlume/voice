@@ -88,12 +88,13 @@ const styles = stylex.create({
   thumbOn: { transform: "translateX(14px)" },
   segments: {
     display: "grid",
+    gridAutoFlow: "column",
+    gridAutoColumns: "1fr",
     gap: 2,
     padding: 3,
     borderRadius: radius.medium,
     backgroundColor: color.segmentTrack,
   },
-  columns: (count: number) => ({ gridTemplateColumns: `repeat(${count}, 1fr)` }),
   segment: {
     position: "relative",
     paddingBlock: 6,
@@ -199,11 +200,7 @@ function Segmented<T extends string>({
 }) {
   const name = useId();
   return (
-    <div
-      role="radiogroup"
-      aria-labelledby={labelledBy}
-      {...stylex.props(styles.segments, styles.columns(options.length))}
-    >
+    <div role="radiogroup" aria-labelledby={labelledBy} {...stylex.props(styles.segments)}>
       {options.map((option) => (
         <label
           key={option.value}

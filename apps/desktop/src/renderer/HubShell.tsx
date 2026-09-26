@@ -20,7 +20,6 @@ const styles = stylex.create({
     minHeight: "100vh",
     backgroundColor: color.background,
     color: color.foreground,
-    colorScheme: "light dark",
     fontFamily: font.sans,
     fontSize: 14,
     lineHeight: 1.45,

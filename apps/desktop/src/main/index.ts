@@ -307,10 +307,11 @@ async function main() {
       minWidth: 720,
       minHeight: 480,
       title: "Voice",
-      show: false,
+      // StyleX tokens cannot be imported here, so this repeats color.background as hex
+      // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fcfcfc",
       webPreferences: { preload },
     });
-    hub.once("ready-to-show", () => hub?.show());
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);

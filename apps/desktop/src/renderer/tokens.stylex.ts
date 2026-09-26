@@ -3,20 +3,23 @@ import * as stylex from "@stylexjs/stylex";
 // Electron's nativeTheme.themeSource drives prefers-color-scheme from the Theme setting.
 const dark = "@media (prefers-color-scheme: dark)";
 const primary = { default: "oklch(0.488 0.217 264)", [dark]: "oklch(0.571 0.21 264)" };
+const background = { default: "oklch(99.2% 0 0)", [dark]: "oklch(14.5% 0 0)" };
+const accent = { default: "oklch(96.7% 0.001 286.375)", [dark]: "rgb(255 255 255 / 4%)" };
+const raisedDark = "color-mix(in srgb, oklch(14.5% 0 0) 97%, white)";
 
 export const color = stylex.defineVars({
-  background: { default: "oklch(99.2% 0 0)", [dark]: "oklch(14.5% 0 0)" },
+  background,
   foreground: { default: "oklch(27.4% 0.006 286.033)", [dark]: "oklch(97% 0 0)" },
-  card: { default: "white", [dark]: "color-mix(in srgb, oklch(14.5% 0 0) 97%, white)" },
+  card: { default: "white", [dark]: raisedDark },
   mutedForeground: {
     default: "oklch(55.2% 0.016 285.938)",
     [dark]: "color-mix(in srgb, oklch(55.6% 0 0) 90%, white)",
   },
-  accent: { default: "oklch(96.7% 0.001 286.375)", [dark]: "rgb(255 255 255 / 4%)" },
+  accent,
   border: { default: "oklch(92% 0.004 286.32)", [dark]: "rgb(255 255 255 / 6%)" },
   input: { default: "oklch(87.1% 0.006 286.286)", [dark]: "rgb(255 255 255 / 8%)" },
   segmentTrack: { default: "oklch(87.1% 0.006 286.286 / 40%)", [dark]: "rgb(255 255 255 / 3.2%)" },
-  segmentSelected: { default: "oklch(99.2% 0 0)", [dark]: "rgb(255 255 255 / 5.76%)" },
+  segmentSelected: { default: background.default, [dark]: "rgb(255 255 255 / 5.76%)" },
   primary,
   primaryForeground: "white",
   // Literal name so style.css can use var(--ring) for the global focus outline.
@@ -31,11 +34,8 @@ export const color = stylex.defineVars({
     [dark]: "color-mix(in srgb, oklch(63.7% 0.237 25.331) 90%, white)",
   },
   errorForeground: { default: "oklch(50.5% 0.213 27.518)", [dark]: "oklch(70.4% 0.191 22.216)" },
-  sidebar: {
-    default: "oklch(98.5% 0 0)",
-    [dark]: "color-mix(in srgb, oklch(14.5% 0 0) 97%, white)",
-  },
-  sidebarRowHover: { default: "oklch(96.7% 0.001 286.375)", [dark]: "rgb(255 255 255 / 4%)" },
+  sidebar: { default: "oklch(98.5% 0 0)", [dark]: raisedDark },
+  sidebarRowHover: accent,
   sidebarRowSelected: { default: "white", [dark]: "rgb(255 255 255 / 3%)" },
 });
 
