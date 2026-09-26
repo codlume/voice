@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://voice.codlume.com/sitemap.xml

@@ -6,8 +6,11 @@ import { RELEASES_URL, formatSize, loadRelease } from "../release.ts";
 import { styles } from "../styles.ts";
 
 const release = await loadRelease();
+const title = "Voice: dictation for your Mac";
 const description =
   "Hold a shortcut, speak, and let go. Voice transcribes on your Mac and types the text into the app you were using.";
+const canonical = "https://voice.codlume.com/";
+const image = new URL("favicon.png", canonical).href;
 ---
 
 <!doctype html>
@@ -16,7 +19,25 @@ const description =
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <title>Voice: dictation for your Mac</title>
+    <title>{title}</title>
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Voice" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:alt" content="Voice app icon" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content="Voice app icon" />
     {import.meta.env.DEV && <link rel="stylesheet" href="/virtual:stylex.css" />}
   </head>
   <body {...stylex.attrs(styles.body)}>
