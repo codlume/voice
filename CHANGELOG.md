@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/codlume/voice/compare/v0.1.0...v0.2.0) (2026-09-26)
+
+
+### Features
+
+* **releases:** attach DMGs to GitHub releases and schedule Nightlies ([#59](https://github.com/codlume/voice/issues/59)) ([c54a4f9](https://github.com/codlume/voice/commit/c54a4f99a42840fa430de4e8b19512ea9be5e532))
+
+
+### Bug Fixes
+
+* **ci:** exclude generated changelog from formatting ([#57](https://github.com/codlume/voice/issues/57)) ([418dea2](https://github.com/codlume/voice/commit/418dea29c5ab4c653fd7fe9cf6771cf9e03c8acc))
+
 ## [0.1.0](https://github.com/codlume/voice/compare/v0.0.1...v0.1.0) (2026-09-26)
 
 
