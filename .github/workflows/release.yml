@@ -65,7 +65,9 @@ jobs:
           echo "stable_sha=${sha}" >> "${GITHUB_OUTPUT}"
 
   nightly-build:
-    if: github.ref == 'refs/heads/main'
+    needs: release-please
+    # A release commit is the Stable build; a Nightly of it would duplicate Stable.
+    if: needs.release-please.outputs.stable != 'true'
     runs-on: macos-15
     timeout-minutes: 90
     env:

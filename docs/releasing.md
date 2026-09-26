@@ -1,8 +1,8 @@
 # Release Voice for macOS
 
 Voice publishes Apple Silicon builds from the Release workflow. Each push to
-`main` builds a Nightly. When you merge a release-please PR, the same
-workflow run also publishes Stable from the tagged commit. Rerun that workflow
+`main` builds a Nightly. When you merge a release-please PR, that workflow
+run publishes Stable from the tagged commit instead of a Nightly. Rerun that workflow
 if Stable publication fails; it detects the GitHub release tag on the commit.
 The workflow does not depend on a tag event from `GITHUB_TOKEN`.
 Release-please versions the repository root and updates the desktop package
