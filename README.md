@@ -57,3 +57,16 @@ pnpm dist:mac
 ```
 
 This builds the helper in release mode and writes an arm64 DMG to `apps/desktop/release`.
+
+## Website
+
+`apps/web` is the download page. It is an Astro site that runs on Cloudflare Workers. On each request, it reads the stable update feed and links the current DMG. If the feed is unavailable, the button links to the latest GitHub release.
+
+```sh
+pnpm --filter @voice/web dev
+pnpm --filter @voice/web build
+pnpm --filter @voice/web preview
+pnpm --filter @voice/web deploy
+```
+
+`preview` serves the output of `build` locally in workerd, the Workers runtime. `deploy` builds and runs `wrangler deploy`. It needs `wrangler login` or a `CLOUDFLARE_API_TOKEN` in the environment.
