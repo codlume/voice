@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/codlume/voice/compare/v0.4.0...v0.5.0) (2026-09-26)
+
+
+### Features
+
+* **web:** add SEO metadata and app favicon ([#73](https://github.com/codlume/voice/issues/73)) ([74fa778](https://github.com/codlume/voice/commit/74fa778f667d23ef1ac7908ab4788e22e692fce5))
+
+
+### Performance Improvements
+
+* **helper:** keep the microphone engine prepared between sessions ([#75](https://github.com/codlume/voice/issues/75)) ([dae9d11](https://github.com/codlume/voice/commit/dae9d11cd29c4ccc2d6ca43fd11b8a2d9cd5f541))
+
 ## [0.4.0](https://github.com/codlume/voice/compare/v0.3.0...v0.4.0) (2026-09-26)
 
 
