@@ -66,7 +66,7 @@ This builds the helper in release mode and writes an arm64 DMG to `apps/desktop/
 pnpm --filter @voice/web dev
 pnpm --filter @voice/web build
 pnpm --filter @voice/web preview
-pnpm --filter @voice/web deploy
+pnpm --filter @voice/web run deploy
 ```
 
 `preview` serves the output of `build` locally in workerd, the Workers runtime. `deploy` builds and runs `wrangler deploy`. It needs `wrangler login` or a `CLOUDFLARE_API_TOKEN` in the environment.
