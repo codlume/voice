@@ -1,6 +1,24 @@
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
 export type Hotkey = "fn" | "rightOption" | "rightCommand";
+export type UpdateChannel = "stable" | "nightly";
+
+export type UpdateStatus =
+  | { kind: "disabled"; reason: string }
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "current" }
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "ready"; version: string }
+  | { kind: "installing"; version: string }
+  | { kind: "failed"; message: string };
+
+export type UpdatesSnapshot = {
+  version: string;
+  installedChannel: UpdateChannel;
+  channel: UpdateChannel;
+  status: UpdateStatus;
+};
 
 export type Outcome =
   | { kind: "inserted"; method: "accessibility" | "paste" }
@@ -24,6 +42,7 @@ export type ModelStatus =
 
 export type Settings = {
   hotkey: Hotkey;
+  updateChannel: UpdateChannel;
   cleanup: {
     enabled: boolean;
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
@@ -34,10 +53,12 @@ export type Settings = {
 
 export type SettingsPatch = {
   hotkey?: Hotkey;
+  updateChannel?: UpdateChannel;
   cleanup?: Partial<Settings["cleanup"]>;
 };
 
 export type Snapshot = {
+  updates: UpdatesSnapshot;
   session: PillState;
   permissions: Record<PermissionKind, PermissionState>;
   models: { asr: ModelStatus; cleanup: ModelStatus };
@@ -46,6 +67,8 @@ export type Snapshot = {
 };
 
 export type VoiceApi = {
+  checkForUpdates(): Promise<void>;
+  restartForUpdate(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   onLevel(listener: (level: number) => void): () => void;
@@ -56,6 +79,8 @@ export type VoiceApi = {
 };
 
 export const Channel = {
+  checkForUpdates: "voice:checkForUpdates",
+  restartForUpdate: "voice:restartForUpdate",
   getSnapshot: "voice:getSnapshot",
   snapshot: "voice:snapshot",
   level: "voice:level",

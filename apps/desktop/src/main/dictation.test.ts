@@ -27,6 +27,12 @@ type Options = {
 
 function harness(opts: Options = {}) {
   const store = createStore({
+    updates: {
+      version: "0.0.1",
+      installedChannel: "stable",
+      channel: "stable",
+      status: { kind: "disabled", reason: "Test" },
+    },
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
     models: {

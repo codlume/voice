@@ -9,6 +9,8 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 }
 
 const voice: VoiceApi = {
+  checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
+  restartForUpdate: () => ipcRenderer.invoke(Channel.restartForUpdate),
   getSnapshot: () => ipcRenderer.invoke(Channel.getSnapshot),
   onSnapshot: (listener) => subscribe<Snapshot>(Channel.snapshot, listener),
   onLevel: (listener) => subscribe<number>(Channel.level, listener),

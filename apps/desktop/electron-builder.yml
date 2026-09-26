@@ -18,6 +18,13 @@ mac:
   target:
     - target: dmg
       arch: arm64
-  hardenedRuntime: false
+    - target: zip
+      arch: arm64
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
   extendInfo:
     NSMicrophoneUsageDescription: Voice records your speech only while you hold the dictation shortcut.
+afterPack: ../../scripts/release-sign-nested.mjs
+generateUpdatesFilesForAllChannels: false

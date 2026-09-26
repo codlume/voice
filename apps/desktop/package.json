@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@stylexjs/stylex": "catalog:",
+    "electron-updater": "6.8.9",
     "node-llama-cpp": "3.21.1"
   },
   "devDependencies": {

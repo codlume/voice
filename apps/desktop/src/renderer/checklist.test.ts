@@ -4,11 +4,18 @@ import type { ModelStatus, Snapshot } from "../shared/api.ts";
 import { checklist } from "./checklist.ts";
 
 const fresh: Snapshot = {
+  updates: {
+    version: "0.0.1",
+    installedChannel: "stable",
+    channel: "stable",
+    status: { kind: "disabled", reason: "Test" },
+  },
   session: { kind: "idle" },
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
+    updateChannel: "stable",
     cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
   },
   last: null,
