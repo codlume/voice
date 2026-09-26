@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/codlume/voice/compare/v0.2.0...v0.3.0) (2026-09-26)
+
+
+### Features
+
+* **desktop:** adopt t3code color tokens and add a Theme setting ([#64](https://github.com/codlume/voice/issues/64)) ([10019c1](https://github.com/codlume/voice/commit/10019c12d4efc69abf9c40f427ec6e5cd919ca6b))
+* **tray:** replace the microphone menu bar icon with the Voice glyph ([#60](https://github.com/codlume/voice/issues/60)) ([816d4e5](https://github.com/codlume/voice/commit/816d4e5f2dd8edb2d72c39318f9813357c81e098))
+* **web:** add Voice download page on Cloudflare Workers ([#66](https://github.com/codlume/voice/issues/66)) ([e89e26c](https://github.com/codlume/voice/commit/e89e26c2e4bc69728de05756991c52f93e8ab088))
+
 ## [0.2.0](https://github.com/codlume/voice/compare/v0.1.0...v0.2.0) (2026-09-26)
 
 
