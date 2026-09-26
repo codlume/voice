@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     branches: [main]
+  schedule:
+    # Nightlies are throttled to one per slot, like T3 Code; minute 17 avoids the busy top of the hour.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -11,7 +14,7 @@ permissions:
 
 jobs:
   release-please:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     concurrency:
       group: release-please-main
@@ -64,10 +67,24 @@ jobs:
           echo "stable_version=${version}" >> "${GITHUB_OUTPUT}"
           echo "stable_sha=${sha}" >> "${GITHUB_OUTPUT}"
 
+  nightly-due:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: bash scripts/release-nightly-due.sh >> "${GITHUB_OUTPUT}"
+
   nightly-build:
-    needs: release-please
-    # A release commit is the Stable build. A failed release-please run still gets a Nightly.
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release-please.outputs.stable != 'true' }}
+    needs: nightly-due
+    if: needs.nightly-due.outputs.due == 'true'
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -222,7 +239,7 @@ jobs:
             gh release create "${tag}" apps/desktop/release/*.dmg \
               --prerelease \
               --target "${GITHUB_SHA}" \
-              --title "Nightly ${RELEASE_VERSION}" \
+              --title "Voice Nightly ${RELEASE_VERSION} (${GITHUB_SHA::12})" \
               --notes "Unstable build of ${GITHUB_SHA}. Installed Nightlies update themselves."
           fi
 

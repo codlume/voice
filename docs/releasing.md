@@ -1,9 +1,11 @@
 # Release Voice for macOS
 
-Voice publishes Apple Silicon builds from the Release workflow. Each push to
-`main` builds a Nightly. When you merge a release-please PR, that workflow
-run publishes Stable from the tagged commit instead of a Nightly. Rerun that workflow
-if Stable publication fails; it detects the GitHub release tag on the commit.
+Voice publishes Apple Silicon builds from the Release workflow. Every six
+hours, a scheduled run builds a Nightly of `main` if `main` changed since
+the last Nightly. Run the workflow manually to build a Nightly now. A Stable
+release commit never gets a Nightly. When you merge a release-please PR, the
+push run publishes Stable from the tagged commit. Rerun that workflow if
+Stable publication fails; it detects the GitHub release tag on the commit.
 The workflow does not depend on a tag event from `GITHUB_TOKEN`.
 Release-please versions the repository root and updates the desktop package
 version in the same release PR. Changes to the native helper and cleanup
@@ -43,37 +45,38 @@ are already configured. Signing and upload secrets still need to be added.
 The workflow builds a DMG for manual installation and a ZIP for updates.
 Both live at `/releases/<version>/mac-arm64/`. After promotion, the workflow
 also attaches the DMG to a GitHub release. Stable uses the release-please
-release. Each Nightly gets its own prerelease tagged `v<version>` on the built
-commit. Release-please ignores these tags because it only matches the version
-in `.release-please-manifest.json`. The app embeds the build
-channel and `RELEASE_BASE_URL`. Each channel has its own
-`/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
+release. Each Nightly gets its own prerelease tagged `v<version>` on the
+built commit. Nightly prereleases are kept, not pruned; the six-hour
+schedule bounds how many accumulate. Release-please ignores these tags
+because it only matches the version in `.release-please-manifest.json`. The
+app embeds the build channel and `RELEASE_BASE_URL`. Each channel has its
+own `/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
 absolute URLs for immutable release artifacts.
 
 The publisher checks every artifact's size and SHA-256 after uploading it.
 It checks the builder's SHA-512 and size fields before uploading. It writes
 the channel feed last. A rerun cannot replace different bytes under an
 existing version. An older run cannot move a feed backward. The promotion
-job is serialized per channel, and a failed upload leaves the prior feed
-in place. Nightly builds wait for release-please to rule out a Stable
-release, then run independently of Stable; only promotion is serialized.
-A Nightly that finishes after a newer one gets `skipped-older` and no GitHub
-prerelease. A rerun skips building when the channel already serves a newer
-version, or the same version with verified artifacts. Missing or corrupt published artifacts stop
-the run; restore the exact original files from the retained workflow artifact
-or publish a new version.
+job is serialized per channel, and a failed upload leaves the prior feed in
+place. Nightly and Stable builds run independently; only promotion is
+serialized. A Nightly that finishes after a newer one gets `skipped-older`
+and no GitHub prerelease. A rerun skips building when the channel already
+serves a newer version, or the same version with verified artifacts. Missing
+or corrupt published artifacts stop the run; restore the exact original
+files from the retained workflow artifact or publish a new version.
 
 ## Publish and recover
 
-Merge to `main` to publish a Nightly. Merge the release-please PR to publish
-Stable; that run skips the Nightly build. Watch the Release workflow. A
-successful run ends with `published`, `already-published`, or
-`skipped-older`. To recover from a failed run, rerun that workflow from
-GitHub Actions. If only the GitHub release step failed, use **Re-run failed
-jobs**. A full rerun skips the already-published version and does not retry
-the GitHub upload. If a run uploaded immutable artifacts but failed before promoting the feed, rebuilding the
-same version can produce different bytes. Keep the existing objects and
-publish a new version in that case.
+Merge to `main`, then wait for the next scheduled run or run the workflow
+manually to publish a Nightly. Merge the release-please PR to publish
+Stable. Watch the Release workflow. A successful run ends with `published`,
+`already-published`, or `skipped-older`. To recover from a failed run, rerun
+that workflow from GitHub Actions. If only the GitHub release step failed,
+use **Re-run failed jobs**. A full rerun skips the already-published version
+and does not retry the GitHub upload. If a run uploaded immutable artifacts
+but failed before promoting the feed, rebuilding the same version can
+produce different bytes. Keep the existing objects and publish a new version
+in that case.
 
 Check the channel feed over the public URL after the run. Confirm that its
 ZIP URL resolves, that the downloaded ZIP hash matches the feed's SHA-512,
