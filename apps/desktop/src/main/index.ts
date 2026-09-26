@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   screen,
   shell,
   Tray,
@@ -147,6 +148,7 @@ async function main() {
     loadSettings(settingsFile, installedChannel),
     app.whenReady(),
   ]);
+  nativeTheme.themeSource = settings.theme;
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
 
@@ -305,6 +307,8 @@ async function main() {
       minWidth: 720,
       minHeight: 480,
       title: "Voice",
+      // Mirrors color.background in tokens.stylex.ts so the first frame does not flash.
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fcfcfc",
       webPreferences: { preload },
     });
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
@@ -376,6 +380,7 @@ async function main() {
     store.update((s) => ({ ...s, settings: next }));
     if (next.hotkey !== previous.hotkey)
       helper.send({ type: "hotkey.configure", key: next.hotkey });
+    if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
     await saving;
     if (next.updateChannel === store.state.settings.updateChannel)

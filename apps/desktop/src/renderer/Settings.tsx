@@ -5,6 +5,7 @@ import type {
   Hotkey,
   Settings as SettingsValue,
   SettingsPatch,
+  Theme,
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
@@ -29,7 +30,7 @@ const styles = stylex.create({
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.large,
-    backgroundColor: color.panel,
+    backgroundColor: color.card,
   },
   row: {
     display: "flex",
@@ -45,7 +46,7 @@ const styles = stylex.create({
   disabled: { opacity: 0.45 },
   rowText: { flexGrow: 1, minWidth: 0 },
   rowTitle: { display: "block", fontWeight: 500 },
-  rowDetail: { margin: 0, color: color.muted, fontSize: 12.5 },
+  rowDetail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   select: {
     paddingBlock: 6,
     paddingInline: 10,
@@ -53,8 +54,8 @@ const styles = stylex.create({
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.small,
-    backgroundColor: color.panel,
-    color: color.ink,
+    backgroundColor: color.card,
+    color: color.foreground,
     font: "inherit",
     fontSize: 13,
   },
@@ -66,12 +67,12 @@ const styles = stylex.create({
     padding: 0,
     borderWidth: 0,
     borderRadius: radius.round,
-    backgroundColor: "#d8d2c8",
+    backgroundColor: color.input,
     cursor: { default: "pointer", ":disabled": "default" },
     transitionProperty: "background-color",
     transitionDuration: "160ms",
   },
-  switchOn: { backgroundColor: color.ink },
+  switchOn: { backgroundColor: color.primary },
   thumb: {
     position: "absolute",
     top: 2,
@@ -79,7 +80,7 @@ const styles = stylex.create({
     width: 18,
     height: 18,
     borderRadius: radius.round,
-    backgroundColor: "white",
+    backgroundColor: color.primaryForeground,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
     transitionProperty: "transform",
     transitionDuration: "160ms",
@@ -87,32 +88,37 @@ const styles = stylex.create({
   thumbOn: { transform: "translateX(14px)" },
   segments: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
     gap: 2,
     padding: 3,
     borderRadius: radius.medium,
-    backgroundColor: color.sidebar,
+    backgroundColor: `color-mix(in srgb, ${color.input} 40%, transparent)`,
   },
+  columns: (count: number) => ({ gridTemplateColumns: `repeat(${count}, 1fr)` }),
   segment: {
     position: "relative",
     paddingBlock: 6,
+    paddingInline: space.md,
     borderRadius: 7,
-    color: color.muted,
+    color: color.mutedForeground,
     fontSize: 13,
     textAlign: "center",
     cursor: "pointer",
-    outline: { default: "none", ":has(:focus-visible)": "2px solid #4f6bd8" },
+    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
   },
+  // t3code's segmented toggle: a raised light chip, or a brighter translucent fill in dark mode.
   segmentOn: {
-    backgroundColor: color.panel,
-    color: color.ink,
+    backgroundColor: {
+      default: color.background,
+      "@media (prefers-color-scheme: dark)": `color-mix(in srgb, ${color.input} 72%, transparent)`,
+    },
+    color: color.foreground,
     fontWeight: 500,
-    boxShadow: "0 1px 2px rgba(31, 29, 26, 0.12)",
+    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
   radio: { position: "absolute", opacity: 0, pointerEvents: "none" },
-  example: { margin: 0, color: color.muted, fontSize: 13 },
-  hint: { margin: 0, color: color.muted, fontSize: 12.5 },
-  error: { margin: 0, color: color.failed, fontSize: 12.5 },
+  example: { margin: 0, color: color.mutedForeground, fontSize: 13 },
+  hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
 const isHotkey = (value: string): value is Hotkey => value in hotkeyLabels;
@@ -182,35 +188,90 @@ function Row({
   );
 }
 
-function StylePicker({ cleanup }: { cleanup: SettingsValue["cleanup"] }) {
+function Segmented<T extends string>({
+  labelledBy,
+  options,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  labelledBy: string;
+  options: readonly { value: T; label: string }[];
+  value: T;
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
   const name = useId();
+  return (
+    <div
+      role="radiogroup"
+      aria-labelledby={labelledBy}
+      {...stylex.props(styles.segments, styles.columns(options.length))}
+    >
+      {options.map((option) => (
+        <label
+          key={option.value}
+          {...stylex.props(styles.segment, option.value === value && styles.segmentOn)}
+        >
+          <input
+            type="radio"
+            name={name}
+            value={option.value}
+            checked={option.value === value}
+            disabled={disabled}
+            onChange={() => onChange(option.value)}
+            {...stylex.props(styles.radio)}
+          />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function StylePicker({ cleanup }: { cleanup: SettingsValue["cleanup"] }) {
+  const titleId = useId();
   const current = stylings.find((s) => s.value === cleanup.styling) ?? stylings[0]!;
   const disabled = !cleanup.enabled;
   return (
     <div {...stylex.props(styles.row, styles.stack, disabled && styles.disabled)}>
-      <span id={name} {...stylex.props(styles.rowTitle)}>
+      <span id={titleId} {...stylex.props(styles.rowTitle)}>
         Style
       </span>
-      <div role="radiogroup" aria-labelledby={name} {...stylex.props(styles.segments)}>
-        {stylings.map(({ value, label }) => (
-          <label
-            key={value}
-            {...stylex.props(styles.segment, value === cleanup.styling && styles.segmentOn)}
-          >
-            <input
-              type="radio"
-              name={name}
-              value={value}
-              checked={value === cleanup.styling}
-              disabled={disabled}
-              onChange={() => update({ cleanup: { styling: value } })}
-              {...stylex.props(styles.radio)}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
+      <Segmented
+        labelledBy={titleId}
+        options={stylings}
+        value={cleanup.styling}
+        disabled={disabled}
+        onChange={(styling) => update({ cleanup: { styling } })}
+      />
       <p {...stylex.props(styles.example)}>&ldquo;{current.example}&rdquo;</p>
+    </div>
+  );
+}
+
+const themes = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+] as const satisfies readonly { value: Theme; label: string }[];
+
+function ThemePicker({ theme }: { theme: Theme }) {
+  const titleId = useId();
+  return (
+    <div {...stylex.props(styles.row)}>
+      <div {...stylex.props(styles.rowText)}>
+        <span id={titleId} {...stylex.props(styles.rowTitle)}>
+          Theme
+        </span>
+        <p {...stylex.props(styles.rowDetail)}>Match your Mac, or pick light or dark.</p>
+      </div>
+      <Segmented
+        labelledBy={titleId}
+        options={themes}
+        value={theme}
+        onChange={(next) => update({ theme: next })}
+      />
     </div>
   );
 }
@@ -310,6 +371,15 @@ export function Settings({
               onChange={(on) => update({ cleanup: { context: on ? "email" : "general" } })}
             />
           </Row>
+        </div>
+      </section>
+
+      <section aria-labelledby="appearance" {...stylex.props(styles.section)}>
+        <h2 id="appearance" {...stylex.props(styles.sectionLabel)}>
+          Appearance
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <ThemePicker theme={settings.theme} />
         </div>
       </section>
 

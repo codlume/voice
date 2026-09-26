@@ -6,9 +6,11 @@ import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
   updateChannel: "stable",
+  theme: "system",
   cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
 };
 
+const THEMES = ["system", "light", "dark"] as const;
 const HOTKEYS = ["fn", "rightOption", "rightCommand"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
 const STRUCTURES = ["prose", "lists"] as const;
@@ -27,6 +29,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   return {
     hotkey: pick(HOTKEYS, r.hotkey, DEFAULT_SETTINGS.hotkey),
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
+    theme: pick(THEMES, r.theme, "system"),
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),
@@ -40,6 +43,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   return parseSettings({
     hotkey: patch.hotkey ?? settings.hotkey,
     updateChannel: patch.updateChannel ?? settings.updateChannel,
+    theme: patch.theme ?? settings.theme,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
   });
 }
