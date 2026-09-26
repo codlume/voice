@@ -307,10 +307,10 @@ async function main() {
       minWidth: 720,
       minHeight: 480,
       title: "Voice",
-      // Mirrors color.background in tokens.stylex.ts so the first frame does not flash.
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fcfcfc",
+      show: false,
       webPreferences: { preload },
     });
+    hub.once("ready-to-show", () => hub?.show());
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);

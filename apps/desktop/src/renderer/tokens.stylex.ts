@@ -1,6 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
 
-// t3code's semantic palette (apps/web/src/index.css), built on Tailwind v4 zinc/neutral.
 // Electron's nativeTheme.themeSource drives prefers-color-scheme from the Theme setting.
 const dark = "@media (prefers-color-scheme: dark)";
 const primary = { default: "oklch(0.488 0.217 264)", [dark]: "oklch(0.571 0.21 264)" };
@@ -16,7 +15,6 @@ export const color = stylex.defineVars({
   accent: { default: "oklch(96.7% 0.001 286.375)", [dark]: "rgb(255 255 255 / 4%)" },
   border: { default: "oklch(92% 0.004 286.32)", [dark]: "rgb(255 255 255 / 6%)" },
   input: { default: "oklch(87.1% 0.006 286.286)", [dark]: "rgb(255 255 255 / 8%)" },
-  // t3code's segmented toggle: a raised light chip, or a brighter translucent fill in dark mode.
   segmentTrack: { default: "oklch(87.1% 0.006 286.286 / 40%)", [dark]: "rgb(255 255 255 / 3.2%)" },
   segmentSelected: { default: "oklch(99.2% 0 0)", [dark]: "rgb(255 255 255 / 5.76%)" },
   primary,
@@ -41,8 +39,7 @@ export const color = stylex.defineVars({
   sidebarRowSelected: { default: "white", [dark]: "rgb(255 255 255 / 3%)" },
 });
 
-// The pill floats over other apps, so it stays dark in both themes.
-export const pillColor = stylex.defineVars({
+export const darkPill = stylex.defineVars({
   surface: "#0b0b0c",
   line: "rgba(255, 255, 255, 0.14)",
   glyph: "white",

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import type { PillState } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
-import { font, pillColor, radius } from "./tokens.stylex.ts";
+import { font, darkPill, radius } from "./tokens.stylex.ts";
 
 const spring = "cubic-bezier(0.34, 1.36, 0.64, 1)";
 const settle = "cubic-bezier(0.32, 0.72, 0, 1)";
@@ -31,7 +31,7 @@ const styles = stylex.create({
     justifyContent: "center",
     overflow: "hidden",
     borderRadius: radius.round,
-    backgroundColor: pillColor.surface,
+    backgroundColor: darkPill.surface,
     transitionProperty: "width, height, opacity, box-shadow",
     transitionDuration: "420ms",
     transitionTimingFunction: spring,
@@ -48,7 +48,7 @@ const styles = stylex.create({
     width: 112,
     height: 32,
     opacity: 1,
-    boxShadow: `inset 0 0 0 1px ${pillColor.line}, 0 2px 8px rgba(0, 0, 0, 0.28)`,
+    boxShadow: `inset 0 0 0 1px ${darkPill.line}, 0 2px 8px rgba(0, 0, 0, 0.28)`,
   },
   wide: { width: 296 },
   content: {
@@ -65,7 +65,7 @@ const styles = stylex.create({
     width: 3,
     height: 16,
     borderRadius: 1.5,
-    backgroundColor: pillColor.glyph,
+    backgroundColor: darkPill.glyph,
     transitionProperty: "transform",
     transitionDuration: "120ms",
     transitionTimingFunction: "ease-out",
@@ -76,7 +76,7 @@ const styles = stylex.create({
     width: 5,
     height: 5,
     borderRadius: radius.round,
-    backgroundColor: pillColor.glyph,
+    backgroundColor: darkPill.glyph,
     animationName: pulse,
     animationDuration: "1.1s",
     animationIterationCount: "infinite",
@@ -91,7 +91,7 @@ const styles = stylex.create({
     animationFillMode: "both, forwards",
   },
   checkStroke: {
-    stroke: pillColor.glyph,
+    stroke: darkPill.glyph,
     strokeDasharray: 18,
     animationName: draw,
     animationDuration: "280ms",
@@ -100,7 +100,7 @@ const styles = stylex.create({
     animationFillMode: "both",
   },
   text: {
-    color: pillColor.text,
+    color: darkPill.text,
     fontFamily: font.sans,
     fontSize: 12.5,
     fontWeight: 500,
