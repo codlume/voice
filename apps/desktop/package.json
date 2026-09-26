@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
+    "brand": "env -u ELECTRON_RUN_AS_NODE electron ../../scripts/render-brand-assets.mjs",
     "build": "vp build && vp pack",
     "dist:mac": "vp build && vp pack && electron-builder --mac --config electron-builder.yml",
     "typecheck": "tsc --noEmit",
