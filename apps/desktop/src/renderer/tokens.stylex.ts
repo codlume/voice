@@ -16,6 +16,9 @@ export const color = stylex.defineVars({
   accent: { default: "oklch(96.7% 0.001 286.375)", [dark]: "rgb(255 255 255 / 4%)" },
   border: { default: "oklch(92% 0.004 286.32)", [dark]: "rgb(255 255 255 / 6%)" },
   input: { default: "oklch(87.1% 0.006 286.286)", [dark]: "rgb(255 255 255 / 8%)" },
+  // t3code's segmented toggle: a raised light chip, or a brighter translucent fill in dark mode.
+  segmentTrack: { default: "oklch(87.1% 0.006 286.286 / 40%)", [dark]: "rgb(255 255 255 / 3.2%)" },
+  segmentSelected: { default: "oklch(99.2% 0 0)", [dark]: "rgb(255 255 255 / 5.76%)" },
   primary,
   primaryForeground: "white",
   // Literal name so style.css can use var(--ring) for the global focus outline.

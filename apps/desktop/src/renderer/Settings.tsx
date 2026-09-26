@@ -91,7 +91,7 @@ const styles = stylex.create({
     gap: 2,
     padding: 3,
     borderRadius: radius.medium,
-    backgroundColor: `color-mix(in srgb, ${color.input} 40%, transparent)`,
+    backgroundColor: color.segmentTrack,
   },
   columns: (count: number) => ({ gridTemplateColumns: `repeat(${count}, 1fr)` }),
   segment: {
@@ -105,12 +105,8 @@ const styles = stylex.create({
     cursor: "pointer",
     outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
   },
-  // t3code's segmented toggle: a raised light chip, or a brighter translucent fill in dark mode.
   segmentOn: {
-    backgroundColor: {
-      default: color.background,
-      "@media (prefers-color-scheme: dark)": `color-mix(in srgb, ${color.input} 72%, transparent)`,
-    },
+    backgroundColor: color.segmentSelected,
     color: color.foreground,
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
