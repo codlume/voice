@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
@@ -9,63 +9,116 @@ import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const pages = [
-  { id: "home", label: "Home" },
-  { id: "settings", label: "Settings" },
+  {
+    id: "home",
+    label: "Home",
+    icon: (
+      <path d="M3.5 8.75 10 3.5l6.5 5.25V16a.5.5 0 0 1-.5.5h-3.5V12h-5v4.5H4a.5.5 0 0 1-.5-.5z" />
+    ),
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: (
+      <>
+        <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
+        <circle cx="12.5" cy="6" r="2" />
+        <circle cx="7.5" cy="14" r="2" />
+      </>
+    ),
+  },
 ] as const;
 
 type Page = (typeof pages)[number]["id"];
+
+const sidebarCollapsedKey = "voice.sidebarCollapsed";
+const sidebarId = "hub-sidebar";
+
+const sidebarPadding = 12;
+const sidebarWidth = 196;
+const navItemSize = 36;
+const navIconSize = 18;
+const railWidth = navItemSize + 2 * sidebarPadding;
 
 const brandIconVisibleSize = 24;
 const macIconGridMargin = 100 / 1024;
 const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
+const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+const easing = "cubic-bezier(0.2, 0, 0, 1)";
+
 const styles = stylex.create({
   shell: {
-    display: "flex",
-    minHeight: "100vh",
-    backgroundColor: color.background,
+    display: "grid",
+    gridTemplateRows: "48px 1fr",
+    gridTemplateColumns: "auto 1fr",
+    height: "100vh",
+    backgroundColor: color.sidebar,
     color: color.foreground,
     fontFamily: font.sans,
     fontSize: 14,
     lineHeight: 1.45,
     WebkitFontSmoothing: "antialiased",
   },
+  titlebar: {
+    gridColumn: "1 / -1",
+    display: "flex",
+    alignItems: "center",
+    paddingLeft: 92,
+    WebkitAppRegion: "drag",
+  },
+  toggle: {
+    display: "grid",
+    placeItems: "center",
+    width: 28,
+    height: 28,
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: radius.small,
+    backgroundColor: { default: "transparent", ":hover": color.sidebarRowHover },
+    color: color.mutedForeground,
+    cursor: "pointer",
+    WebkitAppRegion: "no-drag",
+  },
   sidebar: {
-    position: "sticky",
-    top: 0,
-    height: "100vh",
-    flexShrink: 0,
-    width: 196,
+    width: sidebarWidth,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
     paddingBlock: space.lg,
-    paddingInline: space.md,
-    backgroundColor: color.sidebar,
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: color.border,
+    paddingInline: sidebarPadding,
     display: "flex",
     flexDirection: "column",
+    transitionProperty: "width",
+    transitionDuration: { default: "220ms", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
   },
+  sidebarCollapsed: { width: railWidth },
   brand: {
     display: "flex",
     alignItems: "center",
     gap: space.sm,
     margin: 0,
-    paddingInline: space.md,
+    paddingInline: (navItemSize - brandIconVisibleSize) / 2,
     paddingBottom: space.lg,
     fontFamily: font.serif,
     fontSize: 20,
     fontWeight: 500,
   },
   brandIcon: {
+    flexShrink: 0,
     width: brandIconSize,
     height: brandIconSize,
     margin: -(brandIconSize - brandIconVisibleSize) / 2,
   },
   nav: { display: "flex", flexDirection: "column", gap: 2 },
-  footer: { marginTop: "auto", paddingTop: space.lg },
   navItem: {
-    paddingBlock: 7,
-    paddingInline: space.md,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    overflow: "hidden",
+    height: navItemSize,
+    padding: 0,
+    paddingInline: (navItemSize - navIconSize) / 2,
     borderWidth: 0,
     borderRadius: radius.small,
     backgroundColor: { default: "transparent", ":hover": color.sidebarRowHover },
@@ -79,42 +132,121 @@ const styles = stylex.create({
     color: color.foreground,
     fontWeight: 500,
   },
+  icon: { flexShrink: 0 },
+  label: {
+    transitionProperty: "opacity",
+    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
+  },
+  labelHidden: { opacity: 0 },
+  footer: {
+    width: sidebarWidth - 2 * sidebarPadding,
+    marginTop: "auto",
+    paddingTop: space.lg,
+    whiteSpace: "normal",
+    transitionProperty: "opacity, visibility",
+    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
+  },
+  footerHidden: { opacity: 0, visibility: "hidden" },
   main: {
-    flexGrow: 1,
     minWidth: 0,
+    overflow: "auto",
+    marginRight: 8,
+    marginBottom: 8,
     paddingBlock: space.xxl,
     paddingInline: space.xxl,
+    backgroundColor: color.background,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.large,
   },
   column: { maxWidth: 600, marginInline: "auto" },
 });
 
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={navIconSize}
+      height={navIconSize}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...stylex.props(styles.icon)}
+    >
+      {children}
+    </svg>
+  );
+}
+
 export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   const [page, setPage] = useState<Page>("home");
+  const mainRef = useRef<HTMLElement>(null);
+  // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
+  const focusMain = () => mainRef.current?.focus({ preventScroll: true });
+  useEffect(focusMain, []);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(sidebarCollapsedKey) === "true",
+  );
+
+  function toggleSidebar() {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(sidebarCollapsedKey, String(next));
+  }
+
+  const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   return (
     <div {...stylex.props(styles.shell)}>
-      <aside {...stylex.props(styles.sidebar)}>
+      <div {...stylex.props(styles.titlebar)}>
+        <button
+          type="button"
+          aria-label={toggleLabel}
+          title={toggleLabel}
+          aria-expanded={!collapsed}
+          aria-controls={sidebarId}
+          onClick={toggleSidebar}
+          {...stylex.props(styles.toggle)}
+        >
+          <Icon>
+            <rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" />
+            <path d="M7.75 3.75v12.5" />
+          </Icon>
+        </button>
+      </div>
+      <aside id={sidebarId} {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}>
         <p {...stylex.props(styles.brand)}>
           <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
-          Voice
+          <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
         </p>
         <nav aria-label="Voice" {...stylex.props(styles.nav)}>
-          {pages.map(({ id, label }) => (
+          {pages.map(({ id, label, icon }) => (
             <button
               key={id}
               type="button"
+              title={collapsed ? label : undefined}
               aria-current={page === id ? "page" : undefined}
-              onClick={() => setPage(id)}
+              onClick={() => {
+                setPage(id);
+                focusMain();
+              }}
               {...stylex.props(styles.navItem, page === id && styles.navItemCurrent)}
             >
-              {label}
+              <Icon>{icon}</Icon>
+              <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>{label}</span>
             </button>
           ))}
         </nav>
-        <div {...stylex.props(styles.footer)}>
+        <div {...stylex.props(styles.footer, collapsed && styles.footerHidden)}>
           <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
         </div>
       </aside>
-      <main {...stylex.props(styles.main)}>
+      <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
         <div {...stylex.props(styles.column)}>
           {page === "home" ? (
             <Home snapshot={snapshot} />
