@@ -307,9 +307,11 @@ async function main() {
       minWidth: 720,
       minHeight: 480,
       title: "Voice",
-      // StyleX tokens cannot be imported here, so this repeats color.background as hex
+      titleBarStyle: "hidden",
+      trafficLightPosition: { x: 16, y: 18 },
+      // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
       // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fcfcfc",
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
       webPreferences: { preload },
     });
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
