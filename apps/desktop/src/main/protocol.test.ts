@@ -68,6 +68,41 @@ describe("parseHelperEvent", () => {
       id: "a",
       level: 1,
     });
+    expect(parseHelperEvent(line({ type: "capture.level", id: "a", level: -3 }))).toEqual({
+      type: "capture.level",
+      id: "a",
+      level: 0,
+    });
+  });
+
+  test.each([undefined, null, 42, {}, [], "unknown"])(
+    "normalizes an unsupported insertion reason %j to null",
+    (reason) => {
+      expect(
+        parseHelperEvent(line({ type: "insert.result", id: "a", method: "none", reason })),
+      ).toEqual({ type: "insert.result", id: "a", method: "none", reason: null });
+    },
+  );
+
+  test.each([undefined, null, 42, {}, []])(
+    "normalizes a missing or invalid ASR message %j to null",
+    (message) => {
+      expect(parseHelperEvent(line({ type: "asr.status", state: "ready", message }))).toEqual({
+        type: "asr.status",
+        state: "ready",
+        message: null,
+      });
+    },
+  );
+
+  test.each([
+    '{"type":"ready","version":1e400}',
+    '{"type":"capture.started","id":"a","startMs":1e400}',
+    '{"type":"capture.level","id":"a","level":-1e400}',
+    '{"type":"transcript","id":"a","text":"hi","audioMs":1e400,"asrMs":1}',
+    '{"type":"transcript","id":"a","text":"hi","audioMs":1,"asrMs":1e400}',
+  ])("rejects non-finite numbers in valid JSON %s", (input) => {
+    expect(parseHelperEvent(input)).toBeNull();
   });
 
   test.each([

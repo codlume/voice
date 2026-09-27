@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import * as Effect from "effect/Effect";
+
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
-import { step, type Effect, type Session, type SessionEvent } from "./session.ts";
+import { step, type Effect as SessionEffect, type Session, type SessionEvent } from "./session.ts";
 import type { Store } from "./store.ts";
 
 export type DictationOptions = {
@@ -84,7 +86,7 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function run(effect: Effect) {
+  function run(effect: SessionEffect) {
     switch (effect.type) {
       case "startCapture":
         if (idleTimer) clearTimeout(idleTimer);
@@ -109,26 +111,27 @@ export function createDictation(options: DictationOptions): Dictation {
         if (timing) timing.cleanupStartedAt = startedAt;
         const { styling } = store.state.settings.cleanup;
         const budgetMs = cleanupBudgetMs(effect.raw);
-        // The raw text goes in at the deadline whether or not the model has honored the abort yet.
-        const controller = new AbortController();
-        const budget = setTimeout(() => {
-          controller.abort(new Error(`cleanup timed out after ${budgetMs} ms`));
-          log(`cleanup timed out after ${budgetMs} ms`);
-          dispatch({ type: "cleanupFailed", id: effect.id });
-        }, budgetMs);
-        void cleanup.clean(effect.raw, { styling }, controller.signal).then(
-          (text) => {
-            if (controller.signal.aborted) return;
-            clearTimeout(budget);
-            if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
-            dispatch({ type: "cleaned", id: effect.id, text });
-          },
-          (error: unknown) => {
-            if (controller.signal.aborted) return;
-            clearTimeout(budget);
-            log(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
-            dispatch({ type: "cleanupFailed", id: effect.id });
-          },
+        Effect.runFork(
+          Effect.tryPromise({
+            try: (signal) => cleanup.clean(effect.raw, { styling }, signal),
+            catch: (error) =>
+              `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          }).pipe(
+            Effect.timeoutFail({
+              duration: budgetMs,
+              onTimeout: () => `cleanup timed out after ${budgetMs} ms`,
+            }),
+            Effect.match({
+              onSuccess: (text) => {
+                if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
+                dispatch({ type: "cleaned", id: effect.id, text });
+              },
+              onFailure: (message) => {
+                log(message);
+                dispatch({ type: "cleanupFailed", id: effect.id });
+              },
+            }),
+          ),
         );
         return;
       }
