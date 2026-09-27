@@ -1,3 +1,4 @@
+import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -165,6 +166,39 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
+  tooltipPositioner: {
+    zIndex: 10,
+    width: "var(--positioner-width)",
+    height: "var(--positioner-height)",
+    transitionProperty: "left, right, top, bottom",
+    transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
+  },
+  tooltip: {
+    width: "var(--popup-width)",
+    height: "var(--popup-height)",
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    paddingBlock: 5,
+    paddingInline: space.sm,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.small,
+    backgroundColor: color.card,
+    color: color.foreground,
+    boxShadow: "0 2px 8px rgb(0 0 0 / 12%)",
+    fontFamily: font.sans,
+    fontSize: 12,
+    lineHeight: 1.4,
+    WebkitFontSmoothing: "antialiased",
+    opacity: 1,
+    transitionProperty: "opacity, width, height",
+    transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
+  },
+  tooltipHidden: { opacity: 0 },
+  tooltipInstant: { transitionDuration: "0s" },
   main: {
     minWidth: 0,
     overflow: "auto",
@@ -198,6 +232,48 @@ function Icon({ children }: { children: ReactNode }) {
     >
       {children}
     </svg>
+  );
+}
+
+function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  return (
+    <Tooltip.Provider delay={400} closeDelay={100}>
+      <Tooltip.Root<string> disabled={!collapsed}>
+        {({ payload }) => (
+          <>
+            {children}
+            <Tooltip.Portal>
+              <Tooltip.Positioner
+                side="right"
+                align="center"
+                sideOffset={10}
+                className={({ instant }) =>
+                  stylex.props(
+                    styles.tooltipPositioner,
+                    (instant === "focus" || instant === "dismiss") && styles.tooltipInstant,
+                  ).className
+                }
+              >
+                <Tooltip.Popup
+                  className={({ transitionStatus, instant }) =>
+                    stylex.props(
+                      styles.tooltip,
+                      (transitionStatus === "starting" || transitionStatus === "ending") &&
+                        styles.tooltipHidden,
+                      (instant === "focus" || instant === "dismiss") && styles.tooltipInstant,
+                    ).className
+                  }
+                >
+                  <Tooltip.Viewport className="sidebar-tooltip-viewport">
+                    {payload}
+                  </Tooltip.Viewport>
+                </Tooltip.Popup>
+              </Tooltip.Positioner>
+            </Tooltip.Portal>
+          </>
+        )}
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 
@@ -236,56 +312,64 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           </Icon>
         </button>
       </div>
-      <aside id={sidebarId} {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}>
-        <p {...stylex.props(styles.brand)}>
-          <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
-          <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
-        </p>
-        <nav aria-label="Voice" {...stylex.props(styles.nav)}>
-          {pages.map(({ id, label, icon }) => (
-            <button
-              key={id}
+      <SidebarTooltip collapsed={collapsed}>
+        <aside
+          id={sidebarId}
+          {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}
+        >
+          <p {...stylex.props(styles.brand)}>
+            <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
+            <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
+          </p>
+          <nav aria-label="Voice" {...stylex.props(styles.nav)}>
+            {pages.map(({ id, label, icon }) => (
+              <Tooltip.Trigger
+                key={id}
+                payload={label}
+                type="button"
+                aria-current={page === id ? "page" : undefined}
+                onClick={() => {
+                  setPage(id);
+                  focusMain();
+                }}
+                {...stylex.props(styles.navItem, page === id && styles.navItemCurrent)}
+              >
+                <Icon>{icon}</Icon>
+                <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>
+                  {label}
+                </span>
+              </Tooltip.Trigger>
+            ))}
+          </nav>
+          <div {...stylex.props(styles.footer)}>
+            <Tooltip.Trigger
+              payload="Settings"
               type="button"
-              title={collapsed ? label : undefined}
-              aria-current={page === id ? "page" : undefined}
+              aria-label="Settings"
+              title={collapsed ? undefined : "Settings"}
+              aria-current={page === "settings" ? "page" : undefined}
               onClick={() => {
-                setPage(id);
+                setPage("settings");
                 focusMain();
               }}
-              {...stylex.props(styles.navItem, page === id && styles.navItemCurrent)}
+              {...stylex.props(
+                styles.navItem,
+                styles.footerButton,
+                page === "settings" && styles.navItemCurrent,
+              )}
             >
-              <Icon>{icon}</Icon>
-              <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>{label}</span>
-            </button>
-          ))}
-        </nav>
-        <div {...stylex.props(styles.footer)}>
-          <button
-            type="button"
-            aria-label="Settings"
-            title="Settings"
-            aria-current={page === "settings" ? "page" : undefined}
-            onClick={() => {
-              setPage("settings");
-              focusMain();
-            }}
-            {...stylex.props(
-              styles.navItem,
-              styles.footerButton,
-              page === "settings" && styles.navItemCurrent,
-            )}
-          >
-            <Icon>
-              <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
-              <circle cx="12.5" cy="6" r="2" />
-              <circle cx="7.5" cy="14" r="2" />
-            </Icon>
-          </button>
-          <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
-            <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+              <Icon>
+                <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
+                <circle cx="12.5" cy="6" r="2" />
+                <circle cx="7.5" cy="14" r="2" />
+              </Icon>
+            </Tooltip.Trigger>
+            <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
+              <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      </SidebarTooltip>
       <main
         ref={mainRef}
         tabIndex={-1}
