@@ -374,6 +374,25 @@ export function Settings({
         )}
       </section>
 
+      <section aria-labelledby="audio" {...stylex.props(styles.section)}>
+        <h2 id="audio" {...stylex.props(styles.sectionLabel)}>
+          Audio
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-mute-while-dictating"
+            title="Mute all audio while dictating"
+            detail="Silences supported output devices while recording, then restores their previous audio state."
+          >
+            <Switch
+              id="setting-mute-while-dictating"
+              checked={settings.muteWhileDictating}
+              onChange={(muteWhileDictating) => update({ muteWhileDictating })}
+            />
+          </Row>
+        </div>
+      </section>
+
       <section aria-labelledby="cleanup" {...stylex.props(styles.section)}>
         <h2 id="cleanup" {...stylex.props(styles.sectionLabel)}>
           Cleanup

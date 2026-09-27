@@ -20,6 +20,7 @@ const base: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
+    muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
   },
@@ -162,6 +163,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           dictationLanguage: patch.dictationLanguage ?? snapshot.settings.dictationLanguage,
           theme: patch.theme ?? snapshot.settings.theme,
+          muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
         },
         updates: patch.updateChannel

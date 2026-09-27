@@ -7,6 +7,7 @@ import { parseDictationLanguage } from "../shared/dictation-language.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
+  muteWhileDictating: false,
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
@@ -32,6 +33,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
+    muteWhileDictating: typeof r.muteWhileDictating === "boolean" ? r.muteWhileDictating : false,
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),
@@ -45,6 +47,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     updateChannel: patch.updateChannel ?? settings.updateChannel,
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,
+    muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
   });
 }

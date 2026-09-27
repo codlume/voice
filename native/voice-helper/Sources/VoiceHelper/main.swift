@@ -49,9 +49,9 @@ final class Helper {
         switch command {
         case .hotkeyConfigure(let key):
             hotkeyTap.configure(key)
-        case .captureStart(let id):
+        case .captureStart(let id, let muteWhileDictating):
             let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            capture.start(id: id, frontmostPid: target, receivedAt: receivedAt)
+            capture.start(id: id, frontmostPid: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating)
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
@@ -94,7 +94,7 @@ guard let modelsDir = modelsDirArgument() else {
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 1))
+output.emit(.ready(version: 2))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)

@@ -68,7 +68,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 1 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 2 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -81,7 +81,7 @@ describe("startHelper", () => {
       message: null,
     });
 
-    h.helper.send({ type: "capture.start", id: "s1" });
+    h.helper.send({ type: "capture.start", id: "s1", muteWhileDictating: false });
     await h.waitFor((e) => e.type === "capture.started");
     expect(h.of("capture.started")[0]?.event).toEqual({
       type: "capture.started",
@@ -121,11 +121,11 @@ describe("startHelper", () => {
   });
 
   test("a helper speaking another protocol version is refused, never configured, and not restarted", async () => {
-    const h = boot({ version: 2 });
+    const h = boot({ version: 1 });
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v1; refusing/);
+      .toMatch(/helper: speaks protocol v1 but this build expects v2; refusing/);
     await sleep(RESTART_MIN_MS + 150);
     expect(h.events).toEqual([]);
     expect(h.exits).toEqual([]);

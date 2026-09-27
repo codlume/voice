@@ -2,11 +2,11 @@ import type { Hotkey, PermissionKind, PermissionState } from "../shared/api.ts";
 import type { InsertFailure, InsertMethod } from "./session.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 1;
+export const HELPER_PROTOCOL_VERSION = 2;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
-  | { type: "capture.start"; id: string }
+  | { type: "capture.start"; id: string; muteWhileDictating: boolean }
   | { type: "capture.stop"; id: string }
   | { type: "capture.cancel"; id: string }
   | { type: "insert"; id: string; text: string }

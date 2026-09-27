@@ -10,7 +10,7 @@ private func json(_ line: String) throws -> [String: Any] {
 @Test func decodesEveryCommand() throws {
     let cases: [(String, HelperCommand)] = [
         (#"{"type":"hotkey.configure","key":"rightOption"}"#, .hotkeyConfigure(key: .rightOption)),
-        (#"{"type":"capture.start","id":"s1"}"#, .captureStart(id: "s1")),
+        (#"{"type":"capture.start","id":"s1","muteWhileDictating":false}"#, .captureStart(id: "s1", muteWhileDictating: false)),
         (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
         (#"{"type":"insert","id":"s1","text":"hi there"}"#, .insert(id: "s1", text: "hi there")),
@@ -50,7 +50,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 1), ["type": "ready", "version": 1]),
+        (.ready(version: 2), ["type": "ready", "version": 2]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -88,4 +88,17 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
     let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0).encodeLine()
     #expect(line.contains("/tmp/x"))
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
+}
+
+@Test func captureStartRequiresAnExplicitBooleanMutePreference() {
+    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","muteWhileDictating":true}"#)
+        == .success(.captureStart(id: "s", muteWhileDictating: true)))
+    for line in [
+        #"{"type":"capture.start","id":"s"}"#,
+        #"{"type":"capture.start","id":"s","muteWhileDictating":"true"}"#,
+        #"{"type":"capture.start","id":"s","muteWhileDictating":1}"#,
+        #"{"type":"capture.start","id":"s","muteWhileDictating":null}"#,
+    ] {
+        if case .success = HelperCommand.decode(line: line) { Issue.record("accepted malformed mute preference") }
+    }
 }
