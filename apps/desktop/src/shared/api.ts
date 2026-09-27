@@ -1,3 +1,4 @@
+import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
@@ -44,7 +45,14 @@ export type ModelStatus =
   | { state: "ready" }
   | { state: "failed"; message: string };
 
+export type { Microphone } from "./microphone.ts";
+export type MicrophoneCatalog =
+  | { kind: "loading" }
+  | { kind: "ready"; devices: readonly Microphone[]; defaultUid: string | null }
+  | { kind: "unavailable"; message: string };
+
 export type Settings = {
+  microphone: Microphone | null;
   hotkey: Hotkey;
   muteWhileDictating: boolean;
   dictationLanguage: DictationLanguage;
@@ -57,6 +65,7 @@ export type Settings = {
 };
 
 export type SettingsPatch = {
+  microphone?: Microphone | null;
   hotkey?: Hotkey;
   muteWhileDictating?: boolean;
   dictationLanguage?: DictationLanguage;
@@ -66,6 +75,7 @@ export type SettingsPatch = {
 };
 
 export type Snapshot = {
+  microphones: MicrophoneCatalog;
   updates: UpdatesSnapshot;
   session: PillState;
   permissions: Record<PermissionKind, PermissionState>;

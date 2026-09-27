@@ -8,6 +8,7 @@ final class Helper {
     private let testMode: Bool
     private let transcriber: Transcriber
     private let capture: Capture
+    private let devices: AudioInputDevices
     private let insertion: Insertion
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
@@ -17,11 +18,12 @@ final class Helper {
         self.output = output
         testMode = environment["VOICE_HELPER_TEST"] == "1"
         transcriber = Transcriber(modelsDir: modelsDir, output: output)
-        let capture = Capture(output: output, transcriber: transcriber)
+        let devices = AudioInputDevices(output: output)
+        self.devices = devices
+        let capture = Capture(output: output, transcriber: transcriber, devices: devices)
+        devices.onChange = { [weak capture] in capture?.devicesChanged() }
         if testMode {
             capture.testAudioPath = environment["VOICE_HELPER_TEST_AUDIO"]
-        } else {
-            capture.prepareIdleMic()
         }
         self.capture = capture
         insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
@@ -49,9 +51,11 @@ final class Helper {
         switch command {
         case .hotkeyConfigure(let key):
             hotkeyTap.configure(key)
-        case .captureStart(let id, let language, let muteWhileDictating):
+        case .microphoneConfigure(let microphone):
+            capture.configure(microphone: microphone)
+        case .captureStart(let id, let language, let muteWhileDictating, let microphone):
             let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            capture.start(id: id, language: language, frontmostPid: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating)
+            capture.start(id: id, language: language, frontmostPid: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
@@ -75,6 +79,7 @@ final class Helper {
 
     @MainActor
     func shutdown() {
+        devices.shutdown()
         capture.shutdown()
         insertion.shutdown()
     }
@@ -94,7 +99,7 @@ guard let modelsDir = modelsDirArgument() else {
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 3))
+output.emit(.ready(version: 4))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)

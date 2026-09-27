@@ -41,6 +41,16 @@ function handle(command: Record<string, unknown>) {
     case "hotkey.configure":
       emit({ type: "log", level: "info", message: `hotkey configured: ${String(command.key)}` });
       return;
+    case "microphone.configure":
+      emit({
+        type: "microphones.changed",
+        devices: [
+          { uid: "builtin", name: "Built-in microphone" },
+          { uid: "usb", name: "USB microphone" },
+        ],
+        defaultUid: "builtin",
+      });
+      return;
     case "permissions.check":
     case "permissions.request":
       emit({
@@ -101,7 +111,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 3 });
+const ready = () => emit({ type: "ready", version: config.version ?? 4 });
 
 if (config.control) {
   const path = config.control;

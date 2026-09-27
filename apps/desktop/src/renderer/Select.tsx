@@ -11,6 +11,7 @@ const styles = stylex.create({
     flexShrink: 0,
     gap: space.sm,
     minWidth: 110,
+    maxWidth: "min(240px, 48%)",
     paddingBlock: 6,
     paddingInline: 10,
     borderWidth: 1,
@@ -27,7 +28,13 @@ const styles = stylex.create({
     userSelect: "none",
   },
   disabled: { cursor: "default" },
-  value: { flexGrow: 1, whiteSpace: "nowrap" },
+  value: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   icon: { display: "flex", flexShrink: 0, color: color.mutedForeground },
   positioner: { zIndex: 10 },
   popup: {
@@ -132,7 +139,9 @@ export function Select<T extends string>({
                     ).className
                   }
                 >
-                  <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                  <SelectPrimitive.ItemText {...stylex.props(styles.value)}>
+                    {option.label}
+                  </SelectPrimitive.ItemText>
                 </SelectPrimitive.Item>
               ))}
             </SelectPrimitive.List>

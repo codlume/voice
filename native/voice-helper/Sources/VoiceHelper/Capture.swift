@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import Foundation
 import VoiceHelperCore
 import os
@@ -44,6 +45,8 @@ private let silenceFloor = 1e-4 as Float
 final class Capture {
     private let output: Output
     private let transcriber: Transcriber
+    private let devices: AudioInputDevices
+    private var microphone: Microphone?
     private let outputSilencer: OutputSilencer
     private var state: CaptureState = .idle {
         didSet {
@@ -61,7 +64,8 @@ final class Capture {
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
 
-    init(output: Output, transcriber: Transcriber) {
+    init(output: Output, transcriber: Transcriber, devices: AudioInputDevices) {
+        self.devices = devices
         self.output = output
         self.transcriber = transcriber
         self.outputSilencer = OutputSilencer(output: output)
@@ -69,11 +73,12 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, language: DictationLanguage, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool) {
+    func start(id: String, language: DictationLanguage, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
         }
+        configure(microphone: microphone)
         let session = CaptureSession(id: id, language: language, frontmostPid: frontmostPid, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
@@ -174,12 +179,30 @@ final class Capture {
         state = .idle
     }
 
+    func configure(microphone: Microphone?) {
+        self.microphone = microphone
+        guard case .idle = state else { return }
+        if mic?.preference?.uid != microphone?.uid { disposeMic() }
+        prepareIdleMic()
+    }
+
+    func devicesChanged() {
+        if let mic {
+            let resolved = try? devices.resolve(mic.preference)
+            if resolved?.id != mic.device.id || resolved?.microphone.uid != mic.device.microphone.uid {
+                micInvalidated(mic)
+            }
+        }
+        prepareIdleMic()
+    }
+
     func prepareIdleMic() {
         DispatchQueue.main.async { [weak self] in
             guard let self, case .idle = state, testAudioPath == nil,
                 AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
             else { return }
             do throws(CaptureError) {
+                if mic?.preference?.uid != microphone?.uid { disposeMic() }
                 if let mic { mic.prepare() } else { mic = try makeMic() }
             } catch {
                 output.log(.error, "microphone warmup failed: \(error.message)")
@@ -227,7 +250,7 @@ final class Capture {
     }
 
     private func makeMic() throws(CaptureError) -> MicSource {
-        try MicSource { [weak self] changed in self?.micInvalidated(changed) }
+        try MicSource(device: devices.resolve(microphone), preference: microphone) { [weak self] changed in self?.micInvalidated(changed) }
     }
 
     private func disposeMic() {
@@ -274,22 +297,31 @@ final class Capture {
     }
 }
 
-private let defaultInputAddress = AudioObjectPropertyAddress(
-    mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal,
-    mElement: kAudioObjectPropertyElementMain)
-
 private let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
 
-private final class MicSource {
+final class MicSource {
     private let engine = AVAudioEngine()
     private let converter: AVAudioConverter
     private let sink = OSAllocatedUnfairLock<(([Float]) -> Void)?>(uncheckedState: nil)
     private var observer: NSObjectProtocol?
-    private var defaultInputListener: AudioObjectPropertyListenerBlock?
+    let device: AudioInputDevices.Device
+    let preference: Microphone?
 
-    init(onConfigurationChange: @escaping (MicSource) -> Void) throws(CaptureError) {
+    init(device: AudioInputDevices.Device, preference: Microphone?, onConfigurationChange: @escaping (MicSource) -> Void) throws(CaptureError) {
+        self.device = device
+        self.preference = preference
         let input = engine.inputNode
+        guard let audioUnit = input.audioUnit else {
+            throw CaptureError(reason: .device, message: "Could not open the selected microphone. Choose another in Settings.")
+        }
+        var deviceID = device.id
+        let status = AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                          &deviceID, UInt32(MemoryLayout.size(ofValue: deviceID)))
+        guard status == noErr else {
+            throw CaptureError(reason: .device, message: "Could not use \(device.microphone.name). Choose another microphone in Settings.")
+        }
+        try Self.checkRoute(audioUnit, expected: device.id)
         let hardware = input.outputFormat(forBus: 0)
         guard hardware.sampleRate > 0, hardware.channelCount > 0, let targetFormat,
             let converter = AVAudioConverter(from: hardware, to: targetFormat)
@@ -309,16 +341,16 @@ private final class MicSource {
         ) { [weak self] _ in
             if let self { onConfigurationChange(self) }
         }
-        // A stopped engine gets no configuration change when the default input switches, so a
-        // warm engine would otherwise start on the previous device.
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            if let self { onConfigurationChange(self) }
-        }
-        var address = defaultInputAddress
-        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener) == noErr {
-            defaultInputListener = listener
-        }
         engine.prepare()
+    }
+
+    private static func checkRoute(_ audioUnit: AudioUnit, expected: AudioDeviceID) throws(CaptureError) {
+        var actual = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout.size(ofValue: actual))
+        let status = AudioUnitGetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &actual, &size)
+        guard status == noErr, actual == expected else {
+            throw CaptureError(reason: .device, message: "The selected microphone changed. Choose a microphone in Settings and try again.")
+        }
     }
 
     func prepare() {
@@ -326,6 +358,10 @@ private final class MicSource {
     }
 
     func start(sink deliver: @escaping ([Float]) -> Void) throws(CaptureError) {
+        guard let audioUnit = engine.inputNode.audioUnit else {
+            throw CaptureError(reason: .device, message: "The selected microphone is unavailable. Choose another in Settings.")
+        }
+        try Self.checkRoute(audioUnit, expected: device.id)
         converter.reset()
         sink.withLockUnchecked { $0 = deliver }
         do {
@@ -344,11 +380,6 @@ private final class MicSource {
         sink.withLockUnchecked { $0 = nil }
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
-        if let defaultInputListener {
-            var address = defaultInputAddress
-            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, defaultInputListener)
-        }
-        defaultInputListener = nil
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
     }

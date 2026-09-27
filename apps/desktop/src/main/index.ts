@@ -172,6 +172,7 @@ async function main() {
                 : "Updates are unavailable in this build.",
             },
     },
+    microphones: { kind: "loading" },
     last: null,
   });
 
@@ -194,10 +195,20 @@ async function main() {
       if (lifecycle === "running") dictation.onHelperEvent(event);
     },
     onExit: () => {
-      if (lifecycle === "running") dictation.dispatch({ type: "helperExited" });
+      if (lifecycle === "running") {
+        store.update((s) => ({
+          ...s,
+          microphones: {
+            kind: "unavailable",
+            message: "Microphones are unavailable while Voice reconnects.",
+          },
+        }));
+        dictation.dispatch({ type: "helperExited" });
+      }
     },
     configure: () => [
       { type: "hotkey.configure", key: store.state.settings.hotkey },
+      { type: "microphone.configure", microphone: store.state.settings.microphone },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
     ],
@@ -385,6 +396,8 @@ async function main() {
     store.update((s) => ({ ...s, settings: next }));
     if (next.hotkey !== previous.hotkey)
       helper.send({ type: "hotkey.configure", key: next.hotkey });
+    if (next.microphone?.uid !== previous.microphone?.uid)
+      helper.send({ type: "microphone.configure", microphone: next.microphone });
     if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
     await saving;

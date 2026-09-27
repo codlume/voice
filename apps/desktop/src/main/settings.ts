@@ -1,12 +1,18 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import * as NodePath from "node:path";
 
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import { MicrophoneSchema } from "../shared/microphone.ts";
+
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { hotkeys } from "../shared/api.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
+  microphone: null,
   hotkey: "fn",
   muteWhileDictating: false,
   dictationLanguage: "en",
@@ -29,6 +35,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   const c = record(r.cleanup);
   const d = DEFAULT_SETTINGS.cleanup;
   return {
+    microphone: Option.getOrNull(Schema.decodeUnknownOption(MicrophoneSchema)(r.microphone)),
     hotkey: pick(hotkeys, r.hotkey, DEFAULT_SETTINGS.hotkey),
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
@@ -43,6 +50,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
 
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   return parseSettings({
+    microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
     hotkey: patch.hotkey ?? settings.hotkey,
     updateChannel: patch.updateChannel ?? settings.updateChannel,
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,

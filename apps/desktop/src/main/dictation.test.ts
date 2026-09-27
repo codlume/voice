@@ -51,6 +51,7 @@ function harness(opts: Options = {}) {
         styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
       },
     },
+    microphones: { kind: "loading" },
     last: null,
   });
   const commands: HelperCommand[] = [];
@@ -99,8 +100,50 @@ describe("createDictation", () => {
     const h = harness({ dictationLanguage: value });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     expect(h.commands).toEqual([
-      { type: "capture.start", id: h.id(), muteWhileDictating: false, language: value },
+      {
+        type: "capture.start",
+        id: h.id(),
+        muteWhileDictating: false,
+        language: value,
+        microphone: null,
+      },
     ]);
+  });
+
+  test("snapshots the microphone per session and applies a changed choice next time", () => {
+    const h = harness();
+    const microphone = { uid: "usb", name: "USB Microphone" };
+    h.store.update((state) => ({ ...state, settings: { ...state.settings, microphone } }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", microphone });
+    h.store.update((state) => ({ ...state, settings: { ...state.settings, microphone: null } }));
+    expect(h.commands).toHaveLength(1);
+    expect(h.commands[0]).toMatchObject({ microphone });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", microphone: null });
+  });
+
+  test("publishes live catalog changes without changing the saved microphone or starting capture", () => {
+    const h = harness();
+    const microphone = { uid: "usb", name: "USB Microphone" };
+    h.store.update((state) => ({ ...state, settings: { ...state.settings, microphone } }));
+    h.dictation.onHelperEvent({ type: "microphones.changed", devices: [], defaultUid: null });
+    expect(h.store.state.microphones).toEqual({ kind: "ready", devices: [], defaultUid: null });
+    expect(h.store.state.settings.microphone).toEqual(microphone);
+    h.dictation.onHelperEvent({
+      type: "microphones.changed",
+      devices: [microphone],
+      defaultUid: "usb",
+    });
+    expect(h.store.state.microphones).toEqual({
+      kind: "ready",
+      devices: [microphone],
+      defaultUid: "usb",
+    });
+    h.dictation.onHelperEvent({ type: "microphones.unavailable", message: "Disconnected" });
+    expect(h.store.state.microphones).toEqual({ kind: "unavailable", message: "Disconnected" });
+    expect(h.commands).toEqual([]);
   });
 
   test("snapshots the mute preference once per capture start", () => {
@@ -112,7 +155,13 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const first = h.id();
     expect(h.commands).toEqual([
-      { type: "capture.start", id: first, language: "en", muteWhileDictating: true },
+      {
+        type: "capture.start",
+        id: first,
+        language: "en",
+        muteWhileDictating: true,
+        microphone: null,
+      },
     ]);
     h.store.update((state) => ({
       ...state,
@@ -123,6 +172,7 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     expect(h.commands.at(-1)).toEqual({
       type: "capture.start",
+      microphone: null,
       id: h.id(),
       language: "en",
       muteWhileDictating: false,
@@ -134,7 +184,7 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
     expect(h.commands).toEqual([
-      { type: "capture.start", id, language: "en", muteWhileDictating: false },
+      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
     ]);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     h.dictation.onHelperEvent({ type: "capture.level", id, level: 0.4 });
@@ -212,7 +262,7 @@ describe("createDictation", () => {
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const id = h.id();
       expect(h.commands).toEqual([
-        { type: "capture.start", id, language: value, muteWhileDictating: false },
+        { type: "capture.start", id, language: value, muteWhileDictating: false, microphone: null },
       ]);
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
       vi.advanceTimersByTime(800);
@@ -246,7 +296,11 @@ describe("createDictation", () => {
       const h = harness({ dictationLanguage: before });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const first = h.id();
-      expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", language: before });
+      expect(h.commands.at(-1)).toMatchObject({
+        type: "capture.start",
+        language: before,
+        microphone: null,
+      });
       h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
       h.store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage: after } }));
       vi.advanceTimersByTime(800);
@@ -272,7 +326,11 @@ describe("createDictation", () => {
       });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const second = h.id();
-      expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", language: after });
+      expect(h.commands.at(-1)).toMatchObject({
+        type: "capture.start",
+        language: after,
+        microphone: null,
+      });
       h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40 });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
@@ -449,7 +507,7 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(1);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
     expect(h.commands).toEqual([
-      { type: "capture.start", id, language: "en", muteWhileDictating: false },
+      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
       { type: "capture.cancel", id },
     ]);
   });

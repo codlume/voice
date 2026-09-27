@@ -97,6 +97,7 @@ export function createDictation(options: DictationOptions): Dictation {
           id: effect.id,
           language: sessionLanguage.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
+          microphone: store.state.settings.microphone,
         });
         return;
       case "stopCapture":
@@ -220,6 +221,18 @@ export function createDictation(options: DictationOptions): Dictation {
           method: event.method,
           reason: event.reason,
         });
+        return;
+      case "microphones.changed":
+        store.update((s) => ({
+          ...s,
+          microphones: { kind: "ready", devices: event.devices, defaultUid: event.defaultUid },
+        }));
+        return;
+      case "microphones.unavailable":
+        store.update((s) => ({
+          ...s,
+          microphones: { kind: "unavailable", message: event.message },
+        }));
         return;
       case "permissions":
         store.update((s) => ({

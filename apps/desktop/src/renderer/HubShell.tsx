@@ -295,7 +295,11 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           {page === "home" && <Home snapshot={snapshot} />}
           {page === "style" && <Style settings={snapshot.settings} />}
           {page === "settings" && (
-            <Settings settings={snapshot.settings} updates={snapshot.updates} />
+            <Settings
+              settings={snapshot.settings}
+              updates={snapshot.updates}
+              microphones={snapshot.microphones}
+            />
           )}
         </div>
       </main>

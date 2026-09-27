@@ -55,7 +55,13 @@ async function session(mode, { enabled = true, initiallyMuted = false } = {}) {
   const before = audioState();
   const id = `mute-${mode}-${enabled}-${initiallyMuted}`;
   await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: path } }, async (helper) => {
-    helper.send({ type: "capture.start", language: "en", id, muteWhileDictating: enabled });
+    helper.send({
+      type: "capture.start",
+      microphone: null,
+      language: "en",
+      id,
+      muteWhileDictating: enabled,
+    });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
     expectState({ ...before, muted: enabled || initiallyMuted }, `${mode} during capture`);
     if (mode === "stop") {
@@ -69,7 +75,13 @@ async function session(mode, { enabled = true, initiallyMuted = false } = {}) {
       await helper.waitFor(
         (event) => event.type === "log" && event.message.includes("capture.cancel stale ignored"),
       );
-      helper.send({ type: "capture.start", language: "en", id: "busy", muteWhileDictating: false });
+      helper.send({
+        type: "capture.start",
+        microphone: null,
+        language: "en",
+        id: "busy",
+        muteWhileDictating: false,
+      });
       await helper.waitFor((event) => event.type === "capture.failed" && event.id === "busy");
       expectState(
         { ...before, muted: true },
@@ -104,6 +116,7 @@ try {
     async (helper) => {
       helper.send({
         type: "capture.start",
+        microphone: null,
         language: "en",
         id: "failure",
         muteWhileDictating: true,

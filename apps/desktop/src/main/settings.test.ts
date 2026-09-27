@@ -44,6 +44,7 @@ describe("parseSettings", () => {
       hotkey: "rightOption",
       updateChannel: "stable",
       theme: "system",
+      microphone: null,
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
@@ -91,6 +92,7 @@ describe("applyPatch", () => {
       hotkey: "fn",
       updateChannel: "stable",
       theme: "system",
+      microphone: null,
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
@@ -167,5 +169,43 @@ describe("load and save", () => {
     await expect(loadSettings(file)).resolves.toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(settings);
+  });
+});
+
+describe("microphone settings", () => {
+  const microphone = { uid: "usb-stable-uid", name: "USB Microphone" };
+
+  test.each([
+    undefined,
+    null,
+    "usb",
+    {},
+    { uid: "usb" },
+    { uid: "", name: "USB" },
+    { uid: "usb", name: 42 },
+    [],
+  ])("defaults malformed or legacy microphone %j to the system default", (value) =>
+    expect(parseSettings({ microphone: value }).microphone).toBeNull(),
+  );
+
+  test("keeps a pinned device across unrelated patches and explicitly resets to default", () => {
+    const pinned = applyPatch(DEFAULT_SETTINGS, { microphone });
+    expect(pinned.microphone).toEqual(microphone);
+    expect(applyPatch(pinned, { theme: "dark" }).microphone).toEqual(microphone);
+    expect(applyPatch(pinned, { microphone: null })).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("persists the stable UID and name and then a reset across reloads", async () => {
+    const dir = await mkdtemp(NodePath.join(tmpdir(), "voice-microphone-settings-"));
+    const file = NodePath.join(dir, "settings.json");
+    try {
+      await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { microphone }));
+      const loaded = await loadSettings(file);
+      expect(loaded.microphone).toEqual(microphone);
+      await saveSettings(file, applyPatch(loaded, { microphone: null }));
+      expect((await loadSettings(file)).microphone).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -68,7 +68,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 3 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 4 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -81,7 +81,13 @@ describe("startHelper", () => {
       message: null,
     });
 
-    h.helper.send({ type: "capture.start", id: "s1", language: "en", muteWhileDictating: false });
+    h.helper.send({
+      type: "capture.start",
+      microphone: null,
+      id: "s1",
+      language: "en",
+      muteWhileDictating: false,
+    });
     await h.waitFor((e) => e.type === "capture.started");
     expect(h.of("capture.started")[0]?.event).toEqual({
       type: "capture.started",
@@ -125,7 +131,7 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v3; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v4; refusing/);
     await sleep(RESTART_MIN_MS + 150);
     expect(h.events).toEqual([]);
     expect(h.exits).toEqual([]);

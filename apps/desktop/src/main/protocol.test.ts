@@ -7,7 +7,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 3 },
+      { type: "ready", version: 4 },
       { type: "hotkey", action: "down" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
@@ -119,5 +119,35 @@ describe("parseHelperEvent", () => {
     ],
   ])("rejects %s", (_name, input) => {
     expect(parseHelperEvent(input)).toBeNull();
+  });
+});
+
+describe("microphone catalog", () => {
+  test("decodes input devices and the system default", () => {
+    const event = {
+      type: "microphones.changed",
+      devices: [{ uid: "usb", name: "USB Microphone" }],
+      defaultUid: "usb",
+    };
+    expect(parseHelperEvent(JSON.stringify(event))).toEqual(event);
+    expect(parseHelperEvent(JSON.stringify({ ...event, devices: [], defaultUid: null }))).toEqual({
+      ...event,
+      devices: [],
+      defaultUid: null,
+    });
+  });
+
+  test.each([
+    { devices: [{}], defaultUid: null },
+    { devices: [{ uid: "", name: "USB" }], defaultUid: null },
+    { devices: [], defaultUid: 4 },
+    { devices: [] },
+  ])("rejects a malformed catalog %j", (fields) =>
+    expect(parseHelperEvent(JSON.stringify({ type: "microphones.changed", ...fields }))).toBeNull(),
+  );
+
+  test("decodes enumeration failure", () => {
+    const event = { type: "microphones.unavailable", message: "Unavailable" };
+    expect(parseHelperEvent(JSON.stringify(event))).toEqual(event);
   });
 });
