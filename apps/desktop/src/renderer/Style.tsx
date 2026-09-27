@@ -1,11 +1,42 @@
 import * as stylex from "@stylexjs/stylex";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import { Switch } from "./Switch.tsx";
-import { stylings } from "./checklist.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+
+const stylings: {
+  value: SettingsValue["cleanup"]["styling"];
+  label: string;
+  description: string;
+  example: string;
+}[] = [
+  {
+    value: "casual",
+    label: "Casual",
+    description: "Relaxed and conversational",
+    example: "yeah sounds good, see you at 3",
+  },
+  {
+    value: "semi-casual",
+    label: "Semi-casual",
+    description: "Easygoing, with a little polish",
+    example: "Yeah, sounds good. See you at 3.",
+  },
+  {
+    value: "semi-formal",
+    label: "Semi-formal",
+    description: "Clear and composed",
+    example: "Sounds good. I'll see you at 3.",
+  },
+  {
+    value: "formal",
+    label: "Formal",
+    description: "Polished and professional",
+    example: "That sounds good. I will see you at 3:00.",
+  },
+];
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
@@ -104,15 +135,21 @@ export function Style({ settings }: { settings: SettingsValue }) {
   const name = useId();
   const cleanupId = useId();
   const [saveError, setSaveError] = useState("");
+  const saveVersion = useRef(0);
   const cleanupSupported = supportsCleanup(settings.dictationLanguage);
   const cleanupEnabled = wantsCleanup(settings);
 
   async function changeCleanup(cleanup: NonNullable<SettingsPatch["cleanup"]>) {
+    const version = ++saveVersion.current;
     setSaveError("");
     try {
       await window.voice.updateSettings({ cleanup });
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Could not save your style settings.");
+      if (version === saveVersion.current) {
+        setSaveError(
+          error instanceof Error ? error.message : "Could not save your style settings.",
+        );
+      }
     }
   }
 
