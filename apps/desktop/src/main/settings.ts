@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
+import { hotkeys } from "../shared/api.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -15,7 +16,6 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const THEMES = ["system", "light", "dark"] as const;
-const HOTKEYS = ["fn", "rightOption", "rightCommand"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
 
 const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback: T[number]) =>
@@ -29,7 +29,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   const c = record(r.cleanup);
   const d = DEFAULT_SETTINGS.cleanup;
   return {
-    hotkey: pick(HOTKEYS, r.hotkey, DEFAULT_SETTINGS.hotkey),
+    hotkey: pick(hotkeys, r.hotkey, DEFAULT_SETTINGS.hotkey),
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),

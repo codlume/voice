@@ -1,3 +1,5 @@
+import { Radio } from "@base-ui/react/radio";
+import { RadioGroup } from "@base-ui/react/radio-group";
 import * as stylex from "@stylexjs/stylex";
 import { useId, useRef, useState } from "react";
 
@@ -89,7 +91,7 @@ const styles = stylex.create({
     borderRadius: radius.large,
     backgroundColor: { default: color.card, ":hover": color.accent },
     cursor: "pointer",
-    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
     outlineOffset: 3,
   },
   selected: {
@@ -100,7 +102,6 @@ const styles = stylex.create({
     },
   },
   disabled: { opacity: 0.5, cursor: "default" },
-  radio: { position: "absolute", opacity: 0, pointerEvents: "none" },
   cardHeader: { display: "flex", alignItems: "center", gap: space.sm },
   cardTitle: { flexGrow: 1, fontWeight: 600 },
   mark: {
@@ -178,32 +179,33 @@ export function Style({ settings }: { settings: SettingsValue }) {
       </div>
 
       <fieldset disabled={!cleanupEnabled} {...stylex.props(styles.fieldset)}>
-        <legend {...stylex.props(styles.legend)}>Writing style</legend>
-        <div {...stylex.props(styles.grid)}>
+        <legend id={`${name}-legend`} {...stylex.props(styles.legend)}>
+          Writing style
+        </legend>
+        <RadioGroup<SettingsValue["cleanup"]["styling"]>
+          aria-labelledby={`${name}-legend`}
+          value={settings.cleanup.styling}
+          disabled={!cleanupEnabled}
+          onValueChange={(styling) => void changeCleanup({ styling })}
+          {...stylex.props(styles.grid)}
+        >
           {stylings.map(({ value, label, description, example }) => {
             const selected = settings.cleanup.styling === value;
             const labelId = `${name}-${value}-label`;
             const descriptionId = `${name}-${value}-description`;
             const exampleId = `${name}-${value}-example`;
             return (
-              <label
+              <Radio.Root
                 key={value}
+                value={value}
+                aria-labelledby={labelId}
+                aria-describedby={`${descriptionId} ${exampleId}`}
                 {...stylex.props(
                   styles.card,
                   selected && styles.selected,
                   !cleanupEnabled && styles.disabled,
                 )}
               >
-                <input
-                  type="radio"
-                  name={name}
-                  value={value}
-                  checked={selected}
-                  aria-labelledby={labelId}
-                  aria-describedby={`${descriptionId} ${exampleId}`}
-                  onChange={() => void changeCleanup({ styling: value })}
-                  {...stylex.props(styles.radio)}
-                />
                 <span>
                   <span {...stylex.props(styles.cardHeader)}>
                     <span id={labelId} {...stylex.props(styles.cardTitle)}>
@@ -231,10 +233,10 @@ export function Style({ settings }: { settings: SettingsValue }) {
                 <span id={exampleId} {...stylex.props(styles.example)}>
                   &ldquo;{example}&rdquo;
                 </span>
-              </label>
+              </Radio.Root>
             );
           })}
-        </div>
+        </RadioGroup>
       </fieldset>
 
       <p {...stylex.props(styles.detail)}>

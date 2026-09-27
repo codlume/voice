@@ -1,3 +1,5 @@
+import { Progress } from "@base-ui/react/progress";
+import { Toggle } from "@base-ui/react/toggle";
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useId, useState } from "react";
 
@@ -65,11 +67,9 @@ const styles = stylex.create({
   fill: {
     height: "100%",
     backgroundColor: color.primary,
-    transformOrigin: "left",
-    transitionProperty: "transform",
+    transitionProperty: "width",
     transitionDuration: "300ms",
   },
-  fillScale: (progress: number) => ({ transform: `scaleX(${progress})` }),
   mark: {
     display: "grid",
     placeItems: "center",
@@ -225,16 +225,11 @@ function SetupRow({ row }: { row: ChecklistRow }) {
       >
         <span>{status.text}</span>
         {status.kind === "busy" && status.progress !== undefined && (
-          <div
-            role="progressbar"
-            aria-label={`${row.title} download`}
-            aria-valuenow={Math.round(status.progress * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            {...stylex.props(styles.track)}
-          >
-            <div {...stylex.props(styles.fill, styles.fillScale(status.progress))} />
-          </div>
+          <Progress.Root aria-label={`${row.title} download`} value={status.progress * 100}>
+            <Progress.Track {...stylex.props(styles.track)}>
+              <Progress.Indicator {...stylex.props(styles.fill)} />
+            </Progress.Track>
+          </Progress.Root>
         )}
       </div>
       {action && (
@@ -351,14 +346,13 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
               )}
               <span {...stylex.props(styles.spacer)} />
               {hasRaw && (
-                <button
-                  type="button"
-                  aria-pressed={showRaw}
-                  onClick={() => setShowRaw(!showRaw)}
+                <Toggle
+                  pressed={showRaw}
+                  onPressedChange={setShowRaw}
                   {...stylex.props(styles.toggle)}
                 >
-                  {showRaw ? "Show cleaned" : "Show raw transcript"}
-                </button>
+                  Show raw transcript
+                </Toggle>
               )}
             </div>
           </>

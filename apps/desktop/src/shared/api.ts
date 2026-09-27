@@ -2,7 +2,8 @@ import type { DictationLanguage } from "./dictation-language.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
-export type Hotkey = "fn" | "rightOption" | "rightCommand";
+export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
+export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
 
