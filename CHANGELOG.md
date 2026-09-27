@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/codlume/voice/compare/v0.13.1...v0.13.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* **desktop:** show sidebar tooltips immediately on hover ([#100](https://github.com/codlume/voice/issues/100)) ([d5a4932](https://github.com/codlume/voice/commit/d5a4932c09d484e59e3f7dfdd95cb06329388667))
+
 ## [0.13.1](https://github.com/codlume/voice/compare/v0.13.0...v0.13.1) (2026-09-27)
 
 
