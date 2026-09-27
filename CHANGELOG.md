@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/codlume/voice/compare/v0.9.1...v0.10.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** move cleanup into a Style sidebar page ([#87](https://github.com/codlume/voice/issues/87)) ([326dfc4](https://github.com/codlume/voice/commit/326dfc4a188696307d9cee727d274d886b9ef9d9))
+
+
+### Performance Improvements
+
+* **voice-helper:** transcribe long captures before release ([#90](https://github.com/codlume/voice/issues/90)) ([58661a3](https://github.com/codlume/voice/commit/58661a3153c4b4d7a11a33b31405675bf74ac5f2))
+
 ## [0.9.1](https://github.com/codlume/voice/compare/v0.9.0...v0.9.1) (2026-09-27)
 
 
