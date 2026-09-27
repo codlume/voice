@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/codlume/voice/compare/v0.12.0...v0.13.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** add microphone selection in settings ([#95](https://github.com/codlume/voice/issues/95)) ([6e89ff8](https://github.com/codlume/voice/commit/6e89ff841fef02edfe4f68c37f9d56d17eddf7a6))
+* **desktop:** animate collapsed sidebar tooltips ([#97](https://github.com/codlume/voice/issues/97)) ([731bcda](https://github.com/codlume/voice/commit/731bcda4a6a9a8c42a0b984fb0f4ccd53e14f31b))
+
 ## [0.12.0](https://github.com/codlume/voice/compare/v0.11.0...v0.12.0) (2026-09-27)
 
 
