@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/codlume/voice/compare/v0.7.0...v0.8.0) (2026-09-27)
+
+
+### Features
+
+* **settings:** add dictation language preferences ([#81](https://github.com/codlume/voice/issues/81)) ([94a85fc](https://github.com/codlume/voice/commit/94a85fcb3c55da142550173468d1ac62cf398536))
+
 ## [0.7.0](https://github.com/codlume/voice/compare/v0.6.0...v0.7.0) (2026-09-27)
 
 
