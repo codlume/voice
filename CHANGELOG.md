@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/codlume/voice/compare/v0.8.0...v0.9.0) (2026-09-27)
+
+
+### Features
+
+* **audio:** mute output while dictating ([#83](https://github.com/codlume/voice/issues/83)) ([b4255e1](https://github.com/codlume/voice/commit/b4255e1d9b4adc07c29c566adb5e2a8d598438bd))
+
 ## [0.8.0](https://github.com/codlume/voice/compare/v0.7.0...v0.8.0) (2026-09-27)
 
 
