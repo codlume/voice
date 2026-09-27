@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/codlume/voice/compare/v0.13.0...v0.13.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **desktop:** preserve capture after microphone setup notifications ([#98](https://github.com/codlume/voice/issues/98)) ([2307603](https://github.com/codlume/voice/commit/230760388f3eb0c716b3446af4ff5fcbfa7d8aaa))
+
 ## [0.13.0](https://github.com/codlume/voice/compare/v0.12.0...v0.13.0) (2026-09-27)
 
 
