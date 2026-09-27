@@ -1,6 +1,9 @@
-import type { Hotkey, PermissionKind, PermissionState } from "../shared/api.ts";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import type { Hotkey, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
-import type { InsertFailure, InsertMethod } from "./session.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
 export const HELPER_PROTOCOL_VERSION = 3;
@@ -15,92 +18,75 @@ export type HelperCommand =
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean };
 
-type AsrState = "missing" | "downloading" | "loading" | "ready" | "failed";
+const permissionState = Schema.Literal("granted", "denied", "notDetermined");
+const insertFailure = Schema.NullOr(
+  Schema.Literal("focusChanged", "noFocusedField", "secureInput", "failed"),
+).annotations({ decodingFallback: () => Effect.succeed(null) });
+const statusMessage = Schema.NullOr(Schema.String).annotations({
+  decodingFallback: () => Effect.succeed(null),
+});
 
-export type HelperEvent =
-  | { type: "ready"; version: number }
-  | { type: "hotkey"; action: "down" | "up" | "cancel" }
-  | { type: "capture.started"; id: string; startMs: number }
-  | { type: "capture.level"; id: string; level: number }
-  | { type: "capture.failed"; id: string; message: string }
-  | { type: "capture.cancelled"; id: string }
-  | { type: "transcript"; id: string; text: string; audioMs: number; asrMs: number }
-  | { type: "transcript.failed"; id: string; message: string }
-  | { type: "insert.result"; id: string; method: InsertMethod; reason: InsertFailure | null }
-  | { type: "permissions"; microphone: PermissionState; accessibility: PermissionState }
-  | { type: "asr.status"; state: AsrState; message: string | null }
-  | { type: "log"; level: "info" | "error"; message: string };
+const HelperEventSchema = Schema.Union(
+  Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
+  Schema.Struct({
+    type: Schema.Literal("hotkey"),
+    action: Schema.Literal("down", "up", "cancel"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("capture.started"),
+    id: Schema.String,
+    startMs: Schema.Finite,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("capture.level"),
+    id: Schema.String,
+    level: Schema.Finite.pipe(Schema.clamp(0, 1)),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("capture.failed"),
+    id: Schema.String,
+    message: Schema.String,
+  }),
+  Schema.Struct({ type: Schema.Literal("capture.cancelled"), id: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("transcript"),
+    id: Schema.String,
+    text: Schema.String,
+    audioMs: Schema.Finite,
+    asrMs: Schema.Finite,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("transcript.failed"),
+    id: Schema.String,
+    message: Schema.String,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("insert.result"),
+    id: Schema.String,
+    method: Schema.Literal("accessibility", "paste", "none"),
+    reason: Schema.optionalWith(insertFailure, { default: () => null }),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("permissions"),
+    microphone: permissionState,
+    accessibility: permissionState,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("asr.status"),
+    state: Schema.Literal("missing", "downloading", "loading", "ready", "failed"),
+    message: Schema.optionalWith(statusMessage, { default: () => null }),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("log"),
+    level: Schema.Literal("info", "error"),
+    message: Schema.String,
+  }),
+);
 
-type Raw = Record<string, unknown>;
+export type HelperEvent = typeof HelperEventSchema.Type;
 
-const str = (v: unknown): v is string => typeof v === "string";
-const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
-const oneOf =
-  <const T extends readonly string[]>(values: T) =>
-  (v: unknown): v is T[number] =>
-    str(v) && values.includes(v);
-
-const permissionState = oneOf(["granted", "denied", "notDetermined"]);
-const insertMethod = oneOf(["accessibility", "paste", "none"]);
-const insertFailure = oneOf(["focusChanged", "noFocusedField", "secureInput", "failed"]);
-const asrState = oneOf(["missing", "downloading", "loading", "ready", "failed"]);
+const decodeHelperEvent = Schema.decodeUnknownOption(Schema.parseJson(HelperEventSchema));
 
 export function parseHelperEvent(line: string): HelperEvent | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const r = raw as Raw;
-  switch (r.type) {
-    case "ready":
-      return num(r.version) ? { type: "ready", version: r.version } : null;
-    case "hotkey":
-      return oneOf(["down", "up", "cancel"])(r.action)
-        ? { type: "hotkey", action: r.action }
-        : null;
-    case "capture.started":
-      return str(r.id) && num(r.startMs)
-        ? { type: "capture.started", id: r.id, startMs: r.startMs }
-        : null;
-    case "capture.level":
-      return str(r.id) && num(r.level)
-        ? { type: "capture.level", id: r.id, level: Math.min(1, Math.max(0, r.level)) }
-        : null;
-    case "capture.failed":
-      return str(r.id) && str(r.message)
-        ? { type: "capture.failed", id: r.id, message: r.message }
-        : null;
-    case "capture.cancelled":
-      return str(r.id) ? { type: "capture.cancelled", id: r.id } : null;
-    case "transcript":
-      return str(r.id) && str(r.text) && num(r.audioMs) && num(r.asrMs)
-        ? { type: "transcript", id: r.id, text: r.text, audioMs: r.audioMs, asrMs: r.asrMs }
-        : null;
-    case "transcript.failed":
-      return str(r.id) && str(r.message)
-        ? { type: "transcript.failed", id: r.id, message: r.message }
-        : null;
-    case "insert.result": {
-      if (!str(r.id) || !insertMethod(r.method)) return null;
-      const reason = insertFailure(r.reason) ? r.reason : null;
-      return { type: "insert.result", id: r.id, method: r.method, reason };
-    }
-    case "permissions":
-      return permissionState(r.microphone) && permissionState(r.accessibility)
-        ? { type: "permissions", microphone: r.microphone, accessibility: r.accessibility }
-        : null;
-    case "asr.status":
-      return asrState(r.state)
-        ? { type: "asr.status", state: r.state, message: str(r.message) ? r.message : null }
-        : null;
-    case "log":
-      return oneOf(["info", "error"])(r.level) && str(r.message)
-        ? { type: "log", level: r.level, message: r.message }
-        : null;
-    default:
-      return null;
-  }
+  return Option.getOrNull(decodeHelperEvent(line));
 }
