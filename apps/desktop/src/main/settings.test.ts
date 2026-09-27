@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
+import { dictationLanguages } from "../shared/dictation-language.ts";
 import {
   applyPatch,
   DEFAULT_SETTINGS,
@@ -13,6 +14,12 @@ import {
 } from "./settings.ts";
 
 describe("parseSettings", () => {
+  test.each([undefined, null, "", "xx", "English", 42, {}, ["pl"]])(
+    "defaults missing or invalid dictation language %j to English",
+    (dictationLanguage) => {
+      expect(parseSettings({ dictationLanguage }).dictationLanguage).toBe("en");
+    },
+  );
   test("uses the installed channel for old settings and preserves an explicit selection", () => {
     expect(parseSettings({}, "nightly").updateChannel).toBe("nightly");
     expect(parseSettings({ updateChannel: "beta" }, "nightly").updateChannel).toBe("nightly");
@@ -28,6 +35,7 @@ describe("parseSettings", () => {
       hotkey: "rightOption",
       updateChannel: "stable",
       theme: "system",
+      dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
     });
   });
@@ -55,6 +63,12 @@ describe("parseSettings", () => {
 });
 
 describe("applyPatch", () => {
+  test("changes language without losing cleanup preference and retains it across unrelated patches", () => {
+    const polish = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: "pl" });
+    expect(polish).toEqual({ ...DEFAULT_SETTINGS, dictationLanguage: "pl" });
+    expect(applyPatch(polish, { theme: "dark" })).toEqual({ ...polish, theme: "dark" });
+    expect(applyPatch(polish, { dictationLanguage: "en" })).toEqual(DEFAULT_SETTINGS);
+  });
   test("merges a partial cleanup patch and keeps other fields", () => {
     const formal = applyPatch(DEFAULT_SETTINGS, { cleanup: { styling: "formal" } });
     const next = applyPatch(formal, { cleanup: { enabled: false } });
@@ -62,6 +76,7 @@ describe("applyPatch", () => {
       hotkey: "fn",
       updateChannel: "stable",
       theme: "system",
+      dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
@@ -85,6 +100,23 @@ describe("load and save", () => {
     dir = await mkdtemp(NodePath.join(tmpdir(), "voice-settings-"));
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
+
+  test.each(dictationLanguages)("persists $label across reloads", async ({ value }) => {
+    const file = NodePath.join(dir, "settings.json");
+    const settings = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: value });
+    expect(settings.dictationLanguage).toBe(value);
+    await saveSettings(file, settings);
+    await expect(loadSettings(file)).resolves.toEqual(settings);
+  });
+
+  test("migrates a saved settings file without a language to English", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, JSON.stringify({ cleanup: { enabled: false, styling: "casual" } }));
+    await expect(loadSettings(file)).resolves.toMatchObject({
+      dictationLanguage: "en",
+      cleanup: { enabled: false, styling: "casual" },
+    });
+  });
 
   test("a missing file yields defaults", async () => {
     await expect(loadSettings(NodePath.join(dir, "settings.json"))).resolves.toEqual(

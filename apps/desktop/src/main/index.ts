@@ -16,6 +16,7 @@ import {
 import { autoUpdater } from "electron-updater";
 
 import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
+import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
@@ -176,7 +177,7 @@ async function main() {
 
   const cleanup = createCleanup({
     modelsDir,
-    enabled: () => store.state.settings.cleanup.enabled,
+    enabled: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
   });
 
@@ -369,9 +370,10 @@ async function main() {
     }
     if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
-    const cleanupEnabled = state.settings.cleanup.enabled;
-    if (cleanupEnabled !== previous.settings.cleanup.enabled) {
-      void (cleanupEnabled ? cleanup.loadIfDownloaded() : cleanup.dispose());
+    if (!state.settings.cleanup.enabled && previous.settings.cleanup.enabled) {
+      void cleanup.dispose();
+    } else if (wantsCleanup(state.settings) && !wantsCleanup(previous.settings)) {
+      void cleanup.loadIfDownloaded();
     }
   });
 
@@ -408,7 +410,7 @@ async function main() {
   });
   ipcMain.handle(Channel.setupModels, () => {
     helper.send({ type: "asr.prepare", download: true });
-    void cleanup.downloadAndLoad();
+    if (wantsCleanup(store.state.settings)) void cleanup.downloadAndLoad();
   });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
@@ -453,7 +455,7 @@ async function main() {
 
   showHub();
   updates.start();
-  void cleanup.loadIfDownloaded();
+  if (wantsCleanup(store.state.settings)) void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
   if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
 }

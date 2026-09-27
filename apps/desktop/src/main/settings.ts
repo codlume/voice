@@ -3,8 +3,11 @@ import * as NodePath from "node:path";
 
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
+import { parseDictationLanguage } from "../shared/dictation-language.ts";
+
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
+  dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
@@ -27,6 +30,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   return {
     hotkey: pick(HOTKEYS, r.hotkey, DEFAULT_SETTINGS.hotkey),
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
+    dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
@@ -39,6 +43,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   return parseSettings({
     hotkey: patch.hotkey ?? settings.hotkey,
     updateChannel: patch.updateChannel ?? settings.updateChannel,
+    dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
   });

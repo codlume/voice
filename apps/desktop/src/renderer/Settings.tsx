@@ -9,6 +9,13 @@ import type {
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
+import {
+  dictationLanguages,
+  parseDictationLanguage,
+  supportsCleanup,
+  wantsCleanup,
+  type DictationLanguage,
+} from "../shared/dictation-language.ts";
 import { hotkeyLabels, stylings } from "./checklist.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -135,10 +142,12 @@ export function GlobeHint() {
 
 function Switch({
   checked,
+  disabled = false,
   onChange,
   id,
 }: {
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
   id: string;
 }) {
@@ -148,6 +157,7 @@ function Switch({
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       {...stylex.props(styles.switch, checked && styles.switchOn)}
     >
@@ -219,10 +229,11 @@ function Segmented<T extends string>({
   );
 }
 
-function StylePicker({ cleanup }: { cleanup: SettingsValue["cleanup"] }) {
+function StylePicker({ settings }: { settings: SettingsValue }) {
+  const { cleanup } = settings;
   const titleId = useId();
   const current = stylings.find((s) => s.value === cleanup.styling) ?? stylings[0]!;
-  const disabled = !cleanup.enabled;
+  const disabled = !wantsCleanup(settings);
   return (
     <div {...stylex.props(styles.row, styles.stack, disabled && styles.disabled)}>
       <span id={titleId} {...stylex.props(styles.rowTitle)}>
@@ -273,8 +284,20 @@ export function Settings({
   settings: SettingsValue;
   updates: UpdatesSnapshot;
 }) {
-  const { cleanup } = settings;
   const [updateError, setUpdateError] = useState("");
+  const [languageError, setLanguageError] = useState("");
+  const cleanupSupported = supportsCleanup(settings.dictationLanguage);
+
+  async function changeLanguage(dictationLanguage: DictationLanguage) {
+    setLanguageError("");
+    try {
+      await window.voice.updateSettings({ dictationLanguage });
+    } catch (error) {
+      setLanguageError(
+        error instanceof Error ? error.message : "Could not save dictation language.",
+      );
+    }
+  }
 
   async function changeChannel(channel: UpdateChannel) {
     setUpdateError("");
@@ -318,6 +341,39 @@ export function Settings({
         {settings.hotkey === "fn" && <GlobeHint />}
       </section>
 
+      <section aria-labelledby="dictation-languages" {...stylex.props(styles.section)}>
+        <h2 id="dictation-languages" {...stylex.props(styles.sectionLabel)}>
+          Dictation languages
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-dictation-language"
+            title="Spoken language"
+            detail="Speech recognition detects language automatically. This choice controls English text cleanup and applies to your next dictation."
+          >
+            <select
+              id="setting-dictation-language"
+              value={settings.dictationLanguage}
+              onChange={(event) =>
+                void changeLanguage(parseDictationLanguage(event.currentTarget.value))
+              }
+              {...stylex.props(styles.select)}
+            >
+              {dictationLanguages.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Row>
+        </div>
+        {languageError && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {languageError}
+          </p>
+        )}
+      </section>
+
       <section aria-labelledby="cleanup" {...stylex.props(styles.section)}>
         <h2 id="cleanup" {...stylex.props(styles.sectionLabel)}>
           Cleanup
@@ -326,15 +382,20 @@ export function Settings({
           <Row
             id="setting-cleanup"
             title="Clean up text"
-            detail="Removes filler words and fixes punctuation, on this Mac."
+            detail={
+              cleanupSupported
+                ? "Removes filler words and fixes punctuation, on this Mac."
+                : "Text cleanup is available for English only. Your transcript will be inserted as recognized."
+            }
           >
             <Switch
               id="setting-cleanup"
-              checked={cleanup.enabled}
+              checked={wantsCleanup(settings)}
+              disabled={!cleanupSupported}
               onChange={(enabled) => update({ cleanup: { enabled } })}
             />
           </Row>
-          <StylePicker cleanup={cleanup} />
+          <StylePicker settings={settings} />
         </div>
       </section>
 

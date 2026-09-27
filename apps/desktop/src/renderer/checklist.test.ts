@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Snapshot } from "../shared/api.ts";
+import { dictationLanguages } from "../shared/dictation-language.ts";
 import { checklist } from "./checklist.ts";
 
 const fresh: Snapshot = {
@@ -17,6 +18,7 @@ const fresh: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
+    dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
   },
   last: null,
@@ -98,6 +100,19 @@ describe("checklist", () => {
     };
     expect(checklist(denied).ready).toBe(false);
   });
+
+  test.each(dictationLanguages.filter(({ value }) => value !== "en"))(
+    "$label does not require the English cleanup model",
+    ({ value }) => {
+      const snapshot: Snapshot = {
+        ...allReady,
+        models: { ...allReady.models, cleanup: { state: "missing" } },
+        settings: { ...allReady.settings, dictationLanguage: value },
+      };
+      expect(checklist(snapshot).ready).toBe(true);
+      expect(checklist(snapshot).rows.map((r) => r.id)).not.toContain("cleanup");
+    },
+  );
 
   test("with cleanup off, the cleanup model neither shows nor blocks readiness", () => {
     const cleanupOff: Snapshot = {

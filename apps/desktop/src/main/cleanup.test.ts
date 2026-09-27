@@ -5,7 +5,9 @@ import * as NodePath from "node:path";
 import { S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
-import type { ModelStatus } from "../shared/api.ts";
+import type { ModelStatus, Settings } from "../shared/api.ts";
+import { wantsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
+import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createCleanup, type CleanupModule } from "./cleanup.ts";
 
 const style: CleanupStyle = { styling: "formal" };
@@ -195,6 +197,40 @@ describe("createCleanup", () => {
     expect(fake.calls.cleans).toEqual([]);
     await expect(cleanup.clean("hi", style, signal)).rejects.toThrow();
   });
+
+  test.each(["auto", "pl"] satisfies DictationLanguage[])(
+    "%s skips model startup and setup, then English can load without another download",
+    async (dictationLanguage) => {
+      await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+      let settings: Settings = { ...DEFAULT_SETTINGS, dictationLanguage };
+      const fake = fakeModule();
+      let imports = 0;
+      const cleanup = createCleanup({
+        modelsDir: dir,
+        enabled: () => wantsCleanup(settings),
+        onStatus: (s) => statuses.push(s),
+        loadModule: () => {
+          imports += 1;
+          return fake.loadModule();
+        },
+      });
+      await cleanup.loadIfDownloaded();
+      await cleanup.downloadAndLoad();
+      expect(imports).toBe(0);
+      expect(fake.calls).toMatchObject({ downloads: 0, loads: 0 });
+      settings = { ...settings, dictationLanguage: "en" };
+      await cleanup.loadIfDownloaded();
+      expect(cleanup.loaded()).toBe(true);
+      expect(fake.calls).toMatchObject({ downloads: 0, loads: 1 });
+      settings = { ...settings, dictationLanguage };
+      await cleanup.loadIfDownloaded();
+      await expect(cleanup.clean("finish the English session", style, signal)).resolves.toBe(
+        "FINISH THE ENGLISH SESSION",
+      );
+      expect(fake.calls).toMatchObject({ downloads: 0, loads: 1, disposes: 0 });
+      await cleanup.dispose();
+    },
+  );
 
   test("with cleanup switched off, neither startup nor setup downloads or loads the model", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");

@@ -1,3 +1,5 @@
+import type { DictationLanguage } from "./dictation-language.ts";
+
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
 export type Hotkey = "fn" | "rightOption" | "rightCommand";
@@ -43,6 +45,7 @@ export type ModelStatus =
 
 export type Settings = {
   hotkey: Hotkey;
+  dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
   cleanup: {
@@ -53,6 +56,7 @@ export type Settings = {
 
 export type SettingsPatch = {
   hotkey?: Hotkey;
+  dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;

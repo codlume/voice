@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { step, type Effect, type Session, type SessionEvent } from "./session.ts";
@@ -52,6 +53,7 @@ export function createDictation(options: DictationOptions): Dictation {
   const now = options.now ?? Date.now;
   let idleTimer: NodeJS.Timeout | null = null;
   let timing: Timing | null = null;
+  let sessionLanguage: { id: string; language: DictationLanguage } | null = null;
   let watchdog: NodeJS.Timeout | null = null;
 
   function dispatch(event: SessionEvent) {
@@ -63,6 +65,7 @@ export function createDictation(options: DictationOptions): Dictation {
       armWatchdog(state);
     }
     if (state.phase === "done" && before.phase !== "done") logTiming(state.id, state.outcome.kind);
+    if (state.phase === "done" || state.phase === "idle") sessionLanguage = null;
   }
 
   function armWatchdog(state: Session) {
@@ -86,6 +89,7 @@ export function createDictation(options: DictationOptions): Dictation {
       case "startCapture":
         if (idleTimer) clearTimeout(idleTimer);
         timing = { id: effect.id, pressedAt: now() };
+        sessionLanguage = { id: effect.id, language: store.state.settings.dictationLanguage };
         send({ type: "capture.start", id: effect.id });
         return;
       case "stopCapture":
@@ -190,7 +194,11 @@ export function createDictation(options: DictationOptions): Dictation {
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup: store.state.settings.cleanup.enabled && cleanup.loaded(),
+          cleanup:
+            sessionLanguage?.id === event.id &&
+            supportsCleanup(sessionLanguage.language) &&
+            store.state.settings.cleanup.enabled &&
+            cleanup.loaded(),
         });
         return;
       }
