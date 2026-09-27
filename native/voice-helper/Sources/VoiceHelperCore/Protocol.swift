@@ -11,9 +11,13 @@ public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocu
 public enum AsrState: String, Codable, Sendable { case missing, downloading, loading, ready, failed }
 public enum LogLevel: String, Codable, Sendable { case info, error }
 
+public enum DictationLanguage: String, Codable, CaseIterable, Sendable {
+    case auto, en, bg, hr, cs, da, nl, et, fi, fr, de, el, hu, it, lv, lt, mt, pl, pt, ro, ru, sk, sl, es, sv, uk
+}
+
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey)
-    case captureStart(id: String, muteWhileDictating: Bool)
+    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool)
     case captureStop(id: String)
     case captureCancel(id: String)
     case insert(id: String, text: String)
@@ -45,7 +49,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 }
 
 private enum Key: String, CodingKey {
-    case type, key, id, text, kind, download, path, action, muteWhileDictating
+    case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, method
     case microphone, accessibility, state
 }
@@ -58,6 +62,7 @@ extension HelperCommand: Decodable {
         case "hotkey.configure": self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key))
         case "capture.start":
             self = .captureStart(id: try c.decode(String.self, forKey: .id),
+                                 language: try c.decode(DictationLanguage.self, forKey: .language),
                                  muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))

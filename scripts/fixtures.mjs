@@ -23,6 +23,11 @@ export const fixtures = [
   },
   { name: "silence.wav", silenceSeconds: 2 },
   { name: "url.wav", speech: "open github dot com slash pingdotgg" },
+  {
+    name: "language-trigger.wav",
+    voice: "Milena",
+    speech: "Хеллоу, май нейм из Анна. Плиз сенд зе репорт бай Фрайдей.",
+  },
 ];
 
 function run(command, args) {
@@ -50,7 +55,7 @@ function generate(fixture) {
   }
   const aiff = join(tmpdir(), `voice-fixture-${process.pid}-${fixture.name}.aiff`);
   try {
-    run("say", ["-o", aiff, fixture.speech]);
+    run("say", [...(fixture.voice ? ["-v", fixture.voice] : []), "-o", aiff, fixture.speech]);
     run("ffmpeg", [...encode, "-i", aiff, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", target]);
   } finally {
     rmSync(aiff, { force: true });
