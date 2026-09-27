@@ -1,3 +1,4 @@
+import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
 import * as stylex from "@stylexjs/stylex";
 
 import { color, radius } from "./tokens.stylex.ts";
@@ -17,6 +18,7 @@ const styles = stylex.create({
     transitionDuration: { default: "160ms", "@media (prefers-reduced-motion: reduce)": "0s" },
   },
   switchOn: { backgroundColor: color.primary },
+  disabled: { opacity: 0.5, cursor: "default" },
   thumb: {
     position: "absolute",
     top: 2,
@@ -44,16 +46,16 @@ export function Switch({
   id: string;
 }) {
   return (
-    <button
+    <SwitchPrimitive.Root
       id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
+      nativeButton
+      render={<button />}
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      {...stylex.props(styles.switch, checked && styles.switchOn)}
+      onCheckedChange={onChange}
+      {...stylex.props(styles.switch, checked && styles.switchOn, disabled && styles.disabled)}
     >
-      <span {...stylex.props(styles.thumb, checked && styles.thumbOn)} />
-    </button>
+      <SwitchPrimitive.Thumb {...stylex.props(styles.thumb, checked && styles.thumbOn)} />
+    </SwitchPrimitive.Root>
   );
 }

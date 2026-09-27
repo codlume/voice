@@ -1,3 +1,5 @@
+import { Radio } from "@base-ui/react/radio";
+import { RadioGroup } from "@base-ui/react/radio-group";
 import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
@@ -9,12 +11,9 @@ import type {
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
-import {
-  dictationLanguages,
-  parseDictationLanguage,
-  type DictationLanguage,
-} from "../shared/dictation-language.ts";
+import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import { hotkeyLabels } from "./checklist.ts";
+import { Select } from "./Select.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -52,18 +51,6 @@ const styles = stylex.create({
   rowText: { flexGrow: 1, minWidth: 0 },
   rowTitle: { display: "block", fontWeight: 500 },
   rowDetail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  select: {
-    paddingBlock: 6,
-    paddingInline: 10,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.small,
-    backgroundColor: color.card,
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
-  },
   segments: {
     display: "grid",
     gridAutoFlow: "column",
@@ -82,7 +69,7 @@ const styles = stylex.create({
     fontSize: 13,
     textAlign: "center",
     cursor: "pointer",
-    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
   },
   segmentOn: {
     backgroundColor: color.segmentSelected,
@@ -90,12 +77,16 @@ const styles = stylex.create({
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
-  radio: { position: "absolute", opacity: 0, pointerEvents: "none" },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
-const isHotkey = (value: string): value is Hotkey => value in hotkeyLabels;
+const hotkeys = ["fn", "rightOption", "rightCommand"] as const satisfies readonly Hotkey[];
+const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabels[value] }));
+const updateChannels = [
+  { value: "stable", label: "Stable" },
+  { value: "nightly", label: "Nightly" },
+] as const satisfies readonly { value: UpdateChannel; label: string }[];
 
 function update(patch: SettingsPatch) {
   void window.voice.updateSettings(patch);
@@ -149,27 +140,24 @@ function Segmented<T extends string>({
   disabled?: boolean;
   onChange: (value: T) => void;
 }) {
-  const name = useId();
   return (
-    <div role="radiogroup" aria-labelledby={labelledBy} {...stylex.props(styles.segments)}>
+    <RadioGroup<T>
+      aria-labelledby={labelledBy}
+      value={value}
+      disabled={disabled}
+      onValueChange={onChange}
+      {...stylex.props(styles.segments)}
+    >
       {options.map((option) => (
-        <label
+        <Radio.Root
           key={option.value}
+          value={option.value}
           {...stylex.props(styles.segment, option.value === value && styles.segmentOn)}
         >
-          <input
-            type="radio"
-            name={name}
-            value={option.value}
-            checked={option.value === value}
-            disabled={disabled}
-            onChange={() => onChange(option.value)}
-            {...stylex.props(styles.radio)}
-          />
           {option.label}
-        </label>
+        </Radio.Root>
       ))}
-    </div>
+    </RadioGroup>
   );
 }
 
@@ -242,21 +230,12 @@ export function Settings({
             title="Hold to talk"
             detail="Hold the key while you speak. Press Escape to cancel."
           >
-            <select
+            <Select
               id="setting-hotkey"
               value={settings.hotkey}
-              onChange={(event) => {
-                const hotkey = event.currentTarget.value;
-                if (isHotkey(hotkey)) update({ hotkey });
-              }}
-              {...stylex.props(styles.select)}
-            >
-              {Object.entries(hotkeyLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              options={hotkeyOptions}
+              onChange={(hotkey) => update({ hotkey })}
+            />
           </Row>
         </div>
         {settings.hotkey === "fn" && <GlobeHint />}
@@ -272,20 +251,12 @@ export function Settings({
             title="Spoken language"
             detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
           >
-            <select
+            <Select
               id="setting-dictation-language"
               value={settings.dictationLanguage}
-              onChange={(event) =>
-                void changeLanguage(parseDictationLanguage(event.currentTarget.value))
-              }
-              {...stylex.props(styles.select)}
-            >
-              {dictationLanguages.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              options={dictationLanguages}
+              onChange={(language) => void changeLanguage(language)}
+            />
           </Row>
         </div>
         {languageError && (
@@ -334,19 +305,13 @@ export function Settings({
             detail="Stable gets regular releases. Nightly gets early builds."
             disabled={updates.status.kind === "installing"}
           >
-            <select
+            <Select
               id="setting-update-channel"
               value={updates.channel}
+              options={updateChannels}
               disabled={updates.status.kind === "installing"}
-              onChange={(event) => {
-                const channel = event.currentTarget.value;
-                if (channel === "stable" || channel === "nightly") void changeChannel(channel);
-              }}
-              {...stylex.props(styles.select)}
-            >
-              <option value="stable">Stable</option>
-              <option value="nightly">Nightly</option>
-            </select>
+              onChange={(channel) => void changeChannel(channel)}
+            />
           </Row>
           <div {...stylex.props(styles.row)}>
             <div {...stylex.props(styles.rowText)}>
