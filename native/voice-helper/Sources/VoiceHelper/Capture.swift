@@ -301,14 +301,15 @@ private let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
 
 final class MicSource {
-    private let engine = AVAudioEngine()
+    private let engine: AVAudioEngine
     private let converter: AVAudioConverter
     private let sink = OSAllocatedUnfairLock<(([Float]) -> Void)?>(uncheckedState: nil)
     private var observer: NSObjectProtocol?
     let device: AudioInputDevices.Device
     let preference: Microphone?
 
-    init(device: AudioInputDevices.Device, preference: Microphone?, onConfigurationChange: @escaping (MicSource) -> Void) throws(CaptureError) {
+    init(device: AudioInputDevices.Device, preference: Microphone?, engine: AVAudioEngine = AVAudioEngine(), onConfigurationChange: @escaping (MicSource) -> Void) throws(CaptureError) {
+        self.engine = engine
         self.device = device
         self.preference = preference
         let input = engine.inputNode
@@ -337,11 +338,27 @@ final class MicSource {
             }
         }
         observer = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
-            if let self { onConfigurationChange(self) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.configurationIsUsable() else { return }
+                onConfigurationChange(self)
+            }
         }
         engine.prepare()
+    }
+
+    private func configurationIsUsable() -> Bool {
+        let input = engine.inputNode
+        guard let audioUnit = input.audioUnit,
+            input.outputFormat(forBus: 0).isEqual(converter.inputFormat)
+        else { return false }
+        do {
+            try Self.checkRoute(audioUnit, expected: device.id)
+        } catch {
+            return false
+        }
+        return sink.withLockUnchecked { $0 == nil } || engine.isRunning
     }
 
     private static func checkRoute(_ audioUnit: AudioUnit, expected: AudioDeviceID) throws(CaptureError) {
