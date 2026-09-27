@@ -1,6 +1,8 @@
+import AVFoundation
 import FluidAudio
 import Foundation
 import VoiceHelperCore
+import os
 
 struct TranscribeError: Error {
     let reason: TranscriptFailure
@@ -9,11 +11,16 @@ struct TranscribeError: Error {
 
 @MainActor
 final class Transcriber {
+    struct PreparedAsr {
+        let manager: AsrManager
+        let models: AsrModels
+    }
+
     enum AsrLoad {
         case missing
-        case downloading(Task<AsrManager, Error>)
-        case loading(Task<AsrManager, Error>)
-        case ready(AsrManager)
+        case downloading(Task<PreparedAsr, Error>)
+        case loading(Task<PreparedAsr, Error>)
+        case ready(PreparedAsr)
         case failed(String)
     }
 
@@ -47,7 +54,7 @@ final class Transcriber {
             return
         }
         let directory = directory
-        let task = Task.detached(priority: .userInitiated) { () throws -> AsrManager in
+        let task = Task.detached(priority: .userInitiated) { () throws -> PreparedAsr in
             let models = needsDownload
                 ? try await AsrModels.downloadAndLoad(to: directory, version: .v3)
                 : try await AsrModels.load(from: directory, version: .v3)
@@ -56,7 +63,7 @@ final class Transcriber {
             // The first transcription in a process pays a one-off 30-40 ms; take it here.
             var state = TdtDecoderState.make()
             _ = try await manager.transcribe([Float](repeating: 0, count: 16000), decoderState: &state)
-            return manager
+            return PreparedAsr(manager: manager, models: models)
         }
         load = needsDownload ? .downloading(task) : .loading(task)
         output.emit(.asrStatus(state: needsDownload ? .downloading : .loading, message: nil))
@@ -73,14 +80,29 @@ final class Transcriber {
         }
     }
 
-    func transcribe(_ samples: [Float], language: DictationLanguage) async throws -> (text: String, asrMs: Double) {
+    func beginStreaming(language: DictationLanguage) -> StreamingTranscription? {
+        guard case .ready(let ready) = load else { return nil }
+        return StreamingTranscription(models: ready.models, language: language.asrLanguage)
+    }
+
+    func transcribe(
+        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription? = nil
+    ) async throws -> (text: String, asrMs: Double) {
+        let started = DispatchTime.now()
+        if let stream {
+            if let text = try await stream.finish(sampleCount: samples.count) {
+                output.log(.info, "streaming ASR finalized \(samples.count) samples")
+                return (text, started.millisecondsToNow())
+            }
+            output.log(.error, "streaming ASR incomplete; retrying complete capture")
+        }
         let manager: AsrManager
         switch load {
         case .ready(let ready):
-            manager = ready
+            manager = ready.manager
         case .loading(let task), .downloading(let task):
             do {
-                manager = try await task.value
+                manager = try await task.value.manager
             } catch {
                 throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(error)")
             }
@@ -93,13 +115,96 @@ final class Transcriber {
         let minimum = ASRConstants.minimumRequiredSamples(forSampleRate: 16000)
         let padded = samples.count < minimum ? samples + [Float](repeating: 0, count: minimum - samples.count) : samples
         var state = TdtDecoderState.make()
-        let started = DispatchTime.now()
         do {
+            try Task.checkCancellation()
             let result = try await manager.transcribe(padded, decoderState: &state, language: language.asrLanguage)
             return (result.text, started.millisecondsToNow())
         } catch {
             throw TranscribeError(reason: .unknown, message: "\(error)")
         }
+    }
+}
+
+final class StreamingTranscription {
+    private static let configuration = SlidingWindowAsrConfig.default
+    private static let sampleRate = 16_000.0
+    static let minimumSamples = Int(configuration.chunkSeconds * sampleRate)
+        + Int(configuration.rightContextSeconds * sampleRate)
+
+    private let input: AsyncStream<[Float]>.Continuation
+    private let worker: Task<String?, Never>
+    private let coverage: OSAllocatedUnfairLock<StreamingCoverage>
+
+    init(models: AsrModels, language: Language?) {
+        let (chunks, input) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .bufferingOldest(32))
+        self.input = input
+        let config = Self.configuration.applying(language: language)
+        let coverage = OSAllocatedUnfairLock(initialState: StreamingCoverage(
+            chunkSamples: Int(config.chunkSeconds * Self.sampleRate), minimumSamples: Self.minimumSamples))
+        self.coverage = coverage
+        let manager = SlidingWindowAsrManager(config: config)
+        worker = Task.detached(priority: .userInitiated) {
+            await withTaskCancellationHandler {
+                let updates = await manager.transcriptionUpdates
+                let collector = Task {
+                    for await _ in updates { coverage.withLock { $0.completeWindow() } }
+                }
+                do {
+                    try Task.checkCancellation()
+                    try await manager.loadModels(models)
+                    try Task.checkCancellation()
+                    try await manager.startStreaming()
+                    try Task.checkCancellation()
+                    let format = AVAudioFormat(
+                        commonFormat: .pcmFormatFloat32, sampleRate: Self.sampleRate, channels: 1, interleaved: false)!
+                    for await chunk in chunks {
+                        try Task.checkCancellation()
+                        guard !chunk.isEmpty else { continue }
+                        guard coverage.withLock({ $0.feed(chunk.count) }) else {
+                            throw TranscribeError(reason: .unknown, message: "streaming ASR fell behind capture")
+                        }
+                        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(chunk.count)),
+                            let channel = buffer.floatChannelData?[0]
+                        else { throw ASRError.notInitialized }
+                        buffer.frameLength = AVAudioFrameCount(chunk.count)
+                        chunk.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: chunk.count) }
+                        await manager.streamAudio(buffer)
+                    }
+                    try Task.checkCancellation()
+                    let text = try await manager.finish()
+                    // finish() leaves updates open. Closing them lets the collector drain all successes.
+                    await manager.cancel()
+                    await collector.value
+                    try Task.checkCancellation()
+                    return text
+                } catch {
+                    await manager.cancel()
+                    await collector.value
+                    input.finish()
+                    return nil
+                }
+            } onCancel: {
+                input.finish()
+                Task { await manager.cancel() }
+            }
+        }
+    }
+
+    func enqueue(_ samples: [Float]) {
+        input.yield(samples)
+    }
+
+    func finish(sampleCount: Int) async throws -> String? {
+        input.finish()
+        let result = await worker.value
+        guard !worker.isCancelled else { throw CancellationError() }
+        guard coverage.withLock({ $0.covers(sampleCount) }) else { return nil }
+        return result
+    }
+
+    func cancel() {
+        worker.cancel()
+        input.finish()
     }
 }
 

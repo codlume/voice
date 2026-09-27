@@ -157,12 +157,14 @@ export async function dictateFixture(helper, name, id, language = "en") {
       label: "test.audioFile ended",
     },
   );
+  const releasedAt = performance.now();
   helper.send({ type: "capture.stop", id });
   const transcript = await helper.waitFor(
     (event) =>
       (event.type === "transcript" || event.type === "transcript.failed") && event.id === id,
     { timeoutMs: 60_000, label: "transcript" },
   );
+  const releaseToTranscriptMs = performance.now() - releasedAt;
   assert(
     transcript.type === "transcript",
     `transcript.failed: ${transcript.reason} ${transcript.message}`,
@@ -171,5 +173,5 @@ export async function dictateFixture(helper, name, id, language = "en") {
     .eventsSince(levelsBefore)
     .filter((event) => event.type === "capture.level" && event.id === id)
     .map((event) => event.level);
-  return { started, transcript, levels };
+  return { started, transcript, levels, releaseToTranscriptMs };
 }
