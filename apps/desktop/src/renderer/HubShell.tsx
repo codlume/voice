@@ -315,6 +315,10 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
       <SidebarTooltip collapsed={collapsed}>
         <aside
           id={sidebarId}
+          onClick={(event) => {
+            if (!(event.target instanceof Element) || event.target.closest("button")) return;
+            toggleSidebar();
+          }}
           {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}
         >
           <p {...stylex.props(styles.brand)}>
