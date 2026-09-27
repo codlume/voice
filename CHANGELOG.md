@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/codlume/voice/compare/v0.5.0...v0.6.0) (2026-09-27)
+
+
+### Features
+
+* **cleanup:** remove list and email formatting options ([#76](https://github.com/codlume/voice/issues/76)) ([f978607](https://github.com/codlume/voice/commit/f9786079e3061b03f0c54a5e17c5832f9652e8a9))
+* **desktop:** collapse the hub sidebar to an icon rail ([#77](https://github.com/codlume/voice/issues/77)) ([1568b5a](https://github.com/codlume/voice/commit/1568b5a68e587c693cd880e2413c895f4461e4ea))
+
 ## [0.5.0](https://github.com/codlume/voice/compare/v0.4.0...v0.5.0) (2026-09-26)
 
 
