@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0](https://github.com/codlume/voice/compare/v0.13.2...v0.14.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** toggle sidebar on empty-space clicks ([#106](https://github.com/codlume/voice/issues/106)) ([2ac8d4e](https://github.com/codlume/voice/commit/2ac8d4ee0d3f156c275e16c2485a2bb7e7b2f2f2))
+
+
+### Bug Fixes
+
+* **native:** improve RMS performance and quiet audio detection ([#103](https://github.com/codlume/voice/issues/103)) ([79f4128](https://github.com/codlume/voice/commit/79f41286cc4037951d2ec23e28afcc402e2c5244))
+
+
+### Performance Improvements
+
+* **cleanup:** normalize output once during validation ([#104](https://github.com/codlume/voice/issues/104)) ([d1ecca1](https://github.com/codlume/voice/commit/d1ecca1c83eecb88447f7829c8f1f27b64887c9a))
+
 ## [0.13.2](https://github.com/codlume/voice/compare/v0.13.1...v0.13.2) (2026-09-27)
 
 
