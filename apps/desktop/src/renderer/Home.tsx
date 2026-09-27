@@ -347,12 +347,11 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
               <span {...stylex.props(styles.spacer)} />
               {hasRaw && (
                 <Toggle
-                  aria-label="Show raw transcript"
                   pressed={showRaw}
                   onPressedChange={setShowRaw}
                   {...stylex.props(styles.toggle)}
                 >
-                  {showRaw ? "Show cleaned" : "Show raw transcript"}
+                  Show raw transcript
                 </Toggle>
               )}
             </div>

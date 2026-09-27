@@ -4,13 +4,13 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
 import type {
-  Hotkey,
   Settings as SettingsValue,
   SettingsPatch,
   Theme,
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
+import { hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import { hotkeyLabels } from "./checklist.ts";
 import { Select } from "./Select.tsx";
@@ -81,7 +81,6 @@ const styles = stylex.create({
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
-const hotkeys = ["fn", "rightOption", "rightCommand"] as const satisfies readonly Hotkey[];
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabels[value] }));
 const updateChannels = [
   { value: "stable", label: "Stable" },
