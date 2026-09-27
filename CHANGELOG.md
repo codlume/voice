@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/codlume/voice/compare/v0.10.0...v0.11.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** adopt Base UI for settings controls ([#91](https://github.com/codlume/voice/issues/91)) ([8f64214](https://github.com/codlume/voice/commit/8f642149e46adfd432dcfe6ad6dc0c06a55c6cc6))
+
 ## [0.10.0](https://github.com/codlume/voice/compare/v0.9.1...v0.10.0) (2026-09-27)
 
 
