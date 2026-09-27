@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/codlume/voice/compare/v0.9.0...v0.9.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **dictation:** apply selected language to speech recognition ([#85](https://github.com/codlume/voice/issues/85)) ([dc6b485](https://github.com/codlume/voice/commit/dc6b48507bc7338f6654b79ceade945b4a8bab39))
+
 ## [0.9.0](https://github.com/codlume/voice/compare/v0.8.0...v0.9.0) (2026-09-27)
 
 
