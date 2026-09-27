@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
 import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
-import { updateButton } from "./updateStatus.ts";
+import { updateButton, updateStatusText } from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -32,7 +32,13 @@ const styles = stylex.create({
     transitionProperty: "background-color, color",
     transitionDuration: "150ms",
   },
-  pending: { backgroundColor: color.sidebarRowSelected, color: color.foreground },
+  pending: {
+    backgroundColor: {
+      default: color.sidebarRowSelected,
+      ":hover:not(:disabled)": color.sidebarRowHover,
+    },
+    color: color.foreground,
+  },
   failed: { color: color.errorForeground },
   dimmed: { opacity: 0.6 },
   spinner: { display: "grid" },
@@ -60,7 +66,15 @@ const styles = stylex.create({
     borderRadius: radius.round,
     backgroundColor: color.foreground,
     color: color.background,
-    boxShadow: `0 0 0 2px ${color.sidebarRowSelected}`,
+    boxShadow: `0 0 0 2px ${color.card}`,
+  },
+  visuallyHidden: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    overflow: "hidden",
+    clipPath: "inset(50%)",
+    whiteSpace: "nowrap",
   },
   error: { margin: 0, color: color.errorForeground, fontSize: 12, textAlign: "right" },
 });
@@ -174,7 +188,7 @@ export function SidebarUpdates({
 }) {
   const [actionError, setActionError] = useState("");
   const status = updates.status;
-  const { action, label } = updateButton(status, session);
+  const { action, label, tooltip } = updateButton(status, session);
 
   async function run(task: () => Promise<void>) {
     setActionError("");
@@ -187,10 +201,13 @@ export function SidebarUpdates({
 
   return (
     <div {...stylex.props(styles.sidebar)}>
+      <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
+        {updateStatusText(status)}
+      </p>
       <button
         type="button"
         aria-label={label}
-        title={label}
+        title={tooltip}
         disabled={action === null}
         onClick={() =>
           void run(() =>

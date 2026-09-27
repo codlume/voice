@@ -25,20 +25,31 @@ export function updateStatusText(status: UpdateStatus): string {
   }
 }
 
-export type UpdateButton = { action: "check" | "restart" | null; label: string };
+export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
   switch (status.kind) {
     case "idle":
     case "current":
-      return { action: "check", label: "Check for updates" };
+      return button("check", "Check for updates");
     case "failed":
-      return { action: "check", label: status.message };
+      return { action: "check", label: "Check for updates", tooltip: status.message };
     case "ready":
       return session.kind === "listening" || session.kind === "processing"
-        ? { action: null, label: "Finish dictation before restarting" }
-        : { action: "restart", label: `Restart to install ${status.version}` };
-    default:
-      return { action: null, label: updateStatusText(status) };
+        ? button(null, "Finish dictation before restarting")
+        : button("restart", `Restart to install ${status.version}`);
+    case "checking":
+    case "downloading":
+    case "installing":
+    case "disabled":
+      return button(null, updateStatusText(status));
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
   }
+}
+
+function button(action: UpdateButton["action"], label: string): UpdateButton {
+  return { action, label, tooltip: label };
 }

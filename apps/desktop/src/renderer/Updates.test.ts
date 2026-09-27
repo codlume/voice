@@ -15,10 +15,18 @@ describe("update controls", () => {
       { kind: "done", outcome: { kind: "inserted", method: "accessibility" } },
     ];
     expect(sessions.map((session) => updateButton(ready, session))).toEqual([
-      { action: "restart", label: "Restart to install 1.5.0" },
-      { action: null, label: "Finish dictation before restarting" },
-      { action: null, label: "Finish dictation before restarting" },
-      { action: "restart", label: "Restart to install 1.5.0" },
+      { action: "restart", label: "Restart to install 1.5.0", tooltip: "Restart to install 1.5.0" },
+      {
+        action: null,
+        label: "Finish dictation before restarting",
+        tooltip: "Finish dictation before restarting",
+      },
+      {
+        action: null,
+        label: "Finish dictation before restarting",
+        tooltip: "Finish dictation before restarting",
+      },
+      { action: "restart", label: "Restart to install 1.5.0", tooltip: "Restart to install 1.5.0" },
     ]);
   });
 
@@ -33,13 +41,17 @@ describe("update controls", () => {
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
     expect(statuses.map((status) => updateButton(status, idle))).toEqual([
-      { action: "check", label: "Check for updates" },
-      { action: "check", label: "Check for updates" },
-      { action: "check", label: "Connection timed out" },
-      { action: null, label: "Checking for updates…" },
-      { action: null, label: "Downloading 1.5.0 · 48%" },
-      { action: null, label: "Installing 1.5.0…" },
-      { action: null, label: "Only packaged builds update" },
+      { action: "check", label: "Check for updates", tooltip: "Check for updates" },
+      { action: "check", label: "Check for updates", tooltip: "Check for updates" },
+      { action: "check", label: "Check for updates", tooltip: "Connection timed out" },
+      { action: null, label: "Checking for updates…", tooltip: "Checking for updates…" },
+      { action: null, label: "Downloading 1.5.0 · 48%", tooltip: "Downloading 1.5.0 · 48%" },
+      { action: null, label: "Installing 1.5.0…", tooltip: "Installing 1.5.0…" },
+      {
+        action: null,
+        label: "Only packaged builds update",
+        tooltip: "Only packaged builds update",
+      },
     ]);
   });
 
