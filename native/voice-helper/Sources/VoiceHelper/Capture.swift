@@ -8,11 +8,14 @@ struct CaptureSession {
     let language: DictationLanguage
     let frontmostPid: pid_t?
     let commandedAt: DispatchTime
+    let input = CaptureInput()
 }
 
 final class Recording {
     let session: CaptureSession
     var samples: [Float] = []
+    var stream: StreamingTranscription?
+    var transcription: Task<Void, Never>?
 
     init(session: CaptureSession) {
         self.session = session
@@ -23,7 +26,7 @@ enum CaptureState {
     case idle
     case starting(CaptureSession)
     case recording(Recording)
-    case transcribing(CaptureSession)
+    case transcribing(Recording)
 }
 
 struct CaptureError: Error {
@@ -104,18 +107,20 @@ final class Capture {
         switch state {
         case .recording(let recording) where recording.session.id == id:
             stopSource()
+            drain(recording.session, closing: true)
             let session = recording.session
             let samples = recording.samples
-            state = .transcribing(session)
+            state = .transcribing(recording)
             lastTarget = (session.id, session.frontmostPid)
             let audioMs = Double(samples.count) / sampleRate * 1000
             if samples.count < chunkFrames || rms(samples) < silenceFloor {
+                recording.stream?.cancel()
                 finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0))
                 return
             }
-            Task { @MainActor in
+            recording.transcription = Task { @MainActor in
                 do {
-                    let result = try await transcriber.transcribe(samples, language: session.language)
+                    let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
                     let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs))
                 } catch let error as TranscribeError {
@@ -132,14 +137,19 @@ final class Capture {
     func cancel(id: String) {
         switch state {
         case .starting(let session) where session.id == id:
+            _ = session.input.drain(closing: true)
             stopSource()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .recording(let recording) where recording.session.id == id:
+            _ = recording.session.input.drain(closing: true)
             stopSource()
+            recording.stream?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
-        case .transcribing(let session) where session.id == id:
+        case .transcribing(let recording) where recording.session.id == id:
+            recording.stream?.cancel()
+            recording.transcription?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
         default:
@@ -151,6 +161,16 @@ final class Capture {
     func shutdown() {
         stopSource()
         disposeMic()
+        switch state {
+        case .recording(let recording), .transcribing(let recording):
+            _ = recording.session.input.drain(closing: true)
+            recording.stream?.cancel()
+            recording.transcription?.cancel()
+        case .starting(let session):
+            _ = session.input.drain(closing: true)
+        case .idle:
+            break
+        }
         state = .idle
     }
 
@@ -168,11 +188,23 @@ final class Capture {
     }
 
     private func ingest(_ chunk: [Float], for session: CaptureSession) {
+        guard session.input.enqueue(chunk) else { return }
         output.emit(.captureLevel(id: session.id, level: perceptualLevel(rms: rms(chunk))))
-        DispatchQueue.main.async { self.append(chunk, for: session) }
+        DispatchQueue.main.async { self.drain(session) }
     }
 
-    private func append(_ chunk: [Float], for session: CaptureSession) {
+    private func drain(_ session: CaptureSession, closing: Bool = false) {
+        for chunk in session.input.drain(closing: closing) {
+            MainActor.assumeIsolated { append(chunk, for: session) }
+        }
+        if !closing, case .recording(let recording) = state, recording.session.id == session.id,
+            recording.samples.count >= maxSamples
+        {
+            stop(id: session.id)
+        }
+    }
+
+    @MainActor private func append(_ chunk: [Float], for session: CaptureSession) {
         switch state {
         case .starting(let current) where current.id == session.id:
             let recording = Recording(session: current)
@@ -181,8 +213,13 @@ final class Capture {
             output.emit(.captureStarted(id: current.id, startMs: current.commandedAt.millisecondsToNow()))
         case .recording(let recording) where recording.session.id == session.id:
             recording.samples.append(contentsOf: chunk)
-            if recording.samples.count >= maxSamples {
-                stop(id: session.id)
+            if let stream = recording.stream {
+                stream.enqueue(chunk)
+            } else if recording.samples.count >= StreamingTranscription.minimumSamples,
+                let stream = transcriber.beginStreaming(language: session.language)
+            {
+                recording.stream = stream
+                stream.enqueue(recording.samples)
             }
         default:
             break
@@ -214,6 +251,7 @@ final class Capture {
     }
 
     private func fail(_ session: CaptureSession, reason: CaptureFailure, message: String) {
+        _ = session.input.drain(closing: true)
         disposeMic()
         stopSource()
         state = .idle
@@ -222,7 +260,7 @@ final class Capture {
     }
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
-        guard case .transcribing(let current) = state, current.id == session.id else { return }
+        guard case .transcribing(let current) = state, current.session.input === session.input else { return }
         output.emit(event)
         state = .idle
         prepareIdleMic()
