@@ -7,7 +7,13 @@ await withHelper({}, async (helper) => {
   for (const stopFirst of [false, true]) {
     const id = stopFirst ? "cancel-finalization" : "cancel-recording";
     helper.send({ type: "test.audioFile", path: fixture("long.wav") });
-    helper.send({ type: "capture.start", id, language: "en", muteWhileDictating: false });
+    helper.send({
+      type: "capture.start",
+      microphone: null,
+      id,
+      language: "en",
+      muteWhileDictating: false,
+    });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
     await helper.waitFor(
       (event) =>

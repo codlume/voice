@@ -10,7 +10,7 @@ private func json(_ line: String) throws -> [String: Any] {
 @Test func decodesEveryCommand() throws {
     let cases: [(String, HelperCommand)] = [
         (#"{"type":"hotkey.configure","key":"rightOption"}"#, .hotkeyConfigure(key: .rightOption)),
-        (#"{"type":"capture.start","id":"s1","language":"en","muteWhileDictating":false}"#, .captureStart(id: "s1", language: .en, muteWhileDictating: false)),
+        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","muteWhileDictating":false}"#, .captureStart(id: "s1", language: .en, muteWhileDictating: false, microphone: nil)),
         (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
         (#"{"type":"insert","id":"s1","text":"hi there"}"#, .insert(id: "s1", text: "hi there")),
@@ -50,7 +50,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 3), ["type": "ready", "version": 3]),
+        (.ready(version: 4), ["type": "ready", "version": 4]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -91,13 +91,13 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 }
 
 @Test func captureStartRequiresAnExplicitBooleanMutePreference() {
-    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":true}"#)
-        == .success(.captureStart(id: "s", language: .en, muteWhileDictating: true)))
+    #expect(HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s","language":"en","muteWhileDictating":true}"#)
+        == .success(.captureStart(id: "s", language: .en, muteWhileDictating: true, microphone: nil)))
     for line in [
-        #"{"type":"capture.start","id":"s","language":"en"}"#,
-        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":"true"}"#,
-        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":1}"#,
-        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en"}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","muteWhileDictating":"true"}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","muteWhileDictating":1}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","muteWhileDictating":null}"#,
     ] {
         if case .success = HelperCommand.decode(line: line) { Issue.record("accepted malformed mute preference") }
     }
@@ -105,21 +105,54 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test(arguments: DictationLanguage.allCases)
 func captureStartPreservesEveryLanguage(language: DictationLanguage) {
-    let line = #"{"type":"capture.start","id":"s","language":"\#(language.rawValue)","muteWhileDictating":false}"#
+    let line = #"{"type":"capture.start","microphone":null,"id":"s","language":"\#(language.rawValue)","muteWhileDictating":false}"#
     #expect(HelperCommand.decode(line: line)
-        == .success(.captureStart(id: "s", language: language, muteWhileDictating: false)))
+        == .success(.captureStart(id: "s", language: language, muteWhileDictating: false, microphone: nil)))
 }
 
 @Test func captureStartRequiresAValidLanguage() throws {
     for line in [
-        #"{"type":"capture.start","id":"s","muteWhileDictating":false}"#,
-        #"{"type":"capture.start","id":"s","language":null,"muteWhileDictating":false}"#,
-        #"{"type":"capture.start","id":"s","language":true,"muteWhileDictating":false}"#,
-        #"{"type":"capture.start","id":"s","language":"unknown","muteWhileDictating":false}"#,
-        #"{"type":"capture.start","id":"s","language":"","muteWhileDictating":false}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","muteWhileDictating":false}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":null,"muteWhileDictating":false}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":true,"muteWhileDictating":false}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"unknown","muteWhileDictating":false}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"","muteWhileDictating":false}"#,
     ] {
         let result = HelperCommand.decode(line: line)
         #expect(throws: ProtocolError.self) { try result.get() }
         #expect(try unknownDescription(result).contains("\"language\""))
     }
+}
+
+@Test func microphoneCommands() {
+    let microphone = Microphone(uid: "usb", name: "USB Microphone")
+    #expect(HelperCommand.decode(line: #"{"type":"microphone.configure","microphone":{"uid":"usb","name":"USB Microphone"}}"#)
+        == .success(.microphoneConfigure(microphone: microphone)))
+    #expect(HelperCommand.decode(line: #"{"type":"microphone.configure","microphone":null}"#)
+        == .success(.microphoneConfigure(microphone: nil)))
+    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":false,"microphone":{"uid":"usb","name":"USB Microphone"}}"#)
+        == .success(.captureStart(id: "s", language: .en, muteWhileDictating: false, microphone: microphone)))
+    for line in [
+        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":false}"#,
+        #"{"type":"microphone.configure"}"#,
+        #"{"type":"microphone.configure","microphone":"usb"}"#,
+        #"{"type":"microphone.configure","microphone":{"uid":"","name":"USB"}}"#,
+        #"{"type":"microphone.configure","microphone":{"uid":"usb"}}"#,
+    ] {
+        guard case .failure = HelperCommand.decode(line: line) else {
+            Issue.record("accepted an invalid microphone command: \(line)")
+            continue
+        }
+    }
+}
+
+@Test func microphoneEvents() throws {
+    let event = HelperEvent.microphonesChanged(devices: [Microphone(uid: "usb", name: "USB")], defaultUid: "usb")
+    let data = try #require(event.encodeLine().data(using: .utf8))
+    let decoded = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(decoded["type"] as? String == "microphones.changed")
+    #expect(decoded["defaultUid"] as? String == "usb")
+    #expect(decoded["devices"] as? [[String: String]] == [["uid": "usb", "name": "USB"]])
+    let empty = HelperEvent.microphonesChanged(devices: [], defaultUid: nil).encodeLine()
+    #expect(empty.contains(#""defaultUid":null"#))
 }

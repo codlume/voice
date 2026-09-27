@@ -4,6 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
 import type {
+  MicrophoneCatalog,
   Settings as SettingsValue,
   SettingsPatch,
   Theme,
@@ -189,10 +190,60 @@ function ThemePicker({ theme }: { theme: Theme }) {
 export function Settings({
   settings,
   updates,
+  microphones,
 }: {
   settings: SettingsValue;
   updates: UpdatesSnapshot;
+  microphones: MicrophoneCatalog;
 }) {
+  const [microphoneError, setMicrophoneError] = useState("");
+  const [savingMicrophone, setSavingMicrophone] = useState(false);
+  const devices = microphones.kind === "ready" ? microphones.devices : [];
+  const selected = settings.microphone;
+  const missing = selected !== null && !devices.some((device) => device.uid === selected.uid);
+  const microphoneOptions = [
+    { value: "", label: "System default" },
+    ...devices.map((device) => ({ value: device.uid, label: device.name })),
+    ...(missing
+      ? [
+          {
+            value: selected.uid,
+            label: `${selected.name} (${microphones.kind === "ready" ? "unavailable" : "saved"})`,
+          },
+        ]
+      : []),
+  ];
+  const defaultName =
+    microphones.kind === "ready"
+      ? devices.find((device) => device.uid === microphones.defaultUid)?.name
+      : undefined;
+  let microphoneDetail = "Changes apply to your next dictation.";
+  if (microphones.kind === "loading") {
+    microphoneDetail = "Looking for microphones…";
+  } else if (microphones.kind === "unavailable") {
+    microphoneDetail = microphones.message;
+  } else if (missing) {
+    microphoneDetail = "Reconnect this microphone or choose another before dictating.";
+  } else if (devices.length === 0) {
+    microphoneDetail = "No microphones found. Connect a microphone to dictate.";
+  } else if (selected === null && defaultName) {
+    microphoneDetail = `Currently ${defaultName}. Changes apply to your next dictation.`;
+  }
+
+  async function changeMicrophone(uid: string) {
+    const microphone = uid === "" ? null : devices.find((device) => device.uid === uid);
+    if (microphone === undefined) return;
+    setMicrophoneError("");
+    setSavingMicrophone(true);
+    try {
+      await window.voice.updateSettings({ microphone });
+    } catch (error) {
+      setMicrophoneError(error instanceof Error ? error.message : "Could not save microphone.");
+    } finally {
+      setSavingMicrophone(false);
+    }
+  }
+
   const [updateError, setUpdateError] = useState("");
   const [languageError, setLanguageError] = useState("");
 
@@ -270,6 +321,15 @@ export function Settings({
           Audio
         </h2>
         <div {...stylex.props(styles.card)}>
+          <Row id="setting-microphone" title="Microphone" detail={microphoneDetail}>
+            <Select
+              id="setting-microphone"
+              value={selected?.uid ?? ""}
+              options={microphoneOptions}
+              disabled={savingMicrophone}
+              onChange={(uid) => void changeMicrophone(uid)}
+            />
+          </Row>
           <Row
             id="setting-mute-while-dictating"
             title="Mute all audio while dictating"
@@ -283,6 +343,12 @@ export function Settings({
           </Row>
         </div>
       </section>
+
+      {microphoneError && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          {microphoneError}
+        </p>
+      )}
 
       <section aria-labelledby="appearance" {...stylex.props(styles.section)}>
         <h2 id="appearance" {...stylex.props(styles.sectionLabel)}>

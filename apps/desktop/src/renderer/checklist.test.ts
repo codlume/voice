@@ -18,9 +18,18 @@ const fresh: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
+    microphone: null,
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
+  },
+  microphones: {
+    kind: "ready",
+    devices: [
+      { uid: "builtin", name: "MacBook Pro Microphone" },
+      { uid: "usb", name: "USB Microphone" },
+    ],
+    defaultUid: "builtin",
   },
   last: null,
 };

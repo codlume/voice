@@ -28,5 +28,6 @@ let package = Package(
         .executableTarget(name: "FnPost"),
         .executableTarget(name: "Disclaim"),
         .testTarget(name: "VoiceHelperCoreTests", dependencies: ["VoiceHelperCore"]),
+        .testTarget(name: "VoiceHelperTests", dependencies: ["VoiceHelper"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

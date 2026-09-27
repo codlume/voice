@@ -15,9 +15,30 @@ public enum DictationLanguage: String, Codable, CaseIterable, Sendable {
     case auto, en, bg, hr, cs, da, nl, et, fi, fr, de, el, hu, it, lv, lt, mt, pl, pt, ro, ru, sk, sl, es, sv, uk
 }
 
+public struct Microphone: Codable, Equatable, Sendable {
+    public let uid: String
+    public let name: String
+
+    public init(uid: String, name: String) {
+        self.uid = uid
+        self.name = name
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        uid = try c.decode(String.self, forKey: .uid)
+        name = try c.decode(String.self, forKey: .name)
+        guard !uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "microphone UID and name must not be empty"))
+        }
+    }
+}
+
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey)
-    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool)
+    case microphoneConfigure(microphone: Microphone?)
+    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?)
     case captureStop(id: String)
     case captureCancel(id: String)
     case insert(id: String, text: String)
@@ -29,6 +50,8 @@ public enum HelperCommand: Equatable, Sendable {
 }
 
 public enum HelperEvent: Equatable, Sendable {
+    case microphonesChanged(devices: [Microphone], defaultUid: String?)
+    case microphonesUnavailable(message: String)
     case ready(version: Int)
     case hotkey(action: HotkeyAction)
     case captureStarted(id: String, startMs: Double)
@@ -51,7 +74,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, method
-    case microphone, accessibility, state
+    case microphone, accessibility, state, devices, defaultUid
 }
 
 extension HelperCommand: Decodable {
@@ -60,10 +83,13 @@ extension HelperCommand: Decodable {
         let type = try c.decode(String.self, forKey: .type)
         switch type {
         case "hotkey.configure": self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key))
+        case "microphone.configure":
+            self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
             self = .captureStart(id: try c.decode(String.self, forKey: .id),
                                  language: try c.decode(DictationLanguage.self, forKey: .language),
-                                 muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating))
+                                 muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating),
+                                 microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
         case "insert":
@@ -109,6 +135,13 @@ extension HelperEvent: Encodable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Key.self)
         switch self {
+        case .microphonesChanged(let devices, let defaultUid):
+            try c.encode("microphones.changed", forKey: .type)
+            try c.encode(devices, forKey: .devices)
+            try c.encode(defaultUid, forKey: .defaultUid)
+        case .microphonesUnavailable(let message):
+            try c.encode("microphones.unavailable", forKey: .type)
+            try c.encode(message, forKey: .message)
         case .ready(let version):
             try c.encode("ready", forKey: .type)
             try c.encode(version, forKey: .version)

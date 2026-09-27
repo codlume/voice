@@ -2,15 +2,24 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { Hotkey, PermissionKind } from "../shared/api.ts";
+import { MicrophoneSchema } from "../shared/microphone.ts";
+
+import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 3;
+export const HELPER_PROTOCOL_VERSION = 4;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
-  | { type: "capture.start"; id: string; language: DictationLanguage; muteWhileDictating: boolean }
+  | { type: "microphone.configure"; microphone: Microphone | null }
+  | {
+      type: "capture.start";
+      id: string;
+      language: DictationLanguage;
+      muteWhileDictating: boolean;
+      microphone: Microphone | null;
+    }
   | { type: "capture.stop"; id: string }
   | { type: "capture.cancel"; id: string }
   | { type: "insert"; id: string; text: string }
@@ -27,6 +36,12 @@ const statusMessage = Schema.NullOr(Schema.String).annotations({
 });
 
 const HelperEventSchema = Schema.Union(
+  Schema.Struct({
+    type: Schema.Literal("microphones.changed"),
+    devices: Schema.Array(MicrophoneSchema),
+    defaultUid: Schema.NullOr(Schema.NonEmptyTrimmedString),
+  }),
+  Schema.Struct({ type: Schema.Literal("microphones.unavailable"), message: Schema.String }),
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
   Schema.Struct({
     type: Schema.Literal("hotkey"),

@@ -29,7 +29,13 @@ try {
     await sleep(userIdleGapMs);
     const id = `latency-${index}`;
     const sentAt = performance.now();
-    helper.send({ type: "capture.start", language: "en", id, muteWhileDictating: false });
+    helper.send({
+      type: "capture.start",
+      microphone: null,
+      language: "en",
+      id,
+      muteWhileDictating: false,
+    });
     const started = await helper.waitFor(
       (event) => ["capture.started", "capture.failed"].includes(event.type) && event.id === id,
       { label: "capture.started" },

@@ -20,9 +20,18 @@ const base: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
+    microphone: null,
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
+  },
+  microphones: {
+    kind: "ready",
+    devices: [
+      { uid: "builtin", name: "MacBook Pro Microphone" },
+      { uid: "usb", name: "USB Microphone" },
+    ],
+    defaultUid: "builtin",
   },
   last: null,
 };
@@ -66,6 +75,25 @@ const updateScenes: Record<string, UpdateStatus> = {
 };
 
 const hubScenes: Record<string, Snapshot> = {
+  "microphone-selected": {
+    ...ready,
+    settings: { ...ready.settings, microphone: { uid: "usb", name: "USB Microphone" } },
+  },
+  "microphone-unavailable": {
+    ...ready,
+    settings: {
+      ...ready.settings,
+      microphone: { uid: "missing", name: "Studio microphone with a very long device name" },
+    },
+  },
+  "microphone-empty": { ...ready, microphones: { kind: "ready", devices: [], defaultUid: null } },
+  "microphone-error": {
+    ...ready,
+    microphones: {
+      kind: "unavailable",
+      message: "Could not list microphones. Reopen Voice to try again.",
+    },
+  },
   fresh: base,
   progress: {
     ...base,
@@ -163,6 +191,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           dictationLanguage: patch.dictationLanguage ?? snapshot.settings.dictationLanguage,
           theme: patch.theme ?? snapshot.settings.theme,
+          microphone:
+            patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
         },
