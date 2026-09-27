@@ -27,20 +27,9 @@ const pages = [
       </>
     ),
   },
-  {
-    id: "settings",
-    label: "Settings",
-    icon: (
-      <>
-        <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
-        <circle cx="12.5" cy="6" r="2" />
-        <circle cx="7.5" cy="14" r="2" />
-      </>
-    ),
-  },
 ] as const;
 
-type Page = (typeof pages)[number]["id"];
+type Page = (typeof pages)[number]["id"] | "settings";
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
 const sidebarId = "hub-sidebar";
@@ -151,10 +140,26 @@ const styles = stylex.create({
   },
   labelHidden: { opacity: 0 },
   footer: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: space.sm,
     width: sidebarWidth - 2 * sidebarPadding,
     marginTop: "auto",
     paddingTop: space.lg,
     whiteSpace: "normal",
+  },
+  footerButton: {
+    display: "grid",
+    placeItems: "center",
+    flexShrink: 0,
+    width: 32,
+    height: 32,
+    paddingInline: 0,
+    borderRadius: radius.round,
+  },
+  footerUpdates: {
+    flex: 1,
+    minWidth: 0,
     transitionProperty: "opacity, visibility",
     transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
@@ -254,8 +259,31 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
             </button>
           ))}
         </nav>
-        <div {...stylex.props(styles.footer, collapsed && styles.footerHidden)}>
-          <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+        <div {...stylex.props(styles.footer)}>
+          <button
+            type="button"
+            aria-label="Settings"
+            title="Settings"
+            aria-current={page === "settings" ? "page" : undefined}
+            onClick={() => {
+              setPage("settings");
+              focusMain();
+            }}
+            {...stylex.props(
+              styles.navItem,
+              styles.footerButton,
+              page === "settings" && styles.navItemCurrent,
+            )}
+          >
+            <Icon>
+              <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
+              <circle cx="12.5" cy="6" r="2" />
+              <circle cx="7.5" cy="14" r="2" />
+            </Icon>
+          </button>
+          <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
+            <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+          </div>
         </div>
       </aside>
       <main
