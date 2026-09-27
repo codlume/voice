@@ -1,10 +1,9 @@
+import Accelerate
 import Foundation
 
 public func rms(_ samples: UnsafeBufferPointer<Float>) -> Float {
     guard !samples.isEmpty else { return 0 }
-    var sum: Float = 0
-    for sample in samples { sum += sample * sample }
-    return (sum / Float(samples.count)).squareRoot()
+    return vDSP.rootMeanSquare(samples)
 }
 
 public func rms(_ samples: [Float]) -> Float {
