@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/codlume/voice/compare/v0.11.0...v0.12.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** move settings to sidebar footer ([#93](https://github.com/codlume/voice/issues/93)) ([22de22a](https://github.com/codlume/voice/commit/22de22a8552863c9926784ace5b5dbbcb727460b))
+
 ## [0.11.0](https://github.com/codlume/voice/compare/v0.10.0...v0.11.0) (2026-09-27)
 
 
