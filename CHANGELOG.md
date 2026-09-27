@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/codlume/voice/compare/v0.6.0...v0.7.0) (2026-09-27)
+
+
+### Features
+
+* **desktop:** show update status as an icon in SidebarUpdates ([#79](https://github.com/codlume/voice/issues/79)) ([3a34a22](https://github.com/codlume/voice/commit/3a34a22246bde7fcd2cdcce08fdf48f36aeca785))
+
 ## [0.6.0](https://github.com/codlume/voice/compare/v0.5.0...v0.6.0) (2026-09-27)
 
 
