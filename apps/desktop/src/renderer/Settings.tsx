@@ -12,11 +12,10 @@ import type {
 import {
   dictationLanguages,
   parseDictationLanguage,
-  supportsCleanup,
-  wantsCleanup,
   type DictationLanguage,
 } from "../shared/dictation-language.ts";
-import { hotkeyLabels, stylings } from "./checklist.ts";
+import { hotkeyLabels } from "./checklist.ts";
+import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
 
@@ -49,7 +48,6 @@ const styles = stylex.create({
     borderTopStyle: "solid",
     borderTopColor: color.border,
   },
-  stack: { flexDirection: "column", alignItems: "stretch", gap: space.md },
   disabled: { opacity: 0.45 },
   rowText: { flexGrow: 1, minWidth: 0 },
   rowTitle: { display: "block", fontWeight: 500 },
@@ -66,33 +64,6 @@ const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
   },
-  switch: {
-    position: "relative",
-    flexShrink: 0,
-    width: 36,
-    height: 22,
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: radius.round,
-    backgroundColor: color.input,
-    cursor: "pointer",
-    transitionProperty: "background-color",
-    transitionDuration: "160ms",
-  },
-  switchOn: { backgroundColor: color.primary },
-  thumb: {
-    position: "absolute",
-    top: 2,
-    left: 2,
-    width: 18,
-    height: 18,
-    borderRadius: radius.round,
-    backgroundColor: color.primaryForeground,
-    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
-    transitionProperty: "transform",
-    transitionDuration: "160ms",
-  },
-  thumbOn: { transform: "translateX(14px)" },
   segments: {
     display: "grid",
     gridAutoFlow: "column",
@@ -120,7 +91,6 @@ const styles = stylex.create({
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
   radio: { position: "absolute", opacity: 0, pointerEvents: "none" },
-  example: { margin: 0, color: color.mutedForeground, fontSize: 13 },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
@@ -137,32 +107,6 @@ export function GlobeHint() {
       If the Globe key opens the emoji picker, set System Settings &gt; Keyboard &gt; &ldquo;Press
       🌐 key to&rdquo; to &ldquo;Do Nothing&rdquo;.
     </p>
-  );
-}
-
-function Switch({
-  checked,
-  disabled = false,
-  onChange,
-  id,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-  id: string;
-}) {
-  return (
-    <button
-      id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      {...stylex.props(styles.switch, checked && styles.switchOn)}
-    >
-      <span {...stylex.props(styles.thumb, checked && styles.thumbOn)} />
-    </button>
   );
 }
 
@@ -229,28 +173,6 @@ function Segmented<T extends string>({
   );
 }
 
-function StylePicker({ settings }: { settings: SettingsValue }) {
-  const { cleanup } = settings;
-  const titleId = useId();
-  const current = stylings.find((s) => s.value === cleanup.styling) ?? stylings[0]!;
-  const disabled = !wantsCleanup(settings);
-  return (
-    <div {...stylex.props(styles.row, styles.stack, disabled && styles.disabled)}>
-      <span id={titleId} {...stylex.props(styles.rowTitle)}>
-        Style
-      </span>
-      <Segmented
-        labelledBy={titleId}
-        options={stylings}
-        value={cleanup.styling}
-        disabled={disabled}
-        onChange={(styling) => update({ cleanup: { styling } })}
-      />
-      <p {...stylex.props(styles.example)}>&ldquo;{current.example}&rdquo;</p>
-    </div>
-  );
-}
-
 const themes = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -286,7 +208,6 @@ export function Settings({
 }) {
   const [updateError, setUpdateError] = useState("");
   const [languageError, setLanguageError] = useState("");
-  const cleanupSupported = supportsCleanup(settings.dictationLanguage);
 
   async function changeLanguage(dictationLanguage: DictationLanguage) {
     setLanguageError("");
@@ -390,31 +311,6 @@ export function Settings({
               onChange={(muteWhileDictating) => update({ muteWhileDictating })}
             />
           </Row>
-        </div>
-      </section>
-
-      <section aria-labelledby="cleanup" {...stylex.props(styles.section)}>
-        <h2 id="cleanup" {...stylex.props(styles.sectionLabel)}>
-          Cleanup
-        </h2>
-        <div {...stylex.props(styles.card)}>
-          <Row
-            id="setting-cleanup"
-            title="Clean up text"
-            detail={
-              cleanupSupported
-                ? "Removes filler words and fixes punctuation, on this Mac."
-                : "Text cleanup is available for English only. Your transcript will be inserted as recognized."
-            }
-          >
-            <Switch
-              id="setting-cleanup"
-              checked={wantsCleanup(settings)}
-              disabled={!cleanupSupported}
-              onChange={(enabled) => update({ cleanup: { enabled } })}
-            />
-          </Row>
-          <StylePicker settings={settings} />
         </div>
       </section>
 

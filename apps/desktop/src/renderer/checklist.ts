@@ -117,9 +117,34 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
 
 type Styling = Settings["cleanup"]["styling"];
 
-export const stylings: { value: Styling; label: string; example: string }[] = [
-  { value: "casual", label: "Casual", example: "yeah sounds good, see you at 3" },
-  { value: "semi-casual", label: "Semi-casual", example: "Yeah, sounds good. See you at 3." },
-  { value: "semi-formal", label: "Semi-formal", example: "Sounds good. I'll see you at 3." },
-  { value: "formal", label: "Formal", example: "That sounds good. I will see you at 3:00." },
+export const stylings: {
+  value: Styling;
+  label: string;
+  description: string;
+  example: string;
+}[] = [
+  {
+    value: "casual",
+    label: "Casual",
+    description: "Relaxed and conversational",
+    example: "yeah sounds good, see you at 3",
+  },
+  {
+    value: "semi-casual",
+    label: "Semi-casual",
+    description: "Easygoing, with a little polish",
+    example: "Yeah, sounds good. See you at 3.",
+  },
+  {
+    value: "semi-formal",
+    label: "Semi-formal",
+    description: "Clear and composed",
+    example: "Sounds good. I'll see you at 3.",
+  },
+  {
+    value: "formal",
+    label: "Formal",
+    description: "Polished and professional",
+    example: "That sounds good. I will see you at 3:00.",
+  },
 ];

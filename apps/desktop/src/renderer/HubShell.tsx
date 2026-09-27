@@ -5,6 +5,7 @@ import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
 import { Settings } from "./Settings.tsx";
+import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
@@ -14,6 +15,16 @@ const pages = [
     label: "Home",
     icon: (
       <path d="M3.5 8.75 10 3.5l6.5 5.25V16a.5.5 0 0 1-.5.5h-3.5V12h-5v4.5H4a.5.5 0 0 1-.5-.5z" />
+    ),
+  },
+  {
+    id: "style",
+    label: "Style",
+    icon: (
+      <>
+        <path d="m4 13.5-.75 3.25L6.5 16l9.75-9.75a1.77 1.77 0 0 0-2.5-2.5zM12 5.5 14.5 8" />
+        <path d="M10 16.75h6.75" />
+      </>
     ),
   },
   {
@@ -162,6 +173,7 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
   },
+  styleMain: { paddingBlock: space.xl },
   column: { maxWidth: 600, marginInline: "auto" },
 });
 
@@ -246,11 +258,15 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
         </div>
       </aside>
-      <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
+      <main
+        ref={mainRef}
+        tabIndex={-1}
+        {...stylex.props(styles.main, page === "style" && styles.styleMain)}
+      >
         <div {...stylex.props(styles.column)}>
-          {page === "home" ? (
-            <Home snapshot={snapshot} />
-          ) : (
+          {page === "home" && <Home snapshot={snapshot} />}
+          {page === "style" && <Style settings={snapshot.settings} />}
+          {page === "settings" && (
             <Settings settings={snapshot.settings} updates={snapshot.updates} />
           )}
         </div>
