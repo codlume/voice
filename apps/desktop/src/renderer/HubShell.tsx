@@ -346,6 +346,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
               payload="Settings"
               type="button"
               aria-label="Settings"
+              title={collapsed ? undefined : "Settings"}
               aria-current={page === "settings" ? "page" : undefined}
               onClick={() => {
                 setPage("settings");
