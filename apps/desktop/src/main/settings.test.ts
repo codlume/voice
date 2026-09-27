@@ -22,14 +22,20 @@ describe("parseSettings", () => {
     expect(
       parseSettings({
         hotkey: "rightOption",
-        cleanup: { enabled: false, styling: "shouty", structure: "lists", context: 7 },
+        cleanup: { enabled: false, styling: "shouty" },
       }),
     ).toEqual({
       hotkey: "rightOption",
       updateChannel: "stable",
       theme: "system",
-      cleanup: { enabled: false, styling: "semi-formal", structure: "lists", context: "general" },
+      cleanup: { enabled: false, styling: "semi-formal" },
     });
+  });
+
+  test("drops the retired list and email options from an old settings file", () => {
+    expect(parseSettings({ cleanup: { structure: "lists", context: "email" } }).cleanup).toEqual(
+      DEFAULT_SETTINGS.cleanup,
+    );
   });
 
   test("keeps a saved styling that differs from the default", () => {
@@ -50,14 +56,15 @@ describe("parseSettings", () => {
 
 describe("applyPatch", () => {
   test("merges a partial cleanup patch and keeps other fields", () => {
-    const next = applyPatch(DEFAULT_SETTINGS, { cleanup: { context: "email" } });
+    const formal = applyPatch(DEFAULT_SETTINGS, { cleanup: { styling: "formal" } });
+    const next = applyPatch(formal, { cleanup: { enabled: false } });
     expect(next).toEqual({
       hotkey: "fn",
       updateChannel: "stable",
       theme: "system",
-      cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "email" },
+      cleanup: { enabled: false, styling: "formal" },
     });
-    expect(DEFAULT_SETTINGS.cleanup.context).toBe("general");
+    expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
   });
 
   test("changes the hotkey alone", () => {

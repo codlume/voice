@@ -91,7 +91,7 @@ const quitMain = () =>
 const startCleaning = () =>
   evaluateInMain(
     `globalThis.voiceTest.cleanup.clean(${JSON.stringify(LONG_DICTATION)},
-      { styling: "semi-formal", structure: "prose", context: "general" },
+      { styling: "semi-formal" },
       new AbortController().signal).catch(() => undefined); 'cleaning'`,
   );
 
