@@ -130,7 +130,8 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
   const said = ` ${words(input)} `;
-  const opener = CHAT_OPENERS.find((phrase) => ` ${words(output)} `.startsWith(` ${phrase} `));
+  const cleaned = ` ${words(output)} `;
+  const opener = CHAT_OPENERS.find((phrase) => cleaned.startsWith(` ${phrase} `));
   if (opener && !said.includes(` ${opener} `))
     throw new Error("Cleanup output reads like a chat reply");
 }
