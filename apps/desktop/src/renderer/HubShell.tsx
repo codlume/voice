@@ -237,7 +237,7 @@ function Icon({ children }: { children: ReactNode }) {
 
 function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   return (
-    <Tooltip.Provider delay={400} closeDelay={100}>
+    <Tooltip.Provider delay={0} closeDelay={100}>
       <Tooltip.Root<string> disabled={!collapsed}>
         {({ payload }) => (
           <>
