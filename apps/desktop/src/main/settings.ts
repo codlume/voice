@@ -7,14 +7,12 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
   updateChannel: "stable",
   theme: "system",
-  cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
+  cleanup: { enabled: true, styling: "semi-formal" },
 };
 
 const THEMES = ["system", "light", "dark"] as const;
 const HOTKEYS = ["fn", "rightOption", "rightCommand"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
-const STRUCTURES = ["prose", "lists"] as const;
-const CONTEXTS = ["general", "email"] as const;
 
 const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback: T[number]) =>
   typeof v === "string" && values.includes(v) ? (v as T[number]) : fallback;
@@ -33,8 +31,6 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),
-      structure: pick(STRUCTURES, c.structure, d.structure),
-      context: pick(CONTEXTS, c.context, d.context),
     },
   };
 }

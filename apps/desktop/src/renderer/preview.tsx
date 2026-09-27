@@ -20,7 +20,7 @@ const base: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
-    cleanup: { enabled: true, styling: "semi-formal", structure: "prose", context: "general" },
+    cleanup: { enabled: true, styling: "semi-formal" },
   },
   last: null,
 };

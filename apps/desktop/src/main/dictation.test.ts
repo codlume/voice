@@ -1,3 +1,4 @@
+import type { CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
@@ -21,6 +22,7 @@ type Options = {
   asrModel?: ModelStatus;
   cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
+  styling?: CleanupStyle["styling"];
   cleanFails?: boolean;
   cleanHangs?: boolean;
 };
@@ -41,12 +43,16 @@ function harness(opts: Options = {}) {
     },
     settings: {
       ...DEFAULT_SETTINGS,
-      cleanup: { ...DEFAULT_SETTINGS.cleanup, enabled: opts.cleanupEnabled ?? true },
+      cleanup: {
+        enabled: opts.cleanupEnabled ?? true,
+        styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
+      },
     },
     last: null,
   });
   const commands: HelperCommand[] = [];
   const cleans: string[] = [];
+  const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
   const hung: ((text: string) => void)[] = [];
   const levels: number[] = [];
@@ -58,8 +64,9 @@ function harness(opts: Options = {}) {
     send: (command) => commands.push(command),
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
-      clean: async (raw, _style, signal) => {
+      clean: async (raw, style, signal) => {
         cleans.push(raw);
+        styles.push(style);
         signals.push(signal);
         if (opts.cleanFails) throw new Error("model crashed");
         if (opts.cleanHangs) return new Promise<string>((resolve) => hung.push(resolve));
@@ -74,7 +81,7 @@ function harness(opts: Options = {}) {
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
-  return { store, commands, cleans, signals, hung, levels, logs, phases, dictation, id };
+  return { store, commands, cleans, styles, signals, hung, levels, logs, phases, dictation, id };
 }
 
 async function flush() {
@@ -122,6 +129,18 @@ describe("createDictation", () => {
       /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ insertMs=\d+ releaseToInsertMs=\d+/,
     );
     expect(timing).not.toContain("hello");
+  });
+
+  test("cleans with the user's styling and no other settings", async () => {
+    const h = harness({ styling: "casual" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "hey", audioMs: 800, asrMs: 120 });
+    await flush();
+    expect(h.styles).toStrictEqual([{ styling: "casual" }]);
   });
 
   test.each([

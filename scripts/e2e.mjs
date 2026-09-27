@@ -27,29 +27,20 @@ const cases = [
   {
     name: "a-short-cleanup",
     wav: "short.wav",
-    settings: { cleanup: { enabled: true, structure: "prose" } },
+    settings: { cleanup: { enabled: true } },
     end: "audio",
     target: "textedit",
     outcome: "inserted",
-    check: ({ text }) => {
+    check: ({ text, timing }) => {
       assert(hasSpeech(text), `document lacks Anna/Thursday: ${show(text)}`);
       assert(/^\p{Lu}/u.test(text), `document does not start with a capital: ${show(text)}`);
+      assert(timing.cleanupMs !== undefined, "cleanup did not finish, so raw text was inserted");
     },
-  },
-  {
-    name: "b-list-structure",
-    wav: "list.wav",
-    settings: { cleanup: { enabled: true, structure: "lists" } },
-    end: "audio",
-    target: "textedit",
-    outcome: "inserted",
-    check: ({ text }) =>
-      assert(/^\s*[-*•]\s*milk\b/im.test(text), `document has no "- Milk" line: ${show(text)}`),
   },
   {
     name: "c-silence",
     wav: "silence.wav",
-    settings: { cleanup: { enabled: true, structure: "prose" } },
+    settings: { cleanup: { enabled: true } },
     end: "audio",
     target: "textedit",
     outcome: "empty",
@@ -58,7 +49,7 @@ const cases = [
   {
     name: "d-escape-cancels",
     wav: "short.wav",
-    settings: { cleanup: { enabled: true, structure: "prose" } },
+    settings: { cleanup: { enabled: true } },
     end: "escape",
     target: "textedit",
     outcome: null,
@@ -67,7 +58,7 @@ const cases = [
   {
     name: "e-too-short",
     wav: "short.wav",
-    settings: { cleanup: { enabled: true, structure: "prose" } },
+    settings: { cleanup: { enabled: true } },
     end: "immediate",
     target: "textedit",
     outcome: "tooShort",
@@ -91,7 +82,7 @@ const cases = [
   {
     name: "g-electron-textarea",
     wav: "short.wav",
-    settings: { cleanup: { enabled: true, structure: "prose" } },
+    settings: { cleanup: { enabled: true } },
     end: "audio",
     target: "electron",
     outcome: "inserted",

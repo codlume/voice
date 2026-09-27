@@ -48,8 +48,6 @@ export type Settings = {
   cleanup: {
     enabled: boolean;
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
-    structure: "prose" | "lists";
-    context: "general" | "email";
   };
 };
 

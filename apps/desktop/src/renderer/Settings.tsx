@@ -68,7 +68,7 @@ const styles = stylex.create({
     borderWidth: 0,
     borderRadius: radius.round,
     backgroundColor: color.input,
-    cursor: { default: "pointer", ":disabled": "default" },
+    cursor: "pointer",
     transitionProperty: "background-color",
     transitionDuration: "160ms",
   },
@@ -135,12 +135,10 @@ export function GlobeHint() {
 
 function Switch({
   checked,
-  disabled = false,
   onChange,
   id,
 }: {
   checked: boolean;
-  disabled?: boolean;
   onChange: (checked: boolean) => void;
   id: string;
 }) {
@@ -150,7 +148,6 @@ function Switch({
       type="button"
       role="switch"
       aria-checked={checked}
-      disabled={disabled}
       onClick={() => onChange(!checked)}
       {...stylex.props(styles.switch, checked && styles.switchOn)}
     >
@@ -338,32 +335,6 @@ export function Settings({
             />
           </Row>
           <StylePicker cleanup={cleanup} />
-          <Row
-            id="setting-lists"
-            title="Lists"
-            detail="Turns spoken lists into bullet points."
-            disabled={!cleanup.enabled}
-          >
-            <Switch
-              id="setting-lists"
-              checked={cleanup.structure === "lists"}
-              disabled={!cleanup.enabled}
-              onChange={(on) => update({ cleanup: { structure: on ? "lists" : "prose" } })}
-            />
-          </Row>
-          <Row
-            id="setting-email"
-            title="Email formatting"
-            detail="Adds a greeting, paragraphs, and a sign-off."
-            disabled={!cleanup.enabled}
-          >
-            <Switch
-              id="setting-email"
-              checked={cleanup.context === "email"}
-              disabled={!cleanup.enabled}
-              onChange={(on) => update({ cleanup: { context: on ? "email" : "general" } })}
-            />
-          </Row>
         </div>
       </section>
 

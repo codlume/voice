@@ -98,7 +98,7 @@ export function createDictation(options: DictationOptions): Dictation {
       case "cleanup": {
         const startedAt = now();
         if (timing) timing.cleanupStartedAt = startedAt;
-        const { enabled: _enabled, ...style } = store.state.settings.cleanup;
+        const { styling } = store.state.settings.cleanup;
         const budgetMs = cleanupBudgetMs(effect.raw);
         // The raw text goes in at the deadline whether or not the model has honored the abort yet.
         const controller = new AbortController();
@@ -107,7 +107,7 @@ export function createDictation(options: DictationOptions): Dictation {
           log(`cleanup timed out after ${budgetMs} ms`);
           dispatch({ type: "cleanupFailed", id: effect.id });
         }, budgetMs);
-        void cleanup.clean(effect.raw, style, controller.signal).then(
+        void cleanup.clean(effect.raw, { styling }, controller.signal).then(
           (text) => {
             if (controller.signal.aborted) return;
             clearTimeout(budget);

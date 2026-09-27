@@ -21,7 +21,6 @@ export const fixtures = [
       "There are about forty two thousand records in the old table, and, like, most of them haven't been touched since two thousand nineteen. " +
       "Anyway, I'll, uh, I'll write up the plan tonight and send it over tomorrow morning, so, yeah, let me know what you think.",
   },
-  { name: "list.wav", speech: "things to buy milk eggs bread and coffee" },
   { name: "silence.wav", silenceSeconds: 2 },
   { name: "url.wav", speech: "open github dot com slash pingdotgg" },
 ];

@@ -29,11 +29,7 @@ export type CleanupOptions = {
 const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
-const WARM_UP_STYLE: CleanupStyle = {
-  styling: "semi-formal",
-  structure: "prose",
-  context: "general",
-};
+const WARM_UP_STYLE: CleanupStyle = { styling: "semi-formal" };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 

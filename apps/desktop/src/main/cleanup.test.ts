@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import type { ModelStatus } from "../shared/api.ts";
 import { createCleanup, type CleanupModule } from "./cleanup.ts";
 
-const style: CleanupStyle = { styling: "formal", structure: "lists", context: "email" };
+const style: CleanupStyle = { styling: "formal" };
 const signal = new AbortController().signal;
 
 type Behavior = {

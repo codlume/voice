@@ -67,9 +67,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           assertPlausibleCleanup(chunk, output, metadata.stopReason === "maxTokens");
           if (output) outputs.push(output);
         }
-        return outputs.join(
-          style.structure === "lists" ? "\n" : style.context === "email" ? "\n\n" : " ",
-        );
+        return outputs.join(" ");
       }),
     dispose: () => {
       disposal.abort(new Error("Cleanup model disposed"));

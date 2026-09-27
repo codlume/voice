@@ -66,7 +66,7 @@ vi.mock("node-llama-cpp", () => {
   };
 });
 
-const style: CleanupStyle = { styling: "semi-formal", structure: "prose", context: "general" };
+const style: CleanupStyle = { styling: "semi-formal" };
 
 beforeEach(() => {
   Object.assign(native, {
@@ -135,17 +135,6 @@ test("long input is cleaned in sentence chunks and rejoined", async () => {
 
   expect(native.events.filter((e) => e.startsWith("generate")).length).toBeGreaterThan(1);
   expect(cleaned).toBe(raw.toUpperCase());
-});
-
-test("list chunks are rejoined on separate lines", async () => {
-  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
-  native.reply = (raw) => ({ response: `- ${raw.length}` });
-  const raw = Array.from({ length: 120 }, () => "buy milk eggs bread coffee and more.").join(" ");
-
-  const cleaned = await s1.clean(raw, { ...style, structure: "lists" });
-
-  expect(cleaned.split("\n").length).toBeGreaterThan(1);
-  expect(cleaned.split("\n").every((line) => line.startsWith("- "))).toBe(true);
 });
 
 test("an aborted clean stops the generation and rejects with the reason, and the next clean runs", async () => {
