@@ -25,6 +25,31 @@ export function updateStatusText(status: UpdateStatus): string {
   }
 }
 
-export function canRestartForUpdate(status: UpdateStatus, session: PillState): boolean {
-  return status.kind === "ready" && session.kind !== "listening" && session.kind !== "processing";
+export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
+
+export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
+  switch (status.kind) {
+    case "idle":
+    case "current":
+      return button("check", "Check for updates");
+    case "failed":
+      return { action: "check", label: "Check for updates", tooltip: status.message };
+    case "ready":
+      return session.kind === "listening" || session.kind === "processing"
+        ? button(null, "Finish dictation before restarting")
+        : button("restart", `Restart to install ${status.version}`);
+    case "checking":
+    case "downloading":
+    case "installing":
+    case "disabled":
+      return button(null, updateStatusText(status));
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function button(action: UpdateButton["action"], label: string): UpdateButton {
+  return { action, label, tooltip: label };
 }
