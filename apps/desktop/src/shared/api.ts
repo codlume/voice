@@ -45,6 +45,7 @@ export type ModelStatus =
 
 export type Settings = {
   hotkey: Hotkey;
+  muteWhileDictating: boolean;
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
@@ -56,6 +57,7 @@ export type Settings = {
 
 export type SettingsPatch = {
   hotkey?: Hotkey;
+  muteWhileDictating?: boolean;
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;

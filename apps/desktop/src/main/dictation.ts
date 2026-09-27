@@ -90,7 +90,11 @@ export function createDictation(options: DictationOptions): Dictation {
         if (idleTimer) clearTimeout(idleTimer);
         timing = { id: effect.id, pressedAt: now() };
         sessionLanguage = { id: effect.id, language: store.state.settings.dictationLanguage };
-        send({ type: "capture.start", id: effect.id });
+        send({
+          type: "capture.start",
+          id: effect.id,
+          muteWhileDictating: store.state.settings.muteWhileDictating,
+        });
         return;
       case "stopCapture":
         if (timing) timing.releasedAt = now();

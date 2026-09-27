@@ -14,6 +14,15 @@ import {
 } from "./settings.ts";
 
 describe("parseSettings", () => {
+  test.each([undefined, null, "true", "false", 0, 1, {}, []])(
+    "defaults invalid mute preference %j to false",
+    (muteWhileDictating) => {
+      expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(false);
+    },
+  );
+  test.each([true, false])("keeps boolean mute preference %j", (muteWhileDictating) => {
+    expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(muteWhileDictating);
+  });
   test.each([undefined, null, "", "xx", "English", 42, {}, ["pl"]])(
     "defaults missing or invalid dictation language %j to English",
     (dictationLanguage) => {
@@ -35,6 +44,7 @@ describe("parseSettings", () => {
       hotkey: "rightOption",
       updateChannel: "stable",
       theme: "system",
+      muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
     });
@@ -63,6 +73,11 @@ describe("parseSettings", () => {
 });
 
 describe("applyPatch", () => {
+  test("mute preference survives unrelated patches and can be turned back off", () => {
+    const enabled = applyPatch(DEFAULT_SETTINGS, { muteWhileDictating: true });
+    expect(applyPatch(enabled, { theme: "dark" }).muteWhileDictating).toBe(true);
+    expect(applyPatch(enabled, { muteWhileDictating: false })).toEqual(DEFAULT_SETTINGS);
+  });
   test("changes language without losing cleanup preference and retains it across unrelated patches", () => {
     const polish = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: "pl" });
     expect(polish).toEqual({ ...DEFAULT_SETTINGS, dictationLanguage: "pl" });
@@ -76,6 +91,7 @@ describe("applyPatch", () => {
       hotkey: "fn",
       updateChannel: "stable",
       theme: "system",
+      muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
     });
@@ -100,6 +116,15 @@ describe("load and save", () => {
     dir = await mkdtemp(NodePath.join(tmpdir(), "voice-settings-"));
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
+
+  test.each([true, false])(
+    "persists mute preference %j across reloads",
+    async (muteWhileDictating) => {
+      const file = NodePath.join(dir, "settings.json");
+      await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { muteWhileDictating }));
+      expect((await loadSettings(file)).muteWhileDictating).toBe(muteWhileDictating);
+    },
+  );
 
   test.each(dictationLanguages)("persists $label across reloads", async ({ value }) => {
     const file = NodePath.join(dir, "settings.json");

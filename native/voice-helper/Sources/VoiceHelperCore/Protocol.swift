@@ -13,7 +13,7 @@ public enum LogLevel: String, Codable, Sendable { case info, error }
 
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey)
-    case captureStart(id: String)
+    case captureStart(id: String, muteWhileDictating: Bool)
     case captureStop(id: String)
     case captureCancel(id: String)
     case insert(id: String, text: String)
@@ -45,7 +45,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 }
 
 private enum Key: String, CodingKey {
-    case type, key, id, text, kind, download, path, action
+    case type, key, id, text, kind, download, path, action, muteWhileDictating
     case version, startMs, level, reason, message, audioMs, asrMs, method
     case microphone, accessibility, state
 }
@@ -56,7 +56,9 @@ extension HelperCommand: Decodable {
         let type = try c.decode(String.self, forKey: .type)
         switch type {
         case "hotkey.configure": self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key))
-        case "capture.start": self = .captureStart(id: try c.decode(String.self, forKey: .id))
+        case "capture.start":
+            self = .captureStart(id: try c.decode(String.self, forKey: .id),
+                                 muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
         case "insert":

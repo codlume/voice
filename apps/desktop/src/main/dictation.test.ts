@@ -95,11 +95,34 @@ describe("createDictation", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  test("snapshots the mute preference once per capture start", () => {
+    const h = harness();
+    h.store.update((state) => ({
+      ...state,
+      settings: { ...state.settings, muteWhileDictating: true },
+    }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const first = h.id();
+    expect(h.commands).toEqual([{ type: "capture.start", id: first, muteWhileDictating: true }]);
+    h.store.update((state) => ({
+      ...state,
+      settings: { ...state.settings, muteWhileDictating: false },
+    }));
+    expect(h.commands).toHaveLength(1);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands.at(-1)).toEqual({
+      type: "capture.start",
+      id: h.id(),
+      muteWhileDictating: false,
+    });
+  });
+
   test("drives a full session from hotkey down to inserted and back to idle", async () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
-    expect(h.commands).toEqual([{ type: "capture.start", id }]);
+    expect(h.commands).toEqual([{ type: "capture.start", id, muteWhileDictating: false }]);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     h.dictation.onHelperEvent({ type: "capture.level", id, level: 0.4 });
     vi.advanceTimersByTime(800);
@@ -175,7 +198,7 @@ describe("createDictation", () => {
       const raw = "Zażółć gęślą jaźń.\nПривіт, світе! Café à 15:30.";
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const id = h.id();
-      expect(h.commands).toEqual([{ type: "capture.start", id }]);
+      expect(h.commands).toEqual([{ type: "capture.start", id, muteWhileDictating: false }]);
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
@@ -409,7 +432,7 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(1);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
     expect(h.commands).toEqual([
-      { type: "capture.start", id },
+      { type: "capture.start", id, muteWhileDictating: false },
       { type: "capture.cancel", id },
     ]);
   });

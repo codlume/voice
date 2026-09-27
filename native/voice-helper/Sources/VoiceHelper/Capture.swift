@@ -40,6 +40,7 @@ private let silenceFloor = 1e-4 as Float
 final class Capture {
     private let output: Output
     private let transcriber: Transcriber
+    private let outputSilencer: OutputSilencer
     private var state: CaptureState = .idle {
         didSet {
             let active: Bool
@@ -59,11 +60,12 @@ final class Capture {
     init(output: Output, transcriber: Transcriber) {
         self.output = output
         self.transcriber = transcriber
+        self.outputSilencer = OutputSilencer(output: output)
     }
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime) {
+    func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool) {
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
@@ -77,6 +79,7 @@ final class Capture {
                 }
                 state = .starting(session)
                 self.file = file
+                if muteWhileDictating { outputSilencer.begin() }
                 file.start()
                 return
             }
@@ -86,6 +89,7 @@ final class Capture {
             let mic = try self.mic ?? makeMic()
             self.mic = mic
             state = .starting(session)
+            if muteWhileDictating { outputSilencer.begin() }
             try mic.start(sink: sink)
         } catch let error as CaptureError {
             fail(session, reason: error.reason, message: error.message)
@@ -144,8 +148,7 @@ final class Capture {
     }
 
     func shutdown() {
-        file?.stop()
-        file = nil
+        stopSource()
         disposeMic()
         state = .idle
     }
@@ -228,6 +231,7 @@ final class Capture {
         file?.stop()
         file = nil
         mic?.stop()
+        outputSilencer.end()
     }
 }
 

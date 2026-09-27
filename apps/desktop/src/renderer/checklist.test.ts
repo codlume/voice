@@ -18,6 +18,7 @@ const fresh: Snapshot = {
     hotkey: "fn",
     updateChannel: "stable",
     theme: "system",
+    muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
   },
