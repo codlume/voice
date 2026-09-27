@@ -93,6 +93,7 @@ export function createDictation(options: DictationOptions): Dictation {
         send({
           type: "capture.start",
           id: effect.id,
+          language: sessionLanguage.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
         });
         return;

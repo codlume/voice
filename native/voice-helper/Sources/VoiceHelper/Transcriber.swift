@@ -73,7 +73,7 @@ final class Transcriber {
         }
     }
 
-    func transcribe(_ samples: [Float]) async throws -> (text: String, asrMs: Double) {
+    func transcribe(_ samples: [Float], language: DictationLanguage) async throws -> (text: String, asrMs: Double) {
         let manager: AsrManager
         switch load {
         case .ready(let ready):
@@ -95,10 +95,43 @@ final class Transcriber {
         var state = TdtDecoderState.make()
         let started = DispatchTime.now()
         do {
-            let result = try await manager.transcribe(padded, decoderState: &state)
+            let result = try await manager.transcribe(padded, decoderState: &state, language: language.asrLanguage)
             return (result.text, started.millisecondsToNow())
         } catch {
             throw TranscribeError(reason: .unknown, message: "\(error)")
+        }
+    }
+}
+
+private extension DictationLanguage {
+    var asrLanguage: Language? {
+        switch self {
+        case .auto: nil
+        case .en: .english
+        case .bg: .bulgarian
+        case .hr: .croatian
+        case .cs: .czech
+        case .da: .danish
+        case .nl: .dutch
+        case .et: .estonian
+        case .fi: .finnish
+        case .fr: .french
+        case .de: .german
+        case .el: .greek
+        case .hu: .hungarian
+        case .it: .italian
+        case .lv: .latvian
+        case .lt: .lithuanian
+        case .mt: .maltese
+        case .pl: .polish
+        case .pt: .portuguese
+        case .ro: .romanian
+        case .ru: .russian
+        case .sk: .slovak
+        case .sl: .slovenian
+        case .es: .spanish
+        case .sv: .swedish
+        case .uk: .ukrainian
         }
     }
 }

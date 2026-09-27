@@ -349,7 +349,7 @@ export function Settings({
           <Row
             id="setting-dictation-language"
             title="Spoken language"
-            detail="Speech recognition detects language automatically. This choice controls English text cleanup and applies to your next dictation."
+            detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
           >
             <select
               id="setting-dictation-language"

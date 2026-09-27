@@ -1,12 +1,13 @@
 import type { Hotkey, PermissionKind, PermissionState } from "../shared/api.ts";
+import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { InsertFailure, InsertMethod } from "./session.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 2;
+export const HELPER_PROTOCOL_VERSION = 3;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
-  | { type: "capture.start"; id: string; muteWhileDictating: boolean }
+  | { type: "capture.start"; id: string; language: DictationLanguage; muteWhileDictating: boolean }
   | { type: "capture.stop"; id: string }
   | { type: "capture.cancel"; id: string }
   | { type: "insert"; id: string; text: string }

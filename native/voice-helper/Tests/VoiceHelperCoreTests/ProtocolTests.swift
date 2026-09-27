@@ -10,7 +10,7 @@ private func json(_ line: String) throws -> [String: Any] {
 @Test func decodesEveryCommand() throws {
     let cases: [(String, HelperCommand)] = [
         (#"{"type":"hotkey.configure","key":"rightOption"}"#, .hotkeyConfigure(key: .rightOption)),
-        (#"{"type":"capture.start","id":"s1","muteWhileDictating":false}"#, .captureStart(id: "s1", muteWhileDictating: false)),
+        (#"{"type":"capture.start","id":"s1","language":"en","muteWhileDictating":false}"#, .captureStart(id: "s1", language: .en, muteWhileDictating: false)),
         (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
         (#"{"type":"insert","id":"s1","text":"hi there"}"#, .insert(id: "s1", text: "hi there")),
@@ -50,7 +50,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 2), ["type": "ready", "version": 2]),
+        (.ready(version: 3), ["type": "ready", "version": 3]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -91,14 +91,35 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 }
 
 @Test func captureStartRequiresAnExplicitBooleanMutePreference() {
-    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","muteWhileDictating":true}"#)
-        == .success(.captureStart(id: "s", muteWhileDictating: true)))
+    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":true}"#)
+        == .success(.captureStart(id: "s", language: .en, muteWhileDictating: true)))
     for line in [
-        #"{"type":"capture.start","id":"s"}"#,
-        #"{"type":"capture.start","id":"s","muteWhileDictating":"true"}"#,
-        #"{"type":"capture.start","id":"s","muteWhileDictating":1}"#,
-        #"{"type":"capture.start","id":"s","muteWhileDictating":null}"#,
+        #"{"type":"capture.start","id":"s","language":"en"}"#,
+        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":"true"}"#,
+        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":1}"#,
+        #"{"type":"capture.start","id":"s","language":"en","muteWhileDictating":null}"#,
     ] {
         if case .success = HelperCommand.decode(line: line) { Issue.record("accepted malformed mute preference") }
+    }
+}
+
+@Test(arguments: DictationLanguage.allCases)
+func captureStartPreservesEveryLanguage(language: DictationLanguage) {
+    let line = #"{"type":"capture.start","id":"s","language":"\#(language.rawValue)","muteWhileDictating":false}"#
+    #expect(HelperCommand.decode(line: line)
+        == .success(.captureStart(id: "s", language: language, muteWhileDictating: false)))
+}
+
+@Test func captureStartRequiresAValidLanguage() throws {
+    for line in [
+        #"{"type":"capture.start","id":"s","muteWhileDictating":false}"#,
+        #"{"type":"capture.start","id":"s","language":null,"muteWhileDictating":false}"#,
+        #"{"type":"capture.start","id":"s","language":true,"muteWhileDictating":false}"#,
+        #"{"type":"capture.start","id":"s","language":"unknown","muteWhileDictating":false}"#,
+        #"{"type":"capture.start","id":"s","language":"","muteWhileDictating":false}"#,
+    ] {
+        let result = HelperCommand.decode(line: line)
+        #expect(throws: ProtocolError.self) { try result.get() }
+        #expect(try unknownDescription(result).contains("\"language\""))
     }
 }

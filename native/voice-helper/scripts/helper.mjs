@@ -122,7 +122,7 @@ export async function withHelper(options, body) {
   const helper = new Helper(options);
   try {
     const ready = await helper.waitForType("ready");
-    assert(ready.version === 2, `ready.version is ${ready.version}`);
+    assert(ready.version === 3, `ready.version is ${ready.version}`);
     return await body(helper);
   } finally {
     await helper.close();
@@ -140,10 +140,10 @@ export async function prepareAsr(helper, { download = false } = {}) {
   return performance.now() - startedAt;
 }
 
-export async function dictateFixture(helper, name, id) {
+export async function dictateFixture(helper, name, id, language = "en") {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;
-  helper.send({ type: "capture.start", id, muteWhileDictating: false });
+  helper.send({ type: "capture.start", id, language, muteWhileDictating: false });
   const started = await helper.waitFor(
     (event) => event.type === "capture.started" && event.id === id,
     {

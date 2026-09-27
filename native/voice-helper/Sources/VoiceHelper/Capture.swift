@@ -5,6 +5,7 @@ import os
 
 struct CaptureSession {
     let id: String
+    let language: DictationLanguage
     let frontmostPid: pid_t?
     let commandedAt: DispatchTime
 }
@@ -65,12 +66,12 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool) {
+    func start(id: String, language: DictationLanguage, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool) {
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
         }
-        let session = CaptureSession(id: id, frontmostPid: frontmostPid, commandedAt: receivedAt)
+        let session = CaptureSession(id: id, language: language, frontmostPid: frontmostPid, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
             if let testAudioPath {
@@ -114,7 +115,7 @@ final class Capture {
             }
             Task { @MainActor in
                 do {
-                    let result = try await transcriber.transcribe(samples)
+                    let result = try await transcriber.transcribe(samples, language: session.language)
                     let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs))
                 } catch let error as TranscribeError {
