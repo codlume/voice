@@ -20,7 +20,7 @@ export type Cleanup = {
 
 export type CleanupOptions = {
   modelsDir: string;
-  // The model is only loaded, and only downloaded, while cleanup is switched on.
+  // New loads and downloads require cleanup to be enabled for the selected language.
   enabled: () => boolean;
   onStatus: (status: ModelStatus) => void;
   loadModule?: () => Promise<CleanupModule>;

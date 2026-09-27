@@ -7,6 +7,8 @@ import type {
   Snapshot,
 } from "../shared/api.ts";
 
+import { wantsCleanup } from "../shared/dictation-language.ts";
+
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
   | { type: "setupModels" };
@@ -102,7 +104,7 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
       ...modelState(models.asr),
     },
   ];
-  if (settings.cleanup.enabled) {
+  if (wantsCleanup(settings)) {
     rows.push({
       id: "cleanup",
       title: "Cleanup model",

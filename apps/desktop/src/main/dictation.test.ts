@@ -2,6 +2,7 @@ import type { CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
+import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import {
   CLEANUP_BASE_MS,
   CLEANUP_MAX_MS,
@@ -19,6 +20,7 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {
+  dictationLanguage?: DictationLanguage;
   asrModel?: ModelStatus;
   cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
@@ -43,6 +45,7 @@ function harness(opts: Options = {}) {
     },
     settings: {
       ...DEFAULT_SETTINGS,
+      dictationLanguage: opts.dictationLanguage ?? DEFAULT_SETTINGS.dictationLanguage,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
         styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
@@ -164,6 +167,91 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "raw words" });
   });
+
+  test.each(dictationLanguages.filter(({ value }) => value !== "en"))(
+    "$label preserves the original Unicode transcript through insertion",
+    async ({ value }) => {
+      const h = harness({ dictationLanguage: value });
+      const raw = "Zażółć gęślą jaźń.\nПривіт, світе! Café à 15:30.";
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const id = h.id();
+      expect(h.commands).toEqual([{ type: "capture.start", id }]);
+      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+      vi.advanceTimersByTime(800);
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({ type: "transcript", id, text: raw, audioMs: 800, asrMs: 100 });
+      await flush();
+      expect(h.cleans).toEqual([]);
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: raw });
+      expect(h.store.state.last).toEqual({ raw, text: raw });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "accessibility",
+        reason: null,
+      });
+      expect(toSnapshot(h.store.state).session).toEqual({
+        kind: "done",
+        outcome: { kind: "inserted", method: "accessibility" },
+      });
+    },
+  );
+
+  test.each([
+    { before: "en", after: "pl", firstCleaned: true },
+    { before: "pl", after: "en", firstCleaned: false },
+    { before: "en", after: "auto", firstCleaned: true },
+    { before: "auto", after: "en", firstCleaned: false },
+  ] satisfies { before: DictationLanguage; after: DictationLanguage; firstCleaned: boolean }[])(
+    "changing $before to $after during recording applies to the next session",
+    async ({ before, after, firstCleaned }) => {
+      const h = harness({ dictationLanguage: before });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const first = h.id();
+      h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
+      h.store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage: after } }));
+      vi.advanceTimersByTime(800);
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({
+        type: "transcript",
+        id: first,
+        text: "first",
+        audioMs: 800,
+        asrMs: 100,
+      });
+      await flush();
+      expect(h.commands.at(-1)).toEqual({
+        type: "insert",
+        id: first,
+        text: firstCleaned ? "first." : "first",
+      });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id: first,
+        method: "paste",
+        reason: null,
+      });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const second = h.id();
+      h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40 });
+      vi.advanceTimersByTime(800);
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({
+        type: "transcript",
+        id: second,
+        text: "second",
+        audioMs: 800,
+        asrMs: 100,
+      });
+      await flush();
+      expect(h.commands.at(-1)).toEqual({
+        type: "insert",
+        id: second,
+        text: firstCleaned ? "second" : "second.",
+      });
+      expect(h.cleans).toEqual([firstCleaned ? "first" : "second"]);
+    },
+  );
 
   test("a transcript during the cleanup warm-up is cleaned, not inserted raw", async () => {
     const h = harness();
