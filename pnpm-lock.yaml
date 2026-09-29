@@ -61,9 +61,6 @@ importers:
       '@base-ui/react':
         specifier: 1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@sentry/electron':
-        specifier: 7.20.0
-        version: 7.20.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.1
@@ -77,6 +74,9 @@ importers:
         specifier: 3.21.1
         version: 3.21.1(typescript@7.0.2)
     devDependencies:
+      '@sentry/electron':
+        specifier: 7.20.0
+        version: 7.20.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
       '@sentry/node':
         specifier: 10.75.0
         version: 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
