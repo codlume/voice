@@ -1,0 +1,139 @@
+import type * as SentryMain from "@sentry/electron/main";
+
+import type { DiagnosticsConsent } from "../shared/api.ts";
+import {
+  HELPER_EXIT_MESSAGE,
+  SESSION_MEASUREMENTS,
+  SESSION_TRANSACTION,
+  scrubEvent,
+} from "./diagnostics-scrub.ts";
+import type { SessionReport } from "./dictation.ts";
+import type { HelperExit } from "./helper.ts";
+
+type NodeOptions = SentryMain.NodeOptions;
+type MakeTransport = NonNullable<NodeOptions["transport"]>;
+type InitOptions = Required<
+  Pick<
+    NodeOptions,
+    | "dsn"
+    | "release"
+    | "environment"
+    | "sendDefaultPii"
+    | "sendClientReports"
+    | "tracePropagationTargets"
+    | "tracesSampleRate"
+    | "beforeSend"
+    | "beforeSendTransaction"
+    | "transport"
+    | "integrations"
+  >
+>;
+
+// Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
+export type DiagnosticsSdk = Pick<
+  typeof SentryMain,
+  "startInactiveSpan" | "setMeasurement" | "captureMessage"
+> & { init(options: InitOptions): unknown; makeTransport: MakeTransport };
+
+export type Diagnostics = {
+  sessionDone(report: SessionReport): void;
+  helperExited(exit: HelperExit): void;
+};
+
+// Everything else the SDK enables by default collects context (breadcrumbs, console, network,
+// screenshots, device and locale details, local variables) that Voice never sends.
+const INTEGRATIONS: ReadonlySet<string> = new Set([
+  "SentryMinidump",
+  "OnUncaughtException",
+  "OnUnhandledRejection",
+  "EventFilters",
+  "FunctionToString",
+  "LinkedErrors",
+  "NormalizePaths",
+]);
+
+const off: Diagnostics = { sessionDone() {}, helperExited() {} };
+
+// Model ids are left out: each release pins its models, so the release already names them.
+export function sessionSpan(report: SessionReport) {
+  const { outcome } = report;
+  const attributes: Record<string, string> = {
+    outcome: outcome.kind,
+    ...(outcome.kind === "inserted" && { "insert.method": outcome.method }),
+    ...(outcome.kind === "notInserted" && { "insert.reason": outcome.reason }),
+    ...(report.language !== null && { "dictation.language": report.language }),
+  };
+  const measurements: Partial<Record<(typeof SESSION_MEASUREMENTS)[number], number>> = {};
+  for (const name of SESSION_MEASUREMENTS) {
+    const value = report.timings[name];
+    if (value !== undefined) measurements[name] = value;
+  }
+  return {
+    name: SESSION_TRANSACTION,
+    op: SESSION_TRANSACTION,
+    startTime: report.pressedAt ?? report.finishedAt,
+    endTime: report.finishedAt,
+    attributes,
+    measurements,
+  };
+}
+
+function helperTags(exit: HelperExit): Record<string, string | number> {
+  if ("spawnError" in exit) return { "helper.error": exit.spawnError };
+  if (exit.signal) return { "helper.signal": exit.signal };
+  return { "helper.exit_code": exit.code ?? "none" };
+}
+
+export function startDiagnostics(options: {
+  loadSdk: () => DiagnosticsSdk;
+  dsn: string;
+  release: string;
+  environment: string;
+  tracesSampleRate: number;
+  consent: () => DiagnosticsConsent;
+}): Diagnostics {
+  const on = () => options.consent() === "on";
+  // Turning consent on takes effect at the next launch: the SDK can only start before ready.
+  if (options.dsn === "" || !on()) return off;
+
+  const sdk = options.loadSdk();
+  sdk.init({
+    dsn: options.dsn,
+    release: options.release,
+    environment: options.environment,
+    sendDefaultPii: false,
+    sendClientReports: false,
+    tracePropagationTargets: [],
+    tracesSampleRate: options.tracesSampleRate,
+    beforeSend: (event) => ({ ...scrubEvent(event), type: undefined }),
+    beforeSendTransaction: (event) => ({ ...scrubEvent(event), type: "transaction" }),
+    // Turning consent off stops sending at once, including crash dumps the SDK already started.
+    transport: (transportOptions) => {
+      const base = sdk.makeTransport(transportOptions);
+      return { ...base, send: (envelope) => (on() ? base.send(envelope) : Promise.resolve({})) };
+    },
+    integrations: (defaults) => defaults.filter(({ name }) => INTEGRATIONS.has(name)),
+  });
+
+  const reportedExits = new Set<string>();
+  return {
+    sessionDone(report) {
+      if (!on()) return;
+      const { measurements, endTime, ...start } = sessionSpan(report);
+      const span = sdk.startInactiveSpan({ ...start, forceTransaction: true });
+      for (const [name, value] of Object.entries(measurements)) {
+        sdk.setMeasurement(name, value, "millisecond", span);
+      }
+      span.end(endTime);
+    },
+    helperExited(exit) {
+      if (!on()) return;
+      const tags = helperTags(exit);
+      // A helper that keeps failing restarts every few seconds; one report per kind is enough.
+      const key = JSON.stringify(tags);
+      if (reportedExits.has(key)) return;
+      reportedExits.add(key);
+      sdk.captureMessage(HELPER_EXIT_MESSAGE, { level: "error", tags });
+    },
+  };
+}

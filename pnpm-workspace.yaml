@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  "@sentry/cli": false
   electron: true
   electron-winstaller: false
   esbuild: false

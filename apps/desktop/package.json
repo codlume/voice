@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
+    "@sentry/electron": "7.20.0",
     "@stylexjs/stylex": "catalog:",
     "effect": "3.22.2",
     "electron-updater": "6.8.9",
     "node-llama-cpp": "3.21.1"
   },
   "devDependencies": {
+    "@sentry/node": "10.75.0",
     "@stylexjs/unplugin": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "19.3.0",

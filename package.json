@@ -17,6 +17,7 @@
     "e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
+    "@sentry/cli": "3.8.0",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
