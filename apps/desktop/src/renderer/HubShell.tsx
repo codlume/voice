@@ -387,6 +387,8 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
               settings={snapshot.settings}
               updates={snapshot.updates}
               microphones={snapshot.microphones}
+              microphoneTest={snapshot.microphoneTest}
+              microphonePermission={snapshot.permissions.microphone}
             />
           )}
         </div>

@@ -5,6 +5,8 @@ import { useId, useState, type ReactNode } from "react";
 
 import type {
   MicrophoneCatalog,
+  MicrophoneTest,
+  PermissionState,
   Settings as SettingsValue,
   SettingsPatch,
   Theme,
@@ -14,6 +16,7 @@ import type {
 import { hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import { hotkeyLabels } from "./checklist.ts";
+import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { Select } from "./Select.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -191,10 +194,14 @@ export function Settings({
   settings,
   updates,
   microphones,
+  microphoneTest,
+  microphonePermission,
 }: {
   settings: SettingsValue;
   updates: UpdatesSnapshot;
   microphones: MicrophoneCatalog;
+  microphoneTest: MicrophoneTest;
+  microphonePermission: PermissionState;
 }) {
   const [microphoneError, setMicrophoneError] = useState("");
   const [savingMicrophone, setSavingMicrophone] = useState(false);
@@ -321,15 +328,22 @@ export function Settings({
           Audio
         </h2>
         <div {...stylex.props(styles.card)}>
-          <Row id="setting-microphone" title="Microphone" detail={microphoneDetail}>
+          <MicrophoneRow
+            selectId="setting-microphone"
+            detail={microphoneDetail}
+            test={microphoneTest}
+            permission={microphonePermission}
+            canTest={microphones.kind === "ready" && devices.length > 0 && !missing}
+          >
             <Select
               id="setting-microphone"
               value={selected?.uid ?? ""}
               options={microphoneOptions}
               disabled={savingMicrophone}
+              grouped
               onChange={(uid) => void changeMicrophone(uid)}
             />
-          </Row>
+          </MicrophoneRow>
           <Row
             id="setting-mute-while-dictating"
             title="Mute all audio while dictating"
