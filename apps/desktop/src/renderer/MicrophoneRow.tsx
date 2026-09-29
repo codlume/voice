@@ -83,14 +83,16 @@ const accessibleLabels: Record<MicrophoneTestAction["kind"], string> = {
   stop: "Stop microphone test",
 };
 
-function useLevel(listening: boolean) {
+// Null while no test is listening. Each episode is one audio source, so a restart (microphone
+// change, device reset) re-runs the effect and forgets what the previous source was heard.
+function useLevel(episode: number | null) {
   const [level, setLevel] = useState(0);
   const [heard, setHeard] = useState(false);
   const [quiet, setQuiet] = useState(false);
 
   // Only a listening test subscribes, so an idle Settings page runs no timers and repaints nothing.
   useEffect(() => {
-    if (!listening) return;
+    if (episode === null) return;
     let smoothed = 0;
     const quietTimer = setTimeout(() => setQuiet(true), QUIET_AFTER_MS);
     const unsubscribe = window.voice.onLevel((next) => {
@@ -108,7 +110,7 @@ function useLevel(listening: boolean) {
       setHeard(false);
       setQuiet(false);
     };
-  }, [listening]);
+  }, [episode]);
 
   return { level, heard, quiet };
 }
@@ -129,7 +131,7 @@ export function MicrophoneRow({
   children: ReactNode;
 }) {
   const [accessRequested, setAccessRequested] = useState(false);
-  const { level, heard, quiet } = useLevel(test.kind === "listening");
+  const { level, heard, quiet } = useLevel(test.kind === "listening" ? test.episode : null);
   const running = test.kind === "starting" || test.kind === "listening";
 
   useEffect(
@@ -187,7 +189,7 @@ export function MicrophoneRow({
           {children}
         </div>
       </div>
-      <div inert={status === null} {...stylex.props(styles.expander, status && styles.open)}>
+      <div {...stylex.props(styles.expander, status && styles.open)}>
         <div {...stylex.props(styles.clip)}>
           <div {...stylex.props(styles.body)}>
             {running && (

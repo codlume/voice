@@ -4,7 +4,7 @@ import type { MicrophoneTest } from "../shared/api.ts";
 import { microphoneTestAction, microphoneTestStatus } from "./microphoneTestView.ts";
 
 const off: MicrophoneTest = { kind: "off" };
-const listening: MicrophoneTest = { kind: "listening" };
+const listening: MicrophoneTest = { kind: "listening", episode: 1 };
 const nothing = { heard: false, quiet: false, accessRequested: false };
 const access = { text: "Voice needs microphone access to test.", failed: false };
 
