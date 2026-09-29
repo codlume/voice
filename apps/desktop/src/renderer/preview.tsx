@@ -24,6 +24,7 @@ const base: Snapshot = {
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
+    diagnostics: "unanswered",
   },
   microphones: {
     kind: "ready",
@@ -204,6 +205,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
+          diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
         },
         updates: patch.updateChannel
           ? {

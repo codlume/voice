@@ -22,6 +22,7 @@ const fresh: Snapshot = {
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
+    diagnostics: "unanswered",
   },
   microphones: {
     kind: "ready",

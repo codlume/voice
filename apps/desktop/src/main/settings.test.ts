@@ -48,7 +48,19 @@ describe("parseSettings", () => {
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
+      diagnostics: "unanswered",
     });
+  });
+
+  test.each([undefined, null, true, "yes", "ON", 1, {}])(
+    "treats a missing or invalid diagnostics choice %j as unanswered",
+    (diagnostics) => {
+      expect(parseSettings({ diagnostics }).diagnostics).toBe("unanswered");
+    },
+  );
+
+  test.each(["on", "off"] as const)("keeps a saved diagnostics choice %j", (diagnostics) => {
+    expect(parseSettings({ diagnostics }).diagnostics).toBe(diagnostics);
   });
 
   test("drops the retired list and email options from an old settings file", () => {
@@ -96,8 +108,19 @@ describe("applyPatch", () => {
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
+      diagnostics: "unanswered",
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
+  });
+
+  test("answers diagnostics either way, keeps the answer across unrelated patches", () => {
+    const on = applyPatch(DEFAULT_SETTINGS, { diagnostics: "on" });
+    expect(on).toEqual({ ...DEFAULT_SETTINGS, diagnostics: "on" });
+    expect(applyPatch(on, { theme: "dark" }).diagnostics).toBe("on");
+    expect(applyPatch(on, { diagnostics: "off" })).toEqual({
+      ...DEFAULT_SETTINGS,
+      diagnostics: "off",
+    });
   });
 
   test("changes the hotkey alone", () => {
@@ -124,7 +147,7 @@ describe("load and save", () => {
     async (muteWhileDictating) => {
       const file = NodePath.join(dir, "settings.json");
       await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { muteWhileDictating }));
-      expect((await loadSettings(file)).muteWhileDictating).toBe(muteWhileDictating);
+      expect(loadSettings(file).muteWhileDictating).toBe(muteWhileDictating);
     },
   );
 
@@ -133,28 +156,33 @@ describe("load and save", () => {
     const settings = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: value });
     expect(settings.dictationLanguage).toBe(value);
     await saveSettings(file, settings);
-    await expect(loadSettings(file)).resolves.toEqual(settings);
+    expect(loadSettings(file)).toEqual(settings);
   });
 
   test("migrates a saved settings file without a language to English", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, JSON.stringify({ cleanup: { enabled: false, styling: "casual" } }));
-    await expect(loadSettings(file)).resolves.toMatchObject({
+    expect(loadSettings(file)).toMatchObject({
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "casual" },
     });
   });
 
-  test("a missing file yields defaults", async () => {
-    await expect(loadSettings(NodePath.join(dir, "settings.json"))).resolves.toEqual(
-      DEFAULT_SETTINGS,
-    );
+  test("a missing file yields defaults", () => {
+    expect(loadSettings(NodePath.join(dir, "settings.json"))).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("a settings file from before diagnostics loads as unanswered", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { diagnostics: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, diagnostics: "unanswered" });
   });
 
   test("a corrupt file yields defaults", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
-    await expect(loadSettings(file)).resolves.toEqual(DEFAULT_SETTINGS);
+    expect(loadSettings(file)).toEqual(DEFAULT_SETTINGS);
   });
 
   test("save then load round-trips through a nested directory and leaves no temp file", async () => {
@@ -166,7 +194,7 @@ describe("load and save", () => {
       cleanup: { enabled: false },
     });
     await saveSettings(file, settings);
-    await expect(loadSettings(file)).resolves.toEqual(settings);
+    expect(loadSettings(file)).toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(settings);
   });
@@ -200,10 +228,10 @@ describe("microphone settings", () => {
     const file = NodePath.join(dir, "settings.json");
     try {
       await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { microphone }));
-      const loaded = await loadSettings(file);
+      const loaded = loadSettings(file);
       expect(loaded.microphone).toEqual(microphone);
       await saveSettings(file, applyPatch(loaded, { microphone: null }));
-      expect((await loadSettings(file)).microphone).toBeNull();
+      expect(loadSettings(file).microphone).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

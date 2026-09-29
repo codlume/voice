@@ -1,5 +1,5 @@
 import * as NodePath from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 
 import {
   app,
@@ -139,17 +139,15 @@ async function main() {
   log(`userData ${userData}`);
 
   const manifest: unknown = JSON.parse(
-    await readFile(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
+    readFileSync(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
   );
   const release =
     !development && typeof manifest === "object" && manifest !== null && "voiceRelease" in manifest
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
-  const [settings] = await Promise.all([
-    loadSettings(settingsFile, installedChannel),
-    app.whenReady(),
-  ]);
+  const settings = loadSettings(settingsFile, installedChannel);
+  await app.whenReady();
   nativeTheme.themeSource = settings.theme;
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
