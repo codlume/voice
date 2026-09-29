@@ -109,8 +109,8 @@ function exception(value: Exception): Exception {
 
 type DebugImage = NonNullable<NonNullable<Event["debug_meta"]>["images"]>[number];
 
-// JavaScript source maps resolve through sourcemap images. Native images come from the minidump
-// itself on the server, so no other kind is kept.
+// JavaScript source maps resolve through sourcemap images, and crash events carry no dump to
+// symbolicate, so no other kind is kept.
 function sourceMapImages(images: readonly DebugImage[]): DebugImage[] {
   return images.flatMap((image) =>
     image.type === "sourcemap" &&

@@ -200,6 +200,27 @@ describe("startDiagnostics consent", () => {
     ]);
   });
 
+  test("on sends a crash event without its dump or any other attachment", async () => {
+    const h = harness("on");
+    SentryNode.captureEvent(
+      { level: "fatal", platform: "native", tags: { "event.process": "browser" } },
+      {
+        attachments: [
+          {
+            filename: "crash.dmp",
+            data: `HOME=/Users/someone ${RAW}`,
+            attachmentType: "event.minidump",
+          },
+        ],
+      },
+    );
+    const sent = await h.sent();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('"level":"fatal"');
+    expect(sent[0]).not.toContain('"type":"attachment"');
+    for (const text of ["crash.dmp", "someone", RAW]) expect(sent[0]).not.toContain(text);
+  });
+
   test("turning consent off at runtime stops sending at once", async () => {
     const h = harness("on");
     h.setConsent("off");

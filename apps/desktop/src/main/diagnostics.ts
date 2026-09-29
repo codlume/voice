@@ -105,9 +105,15 @@ export function startDiagnostics(options: {
     sendClientReports: false,
     tracePropagationTargets: [],
     tracesSampleRate: options.tracesSampleRate,
-    beforeSend: (event) => ({ ...scrubEvent(event), type: undefined }),
+    beforeSend: (event, hint) => {
+      // Attachments are raw bytes the scrubber cannot read. A native crash dump holds whole
+      // thread stacks, which include the process environment (HOME, USER, PATH), so the crash
+      // event is sent without its dump.
+      hint.attachments = [];
+      return { ...scrubEvent(event), type: undefined };
+    },
     beforeSendTransaction: (event) => ({ ...scrubEvent(event), type: "transaction" }),
-    // Turning consent off stops sending at once, including crash dumps the SDK already started.
+    // Turning consent off stops sending at once, including events the SDK's own integrations capture.
     transport: (transportOptions) => {
       const base = sdk.makeTransport(transportOptions);
       return { ...base, send: (envelope) => (on() ? base.send(envelope) : Promise.resolve({})) };
