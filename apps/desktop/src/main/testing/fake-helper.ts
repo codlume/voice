@@ -18,6 +18,14 @@ type Config = {
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
+let microphoneTest: { id: string; levels: NodeJS.Timeout } | null = null;
+
+function endMicrophoneTest() {
+  if (!microphoneTest) return;
+  clearInterval(microphoneTest.levels);
+  emit({ type: "microphone.test.ended", id: microphoneTest.id });
+  microphoneTest = null;
+}
 
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -63,7 +71,25 @@ function handle(command: Record<string, unknown>) {
     case "asr.prepare":
       emit({ type: "asr.status", state: config.asr ?? "ready" });
       return;
+    case "microphone.test.start": {
+      if (recording) {
+        emit({ type: "microphone.test.failed", id, message: "Finish dictating, then test again." });
+        return;
+      }
+      endMicrophoneTest();
+      emit({ type: "microphone.test.started", id });
+      const levels = setInterval(
+        () => emit({ type: "microphone.test.level", id, level: Math.random() }),
+        33,
+      );
+      microphoneTest = { id, levels };
+      return;
+    }
+    case "microphone.test.stop":
+      if (microphoneTest?.id === id) endMicrophoneTest();
+      return;
     case "capture.start":
+      endMicrophoneTest();
       setTimeout(() => {
         const startMs = config.startMs ?? 30;
         emit({ type: "capture.started", id, startMs });
@@ -111,7 +137,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 4 });
+const ready = () => emit({ type: "ready", version: config.version ?? 5 });
 
 if (config.control) {
   const path = config.control;

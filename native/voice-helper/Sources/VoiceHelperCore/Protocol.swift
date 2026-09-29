@@ -41,6 +41,8 @@ public enum HelperCommand: Equatable, Sendable {
     case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?)
     case captureStop(id: String)
     case captureCancel(id: String)
+    case microphoneTestStart(id: String, microphone: Microphone?)
+    case microphoneTestStop(id: String)
     case insert(id: String, text: String)
     case permissionsCheck
     case permissionsRequest(kind: PermissionKind)
@@ -58,6 +60,10 @@ public enum HelperEvent: Equatable, Sendable {
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
     case captureCancelled(id: String)
+    case microphoneTestStarted(id: String)
+    case microphoneTestLevel(id: String, level: Double)
+    case microphoneTestEnded(id: String)
+    case microphoneTestFailed(id: String, message: String)
     case transcript(id: String, text: String, audioMs: Double, asrMs: Double)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
@@ -92,6 +98,10 @@ extension HelperCommand: Decodable {
                                  microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
+        case "microphone.test.start":
+            self = .microphoneTestStart(id: try c.decode(String.self, forKey: .id),
+                                        microphone: try c.decode(Microphone?.self, forKey: .microphone))
+        case "microphone.test.stop": self = .microphoneTestStop(id: try c.decode(String.self, forKey: .id))
         case "insert":
             self = .insert(id: try c.decode(String.self, forKey: .id), text: try c.decode(String.self, forKey: .text))
         case "permissions.check": self = .permissionsCheck
@@ -164,6 +174,20 @@ extension HelperEvent: Encodable {
         case .captureCancelled(let id):
             try c.encode("capture.cancelled", forKey: .type)
             try c.encode(id, forKey: .id)
+        case .microphoneTestStarted(let id):
+            try c.encode("microphone.test.started", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case .microphoneTestLevel(let id, let level):
+            try c.encode("microphone.test.level", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(finite(level), forKey: .level)
+        case .microphoneTestEnded(let id):
+            try c.encode("microphone.test.ended", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case .microphoneTestFailed(let id, let message):
+            try c.encode("microphone.test.failed", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(message, forKey: .message)
         case .transcript(let id, let text, let audioMs, let asrMs):
             try c.encode("transcript", forKey: .type)
             try c.encode(id, forKey: .id)

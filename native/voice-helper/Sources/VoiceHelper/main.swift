@@ -60,6 +60,10 @@ final class Helper {
             capture.stop(id: id)
         case .captureCancel(let id):
             capture.cancel(id: id)
+        case .microphoneTestStart(let id, let microphone):
+            capture.startTest(id: id, microphone: microphone)
+        case .microphoneTestStop(let id):
+            capture.stopTest(id: id)
         case .insert(let id, let text):
             insertion.insert(id: id, text: text, target: capture.lastTarget)
         case .permissionsCheck:
@@ -99,7 +103,7 @@ guard let modelsDir = modelsDirArgument() else {
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 4))
+output.emit(.ready(version: 5))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)

@@ -91,6 +91,31 @@ struct MicrophoneHardwareTests {
         #expect(!engine.isRunning)
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["VOICE_MICROPHONE_CAPTURE_SMOKE"] == "1"))
+    @MainActor func startingARunningSourceHandsAudioToTheNewSinkWithoutRestarting() async throws {
+        try #require(AVCaptureDevice.authorizationStatus(for: .audio) == .authorized)
+        let device = try defaultMicrophone()
+        let engine = AVAudioEngine()
+        let source = try MicSource(device: device, preference: device.microphone, engine: engine) { _ in }
+        defer { source.dispose() }
+        let firstAudio = XCTestExpectation(description: "the test sink hears audio")
+        firstAudio.assertForOverFulfill = false
+        let handedOver = OSAllocatedUnfairLock(initialState: false)
+        let lateChunks = OSAllocatedUnfairLock(initialState: 0)
+        try source.start { _ in
+            if handedOver.withLock({ $0 }) { lateChunks.withLock { $0 += 1 } }
+            firstAudio.fulfill()
+        }
+        #expect(await XCTWaiter.fulfillment(of: [firstAudio], timeout: 3) == .completed)
+        let secondAudio = XCTestExpectation(description: "the dictation sink hears audio")
+        secondAudio.assertForOverFulfill = false
+        handedOver.withLock { $0 = true }
+        try source.start { _ in secondAudio.fulfill() }
+        #expect(engine.isRunning)
+        #expect(await XCTWaiter.fulfillment(of: [secondAudio], timeout: 1) == .completed)
+        #expect(lateChunks.withLock { $0 } <= 1)
+    }
+
     private func defaultMicrophone() throws -> AudioInputDevices.Device {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal,
