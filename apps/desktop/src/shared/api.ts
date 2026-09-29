@@ -54,7 +54,9 @@ export type MicrophoneCatalog =
 export type MicrophoneTest =
   | { kind: "off" }
   | { kind: "starting" }
-  | { kind: "listening" }
+  // The helper restarts a test when its device changes. Each restart is a new episode, so the
+  // renderer can reset what it heard.
+  | { kind: "listening"; episode: number }
   | { kind: "failed"; message: string };
 
 export type Settings = {

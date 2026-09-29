@@ -347,6 +347,7 @@ async function main() {
     hub.on("blur", syncPermissionPolling);
     hub.on("closed", syncPermissionPolling);
     hub.on("hide", microphoneTest.stop);
+    hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
     loadPage(hub, "hub");
   }

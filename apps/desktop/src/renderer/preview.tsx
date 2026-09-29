@@ -213,7 +213,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       set({ ...snapshot, microphoneTest: { kind: "starting" } });
       setTimeout(() => {
         if (snapshot.microphoneTest.kind === "starting")
-          set({ ...snapshot, microphoneTest: { kind: "listening" } });
+          set({ ...snapshot, microphoneTest: { kind: "listening", episode: 1 } });
       }, 300);
     },
     stopMicrophoneTest: async () => {

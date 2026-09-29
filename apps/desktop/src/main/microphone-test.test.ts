@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import { START_TIMEOUT_MS } from "./dictation.ts";
 import { MICROPHONE_TEST_MAX_MS, createMicrophoneTest } from "./microphone-test.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
@@ -64,7 +65,7 @@ describe("microphone test", () => {
     h.test.onHelperEvent({ type: "microphone.test.level", id: h.id(), level: 0.4 });
     expect(h.state()).toEqual({ kind: "starting" });
     h.test.onHelperEvent({ type: "microphone.test.started", id: h.id() });
-    expect(h.state()).toEqual({ kind: "listening" });
+    expect(h.state()).toEqual({ kind: "listening", episode: 1 });
   });
 
   test("forwards levels for the current test only", () => {
@@ -110,7 +111,7 @@ describe("microphone test", () => {
     h.test.onHelperEvent({ type: "microphone.test.started", id: h.id() });
     h.test.onHelperEvent({ type: "microphone.test.ended", id: first });
     h.test.onHelperEvent({ type: "microphone.test.failed", id: first, message: "old" });
-    expect(h.state()).toEqual({ kind: "listening" });
+    expect(h.state()).toEqual({ kind: "listening", episode: 1 });
   });
 
   test("the cap stops a forgotten test and tells the helper", () => {
@@ -119,10 +120,61 @@ describe("microphone test", () => {
     const id = h.id();
     h.test.onHelperEvent({ type: "microphone.test.started", id });
     vi.advanceTimersByTime(MICROPHONE_TEST_MAX_MS - 1);
-    expect(h.state()).toEqual({ kind: "listening" });
+    expect(h.state()).toEqual({ kind: "listening", episode: 1 });
     vi.advanceTimersByTime(1);
     expect(h.commands.at(-1)).toEqual({ type: "microphone.test.stop", id });
     expect(h.state()).toEqual({ kind: "off" });
+  });
+
+  test("a start the helper never answers fails at the start deadline and tells the helper", () => {
+    const h = harness();
+    h.test.start();
+    const id = h.id();
+    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    expect(h.state()).toEqual({ kind: "starting" });
+    vi.advanceTimersByTime(1);
+    expect(h.commands.at(-1)).toEqual({ type: "microphone.test.stop", id });
+    expect(h.state()).toEqual({
+      kind: "failed",
+      message: "Voice could not start the microphone. Test again.",
+    });
+  });
+
+  test("a started test outlives the start deadline and stops at the cap", () => {
+    const h = harness();
+    h.test.start();
+    const id = h.id();
+    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    h.test.onHelperEvent({ type: "microphone.test.started", id });
+    vi.advanceTimersByTime(MICROPHONE_TEST_MAX_MS - 1);
+    expect(h.state()).toEqual({ kind: "listening", episode: 1 });
+    vi.advanceTimersByTime(1);
+    expect(h.commands.at(-1)).toEqual({ type: "microphone.test.stop", id });
+    expect(h.state()).toEqual({ kind: "off" });
+  });
+
+  test("a restarted test keeps its cap", () => {
+    const h = harness();
+    h.test.start();
+    const id = h.id();
+    h.test.onHelperEvent({ type: "microphone.test.started", id });
+    vi.advanceTimersByTime(MICROPHONE_TEST_MAX_MS / 2);
+    h.test.onHelperEvent({ type: "microphone.test.started", id });
+    vi.advanceTimersByTime(MICROPHONE_TEST_MAX_MS / 2);
+    expect(h.commands.at(-1)).toEqual({ type: "microphone.test.stop", id });
+    expect(h.state()).toEqual({ kind: "off" });
+  });
+
+  test("each started for the current test is a new listening episode", () => {
+    const h = harness();
+    h.test.start();
+    const id = h.id();
+    h.test.onHelperEvent({ type: "microphone.test.started", id });
+    expect(h.state()).toEqual({ kind: "listening", episode: 1 });
+    h.test.onHelperEvent({ type: "microphone.test.started", id });
+    expect(h.state()).toEqual({ kind: "listening", episode: 2 });
+    h.test.onHelperEvent({ type: "microphone.test.started", id: "stale" });
+    expect(h.state()).toEqual({ kind: "listening", episode: 2 });
   });
 
   test("a test that ended on its own does not fire the cap later", () => {
