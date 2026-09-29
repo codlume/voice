@@ -12,12 +12,17 @@ export const RESTART_MIN_MS = 250;
 const RESTART_MAX_MS = 5000;
 const HEALTHY_RUN_MS = 10_000;
 
+// Only codes, never error messages or stderr: this can leave the machine as a diagnostic.
+export type HelperExit =
+  | { code: number | null; signal: NodeJS.Signals | null }
+  | { spawnError: string };
+
 export type HelperOptions = {
   binary: string;
   modelsDir: string;
   env: NodeJS.ProcessEnv;
   onEvent: (event: HelperEvent) => void;
-  onExit: () => void;
+  onExit: (exit: HelperExit) => void;
   configure: () => HelperCommand[];
   log: (message: string) => void;
 };
@@ -65,19 +70,21 @@ export function startHelper(options: HelperOptions): Helper {
     // out of the event loop and take main down with it. The close handler does the recovery.
     proc.stdin.on("error", (error) => options.log(`helper: stdin ${error.message}`));
 
-    const onEnd = (reason: string) => {
+    const onEnd = (reason: string, exit: HelperExit) => {
       if (ended) return;
       ended = true;
       if (child === proc) child = null;
       if (stopping) return;
       options.log(`helper: ${reason}`);
-      options.onExit();
+      options.onExit(exit);
       if (Date.now() - startedAt > HEALTHY_RUN_MS) restartDelay = RESTART_MIN_MS;
       restartTimer = setTimeout(launch, restartDelay);
       restartDelay = Math.min(restartDelay * 2, RESTART_MAX_MS);
     };
-    proc.on("error", (error) => onEnd(`failed to start (${error.message})`));
-    proc.on("close", (code, signal) => onEnd(`exited (${signal ?? code})`));
+    proc.on("error", (error: NodeJS.ErrnoException) =>
+      onEnd(`failed to start (${error.message})`, { spawnError: error.code ?? "unknown" }),
+    );
+    proc.on("close", (code, signal) => onEnd(`exited (${signal ?? code})`, { code, signal }));
   }
 
   function send(command: HelperCommand) {
