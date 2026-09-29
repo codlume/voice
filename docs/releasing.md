@@ -67,6 +67,27 @@ serves a newer version, or the same version with verified artifacts. Missing
 or corrupt published artifacts stop the run; restore the exact original
 files from the retained workflow artifact or publish a new version.
 
+## Configure Sentry
+
+Crash reports are opt-in. An app sends nothing unless it was built with a
+DSN and its user chose to share.
+
+1. Create a Sentry project for Electron. Add its DSN as the `SENTRY_DSN`
+   repository variable. The build bakes it into the app as
+   `VOICE_SENTRY_DSN`. Without it, the app cannot send diagnostics at all.
+2. Add an organization auth token as the `SENTRY_AUTH_TOKEN` secret, and
+   the organization and project slugs as the `SENTRY_ORG` and
+   `SENTRY_PROJECT` repository variables. Before packaging, the build
+   injects debug IDs into the bundles and uploads their source maps for
+   release `voice@<version>`. Without the token, the build skips the upload
+   and says so. With the token, a missing slug stops the build.
+3. In the project's Debug Files settings, keep the built-in Electron symbol
+   source enabled. Native Electron crashes resolve through it. Voice uploads
+   no native symbols: the Swift helper is a separate process without a crash
+   reporter.
+4. In the project's Security & Privacy settings, turn on Prevent Storing of
+   IP Addresses. The app already asks Sentry not to infer one.
+
 ## Publish and recover
 
 Merge to `main`, then wait for the next scheduled run or run the workflow
