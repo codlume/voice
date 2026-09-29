@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import * as Effect from "effect/Effect";
 
+import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -14,6 +15,7 @@ export type DictationOptions = {
   cleanup: Pick<Cleanup, "clean" | "loaded">;
   onLevel: (level: number) => void;
   log: (message: string) => void;
+  onSessionDone?: (report: SessionReport) => void;
   now?: () => number;
 };
 
@@ -50,6 +52,40 @@ type Timing = {
   insertMs?: number;
 };
 
+export type SessionTimings = {
+  startMs?: number | undefined;
+  audioMs?: number | undefined;
+  asrMs?: number | undefined;
+  cleanupMs?: number | undefined;
+  insertMs?: number | undefined;
+  releaseToInsertMs?: number | undefined;
+};
+
+// Carries no text, session id, or target: this is what diagnostics may see of a session.
+export type SessionReport = {
+  outcome: Outcome;
+  language: DictationLanguage | null;
+  pressedAt: number | null;
+  finishedAt: number;
+  timings: SessionTimings;
+};
+
+function sessionTimings(
+  t: Timing | null,
+  outcome: Outcome["kind"],
+  finishedAt: number,
+): SessionTimings {
+  return {
+    startMs: t?.startMs,
+    audioMs: t?.audioMs,
+    asrMs: t?.asrMs,
+    cleanupMs: t?.cleanupMs,
+    insertMs: t?.insertStartedAt === undefined ? undefined : finishedAt - t.insertStartedAt,
+    releaseToInsertMs:
+      t?.releasedAt === undefined || outcome !== "inserted" ? undefined : finishedAt - t.releasedAt,
+  };
+}
+
 export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;
@@ -66,7 +102,7 @@ export function createDictation(options: DictationOptions): Dictation {
       store.update((s) => ({ ...s, session: state }));
       armWatchdog(state);
     }
-    if (state.phase === "done" && before.phase !== "done") logTiming(state.id, state.outcome.kind);
+    if (state.phase === "done" && before.phase !== "done") finish(state.id, state.outcome);
     if (state.phase === "done" || state.phase === "idle") sessionLanguage = null;
   }
 
@@ -150,24 +186,21 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function logTiming(id: string, outcome: string) {
+  function finish(id: string, outcome: Outcome) {
     const t = timing?.id === id ? timing : null;
     const finishedAt = now();
-    const fields = {
-      startMs: t?.startMs,
-      audioMs: t?.audioMs,
-      asrMs: t?.asrMs,
-      cleanupMs: t?.cleanupMs,
-      insertMs: t?.insertStartedAt === undefined ? undefined : finishedAt - t.insertStartedAt,
-      releaseToInsertMs:
-        t?.releasedAt === undefined || outcome !== "inserted"
-          ? undefined
-          : finishedAt - t.releasedAt,
-    };
-    const parts = Object.entries(fields).flatMap(([key, value]) =>
+    const timings = sessionTimings(t, outcome.kind, finishedAt);
+    const parts = Object.entries(timings).flatMap(([key, value]) =>
       value === undefined ? [] : [`${key}=${Math.round(value)}`],
     );
-    log(`session ${id.slice(0, 8)} outcome=${outcome} ${parts.join(" ")}`);
+    log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
+    options.onSessionDone?.({
+      outcome,
+      language: sessionLanguage?.id === id ? sessionLanguage.language : null,
+      pressedAt: t?.pressedAt ?? null,
+      finishedAt,
+      timings,
+    });
   }
 
   function onHelperEvent(event: HelperEvent) {
