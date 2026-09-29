@@ -7,12 +7,16 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 4 },
+      { type: "ready", version: 5 },
       { type: "hotkey", action: "down" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },
       { type: "capture.cancelled", id: "a" },
+      { type: "microphone.test.started", id: "t" },
+      { type: "microphone.test.level", id: "t", level: 0.3 },
+      { type: "microphone.test.ended", id: "t" },
+      { type: "microphone.test.failed", id: "t", message: "Finish dictating, then test again." },
       { type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300 },
       { type: "transcript.failed", id: "a", message: "no model" },
       { type: "insert.result", id: "a", method: "accessibility", reason: null },
@@ -73,6 +77,11 @@ describe("parseHelperEvent", () => {
       id: "a",
       level: 0,
     });
+    expect(parseHelperEvent(line({ type: "microphone.test.level", id: "t", level: 2 }))).toEqual({
+      type: "microphone.test.level",
+      id: "t",
+      level: 1,
+    });
   });
 
   test.each([undefined, null, 42, {}, [], "unknown"])(
@@ -110,6 +119,7 @@ describe("parseHelperEvent", () => {
     ["an array", "[1]"],
     ["an unknown type", line({ type: "capture.exploded", id: "a" })],
     ["a missing id", line({ type: "capture.started", startMs: 1 })],
+    ["a test failure without a message", line({ type: "microphone.test.failed", id: "t" })],
     ["a wrong field type", line({ type: "transcript", id: "a", text: 5, audioMs: 1, asrMs: 1 })],
     ["an unknown enum value", line({ type: "hotkey", action: "sideways" })],
     ["a NaN number", '{"type":"capture.level","id":"a","level":NaN}'],

@@ -18,6 +18,17 @@ type Config = {
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
+// Set from capture.start until the session's last event, so a test is refused for the same
+// window as the real helper's starting/recording/transcribing states.
+let dictating = false;
+let microphoneTest: { id: string; levels: NodeJS.Timeout } | null = null;
+
+function endMicrophoneTest() {
+  if (!microphoneTest) return;
+  clearInterval(microphoneTest.levels);
+  emit({ type: "microphone.test.ended", id: microphoneTest.id });
+  microphoneTest = null;
+}
 
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -63,7 +74,26 @@ function handle(command: Record<string, unknown>) {
     case "asr.prepare":
       emit({ type: "asr.status", state: config.asr ?? "ready" });
       return;
+    case "microphone.test.start": {
+      if (dictating) {
+        emit({ type: "microphone.test.failed", id, message: "Finish dictating, then test again." });
+        return;
+      }
+      endMicrophoneTest();
+      emit({ type: "microphone.test.started", id });
+      const levels = setInterval(
+        () => emit({ type: "microphone.test.level", id, level: Math.random() }),
+        33,
+      );
+      microphoneTest = { id, levels };
+      return;
+    }
+    case "microphone.test.stop":
+      if (microphoneTest?.id === id) endMicrophoneTest();
+      return;
     case "capture.start":
+      dictating = true;
+      endMicrophoneTest();
       setTimeout(() => {
         const startMs = config.startMs ?? 30;
         emit({ type: "capture.started", id, startMs });
@@ -78,22 +108,22 @@ function handle(command: Record<string, unknown>) {
       stopLevels();
       const audioMs = recording ? Date.now() - recording.since : 0;
       recording = null;
-      setTimeout(
-        () =>
-          emit({
-            type: "transcript",
-            id,
-            text: config.transcript ?? "hello world",
-            audioMs,
-            asrMs: 40,
-          }),
-        40,
-      );
+      setTimeout(() => {
+        dictating = false;
+        emit({
+          type: "transcript",
+          id,
+          text: config.transcript ?? "hello world",
+          audioMs,
+          asrMs: 40,
+        });
+      }, 40);
       return;
     }
     case "capture.cancel":
       stopLevels();
       recording = null;
+      dictating = false;
       emit({ type: "capture.cancelled", id });
       return;
     case "insert":
@@ -111,7 +141,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 4 });
+const ready = () => emit({ type: "ready", version: config.version ?? 5 });
 
 if (config.control) {
   const path = config.control;

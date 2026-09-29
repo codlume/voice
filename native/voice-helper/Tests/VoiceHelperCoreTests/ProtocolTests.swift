@@ -13,6 +13,10 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","muteWhileDictating":false}"#, .captureStart(id: "s1", language: .en, muteWhileDictating: false, microphone: nil)),
         (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
+        (#"{"type":"microphone.test.start","id":"t1","microphone":null}"#, .microphoneTestStart(id: "t1", microphone: nil)),
+        (#"{"type":"microphone.test.start","id":"t1","microphone":{"uid":"usb","name":"USB"}}"#,
+         .microphoneTestStart(id: "t1", microphone: Microphone(uid: "usb", name: "USB"))),
+        (#"{"type":"microphone.test.stop","id":"t1"}"#, .microphoneTestStop(id: "t1")),
         (#"{"type":"insert","id":"s1","text":"hi there"}"#, .insert(id: "s1", text: "hi there")),
         (#"{"type":"permissions.check"}"#, .permissionsCheck),
         (#"{"type":"permissions.request","kind":"accessibility"}"#, .permissionsRequest(kind: .accessibility)),
@@ -50,7 +54,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 4), ["type": "ready", "version": 4]),
+        (.ready(version: 5), ["type": "ready", "version": 5]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -59,6 +63,12 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.captureFailed(id: "s2", reason: .busy, message: "busy"),
          ["type": "capture.failed", "id": "s2", "reason": "busy", "message": "busy"]),
         (.captureCancelled(id: "s"), ["type": "capture.cancelled", "id": "s"]),
+        (.microphoneTestStarted(id: "t"), ["type": "microphone.test.started", "id": "t"]),
+        (.microphoneTestLevel(id: "t", level: 0.25), ["type": "microphone.test.level", "id": "t", "level": 0.25]),
+        (.microphoneTestLevel(id: "t", level: .nan), ["type": "microphone.test.level", "id": "t", "level": 0]),
+        (.microphoneTestEnded(id: "t"), ["type": "microphone.test.ended", "id": "t"]),
+        (.microphoneTestFailed(id: "t", message: "Finish dictating, then test again."),
+         ["type": "microphone.test.failed", "id": "t", "message": "Finish dictating, then test again."]),
         (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80),
          ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
@@ -138,6 +148,9 @@ func captureStartPreservesEveryLanguage(language: DictationLanguage) {
         #"{"type":"microphone.configure","microphone":"usb"}"#,
         #"{"type":"microphone.configure","microphone":{"uid":"","name":"USB"}}"#,
         #"{"type":"microphone.configure","microphone":{"uid":"usb"}}"#,
+        #"{"type":"microphone.test.start","id":"t"}"#,
+        #"{"type":"microphone.test.start","microphone":null}"#,
+        #"{"type":"microphone.test.stop"}"#,
     ] {
         guard case .failure = HelperCommand.decode(line: line) else {
             Issue.record("accepted an invalid microphone command: \(line)")

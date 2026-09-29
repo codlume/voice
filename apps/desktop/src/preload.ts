@@ -16,6 +16,8 @@ const voice: VoiceApi = {
   onLevel: (listener) => subscribe<number>(Channel.level, listener),
   updateSettings: (patch) => ipcRenderer.invoke(Channel.updateSettings, patch),
   requestPermission: (kind) => ipcRenderer.invoke(Channel.requestPermission, kind),
+  startMicrophoneTest: () => ipcRenderer.invoke(Channel.startMicrophoneTest),
+  stopMicrophoneTest: () => ipcRenderer.invoke(Channel.stopMicrophoneTest),
   setupModels: () => ipcRenderer.invoke(Channel.setupModels),
   copyLast: (which) => ipcRenderer.invoke(Channel.copyLast, which),
 };

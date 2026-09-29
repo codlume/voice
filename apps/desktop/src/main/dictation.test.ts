@@ -52,6 +52,7 @@ function harness(opts: Options = {}) {
       },
     },
     microphones: { kind: "loading" },
+    microphoneTest: { kind: "off" },
     last: null,
   });
   const commands: HelperCommand[] = [];

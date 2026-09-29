@@ -69,7 +69,7 @@ export class Helper {
       } catch {
         throw new Error(`helper wrote a non-JSON line: ${line}`);
       }
-      if (event.type !== "capture.level") console.error(`<< ${line}`);
+      if (!event.type.endsWith(".level")) console.error(`<< ${line}`);
       this.events.push(event);
       for (const waiter of this.#waiters.splice(0)) waiter();
     });
@@ -122,7 +122,7 @@ export async function withHelper(options, body) {
   const helper = new Helper(options);
   try {
     const ready = await helper.waitForType("ready");
-    assert(ready.version === 4, `ready.version is ${ready.version}`);
+    assert(ready.version === 5, `ready.version is ${ready.version}`);
     return await body(helper);
   } finally {
     await helper.close();

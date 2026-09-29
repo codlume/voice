@@ -28,6 +28,8 @@ enum CaptureState {
     case starting(CaptureSession)
     case recording(Recording)
     case transcribing(Recording)
+    /// `started` flips on the first chunk, so a test never reports audio that has not flowed.
+    case testing(id: String, started: Bool)
 }
 
 struct CaptureError: Error {
@@ -53,7 +55,7 @@ final class Capture {
             let active: Bool
             switch state {
             case .starting, .recording: active = true
-            case .idle, .transcribing: active = false
+            case .idle, .transcribing, .testing: active = false
             }
             activeFlag.withLock { $0 = active }
         }
@@ -74,6 +76,14 @@ final class Capture {
     var isActive: Bool { activeFlag.withLock { $0 } }
 
     func start(id: String, language: DictationLanguage, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
+        // Dictation preempts a test. The mic keeps running so dictation gets audio without an
+        // engine restart.
+        if case .testing(let testId, _) = state {
+            file?.stop()
+            file = nil
+            state = .idle
+            output.emit(.microphoneTestEnded(id: testId))
+        }
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
@@ -173,17 +183,44 @@ final class Capture {
             recording.transcription?.cancel()
         case .starting(let session):
             _ = session.input.drain(closing: true)
-        case .idle:
+        case .idle, .testing:
             break
         }
         state = .idle
     }
 
+    func startTest(id: String, microphone: Microphone?) {
+        if case .testing(let current, _) = state { stopTest(id: current) }
+        guard case .idle = state else {
+            output.emit(.microphoneTestFailed(id: id, message: "Finish dictating, then test again."))
+            return
+        }
+        configure(microphone: microphone)
+        beginTest(id: id)
+    }
+
+    func stopTest(id: String) {
+        guard case .testing(let current, _) = state, current == id else {
+            output.log(.info, "microphone.test.stop \(id) ignored: no such test")
+            return
+        }
+        stopSource()
+        state = .idle
+        output.emit(.microphoneTestEnded(id: id))
+        prepareIdleMic()
+    }
+
     func configure(microphone: Microphone?) {
         self.microphone = microphone
-        guard case .idle = state else { return }
-        if mic?.preference?.uid != microphone?.uid { disposeMic() }
-        prepareIdleMic()
+        switch state {
+        case .idle:
+            if mic?.preference?.uid != microphone?.uid { disposeMic() }
+            prepareIdleMic()
+        case .testing(let id, _):
+            if let mic, mic.preference?.uid != microphone?.uid { restartTest(id: id) }
+        case .starting, .recording, .transcribing:
+            break
+        }
     }
 
     func devicesChanged() {
@@ -208,6 +245,59 @@ final class Capture {
                 output.log(.error, "microphone warmup failed: \(error.message)")
             }
         }
+    }
+
+    private func beginTest(id: String) {
+        // Chunks hop to main so one that was already in flight at a stop is dropped rather than
+        // reported after `ended`.
+        let sink: ([Float]) -> Void = { [weak self] chunk in
+            let level = perceptualLevel(rms: rms(chunk))
+            DispatchQueue.main.async { self?.meter(level, for: id) }
+        }
+        do {
+            if let testAudioPath {
+                let file = try FileSource(path: testAudioPath, sink: sink) { [weak self] in self?.stopTest(id: id) }
+                state = .testing(id: id, started: false)
+                self.file = file
+                file.start()
+                return
+            }
+            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+                throw CaptureError(reason: .permission, message: "Allow microphone access for Voice, then test again.")
+            }
+            let mic = try self.mic ?? makeMic()
+            self.mic = mic
+            state = .testing(id: id, started: false)
+            try mic.start(sink: sink)
+        } catch let error as CaptureError {
+            failTest(id: id, message: error.message)
+        } catch {
+            failTest(id: id, message: "\(error)")
+        }
+    }
+
+    private func restartTest(id: String) {
+        stopSource()
+        disposeMic()
+        state = .idle
+        beginTest(id: id)
+    }
+
+    private func meter(_ level: Double, for id: String) {
+        guard case .testing(let current, let started) = state, current == id else { return }
+        if !started {
+            state = .testing(id: id, started: true)
+            output.emit(.microphoneTestStarted(id: id))
+        }
+        output.emit(.microphoneTestLevel(id: id, level: level))
+    }
+
+    private func failTest(id: String, message: String) {
+        disposeMic()
+        stopSource()
+        state = .idle
+        output.emit(.microphoneTestFailed(id: id, message: message))
+        prepareIdleMic()
     }
 
     private func ingest(_ chunk: [Float], for session: CaptureSession) {
@@ -268,6 +358,8 @@ final class Capture {
             fail(session, reason: .device, message: "audio device configuration changed")
         case .recording(let recording):
             stop(id: recording.session.id)
+        case .testing(let id, _):
+            restartTest(id: id)
         case .idle, .transcribing:
             prepareIdleMic()
         }
@@ -379,6 +471,12 @@ final class MicSource {
             throw CaptureError(reason: .device, message: "The selected microphone is unavailable. Choose another in Settings.")
         }
         try Self.checkRoute(audioUnit, expected: device.id)
+        // A running engine is a microphone test handing over to dictation. Resetting the converter
+        // would race the tap on the audio thread, and the stream is continuous anyway.
+        if engine.isRunning {
+            sink.withLockUnchecked { $0 = deliver }
+            return
+        }
         converter.reset()
         sink.withLockUnchecked { $0 = deliver }
         do {

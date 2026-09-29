@@ -8,7 +8,7 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 4;
+export const HELPER_PROTOCOL_VERSION = 5;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
@@ -22,6 +22,8 @@ export type HelperCommand =
     }
   | { type: "capture.stop"; id: string }
   | { type: "capture.cancel"; id: string }
+  | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
+  | { type: "microphone.test.stop"; id: string }
   | { type: "insert"; id: string; text: string }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
@@ -63,6 +65,18 @@ const HelperEventSchema = Schema.Union(
     message: Schema.String,
   }),
   Schema.Struct({ type: Schema.Literal("capture.cancelled"), id: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("microphone.test.started"), id: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("microphone.test.level"),
+    id: Schema.String,
+    level: Schema.Finite.pipe(Schema.clamp(0, 1)),
+  }),
+  Schema.Struct({ type: Schema.Literal("microphone.test.ended"), id: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("microphone.test.failed"),
+    id: Schema.String,
+    message: Schema.String,
+  }),
   Schema.Struct({
     type: Schema.Literal("transcript"),
     id: Schema.String,
