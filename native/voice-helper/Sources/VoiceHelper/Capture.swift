@@ -190,6 +190,7 @@ final class Capture {
     }
 
     func startTest(id: String, microphone: Microphone?) {
+        if case .testing(let current, _) = state { stopTest(id: current) }
         guard case .idle = state else {
             output.emit(.microphoneTestFailed(id: id, message: "Finish dictating, then test again."))
             return

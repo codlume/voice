@@ -22,26 +22,42 @@ await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: short } }, async (helper) => 
     "a test emits no capture events",
   );
 
-  helper.send({ type: "microphone.test.stop", id: "t1" });
-  await helper.waitFor(forId("microphone.test.ended", "t1"), { label: "t1 ended" });
-  const ended = indexOf(helper, "microphone.test.ended", "t1");
-  helper.send({ type: "microphone.test.stop", id: "t1" });
+  helper.send({ type: "microphone.test.start", id: "t2", microphone: null });
+  await helper.waitFor(forId("microphone.test.started", "t2"), { label: "t2 started" });
+  await helper.waitFor(forId("microphone.test.level", "t2"), { label: "t2 level" });
+  const t1Ended = indexOf(helper, "microphone.test.ended", "t1");
+  const t2Started = indexOf(helper, "microphone.test.started", "t2");
+  assert(t1Ended !== -1 && t1Ended < t2Started, "a new start ends the running test first");
+  assert(
+    !helper.eventsSince(t1Ended + 1).some(forId("microphone.test.level", "t1")),
+    "no t1 level after t1 ended",
+  );
+  assert(
+    !helper.events.some(forId("microphone.test.failed", "t2")),
+    "a start during a test is not refused",
+  );
+  results.restart = { endedAt: t1Ended, startedAt: t2Started };
+
+  helper.send({ type: "microphone.test.stop", id: "t2" });
+  await helper.waitFor(forId("microphone.test.ended", "t2"), { label: "t2 ended" });
+  const ended = indexOf(helper, "microphone.test.ended", "t2");
+  helper.send({ type: "microphone.test.stop", id: "t2" });
   await helper.waitFor(
-    (event) => event.type === "log" && event.message.includes("microphone.test.stop t1 ignored"),
+    (event) => event.type === "log" && event.message.includes("microphone.test.stop t2 ignored"),
     { label: "repeated stop is ignored" },
   );
   assert(
-    !helper.eventsSince(ended + 1).some(forId("microphone.test.level", "t1")),
+    !helper.eventsSince(ended + 1).some(forId("microphone.test.level", "t2")),
     "no level after ended",
   );
   assert(
-    !helper.eventsSince(ended + 1).some(forId("microphone.test.ended", "t1")),
+    !helper.eventsSince(ended + 1).some(forId("microphone.test.ended", "t2")),
     "a repeated stop does not end twice",
   );
   results.stop = { nonzeroLevel: loud.level };
 
-  helper.send({ type: "microphone.test.start", id: "t2", microphone: null });
-  await helper.waitFor(forId("microphone.test.started", "t2"), { label: "t2 started" });
+  helper.send({ type: "microphone.test.start", id: "t3", microphone: null });
+  await helper.waitFor(forId("microphone.test.started", "t3"), { label: "t3 started" });
   helper.send({
     type: "capture.start",
     id: "s1",
@@ -50,12 +66,12 @@ await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: short } }, async (helper) => 
     muteWhileDictating: false,
   });
   await helper.waitFor(forId("capture.started", "s1"), { label: "s1 capture.started" });
-  const preempted = indexOf(helper, "microphone.test.ended", "t2");
+  const preempted = indexOf(helper, "microphone.test.ended", "t3");
   const captured = indexOf(helper, "capture.started", "s1");
   assert(preempted !== -1 && preempted < captured, "dictation ends the test before it starts");
 
-  helper.send({ type: "microphone.test.start", id: "t3", microphone: null });
-  const busy = await helper.waitFor(forId("microphone.test.failed", "t3"), { label: "t3 failed" });
+  helper.send({ type: "microphone.test.start", id: "t4", microphone: null });
+  const busy = await helper.waitFor(forId("microphone.test.failed", "t4"), { label: "t4 failed" });
   assert(busy.message === "Finish dictating, then test again.", `busy message: ${busy.message}`);
   helper.send({ type: "capture.cancel", id: "s1" });
   await helper.waitFor(forId("capture.cancelled", "s1"), { label: "s1 cancelled" });
@@ -63,10 +79,10 @@ await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: short } }, async (helper) => 
 });
 
 await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: silence } }, async (helper) => {
-  helper.send({ type: "microphone.test.start", id: "t4", microphone: null });
-  await helper.waitFor(forId("microphone.test.started", "t4"), { label: "t4 started" });
-  await helper.waitFor(forId("microphone.test.ended", "t4"), { label: "t4 ended by file end" });
-  const levels = helper.events.filter(forId("microphone.test.level", "t4"));
+  helper.send({ type: "microphone.test.start", id: "t5", microphone: null });
+  await helper.waitFor(forId("microphone.test.started", "t5"), { label: "t5 started" });
+  await helper.waitFor(forId("microphone.test.ended", "t5"), { label: "t5 ended by file end" });
+  const levels = helper.events.filter(forId("microphone.test.level", "t5"));
   assert(levels.length > 0, "silence still reports levels");
   assert(
     levels.every((event) => event.level === 0),

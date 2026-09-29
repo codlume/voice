@@ -18,6 +18,9 @@ type Config = {
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
+// Set from capture.start until the session's last event, so a test is refused for the same
+// window as the real helper's starting/recording/transcribing states.
+let dictating = false;
 let microphoneTest: { id: string; levels: NodeJS.Timeout } | null = null;
 
 function endMicrophoneTest() {
@@ -72,7 +75,7 @@ function handle(command: Record<string, unknown>) {
       emit({ type: "asr.status", state: config.asr ?? "ready" });
       return;
     case "microphone.test.start": {
-      if (recording) {
+      if (dictating) {
         emit({ type: "microphone.test.failed", id, message: "Finish dictating, then test again." });
         return;
       }
@@ -89,6 +92,7 @@ function handle(command: Record<string, unknown>) {
       if (microphoneTest?.id === id) endMicrophoneTest();
       return;
     case "capture.start":
+      dictating = true;
       endMicrophoneTest();
       setTimeout(() => {
         const startMs = config.startMs ?? 30;
@@ -104,22 +108,22 @@ function handle(command: Record<string, unknown>) {
       stopLevels();
       const audioMs = recording ? Date.now() - recording.since : 0;
       recording = null;
-      setTimeout(
-        () =>
-          emit({
-            type: "transcript",
-            id,
-            text: config.transcript ?? "hello world",
-            audioMs,
-            asrMs: 40,
-          }),
-        40,
-      );
+      setTimeout(() => {
+        dictating = false;
+        emit({
+          type: "transcript",
+          id,
+          text: config.transcript ?? "hello world",
+          audioMs,
+          asrMs: 40,
+        });
+      }, 40);
       return;
     }
     case "capture.cancel":
       stopLevels();
       recording = null;
+      dictating = false;
       emit({ type: "capture.cancelled", id });
       return;
     case "insert":
