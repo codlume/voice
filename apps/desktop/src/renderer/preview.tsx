@@ -33,6 +33,7 @@ const base: Snapshot = {
     ],
     defaultUid: "builtin",
   },
+  microphoneTest: { kind: "off" },
   last: null,
 };
 
@@ -207,6 +208,16 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     },
     requestPermission: async (kind) => {
       set({ ...snapshot, permissions: { ...snapshot.permissions, [kind]: "granted" } });
+    },
+    startMicrophoneTest: async () => {
+      set({ ...snapshot, microphoneTest: { kind: "starting" } });
+      setTimeout(() => {
+        if (snapshot.microphoneTest.kind === "starting")
+          set({ ...snapshot, microphoneTest: { kind: "listening" } });
+      }, 300);
+    },
+    stopMicrophoneTest: async () => {
+      set({ ...snapshot, microphoneTest: { kind: "off" } });
     },
     setupModels: async () => {
       let progress = 0;

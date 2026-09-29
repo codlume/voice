@@ -20,6 +20,7 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
+import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
@@ -173,6 +174,7 @@ async function main() {
             },
     },
     microphones: { kind: "loading" },
+    microphoneTest: { kind: "off" },
     last: null,
   });
 
@@ -187,12 +189,15 @@ async function main() {
   positionPill(pill);
 
   let dictation: Dictation;
+  let microphoneTest: MicrophoneTest;
   const helper: Helper = startHelper({
     binary: helperBinary(),
     modelsDir,
     env: helperEnv(),
     onEvent: (event) => {
-      if (lifecycle === "running") dictation.onHelperEvent(event);
+      if (lifecycle !== "running") return;
+      dictation.onHelperEvent(event);
+      microphoneTest.onHelperEvent(event);
     },
     onExit: () => {
       if (lifecycle === "running") {
@@ -204,6 +209,7 @@ async function main() {
           },
         }));
         dictation.dispatch({ type: "helperExited" });
+        microphoneTest.helperExited();
       }
     },
     configure: () => [
@@ -222,6 +228,14 @@ async function main() {
       if (!pill.isDestroyed()) pill.webContents.send(Channel.level, level);
     },
     log,
+  });
+  // The pill keeps dictation levels; the hub's onLevel carries only test levels.
+  microphoneTest = createMicrophoneTest({
+    store,
+    send: helper.send,
+    onLevel: (level) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.level, level);
+    },
   });
 
   const updates = createUpdates({
@@ -332,6 +346,8 @@ async function main() {
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
     hub.on("closed", syncPermissionPolling);
+    hub.on("hide", microphoneTest.stop);
+    hub.on("closed", microphoneTest.stop);
     loadPage(hub, "hub");
   }
 
@@ -421,6 +437,10 @@ async function main() {
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
   });
+  ipcMain.handle(Channel.startMicrophoneTest, () => {
+    if (lifecycle === "running") microphoneTest.start();
+  });
+  ipcMain.handle(Channel.stopMicrophoneTest, () => microphoneTest.stop());
   ipcMain.handle(Channel.setupModels, () => {
     helper.send({ type: "asr.prepare", download: true });
     if (wantsCleanup(store.state.settings)) void cleanup.downloadAndLoad();

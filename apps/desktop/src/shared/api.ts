@@ -51,6 +51,12 @@ export type MicrophoneCatalog =
   | { kind: "ready"; devices: readonly Microphone[]; defaultUid: string | null }
   | { kind: "unavailable"; message: string };
 
+export type MicrophoneTest =
+  | { kind: "off" }
+  | { kind: "starting" }
+  | { kind: "listening" }
+  | { kind: "failed"; message: string };
+
 export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
@@ -76,6 +82,7 @@ export type SettingsPatch = {
 
 export type Snapshot = {
   microphones: MicrophoneCatalog;
+  microphoneTest: MicrophoneTest;
   updates: UpdatesSnapshot;
   session: PillState;
   permissions: Record<PermissionKind, PermissionState>;
@@ -92,6 +99,8 @@ export type VoiceApi = {
   onLevel(listener: (level: number) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
+  startMicrophoneTest(): Promise<void>;
+  stopMicrophoneTest(): Promise<void>;
   setupModels(): Promise<void>;
   copyLast(which: "text" | "raw"): Promise<void>;
 };
@@ -104,6 +113,8 @@ export const Channel = {
   level: "voice:level",
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
+  startMicrophoneTest: "voice:startMicrophoneTest",
+  stopMicrophoneTest: "voice:stopMicrophoneTest",
   setupModels: "voice:setupModels",
   copyLast: "voice:copyLast",
 } as const;
