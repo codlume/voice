@@ -1,3 +1,5 @@
+// Gives the renderer SDK its IPC channel to main. It stays inert unless main started Sentry.
+import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 import { Channel, type Snapshot, type VoiceApi } from "./shared/api.ts";

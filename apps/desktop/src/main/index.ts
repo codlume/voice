@@ -1,5 +1,6 @@
-import * as NodePath from "node:path";
 import { readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import * as NodePath from "node:path";
 
 import {
   app,
@@ -18,6 +19,8 @@ import { autoUpdater } from "electron-updater";
 import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
+import { startDiagnostics } from "./diagnostics.ts";
+import type * as SentryEntry from "./sentry.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
@@ -129,6 +132,15 @@ function publish(snapshot: Snapshot) {
   }
 }
 
+async function removeCrashDumps() {
+  const dumps = app.getPath("crashDumps");
+  await Promise.allSettled(
+    ["completed", "pending"].map((dir) =>
+      rm(NodePath.join(dumps, dir), { recursive: true, force: true }),
+    ),
+  );
+}
+
 const allGranted = (state: AppState) =>
   Object.values(state.permissions).every((permission) => permission === "granted");
 
@@ -147,8 +159,6 @@ async function main() {
       : null;
   const installedChannel = release?.channel ?? "stable";
   const settings = loadSettings(settingsFile, installedChannel);
-  await app.whenReady();
-  nativeTheme.themeSource = settings.theme;
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
 
@@ -176,6 +186,25 @@ async function main() {
     last: null,
   });
 
+  // The SDK has to start before ready, so the consent read at launch decides whether it runs.
+  const diagnostics = startDiagnostics({
+    loadSdk: () => {
+      const sentry: typeof SentryEntry = require(NodePath.join(__dirname, "sentry.cjs"));
+      return { ...sentry, makeTransport: sentry.makeElectronTransport };
+    },
+    dsn: process.env.VOICE_SENTRY_DSN ?? "",
+    release: `voice@${app.getVersion()}`,
+    environment: development ? "development" : installedChannel,
+    tracesSampleRate: development ? 1 : 0.2,
+    consent: () => store.state.settings.diagnostics,
+  });
+  // Crash dumps written while sharing was on must not be uploaded after a later opt-out and
+  // opt-in, so any left over are removed whenever the SDK is not running.
+  if (settings.diagnostics !== "on") void removeCrashDumps();
+
+  await app.whenReady();
+  nativeTheme.themeSource = settings.theme;
+
   const cleanup = createCleanup({
     modelsDir,
     enabled: () => wantsCleanup(store.state.settings),
@@ -197,8 +226,9 @@ async function main() {
       dictation.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
     },
-    onExit: () => {
+    onExit: (exit) => {
       if (lifecycle === "running") {
+        diagnostics.helperExited(exit);
         store.update((s) => ({
           ...s,
           microphones: {
@@ -226,6 +256,7 @@ async function main() {
       if (!pill.isDestroyed()) pill.webContents.send(Channel.level, level);
     },
     log,
+    onSessionDone: diagnostics.sessionDone,
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({
