@@ -27,6 +27,8 @@ const styles = stylex.create({
     cursor: "pointer",
     userSelect: "none",
   },
+  // A control group owns the row's width cap; a percentage here would resolve against the group.
+  grouped: { flexShrink: 1, maxWidth: 240 },
   disabled: { cursor: "default" },
   value: {
     flexGrow: 1,
@@ -80,12 +82,14 @@ export function Select<T extends string>({
   value,
   options,
   disabled = false,
+  grouped = false,
   onChange,
 }: {
   id: string;
   value: T;
   options: readonly { value: T; label: string }[];
   disabled?: boolean;
+  grouped?: boolean;
   onChange: (value: T) => void;
 }) {
   return (
@@ -99,7 +103,7 @@ export function Select<T extends string>({
     >
       <SelectPrimitive.Trigger
         id={id}
-        {...stylex.props(styles.trigger, disabled && styles.disabled)}
+        {...stylex.props(styles.trigger, grouped && styles.grouped, disabled && styles.disabled)}
       >
         <SelectPrimitive.Value {...stylex.props(styles.value)} />
         <SelectPrimitive.Icon {...stylex.props(styles.icon)}>

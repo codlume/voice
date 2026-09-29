@@ -76,6 +76,14 @@ const updateScenes: Record<string, UpdateStatus> = {
 };
 
 const hubScenes: Record<string, Snapshot> = {
+  "microphone-test-failed": {
+    ...ready,
+    microphoneTest: {
+      kind: "failed",
+      message: "The microphone test stopped while Voice reconnected. Test again.",
+    },
+  },
+  "microphone-denied": { ...ready, permissions: { ...ready.permissions, microphone: "denied" } },
   "microphone-selected": {
     ...ready,
     settings: { ...ready.settings, microphone: { uid: "usb", name: "USB Microphone" } },
@@ -207,6 +215,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       });
     },
     requestPermission: async (kind) => {
+      // macOS never prompts again once access is denied.
+      if (snapshot.permissions[kind] === "denied") return;
       set({ ...snapshot, permissions: { ...snapshot.permissions, [kind]: "granted" } });
     },
     startMicrophoneTest: async () => {
