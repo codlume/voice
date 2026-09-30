@@ -142,7 +142,6 @@ export function startDiagnostics(options: {
   return {
     active: true,
     sessionDone(report) {
-      if (!on()) return;
       const { measurements, endTime, ...start } = sessionSpan(report);
       const span = sdk.startInactiveSpan({ ...start, forceTransaction: true });
       for (const [name, value] of Object.entries(measurements)) {
@@ -151,7 +150,6 @@ export function startDiagnostics(options: {
       span.end(endTime);
     },
     helperExited(exit) {
-      if (!on()) return;
       const tags = helperTags(exit);
       // A helper that keeps failing restarts every few seconds; one report per kind is enough.
       const key = JSON.stringify(tags);
