@@ -70,7 +70,9 @@ files from the retained workflow artifact or publish a new version.
 ## Configure Sentry
 
 Crash reports are opt-in. An app sends nothing unless it was built with a
-DSN and its user chose to share.
+DSN and its user chose to share. The configured project is `voice` in
+organization `codlume`, and the repository variables and secret below are
+already set.
 
 1. Create a Sentry project for Electron. Add its DSN as the `SENTRY_DSN`
    repository variable. The build bakes it into the app as
@@ -80,13 +82,17 @@ DSN and its user chose to share.
    `SENTRY_PROJECT` repository variables. Before packaging, the build
    injects debug IDs into the bundles and uploads their source maps for
    release `voice@<version>`. Without the token, the build skips the upload
-   and says so. With the token, a missing slug stops the build.
-3. In the project's Debug Files settings, keep the built-in Electron symbol
-   source enabled. Native Electron crashes resolve through it. Voice uploads
-   no native symbols: the Swift helper is a separate process without a crash
-   reporter.
-4. In the project's Security & Privacy settings, turn on Prevent Storing of
-   IP Addresses. The app already asks Sentry not to infer one.
+   and says so. With the token, a missing slug stops the build. Renaming
+   the project changes its slug, so update `SENTRY_PROJECT` with it.
+3. In the project's Security & Privacy settings, turn on Prevent Storing of
+   IP Addresses, and add an advanced data scrubbing rule that removes
+   anything from `$user.geo.**`. Sentry derives a city from the connection
+   address before it drops the address, so the switch alone still stores a
+   location.
+
+Native crash events arrive without their minidump, so Voice uploads no
+native symbols. A dump holds whole thread stacks, including the process
+environment, and nothing can scrub it before it leaves the Mac.
 
 ## Publish and recover
 
