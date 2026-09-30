@@ -185,10 +185,7 @@ async function main() {
 
   // The SDK has to start before ready, so the consent read at launch decides whether it runs.
   const diagnostics = startDiagnostics({
-    loadSdk: () => {
-      const sentry: typeof SentryEntry = require(NodePath.join(__dirname, "sentry.cjs"));
-      return { ...sentry, makeTransport: sentry.makeElectronTransport };
-    },
+    loadSdk: (): typeof SentryEntry => require(NodePath.join(__dirname, "sentry.cjs")),
     dsn: process.env.VOICE_SENTRY_DSN ?? "",
     release: `voice@${app.getVersion()}`,
     environment: development ? "development" : installedChannel,

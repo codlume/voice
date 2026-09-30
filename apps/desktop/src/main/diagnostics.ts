@@ -9,34 +9,20 @@ import {
   SESSION_MEASUREMENTS,
   SESSION_TRANSACTION,
   scrubEvent,
+  type HelperTag,
+  type SessionAttribute,
 } from "./diagnostics-scrub.ts";
 import type { SessionReport } from "./dictation.ts";
 import type { HelperExit } from "./helper.ts";
 
 type NodeOptions = SentryMain.NodeOptions;
 type MakeTransport = NonNullable<NodeOptions["transport"]>;
-type InitOptions = Required<
-  Pick<
-    NodeOptions,
-    | "dsn"
-    | "release"
-    | "environment"
-    | "sendDefaultPii"
-    | "sendClientReports"
-    | "tracePropagationTargets"
-    | "tracesSampleRate"
-    | "beforeSend"
-    | "beforeSendTransaction"
-    | "transport"
-    | "integrations"
-  >
->;
 
 // Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
 export type DiagnosticsSdk = Pick<
   typeof SentryMain,
   "startInactiveSpan" | "setMeasurement" | "captureMessage"
-> & { init(options: InitOptions): unknown; makeTransport: MakeTransport };
+> & { init(options: NodeOptions): unknown; makeTransport: MakeTransport };
 
 export type Diagnostics = {
   active: boolean;
@@ -68,11 +54,11 @@ async function removeCrashDumps(dir: string) {
 
 // Model ids are left out: each release pins its models, so the release already names them.
 export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
-  const attributes: Record<string, string> = {
+  const attributes: { [K in SessionAttribute]?: string | undefined } = {
     outcome: outcome.kind,
-    ...(outcome.kind === "inserted" && { "insert.method": outcome.method }),
-    ...(outcome.kind === "notInserted" && { "insert.reason": outcome.reason }),
-    ...(capture && { "dictation.language": capture.language }),
+    "insert.method": outcome.kind === "inserted" ? outcome.method : undefined,
+    "insert.reason": outcome.kind === "notInserted" ? outcome.reason : undefined,
+    "dictation.language": capture?.language,
   };
   const measurements: Partial<Record<(typeof SESSION_MEASUREMENTS)[number], number>> = {};
   for (const name of SESSION_MEASUREMENTS) {
@@ -89,7 +75,7 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   };
 }
 
-function helperTags(exit: HelperExit): Record<string, string | number> {
+function helperTags(exit: HelperExit): Partial<Record<HelperTag, string | number>> {
   if ("spawnError" in exit) return { "helper.error": exit.spawnError };
   if (exit.signal) return { "helper.signal": exit.signal };
   return { "helper.exit_code": exit.code ?? "none" };

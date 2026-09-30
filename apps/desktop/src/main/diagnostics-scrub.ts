@@ -13,6 +13,9 @@ export const SESSION_ATTRIBUTES = [
   "insert.reason",
   "dictation.language",
 ] as const;
+export type SessionAttribute = (typeof SESSION_ATTRIBUTES)[number];
+export const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as const;
+export type HelperTag = (typeof HELPER_TAGS)[number];
 export const SESSION_MEASUREMENTS = [
   "startMs",
   "audioMs",
@@ -25,9 +28,7 @@ export const SESSION_MEASUREMENTS = [
 const MESSAGES: ReadonlySet<string> = new Set([HELPER_EXIT_MESSAGE]);
 const TAGS: ReadonlySet<string> = new Set([
   ...SESSION_ATTRIBUTES,
-  "helper.exit_code",
-  "helper.signal",
-  "helper.error",
+  ...HELPER_TAGS,
   // Set by @sentry/electron on renderer, minidump, and child-process events.
   "event.process",
   "event.environment",

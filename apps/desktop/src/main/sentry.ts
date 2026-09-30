@@ -3,7 +3,7 @@
 export {
   captureMessage,
   init,
-  makeElectronTransport,
+  makeElectronTransport as makeTransport,
   setMeasurement,
   startInactiveSpan,
 } from "@sentry/electron/main";
