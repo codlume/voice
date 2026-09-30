@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import {
@@ -13,10 +12,17 @@ import {
   screen,
   shell,
   Tray,
+  type WebPreferences,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
-import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
+import {
+  Channel,
+  DIAGNOSTICS_ARGUMENT,
+  type PermissionKind,
+  type SettingsPatch,
+  type Snapshot,
+} from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -89,7 +95,7 @@ function loadPage(window: BrowserWindow, page: "hub" | "pill") {
   }
 }
 
-function createPillWindow() {
+function createPillWindow(webPreferences: WebPreferences) {
   const pill = new BrowserWindow({
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
@@ -106,7 +112,7 @@ function createPillWindow() {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    webPreferences: { preload },
+    webPreferences,
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -130,15 +136,6 @@ function publish(snapshot: Snapshot) {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(Channel.snapshot, snapshot);
   }
-}
-
-async function removeCrashDumps() {
-  const dumps = app.getPath("crashDumps");
-  await Promise.allSettled(
-    ["completed", "pending"].map((dir) =>
-      rm(NodePath.join(dumps, dir), { recursive: true, force: true }),
-    ),
-  );
 }
 
 const allGranted = (state: AppState) =>
@@ -197,10 +194,12 @@ async function main() {
     environment: development ? "development" : installedChannel,
     tracesSampleRate: development ? 1 : 0.2,
     consent: () => store.state.settings.diagnostics,
+    crashDumpsDir: app.getPath("crashDumps"),
   });
-  // Crash dumps written while sharing was on must not be uploaded after a later opt-out and
-  // opt-in, so any left over are removed whenever the SDK is not running.
-  if (settings.diagnostics !== "on") void removeCrashDumps();
+  const webPreferences: WebPreferences = {
+    preload,
+    additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
+  };
 
   await app.whenReady();
   nativeTheme.themeSource = settings.theme;
@@ -212,7 +211,7 @@ async function main() {
   });
 
   let hub: BrowserWindow | undefined;
-  const pill = createPillWindow();
+  const pill = createPillWindow(webPreferences);
   positionPill(pill);
 
   let dictation: Dictation;
@@ -367,7 +366,7 @@ async function main() {
       // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
       // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
-      webPreferences: { preload },
+      webPreferences,
     });
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
     hub.on("show", syncPermissionPolling);

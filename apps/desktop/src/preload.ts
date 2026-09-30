@@ -2,7 +2,7 @@
 import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-import { Channel, type Snapshot, type VoiceApi } from "./shared/api.ts";
+import { Channel, DIAGNOSTICS_ARGUMENT, type Snapshot, type VoiceApi } from "./shared/api.ts";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, value: T) => listener(value);
@@ -11,6 +11,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 }
 
 const voice: VoiceApi = {
+  diagnosticsStartedAtLaunch: process.argv.includes(DIAGNOSTICS_ARGUMENT),
   checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
   restartForUpdate: () => ipcRenderer.invoke(Channel.restartForUpdate),
   getSnapshot: () => ipcRenderer.invoke(Channel.getSnapshot),

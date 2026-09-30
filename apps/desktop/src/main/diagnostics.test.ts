@@ -1,3 +1,7 @@
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import * as NodePath from "node:path";
+
 import * as SentryNode from "@sentry/node";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
@@ -88,9 +92,18 @@ describe("sessionSpan", () => {
 
 type Envelope = Parameters<ReturnType<NonNullable<SentryNode.NodeOptions["transport"]>>["send"]>[0];
 
-function harness(initial: DiagnosticsConsent) {
+const DSN = "https://public@o0.ingest.sentry.io/1";
+
+function crashDumps() {
+  const dir = mkdtempSync(NodePath.join(tmpdir(), "voice-crash-dumps-"));
+  for (const name of ["completed", "pending"]) mkdirSync(NodePath.join(dir, name));
+  return dir;
+}
+
+function harness(initial: DiagnosticsConsent, dsn = DSN) {
   let consent = initial;
   const envelopes: Envelope[] = [];
+  const crashDumpsDir = crashDumps();
   const diagnostics: Diagnostics = startDiagnostics({
     loadSdk: () => ({
       ...SentryNode,
@@ -102,11 +115,12 @@ function harness(initial: DiagnosticsConsent) {
         flush: async () => true,
       }),
     }),
-    dsn: "https://public@o0.ingest.sentry.io/1",
+    dsn,
     release: "voice@0.0.1",
     environment: "test",
     tracesSampleRate: 1,
     consent: () => consent,
+    crashDumpsDir,
   });
   const store = createStore({
     updates: {
@@ -157,6 +171,7 @@ function harness(initial: DiagnosticsConsent) {
 
   return {
     diagnostics,
+    crashDumpsDir,
     dictate,
     sent,
     setConsent: (next: DiagnosticsConsent) => {
@@ -179,8 +194,23 @@ describe("startDiagnostics consent", () => {
     expect(await h.sent()).toEqual([]);
   });
 
+  test.each([
+    ["unanswered", DSN],
+    ["off", DSN],
+    ["on", ""],
+  ] as const)(
+    "%s with DSN %j stays inactive and removes leftover crash dumps",
+    async (consent, dsn) => {
+      const h = harness(consent, dsn);
+      expect(h.diagnostics.active).toBe(false);
+      await expect.poll(() => existsSync(NodePath.join(h.crashDumpsDir, "completed"))).toBe(false);
+      expect(existsSync(NodePath.join(h.crashDumpsDir, "pending"))).toBe(false);
+    },
+  );
+
   test("on sends one scrubbed session transaction", async () => {
     const h = harness("on");
+    expect(h.diagnostics.active).toBe(true);
     await h.dictate();
     const sent = await h.sent();
     expect(sent).toHaveLength(1);

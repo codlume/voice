@@ -1,5 +1,3 @@
-import type { Snapshot } from "../shared/api.ts";
-
 // Renderer errors travel to main over IPC and pass main's scrubber and consent gate. Only the
 // handlers that catch errors are kept: no breadcrumbs, request context, or scope sync.
 const INTEGRATIONS: ReadonlySet<string> = new Set([
@@ -11,13 +9,8 @@ const INTEGRATIONS: ReadonlySet<string> = new Set([
   "Dedupe",
 ]);
 
-let decided = false;
-
-// Main starts Sentry only when consent was on at launch, so the first snapshot decides.
-export function startRendererDiagnostics({ settings }: Snapshot) {
-  if (decided) return;
-  decided = true;
-  if (settings.diagnostics !== "on") return;
+export function startRendererDiagnostics() {
+  if (!window.voice.diagnosticsStartedAtLaunch) return;
   void import("@sentry/electron/renderer").then((Sentry) =>
     Sentry.init({
       sendDefaultPii: false,

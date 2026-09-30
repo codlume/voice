@@ -10,6 +10,6 @@ function Pill() {
   return <PillCapsule session={snapshot?.session ?? { kind: "idle" }} />;
 }
 
-void window.voice.getSnapshot().then(startRendererDiagnostics);
+startRendererDiagnostics();
 
 createRoot(document.getElementById("root")!).render(<Pill />);

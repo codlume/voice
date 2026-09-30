@@ -1,3 +1,6 @@
+import { rm } from "node:fs/promises";
+import * as NodePath from "node:path";
+
 import type * as SentryMain from "@sentry/electron/main";
 
 import type { DiagnosticsConsent } from "../shared/api.ts";
@@ -36,6 +39,7 @@ export type DiagnosticsSdk = Pick<
 > & { init(options: InitOptions): unknown; makeTransport: MakeTransport };
 
 export type Diagnostics = {
+  active: boolean;
   sessionDone(report: SessionReport): void;
   helperExited(exit: HelperExit): void;
 };
@@ -52,7 +56,15 @@ const INTEGRATIONS: ReadonlySet<string> = new Set([
   "NormalizePaths",
 ]);
 
-const off: Diagnostics = { sessionDone() {}, helperExited() {} };
+const off: Diagnostics = { active: false, sessionDone() {}, helperExited() {} };
+
+async function removeCrashDumps(dir: string) {
+  await Promise.allSettled(
+    ["completed", "pending"].map((name) =>
+      rm(NodePath.join(dir, name), { recursive: true, force: true }),
+    ),
+  );
+}
 
 // Model ids are left out: each release pins its models, so the release already names them.
 export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
@@ -90,10 +102,16 @@ export function startDiagnostics(options: {
   environment: string;
   tracesSampleRate: number;
   consent: () => DiagnosticsConsent;
+  crashDumpsDir: string;
 }): Diagnostics {
   const on = () => options.consent() === "on";
   // Turning consent on takes effect at the next launch: the SDK can only start before ready.
-  if (options.dsn === "" || !on()) return off;
+  // Dumps written while sharing was on must not be uploaded after a later opt-out and opt-in,
+  // so any left over are removed whenever the SDK does not start.
+  if (options.dsn === "" || !on()) {
+    void removeCrashDumps(options.crashDumpsDir);
+    return off;
+  }
 
   const sdk = options.loadSdk();
   sdk.init({
@@ -122,6 +140,7 @@ export function startDiagnostics(options: {
 
   const reportedExits = new Set<string>();
   return {
+    active: true,
     sessionDone(report) {
       if (!on()) return;
       const { measurements, endTime, ...start } = sessionSpan(report);

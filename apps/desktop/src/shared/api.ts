@@ -8,6 +8,7 @@ export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
 export type DiagnosticsConsent = "unanswered" | "on" | "off";
+export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
 export type UpdateStatus =
   | { kind: "disabled"; reason: string }
@@ -97,6 +98,7 @@ export type Snapshot = {
 };
 
 export type VoiceApi = {
+  diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
   restartForUpdate(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;

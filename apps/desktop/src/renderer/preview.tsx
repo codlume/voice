@@ -161,6 +161,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
   }
 
   return {
+    diagnosticsStartedAtLaunch: false,
     checkForUpdates: async () => {
       set({ ...snapshot, updates: { ...snapshot.updates, status: { kind: "checking" } } });
       setTimeout(

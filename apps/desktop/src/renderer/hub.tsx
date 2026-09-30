@@ -10,6 +10,6 @@ function Hub() {
   return snapshot ? <HubShell snapshot={snapshot} /> : null;
 }
 
-void window.voice.getSnapshot().then(startRendererDiagnostics);
+startRendererDiagnostics();
 
 createRoot(document.getElementById("root")!).render(<Hub />);
