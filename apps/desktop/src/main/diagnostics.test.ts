@@ -21,13 +21,15 @@ const timings = {
   releaseToInsertMs: 215,
 };
 
-const report = (outcome: Outcome, over: Partial<SessionReport> = {}): SessionReport => ({
+const capture = { language: "en" as const, pressedAt: 1_790_000_000_000, timings };
+
+const report = (
+  outcome: Outcome,
+  over: Partial<SessionReport["capture"]> | null = {},
+): SessionReport => ({
   outcome,
-  language: "en",
-  pressedAt: 1_790_000_000_000,
   finishedAt: 1_790_000_001_050,
-  timings,
-  ...over,
+  capture: over && { ...capture, ...over },
 });
 
 describe("sessionSpan", () => {
@@ -64,17 +66,23 @@ describe("sessionSpan", () => {
 
   test("spans the press to the finish and omits what is unknown", () => {
     expect(
-      sessionSpan(report({ kind: "empty" }, { language: null, timings: { startMs: 40 } })),
+      sessionSpan(report({ kind: "empty" }, { language: "pl", timings: { startMs: 40 } })),
     ).toEqual({
       name: "dictation.session",
       op: "dictation.session",
       startTime: 1_790_000_000_000,
       endTime: 1_790_000_001_050,
-      attributes: { outcome: "empty" },
+      attributes: { outcome: "empty", "dictation.language": "pl" },
       measurements: { startMs: 40 },
     });
-    const unpressed = sessionSpan(report({ kind: "tooShort" }, { pressedAt: null }));
-    expect(unpressed.startTime).toBe(unpressed.endTime);
+    expect(sessionSpan(report({ kind: "failed", message: "No model" }, null))).toEqual({
+      name: "dictation.session",
+      op: "dictation.session",
+      startTime: 1_790_000_001_050,
+      endTime: 1_790_000_001_050,
+      attributes: { outcome: "failed" },
+      measurements: {},
+    });
   });
 });
 

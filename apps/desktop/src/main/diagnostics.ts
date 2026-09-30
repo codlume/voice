@@ -55,24 +55,23 @@ const INTEGRATIONS: ReadonlySet<string> = new Set([
 const off: Diagnostics = { sessionDone() {}, helperExited() {} };
 
 // Model ids are left out: each release pins its models, so the release already names them.
-export function sessionSpan(report: SessionReport) {
-  const { outcome } = report;
+export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   const attributes: Record<string, string> = {
     outcome: outcome.kind,
     ...(outcome.kind === "inserted" && { "insert.method": outcome.method }),
     ...(outcome.kind === "notInserted" && { "insert.reason": outcome.reason }),
-    ...(report.language !== null && { "dictation.language": report.language }),
+    ...(capture && { "dictation.language": capture.language }),
   };
   const measurements: Partial<Record<(typeof SESSION_MEASUREMENTS)[number], number>> = {};
   for (const name of SESSION_MEASUREMENTS) {
-    const value = report.timings[name];
+    const value = capture?.timings[name];
     if (value !== undefined) measurements[name] = value;
   }
   return {
     name: SESSION_TRANSACTION,
     op: SESSION_TRANSACTION,
-    startTime: report.pressedAt ?? report.finishedAt,
-    endTime: report.finishedAt,
+    startTime: capture?.pressedAt ?? finishedAt,
+    endTime: finishedAt,
     attributes,
     measurements,
   };

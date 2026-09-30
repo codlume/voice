@@ -16,7 +16,12 @@ import {
   type SessionReport,
 } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
-import { IDLE_AFTER_INSERTED_MS, idle } from "./session.ts";
+import {
+  ASR_MISSING_MESSAGE,
+  IDLE_AFTER_INSERTED_MS,
+  IDLE_AFTER_OTHER_MS,
+  idle,
+} from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
@@ -259,16 +264,18 @@ describe("createDictation", () => {
     expect(h.reports).toEqual([
       {
         outcome: { kind: "inserted", method: "paste" },
-        language: "en",
-        pressedAt,
         finishedAt: pressedAt + 830,
-        timings: {
-          startMs: 40,
-          audioMs: 800,
-          asrMs: 120,
-          cleanupMs: 0,
-          insertMs: 30,
-          releaseToInsertMs: 30,
+        capture: {
+          language: "en",
+          pressedAt,
+          timings: {
+            startMs: 40,
+            audioMs: 800,
+            asrMs: 120,
+            cleanupMs: 0,
+            insertMs: 30,
+            releaseToInsertMs: 30,
+          },
         },
       },
     ]);
@@ -289,9 +296,28 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
     h.dictation.onHelperEvent({ type: "transcript.failed", id, message: "decoder broke" });
     expect(h.reports).toHaveLength(1);
-    expect(h.reports[0]).toMatchObject({ language: "pl", timings: { startMs: 25 } });
+    expect(h.reports[0]).toMatchObject({ capture: { language: "pl", timings: { startMs: 25 } } });
     expect(h.reports[0]?.outcome.kind).toBe("failed");
-    expect(h.reports[0]?.timings.releaseToInsertMs).toBeUndefined();
+    expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBeUndefined();
+  });
+
+  test("reports a session that ended before capture without the previous session's data", () => {
+    const h = harness({ dictationLanguage: "pl" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const first = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 25 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript.failed", id: first, message: "decoder broke" });
+    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS);
+    h.store.update((s) => ({ ...s, models: { ...s.models, asr: { state: "missing" } } }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.reports).toHaveLength(2);
+    expect(h.reports[1]).toEqual({
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+      finishedAt: Date.now(),
+      capture: null,
+    });
   });
 
   test("cleans with the user's styling and no other settings", async () => {
