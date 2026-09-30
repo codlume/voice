@@ -1,5 +1,5 @@
+import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
-import { readFile } from "node:fs/promises";
 
 import {
   app,
@@ -12,12 +12,21 @@ import {
   screen,
   shell,
   Tray,
+  type WebPreferences,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 
-import { Channel, type PermissionKind, type SettingsPatch, type Snapshot } from "../shared/api.ts";
+import {
+  Channel,
+  DIAGNOSTICS_ARGUMENT,
+  type PermissionKind,
+  type SettingsPatch,
+  type Snapshot,
+} from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
+import { startDiagnostics } from "./diagnostics.ts";
+import type * as SentryEntry from "./sentry.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
@@ -54,12 +63,6 @@ if (development) {
   }
 }
 
-if (app.requestSingleInstanceLock()) {
-  void main();
-} else {
-  app.exit(0);
-}
-
 function helperBinary(): string {
   if (!development) return NodePath.join(process.resourcesPath, "bin", "voice-helper");
   return (
@@ -86,7 +89,7 @@ function loadPage(window: BrowserWindow, page: "hub" | "pill") {
   }
 }
 
-function createPillWindow() {
+function createPillWindow(webPreferences: WebPreferences) {
   const pill = new BrowserWindow({
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
@@ -103,7 +106,7 @@ function createPillWindow() {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    webPreferences: { preload },
+    webPreferences,
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -139,18 +142,14 @@ async function main() {
   log(`userData ${userData}`);
 
   const manifest: unknown = JSON.parse(
-    await readFile(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
+    readFileSync(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
   );
   const release =
     !development && typeof manifest === "object" && manifest !== null && "voiceRelease" in manifest
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
-  const [settings] = await Promise.all([
-    loadSettings(settingsFile, installedChannel),
-    app.whenReady(),
-  ]);
-  nativeTheme.themeSource = settings.theme;
+  const settings = loadSettings(settingsFile, installedChannel);
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
 
@@ -178,6 +177,24 @@ async function main() {
     last: null,
   });
 
+  // The SDK has to start before ready, so the consent read at launch decides whether it runs.
+  const diagnostics = startDiagnostics({
+    loadSdk: (): typeof SentryEntry => require(NodePath.join(__dirname, "sentry.cjs")),
+    dsn: process.env.VOICE_SENTRY_DSN ?? "",
+    release: `voice@${app.getVersion()}`,
+    environment: development ? "development" : installedChannel,
+    tracesSampleRate: development ? 1 : 0.2,
+    consent: () => store.state.settings.diagnostics,
+    crashDumpsDir: app.getPath("crashDumps"),
+  });
+  const webPreferences: WebPreferences = {
+    preload,
+    additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
+  };
+
+  await app.whenReady();
+  nativeTheme.themeSource = settings.theme;
+
   const cleanup = createCleanup({
     modelsDir,
     enabled: () => wantsCleanup(store.state.settings),
@@ -185,7 +202,7 @@ async function main() {
   });
 
   let hub: BrowserWindow | undefined;
-  const pill = createPillWindow();
+  const pill = createPillWindow(webPreferences);
   positionPill(pill);
 
   let dictation: Dictation;
@@ -199,8 +216,9 @@ async function main() {
       dictation.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
     },
-    onExit: () => {
+    onExit: (exit) => {
       if (lifecycle === "running") {
+        diagnostics.helperExited(exit);
         store.update((s) => ({
           ...s,
           microphones: {
@@ -228,6 +246,7 @@ async function main() {
       if (!pill.isDestroyed()) pill.webContents.send(Channel.level, level);
     },
     log,
+    onSessionDone: diagnostics.sessionDone,
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({
@@ -338,7 +357,7 @@ async function main() {
       // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
       // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
-      webPreferences: { preload },
+      webPreferences,
     });
     hub.on("focus", () => helper.send({ type: "permissions.check" }));
     hub.on("show", syncPermissionPolling);
@@ -492,4 +511,11 @@ async function main() {
   if (wantsCleanup(store.state.settings)) void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
   if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
+}
+
+// Called last because main runs synchronously until whenReady and reads module constants.
+if (app.requestSingleInstanceLock()) {
+  void main();
+} else {
+  app.exit(0);
 }

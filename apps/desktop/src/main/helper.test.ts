@@ -4,21 +4,22 @@ import * as NodePath from "node:path";
 
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
-import { RESTART_MIN_MS, startHelper, type Helper } from "./helper.ts";
+import { RESTART_MIN_MS, startHelper, type Helper, type HelperExit } from "./helper.ts";
 import type { HelperEvent } from "./protocol.ts";
 
 const FAKE = NodePath.join(import.meta.dirname, "testing/fake-helper.ts");
 
 type Observed = { at: number; event: HelperEvent };
 
-function boot(config: Record<string, unknown> = {}) {
+function boot(config: Record<string, unknown> = {}, binary = FAKE) {
   const events: Observed[] = [];
   const exits: number[] = [];
+  const exitReasons: HelperExit[] = [];
   const logs: string[] = [];
   const waiters: { pred: (event: HelperEvent) => boolean; resolve: () => void }[] = [];
   process.env.VOICE_FAKE_HELPER = JSON.stringify(config);
   const helper = startHelper({
-    binary: FAKE,
+    binary,
     modelsDir: "/tmp/voice-models",
     env: process.env,
     configure: () => [
@@ -33,7 +34,10 @@ function boot(config: Record<string, unknown> = {}) {
         waiter.resolve();
       }
     },
-    onExit: () => exits.push(Date.now()),
+    onExit: (exit) => {
+      exits.push(Date.now());
+      exitReasons.push(exit);
+    },
     log: (message) => logs.push(message),
   });
   const waitFor = (pred: (event: HelperEvent) => boolean, ms = 5000) =>
@@ -52,7 +56,7 @@ function boot(config: Record<string, unknown> = {}) {
     events.filter(
       (e): e is Observed & { event: Extract<HelperEvent, { type: T }> } => e.event.type === type,
     );
-  return { helper, events, exits, logs, waitFor, of };
+  return { helper, events, exits, exitReasons, logs, waitFor, of };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -165,6 +169,15 @@ describe("startHelper", () => {
     expect(secondGap).toBeLessThan(RESTART_MIN_MS * 4);
     expect(h.of("asr.status").length).toBeGreaterThanOrEqual(3);
     expect(h.logs.some((line) => line.includes("exited (3)"))).toBe(true);
+    expect(h.exitReasons[0]).toEqual({ code: 3, signal: null });
+  });
+
+  test("reports a helper that cannot start by its errno code alone", async () => {
+    const missing = NodePath.join(tmpdir(), "voice-no-such-helper", "voice-helper");
+    const h = boot({}, missing);
+    helper = h.helper;
+    await expect.poll(() => h.exitReasons.length).toBeGreaterThanOrEqual(1);
+    expect(h.exitReasons[0]).toEqual({ spawnError: "ENOENT" });
   });
 
   test("logs a malformed line by type and size only, never its text", async () => {

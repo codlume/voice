@@ -1,4 +1,5 @@
 import type {
+  DiagnosticsConsent,
   Hotkey,
   ModelStatus,
   PermissionKind,
@@ -10,10 +11,16 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
-  | { type: "setupModels" };
+  | { type: "setupModels" }
+  | { type: "setDiagnostics"; consent: Exclude<DiagnosticsConsent, "unanswered"> };
+
+type Action = {
+  label: "Grant" | "Open" | "Download" | "Retry" | "Share" | "Don't share";
+  command: SetupCommand;
+};
 
 export type ChecklistRow = {
-  id: PermissionKind | "asr" | "cleanup";
+  id: PermissionKind | "asr" | "cleanup" | "diagnostics";
   title: string;
   subtitle: string;
   status:
@@ -21,7 +28,7 @@ export type ChecklistRow = {
     | { kind: "needed"; text: string }
     | { kind: "busy"; text: string; progress?: number }
     | { kind: "failed"; text: string };
-  action?: { label: "Grant" | "Open" | "Download" | "Retry"; command: SetupCommand };
+  actions: readonly Action[];
 };
 
 type Checklist = { ready: boolean; rows: ChecklistRow[] };
@@ -32,22 +39,22 @@ export const hotkeyLabels: Record<Hotkey, string> = {
   rightCommand: "Right Command",
 };
 
-type RowState = Pick<ChecklistRow, "status" | "action">;
+type RowState = Pick<ChecklistRow, "status" | "actions">;
 
 function permissionState(kind: PermissionKind, state: PermissionState): RowState {
   const command: SetupCommand = { type: "requestPermission", kind };
   switch (state) {
     case "granted":
-      return { status: { kind: "ready", text: "Granted" } };
+      return { status: { kind: "ready", text: "Granted" }, actions: [] };
     case "notDetermined":
       return {
         status: { kind: "needed", text: "Needs access" },
-        action: { label: "Grant", command },
+        actions: [{ label: "Grant", command }],
       };
     case "denied":
       return {
         status: { kind: "needed", text: "Allow Voice in System Settings" },
-        action: { label: "Open", command },
+        actions: [{ label: "Open", command }],
       };
   }
 }
@@ -56,29 +63,47 @@ function modelState(model: ModelStatus): RowState {
   const command: SetupCommand = { type: "setupModels" };
   switch (model.state) {
     case "ready":
-      return { status: { kind: "ready", text: "Ready" } };
+      return { status: { kind: "ready", text: "Ready" }, actions: [] };
     case "missing":
       return {
         status: { kind: "needed", text: "Not downloaded" },
-        action: { label: "Download", command },
+        actions: [{ label: "Download", command }],
       };
     case "downloading":
       return model.progress === undefined
-        ? { status: { kind: "busy", text: "Downloading" } }
+        ? { status: { kind: "busy", text: "Downloading" }, actions: [] }
         : {
             status: {
               kind: "busy",
               text: `Downloading ${Math.round(model.progress * 100)}%`,
               progress: model.progress,
             },
+            actions: [],
           };
     case "loading":
-      return { status: { kind: "busy", text: "Loading" } };
+      return { status: { kind: "busy", text: "Loading" }, actions: [] };
     case "failed":
       return {
         status: { kind: "failed", text: model.message },
-        action: { label: "Retry", command },
+        actions: [{ label: "Retry", command }],
       };
+  }
+}
+
+function diagnosticsState(consent: DiagnosticsConsent): RowState {
+  switch (consent) {
+    case "unanswered":
+      return {
+        status: { kind: "needed", text: "Choose" },
+        actions: [
+          { label: "Share", command: { type: "setDiagnostics", consent: "on" } },
+          { label: "Don't share", command: { type: "setDiagnostics", consent: "off" } },
+        ],
+      };
+    case "on":
+      return { status: { kind: "ready", text: "Sharing" }, actions: [] };
+    case "off":
+      return { status: { kind: "ready", text: "Not sharing" }, actions: [] };
   }
 }
 
@@ -111,5 +136,11 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
       ...modelState(models.cleanup),
     });
   }
+  rows.push({
+    id: "diagnostics",
+    title: "Crash reports",
+    subtitle: "Crashes and timings only. Never your words or audio.",
+    ...diagnosticsState(settings.diagnostics),
+  });
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };
 }

@@ -13,9 +13,15 @@ import {
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
+  type SessionReport,
 } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
-import { IDLE_AFTER_INSERTED_MS, idle } from "./session.ts";
+import {
+  ASR_MISSING_MESSAGE,
+  IDLE_AFTER_INSERTED_MS,
+  IDLE_AFTER_OTHER_MS,
+  idle,
+} from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
@@ -63,6 +69,7 @@ function harness(opts: Options = {}) {
   const levels: number[] = [];
   const logs: string[] = [];
   const phases: string[] = [];
+  const reports: SessionReport[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
@@ -80,13 +87,27 @@ function harness(opts: Options = {}) {
     },
     onLevel: (level) => levels.push(level),
     log: (message) => logs.push(message),
+    onSessionDone: (report) => reports.push(report),
   });
   const id = () => {
     const session = store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
-  return { store, commands, cleans, styles, signals, hung, levels, logs, phases, dictation, id };
+  return {
+    store,
+    commands,
+    cleans,
+    styles,
+    signals,
+    hung,
+    levels,
+    logs,
+    phases,
+    reports,
+    dictation,
+    id,
+  };
 }
 
 async function flush() {
@@ -219,6 +240,84 @@ describe("createDictation", () => {
       /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ insertMs=\d+ releaseToInsertMs=\d+/,
     );
     expect(timing).not.toContain("hello");
+  });
+
+  test("reports a finished session once, with the logged timings and no text or id", async () => {
+    const h = harness({ dictationLanguage: "en" });
+    const pressedAt = Date.now();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "call Anna",
+      audioMs: 800,
+      asrMs: 120,
+    });
+    await flush();
+    vi.advanceTimersByTime(30);
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
+    expect(h.reports).toEqual([
+      {
+        outcome: { kind: "inserted", method: "paste" },
+        finishedAt: pressedAt + 830,
+        capture: {
+          language: "en",
+          pressedAt,
+          timings: {
+            startMs: 40,
+            audioMs: 800,
+            asrMs: 120,
+            cleanupMs: 0,
+            insertMs: 30,
+            releaseToInsertMs: 30,
+          },
+        },
+      },
+    ]);
+    expect(h.logs).toContain(
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=0 insertMs=30 releaseToInsertMs=30`,
+    );
+    const json = JSON.stringify(h.reports);
+    expect(json).not.toContain("Anna");
+    expect(json).not.toContain(id.slice(0, 8));
+  });
+
+  test("reports a failed session once, with its language", () => {
+    const h = harness({ dictationLanguage: "pl" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 25 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript.failed", id, message: "decoder broke" });
+    expect(h.reports).toHaveLength(1);
+    expect(h.reports[0]).toMatchObject({ capture: { language: "pl", timings: { startMs: 25 } } });
+    expect(h.reports[0]?.outcome.kind).toBe("failed");
+    expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBeUndefined();
+  });
+
+  test("reports a session that ended before capture without the previous session's data", () => {
+    const h = harness({ dictationLanguage: "pl" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const first = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 25 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "transcript.failed", id: first, message: "decoder broke" });
+    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS);
+    h.store.update((s) => ({ ...s, models: { ...s.models, asr: { state: "missing" } } }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.reports).toHaveLength(2);
+    expect(h.reports[1]).toEqual({
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+      finishedAt: Date.now(),
+      capture: null,
+    });
   });
 
   test("cleans with the user's styling and no other settings", async () => {

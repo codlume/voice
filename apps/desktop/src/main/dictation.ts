@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import * as Effect from "effect/Effect";
 
+import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -14,6 +15,7 @@ export type DictationOptions = {
   cleanup: Pick<Cleanup, "clean" | "loaded">;
   onLevel: (level: number) => void;
   log: (message: string) => void;
+  onSessionDone: (report: SessionReport) => void;
   now?: () => number;
 };
 
@@ -37,25 +39,55 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
-type Timing = {
+type Started = {
   id: string;
+  language: DictationLanguage;
   pressedAt: number;
   startMs?: number;
   releasedAt?: number;
   audioMs?: number;
   asrMs?: number;
-  cleanupStartedAt?: number;
   cleanupMs?: number;
   insertStartedAt?: number;
-  insertMs?: number;
 };
+
+export type SessionTimings = {
+  startMs?: number | undefined;
+  audioMs?: number | undefined;
+  asrMs?: number | undefined;
+  cleanupMs?: number | undefined;
+  insertMs?: number | undefined;
+  releaseToInsertMs?: number | undefined;
+};
+
+// Carries no text, session id, or target: this is what diagnostics may see of a session.
+export type SessionReport = {
+  outcome: Outcome;
+  finishedAt: number;
+  capture: { language: DictationLanguage; pressedAt: number; timings: SessionTimings } | null;
+};
+
+function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
+  return {
+    startMs: s.startMs,
+    audioMs: s.audioMs,
+    asrMs: s.asrMs,
+    cleanupMs: s.cleanupMs,
+    insertMs: s.insertStartedAt === undefined ? undefined : finishedAt - s.insertStartedAt,
+    releaseToInsertMs:
+      s.releasedAt === undefined || outcome !== "inserted" ? undefined : finishedAt - s.releasedAt,
+  };
+}
 
 export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;
   let idleTimer: NodeJS.Timeout | null = null;
-  let timing: Timing | null = null;
-  let sessionLanguage: { id: string; language: DictationLanguage } | null = null;
+  let started: Started | null = null;
+
+  function track(id: string, patch: Partial<Omit<Started, "id" | "language" | "pressedAt">>) {
+    if (started?.id === id) Object.assign(started, patch);
+  }
   let watchdog: NodeJS.Timeout | null = null;
 
   function dispatch(event: SessionEvent) {
@@ -66,8 +98,7 @@ export function createDictation(options: DictationOptions): Dictation {
       store.update((s) => ({ ...s, session: state }));
       armWatchdog(state);
     }
-    if (state.phase === "done" && before.phase !== "done") logTiming(state.id, state.outcome.kind);
-    if (state.phase === "done" || state.phase === "idle") sessionLanguage = null;
+    if (state.phase === "done" && before.phase !== "done") finish(state.id, state.outcome);
   }
 
   function armWatchdog(state: Session) {
@@ -90,18 +121,21 @@ export function createDictation(options: DictationOptions): Dictation {
     switch (effect.type) {
       case "startCapture":
         if (idleTimer) clearTimeout(idleTimer);
-        timing = { id: effect.id, pressedAt: now() };
-        sessionLanguage = { id: effect.id, language: store.state.settings.dictationLanguage };
+        started = {
+          id: effect.id,
+          language: store.state.settings.dictationLanguage,
+          pressedAt: now(),
+        };
         send({
           type: "capture.start",
           id: effect.id,
-          language: sessionLanguage.language,
+          language: started.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
           microphone: store.state.settings.microphone,
         });
         return;
       case "stopCapture":
-        if (timing) timing.releasedAt = now();
+        track(effect.id, { releasedAt: now() });
         send({ type: "capture.stop", id: effect.id });
         return;
       case "cancelCapture":
@@ -109,7 +143,6 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "cleanup": {
         const startedAt = now();
-        if (timing) timing.cleanupStartedAt = startedAt;
         const { styling } = store.state.settings.cleanup;
         const budgetMs = cleanupBudgetMs(effect.raw);
         Effect.runFork(
@@ -124,7 +157,7 @@ export function createDictation(options: DictationOptions): Dictation {
             }),
             Effect.match({
               onSuccess: (text) => {
-                if (timing?.id === effect.id) timing.cleanupMs = now() - startedAt;
+                track(effect.id, { cleanupMs: now() - startedAt });
                 dispatch({ type: "cleaned", id: effect.id, text });
               },
               onFailure: (message) => {
@@ -137,7 +170,7 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "insert":
-        if (timing) timing.insertStartedAt = now();
+        track(effect.id, { insertStartedAt: now() });
         send({ type: "insert", id: effect.id, text: effect.text });
         return;
       case "remember":
@@ -150,24 +183,19 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function logTiming(id: string, outcome: string) {
-    const t = timing?.id === id ? timing : null;
+  function finish(id: string, outcome: Outcome) {
+    const s = started?.id === id ? started : null;
     const finishedAt = now();
-    const fields = {
-      startMs: t?.startMs,
-      audioMs: t?.audioMs,
-      asrMs: t?.asrMs,
-      cleanupMs: t?.cleanupMs,
-      insertMs: t?.insertStartedAt === undefined ? undefined : finishedAt - t.insertStartedAt,
-      releaseToInsertMs:
-        t?.releasedAt === undefined || outcome !== "inserted"
-          ? undefined
-          : finishedAt - t.releasedAt,
+    const capture = s && {
+      language: s.language,
+      pressedAt: s.pressedAt,
+      timings: sessionTimings(s, outcome.kind, finishedAt),
     };
-    const parts = Object.entries(fields).flatMap(([key, value]) =>
+    const parts = Object.entries(capture?.timings ?? {}).flatMap(([key, value]) =>
       value === undefined ? [] : [`${key}=${Math.round(value)}`],
     );
-    log(`session ${id.slice(0, 8)} outcome=${outcome} ${parts.join(" ")}`);
+    log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
+    options.onSessionDone({ outcome, finishedAt, capture });
   }
 
   function onHelperEvent(event: HelperEvent) {
@@ -183,7 +211,7 @@ export function createDictation(options: DictationOptions): Dictation {
         }
         return;
       case "capture.started":
-        if (timing?.id === event.id) timing.startMs = event.startMs;
+        track(event.id, { startMs: event.startMs });
         dispatch({ type: "captureStarted", id: event.id });
         return;
       case "capture.level":
@@ -195,17 +223,14 @@ export function createDictation(options: DictationOptions): Dictation {
       case "capture.cancelled":
         return;
       case "transcript": {
-        if (timing?.id === event.id) {
-          timing.audioMs = event.audioMs;
-          timing.asrMs = event.asrMs;
-        }
+        track(event.id, { audioMs: event.audioMs, asrMs: event.asrMs });
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup:
-            sessionLanguage?.id === event.id &&
-            supportsCleanup(sessionLanguage.language) &&
+            started?.id === event.id &&
+            supportsCleanup(started.language) &&
             store.state.settings.cleanup.enabled &&
             cleanup.loaded(),
         });

@@ -2,6 +2,8 @@
 
 Voice is a macOS dictation app. Hold a shortcut, speak, and release. Voice transcribes your speech on your Mac and types the text into the app you were using.
 
+Sharing crash reports and dictation timings is opt-in, and they never include your words or audio.
+
 ## Requirements
 
 - A Mac with Apple Silicon.

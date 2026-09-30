@@ -415,6 +415,25 @@ export function Settings({
           </div>
         </div>
       </section>
+
+      <section aria-labelledby="privacy" {...stylex.props(styles.section)}>
+        <h2 id="privacy" {...stylex.props(styles.sectionLabel)}>
+          Privacy
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-diagnostics"
+            title="Share crash reports"
+            detail="Sends crashes and dictation timings, such as how long transcription took. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
+          >
+            <Switch
+              id="setting-diagnostics"
+              checked={settings.diagnostics === "on"}
+              onChange={(on) => update({ diagnostics: on ? "on" : "off" })}
+            />
+          </Row>
+        </div>
+      </section>
     </div>
   );
 }

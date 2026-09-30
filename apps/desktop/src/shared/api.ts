@@ -7,6 +7,8 @@ export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
+export type DiagnosticsConsent = "unanswered" | "on" | "off";
+export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
 export type UpdateStatus =
   | { kind: "disabled"; reason: string }
@@ -70,6 +72,7 @@ export type Settings = {
     enabled: boolean;
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
   };
+  diagnostics: DiagnosticsConsent;
 };
 
 export type SettingsPatch = {
@@ -80,6 +83,7 @@ export type SettingsPatch = {
   updateChannel?: UpdateChannel;
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
+  diagnostics?: Exclude<DiagnosticsConsent, "unanswered">;
 };
 
 export type Snapshot = {
@@ -94,6 +98,7 @@ export type Snapshot = {
 };
 
 export type VoiceApi = {
+  diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
   restartForUpdate(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;

@@ -178,9 +178,14 @@ function greeting(hour: number): string {
 }
 
 function run(command: SetupCommand): Promise<void> {
-  return command.type === "setupModels"
-    ? window.voice.setupModels()
-    : window.voice.requestPermission(command.kind);
+  switch (command.type) {
+    case "setupModels":
+      return window.voice.setupModels();
+    case "requestPermission":
+      return window.voice.requestPermission(command.kind);
+    case "setDiagnostics":
+      return window.voice.updateSettings({ diagnostics: command.consent });
+  }
 }
 
 function CheckIcon() {
@@ -199,7 +204,7 @@ function CheckIcon() {
 }
 
 function SetupRow({ row }: { row: ChecklistRow }) {
-  const { status, action } = row;
+  const { status, actions } = row;
   return (
     <li {...stylex.props(styles.row)}>
       <span
@@ -232,8 +237,9 @@ function SetupRow({ row }: { row: ChecklistRow }) {
           </Progress.Root>
         )}
       </div>
-      {action && (
+      {actions.map((action) => (
         <button
+          key={action.label}
           type="button"
           aria-label={`${action.label} ${row.title}`}
           onClick={() => void run(action.command)}
@@ -241,7 +247,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
         >
           {action.label}
         </button>
-      )}
+      ))}
     </li>
   );
 }

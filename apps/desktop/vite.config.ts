@@ -17,7 +17,7 @@ const isExternal = (id: string) =>
   id === "node-llama-cpp" ||
   id === "electron-updater";
 
-const electronEntry = (name: "main" | "preload", entry: string) => ({
+const electronEntry = (name: "main" | "preload" | "sentry", entry: string) => ({
   entry: { [name]: entry },
   format: "cjs" as const,
   platform: "node" as const,
@@ -46,6 +46,8 @@ export default defineConfig({
   build: {
     outDir: `${appDir}dist/renderer`,
     emptyOutDir: true,
+    // Maps are uploaded to Sentry at release time; hidden keeps them unreferenced by the bundle.
+    sourcemap: "hidden",
     rollupOptions: {
       input: {
         pill: `${rendererDir}/pill.html`,
@@ -53,7 +55,16 @@ export default defineConfig({
       },
     },
   },
-  pack: [electronEntry("main", "src/main/index.ts"), electronEntry("preload", "src/preload.ts")],
+  pack: [
+    {
+      ...electronEntry("main", "src/main/index.ts"),
+      // Baked in at build time so a packaged app never reads it from its environment. Empty
+      // (the default) builds an app that cannot send diagnostics at all.
+      env: { VOICE_SENTRY_DSN: process.env.VOICE_SENTRY_DSN ?? "" },
+    },
+    electronEntry("preload", "src/preload.ts"),
+    electronEntry("sentry", "src/main/sentry.ts"),
+  ],
   test: {
     root: appDir,
   },
