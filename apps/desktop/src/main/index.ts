@@ -63,12 +63,6 @@ if (development) {
   }
 }
 
-if (app.requestSingleInstanceLock()) {
-  void main();
-} else {
-  app.exit(0);
-}
-
 function helperBinary(): string {
   if (!development) return NodePath.join(process.resourcesPath, "bin", "voice-helper");
   return (
@@ -517,4 +511,11 @@ async function main() {
   if (wantsCleanup(store.state.settings)) void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
   if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
+}
+
+// Called last because main runs synchronously until whenReady and reads module constants.
+if (app.requestSingleInstanceLock()) {
+  void main();
+} else {
+  app.exit(0);
 }
