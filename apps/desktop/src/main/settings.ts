@@ -31,6 +31,8 @@ const CONSENTS = ["on", "off"] as const;
 const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback: T[number]) =>
   typeof v === "string" && values.includes(v) ? (v as T[number]) : fallback;
 
+const flag = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+
 const record = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
@@ -44,10 +46,10 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
-    muteWhileDictating: typeof r.muteWhileDictating === "boolean" ? r.muteWhileDictating : false,
-    showInDock: typeof r.showInDock === "boolean" ? r.showInDock : DEFAULT_SETTINGS.showInDock,
+    muteWhileDictating: flag(r.muteWhileDictating, DEFAULT_SETTINGS.muteWhileDictating),
+    showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
     cleanup: {
-      enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
+      enabled: flag(c.enabled, d.enabled),
       styling: pick(STYLINGS, c.styling, d.styling),
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
