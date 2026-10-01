@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { PillState, UpdateStatus } from "../shared/api.ts";
-import { pendingUpdate, releaseCardTitle, updateButton, updateStatusText } from "./updateStatus.ts";
+import { pendingUpdate, type PillState, type UpdateStatus } from "../shared/api.ts";
+import { releaseCardTitle, updateButton, updateStatusText } from "./updateStatus.ts";
 
 const idle: PillState = { kind: "idle" };
 

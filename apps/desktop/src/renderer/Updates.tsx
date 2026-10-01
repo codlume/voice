@@ -2,14 +2,14 @@ import { Popover } from "@base-ui/react/popover";
 import * as stylex from "@stylexjs/stylex";
 import { useRef, useState, type ReactNode } from "react";
 
-import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import {
   pendingUpdate,
-  releaseCardTitle,
-  updateButton,
-  updateStatusText,
   type PendingUpdate,
-} from "./updateStatus.ts";
+  type PillState,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
+import { releaseCardTitle, updateButton, updateStatusText } from "./updateStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({

@@ -1,6 +1,11 @@
 import type { AppUpdater } from "electron-updater";
 
-import type { UpdateChannel, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  pendingUpdate,
+  type UpdateChannel,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
 import { releaseNoteItems } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
@@ -178,14 +183,11 @@ export function createUpdates({
     },
     check,
     releaseUrl(): string | null {
-      const status = snapshot.status;
-      switch (status.kind) {
-        case "downloading":
-        case "ready":
-          return `https://github.com/codlume/voice/releases/tag/v${encodeURIComponent(status.version)}`;
-        default:
-          return null;
-      }
+      const update = pendingUpdate(snapshot.status);
+      return (
+        update &&
+        `https://github.com/codlume/voice/releases/tag/v${encodeURIComponent(update.version)}`
+      );
     },
     async setChannel(channel: UpdateChannel) {
       if (restarting) throw new Error("Voice is restarting for an update.");

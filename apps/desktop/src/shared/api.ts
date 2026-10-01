@@ -22,6 +22,13 @@ export type UpdateStatus =
   | { kind: "installing"; version: string }
   | { kind: "failed"; message: string };
 
+/** An update the user can read about before installing it. */
+export type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
+
+export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
+  return status.kind === "downloading" || status.kind === "ready" ? status : null;
+}
+
 export type UpdatesSnapshot = {
   version: string;
   installedChannel: UpdateChannel;

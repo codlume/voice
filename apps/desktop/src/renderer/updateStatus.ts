@@ -1,4 +1,4 @@
-import type { PillState, UpdateStatus } from "../shared/api.ts";
+import type { PendingUpdate, PillState, UpdateStatus } from "../shared/api.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -23,12 +23,6 @@ export function updateStatusText(status: UpdateStatus): string {
       return exhaustive;
     }
   }
-}
-
-export type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
-
-export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
-  return status.kind === "downloading" || status.kind === "ready" ? status : null;
 }
 
 export function releaseCardTitle(update: PendingUpdate): string {
