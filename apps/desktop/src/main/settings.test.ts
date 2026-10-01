@@ -32,6 +32,15 @@ describe("parseSettings", () => {
   test("keeps an explicit off for show in Dock", () => {
     expect(parseSettings({ showInDock: false }).showInDock).toBe(false);
   });
+  test.each([undefined, null, "true", "false", 0, 1, {}, []])(
+    "defaults missing or invalid Flow Bar preference %j to always shown",
+    (alwaysShowPill) => {
+      expect(parseSettings({ alwaysShowPill }).alwaysShowPill).toBe(true);
+    },
+  );
+  test("keeps an explicit off for show Flow Bar at all times", () => {
+    expect(parseSettings({ alwaysShowPill: false }).alwaysShowPill).toBe(false);
+  });
   test.each([undefined, null, "", "xx", "English", 42, {}, ["pl"]])(
     "defaults missing or invalid dictation language %j to English",
     (dictationLanguage) => {
@@ -56,6 +65,7 @@ describe("parseSettings", () => {
       microphone: null,
       muteWhileDictating: false,
       showInDock: true,
+      alwaysShowPill: true,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
@@ -117,6 +127,7 @@ describe("applyPatch", () => {
       microphone: null,
       muteWhileDictating: false,
       showInDock: true,
+      alwaysShowPill: true,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
@@ -139,6 +150,13 @@ describe("applyPatch", () => {
     expect(hidden).toEqual({ ...DEFAULT_SETTINGS, showInDock: false });
     expect(applyPatch(hidden, { theme: "dark" })).toEqual({ ...hidden, theme: "dark" });
     expect(applyPatch(hidden, { showInDock: true })).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("turns show Flow Bar at all times off and back on, and keeps it through other changes", () => {
+    const hidden = applyPatch(DEFAULT_SETTINGS, { alwaysShowPill: false });
+    expect(hidden).toEqual({ ...DEFAULT_SETTINGS, alwaysShowPill: false });
+    expect(applyPatch(hidden, { theme: "dark" })).toEqual({ ...hidden, theme: "dark" });
+    expect(applyPatch(hidden, { alwaysShowPill: true })).toEqual(DEFAULT_SETTINGS);
   });
 
   test("changes the hotkey alone", () => {

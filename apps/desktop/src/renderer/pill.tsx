@@ -7,7 +7,9 @@ import { useSnapshot } from "./useSnapshot.ts";
 
 function Pill() {
   const snapshot = useSnapshot();
-  return <PillCapsule session={snapshot?.session ?? { kind: "idle" }} />;
+  return snapshot ? (
+    <PillCapsule session={snapshot.session} alwaysShowPill={snapshot.settings.alwaysShowPill} />
+  ) : null;
 }
 
 startRendererDiagnostics();
