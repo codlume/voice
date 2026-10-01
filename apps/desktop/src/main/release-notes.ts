@@ -8,7 +8,7 @@ export function releaseNoteItems(value: unknown): string[] {
     const line = raw.trim();
     if (/^#+\s*New Contributors\b/i.test(line)) break;
     const bullet = /^[*-] (.*)$/.exec(line)?.[1];
-    if (bullet === undefined || /Full Changelog|\/compare\//i.test(bullet)) continue;
+    if (bullet === undefined) continue;
     const item = plainText(bullet);
     if (!item || items.includes(item)) continue;
     items.push(item);

@@ -21,17 +21,6 @@ describe("release note items", () => {
     ]);
   });
 
-  test("ignores the Nightly preamble and a bulleted changelog link", () => {
-    const nightly = `Unstable build of 44142cc. Installed Nightlies update themselves.
-
-## What's Changed
-* feat(desktop): add keyboard shortcuts by @mhadrys in https://github.com/codlume/voice/pull/119
-* Full Changelog: https://github.com/codlume/voice/compare/v0.2.1-nightly.20261001.7...v0.2.1-nightly.20261001.8`;
-    expect(releaseNoteItems(nightly)).toEqual([
-      "feat(desktop): add keyboard shortcuts by @mhadrys in #119",
-    ]);
-  });
-
   test("caps long items and long lists", () => {
     const [item] = releaseNoteItems(`* ${"word ".repeat(100)}`);
     expect(item).toHaveLength(240);
