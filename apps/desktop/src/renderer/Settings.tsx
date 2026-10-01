@@ -19,7 +19,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import { hotkeyLabels } from "./checklist.ts";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { Select } from "./Select.tsx";
-import { jumpKeys, shortcutKeys, shortcuts } from "./shortcuts.ts";
+import { jumpKeys, shortcuts } from "./shortcuts.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -550,8 +550,8 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
 
       <Section label="Voice window">
         <div {...stylex.props(styles.card)}>
-          {Object.values(shortcuts).map(({ label, key }) => (
-            <ShortcutRow key={key} title={label} keys={shortcutKeys(key)} />
+          {Object.values(shortcuts).map(({ title, keys }) => (
+            <ShortcutRow key={title} title={title} keys={keys} />
           ))}
           <ShortcutRow
             title="Go to sidebar item"

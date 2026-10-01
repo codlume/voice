@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { jumpLabel, matchShortcut, shortcutLabel } from "./shortcuts.ts";
+import { jumpLabel, matchShortcut, shortcuts } from "./shortcuts.ts";
 
 function press(
   key: string,
@@ -56,9 +56,9 @@ describe("matchShortcut", () => {
   });
 });
 
-test("shortcutLabel", () => {
-  expect(shortcutLabel("b")).toBe("⌘B");
-  expect(shortcutLabel(",")).toBe("⌘,");
+test("shortcut hints", () => {
+  expect(shortcuts.toggleSidebar.hint).toBe("⌘B");
+  expect(shortcuts.openSettings.hint).toBe("⌘,");
 });
 
 test("every sidebar hint is a shortcut that jumps to that item", () => {

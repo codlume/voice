@@ -11,14 +11,7 @@ import {
   ShortcutsSettings,
   SystemSettings,
 } from "./Settings.tsx";
-import {
-  jumpLabel,
-  shortcutLabel,
-  shortcuts,
-  useShortcuts,
-  withShortcut,
-  type ShortcutCommand,
-} from "./shortcuts.ts";
+import { jumpLabel, shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -420,13 +413,13 @@ function NavItems<Id extends string>({
   items,
   current,
   collapsed,
-  shortcutHints,
+  showShortcut,
   onSelect,
 }: {
   items: readonly { id: Id; label: string; icon: ReactNode }[];
   current: Id;
   collapsed: boolean;
-  shortcutHints: boolean;
+  showShortcut: boolean;
   onSelect: (id: Id) => void;
 }) {
   return items.map(({ id, label, icon }, index) => (
@@ -437,7 +430,7 @@ function NavItems<Id extends string>({
       shortcut={jumpLabel(index)}
       current={current === id}
       collapsed={collapsed}
-      showShortcut={shortcutHints}
+      showShortcut={showShortcut}
       onClick={() => onSelect(id)}
     />
   ));
@@ -491,27 +484,18 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
     }
   }
 
-  const commands: Record<ShortcutCommand, () => void> = {
-    toggleSidebar,
-    openSettings,
-    closeSettings,
-  };
-
-  const commandHeld = useShortcuts((action) => {
-    if (action.command === "jump") jump(action.index);
-    else commands[action.command]();
-  });
-  const shortcutHints = commandHeld && !collapsed;
+  const showShortcut =
+    useShortcuts({ toggleSidebar, openSettings, closeSettings, jump }) && !collapsed;
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
-  const settingsLabel = withShortcut("Settings", shortcutLabel(shortcuts.openSettings.key));
+  const settingsLabel = withShortcut("Settings", shortcuts.openSettings.hint);
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar)}>
         <button
           type="button"
           aria-label={toggleLabel}
-          title={withShortcut(toggleLabel, shortcutLabel(shortcuts.toggleSidebar.key))}
+          title={withShortcut(toggleLabel, shortcuts.toggleSidebar.hint)}
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
@@ -543,7 +527,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={appPages}
                   current={appPage}
                   collapsed={collapsed}
-                  shortcutHints={shortcutHints}
+                  showShortcut={showShortcut}
                   onSelect={selectAppPage}
                 />
               </nav>
@@ -570,16 +554,16 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={settingsPages}
                   current={settingsPage}
                   collapsed={collapsed}
-                  shortcutHints={shortcutHints}
+                  showShortcut={showShortcut}
                   onSelect={selectSettingsPage}
                 />
               </nav>
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
-                shortcut={shortcutLabel(shortcuts.closeSettings.key)}
+                shortcut={shortcuts.closeSettings.hint}
                 collapsed={collapsed}
-                showShortcut={shortcutHints}
+                showShortcut={showShortcut}
                 onClick={closeSettings}
                 style={styles.back}
               />
