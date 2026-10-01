@@ -130,6 +130,18 @@ function Row({
   );
 }
 
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id} {...stylex.props(styles.section)}>
+      <h2 id={id} {...stylex.props(styles.sectionLabel)}>
+        {label}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 function Segmented<T extends string>({
   labelledBy,
   options,
@@ -266,10 +278,7 @@ export function GeneralSettings({
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>General</h1>
 
-      <section aria-labelledby="shortcut" {...stylex.props(styles.section)}>
-        <h2 id="shortcut" {...stylex.props(styles.sectionLabel)}>
-          Shortcut
-        </h2>
+      <Section label="Shortcut">
         <div {...stylex.props(styles.card)}>
           <Row
             id="setting-hotkey"
@@ -285,12 +294,9 @@ export function GeneralSettings({
           </Row>
         </div>
         {settings.hotkey === "fn" && <GlobeHint />}
-      </section>
+      </Section>
 
-      <section aria-labelledby="input" {...stylex.props(styles.section)}>
-        <h2 id="input" {...stylex.props(styles.sectionLabel)}>
-          Input
-        </h2>
+      <Section label="Input">
         <div {...stylex.props(styles.card)}>
           <MicrophoneRow
             selectId="setting-microphone"
@@ -314,12 +320,9 @@ export function GeneralSettings({
             {microphoneError}
           </p>
         )}
-      </section>
+      </Section>
 
-      <section aria-labelledby="dictation-language" {...stylex.props(styles.section)}>
-        <h2 id="dictation-language" {...stylex.props(styles.sectionLabel)}>
-          Dictation language
-        </h2>
+      <Section label="Dictation language">
         <div {...stylex.props(styles.card)}>
           <Row
             id="setting-dictation-language"
@@ -339,7 +342,7 @@ export function GeneralSettings({
             {languageError}
           </p>
         )}
-      </section>
+      </Section>
     </div>
   );
 }
@@ -366,10 +369,7 @@ export function SystemSettings({
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>System</h1>
 
-      <section aria-labelledby="audio" {...stylex.props(styles.section)}>
-        <h2 id="audio" {...stylex.props(styles.sectionLabel)}>
-          Audio
-        </h2>
+      <Section label="Audio">
         <div {...stylex.props(styles.card)}>
           <Row
             id="setting-mute-while-dictating"
@@ -383,21 +383,15 @@ export function SystemSettings({
             />
           </Row>
         </div>
-      </section>
+      </Section>
 
-      <section aria-labelledby="appearance" {...stylex.props(styles.section)}>
-        <h2 id="appearance" {...stylex.props(styles.sectionLabel)}>
-          Appearance
-        </h2>
+      <Section label="Appearance">
         <div {...stylex.props(styles.card)}>
           <ThemePicker theme={settings.theme} />
         </div>
-      </section>
+      </Section>
 
-      <section aria-labelledby="updates" {...stylex.props(styles.section)}>
-        <h2 id="updates" {...stylex.props(styles.sectionLabel)}>
-          Updates
-        </h2>
+      <Section label="Updates">
         <div {...stylex.props(styles.card)}>
           <Row
             id="setting-update-channel"
@@ -435,7 +429,7 @@ export function SystemSettings({
             </div>
           </div>
         </div>
-      </section>
+      </Section>
     </div>
   );
 }
@@ -445,10 +439,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
 
-      <section aria-labelledby="diagnostics" {...stylex.props(styles.section)}>
-        <h2 id="diagnostics" {...stylex.props(styles.sectionLabel)}>
-          Diagnostics
-        </h2>
+      <Section label="Diagnostics">
         <div {...stylex.props(styles.card)}>
           <Row
             id="setting-diagnostics"
@@ -462,7 +453,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             />
           </Row>
         </div>
-      </section>
+      </Section>
     </div>
   );
 }
