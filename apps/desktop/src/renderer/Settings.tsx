@@ -7,7 +7,7 @@ import type {
   MicrophoneCatalog,
   MicrophoneTest,
   PermissionState,
-  Settings as SettingsValue,
+  Settings,
   SettingsPatch,
   Theme,
   UpdateChannel,
@@ -196,7 +196,7 @@ export function GeneralSettings({
   microphoneTest,
   microphonePermission,
 }: {
-  settings: SettingsValue;
+  settings: Settings;
   microphones: MicrophoneCatalog;
   microphoneTest: MicrophoneTest;
   microphonePermission: PermissionState;
@@ -348,7 +348,7 @@ export function SystemSettings({
   settings,
   updates,
 }: {
-  settings: SettingsValue;
+  settings: Settings;
   updates: UpdatesSnapshot;
 }) {
   const [updateError, setUpdateError] = useState("");
