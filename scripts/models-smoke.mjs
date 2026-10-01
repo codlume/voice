@@ -2,10 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { models as registry } from "../apps/desktop/src/shared/models.ts";
 import { modelsDir } from "../native/voice-helper/scripts/helper.mjs";
 import {
   assert,
   launchVoice,
+  modelFiles,
   Page,
   prepareUserData,
   stopChildren,
@@ -14,8 +16,7 @@ import {
 
 const port = 9341;
 const shots = process.env.VOICE_SMOKE_SHOTS ?? "/tmp/voice-models-smoke";
-const files = { asr: "parakeet-tdt-0.6b-v3", cleanup: "s1-mini-q4_k_m.gguf" };
-const names = { asr: "Parakeet", cleanup: "S1-mini" };
+const names = Object.fromEntries(registry.map((model) => [model.id, model.name]));
 
 const note = (message) => console.error(`[models-smoke] ${message}`);
 const linked = (path) => {
@@ -95,15 +96,15 @@ try {
   await answerDialog("Cancel");
   await wait(1000);
   assert(installed((await snapshot()).models.cleanup.state), "Cancel keeps the cleanup model");
-  assert(linked(join(models, files.cleanup)), "Cancel keeps the cleanup file");
+  assert(linked(join(models, modelFiles.cleanup)), "Cancel keeps the cleanup file");
   note("cancel keeps the model");
 
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Uninstall ${names[id]}`));
     await answerDialog("Uninstall");
     await until((m) => m[id].state === "missing", `${id} missing`);
-    assert(!linked(join(models, files[id])), `${id} link removed`);
-    assert(existsSync(join(cache, files[id])), `${id} cache left intact`);
+    assert(!linked(join(models, modelFiles[id])), `${id} link removed`);
+    assert(existsSync(join(cache, modelFiles[id])), `${id} cache left intact`);
     note(`${id} uninstalled, cache intact`);
   }
   const uninstalledText = await mainText();
@@ -117,7 +118,8 @@ try {
   await click(button("Settings"));
   await click(navButton("Models"));
 
-  for (const id of ["cleanup", "asr"]) symlinkSync(join(cache, files[id]), join(models, files[id]));
+  for (const id of ["cleanup", "asr"])
+    symlinkSync(join(cache, modelFiles[id]), join(models, modelFiles[id]));
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Install ${names[id]}`));
     await until(
