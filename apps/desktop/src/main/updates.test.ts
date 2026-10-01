@@ -192,6 +192,17 @@ describe("updates", () => {
     expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes });
   });
 
+  test("links the release page only while an update is downloading or ready", async () => {
+    const { updates, engine } = setup();
+    expect(updates.releaseUrl()).toBeNull();
+    engine.checkForUpdates.mockResolvedValue(result("0.0.2"));
+    await updates.check();
+    expect(updates.releaseUrl()).toBe("https://github.com/codlume/voice/releases/tag/v0.0.2");
+    await updates.restart();
+    expect(updates.snapshot.status.kind).toBe("installing");
+    expect(updates.releaseUrl()).toBeNull();
+  });
+
   test("rejects a wrong-channel feed before downloading", async () => {
     const { updates, engine } = setup();
     engine.checkForUpdates.mockResolvedValue(result("0.0.2-nightly.1"));

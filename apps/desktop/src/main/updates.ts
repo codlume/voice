@@ -177,6 +177,16 @@ export function createUpdates({
       pollTimer.unref();
     },
     check,
+    releaseUrl(): string | null {
+      const status = snapshot.status;
+      switch (status.kind) {
+        case "downloading":
+        case "ready":
+          return `https://github.com/codlume/voice/releases/tag/v${encodeURIComponent(status.version)}`;
+        default:
+          return null;
+      }
+    },
     async setChannel(channel: UpdateChannel) {
       if (restarting) throw new Error("Voice is restarting for an update.");
       if (snapshot.channel === channel || disposed) return;
