@@ -6,6 +6,7 @@ export const models = [
     name: "Parakeet",
     vendor: "NVIDIA",
     size: "480 MB",
+    lostUntilReinstalled: "Dictation stops working",
   },
   {
     id: "cleanup",
@@ -14,6 +15,7 @@ export const models = [
     name: "S1-mini",
     vendor: "Superwhisper",
     size: "480 MB",
+    lostUntilReinstalled: "Text cleanup stops",
   },
 ] as const;
 
