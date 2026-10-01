@@ -55,6 +55,20 @@ const settingsPages = [
 type AppPage = (typeof appPages)[number]["id"];
 type SettingsPage = (typeof settingsPages)[number]["id"];
 
+const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNode> = {
+  home: (snapshot) => <Home snapshot={snapshot} />,
+  style: (snapshot) => <Style settings={snapshot.settings} />,
+  general: (snapshot) => (
+    <GeneralSettings
+      settings={snapshot.settings}
+      microphones={snapshot.microphones}
+      microphoneTest={snapshot.microphoneTest}
+      microphonePermission={snapshot.permissions.microphone}
+    />
+  ),
+  system: (snapshot) => <SystemSettings settings={snapshot.settings} updates={snapshot.updates} />,
+};
+
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
 const sidebarId = "hub-sidebar";
 
@@ -467,21 +481,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
         tabIndex={-1}
         {...stylex.props(styles.main, page === "style" && styles.styleMain)}
       >
-        <div {...stylex.props(styles.column)}>
-          {page === "home" && <Home snapshot={snapshot} />}
-          {page === "style" && <Style settings={snapshot.settings} />}
-          {page === "general" && (
-            <GeneralSettings
-              settings={snapshot.settings}
-              microphones={snapshot.microphones}
-              microphoneTest={snapshot.microphoneTest}
-              microphonePermission={snapshot.permissions.microphone}
-            />
-          )}
-          {page === "system" && (
-            <SystemSettings settings={snapshot.settings} updates={snapshot.updates} />
-          )}
-        </div>
+        <div {...stylex.props(styles.column)}>{pageViews[page](snapshot)}</div>
       </main>
     </div>
   );
