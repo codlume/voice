@@ -27,6 +27,7 @@ function fakeModule(behavior: Behavior = {}) {
   const calls = {
     downloads: 0,
     creates: 0,
+    modelPaths: [] as string[],
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
@@ -47,8 +48,9 @@ function fakeModule(behavior: Behavior = {}) {
       if (behavior.removeError) throw new Error(behavior.removeError);
       await removeS1Mini(options);
     },
-    createS1Mini() {
+    createS1Mini({ modelPath }) {
       calls.creates += 1;
+      calls.modelPaths.push(modelPath);
       return {
         async load() {
           calls.loads += 1;
@@ -104,6 +106,7 @@ describe("createCleanup", () => {
     const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
+    expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
     await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
     expect(fake.calls.cleans.at(-1)).toEqual(["hello", style]);
   });
@@ -296,6 +299,7 @@ describe("createCleanup", () => {
     await Promise.all([cleanup.install(), cleanup.install()]);
     expect(fake.calls.downloads).toBe(1);
     expect(fake.calls.loads).toBe(1);
+    expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
     expect(statuses).toEqual([
       { state: "downloading", progress: 0 },
       { state: "downloading", progress: 0.5 },
