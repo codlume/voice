@@ -1,0 +1,6 @@
+# Nightly release notes come from GitHub's generated notes; stable notes come from release-please.
+changelog:
+  exclude:
+    labels:
+      - "autorelease: pending"
+      - "autorelease: tagged"
