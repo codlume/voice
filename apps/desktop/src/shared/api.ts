@@ -8,6 +8,8 @@ export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
 export type DiagnosticsConsent = "on" | "off";
+// "unavailable" is a development build, which never registers a login item.
+export type LoginItem = "on" | "off" | "needsApproval" | "unavailable";
 export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
 export type UpdateStatus =
@@ -65,7 +67,6 @@ export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
   muteWhileDictating: boolean;
-  launchAtLogin: boolean;
   showInDock: boolean;
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
@@ -81,7 +82,6 @@ export type SettingsPatch = {
   microphone?: Microphone | null;
   hotkey?: Hotkey;
   muteWhileDictating?: boolean;
-  launchAtLogin?: boolean;
   showInDock?: boolean;
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
@@ -96,6 +96,7 @@ export type Snapshot = {
   updates: UpdatesSnapshot;
   session: PillState;
   permissions: Record<PermissionKind, PermissionState>;
+  loginItem: LoginItem;
   models: { asr: ModelStatus; cleanup: ModelStatus };
   settings: Settings;
   last: { raw: string; text: string } | null;
@@ -110,6 +111,7 @@ export type VoiceApi = {
   onLevel(listener: (level: number) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
+  setOpenAtLogin(on: boolean): Promise<void>;
   startMicrophoneTest(): Promise<void>;
   stopMicrophoneTest(): Promise<void>;
   setupModels(): Promise<void>;
@@ -124,6 +126,7 @@ export const Channel = {
   level: "voice:level",
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
+  setOpenAtLogin: "voice:setOpenAtLogin",
   startMicrophoneTest: "voice:startMicrophoneTest",
   stopMicrophoneTest: "voice:stopMicrophoneTest",
   setupModels: "voice:setupModels",

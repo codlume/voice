@@ -20,6 +20,7 @@ import { autoUpdater } from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
+  type LoginItem,
   type PermissionKind,
   type SettingsPatch,
   type Snapshot,
@@ -44,6 +45,7 @@ const PILL_BOTTOM_MARGIN = 12;
 const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
 
+const LOGIN_ITEMS_PANE = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
@@ -81,8 +83,12 @@ function helperEnv(): NodeJS.ProcessEnv {
 }
 
 // A development build would register the bare Electron binary to open at login.
-function syncLoginItem(openAtLogin: boolean) {
-  if (process.platform === "darwin" && !development) app.setLoginItemSettings({ openAtLogin });
+function readLoginItem(): LoginItem {
+  if (development) return "unavailable";
+  const { status } = app.getLoginItemSettings();
+  if (status === "enabled") return "on";
+  if (status === "requires-approval") return "needsApproval";
+  return "off";
 }
 
 const preload = NodePath.join(__dirname, "preload.cjs");
@@ -164,6 +170,7 @@ async function main() {
   const store = createStore({
     session: idle,
     permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+    loginItem: "unavailable",
     models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
     settings,
     updates: {
@@ -200,9 +207,15 @@ async function main() {
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
   };
 
+  // The user can change Login Items in System Settings, so macOS owns this state.
+  function refreshLoginItem() {
+    const loginItem = readLoginItem();
+    store.update((s) => (s.loginItem === loginItem ? s : { ...s, loginItem }));
+  }
+
   await app.whenReady();
   nativeTheme.themeSource = settings.theme;
-  syncLoginItem(settings.launchAtLogin);
+  refreshLoginItem();
   if (!settings.showInDock) app.dock?.hide();
 
   const cleanup = createCleanup({
@@ -369,7 +382,10 @@ async function main() {
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
       webPreferences,
     });
-    hub.on("focus", () => helper.send({ type: "permissions.check" }));
+    hub.on("focus", () => {
+      helper.send({ type: "permissions.check" });
+      refreshLoginItem();
+    });
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
@@ -458,7 +474,6 @@ async function main() {
     if (next.microphone?.uid !== previous.microphone?.uid)
       helper.send({ type: "microphone.configure", microphone: next.microphone });
     if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
-    if (next.launchAtLogin !== previous.launchAtLogin) syncLoginItem(next.launchAtLogin);
     if (next.showInDock !== previous.showInDock) void syncDock();
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
     await saving;
@@ -481,6 +496,17 @@ async function main() {
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
+  });
+  ipcMain.handle(Channel.setOpenAtLogin, (_event, on: boolean) => {
+    if (development) return;
+    const openAtLogin = on === true;
+    // Registering again does not approve the item. Only the user can, in Login Items.
+    if (openAtLogin && store.state.loginItem === "needsApproval") {
+      void shell.openExternal(LOGIN_ITEMS_PANE);
+      return;
+    }
+    app.setLoginItemSettings({ openAtLogin });
+    refreshLoginItem();
   });
   ipcMain.handle(Channel.startMicrophoneTest, () => {
     if (lifecycle === "running") microphoneTest.start();

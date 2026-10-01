@@ -4,6 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
 import type {
+  LoginItem,
   MicrophoneCatalog,
   MicrophoneTest,
   PermissionState,
@@ -347,11 +348,21 @@ export function GeneralSettings({
   );
 }
 
+const loginItemDetails: Record<LoginItem, string> = {
+  on: "Start Voice when you log in to your Mac, so dictation is ready right away.",
+  off: "Start Voice when you log in to your Mac, so dictation is ready right away.",
+  needsApproval:
+    "macOS needs your approval. Turn this on to open Login Items in System Settings, then allow Voice.",
+  unavailable: "Development builds can't open at login.",
+};
+
 export function SystemSettings({
   settings,
+  loginItem,
   updates,
 }: {
   settings: Settings;
+  loginItem: LoginItem;
   updates: UpdatesSnapshot;
 }) {
   const [updateError, setUpdateError] = useState("");
@@ -372,14 +383,16 @@ export function SystemSettings({
       <Section label="Startup">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-launch-at-login"
+            id="setting-open-at-login"
             title="Open at login"
-            detail="Start Voice when you log in to your Mac, so dictation is ready right away."
+            detail={loginItemDetails[loginItem]}
+            disabled={loginItem === "unavailable"}
           >
             <Switch
-              id="setting-launch-at-login"
-              checked={settings.launchAtLogin}
-              onChange={(launchAtLogin) => update({ launchAtLogin })}
+              id="setting-open-at-login"
+              checked={loginItem === "on"}
+              disabled={loginItem === "unavailable"}
+              onChange={(on) => void window.voice.setOpenAtLogin(on)}
             />
           </Row>
         </div>

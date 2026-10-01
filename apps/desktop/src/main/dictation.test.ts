@@ -45,6 +45,7 @@ function harness(opts: Options = {}) {
     },
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
+    loginItem: "off",
     models: {
       asr: opts.asrModel ?? { state: "ready" },
       cleanup: { state: "ready" },

@@ -19,6 +19,7 @@ function harness() {
     },
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
+    loginItem: "off",
     models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
     settings: { ...DEFAULT_SETTINGS, microphone: usb },
     microphones: { kind: "ready", devices: [usb], defaultUid: "usb" },
