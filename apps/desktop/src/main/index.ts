@@ -109,7 +109,12 @@ function createPillWindow(webPreferences: WebPreferences) {
     webPreferences,
   });
   pill.setAlwaysOnTop(true, "screen-saver");
-  pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Without skipTransformProcessType, Electron makes the whole app a UIElement, which drops Voice
+  // from the Dock and Cmd-Tab. The panel type alone keeps the pill above fullscreen apps.
+  pill.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
   pill.setIgnoreMouseEvents(true);
   pill.once("ready-to-show", () => pill.showInactive());
   loadPage(pill, "pill");
