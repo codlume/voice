@@ -7,7 +7,7 @@ export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
-export type DiagnosticsConsent = "unanswered" | "on" | "off";
+export type DiagnosticsConsent = "on" | "off";
 export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
 export type UpdateStatus =
@@ -83,7 +83,7 @@ export type SettingsPatch = {
   updateChannel?: UpdateChannel;
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
-  diagnostics?: Exclude<DiagnosticsConsent, "unanswered">;
+  diagnostics?: DiagnosticsConsent;
 };
 
 export type Snapshot = {

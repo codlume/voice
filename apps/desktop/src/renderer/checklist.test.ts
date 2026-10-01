@@ -22,7 +22,7 @@ const fresh: Snapshot = {
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
-    diagnostics: "unanswered",
+    diagnostics: "off",
   },
   microphones: {
     kind: "ready",
@@ -100,11 +100,6 @@ describe("checklist", () => {
 
   test("ready only when every step is ready", () => {
     expect(checklist(allReady).ready).toBe(true);
-    const unanswered: Snapshot = {
-      ...allReady,
-      settings: { ...allReady.settings, diagnostics: "unanswered" },
-    };
-    expect(checklist(unanswered).ready).toBe(true);
     const loading: Snapshot = {
       ...allReady,
       models: { ...allReady.models, cleanup: { state: "loading" } },

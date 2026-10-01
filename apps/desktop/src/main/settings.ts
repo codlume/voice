@@ -20,12 +20,12 @@ export const DEFAULT_SETTINGS: Settings = {
   updateChannel: "stable",
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
-  diagnostics: "unanswered",
+  diagnostics: "off",
 };
 
 const THEMES = ["system", "light", "dark"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
-const CONSENTS = ["unanswered", "on", "off"] as const;
+const CONSENTS = ["on", "off"] as const;
 
 const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback: T[number]) =>
   typeof v === "string" && values.includes(v) ? (v as T[number]) : fallback;
