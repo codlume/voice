@@ -190,15 +190,13 @@ function ThemePicker({ theme }: { theme: Theme }) {
   );
 }
 
-export function Settings({
+export function GeneralSettings({
   settings,
-  updates,
   microphones,
   microphoneTest,
   microphonePermission,
 }: {
   settings: SettingsValue;
-  updates: UpdatesSnapshot;
   microphones: MicrophoneCatalog;
   microphoneTest: MicrophoneTest;
   microphonePermission: PermissionState;
@@ -251,7 +249,6 @@ export function Settings({
     }
   }
 
-  const [updateError, setUpdateError] = useState("");
   const [languageError, setLanguageError] = useState("");
 
   async function changeLanguage(dictationLanguage: DictationLanguage) {
@@ -265,17 +262,9 @@ export function Settings({
     }
   }
 
-  async function changeChannel(channel: UpdateChannel) {
-    setUpdateError("");
-    try {
-      await window.voice.updateSettings({ updateChannel: channel });
-    } catch (error) {
-      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
-    }
-  }
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>Settings</h1>
+      <h1 {...stylex.props(styles.headline)}>General</h1>
 
       <section aria-labelledby="shortcut" {...stylex.props(styles.section)}>
         <h2 id="shortcut" {...stylex.props(styles.sectionLabel)}>
@@ -298,9 +287,38 @@ export function Settings({
         {settings.hotkey === "fn" && <GlobeHint />}
       </section>
 
-      <section aria-labelledby="dictation-languages" {...stylex.props(styles.section)}>
-        <h2 id="dictation-languages" {...stylex.props(styles.sectionLabel)}>
-          Dictation languages
+      <section aria-labelledby="input" {...stylex.props(styles.section)}>
+        <h2 id="input" {...stylex.props(styles.sectionLabel)}>
+          Input
+        </h2>
+        <div {...stylex.props(styles.card)}>
+          <MicrophoneRow
+            selectId="setting-microphone"
+            detail={microphoneDetail}
+            test={microphoneTest}
+            permission={microphonePermission}
+            canTest={microphones.kind === "ready" && devices.length > 0 && !missing}
+          >
+            <Select
+              id="setting-microphone"
+              value={selected?.uid ?? ""}
+              options={microphoneOptions}
+              disabled={savingMicrophone}
+              grouped
+              onChange={(uid) => void changeMicrophone(uid)}
+            />
+          </MicrophoneRow>
+        </div>
+        {microphoneError && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {microphoneError}
+          </p>
+        )}
+      </section>
+
+      <section aria-labelledby="dictation-language" {...stylex.props(styles.section)}>
+        <h2 id="dictation-language" {...stylex.props(styles.sectionLabel)}>
+          Dictation language
         </h2>
         <div {...stylex.props(styles.card)}>
           <Row
@@ -322,28 +340,37 @@ export function Settings({
           </p>
         )}
       </section>
+    </div>
+  );
+}
+
+export function SystemSettings({
+  settings,
+  updates,
+}: {
+  settings: SettingsValue;
+  updates: UpdatesSnapshot;
+}) {
+  const [updateError, setUpdateError] = useState("");
+
+  async function changeChannel(channel: UpdateChannel) {
+    setUpdateError("");
+    try {
+      await window.voice.updateSettings({ updateChannel: channel });
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
+    }
+  }
+
+  return (
+    <div {...stylex.props(styles.page)}>
+      <h1 {...stylex.props(styles.headline)}>System</h1>
 
       <section aria-labelledby="audio" {...stylex.props(styles.section)}>
         <h2 id="audio" {...stylex.props(styles.sectionLabel)}>
           Audio
         </h2>
         <div {...stylex.props(styles.card)}>
-          <MicrophoneRow
-            selectId="setting-microphone"
-            detail={microphoneDetail}
-            test={microphoneTest}
-            permission={microphonePermission}
-            canTest={microphones.kind === "ready" && devices.length > 0 && !missing}
-          >
-            <Select
-              id="setting-microphone"
-              value={selected?.uid ?? ""}
-              options={microphoneOptions}
-              disabled={savingMicrophone}
-              grouped
-              onChange={(uid) => void changeMicrophone(uid)}
-            />
-          </MicrophoneRow>
           <Row
             id="setting-mute-while-dictating"
             title="Mute all audio while dictating"
@@ -357,12 +384,6 @@ export function Settings({
           </Row>
         </div>
       </section>
-
-      {microphoneError && (
-        <p role="alert" {...stylex.props(styles.error)}>
-          {microphoneError}
-        </p>
-      )}
 
       <section aria-labelledby="appearance" {...stylex.props(styles.section)}>
         <h2 id="appearance" {...stylex.props(styles.sectionLabel)}>
