@@ -1,5 +1,4 @@
 import type {
-  DiagnosticsConsent,
   Hotkey,
   ModelStatus,
   PermissionKind,
@@ -11,16 +10,15 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
-  | { type: "setupModels" }
-  | { type: "setDiagnostics"; consent: Exclude<DiagnosticsConsent, "unanswered"> };
+  | { type: "setupModels" };
 
 type Action = {
-  label: "Grant" | "Open" | "Download" | "Retry" | "Share" | "Don't share";
+  label: "Grant" | "Open" | "Download" | "Retry";
   command: SetupCommand;
 };
 
 export type ChecklistRow = {
-  id: PermissionKind | "asr" | "cleanup" | "diagnostics";
+  id: PermissionKind | "asr" | "cleanup";
   title: string;
   subtitle: string;
   status:
@@ -90,23 +88,6 @@ function modelState(model: ModelStatus): RowState {
   }
 }
 
-function diagnosticsState(consent: DiagnosticsConsent): RowState {
-  switch (consent) {
-    case "unanswered":
-      return {
-        status: { kind: "needed", text: "Choose" },
-        actions: [
-          { label: "Share", command: { type: "setDiagnostics", consent: "on" } },
-          { label: "Don't share", command: { type: "setDiagnostics", consent: "off" } },
-        ],
-      };
-    case "on":
-      return { status: { kind: "ready", text: "Sharing" }, actions: [] };
-    case "off":
-      return { status: { kind: "ready", text: "Not sharing" }, actions: [] };
-  }
-}
-
 export function checklist({ permissions, models, settings }: Snapshot): Checklist {
   const rows: ChecklistRow[] = [
     {
@@ -136,11 +117,5 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
       ...modelState(models.cleanup),
     });
   }
-  rows.push({
-    id: "diagnostics",
-    title: "Crash reports",
-    subtitle: "Crashes and timings only. Never your words or audio.",
-    ...diagnosticsState(settings.diagnostics),
-  });
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };
 }
