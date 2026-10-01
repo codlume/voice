@@ -22,10 +22,16 @@ describe("matchShortcut", () => {
     ["B", { command: "toggleSidebar" }],
     [",", { command: "openSettings" }],
     ["[", { command: "closeSettings" }],
-    ["1", { command: "jump", index: 0 }],
-    ["9", { command: "jump", index: 8 }],
   ])("⌘%s", (key, action) => {
     expect(press(key)).toEqual(action);
+  });
+
+  test.each([
+    ["1", "Digit1", 0],
+    ["9", "Digit9", 8],
+    ["1", "Numpad1", 0],
+  ])("⌘%s (%s) jumps", (key, code, index) => {
+    expect(press(key, { code })).toEqual({ command: "jump", index });
   });
 
   test("⌘0 is not a jump", () => {
@@ -62,6 +68,9 @@ test("every sidebar hint is a shortcut that jumps to that item", () => {
   expect(labelled).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   for (const index of labelled) {
     expect(jumpLabel(index)).toBe(`⌘${index + 1}`);
-    expect(press(String(index + 1))).toEqual({ command: "jump", index });
+    expect(press(String(index + 1), { code: `Digit${index + 1}` })).toEqual({
+      command: "jump",
+      index,
+    });
   }
 });
