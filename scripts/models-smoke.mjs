@@ -28,6 +28,14 @@ const linked = (path) => {
   }
 };
 
+const button = (label) =>
+  `document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)})`;
+const navButton = (text) =>
+  `[...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+const enabled = (find) => `(${find})?.disabled === false`;
+// Install reports 0% before it checks the file on disk, so any other download status is a fetch.
+const fetching = (status) => status.state === "downloading" && status.progress !== 0;
+
 stopChildrenOnSignal();
 const cache = modelsDir();
 const userData = await prepareUserData("voice-models-smoke");
@@ -55,11 +63,6 @@ try {
     })`);
     assert(met, label);
   };
-  const button = (label) =>
-    `document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)})`;
-  const navButton = (text) =>
-    `[...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const enabled = (find) => `(${find})?.disabled === false`;
   const click = (find, label) =>
     untilPage(
       `(() => { const el = ${find}; if (el?.disabled !== false) return false; el.click(); return true; })()`,
@@ -87,8 +90,6 @@ try {
     const answered = execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
     assert(answered === "ok", `no confirmation sheet to answer ${choice}`);
   };
-  // Install reports 0% before it checks the file on disk, so any other download status is a fetch.
-  const fetching = (status) => status.state === "downloading" && status.progress !== 0;
 
   await untilModels(
     (m) => m.asr.state === "ready" && m.cleanup.state === "ready",
