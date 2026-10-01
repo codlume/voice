@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { PillState, UpdateStatus } from "../shared/api.ts";
-import { updateButton, updateStatusText } from "./updateStatus.ts";
+import { pendingUpdate, releaseCardTitle, updateButton, updateStatusText } from "./updateStatus.ts";
 
 const idle: PillState = { kind: "idle" };
 
@@ -65,5 +65,33 @@ describe("update controls", () => {
     expect(
       updateStatusText({ kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 }),
     ).toBe("Downloading 1.5.0 · 48%");
+  });
+
+  test("only a downloading or ready update gets a release card", () => {
+    const statuses: UpdateStatus[] = [
+      { kind: "idle" },
+      { kind: "checking" },
+      { kind: "current" },
+      { kind: "downloading", version: "1.5.0", notes: ["fix: one"], percent: 48.4 },
+      { kind: "ready", version: "1.5.0", notes: ["fix: one"] },
+      { kind: "installing", version: "1.5.0" },
+      { kind: "failed", message: "Connection timed out" },
+      { kind: "disabled", reason: "Only packaged builds update" },
+    ];
+    expect(
+      statuses.map((status) => {
+        const update = pendingUpdate(status);
+        return update && releaseCardTitle(update);
+      }),
+    ).toEqual([
+      null,
+      null,
+      null,
+      "Downloading update · 48%",
+      "Update ready to install",
+      null,
+      null,
+      null,
+    ]);
   });
 });

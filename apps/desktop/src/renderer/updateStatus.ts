@@ -25,6 +25,18 @@ export function updateStatusText(status: UpdateStatus): string {
   }
 }
 
+export type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
+
+export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
+  return status.kind === "downloading" || status.kind === "ready" ? status : null;
+}
+
+export function releaseCardTitle(update: PendingUpdate): string {
+  return update.kind === "ready"
+    ? "Update ready to install"
+    : `Downloading update · ${Math.round(update.percent)}%`;
+}
+
 export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {

@@ -1,9 +1,15 @@
 import { Popover } from "@base-ui/react/popover";
 import * as stylex from "@stylexjs/stylex";
-import { useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
-import { updateButton, updateStatusText } from "./updateStatus.ts";
+import {
+  pendingUpdate,
+  releaseCardTitle,
+  updateButton,
+  updateStatusText,
+  type PendingUpdate,
+} from "./updateStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -237,93 +243,57 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The update action failed. Try again.";
 }
 
-type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
-
-function cardTitle(update: PendingUpdate): string {
-  return update.kind === "ready"
-    ? "Update ready to install"
-    : `Downloading update · ${Math.round(update.percent)}%`;
-}
-
-function ReleaseCardTrigger({
-  update,
-  ...button
-}: { update: PendingUpdate } & ComponentProps<"button">) {
-  const [open, setOpen] = useState(false);
-  const focusReturnedByEscape = useRef(false);
-
+function ReleaseCard({ update }: { update: PendingUpdate }) {
   return (
-    <Popover.Root
-      open={open}
-      onOpenChange={(next, details) => {
-        // A click runs the update action instead of pinning the card open.
-        if (details.reason === "trigger-press") {
-          details.cancel();
-          return;
-        }
-        if (!next && details.reason === "escape-key") focusReturnedByEscape.current = true;
-        setOpen(next);
-      }}
-    >
-      <Popover.Trigger
-        {...button}
-        openOnHover
-        delay={100}
-        closeDelay={150}
-        onFocus={(event) => {
-          if (!focusReturnedByEscape.current && event.currentTarget.matches(":focus-visible"))
-            setOpen(true);
-          focusReturnedByEscape.current = false;
-        }}
-      />
-      <Popover.Portal>
-        <Popover.Positioner
-          side="top"
-          align="center"
-          sideOffset={8}
-          collisionPadding={8}
-          {...stylex.props(styles.positioner)}
+    <Popover.Portal>
+      <Popover.Positioner
+        side="top"
+        align="center"
+        sideOffset={8}
+        collisionPadding={8}
+        {...stylex.props(styles.positioner)}
+      >
+        <Popover.Popup
+          initialFocus={false}
+          className={({ transitionStatus }) =>
+            stylex.props(
+              styles.card,
+              (transitionStatus === "starting" || transitionStatus === "ending") &&
+                styles.cardHidden,
+            ).className
+          }
         >
-          <Popover.Popup
-            initialFocus={false}
-            className={({ transitionStatus }) =>
-              stylex.props(
-                styles.card,
-                (transitionStatus === "starting" || transitionStatus === "ending") &&
-                  styles.cardHidden,
-              ).className
-            }
+          <Popover.Title {...stylex.props(styles.cardTitle)}>
+            {releaseCardTitle(update)}
+          </Popover.Title>
+          <p {...stylex.props(styles.cardVersion)}>Version {update.version}</p>
+          {update.notes.length > 0 && (
+            <>
+              <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
+              <ul {...stylex.props(styles.notes)}>
+                {update.notes.map((note) => (
+                  <li key={note} {...stylex.props(styles.note)}>
+                    {note}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => void window.voice.openRelease()}
+            {...stylex.props(styles.releaseLink)}
           >
-            <Popover.Title {...stylex.props(styles.cardTitle)}>{cardTitle(update)}</Popover.Title>
-            <p {...stylex.props(styles.cardVersion)}>Version {update.version}</p>
-            {update.notes.length > 0 && (
-              <>
-                <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
-                <ul {...stylex.props(styles.notes)}>
-                  {update.notes.map((note) => (
-                    <li key={note} {...stylex.props(styles.note)}>
-                      {note}
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => void window.voice.openRelease()}
-              {...stylex.props(styles.releaseLink)}
-            >
-              View release on GitHub
-              <Glyph size={12}>
-                <path d="M15 3h6v6" />
-                <path d="M10 14 21 3" />
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              </Glyph>
-            </button>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+            View release on GitHub
+            <Glyph size={12}>
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </Glyph>
+          </button>
+        </Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
   );
 }
 
@@ -335,9 +305,12 @@ export function SidebarUpdates({
   session: PillState;
 }) {
   const [actionError, setActionError] = useState("");
+  const [cardOpen, setCardOpen] = useState(false);
+  const focusReturnedByEscape = useRef(false);
   const status = updates.status;
   const { action, label, tooltip } = updateButton(status, session);
-  const pending = status.kind === "downloading" || status.kind === "ready" ? status : null;
+  const pending = pendingUpdate(status);
+  if (cardOpen && !pending) setCardOpen(false);
 
   async function run(task: () => Promise<void>) {
     setActionError("");
@@ -348,38 +321,67 @@ export function SidebarUpdates({
     }
   }
 
-  // aria-disabled instead of disabled keeps the button hoverable and focusable for the card.
-  const button = {
-    type: "button",
-    "aria-label": label,
-    "aria-disabled": action === null || undefined,
-    onClick: () => {
-      if (action === null) return;
-      void run(() =>
-        action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
-      );
-    },
-    children: <StatusIcon status={status} />,
-    ...stylex.props(
-      styles.button,
-      (status.kind === "ready" || status.kind === "installing" || status.kind === "downloading") &&
-        styles.pending,
-      status.kind === "failed" && styles.failed,
-      status.kind === "disabled" && styles.dimmed,
-      action === null && styles.unavailable,
-    ),
-  } satisfies ComponentProps<"button">;
-
   return (
     <div {...stylex.props(styles.sidebar)}>
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
         {updateStatusText(status)}
       </p>
-      {pending ? (
-        <ReleaseCardTrigger update={pending} {...button} />
-      ) : (
-        <button {...button} title={tooltip} />
-      )}
+      {/* One trigger for every status, so the button keeps focus when an update starts or finishes. */}
+      <Popover.Root
+        open={cardOpen}
+        onOpenChange={(next, details) => {
+          // A click runs the update action instead of pinning the card open.
+          if (details.reason === "trigger-press") {
+            details.cancel();
+            return;
+          }
+          // Escape hands focus back to the trigger, which must not reopen the card.
+          if (!next && details.reason === "escape-key") focusReturnedByEscape.current = true;
+          setCardOpen(next);
+        }}
+      >
+        <Popover.Trigger
+          openOnHover={pending !== null}
+          delay={100}
+          closeDelay={150}
+          aria-label={label}
+          aria-haspopup={pending ? "dialog" : undefined}
+          aria-expanded={pending ? cardOpen : undefined}
+          // aria-disabled instead of disabled keeps the button hoverable and focusable for the card.
+          aria-disabled={action === null || undefined}
+          title={pending ? undefined : tooltip}
+          onClick={() => {
+            if (action === null) return;
+            void run(() =>
+              action === "restart"
+                ? window.voice.restartForUpdate()
+                : window.voice.checkForUpdates(),
+            );
+          }}
+          onFocus={(event) => {
+            if (
+              pending &&
+              !focusReturnedByEscape.current &&
+              event.currentTarget.matches(":focus-visible")
+            )
+              setCardOpen(true);
+            focusReturnedByEscape.current = false;
+          }}
+          {...stylex.props(
+            styles.button,
+            (status.kind === "ready" ||
+              status.kind === "installing" ||
+              status.kind === "downloading") &&
+              styles.pending,
+            status.kind === "failed" && styles.failed,
+            status.kind === "disabled" && styles.dimmed,
+            action === null && styles.unavailable,
+          )}
+        >
+          <StatusIcon status={status} />
+        </Popover.Trigger>
+        {pending && <ReleaseCard update={pending} />}
+      </Popover.Root>
       {actionError && (
         <p role="alert" {...stylex.props(styles.error)}>
           {actionError}
