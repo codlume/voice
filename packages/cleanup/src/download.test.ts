@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
-import { downloadModel, removeModel, S1_MINI } from "./download.ts";
+import { downloadModel, findS1Mini, removeModel, S1_MINI, S1_MINI_FILE } from "./download.ts";
 
 const BYTES = 256 * 1024;
 const MODEL = Buffer.from(Array.from({ length: BYTES }, (_, i) => (i * 31 + 7) % 256));
@@ -140,6 +140,21 @@ test("rejects an HTTP error", async () => {
   behavior = "missing";
 
   await expect(download()).rejects.toThrow("HTTP 404");
+});
+
+test("findS1Mini finds the weights only once a download has renamed them into place", async () => {
+  for (const name of [
+    `${S1_MINI_FILE}.part`,
+    `${S1_MINI_FILE}.LICENSE`,
+    `${S1_MINI_FILE}.NOTICE`,
+  ]) {
+    await writeFile(join(dir, name), "partial");
+  }
+  await expect(findS1Mini({ dir })).resolves.toBeUndefined();
+
+  await writeFile(join(dir, S1_MINI_FILE), "weights");
+
+  await expect(findS1Mini({ dir })).resolves.toBe(join(dir, S1_MINI_FILE));
 });
 
 test("removeModel deletes everything a download wrote and keeps other files", async () => {

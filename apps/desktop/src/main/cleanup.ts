@@ -1,13 +1,10 @@
-import { access } from "node:fs/promises";
-import * as NodePath from "node:path";
-
 import type { CleanupStyle, S1Mini } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
-  "S1_MINI_FILE" | "createS1Mini" | "downloadS1Mini" | "removeS1Mini"
+  "createS1Mini" | "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
 >;
 
 export type Cleanup = {
@@ -72,16 +69,14 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     });
   }
 
-  async function loadModel(module: CleanupModule) {
+  async function loadModel(module: CleanupModule, modelPath: string) {
     if (!options.shouldLoad()) {
       options.onStatus({ state: "installed" });
       return;
     }
     if (model.phase !== "none") return;
     options.onStatus({ state: "loading" });
-    const created = module.createS1Mini({
-      modelPath: NodePath.join(options.modelsDir, module.S1_MINI_FILE),
-    });
+    const created = module.createS1Mini({ modelPath });
     model = { phase: "loading", model: created };
     try {
       await created.load();
@@ -99,13 +94,12 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   async function loadIfOnDisk() {
     if (!claimIdle()) return;
     const module = await loadModule();
-    try {
-      await access(NodePath.join(options.modelsDir, module.S1_MINI_FILE));
-    } catch {
+    const modelPath = await module.findS1Mini({ dir: options.modelsDir });
+    if (modelPath === undefined) {
       options.onStatus({ state: "missing" });
       return;
     }
-    await loadModel(module);
+    await loadModel(module, modelPath);
   }
 
   return {
@@ -115,8 +109,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         if (!claimIdle()) return;
         options.onStatus({ state: "downloading", progress: 0 });
         const module = await loadModule();
+        let modelPath: string;
         try {
-          await module.downloadS1Mini({
+          modelPath = await module.downloadS1Mini({
             dir: options.modelsDir,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
           });
@@ -124,7 +119,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           options.onStatus({ state: "failed", message: message(error) });
           return;
         }
-        await loadModel(module);
+        await loadModel(module, modelPath);
       }),
     uninstall: () =>
       disposeThen(async () => {

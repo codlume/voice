@@ -2,7 +2,7 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
+import { findS1Mini, removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
@@ -34,7 +34,7 @@ function fakeModule(behavior: Behavior = {}) {
     signals: [] as (AbortSignal | undefined)[],
   };
   const module: CleanupModule = {
-    S1_MINI_FILE,
+    findS1Mini,
     async downloadS1Mini({ dir, onProgress }) {
       calls.downloads += 1;
       if (behavior.downloadError) throw new Error(behavior.downloadError);
