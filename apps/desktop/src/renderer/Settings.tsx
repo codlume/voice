@@ -436,10 +436,18 @@ export function SystemSettings({
           </div>
         </div>
       </section>
+    </div>
+  );
+}
 
-      <section aria-labelledby="privacy" {...stylex.props(styles.section)}>
-        <h2 id="privacy" {...stylex.props(styles.sectionLabel)}>
-          Privacy
+export function DataPrivacySettings({ settings }: { settings: Settings }) {
+  return (
+    <div {...stylex.props(styles.page)}>
+      <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
+
+      <section aria-labelledby="diagnostics" {...stylex.props(styles.section)}>
+        <h2 id="diagnostics" {...stylex.props(styles.sectionLabel)}>
+          Diagnostics
         </h2>
         <div {...stylex.props(styles.card)}>
           <Row
