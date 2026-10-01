@@ -10,6 +10,7 @@ import {
   modelFiles,
   Page,
   prepareUserData,
+  snapshotStream,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
@@ -26,7 +27,6 @@ const linked = (path) => {
     return false;
   }
 };
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 stopChildrenOnSignal();
 const cache = modelsDir();
@@ -36,100 +36,112 @@ const { child } = launchVoice(userData, { port });
 
 try {
   const page = await Page.connect(port, "hub.html");
-  const snapshot = () => page.evaluate("window.voice.getSnapshot()");
-  const until = async (predicate, label, timeoutMs = 180_000) => {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const s = await snapshot();
-      if (predicate(s.models)) return s;
-      await wait(200);
-    }
-    throw new Error(`timed out waiting for ${label}: ${JSON.stringify((await snapshot()).models)}`);
+  const snapshots = await snapshotStream(page);
+  const untilModels = (predicate, label) =>
+    snapshots
+      .waitFor((s) => predicate(s.models), { timeoutMs: 180_000, label })
+      .catch((error) => {
+        throw new Error(`${error.message}: ${JSON.stringify(snapshots.items.at(-1)?.models)}`);
+      });
+  // Rechecks `condition`, a page expression, after every DOM change until it holds.
+  const untilPage = async (condition, label) => {
+    const met = await page.evaluate(`new Promise((resolve) => {
+      const observer = new MutationObserver(() => check());
+      const timer = setTimeout(() => done(false), 10000);
+      const done = (value) => { observer.disconnect(); clearTimeout(timer); resolve(value); };
+      const check = () => { if (${condition}) done(true); };
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+      check();
+    })`);
+    assert(met, label);
   };
-  const click = (find) =>
-    page.evaluate(
-      `(() => { const el = ${find}; if (!el) throw new Error("missing element"); el.click(); return true })()`,
-    );
-  const button = (label) => `document.querySelector(${JSON.stringify(`[aria-label="${label}"]`)})`;
+  const button = (label) =>
+    `document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)})`;
   const navButton = (text) =>
     `[...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
-  const mainText = () => page.evaluate("document.querySelector('main').innerText");
+  const enabled = (find) => `(${find})?.disabled === false`;
+  const click = (find, label) =>
+    untilPage(
+      `(() => { const el = ${find}; if (el?.disabled !== false) return false; el.click(); return true; })()`,
+      label,
+    );
+  const mainText = "document.querySelector('main').innerText";
   const shot = async (name) => {
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
     writeFileSync(`${shots}-${name}.png`, Buffer.from(data, "base64"));
   };
-  const answerDialog = async (choice) => {
+  const answerDialog = (choice) => {
     const script = `tell application "System Events" to tell (first process whose unix id is ${child.pid})
-      repeat with w in windows
-        if (count of sheets of w) > 0 then
-          click button "${choice}" of sheet 1 of w
-          return "ok"
-        end if
+      repeat 50 times
+        repeat with w in windows
+          if (count of sheets of w) > 0 then
+            click button "${choice}" of sheet 1 of w
+            return "ok"
+          end if
+        end repeat
+        delay 0.1
       end repeat
       return "none"
     end tell`;
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      if (execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim() === "ok") return;
-      await wait(100);
-    }
-    throw new Error(`no confirmation sheet to answer ${choice}`);
+    const answered = execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
+    assert(answered === "ok", `no confirmation sheet to answer ${choice}`);
   };
   const installed = (state) => state === "ready" || state === "installed";
 
-  await until((m) => m.asr.state === "ready" && installed(m.cleanup.state), "both models loaded");
-  await click(button("Settings"));
-  await click(navButton("Models"));
-  await wait(300);
-  assert((await mainText()).includes("Speech recognition"), "Models page renders");
+  await untilModels(
+    (m) => m.asr.state === "ready" && installed(m.cleanup.state),
+    "both models loaded",
+  );
+  await click(button("Settings"), "Settings opens");
+  await click(navButton("Models"), "Models page opens");
+  await untilPage(`${mainText}.includes("Speech recognition")`, "Models page renders");
   await shot("installed");
 
   await page.evaluate("window.voice.updateSettings({ cleanup: { enabled: false } })");
-  await until((m) => m.cleanup.state === "installed", "cleanup off reports installed");
-  await wait(300);
-  assert((await mainText()).includes("Loads when text cleanup is on"), "cleanup-off row text");
+  await untilModels((m) => m.cleanup.state === "installed", "cleanup off reports installed");
+  await untilPage(`${mainText}.includes("Loads when text cleanup is on")`, "cleanup-off row text");
   await shot("cleanup-off");
   await page.evaluate("window.voice.updateSettings({ cleanup: { enabled: true } })");
-  await until((m) => m.cleanup.state === "ready", "cleanup on loads again");
+  await untilModels((m) => m.cleanup.state === "ready", "cleanup on loads again");
   note("cleanup off unloads, on reloads");
 
-  await click(button(`Uninstall ${names.cleanup}`));
-  await answerDialog("Cancel");
-  await wait(1000);
-  assert(installed((await snapshot()).models.cleanup.state), "Cancel keeps the cleanup model");
+  const uninstallCleanup = button(`Uninstall ${names.cleanup}`);
+  await click(uninstallCleanup, "cleanup Uninstall clickable");
+  answerDialog("Cancel");
+  await untilPage(enabled(uninstallCleanup), "cancelled uninstall settles");
+  const afterCancel = await page.evaluate("window.voice.getSnapshot()");
+  assert(installed(afterCancel.models.cleanup.state), "Cancel keeps the cleanup model");
   assert(linked(join(models, modelFiles.cleanup)), "Cancel keeps the cleanup file");
   note("cancel keeps the model");
 
   for (const id of ["cleanup", "asr"]) {
-    await click(button(`Uninstall ${names[id]}`));
-    await answerDialog("Uninstall");
-    await until((m) => m[id].state === "missing", `${id} missing`);
+    await click(button(`Uninstall ${names[id]}`), `${id} Uninstall clickable`);
+    answerDialog("Uninstall");
+    await untilModels((m) => m[id].state === "missing", `${id} missing`);
     assert(!linked(join(models, modelFiles[id])), `${id} link removed`);
     assert(existsSync(join(cache, modelFiles[id])), `${id} cache left intact`);
     note(`${id} uninstalled, cache intact`);
   }
-  const uninstalledText = await mainText();
-  assert(uninstalledText.split("Not installed").length === 3, "both rows say Not installed");
+  await untilPage(`${mainText}.split("Not installed").length === 3`, "both rows say Not installed");
   await shot("uninstalled");
 
-  await click(navButton("Back"));
-  await wait(300);
-  assert((await mainText()).includes("Not downloaded"), "Home checklist offers the download");
+  await click(navButton("Back"), "Back clickable");
+  await untilPage(`${mainText}.includes("Not downloaded")`, "Home checklist offers the download");
   await shot("home-uninstalled");
-  await click(button("Settings"));
-  await click(navButton("Models"));
+  await click(button("Settings"), "Settings opens again");
+  await click(navButton("Models"), "Models page opens again");
 
   for (const id of ["cleanup", "asr"])
     symlinkSync(join(cache, modelFiles[id]), join(models, modelFiles[id]));
   for (const id of ["cleanup", "asr"]) {
-    await click(button(`Install ${names[id]}`));
-    await until(
+    await click(button(`Install ${names[id]}`), `${id} Install clickable`);
+    await untilModels(
       (m) => (id === "asr" ? m.asr.state === "ready" : installed(m.cleanup.state)),
       `${id} reinstalled`,
     );
     note(`${id} reinstalled`);
   }
-  await wait(300);
-  assert(!(await mainText()).includes("Not installed"), "both rows installed again");
+  await untilPage(`!${mainText}.includes("Not installed")`, "both rows installed again");
   await shot("reinstalled");
   page.close();
   note("ok");
