@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
-import { GeneralSettings, SystemSettings } from "./Settings.tsx";
+import { DataPrivacySettings, GeneralSettings, SystemSettings } from "./Settings.tsx";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -50,6 +50,16 @@ const settingsPages = [
       </>
     ),
   },
+  {
+    id: "privacy",
+    label: "Data and Privacy",
+    icon: (
+      <>
+        <path d="M10 2.75 3.75 5.25v4.5c0 3.75 2.6 6.4 6.25 7.5 3.65-1.1 6.25-3.75 6.25-7.5v-4.5z" />
+        <path d="m7.5 10.25 1.75 1.75 3.25-3.5" />
+      </>
+    ),
+  },
 ] as const;
 
 type AppPage = (typeof appPages)[number]["id"];
@@ -67,6 +77,7 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
     />
   ),
   system: (snapshot) => <SystemSettings settings={snapshot.settings} updates={snapshot.updates} />,
+  privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
 };
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
