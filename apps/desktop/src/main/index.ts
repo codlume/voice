@@ -26,6 +26,7 @@ import {
   type Snapshot,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { models, type Model, type ModelId } from "../shared/models.ts";
 import { createCleanup } from "./cleanup.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
@@ -220,7 +221,7 @@ async function main() {
 
   const cleanup = createCleanup({
     modelsDir,
-    enabled: () => wantsCleanup(store.state.settings),
+    shouldLoad: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
   });
 
@@ -280,6 +281,9 @@ async function main() {
     },
   });
 
+  const dictating = () =>
+    store.state.session.phase !== "idle" && store.state.session.phase !== "done";
+
   const updates = createUpdates({
     engine: store.state.updates.status.kind === "disabled" ? null : autoUpdater,
     release,
@@ -287,7 +291,7 @@ async function main() {
     onChange: (value) => store.update((s) => ({ ...s, updates: value })),
     canRestart: () =>
       lifecycle === "running" &&
-      (store.state.session.phase === "idle" || store.state.session.phase === "done") &&
+      !dictating() &&
       store.state.settings.updateChannel === store.state.updates.channel,
     confirmRestart: async () => {
       const last = store.state.last;
@@ -457,7 +461,7 @@ async function main() {
     if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     if (!state.settings.cleanup.enabled && previous.settings.cleanup.enabled) {
-      void cleanup.dispose();
+      void cleanup.unload();
     } else if (wantsCleanup(state.settings) && !wantsCleanup(previous.settings)) {
       void cleanup.loadIfDownloaded();
     }
@@ -490,6 +494,51 @@ async function main() {
     helper.send({ type: "permissions.request", kind });
   }
 
+  const modelControls: Record<
+    ModelId,
+    { install(): void; uninstall(): Promise<void>; lostUntilReinstalled: string }
+  > = {
+    asr: {
+      install: () => helper.send({ type: "asr.prepare", download: true }),
+      uninstall: async () => helper.send({ type: "asr.remove" }),
+      lostUntilReinstalled: "Dictation stops working",
+    },
+    cleanup: {
+      install: () => void cleanup.install(),
+      uninstall: () => cleanup.uninstall(),
+      lostUntilReinstalled: "Text cleanup stops",
+    },
+  };
+
+  function assertCanUninstall(model: Model) {
+    if (lifecycle !== "running") throw new Error("Voice is closing.");
+    const { state } = store.state.models[model.id];
+    if (state === "downloading" || state === "loading") {
+      throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
+    }
+    if (model.id === "asr" && dictating()) {
+      throw new Error("Finish dictating, then uninstall the speech model.");
+    }
+  }
+
+  async function uninstallModel(model: Model) {
+    assertCanUninstall(model);
+    const confirmation = {
+      type: "warning" as const,
+      message: `Uninstall the ${model.kind.toLowerCase()}?`,
+      detail: `${modelControls[model.id].lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`,
+      buttons: ["Cancel", "Uninstall"],
+      defaultId: 0,
+      cancelId: 0,
+    };
+    const { response } = await (hub && !hub.isDestroyed()
+      ? dialog.showMessageBox(hub, confirmation)
+      : dialog.showMessageBox(confirmation));
+    if (response !== 1) return;
+    assertCanUninstall(model);
+    await modelControls[model.id].uninstall();
+  }
+
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
@@ -516,9 +565,13 @@ async function main() {
     if (lifecycle === "running") microphoneTest.start();
   });
   ipcMain.handle(Channel.stopMicrophoneTest, () => microphoneTest.stop());
-  ipcMain.handle(Channel.setupModels, () => {
-    helper.send({ type: "asr.prepare", download: true });
-    if (wantsCleanup(store.state.settings)) void cleanup.downloadAndLoad();
+  ipcMain.handle(Channel.installModel, (_event, id: unknown) => {
+    const model = models.find((candidate) => candidate.id === id);
+    if (model && lifecycle === "running") modelControls[model.id].install();
+  });
+  ipcMain.handle(Channel.uninstallModel, (_event, id: unknown) => {
+    const model = models.find((candidate) => candidate.id === id);
+    if (model) return uninstallModel(model);
   });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
@@ -563,7 +616,7 @@ async function main() {
 
   showHub();
   updates.start();
-  if (wantsCleanup(store.state.settings)) void cleanup.loadIfDownloaded();
+  void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
   if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
 }

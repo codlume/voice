@@ -1,6 +1,13 @@
 import { createRoot } from "react-dom/client";
 
-import type { Outcome, PillState, Snapshot, UpdateStatus, VoiceApi } from "../shared/api.ts";
+import type {
+  ModelStatus,
+  Outcome,
+  PillState,
+  Snapshot,
+  UpdateStatus,
+  VoiceApi,
+} from "../shared/api.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
@@ -129,6 +136,11 @@ const hubScenes: Record<string, Snapshot> = {
     },
   },
   ready,
+  "cleanup-off": {
+    ...ready,
+    models: { asr: { state: "ready" }, cleanup: { state: "installed" } },
+    settings: { ...ready.settings, cleanup: { ...ready.settings.cleanup, enabled: false } },
+  },
   ...Object.fromEntries(
     Object.entries(updateScenes).map(([name, status]) => [
       name,
@@ -260,15 +272,21 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     stopMicrophoneTest: async () => {
       set({ ...snapshot, microphoneTest: { kind: "off" } });
     },
-    setupModels: async () => {
+    installModel: async (id) => {
       let progress = 0;
       const timer = setInterval(() => {
         progress = Math.min(1, progress + 0.07);
-        const model =
-          progress < 1 ? { state: "downloading" as const, progress } : { state: "ready" as const };
-        set({ ...snapshot, models: { asr: model, cleanup: model } });
+        const model: ModelStatus =
+          progress < 1 ? { state: "downloading", progress } : { state: "ready" };
+        set({ ...snapshot, models: { ...snapshot.models, [id]: model } });
         if (progress >= 1) clearInterval(timer);
       }, 200);
+    },
+    uninstallModel: async (id) => {
+      if (id === "asr" && snapshot.session.kind !== "idle" && snapshot.session.kind !== "done")
+        throw new Error("Finish dictating, then uninstall the speech model.");
+      if (!confirm(`Uninstall ${id}?`)) return;
+      set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
     copyLast: async (which) => {
       console.info("copyLast", which);

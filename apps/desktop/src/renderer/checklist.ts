@@ -7,10 +7,11 @@ import type {
 } from "../shared/api.ts";
 
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { models, type ModelId } from "../shared/models.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
-  | { type: "setupModels" };
+  | { type: "installModel"; id: ModelId };
 
 type Action = {
   label: "Grant" | "Open" | "Download" | "Retry";
@@ -18,7 +19,7 @@ type Action = {
 };
 
 export type ChecklistRow = {
-  id: PermissionKind | "asr" | "cleanup";
+  id: PermissionKind | ModelId;
   title: string;
   subtitle: string;
   status:
@@ -57,11 +58,13 @@ function permissionState(kind: PermissionKind, state: PermissionState): RowState
   }
 }
 
-function modelState(model: ModelStatus): RowState {
-  const command: SetupCommand = { type: "setupModels" };
+function modelState(id: ModelId, model: ModelStatus): RowState {
+  const command: SetupCommand = { type: "installModel", id };
   switch (model.state) {
     case "ready":
       return { status: { kind: "ready", text: "Ready" }, actions: [] };
+    case "installed":
+      return { status: { kind: "ready", text: "Downloaded" }, actions: [] };
     case "missing":
       return {
         status: { kind: "needed", text: "Not downloaded" },
@@ -88,7 +91,7 @@ function modelState(model: ModelStatus): RowState {
   }
 }
 
-export function checklist({ permissions, models, settings }: Snapshot): Checklist {
+export function checklist({ permissions, models: statuses, settings }: Snapshot): Checklist {
   const rows: ChecklistRow[] = [
     {
       id: "microphone",
@@ -102,19 +105,14 @@ export function checklist({ permissions, models, settings }: Snapshot): Checklis
       subtitle: "Types the text into the app you are using",
       ...permissionState("accessibility", permissions.accessibility),
     },
-    {
-      id: "asr",
-      title: "Speech model",
-      subtitle: "Parakeet, on this Mac",
-      ...modelState(models.asr),
-    },
   ];
-  if (wantsCleanup(settings)) {
+  for (const model of models) {
+    if (model.id === "cleanup" && !wantsCleanup(settings)) continue;
     rows.push({
-      id: "cleanup",
-      title: "Cleanup model",
-      subtitle: "S1-mini by Superwhisper",
-      ...modelState(models.cleanup),
+      id: model.id,
+      title: model.kind,
+      subtitle: `${model.name} by ${model.vendor}`,
+      ...modelState(model.id, statuses[model.id]),
     });
   }
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };

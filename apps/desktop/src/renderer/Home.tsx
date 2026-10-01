@@ -181,8 +181,8 @@ function greeting(hour: number): string {
 
 function run(command: SetupCommand): Promise<void> {
   switch (command.type) {
-    case "setupModels":
-      return window.voice.setupModels();
+    case "installModel":
+      return window.voice.installModel(command.id);
     case "requestPermission":
       return window.voice.requestPermission(command.kind);
   }
