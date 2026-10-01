@@ -256,7 +256,7 @@ describe("createCleanup", () => {
     await expect.poll(() => fake.calls.downloads).toBe(1);
 
     enabled = false;
-    const disposing = cleanup.dispose();
+    const disposing = cleanup.unload();
     finishDownload();
     await Promise.all([downloading, disposing]);
     expect(fake.calls.loads).toBe(0);
@@ -279,7 +279,7 @@ describe("createCleanup", () => {
     await expect.poll(() => statuses).toEqual([{ state: "loading" }]);
 
     enabled = false;
-    const disposing = cleanup.dispose();
+    const disposing = cleanup.unload();
     enabled = true;
     const second = cleanup.loadIfDownloaded();
     finishLoad();
