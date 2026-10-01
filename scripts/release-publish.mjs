@@ -50,7 +50,7 @@ function requireInstallerFiles(names) {
   }
 }
 
-export function prepareFeed(source, version, baseUrl, artifacts, releaseNotes = "") {
+export function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
   const feed = readFeed(source);
   if (feed.version !== version)
     throw new Error("Builder feed version differs from artifact version");
