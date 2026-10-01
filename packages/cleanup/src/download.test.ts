@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vite-plus/test";
 
-import { downloadModel, S1_MINI } from "./download.ts";
+import { downloadModel, findS1Mini, removeModel, S1_MINI, S1_MINI_FILE } from "./download.ts";
 
 const BYTES = 256 * 1024;
 const MODEL = Buffer.from(Array.from({ length: BYTES }, (_, i) => (i * 31 + 7) % 256));
@@ -140,6 +140,56 @@ test("rejects an HTTP error", async () => {
   behavior = "missing";
 
   await expect(download()).rejects.toThrow("HTTP 404");
+});
+
+test("findS1Mini finds the weights only once a download has renamed them into place", async () => {
+  for (const name of [
+    `${S1_MINI_FILE}.part`,
+    `${S1_MINI_FILE}.LICENSE`,
+    `${S1_MINI_FILE}.NOTICE`,
+  ]) {
+    await writeFile(join(dir, name), "partial");
+  }
+  await expect(findS1Mini({ dir })).resolves.toBeUndefined();
+
+  await writeFile(join(dir, S1_MINI_FILE), "weights");
+
+  await expect(findS1Mini({ dir })).resolves.toBe(join(dir, S1_MINI_FILE));
+});
+
+test("removeModel deletes everything a download wrote and keeps other files", async () => {
+  await download();
+  await writeFile(join(dir, "other.gguf"), "keep");
+
+  await removeModel({ dir, file: "model.gguf" });
+
+  expect(await readdir(dir)).toEqual(["other.gguf"]);
+});
+
+test("removeModel deletes partial downloads left by a crash and succeeds again with nothing left", async () => {
+  for (const name of ["model.gguf.part", "model.gguf.LICENSE.part", "model.gguf.NOTICE.part"]) {
+    await writeFile(join(dir, name), "partial");
+  }
+
+  await removeModel({ dir, file: "model.gguf" });
+  await removeModel({ dir, file: "model.gguf" });
+
+  expect(await readdir(dir)).toEqual([]);
+});
+
+test("removeModel unlinks a symlinked model without touching the file it points to", async () => {
+  const cache = await mkdtemp(join(tmpdir(), "voice-cleanup-cache-"));
+  try {
+    await writeFile(join(cache, "model.gguf"), "weights");
+    await symlink(join(cache, "model.gguf"), join(dir, "model.gguf"));
+
+    await removeModel({ dir, file: "model.gguf" });
+
+    expect(await readdir(dir)).toEqual([]);
+    expect(await readFile(join(cache, "model.gguf"), "utf8")).toBe("weights");
+  } finally {
+    await rm(cache, { recursive: true, force: true });
+  }
 });
 
 test("S1-mini is pinned to a commit revision with a full SHA-256, never to a moving branch", () => {

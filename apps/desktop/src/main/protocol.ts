@@ -7,6 +7,7 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
+// Bump together with the helper's `ready` version whenever a line's shape changes.
 export const HELPER_PROTOCOL_VERSION = 6;
 
 export type HelperCommand =

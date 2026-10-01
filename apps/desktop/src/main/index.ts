@@ -494,19 +494,14 @@ async function main() {
     helper.send({ type: "permissions.request", kind });
   }
 
-  const modelControls: Record<
-    ModelId,
-    { install(): void; uninstall(): Promise<void>; lostUntilReinstalled: string }
-  > = {
+  const modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }> = {
     asr: {
       install: () => helper.send({ type: "asr.prepare", download: true }),
       uninstall: async () => helper.send({ type: "asr.remove" }),
-      lostUntilReinstalled: "Dictation stops working",
     },
     cleanup: {
       install: () => void cleanup.install(),
       uninstall: () => cleanup.uninstall(),
-      lostUntilReinstalled: "Text cleanup stops",
     },
   };
 
@@ -516,8 +511,8 @@ async function main() {
     if (state === "downloading" || state === "loading") {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    if (model.id === "asr" && dictating()) {
-      throw new Error("Finish dictating, then uninstall the speech model.");
+    if (model.neededWhileDictating && dictating()) {
+      throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
     }
   }
 
@@ -526,7 +521,7 @@ async function main() {
     const confirmation = {
       type: "warning" as const,
       message: `Uninstall the ${model.kind.toLowerCase()}?`,
-      detail: `${modelControls[model.id].lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`,
+      detail: `${model.lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`,
       buttons: ["Cancel", "Uninstall"],
       defaultId: 0,
       cancelId: 0,

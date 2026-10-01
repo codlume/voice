@@ -1,8 +1,8 @@
-import { access, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
+import { findS1Mini, removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
@@ -16,6 +16,7 @@ const signal = new AbortController().signal;
 type Behavior = {
   loadError?: string;
   downloadError?: string;
+  removeError?: string;
   warmUpError?: string;
   downloadGate?: Promise<void>;
   loadGate?: Promise<void>;
@@ -26,13 +27,14 @@ function fakeModule(behavior: Behavior = {}) {
   const calls = {
     downloads: 0,
     creates: 0,
+    modelPaths: [] as string[],
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
     signals: [] as (AbortSignal | undefined)[],
   };
   const module: CleanupModule = {
-    S1_MINI_FILE,
+    findS1Mini,
     async downloadS1Mini({ dir, onProgress }) {
       calls.downloads += 1;
       if (behavior.downloadError) throw new Error(behavior.downloadError);
@@ -42,8 +44,13 @@ function fakeModule(behavior: Behavior = {}) {
       await writeFile(path, "weights");
       return path;
     },
-    createS1Mini() {
+    async removeS1Mini(options) {
+      if (behavior.removeError) throw new Error(behavior.removeError);
+      await removeS1Mini(options);
+    },
+    createS1Mini({ modelPath }) {
       calls.creates += 1;
+      calls.modelPaths.push(modelPath);
       return {
         async load() {
           calls.loads += 1;
@@ -80,14 +87,12 @@ describe("createCleanup", () => {
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
+  const start = (fake = fakeModule(), shouldLoad = () => enabled) =>
+    createCleanup({ modelsDir: dir, shouldLoad, onStatus: (s) => statuses.push(s), ...fake });
+
   test("loadIfDownloaded without a model file reports missing and never loads a model", async () => {
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "missing" }]);
     expect(fake.calls.loads).toBe(0);
@@ -98,14 +103,10 @@ describe("createCleanup", () => {
   test("loadIfDownloaded with a model file goes loading then ready and cleans with the style", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
+    expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
     await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
     expect(fake.calls.cleans.at(-1)).toEqual(["hello", style]);
   });
@@ -113,12 +114,7 @@ describe("createCleanup", () => {
   test("clean hands the caller's abort signal to the model, so a budget stops the generation", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     const controller = new AbortController();
 
@@ -131,12 +127,7 @@ describe("createCleanup", () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     let finishWarmUp!: () => void;
     const fake = fakeModule({ warmUpGate: new Promise((resolve) => (finishWarmUp = resolve)) });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     const loading = cleanup.loadIfDownloaded();
     await expect.poll(() => fake.calls.cleans.length).toBe(1);
     expect(statuses).toEqual([{ state: "loading" }]);
@@ -154,12 +145,7 @@ describe("createCleanup", () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     let finishLoad!: () => void;
     const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     const loading = cleanup.loadIfDownloaded();
     await expect.poll(() => statuses).toEqual([{ state: "loading" }]);
 
@@ -176,12 +162,7 @@ describe("createCleanup", () => {
   test("a failed warm-up still reports ready with the model loaded", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule({ warmUpError: "implausible output" });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
@@ -190,12 +171,7 @@ describe("createCleanup", () => {
   test("a load failure reports failed with the error message", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule({ loadError: "bad gguf" });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "failed", message: "bad gguf" }]);
     expect(fake.calls.cleans).toEqual([]);
@@ -208,12 +184,7 @@ describe("createCleanup", () => {
       await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
       let settings: Settings = { ...DEFAULT_SETTINGS, dictationLanguage };
       const fake = fakeModule();
-      const cleanup = createCleanup({
-        modelsDir: dir,
-        shouldLoad: () => wantsCleanup(settings),
-        onStatus: (s) => statuses.push(s),
-        ...fake,
-      });
+      const cleanup = start(fake, () => wantsCleanup(settings));
       await cleanup.loadIfDownloaded();
       expect(statuses).toEqual([{ state: "installed" }]);
       expect(fake.calls).toMatchObject({ downloads: 0, creates: 0 });
@@ -240,12 +211,7 @@ describe("createCleanup", () => {
       if (onDisk) await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
       enabled = false;
       const fake = fakeModule();
-      const cleanup = createCleanup({
-        modelsDir: dir,
-        shouldLoad: () => enabled,
-        onStatus: (s) => statuses.push(s),
-        ...fake,
-      });
+      const cleanup = start(fake);
 
       await cleanup.loadIfDownloaded();
 
@@ -258,12 +224,7 @@ describe("createCleanup", () => {
   test("install with cleanup switched off downloads, ends installed, and never creates a model", async () => {
     enabled = false;
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
 
     await cleanup.install();
 
@@ -279,12 +240,7 @@ describe("createCleanup", () => {
   test("switching cleanup off frees the loaded model and ends installed, not ready", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
 
     enabled = false;
@@ -298,17 +254,12 @@ describe("createCleanup", () => {
   test("switching cleanup off during a download keeps the file but never loads it, and switching on loads it", async () => {
     let finishDownload!: () => void;
     const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     const downloading = cleanup.install();
     await expect.poll(() => fake.calls.downloads).toBe(1);
 
     enabled = false;
-    const disposing = cleanup.dispose();
+    const disposing = cleanup.unload();
     finishDownload();
     await Promise.all([downloading, disposing]);
     expect(fake.calls.loads).toBe(0);
@@ -326,17 +277,12 @@ describe("createCleanup", () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     let finishLoad!: () => void;
     const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     const first = cleanup.loadIfDownloaded();
     await expect.poll(() => statuses).toEqual([{ state: "loading" }]);
 
     enabled = false;
-    const disposing = cleanup.dispose();
+    const disposing = cleanup.unload();
     enabled = true;
     const second = cleanup.loadIfDownloaded();
     finishLoad();
@@ -349,15 +295,11 @@ describe("createCleanup", () => {
 
   test("install downloads with progress, loads, and a concurrent second call does not download again", async () => {
     const fake = fakeModule();
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await Promise.all([cleanup.install(), cleanup.install()]);
     expect(fake.calls.downloads).toBe(1);
     expect(fake.calls.loads).toBe(1);
+    expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
     expect(statuses).toEqual([
       { state: "downloading", progress: 0 },
       { state: "downloading", progress: 0.5 },
@@ -370,67 +312,38 @@ describe("createCleanup", () => {
 
   test("a download failure reports failed and does not try to load", async () => {
     const fake = fakeModule({ downloadError: "offline" });
-    const cleanup = createCleanup({
-      modelsDir: dir,
-      shouldLoad: () => enabled,
-      onStatus: (s) => statuses.push(s),
-      ...fake,
-    });
+    const cleanup = start(fake);
     await cleanup.install();
     expect(statuses.at(-1)).toEqual({ state: "failed", message: "offline" });
     expect(fake.calls.loads).toBe(0);
   });
 
   describe("uninstall", () => {
-    const modelPaths = () => {
-      const file = NodePath.join(dir, S1_MINI_FILE);
-      return [file, `${file}.LICENSE`, `${file}.NOTICE`, `${file}.part`];
-    };
-    const onDisk = async () =>
-      (await readdir(dir)).filter((name) => name.startsWith(S1_MINI_FILE)).sort();
-
-    test("removes the weights, legal files, and partial download, then reports missing", async () => {
-      for (const path of modelPaths()) await writeFile(path, "bytes");
+    test("removes the model files, then reports missing, and succeeds again with nothing on disk", async () => {
+      await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+      await writeFile(NodePath.join(dir, `${S1_MINI_FILE}.LICENSE`), "license");
       await writeFile(NodePath.join(dir, "unrelated.bin"), "keep");
-      const cleanup = createCleanup({
-        modelsDir: dir,
-        shouldLoad: () => enabled,
-        onStatus: (s) => statuses.push(s),
-        ...fakeModule(),
-      });
+      const cleanup = start();
 
       await cleanup.uninstall();
+      await cleanup.uninstall();
 
-      expect(await onDisk()).toEqual([]);
       expect(await readdir(dir)).toEqual(["unrelated.bin"]);
-      expect(statuses).toEqual([{ state: "missing" }]);
+      expect(statuses).toEqual([{ state: "missing" }, { state: "missing" }]);
     });
 
-    test("succeeds twice in a row and with nothing on disk", async () => {
-      await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
-      const cleanup = createCleanup({
-        modelsDir: dir,
-        shouldLoad: () => enabled,
-        onStatus: (s) => statuses.push(s),
-        ...fakeModule(),
-      });
+    test("a removal failure reports failed with the error message", async () => {
+      const cleanup = start(fakeModule({ removeError: "permission denied" }));
 
       await cleanup.uninstall();
-      await cleanup.uninstall();
 
-      expect(await onDisk()).toEqual([]);
-      expect(statuses).toEqual([{ state: "missing" }, { state: "missing" }]);
+      expect(statuses).toEqual([{ state: "failed", message: "permission denied" }]);
     });
 
     test("frees a loaded model so cleaning stops", async () => {
       await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
       const fake = fakeModule();
-      const cleanup = createCleanup({
-        modelsDir: dir,
-        shouldLoad: () => enabled,
-        onStatus: (s) => statuses.push(s),
-        ...fake,
-      });
+      const cleanup = start(fake);
       await cleanup.loadIfDownloaded();
 
       await cleanup.uninstall();
@@ -439,28 +352,6 @@ describe("createCleanup", () => {
       expect(cleanup.loaded()).toBe(false);
       await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
       expect(statuses.at(-1)).toEqual({ state: "missing" });
-    });
-
-    test("removes a symlinked model without touching the file it points to", async () => {
-      const cache = await mkdtemp(NodePath.join(tmpdir(), "voice-cleanup-cache-"));
-      try {
-        const cached = NodePath.join(cache, S1_MINI_FILE);
-        await writeFile(cached, "weights");
-        await symlink(cached, NodePath.join(dir, S1_MINI_FILE));
-        const cleanup = createCleanup({
-          modelsDir: dir,
-          shouldLoad: () => enabled,
-          onStatus: (s) => statuses.push(s),
-          ...fakeModule(),
-        });
-
-        await cleanup.uninstall();
-
-        expect(await onDisk()).toEqual([]);
-        await expect(readFile(cached, "utf8")).resolves.toBe("weights");
-      } finally {
-        await rm(cache, { recursive: true, force: true });
-      }
     });
   });
 });

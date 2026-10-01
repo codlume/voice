@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rename, rm, stat } from "node:fs/promises";
+import { access, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 
@@ -49,6 +49,32 @@ export async function downloadModel({
   }
   await fetchToFile(`${baseUrl}/${file}`, path, { bytes, sha256, onProgress, signal });
   return path;
+}
+
+// The download renames the weights into place last, so their presence means the install finished.
+export async function findS1Mini({
+  dir,
+}: Pick<DownloadOptions, "dir">): Promise<string | undefined> {
+  const path = join(dir, S1_MINI_FILE);
+  try {
+    await access(path);
+    return path;
+  } catch {
+    return undefined;
+  }
+}
+
+export function removeS1Mini({ dir }: Pick<DownloadOptions, "dir">): Promise<void> {
+  return removeModel({ dir, file: S1_MINI_FILE });
+}
+
+export async function removeModel({ dir, file }: { dir: string; file: string }): Promise<void> {
+  const paths = [file, ...LEGAL_FILES.map((name) => `${file}.${name}`)].map((name) =>
+    join(dir, name),
+  );
+  await Promise.all(
+    paths.flatMap((path) => [path, `${path}.part`]).map((path) => rm(path, { force: true })),
+  );
 }
 
 // Size first, because hashing half a gigabyte is the expensive half of the check.

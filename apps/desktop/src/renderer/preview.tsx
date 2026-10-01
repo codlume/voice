@@ -283,8 +283,6 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       }, 200);
     },
     uninstallModel: async (id) => {
-      if (id === "asr" && snapshot.session.kind !== "idle" && snapshot.session.kind !== "done")
-        throw new Error("Finish dictating, then uninstall the speech model.");
       if (!confirm(`Uninstall ${id}?`)) return;
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
