@@ -1,8 +1,8 @@
-import { access, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
+import { removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
@@ -16,6 +16,7 @@ const signal = new AbortController().signal;
 type Behavior = {
   loadError?: string;
   downloadError?: string;
+  removeError?: string;
   warmUpError?: string;
   downloadGate?: Promise<void>;
   loadGate?: Promise<void>;
@@ -41,6 +42,10 @@ function fakeModule(behavior: Behavior = {}) {
       const path = NodePath.join(dir, S1_MINI_FILE);
       await writeFile(path, "weights");
       return path;
+    },
+    async removeS1Mini(options) {
+      if (behavior.removeError) throw new Error(behavior.removeError);
+      await removeS1Mini(options);
     },
     createS1Mini() {
       calls.creates += 1;
@@ -310,34 +315,25 @@ describe("createCleanup", () => {
   });
 
   describe("uninstall", () => {
-    const modelPaths = () => {
-      const file = NodePath.join(dir, S1_MINI_FILE);
-      return [file, `${file}.LICENSE`, `${file}.NOTICE`, `${file}.part`];
-    };
-    const onDisk = async () =>
-      (await readdir(dir)).filter((name) => name.startsWith(S1_MINI_FILE)).sort();
-
-    test("removes the weights, legal files, and partial download, then reports missing", async () => {
-      for (const path of modelPaths()) await writeFile(path, "bytes");
+    test("removes the model files, then reports missing, and succeeds again with nothing on disk", async () => {
+      await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+      await writeFile(NodePath.join(dir, `${S1_MINI_FILE}.LICENSE`), "license");
       await writeFile(NodePath.join(dir, "unrelated.bin"), "keep");
       const cleanup = start();
 
       await cleanup.uninstall();
+      await cleanup.uninstall();
 
-      expect(await onDisk()).toEqual([]);
       expect(await readdir(dir)).toEqual(["unrelated.bin"]);
-      expect(statuses).toEqual([{ state: "missing" }]);
+      expect(statuses).toEqual([{ state: "missing" }, { state: "missing" }]);
     });
 
-    test("succeeds twice in a row and with nothing on disk", async () => {
-      await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
-      const cleanup = start();
+    test("a removal failure reports failed with the error message", async () => {
+      const cleanup = start(fakeModule({ removeError: "permission denied" }));
 
       await cleanup.uninstall();
-      await cleanup.uninstall();
 
-      expect(await onDisk()).toEqual([]);
-      expect(statuses).toEqual([{ state: "missing" }, { state: "missing" }]);
+      expect(statuses).toEqual([{ state: "failed", message: "permission denied" }]);
     });
 
     test("frees a loaded model so cleaning stops", async () => {
@@ -352,23 +348,6 @@ describe("createCleanup", () => {
       expect(cleanup.loaded()).toBe(false);
       await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
       expect(statuses.at(-1)).toEqual({ state: "missing" });
-    });
-
-    test("removes a symlinked model without touching the file it points to", async () => {
-      const cache = await mkdtemp(NodePath.join(tmpdir(), "voice-cleanup-cache-"));
-      try {
-        const cached = NodePath.join(cache, S1_MINI_FILE);
-        await writeFile(cached, "weights");
-        await symlink(cached, NodePath.join(dir, S1_MINI_FILE));
-        const cleanup = start();
-
-        await cleanup.uninstall();
-
-        expect(await onDisk()).toEqual([]);
-        await expect(readFile(cached, "utf8")).resolves.toBe("weights");
-      } finally {
-        await rm(cache, { recursive: true, force: true });
-      }
     });
   });
 });

@@ -1,4 +1,4 @@
-import { access, rm } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import type { CleanupStyle, S1Mini } from "@voice/cleanup";
@@ -7,7 +7,7 @@ import type { ModelStatus } from "../shared/api.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
-  "S1_MINI_FILE" | "createS1Mini" | "downloadS1Mini"
+  "S1_MINI_FILE" | "createS1Mini" | "downloadS1Mini" | "removeS1Mini"
 >;
 
 export type Cleanup = {
@@ -133,10 +133,8 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       return serialize(async () => {
         await freed;
         const module = await loadModule();
-        const file = NodePath.join(options.modelsDir, module.S1_MINI_FILE);
-        const paths = [file, `${file}.LICENSE`, `${file}.NOTICE`, `${file}.part`];
         try {
-          await Promise.all(paths.map((path) => rm(path, { force: true })));
+          await module.removeS1Mini({ dir: options.modelsDir });
         } catch (error) {
           options.onStatus({ state: "failed", message: message(error) });
           return;

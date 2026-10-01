@@ -51,6 +51,19 @@ export async function downloadModel({
   return path;
 }
 
+export function removeS1Mini({ dir }: Pick<DownloadOptions, "dir">): Promise<void> {
+  return removeModel({ dir, file: S1_MINI_FILE });
+}
+
+export async function removeModel({ dir, file }: { dir: string; file: string }): Promise<void> {
+  const paths = [file, ...LEGAL_FILES.map((name) => `${file}.${name}`)].map((name) =>
+    join(dir, name),
+  );
+  await Promise.all(
+    paths.flatMap((path) => [path, `${path}.part`]).map((path) => rm(path, { force: true })),
+  );
+}
+
 // Size first, because hashing half a gigabyte is the expensive half of the check.
 async function matches(path: string, bytes: number, sha256: string): Promise<boolean> {
   try {
