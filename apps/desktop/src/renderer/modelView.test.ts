@@ -2,47 +2,65 @@ import { describe, expect, test } from "vite-plus/test";
 
 import { modelView } from "./modelView.ts";
 
+const idle = { cleanupEnabled: true, dictating: false };
+const install = { label: "Install", disabled: false };
+const retry = { label: "Retry", disabled: false };
+const uninstall = { label: "Uninstall", disabled: false };
+
 describe("modelView", () => {
   test("a missing model offers only Install", () => {
-    expect(modelView({ state: "missing" }, true)).toEqual({
+    expect(modelView("asr", { state: "missing" }, idle)).toEqual({
       text: "Not installed",
-      actions: ["Install"],
+      actions: [install],
     });
   });
 
   test("a download or load in flight offers nothing to click", () => {
-    expect(modelView({ state: "downloading" }, true)).toEqual({
+    expect(modelView("asr", { state: "downloading" }, idle)).toEqual({
       text: "Downloading",
       actions: [],
     });
-    expect(modelView({ state: "downloading", progress: 0.426 }, true)).toEqual({
+    expect(modelView("asr", { state: "downloading", progress: 0.426 }, idle)).toEqual({
       text: "Downloading 43%",
       actions: [],
     });
-    expect(modelView({ state: "loading" }, true)).toEqual({ text: "Loading", actions: [] });
+    expect(modelView("asr", { state: "loading" }, idle)).toEqual({ text: "Loading", actions: [] });
   });
 
   test("a model on disk can be uninstalled whether or not it is loaded", () => {
-    expect(modelView({ state: "ready" }, true)).toEqual({
+    expect(modelView("asr", { state: "ready" }, idle)).toEqual({
       text: "Installed",
-      actions: ["Uninstall"],
+      actions: [uninstall],
     });
-    expect(modelView({ state: "installed" }, true)).toEqual({
+    expect(modelView("cleanup", { state: "installed" }, idle)).toEqual({
       text: "Installed. Loads when you dictate in English.",
-      actions: ["Uninstall"],
+      actions: [uninstall],
     });
   });
 
   test("an installed cleanup model says what turns it back on", () => {
-    expect(modelView({ state: "installed" }, false).text).toBe(
+    const off = { ...idle, cleanupEnabled: false };
+    expect(modelView("cleanup", { state: "installed" }, off).text).toBe(
       "Installed. Loads when text cleanup is on.",
     );
   });
 
   test("a failure shows its message and offers Retry or Uninstall", () => {
-    expect(modelView({ state: "failed", message: "offline" }, true)).toEqual({
+    expect(modelView("asr", { state: "failed", message: "offline" }, idle)).toEqual({
       text: "offline",
-      actions: ["Retry", "Uninstall"],
+      actions: [retry, uninstall],
     });
+  });
+
+  test("dictation locks only the speech model's Uninstall", () => {
+    const dictating = { ...idle, dictating: true };
+    const locked = { label: "Uninstall", disabled: true };
+    expect(modelView("asr", { state: "ready" }, dictating).actions).toEqual([locked]);
+    expect(modelView("asr", { state: "failed", message: "offline" }, dictating).actions).toEqual([
+      retry,
+      locked,
+    ]);
+    expect(modelView("cleanup", { state: "ready" }, dictating).actions).toEqual([uninstall]);
+    expect(modelView("asr", { state: "missing" }, dictating).actions).toEqual([install]);
   });
 });

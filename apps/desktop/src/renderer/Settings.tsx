@@ -535,7 +535,7 @@ function ModelSection({
 }) {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const view = modelView(status, cleanupEnabled);
+  const view = modelView(model.id, status, { cleanupEnabled, dictating });
 
   async function run(action: ModelAction) {
     setError("");
@@ -572,15 +572,15 @@ function ModelSection({
           </div>
           {view.actions.length > 0 && (
             <div {...stylex.props(styles.actions)}>
-              {view.actions.map((action) => (
+              {view.actions.map(({ label, disabled }) => (
                 <Button
-                  key={action}
-                  variant={action === "Uninstall" ? "secondary" : "primary"}
-                  aria-label={`${action} ${model.name}`}
-                  disabled={pending || (action === "Uninstall" && model.id === "asr" && dictating)}
-                  onClick={() => void run(action)}
+                  key={label}
+                  variant={label === "Uninstall" ? "secondary" : "primary"}
+                  aria-label={`${label} ${model.name}`}
+                  disabled={pending || disabled}
+                  onClick={() => void run(label)}
                 >
-                  {action}
+                  {label}
                 </Button>
               ))}
             </div>
