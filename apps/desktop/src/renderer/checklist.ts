@@ -12,10 +12,10 @@ export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
   | { type: "setupModels" };
 
-type Action = {
-  label: "Grant" | "Open" | "Download" | "Retry";
-  command: SetupCommand;
-};
+type Control =
+  | { kind: "button"; label: "Download" | "Retry"; command: SetupCommand }
+  | { kind: "switch"; checked: true }
+  | { kind: "switch"; checked: false; command: SetupCommand };
 
 export type ChecklistRow = {
   id: PermissionKind | "asr" | "cleanup";
@@ -26,7 +26,7 @@ export type ChecklistRow = {
     | { kind: "needed"; text: string }
     | { kind: "busy"; text: string; progress?: number }
     | { kind: "failed"; text: string };
-  actions: readonly Action[];
+  control: Control | null;
 };
 
 type Checklist = { ready: boolean; rows: ChecklistRow[] };
@@ -37,22 +37,25 @@ export const hotkeyLabels: Record<Hotkey, string> = {
   rightCommand: "Right Command",
 };
 
-type RowState = Pick<ChecklistRow, "status" | "actions">;
+type RowState = Pick<ChecklistRow, "status" | "control">;
 
 function permissionState(kind: PermissionKind, state: PermissionState): RowState {
   const command: SetupCommand = { type: "requestPermission", kind };
   switch (state) {
     case "granted":
-      return { status: { kind: "ready", text: "Granted" }, actions: [] };
+      return {
+        status: { kind: "ready", text: "Granted" },
+        control: { kind: "switch", checked: true },
+      };
     case "notDetermined":
       return {
         status: { kind: "needed", text: "Needs access" },
-        actions: [{ label: "Grant", command }],
+        control: { kind: "switch", checked: false, command },
       };
     case "denied":
       return {
         status: { kind: "needed", text: "Allow Voice in System Settings" },
-        actions: [{ label: "Open", command }],
+        control: { kind: "switch", checked: false, command },
       };
   }
 }
@@ -61,29 +64,29 @@ function modelState(model: ModelStatus): RowState {
   const command: SetupCommand = { type: "setupModels" };
   switch (model.state) {
     case "ready":
-      return { status: { kind: "ready", text: "Ready" }, actions: [] };
+      return { status: { kind: "ready", text: "Ready" }, control: null };
     case "missing":
       return {
         status: { kind: "needed", text: "Not downloaded" },
-        actions: [{ label: "Download", command }],
+        control: { kind: "button", label: "Download", command },
       };
     case "downloading":
       return model.progress === undefined
-        ? { status: { kind: "busy", text: "Downloading" }, actions: [] }
+        ? { status: { kind: "busy", text: "Downloading" }, control: null }
         : {
             status: {
               kind: "busy",
               text: `Downloading ${Math.round(model.progress * 100)}%`,
               progress: model.progress,
             },
-            actions: [],
+            control: null,
           };
     case "loading":
-      return { status: { kind: "busy", text: "Loading" }, actions: [] };
+      return { status: { kind: "busy", text: "Loading" }, control: null };
     case "failed":
       return {
         status: { kind: "failed", text: model.message },
-        actions: [{ label: "Retry", command }],
+        control: { kind: "button", label: "Retry", command },
       };
   }
 }

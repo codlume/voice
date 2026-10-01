@@ -51,51 +51,78 @@ const row = (snapshot: Snapshot, id: string) => {
 const withAsr = (asr: ModelStatus): Snapshot => ({ ...fresh, models: { ...fresh.models, asr } });
 
 describe("checklist", () => {
-  test("a fresh install lists all four steps, each with its actions", () => {
+  test("a fresh install lists all four steps, each with its control", () => {
     const list = checklist(fresh);
     expect(list.ready).toBe(false);
-    expect(list.rows.map((r) => [r.title, r.status.text, r.actions.map((a) => a.label)])).toEqual([
-      ["Microphone", "Needs access", ["Grant"]],
-      ["Accessibility", "Needs access", ["Grant"]],
-      ["Speech model", "Not downloaded", ["Download"]],
-      ["Cleanup model", "Not downloaded", ["Download"]],
+    expect(list.rows.map((r) => [r.title, r.status.text, r.control])).toEqual([
+      [
+        "Microphone",
+        "Needs access",
+        {
+          kind: "switch",
+          checked: false,
+          command: { type: "requestPermission", kind: "microphone" },
+        },
+      ],
+      [
+        "Accessibility",
+        "Needs access",
+        {
+          kind: "switch",
+          checked: false,
+          command: { type: "requestPermission", kind: "accessibility" },
+        },
+      ],
+      [
+        "Speech model",
+        "Not downloaded",
+        { kind: "button", label: "Download", command: { type: "setupModels" } },
+      ],
+      [
+        "Cleanup model",
+        "Not downloaded",
+        { kind: "button", label: "Download", command: { type: "setupModels" } },
+      ],
     ]);
     expect(row(fresh, "cleanup").subtitle).toBe("S1-mini by Superwhisper");
   });
 
-  test("actions carry the command the row needs", () => {
-    expect(row(fresh, "accessibility").actions[0]?.command).toEqual({
-      type: "requestPermission",
-      kind: "accessibility",
-    });
-    expect(row(fresh, "asr").actions[0]?.command).toEqual({ type: "setupModels" });
-  });
-
-  test("a denied permission sends the user to System Settings", () => {
+  test("a denied permission keeps an unchecked switch that sends the user to System Settings", () => {
     const denied: Snapshot = {
       ...fresh,
       permissions: { ...fresh.permissions, microphone: "denied" },
     };
-    expect(row(denied, "microphone").actions).toEqual([
-      { label: "Open", command: { type: "requestPermission", kind: "microphone" } },
-    ]);
+    const r = row(denied, "microphone");
+    expect(r.status).toEqual({ kind: "needed", text: "Allow Voice in System Settings" });
+    expect(r.control).toEqual({
+      kind: "switch",
+      checked: false,
+      command: { type: "requestPermission", kind: "microphone" },
+    });
   });
 
-  test("downloading shows progress and offers no action", () => {
+  test("a granted permission shows a checked switch with nothing to send", () => {
+    const r = row(allReady, "accessibility");
+    expect(r.status).toEqual({ kind: "ready", text: "Granted" });
+    expect(r.control).toStrictEqual({ kind: "switch", checked: true });
+  });
+
+  test("downloading shows progress and offers no control", () => {
     const r = row(withAsr({ state: "downloading", progress: 0.42 }), "asr");
     expect(r.status).toEqual({ kind: "busy", text: "Downloading 42%", progress: 0.42 });
-    expect(r.actions).toEqual([]);
+    expect(r.control).toBeNull();
     expect(row(withAsr({ state: "downloading" }), "asr").status).toEqual({
       kind: "busy",
       text: "Downloading",
     });
-    expect(row(withAsr({ state: "loading" }), "asr").actions).toEqual([]);
+    expect(row(withAsr({ state: "loading" }), "asr").control).toBeNull();
+    expect(row(allReady, "asr").control).toBeNull();
   });
 
   test("a failed model shows its message and offers Retry", () => {
     const r = row(withAsr({ state: "failed", message: "Network unreachable" }), "asr");
     expect(r.status).toEqual({ kind: "failed", text: "Network unreachable" });
-    expect(r.actions.map((a) => a.label)).toEqual(["Retry"]);
+    expect(r.control).toEqual({ kind: "button", label: "Retry", command: { type: "setupModels" } });
   });
 
   test("ready only when every step is ready", () => {
