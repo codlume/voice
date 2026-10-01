@@ -1,6 +1,6 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
@@ -12,10 +12,11 @@ import {
   SystemSettings,
 } from "./Settings.tsx";
 import {
-  matchShortcut,
+  jumpLabel,
   shortcutLabel,
   shortcuts,
-  type ShortcutAction,
+  useShortcuts,
+  withShortcut,
   type ShortcutCommand,
 } from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
@@ -218,7 +219,7 @@ const styles = stylex.create({
   },
   labelHidden: { opacity: 0 },
   labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
-  jumpHint: {
+  shortcutHint: {
     flexShrink: 0,
     marginLeft: "auto",
     paddingInline: 6,
@@ -374,28 +375,25 @@ function NavItem({
   shortcut,
   current = false,
   collapsed,
-  jumpHint = false,
-  title,
+  showShortcut,
   onClick,
   style,
 }: {
   label: string;
   icon: ReactNode;
-  shortcut?: string | undefined;
+  shortcut: string | undefined;
   current?: boolean;
   collapsed: boolean;
-  jumpHint?: boolean;
-  title?: string;
+  showShortcut: boolean;
   onClick: () => void;
   style?: stylex.StyleXStyles;
 }) {
-  const showHint = jumpHint && shortcut !== undefined;
+  const showHint = showShortcut && shortcut !== undefined;
   return (
     <Tooltip.Trigger
-      payload={shortcut ? `${label} ${shortcut}` : label}
+      payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
       type="button"
       aria-current={current ? "page" : undefined}
-      title={collapsed ? undefined : title}
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
     >
@@ -410,7 +408,7 @@ function NavItem({
         {label}
       </span>
       {showHint && (
-        <kbd aria-hidden="true" {...stylex.props(styles.jumpHint)}>
+        <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
           {shortcut}
         </kbd>
       )}
@@ -418,19 +416,17 @@ function NavItem({
   );
 }
 
-const jumpLimit = 9;
-
 function NavItems<Id extends string>({
   items,
   current,
   collapsed,
-  jumpHints,
+  shortcutHints,
   onSelect,
 }: {
   items: readonly { id: Id; label: string; icon: ReactNode }[];
   current: Id;
   collapsed: boolean;
-  jumpHints: boolean;
+  shortcutHints: boolean;
   onSelect: (id: Id) => void;
 }) {
   return items.map(({ id, label, icon }, index) => (
@@ -438,10 +434,10 @@ function NavItems<Id extends string>({
       key={id}
       label={label}
       icon={icon}
-      shortcut={index < jumpLimit ? shortcutLabel(String(index + 1)) : undefined}
+      shortcut={jumpLabel(index)}
       current={current === id}
       collapsed={collapsed}
-      jumpHint={jumpHints}
+      showShortcut={shortcutHints}
       onClick={() => onSelect(id)}
     />
   ));
@@ -458,7 +454,6 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedKey) === "true",
   );
-  const [jumpHints, setJumpHints] = useState(false);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -502,48 +497,21 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
     closeSettings,
   };
 
-  const runShortcut = useEffectEvent((action: ShortcutAction) => {
+  const commandHeld = useShortcuts((action) => {
     if (action.command === "jump") jump(action.index);
     else commands[action.command]();
   });
+  const shortcutHints = commandHeld && !collapsed;
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      setJumpHints(event.key === "Meta" && !event.ctrlKey && !event.altKey && !event.shiftKey);
-      if (event.defaultPrevented) return;
-      const action = matchShortcut(event);
-      if (action === null) return;
-      event.preventDefault();
-      if (!event.repeat) runShortcut(action);
-    }
-    function onKeyUp(event: KeyboardEvent) {
-      if (event.key === "Meta") setJumpHints(false);
-    }
-    // Switching apps with ⌘-Tab never delivers the Meta keyup to this window.
-    function onBlur() {
-      setJumpHints(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, []);
-
-  const showJumpHints = jumpHints && !collapsed;
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
-  const settingsShortcut = shortcutLabel(shortcuts.openSettings.key);
-  const backShortcut = shortcutLabel(shortcuts.closeSettings.key);
+  const settingsLabel = withShortcut("Settings", shortcutLabel(shortcuts.openSettings.key));
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar)}>
         <button
           type="button"
           aria-label={toggleLabel}
-          title={`${toggleLabel} (${shortcutLabel(shortcuts.toggleSidebar.key)})`}
+          title={withShortcut(toggleLabel, shortcutLabel(shortcuts.toggleSidebar.key))}
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
@@ -575,16 +543,16 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={appPages}
                   current={appPage}
                   collapsed={collapsed}
-                  jumpHints={showJumpHints}
+                  shortcutHints={shortcutHints}
                   onSelect={selectAppPage}
                 />
               </nav>
               <div {...stylex.props(styles.footer)}>
                 <Tooltip.Trigger
-                  payload={`Settings ${settingsShortcut}`}
+                  payload={settingsLabel}
                   type="button"
                   aria-label="Settings"
-                  title={collapsed ? undefined : `Settings (${settingsShortcut})`}
+                  title={collapsed ? undefined : settingsLabel}
                   onClick={openSettings}
                   {...stylex.props(styles.navItem, styles.footerButton)}
                 >
@@ -602,16 +570,16 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={settingsPages}
                   current={settingsPage}
                   collapsed={collapsed}
-                  jumpHints={showJumpHints}
+                  shortcutHints={shortcutHints}
                   onSelect={selectSettingsPage}
                 />
               </nav>
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
-                shortcut={backShortcut}
+                shortcut={shortcutLabel(shortcuts.closeSettings.key)}
                 collapsed={collapsed}
-                title={`Back (${backShortcut})`}
+                showShortcut={shortcutHints}
                 onClick={closeSettings}
                 style={styles.back}
               />
