@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.15.0 (2026-10-01)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(native): meter the microphone for a settings test by @hadrysm in https://github.com/codlume/voice/pull/107
+* feat(desktop): add opt-in crash, error, and latency reporting with Sentry by @hadrysm in https://github.com/codlume/voice/pull/111
+* feat(desktop): use a switch for crash reports in setup by @hadrysm in https://github.com/codlume/voice/pull/112
+* chore(release): leave release PRs out of nightly notes by @hadrysm in https://github.com/codlume/voice/pull/113
+* chore(release): list authors in stable release notes by @hadrysm in https://github.com/codlume/voice/pull/114
+* feat(desktop): split settings into General and System by @hadrysm in https://github.com/codlume/voice/pull/115
+* fix(desktop): keep Voice in Cmd-Tab and the Dock by @hadrysm in https://github.com/codlume/voice/pull/116
+* feat(desktop): add a Data and Privacy settings page by @hadrysm in https://github.com/codlume/voice/pull/117
+* feat(desktop): add Open at login and Show in Dock settings by @hadrysm in https://github.com/codlume/voice/pull/118
+* feat(desktop): add a Show Flow Bar at all times setting by @hadrysm in https://github.com/codlume/voice/pull/120
+* feat(desktop): add keyboard shortcuts and a Shortcuts settings page by @hadrysm in https://github.com/codlume/voice/pull/119
+* feat(desktop): show release notes when hovering the update button by @hadrysm in https://github.com/codlume/voice/pull/121
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.14.0...v0.15.0
+
 ## [0.14.0](https://github.com/codlume/voice/compare/v0.13.2...v0.14.0) (2026-09-27)
 
 
