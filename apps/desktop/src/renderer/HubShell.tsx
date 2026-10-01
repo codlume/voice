@@ -8,6 +8,7 @@ import { Home } from "./Home.tsx";
 import {
   DataPrivacySettings,
   GeneralSettings,
+  ModelsSettings,
   ShortcutsSettings,
   SystemSettings,
 } from "./Settings.tsx";
@@ -65,6 +66,16 @@ const settingsPages = [
     ),
   },
   {
+    id: "models",
+    label: "Models",
+    icon: (
+      <>
+        <path d="M10 2.75 16.5 6.25v7.5L10 17.25l-6.5-3.5v-7.5z" />
+        <path d="M3.5 6.25 10 9.75l6.5-3.5M10 9.75v7.5" />
+      </>
+    ),
+  },
+  {
     id: "shortcuts",
     label: "Shortcuts",
     icon: (
@@ -105,6 +116,13 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
       settings={snapshot.settings}
       loginItem={snapshot.loginItem}
       updates={snapshot.updates}
+    />
+  ),
+  models: (snapshot) => (
+    <ModelsSettings
+      models={snapshot.models}
+      settings={snapshot.settings}
+      session={snapshot.session}
     />
   ),
   privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
