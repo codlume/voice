@@ -511,8 +511,8 @@ async function main() {
     if (state === "downloading" || state === "loading") {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    if (model.id === "asr" && dictating()) {
-      throw new Error("Finish dictating, then uninstall the speech model.");
+    if (model.neededWhileDictating && dictating()) {
+      throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
     }
   }
 

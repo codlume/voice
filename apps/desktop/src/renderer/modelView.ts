@@ -1,5 +1,5 @@
 import type { ModelStatus } from "../shared/api.ts";
-import type { ModelId } from "../shared/models.ts";
+import type { Model } from "../shared/models.ts";
 
 export type ModelAction = "Install" | "Retry" | "Uninstall";
 
@@ -9,14 +9,16 @@ type ModelView = {
 };
 
 export function modelView(
-  id: ModelId,
+  model: Model,
   status: ModelStatus,
   { cleanupEnabled, dictating }: { cleanupEnabled: boolean; dictating: boolean },
 ): ModelView {
   const install = { label: "Install", disabled: false } as const;
   const retry = { label: "Retry", disabled: false } as const;
-  // A session in flight still needs the speech model to transcribe.
-  const uninstall = { label: "Uninstall", disabled: id === "asr" && dictating } as const;
+  const uninstall = {
+    label: "Uninstall",
+    disabled: model.neededWhileDictating && dictating,
+  } as const;
   switch (status.state) {
     case "missing":
       return { text: "Not installed", actions: [install] };

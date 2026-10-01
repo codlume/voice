@@ -535,7 +535,7 @@ function ModelSection({
 }) {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const view = modelView(model.id, status, { cleanupEnabled, dictating });
+  const view = modelView(model, status, { cleanupEnabled, dictating });
 
   async function run(action: ModelAction) {
     setError("");

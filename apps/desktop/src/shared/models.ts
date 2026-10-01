@@ -7,6 +7,7 @@ export const models = [
     vendor: "NVIDIA",
     size: "480 MB",
     lostUntilReinstalled: "Dictation stops working",
+    neededWhileDictating: true,
   },
   {
     id: "cleanup",
@@ -16,6 +17,8 @@ export const models = [
     vendor: "Superwhisper",
     size: "480 MB",
     lostUntilReinstalled: "Text cleanup stops",
+    // Dictation falls back to the raw transcript without it.
+    neededWhileDictating: false,
   },
 ] as const;
 
