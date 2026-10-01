@@ -144,12 +144,12 @@ try {
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Install ${names[id]}`), `${id} Install clickable`);
     const { models: settled } = await untilModels(
-      (m) => ["ready", "failed"].includes(m[id].state) || fetching(m[id]),
+      (m) => ["ready", "installed", "failed"].includes(m[id].state) || fetching(m[id]),
       `${id} reinstalled`,
     );
     assert(
       settled[id].state === "ready",
-      `${id} reinstalls from the linked file without a download: ${JSON.stringify(settled[id])}`,
+      `${id} loads again from the linked file, without a download: ${JSON.stringify(settled[id])}`,
     );
     note(`${id} reinstalled`);
   }
