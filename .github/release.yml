@@ -1,4 +1,4 @@
-# Nightly release notes come from GitHub's generated notes; stable notes come from release-please.
+# Nightly and stable release notes both come from GitHub's generated notes.
 changelog:
   exclude:
     labels:

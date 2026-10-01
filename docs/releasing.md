@@ -45,7 +45,9 @@ are already configured. Signing and upload secrets still need to be added.
 The workflow builds a DMG for manual installation and a ZIP for updates.
 Both live at `/releases/<version>/mac-arm64/`. After promotion, the workflow
 also attaches the DMG to a GitHub release. Stable uses the release-please
-release. Each Nightly gets its own prerelease tagged `v<version>` on the
+release. Its notes are GitHub's generated release notes, which list each
+pull request since the previous stable tag with its author.
+Each Nightly gets its own prerelease tagged `v<version>` on the
 built commit, such as `v0.1.1-nightly.20260926.42` for the UTC date and
 workflow run number. Its notes list the pull requests merged since the
 previous Nightly. Nightly prereleases are kept, not pruned; the six-hour
