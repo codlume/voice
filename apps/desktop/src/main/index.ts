@@ -27,6 +27,7 @@ import {
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { createCleanup } from "./cleanup.ts";
 import { startDiagnostics } from "./diagnostics.ts";
+import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
 import { createDictation, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
@@ -42,7 +43,6 @@ const PILL_HEIGHT = 48;
 const PILL_BOTTOM_MARGIN = 12;
 const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
-const DOCK_SHOW_SETTLE_MS = 1000;
 
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
@@ -381,28 +381,18 @@ async function main() {
     loadPage(hub, "hub");
   }
 
-  // Electron ignores dock.hide() within a second of dock.show(), so changes run one at a time,
-  // each applies the latest setting, and a show holds the queue for that second.
-  let dockChange: Promise<void> = Promise.resolve();
-  function syncDock() {
-    dockChange = dockChange
-      .then(async () => {
-        if (store.state.settings.showInDock) {
-          await app.dock?.show();
-          await delay(DOCK_SHOW_SETTLE_MS);
-        } else {
-          app.dock?.hide();
-        }
-        // Leaving the Dock deactivates Voice, which would drop the open hub behind other apps.
-        if (hubVisible()) {
-          showHub();
-          app.focus({ steal: true });
-        }
-      })
-      .catch((error: unknown) =>
-        log(`dock: ${error instanceof Error ? error.message : String(error)}`),
-      );
-  }
+  const syncDock = createDockSync({
+    dock: app.dock,
+    showInDock: () => store.state.settings.showInDock,
+    wait: delay,
+    afterChange: () => {
+      if (hubVisible()) {
+        showHub();
+        app.focus({ steal: true });
+      }
+    },
+    log,
+  });
 
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
@@ -469,7 +459,7 @@ async function main() {
       helper.send({ type: "microphone.configure", microphone: next.microphone });
     if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
     if (next.launchAtLogin !== previous.launchAtLogin) syncLoginItem(next.launchAtLogin);
-    if (next.showInDock !== previous.showInDock) syncDock();
+    if (next.showInDock !== previous.showInDock) void syncDock();
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
     await saving;
     if (next.updateChannel === store.state.settings.updateChannel)
