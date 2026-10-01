@@ -5,7 +5,21 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
-import { DataPrivacySettings, GeneralSettings, SystemSettings } from "./Settings.tsx";
+import {
+  DataPrivacySettings,
+  GeneralSettings,
+  ShortcutsSettings,
+  SystemSettings,
+} from "./Settings.tsx";
+import {
+  jumpShortcuts,
+  shortcuts,
+  useCommandHeld,
+  useShortcuts,
+  withShortcut,
+  type Binding,
+  type Shortcut,
+} from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -51,6 +65,16 @@ const settingsPages = [
     ),
   },
   {
+    id: "shortcuts",
+    label: "Shortcuts",
+    icon: (
+      <>
+        <rect x="2.5" y="5" width="15" height="10" rx="2" />
+        <path d="M5.75 8.25h.01M8.6 8.25h.01M11.4 8.25h.01M14.25 8.25h.01M6.75 11.75h6.5" />
+      </>
+    ),
+  },
+  {
     id: "privacy",
     label: "Data and Privacy",
     icon: (
@@ -84,6 +108,7 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
     />
   ),
   privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
+  shortcuts: (snapshot) => <ShortcutsSettings settings={snapshot.settings} />,
 };
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
@@ -194,6 +219,19 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
+  labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
+  shortcutHint: {
+    flexShrink: 0,
+    marginLeft: "auto",
+    paddingInline: 6,
+    borderRadius: radius.round,
+    backgroundColor: color.segmentTrack,
+    color: color.mutedForeground,
+    fontFamily: "inherit",
+    fontSize: 11,
+    fontWeight: 400,
+    lineHeight: "18px",
+  },
   footer: {
     display: "flex",
     alignItems: "flex-start",
@@ -335,28 +373,46 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
 function NavItem({
   label,
   icon,
+  shortcut,
   current = false,
   collapsed,
+  showShortcut,
   onClick,
   style,
 }: {
   label: string;
   icon: ReactNode;
+  shortcut: Shortcut | undefined;
   current?: boolean;
   collapsed: boolean;
+  showShortcut: boolean;
   onClick: () => void;
   style?: stylex.StyleXStyles;
 }) {
+  const showHint = showShortcut && shortcut !== undefined;
   return (
     <Tooltip.Trigger
-      payload={label}
+      payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
       type="button"
       aria-current={current ? "page" : undefined}
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
     >
       <Icon>{icon}</Icon>
-      <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>{label}</span>
+      <span
+        {...stylex.props(
+          styles.label,
+          collapsed && styles.labelHidden,
+          showHint && styles.labelBesideHint,
+        )}
+      >
+        {label}
+      </span>
+      {showHint && (
+        <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
+          {shortcut.hint}
+        </kbd>
+      )}
     </Tooltip.Trigger>
   );
 }
@@ -365,20 +421,24 @@ function NavItems<Id extends string>({
   items,
   current,
   collapsed,
+  showShortcut,
   onSelect,
 }: {
   items: readonly { id: Id; label: string; icon: ReactNode }[];
   current: Id;
   collapsed: boolean;
+  showShortcut: boolean;
   onSelect: (id: Id) => void;
 }) {
-  return items.map(({ id, label, icon }) => (
+  return items.map(({ id, label, icon }, index) => (
     <NavItem
       key={id}
       label={label}
       icon={icon}
+      shortcut={jumpShortcuts[index]}
       current={current === id}
       collapsed={collapsed}
+      showShortcut={showShortcut}
       onClick={() => onSelect(id)}
     />
   ));
@@ -402,14 +462,55 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
     localStorage.setItem(sidebarCollapsedKey, String(next));
   }
 
+  function selectAppPage(id: AppPage) {
+    setAppPage(id);
+    focusMain();
+  }
+
+  function selectSettingsPage(id: SettingsPage) {
+    setSettingsPage(id);
+    focusMain();
+  }
+
+  function closeSettings() {
+    setSettingsPage(null);
+    focusMain();
+  }
+
+  const navTargets =
+    settingsPage === null
+      ? appPages.map(
+          ({ id }) =>
+            () =>
+              selectAppPage(id),
+        )
+      : settingsPages.map(
+          ({ id }) =>
+            () =>
+              selectSettingsPage(id),
+        );
+
+  useShortcuts([
+    { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
+    settingsPage === null
+      ? { shortcut: shortcuts.openSettings, run: () => selectSettingsPage("general") }
+      : { shortcut: shortcuts.closeSettings, run: closeSettings },
+    ...navTargets.flatMap((run, index): Binding[] => {
+      const shortcut = jumpShortcuts[index];
+      return shortcut ? [{ shortcut, run }] : [];
+    }),
+  ]);
+  const showShortcut = useCommandHeld(snapshot.settings.hotkey) && !collapsed;
+
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar)}>
         <button
           type="button"
           aria-label={toggleLabel}
-          title={toggleLabel}
+          title={withShortcut(toggleLabel, shortcuts.toggleSidebar)}
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
@@ -441,22 +542,17 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={appPages}
                   current={appPage}
                   collapsed={collapsed}
-                  onSelect={(id) => {
-                    setAppPage(id);
-                    focusMain();
-                  }}
+                  showShortcut={showShortcut}
+                  onSelect={selectAppPage}
                 />
               </nav>
               <div {...stylex.props(styles.footer)}>
                 <Tooltip.Trigger
-                  payload="Settings"
+                  payload={settingsLabel}
                   type="button"
                   aria-label="Settings"
-                  title={collapsed ? undefined : "Settings"}
-                  onClick={() => {
-                    setSettingsPage("general");
-                    focusMain();
-                  }}
+                  title={collapsed ? undefined : settingsLabel}
+                  onClick={() => selectSettingsPage("general")}
                   {...stylex.props(styles.navItem, styles.footerButton)}
                 >
                   <Icon>{slidersIcon}</Icon>
@@ -473,20 +569,17 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={settingsPages}
                   current={settingsPage}
                   collapsed={collapsed}
-                  onSelect={(id) => {
-                    setSettingsPage(id);
-                    focusMain();
-                  }}
+                  showShortcut={showShortcut}
+                  onSelect={selectSettingsPage}
                 />
               </nav>
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
+                shortcut={shortcuts.closeSettings}
                 collapsed={collapsed}
-                onClick={() => {
-                  setSettingsPage(null);
-                  focusMain();
-                }}
+                showShortcut={showShortcut}
+                onClick={closeSettings}
                 style={styles.back}
               />
             </>

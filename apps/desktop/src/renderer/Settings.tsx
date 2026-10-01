@@ -19,6 +19,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import { hotkeyLabels } from "./checklist.ts";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { Select } from "./Select.tsx";
+import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -81,6 +82,23 @@ const styles = stylex.create({
     color: color.foreground,
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+  },
+  keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
+  key: {
+    minWidth: 22,
+    paddingBlock: 2,
+    paddingInline: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.small,
+    backgroundColor: color.segmentTrack,
+    color: color.foreground,
+    fontFamily: "inherit",
+    fontSize: 12,
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: "16px",
+    textAlign: "center",
   },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
@@ -278,24 +296,6 @@ export function GeneralSettings({
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>General</h1>
-
-      <Section label="Shortcut">
-        <div {...stylex.props(styles.card)}>
-          <Row
-            id="setting-hotkey"
-            title="Hold to talk"
-            detail="Hold the key while you speak. Press Escape to cancel."
-          >
-            <Select
-              id="setting-hotkey"
-              value={settings.hotkey}
-              options={hotkeyOptions}
-              onChange={(hotkey) => update({ hotkey })}
-            />
-          </Row>
-        </div>
-        {settings.hotkey === "fn" && <GlobeHint />}
-      </Section>
 
       <Section label="Input">
         <div {...stylex.props(styles.card)}>
@@ -503,6 +503,72 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
               onChange={(on) => update({ diagnostics: on ? "on" : "off" })}
             />
           </Row>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function ShortcutRow({
+  title,
+  detail,
+  keys,
+}: {
+  title: string;
+  detail?: string | undefined;
+  keys: readonly string[];
+}) {
+  return (
+    <div {...stylex.props(styles.row)}>
+      <div {...stylex.props(styles.rowText)}>
+        <span {...stylex.props(styles.rowTitle)}>{title}</span>
+        {detail && <p {...stylex.props(styles.rowDetail)}>{detail}</p>}
+      </div>
+      <kbd {...stylex.props(styles.keys)}>
+        {keys.map((key) => (
+          <kbd key={key} {...stylex.props(styles.key)}>
+            {key}
+          </kbd>
+        ))}
+      </kbd>
+    </div>
+  );
+}
+
+export function ShortcutsSettings({ settings }: { settings: Settings }) {
+  return (
+    <div {...stylex.props(styles.page)}>
+      <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
+
+      <Section label="Dictation">
+        <div {...stylex.props(styles.card)}>
+          <Row id="setting-hotkey" title="Hold to talk" detail="Hold the key while you speak.">
+            <Select
+              id="setting-hotkey"
+              value={settings.hotkey}
+              options={hotkeyOptions}
+              onChange={(hotkey) => update({ hotkey })}
+            />
+          </Row>
+          <ShortcutRow
+            title="Cancel dictation"
+            detail="Press while dictating to stop without inserting."
+            keys={["Esc"]}
+          />
+        </div>
+        {settings.hotkey === "fn" && <GlobeHint />}
+      </Section>
+
+      <Section label="Voice window">
+        <div {...stylex.props(styles.card)}>
+          <ShortcutRow title="Toggle sidebar" keys={shortcuts.toggleSidebar.keys} />
+          <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
+          <ShortcutRow title="Leave Settings" keys={shortcuts.closeSettings.keys} />
+          <ShortcutRow
+            title="Go to sidebar item"
+            detail="Jump to an item in the sidebar, top to bottom."
+            keys={["⌘", `1–${jumpShortcuts.length}`]}
+          />
         </div>
       </Section>
     </div>
