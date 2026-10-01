@@ -13,6 +13,7 @@ const fresh: Snapshot = {
   },
   session: { kind: "idle" },
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+  loginItem: "off",
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
@@ -20,6 +21,7 @@ const fresh: Snapshot = {
     theme: "system",
     microphone: null,
     muteWhileDictating: false,
+    showInDock: true,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",

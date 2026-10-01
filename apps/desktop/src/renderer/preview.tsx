@@ -15,6 +15,7 @@ const base: Snapshot = {
   },
   session: { kind: "idle" },
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+  loginItem: "off",
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
@@ -22,6 +23,7 @@ const base: Snapshot = {
     theme: "system",
     microphone: null,
     muteWhileDictating: false,
+    showInDock: true,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
@@ -205,6 +207,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
+          showInDock: patch.showInDock ?? snapshot.settings.showInDock,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
         },
@@ -221,6 +224,9 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       // macOS never prompts again once access is denied.
       if (snapshot.permissions[kind] === "denied") return;
       set({ ...snapshot, permissions: { ...snapshot.permissions, [kind]: "granted" } });
+    },
+    setOpenAtLogin: async (on) => {
+      set({ ...snapshot, loginItem: on ? "on" : "off" });
     },
     startMicrophoneTest: async () => {
       set({ ...snapshot, microphoneTest: { kind: "starting" } });

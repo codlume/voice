@@ -131,6 +131,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN) {
     },
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
+    loginItem: "off",
     models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
     settings: { ...DEFAULT_SETTINGS, diagnostics: initial },
     microphones: { kind: "loading" },

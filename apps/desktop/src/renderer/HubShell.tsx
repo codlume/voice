@@ -76,7 +76,13 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
       microphonePermission={snapshot.permissions.microphone}
     />
   ),
-  system: (snapshot) => <SystemSettings settings={snapshot.settings} updates={snapshot.updates} />,
+  system: (snapshot) => (
+    <SystemSettings
+      settings={snapshot.settings}
+      loginItem={snapshot.loginItem}
+      updates={snapshot.updates}
+    />
+  ),
   privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
 };
 
