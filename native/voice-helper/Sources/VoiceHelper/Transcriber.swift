@@ -80,6 +80,32 @@ final class Transcriber {
         }
     }
 
+    func remove() {
+        switch load {
+        case .downloading:
+            output.log(.info, "asr.remove ignored while the speech model downloads")
+            output.emit(.asrStatus(state: .downloading, message: nil))
+            return
+        case .loading:
+            output.log(.info, "asr.remove ignored while the speech model loads")
+            output.emit(.asrStatus(state: .loading, message: nil))
+            return
+        case .missing, .ready, .failed:
+            break
+        }
+        load = .missing
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+        } catch {
+            let message = error.localizedDescription
+            load = .failed(message)
+            output.emit(.asrStatus(state: .failed, message: message))
+            return
+        }
+        output.emit(.asrStatus(state: .missing, message: nil))
+    }
+
     func beginStreaming(language: DictationLanguage) -> StreamingTranscription? {
         guard case .ready(let ready) = load else { return nil }
         return StreamingTranscription(models: ready.models, language: language.asrLanguage)

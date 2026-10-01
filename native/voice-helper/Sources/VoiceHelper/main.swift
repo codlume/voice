@@ -72,6 +72,8 @@ final class Helper {
             permissions.request(kind)
         case .asrPrepare(let download):
             transcriber.prepare(download: download)
+        case .asrRemove:
+            transcriber.remove()
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path
@@ -103,7 +105,7 @@ guard let modelsDir = modelsDirArgument() else {
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 5))
+output.emit(.ready(version: 6))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)
