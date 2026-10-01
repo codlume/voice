@@ -20,6 +20,8 @@ const fresh: Snapshot = {
     theme: "system",
     microphone: null,
     muteWhileDictating: false,
+    launchAtLogin: true,
+    showInDock: true,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   app,
@@ -41,6 +42,7 @@ const PILL_HEIGHT = 48;
 const PILL_BOTTOM_MARGIN = 12;
 const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
+const DOCK_SHOW_SETTLE_MS = 1000;
 
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
@@ -76,6 +78,11 @@ function helperEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("VOICE_")),
   );
+}
+
+// A development build would register the bare Electron binary to open at login.
+function syncLoginItem(openAtLogin: boolean) {
+  if (process.platform === "darwin" && !development) app.setLoginItemSettings({ openAtLogin });
 }
 
 const preload = NodePath.join(__dirname, "preload.cjs");
@@ -195,6 +202,8 @@ async function main() {
 
   await app.whenReady();
   nativeTheme.themeSource = settings.theme;
+  syncLoginItem(settings.launchAtLogin);
+  if (!settings.showInDock) app.dock?.hide();
 
   const cleanup = createCleanup({
     modelsDir,
@@ -372,6 +381,29 @@ async function main() {
     loadPage(hub, "hub");
   }
 
+  // Electron ignores dock.hide() within a second of dock.show(), so changes run one at a time,
+  // each applies the latest setting, and a show holds the queue for that second.
+  let dockChange: Promise<void> = Promise.resolve();
+  function syncDock() {
+    dockChange = dockChange
+      .then(async () => {
+        if (store.state.settings.showInDock) {
+          await app.dock?.show();
+          await delay(DOCK_SHOW_SETTLE_MS);
+        } else {
+          app.dock?.hide();
+        }
+        // Leaving the Dock deactivates Voice, which would drop the open hub behind other apps.
+        if (hubVisible()) {
+          showHub();
+          app.focus({ steal: true });
+        }
+      })
+      .catch((error: unknown) =>
+        log(`dock: ${error instanceof Error ? error.message : String(error)}`),
+      );
+  }
+
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
   function copyLast(which: "text" | "raw") {
@@ -436,6 +468,8 @@ async function main() {
     if (next.microphone?.uid !== previous.microphone?.uid)
       helper.send({ type: "microphone.configure", microphone: next.microphone });
     if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
+    if (next.launchAtLogin !== previous.launchAtLogin) syncLoginItem(next.launchAtLogin);
+    if (next.showInDock !== previous.showInDock) syncDock();
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
     await saving;
     if (next.updateChannel === store.state.settings.updateChannel)

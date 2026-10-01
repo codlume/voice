@@ -65,6 +65,8 @@ export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
   muteWhileDictating: boolean;
+  launchAtLogin: boolean;
+  showInDock: boolean;
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
@@ -79,6 +81,8 @@ export type SettingsPatch = {
   microphone?: Microphone | null;
   hotkey?: Hotkey;
   muteWhileDictating?: boolean;
+  launchAtLogin?: boolean;
+  showInDock?: boolean;
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;

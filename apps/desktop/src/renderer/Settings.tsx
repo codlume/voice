@@ -369,6 +369,22 @@ export function SystemSettings({
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>System</h1>
 
+      <Section label="Startup">
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-launch-at-login"
+            title="Open at login"
+            detail="Start Voice when you log in to your Mac, so dictation is ready right away."
+          >
+            <Switch
+              id="setting-launch-at-login"
+              checked={settings.launchAtLogin}
+              onChange={(launchAtLogin) => update({ launchAtLogin })}
+            />
+          </Row>
+        </div>
+      </Section>
+
       <Section label="Audio">
         <div {...stylex.props(styles.card)}>
           <Row
@@ -388,6 +404,17 @@ export function SystemSettings({
       <Section label="Appearance">
         <div {...stylex.props(styles.card)}>
           <ThemePicker theme={settings.theme} />
+          <Row
+            id="setting-show-in-dock"
+            title="Show in Dock"
+            detail="When off, Voice stays out of the Dock and Cmd-Tab. Open it from the menu bar."
+          >
+            <Switch
+              id="setting-show-in-dock"
+              checked={settings.showInDock}
+              onChange={(showInDock) => update({ showInDock })}
+            />
+          </Row>
         </div>
       </Section>
 

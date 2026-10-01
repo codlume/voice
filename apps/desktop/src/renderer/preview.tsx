@@ -22,6 +22,8 @@ const base: Snapshot = {
     theme: "system",
     microphone: null,
     muteWhileDictating: false,
+    launchAtLogin: true,
+    showInDock: true,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
@@ -205,6 +207,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
+          launchAtLogin: patch.launchAtLogin ?? snapshot.settings.launchAtLogin,
+          showInDock: patch.showInDock ?? snapshot.settings.showInDock,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
         },

@@ -23,6 +23,25 @@ describe("parseSettings", () => {
   test.each([true, false])("keeps boolean mute preference %j", (muteWhileDictating) => {
     expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(muteWhileDictating);
   });
+  test.each([undefined, null, "true", "false", 0, 1, {}, []])(
+    "defaults missing or invalid startup and Dock preferences %j to on",
+    (value) => {
+      expect(parseSettings({ launchAtLogin: value, showInDock: value })).toMatchObject({
+        launchAtLogin: true,
+        showInDock: true,
+      });
+    },
+  );
+  test("keeps an explicit off for open at login and show in Dock", () => {
+    expect(parseSettings({ launchAtLogin: false })).toMatchObject({
+      launchAtLogin: false,
+      showInDock: true,
+    });
+    expect(parseSettings({ showInDock: false })).toMatchObject({
+      launchAtLogin: true,
+      showInDock: false,
+    });
+  });
   test.each([undefined, null, "", "xx", "English", 42, {}, ["pl"]])(
     "defaults missing or invalid dictation language %j to English",
     (dictationLanguage) => {
@@ -46,6 +65,8 @@ describe("parseSettings", () => {
       theme: "system",
       microphone: null,
       muteWhileDictating: false,
+      launchAtLogin: true,
+      showInDock: true,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
@@ -106,6 +127,8 @@ describe("applyPatch", () => {
       theme: "system",
       microphone: null,
       muteWhileDictating: false,
+      launchAtLogin: true,
+      showInDock: true,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
@@ -121,6 +144,18 @@ describe("applyPatch", () => {
       ...DEFAULT_SETTINGS,
       diagnostics: "off",
     });
+  });
+
+  test("turns off open at login or show in Dock without touching the other", () => {
+    const noLogin = applyPatch(DEFAULT_SETTINGS, { launchAtLogin: false });
+    expect(noLogin).toEqual({ ...DEFAULT_SETTINGS, launchAtLogin: false });
+    const both = applyPatch(noLogin, { showInDock: false });
+    expect(both).toEqual({ ...DEFAULT_SETTINGS, launchAtLogin: false, showInDock: false });
+    expect(applyPatch(both, { launchAtLogin: true })).toEqual({
+      ...DEFAULT_SETTINGS,
+      showInDock: false,
+    });
+    expect(applyPatch(both, { theme: "dark" })).toEqual({ ...both, theme: "dark" });
   });
 
   test("changes the hotkey alone", () => {

@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: Settings = {
   microphone: null,
   hotkey: "fn",
   muteWhileDictating: false,
+  launchAtLogin: true,
+  showInDock: true,
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
@@ -44,6 +46,9 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     muteWhileDictating: typeof r.muteWhileDictating === "boolean" ? r.muteWhileDictating : false,
+    launchAtLogin:
+      typeof r.launchAtLogin === "boolean" ? r.launchAtLogin : DEFAULT_SETTINGS.launchAtLogin,
+    showInDock: typeof r.showInDock === "boolean" ? r.showInDock : DEFAULT_SETTINGS.showInDock,
     cleanup: {
       enabled: typeof c.enabled === "boolean" ? c.enabled : d.enabled,
       styling: pick(STYLINGS, c.styling, d.styling),
@@ -60,6 +65,8 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,
     muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
+    launchAtLogin: patch.launchAtLogin ?? settings.launchAtLogin,
+    showInDock: patch.showInDock ?? settings.showInDock,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
   });
