@@ -5,12 +5,20 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
-import { Settings } from "./Settings.tsx";
+import { GeneralSettings, SystemSettings } from "./Settings.tsx";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
-const pages = [
+const slidersIcon = (
+  <>
+    <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
+    <circle cx="12.5" cy="6" r="2" />
+    <circle cx="7.5" cy="14" r="2" />
+  </>
+);
+
+const appPages = [
   {
     id: "home",
     label: "Home",
@@ -30,7 +38,36 @@ const pages = [
   },
 ] as const;
 
-type Page = (typeof pages)[number]["id"] | "settings";
+const settingsPages = [
+  { id: "general", label: "General", icon: slidersIcon },
+  {
+    id: "system",
+    label: "System",
+    icon: (
+      <>
+        <rect x="2.75" y="3.5" width="14.5" height="10" rx="1.5" />
+        <path d="M7 16.5h6M10 13.5v3" />
+      </>
+    ),
+  },
+] as const;
+
+type AppPage = (typeof appPages)[number]["id"];
+type SettingsPage = (typeof settingsPages)[number]["id"];
+
+const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNode> = {
+  home: (snapshot) => <Home snapshot={snapshot} />,
+  style: (snapshot) => <Style settings={snapshot.settings} />,
+  general: (snapshot) => (
+    <GeneralSettings
+      settings={snapshot.settings}
+      microphones={snapshot.microphones}
+      microphoneTest={snapshot.microphoneTest}
+      microphonePermission={snapshot.permissions.microphone}
+    />
+  ),
+  system: (snapshot) => <SystemSettings settings={snapshot.settings} updates={snapshot.updates} />,
+};
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
 const sidebarId = "hub-sidebar";
@@ -166,6 +203,7 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
+  back: { flexShrink: 0, marginTop: "auto" },
   tooltipPositioner: {
     zIndex: 10,
     width: "var(--positioner-width)",
@@ -277,8 +315,62 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
   );
 }
 
+function NavItem({
+  label,
+  icon,
+  current = false,
+  collapsed,
+  onClick,
+  style,
+}: {
+  label: string;
+  icon: ReactNode;
+  current?: boolean;
+  collapsed: boolean;
+  onClick: () => void;
+  style?: stylex.StyleXStyles;
+}) {
+  return (
+    <Tooltip.Trigger
+      payload={label}
+      type="button"
+      aria-current={current ? "page" : undefined}
+      onClick={onClick}
+      {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
+    >
+      <Icon>{icon}</Icon>
+      <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>{label}</span>
+    </Tooltip.Trigger>
+  );
+}
+
+function NavItems<Id extends string>({
+  items,
+  current,
+  collapsed,
+  onSelect,
+}: {
+  items: readonly { id: Id; label: string; icon: ReactNode }[];
+  current: Id;
+  collapsed: boolean;
+  onSelect: (id: Id) => void;
+}) {
+  return items.map(({ id, label, icon }) => (
+    <NavItem
+      key={id}
+      label={label}
+      icon={icon}
+      current={current === id}
+      collapsed={collapsed}
+      onClick={() => onSelect(id)}
+    />
+  ));
+}
+
 export function HubShell({ snapshot }: { snapshot: Snapshot }) {
-  const [page, setPage] = useState<Page>("home");
+  const [appPage, setAppPage] = useState<AppPage>("home");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
+  const page = settingsPage ?? appPage;
   const mainRef = useRef<HTMLElement>(null);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
@@ -325,53 +417,63 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
             <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
             <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
           </p>
-          <nav aria-label="Voice" {...stylex.props(styles.nav)}>
-            {pages.map(({ id, label, icon }) => (
-              <Tooltip.Trigger
-                key={id}
-                payload={label}
-                type="button"
-                aria-current={page === id ? "page" : undefined}
+          {settingsPage === null ? (
+            <>
+              <nav aria-label="Voice" {...stylex.props(styles.nav)}>
+                <NavItems
+                  items={appPages}
+                  current={appPage}
+                  collapsed={collapsed}
+                  onSelect={(id) => {
+                    setAppPage(id);
+                    focusMain();
+                  }}
+                />
+              </nav>
+              <div {...stylex.props(styles.footer)}>
+                <Tooltip.Trigger
+                  payload="Settings"
+                  type="button"
+                  aria-label="Settings"
+                  title={collapsed ? undefined : "Settings"}
+                  onClick={() => {
+                    setSettingsPage("general");
+                    focusMain();
+                  }}
+                  {...stylex.props(styles.navItem, styles.footerButton)}
+                >
+                  <Icon>{slidersIcon}</Icon>
+                </Tooltip.Trigger>
+                <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
+                  <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <nav aria-label="Settings" {...stylex.props(styles.nav)}>
+                <NavItems
+                  items={settingsPages}
+                  current={settingsPage}
+                  collapsed={collapsed}
+                  onSelect={(id) => {
+                    setSettingsPage(id);
+                    focusMain();
+                  }}
+                />
+              </nav>
+              <NavItem
+                label="Back"
+                icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
+                collapsed={collapsed}
                 onClick={() => {
-                  setPage(id);
+                  setSettingsPage(null);
                   focusMain();
                 }}
-                {...stylex.props(styles.navItem, page === id && styles.navItemCurrent)}
-              >
-                <Icon>{icon}</Icon>
-                <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>
-                  {label}
-                </span>
-              </Tooltip.Trigger>
-            ))}
-          </nav>
-          <div {...stylex.props(styles.footer)}>
-            <Tooltip.Trigger
-              payload="Settings"
-              type="button"
-              aria-label="Settings"
-              title={collapsed ? undefined : "Settings"}
-              aria-current={page === "settings" ? "page" : undefined}
-              onClick={() => {
-                setPage("settings");
-                focusMain();
-              }}
-              {...stylex.props(
-                styles.navItem,
-                styles.footerButton,
-                page === "settings" && styles.navItemCurrent,
-              )}
-            >
-              <Icon>
-                <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
-                <circle cx="12.5" cy="6" r="2" />
-                <circle cx="7.5" cy="14" r="2" />
-              </Icon>
-            </Tooltip.Trigger>
-            <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
-              <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
-            </div>
-          </div>
+                style={styles.back}
+              />
+            </>
+          )}
         </aside>
       </SidebarTooltip>
       <main
@@ -379,19 +481,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
         tabIndex={-1}
         {...stylex.props(styles.main, page === "style" && styles.styleMain)}
       >
-        <div {...stylex.props(styles.column)}>
-          {page === "home" && <Home snapshot={snapshot} />}
-          {page === "style" && <Style settings={snapshot.settings} />}
-          {page === "settings" && (
-            <Settings
-              settings={snapshot.settings}
-              updates={snapshot.updates}
-              microphones={snapshot.microphones}
-              microphoneTest={snapshot.microphoneTest}
-              microphonePermission={snapshot.permissions.microphone}
-            />
-          )}
-        </div>
+        <div {...stylex.props(styles.column)}>{pageViews[page](snapshot)}</div>
       </main>
     </div>
   );
