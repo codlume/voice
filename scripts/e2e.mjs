@@ -103,6 +103,11 @@ function osascript(script) {
   return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 }
 
+function activationType(pid) {
+  const apps = execFileSync("lsappinfo", ["list"], { encoding: "utf8" });
+  return new RegExp(`pid = ${pid} .*?type="([^"]+)"`).exec(apps)?.[1];
+}
+
 function fnpost(...args) {
   execFileSync(join(helperDir, ".build/debug/fnpost"), args, { stdio: "ignore" });
 }
@@ -303,13 +308,15 @@ async function main() {
   const targets = {};
   const pages = [];
   try {
-    const { logs } = launchVoice(userData, {
+    const { child, logs } = launchVoice(userData, {
       port: ports.voice,
       env: { VOICE_HELPER_TEST_AUDIO: audioPath },
     });
     const pill = await Page.connect(ports.voice, "pill.html");
     const hub = await Page.connect(ports.voice, "hub.html");
     pages.push(pill, hub);
+    const type = activationType(child.pid);
+    assert(type === "Foreground", `Voice must stay in the Dock and Cmd-Tab, but is ${type}`);
     const snapshots = new Stream();
     await pill.bind("__voiceE2E", (payload) => snapshots.push(JSON.parse(payload)));
     await pill.evaluate(`
