@@ -16,7 +16,7 @@ import {
 } from "./voice-app.mjs";
 
 const port = 9341;
-const shots = process.env.VOICE_SMOKE_SHOTS ?? "/tmp/voice-models-smoke";
+const shots = process.env.VOICE_SMOKE_SHOTS;
 const names = Object.fromEntries(registry.map((model) => [model.id, model.name]));
 
 const note = (message) => console.error(`[models-smoke] ${message}`);
@@ -67,6 +67,7 @@ try {
     );
   const mainText = "document.querySelector('main').innerText";
   const shot = async (name) => {
+    if (!shots) return;
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
     writeFileSync(`${shots}-${name}.png`, Buffer.from(data, "base64"));
   };
