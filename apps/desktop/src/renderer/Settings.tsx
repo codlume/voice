@@ -23,6 +23,7 @@ import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { hotkeyLabels } from "./checklist.ts";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
+import { modelView, type ModelAction } from "./modelView.ts";
 import { Select } from "./Select.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { Switch } from "./Switch.tsx";
@@ -519,40 +520,7 @@ const modelActions = {
   Install: (id) => window.voice.installModel(id),
   Retry: (id) => window.voice.installModel(id),
   Uninstall: (id) => window.voice.uninstallModel(id),
-} satisfies Record<string, (id: ModelId) => Promise<void>>;
-
-type ModelAction = keyof typeof modelActions;
-
-function modelView(
-  status: ModelStatus,
-  cleanupEnabled: boolean,
-): { text: string; actions: readonly ModelAction[] } {
-  switch (status.state) {
-    case "missing":
-      return { text: "Not installed", actions: ["Install"] };
-    case "downloading":
-      return {
-        text:
-          status.progress === undefined
-            ? "Downloading"
-            : `Downloading ${Math.round(status.progress * 100)}%`,
-        actions: [],
-      };
-    case "loading":
-      return { text: "Loading", actions: [] };
-    case "ready":
-      return { text: "Installed", actions: ["Uninstall"] };
-    case "installed":
-      return {
-        text: cleanupEnabled
-          ? "Installed. Loads when you dictate in English."
-          : "Installed. Loads when text cleanup is on.",
-        actions: ["Uninstall"],
-      };
-    case "failed":
-      return { text: status.message, actions: ["Retry", "Uninstall"] };
-  }
-}
+} satisfies Record<ModelAction, (id: ModelId) => Promise<void>>;
 
 function ModelSection({
   model,
