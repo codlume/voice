@@ -2,7 +2,6 @@ import type { Outcome, PillState } from "../shared/api.ts";
 
 type PillView =
   | { kind: "idle" }
-  | { kind: "hidden" }
   | { kind: "listening" }
   | { kind: "processing" }
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
@@ -30,8 +29,7 @@ function outcomeView(outcome: Outcome): PillView {
   }
 }
 
-export function pillView(session: PillState, alwaysShowPill: boolean): PillView {
-  if (session.kind === "idle") return alwaysShowPill ? session : { kind: "hidden" };
+export function pillView(session: PillState): PillView {
   return session.kind === "done" ? outcomeView(session.outcome) : session;
 }
 

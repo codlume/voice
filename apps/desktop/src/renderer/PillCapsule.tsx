@@ -176,7 +176,7 @@ export function PillCapsule({
   session: PillState;
   alwaysShowPill: boolean;
 }) {
-  const view = pillView(session, alwaysShowPill);
+  const view = pillView(session);
   return (
     <div {...stylex.props(styles.frame)}>
       <div
@@ -184,8 +184,7 @@ export function PillCapsule({
         role="status"
         {...stylex.props(
           styles.capsule,
-          view.kind === "idle" || view.kind === "hidden" ? styles.idle : styles.open,
-          view.kind === "hidden" && styles.hidden,
+          view.kind === "idle" ? [styles.idle, !alwaysShowPill && styles.hidden] : styles.open,
           view.kind === "message" && styles.wide,
         )}
       >
