@@ -23,7 +23,8 @@ const voice: VoiceApi = {
   setOpenAtLogin: (on) => ipcRenderer.invoke(Channel.setOpenAtLogin, on),
   startMicrophoneTest: () => ipcRenderer.invoke(Channel.startMicrophoneTest),
   stopMicrophoneTest: () => ipcRenderer.invoke(Channel.stopMicrophoneTest),
-  setupModels: () => ipcRenderer.invoke(Channel.setupModels),
+  installModel: (id) => ipcRenderer.invoke(Channel.installModel, id),
+  uninstallModel: (id) => ipcRenderer.invoke(Channel.uninstallModel, id),
   copyLast: (which) => ipcRenderer.invoke(Channel.copyLast, which),
 };
 

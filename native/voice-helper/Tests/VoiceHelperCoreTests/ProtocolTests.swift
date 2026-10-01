@@ -21,6 +21,7 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"permissions.check"}"#, .permissionsCheck),
         (#"{"type":"permissions.request","kind":"accessibility"}"#, .permissionsRequest(kind: .accessibility)),
         (#"{"type":"asr.prepare","download":true}"#, .asrPrepare(download: true)),
+        (#"{"type":"asr.remove"}"#, .asrRemove),
         (#"{"type":"test.audioFile","path":"/tmp/a.wav"}"#, .testAudioFile(path: "/tmp/a.wav")),
         (#"{"type":"test.audioFile","path":null}"#, .testAudioFile(path: nil)),
         (#"{"type":"test.hotkey","action":"cancel"}"#, .testHotkey(action: .cancel)),
@@ -54,7 +55,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 5), ["type": "ready", "version": 5]),
+        (.ready(version: 6), ["type": "ready", "version": 6]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),

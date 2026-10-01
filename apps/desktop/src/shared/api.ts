@@ -1,5 +1,6 @@
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
+import type { ModelId } from "./models.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
@@ -54,6 +55,7 @@ export type ModelStatus =
   | { state: "downloading"; progress?: number }
   | { state: "loading" }
   | { state: "ready" }
+  | { state: "installed" }
   | { state: "failed"; message: string };
 
 export type { Microphone } from "./microphone.ts";
@@ -106,7 +108,7 @@ export type Snapshot = {
   session: PillState;
   permissions: Record<PermissionKind, PermissionState>;
   loginItem: LoginItem;
-  models: { asr: ModelStatus; cleanup: ModelStatus };
+  models: Record<ModelId, ModelStatus>;
   settings: Settings;
   last: { raw: string; text: string } | null;
 };
@@ -124,7 +126,8 @@ export type VoiceApi = {
   setOpenAtLogin(on: boolean): Promise<void>;
   startMicrophoneTest(): Promise<void>;
   stopMicrophoneTest(): Promise<void>;
-  setupModels(): Promise<void>;
+  installModel(id: ModelId): Promise<void>;
+  uninstallModel(id: ModelId): Promise<void>;
   copyLast(which: "text" | "raw"): Promise<void>;
 };
 
@@ -140,6 +143,7 @@ export const Channel = {
   setOpenAtLogin: "voice:setOpenAtLogin",
   startMicrophoneTest: "voice:startMicrophoneTest",
   stopMicrophoneTest: "voice:stopMicrophoneTest",
-  setupModels: "voice:setupModels",
+  installModel: "voice:installModel",
+  uninstallModel: "voice:uninstallModel",
   copyLast: "voice:copyLast",
 } as const;

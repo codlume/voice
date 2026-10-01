@@ -47,6 +47,7 @@ public enum HelperCommand: Equatable, Sendable {
     case permissionsCheck
     case permissionsRequest(kind: PermissionKind)
     case asrPrepare(download: Bool)
+    case asrRemove
     case testAudioFile(path: String?)
     case testHotkey(action: HotkeyAction)
 }
@@ -108,6 +109,7 @@ extension HelperCommand: Decodable {
         case "permissions.request":
             self = .permissionsRequest(kind: try c.decode(PermissionKind.self, forKey: .kind))
         case "asr.prepare": self = .asrPrepare(download: try c.decode(Bool.self, forKey: .download))
+        case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
         case "test.hotkey": self = .testHotkey(action: try c.decode(HotkeyAction.self, forKey: .action))
         default:

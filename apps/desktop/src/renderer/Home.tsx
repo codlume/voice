@@ -4,6 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useEffect, useId, useState } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
+import { Button } from "./Button.tsx";
 import { checklist, hotkeyLabels, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
@@ -86,36 +87,6 @@ const styles = stylex.create({
   markFailed: { borderColor: color.error },
   markBusy: { borderStyle: "dashed", borderColor: color.foreground },
   markEmpty: { borderColor: "transparent" },
-  primary: {
-    flexShrink: 0,
-    minWidth: 76,
-    paddingBlock: 6,
-    paddingInline: 14,
-    borderWidth: 0,
-    borderRadius: radius.round,
-    backgroundColor: {
-      default: color.primary,
-      ":hover": `color-mix(in srgb, ${color.primary} 90%, transparent)`,
-    },
-    color: color.primaryForeground,
-    font: "inherit",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  secondary: {
-    paddingBlock: 6,
-    paddingInline: 14,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.round,
-    backgroundColor: { default: color.card, ":hover": color.accent },
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 13,
-    cursor: "pointer",
-  },
   ready: {
     display: "flex",
     alignItems: "center",
@@ -181,8 +152,8 @@ function greeting(hour: number): string {
 
 function run(command: SetupCommand): Promise<void> {
   switch (command.type) {
-    case "setupModels":
-      return window.voice.setupModels();
+    case "installModel":
+      return window.voice.installModel(command.id);
     case "requestPermission":
       return window.voice.requestPermission(command.kind);
   }
@@ -238,15 +209,13 @@ function SetupRow({ row }: { row: ChecklistRow }) {
         )}
       </div>
       {actions.map((action) => (
-        <button
+        <Button
           key={action.label}
-          type="button"
           aria-label={`${action.label} ${row.title}`}
           onClick={() => void run(action.command)}
-          {...stylex.props(styles.primary)}
         >
           {action.label}
-        </button>
+        </Button>
       ))}
     </li>
   );
@@ -361,21 +330,13 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
               {showRaw && hasRaw ? last.raw : last.text}
             </p>
             <div {...stylex.props(styles.cardFoot)}>
-              <button
-                type="button"
-                onClick={() => copy("text")}
-                {...stylex.props(styles.secondary)}
-              >
+              <Button variant="secondary" onClick={() => copy("text")}>
                 {copied === "text" ? "Copied" : "Copy"}
-              </button>
+              </Button>
               {hasRaw && (
-                <button
-                  type="button"
-                  onClick={() => copy("raw")}
-                  {...stylex.props(styles.secondary)}
-                >
+                <Button variant="secondary" onClick={() => copy("raw")}>
                   {copied === "raw" ? "Copied" : "Copy raw"}
-                </button>
+                </Button>
               )}
               <span {...stylex.props(styles.spacer)} />
               {hasRaw && (

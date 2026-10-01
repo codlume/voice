@@ -7,15 +7,20 @@ import type {
   LoginItem,
   MicrophoneCatalog,
   MicrophoneTest,
+  ModelStatus,
   PermissionState,
+  PillState,
   Settings,
   SettingsPatch,
+  Snapshot,
   Theme,
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
 import { hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import { models, type Model, type ModelId } from "../shared/models.ts";
+import { Button } from "./Button.tsx";
 import { hotkeyLabels } from "./checklist.ts";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { Select } from "./Select.tsx";
@@ -100,6 +105,7 @@ const styles = stylex.create({
     lineHeight: "16px",
     textAlign: "center",
   },
+  actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
@@ -505,6 +511,145 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
           </Row>
         </div>
       </Section>
+    </div>
+  );
+}
+
+const modelActions = {
+  Install: (id) => window.voice.installModel(id),
+  Retry: (id) => window.voice.installModel(id),
+  Uninstall: (id) => window.voice.uninstallModel(id),
+} satisfies Record<string, (id: ModelId) => Promise<void>>;
+
+type ModelAction = keyof typeof modelActions;
+
+function modelView(
+  status: ModelStatus,
+  cleanupEnabled: boolean,
+): { text: string; actions: readonly ModelAction[] } {
+  switch (status.state) {
+    case "missing":
+      return { text: "Not installed", actions: ["Install"] };
+    case "downloading":
+      return {
+        text:
+          status.progress === undefined
+            ? "Downloading"
+            : `Downloading ${Math.round(status.progress * 100)}%`,
+        actions: [],
+      };
+    case "loading":
+      return { text: "Loading", actions: [] };
+    case "ready":
+      return { text: "Installed", actions: ["Uninstall"] };
+    case "installed":
+      return {
+        text: cleanupEnabled
+          ? "Installed. Loads when you dictate in English."
+          : "Installed. Loads when text cleanup is on.",
+        actions: ["Uninstall"],
+      };
+    case "failed":
+      return { text: status.message, actions: ["Retry", "Uninstall"] };
+  }
+}
+
+function ModelSection({
+  model,
+  status,
+  cleanupEnabled,
+  dictating,
+}: {
+  model: Model;
+  status: ModelStatus;
+  cleanupEnabled: boolean;
+  dictating: boolean;
+}) {
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const view = modelView(status, cleanupEnabled);
+
+  async function run(action: ModelAction) {
+    setError("");
+    setPending(true);
+    try {
+      await modelActions[action](model.id);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : `Could not ${action.toLowerCase()} ${model.name}.`,
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Section label={model.purpose}>
+      <div {...stylex.props(styles.card)}>
+        <div {...stylex.props(styles.row)}>
+          <div {...stylex.props(styles.rowText)}>
+            <span {...stylex.props(styles.rowTitle)}>{model.name}</span>
+            <p {...stylex.props(styles.rowDetail)}>
+              {model.vendor} · {model.size}
+            </p>
+            <p
+              role="status"
+              aria-live="polite"
+              {...stylex.props(styles.rowDetail, status.state === "failed" && styles.error)}
+            >
+              {view.text}
+            </p>
+          </div>
+          {view.actions.length > 0 && (
+            <div {...stylex.props(styles.actions)}>
+              {view.actions.map((action) => (
+                <Button
+                  key={action}
+                  variant={action === "Uninstall" ? "secondary" : "primary"}
+                  aria-label={`${action} ${model.name}`}
+                  disabled={pending || (action === "Uninstall" && model.id === "asr" && dictating)}
+                  onClick={() => void run(action)}
+                >
+                  {action}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {error && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          {error}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+export function ModelsSettings({
+  models: statuses,
+  settings,
+  session,
+}: {
+  models: Snapshot["models"];
+  settings: Settings;
+  session: PillState;
+}) {
+  const dictating = session.kind === "listening" || session.kind === "processing";
+  return (
+    <div {...stylex.props(styles.page)}>
+      <h1 {...stylex.props(styles.headline)}>Models</h1>
+      {models.map((model) => (
+        <ModelSection
+          key={model.id}
+          model={model}
+          status={statuses[model.id]}
+          cleanupEnabled={settings.cleanup.enabled}
+          dictating={dictating}
+        />
+      ))}
     </div>
   );
 }

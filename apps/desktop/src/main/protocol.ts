@@ -7,8 +7,7 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
-// Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 5;
+export const HELPER_PROTOCOL_VERSION = 6;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
@@ -27,7 +26,8 @@ export type HelperCommand =
   | { type: "insert"; id: string; text: string }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
-  | { type: "asr.prepare"; download: boolean };
+  | { type: "asr.prepare"; download: boolean }
+  | { type: "asr.remove" };
 
 const permissionState = Schema.Literal("granted", "denied", "notDetermined");
 const insertFailure = Schema.NullOr(

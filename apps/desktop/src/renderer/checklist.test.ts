@@ -63,6 +63,7 @@ describe("checklist", () => {
       ["Speech model", "Not downloaded", ["Download"]],
       ["Cleanup model", "Not downloaded", ["Download"]],
     ]);
+    expect(row(fresh, "asr").subtitle).toBe("Parakeet by NVIDIA");
     expect(row(fresh, "cleanup").subtitle).toBe("S1-mini by Superwhisper");
   });
 
@@ -71,7 +72,23 @@ describe("checklist", () => {
       type: "requestPermission",
       kind: "accessibility",
     });
-    expect(row(fresh, "asr").actions[0]?.command).toEqual({ type: "setupModels" });
+    expect(row(fresh, "asr").actions[0]?.command).toEqual({ type: "installModel", id: "asr" });
+    expect(row(fresh, "cleanup").actions[0]?.command).toEqual({
+      type: "installModel",
+      id: "cleanup",
+    });
+    const failed = row(withAsr({ state: "failed", message: "offline" }), "asr");
+    expect(failed.actions[0]?.command).toEqual({ type: "installModel", id: "asr" });
+  });
+
+  test("a downloaded model that is not loaded counts as ready", () => {
+    const snapshot: Snapshot = {
+      ...allReady,
+      models: { ...allReady.models, cleanup: { state: "installed" } },
+    };
+    expect(row(snapshot, "cleanup").status).toEqual({ kind: "ready", text: "Downloaded" });
+    expect(row(snapshot, "cleanup").actions).toEqual([]);
+    expect(checklist(snapshot).ready).toBe(true);
   });
 
   test("a denied permission sends the user to System Settings", () => {
