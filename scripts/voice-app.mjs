@@ -54,6 +54,17 @@ export class Stream {
   }
 }
 
+// Every snapshot the page reports, starting with the current one.
+export async function snapshotStream(page) {
+  const snapshots = new Stream();
+  await page.bind("__voiceSnapshot", (payload) => snapshots.push(JSON.parse(payload)));
+  await page.evaluate(`
+    window.voice.onSnapshot((s) => __voiceSnapshot(JSON.stringify(s)));
+    window.voice.getSnapshot().then((s) => __voiceSnapshot(JSON.stringify(s)));
+    true`);
+  return snapshots;
+}
+
 export class Page {
   #nextId = 1;
   #pending = new Map();
