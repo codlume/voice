@@ -500,7 +500,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
       return shortcut ? [{ shortcut, run }] : [];
     }),
   ]);
-  const showShortcut = useCommandHeld() && !collapsed;
+  const showShortcut = useCommandHeld(snapshot.settings.hotkey) && !collapsed;
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);

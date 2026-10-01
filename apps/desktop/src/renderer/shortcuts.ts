@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 
+import type { Hotkey } from "../shared/api.ts";
+
 type ShortcutEvent = Pick<
   KeyboardEvent,
   "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"
@@ -53,13 +55,18 @@ export function useShortcuts(bindings: readonly Binding[]) {
   }, []);
 }
 
-export function useCommandHeld(): boolean {
+export function showsHints(event: ShortcutEvent, hotkey: Hotkey): boolean {
+  const holdsDictationHotkey = hotkey === "rightCommand" && event.code === "MetaRight";
+  // Some input paths report metaKey false on the Meta keydown itself, so check the key.
+  return event.key === "Meta" && noOtherModifiers(event) && !holdsDictationHotkey;
+}
+
+export function useCommandHeld(hotkey: Hotkey): boolean {
   const [held, setHeld] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // Some input paths report metaKey false on the Meta keydown itself, so check the key.
-      setHeld(event.key === "Meta" && noOtherModifiers(event));
+      setHeld(showsHints(event, hotkey));
     }
     function onKeyUp(event: KeyboardEvent) {
       if (event.key === "Meta") setHeld(false);
@@ -76,7 +83,7 @@ export function useCommandHeld(): boolean {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [hotkey]);
 
   return held;
 }

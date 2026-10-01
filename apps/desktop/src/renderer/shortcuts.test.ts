@@ -1,14 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { jumpShortcuts, matches, shortcuts, type Shortcut } from "./shortcuts.ts";
+import { jumpShortcuts, matches, shortcuts, showsHints, type Shortcut } from "./shortcuts.ts";
 
 const all: Shortcut[] = [...Object.values(shortcuts), ...jumpShortcuts];
 
-function press(
-  key: string,
-  modifiers: { code?: string; ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {},
-) {
-  const event = {
+type Modifiers = { code?: string; ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean };
+
+function keyEvent(key: string, modifiers: Modifiers = {}) {
+  return {
     key,
     code: modifiers.code ?? "",
     metaKey: modifiers.meta ?? true,
@@ -16,6 +15,10 @@ function press(
     altKey: modifiers.alt ?? false,
     shiftKey: modifiers.shift ?? false,
   };
+}
+
+function press(key: string, modifiers?: Modifiers) {
+  const event = keyEvent(key, modifiers);
   return all.filter((shortcut) => matches(shortcut, event));
 }
 
@@ -65,4 +68,20 @@ test("shortcut hints", () => {
   expect(jumpShortcuts.map(({ hint }) => hint)).toEqual(
     ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => `⌘${digit}`),
   );
+});
+
+describe("showsHints", () => {
+  test("⌘ on its own shows hints", () => {
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn")).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn")).toBe(true);
+  });
+
+  test("⌘ with another modifier does not", () => {
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft", shift: true }), "fn")).toBe(false);
+  });
+
+  test("holding Right ⌘ to dictate does not", () => {
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "rightCommand")).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "rightCommand")).toBe(true);
+  });
 });
