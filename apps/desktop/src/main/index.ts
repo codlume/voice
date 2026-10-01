@@ -93,6 +93,8 @@ function createPillWindow(webPreferences: WebPreferences) {
   const pill = new BrowserWindow({
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
+    // A panel already joins every Space and floats over fullscreen apps. Calling
+    // setVisibleOnAllWorkspaces for that would also drop Voice from the Dock and Cmd-Tab.
     type: "panel",
     frame: false,
     transparent: true,
@@ -109,7 +111,6 @@ function createPillWindow(webPreferences: WebPreferences) {
     webPreferences,
   });
   pill.setAlwaysOnTop(true, "screen-saver");
-  pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pill.setIgnoreMouseEvents(true);
   pill.once("ready-to-show", () => pill.showInactive());
   loadPage(pill, "pill");
