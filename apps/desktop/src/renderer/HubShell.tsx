@@ -1,11 +1,23 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { Home } from "./Home.tsx";
-import { DataPrivacySettings, GeneralSettings, SystemSettings } from "./Settings.tsx";
+import {
+  DataPrivacySettings,
+  GeneralSettings,
+  ShortcutsSettings,
+  SystemSettings,
+} from "./Settings.tsx";
+import {
+  matchShortcut,
+  shortcutLabel,
+  shortcuts,
+  type ShortcutAction,
+  type ShortcutCommand,
+} from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -51,6 +63,16 @@ const settingsPages = [
     ),
   },
   {
+    id: "shortcuts",
+    label: "Shortcuts",
+    icon: (
+      <>
+        <rect x="2.5" y="5" width="15" height="10" rx="2" />
+        <path d="M5.75 8.25h.01M8.6 8.25h.01M11.4 8.25h.01M14.25 8.25h.01M6.75 11.75h6.5" />
+      </>
+    ),
+  },
+  {
     id: "privacy",
     label: "Data and Privacy",
     icon: (
@@ -84,6 +106,7 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
     />
   ),
   privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
+  shortcuts: (snapshot) => <ShortcutsSettings settings={snapshot.settings} />,
 };
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
@@ -194,6 +217,19 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
+  labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
+  jumpHint: {
+    flexShrink: 0,
+    marginLeft: "auto",
+    paddingInline: 6,
+    borderRadius: radius.round,
+    backgroundColor: color.segmentTrack,
+    color: color.mutedForeground,
+    fontFamily: "inherit",
+    fontSize: 11,
+    fontWeight: 400,
+    lineHeight: "18px",
+  },
   footer: {
     display: "flex",
     alignItems: "flex-start",
@@ -335,50 +371,77 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
 function NavItem({
   label,
   icon,
+  shortcut,
   current = false,
   collapsed,
+  jumpHint = false,
+  title,
   onClick,
   style,
 }: {
   label: string;
   icon: ReactNode;
+  shortcut?: string | undefined;
   current?: boolean;
   collapsed: boolean;
+  jumpHint?: boolean;
+  title?: string;
   onClick: () => void;
   style?: stylex.StyleXStyles;
 }) {
+  const showHint = jumpHint && shortcut !== undefined;
   return (
     <Tooltip.Trigger
-      payload={label}
+      payload={shortcut ? `${label} ${shortcut}` : label}
       type="button"
       aria-current={current ? "page" : undefined}
+      title={collapsed ? undefined : title}
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
     >
       <Icon>{icon}</Icon>
-      <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>{label}</span>
+      <span
+        {...stylex.props(
+          styles.label,
+          collapsed && styles.labelHidden,
+          showHint && styles.labelBesideHint,
+        )}
+      >
+        {label}
+      </span>
+      {showHint && (
+        <kbd aria-hidden="true" {...stylex.props(styles.jumpHint)}>
+          {shortcut}
+        </kbd>
+      )}
     </Tooltip.Trigger>
   );
 }
+
+const jumpLimit = 9;
 
 function NavItems<Id extends string>({
   items,
   current,
   collapsed,
+  jumpHints,
   onSelect,
 }: {
   items: readonly { id: Id; label: string; icon: ReactNode }[];
   current: Id;
   collapsed: boolean;
+  jumpHints: boolean;
   onSelect: (id: Id) => void;
 }) {
-  return items.map(({ id, label, icon }) => (
+  return items.map(({ id, label, icon }, index) => (
     <NavItem
       key={id}
       label={label}
       icon={icon}
+      shortcut={index < jumpLimit ? shortcutLabel(String(index + 1)) : undefined}
       current={current === id}
       collapsed={collapsed}
+      jumpHint={jumpHints}
       onClick={() => onSelect(id)}
     />
   ));
@@ -395,6 +458,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedKey) === "true",
   );
+  const [jumpHints, setJumpHints] = useState(false);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -402,14 +466,84 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
     localStorage.setItem(sidebarCollapsedKey, String(next));
   }
 
+  function selectAppPage(id: AppPage) {
+    setAppPage(id);
+    focusMain();
+  }
+
+  function selectSettingsPage(id: SettingsPage) {
+    setSettingsPage(id);
+    focusMain();
+  }
+
+  function openSettings() {
+    if (settingsPage === null) selectSettingsPage("general");
+  }
+
+  function closeSettings() {
+    if (settingsPage === null) return;
+    setSettingsPage(null);
+    focusMain();
+  }
+
+  function jump(index: number) {
+    if (settingsPage === null) {
+      const item = appPages.at(index);
+      if (item) selectAppPage(item.id);
+    } else {
+      const item = settingsPages.at(index);
+      if (item) selectSettingsPage(item.id);
+    }
+  }
+
+  const commands: Record<ShortcutCommand, () => void> = {
+    toggleSidebar,
+    openSettings,
+    closeSettings,
+  };
+
+  const runShortcut = useEffectEvent((action: ShortcutAction) => {
+    if (action.command === "jump") jump(action.index);
+    else commands[action.command]();
+  });
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      setJumpHints(event.key === "Meta" && !event.ctrlKey && !event.altKey && !event.shiftKey);
+      if (event.defaultPrevented) return;
+      const action = matchShortcut(event);
+      if (action === null) return;
+      event.preventDefault();
+      if (!event.repeat) runShortcut(action);
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.key === "Meta") setJumpHints(false);
+    }
+    // Switching apps with ⌘-Tab never delivers the Meta keyup to this window.
+    function onBlur() {
+      setJumpHints(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  const showJumpHints = jumpHints && !collapsed;
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const settingsShortcut = shortcutLabel(shortcuts.openSettings.key);
+  const backShortcut = shortcutLabel(shortcuts.closeSettings.key);
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar)}>
         <button
           type="button"
           aria-label={toggleLabel}
-          title={toggleLabel}
+          title={`${toggleLabel} (${shortcutLabel(shortcuts.toggleSidebar.key)})`}
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
@@ -441,22 +575,17 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={appPages}
                   current={appPage}
                   collapsed={collapsed}
-                  onSelect={(id) => {
-                    setAppPage(id);
-                    focusMain();
-                  }}
+                  jumpHints={showJumpHints}
+                  onSelect={selectAppPage}
                 />
               </nav>
               <div {...stylex.props(styles.footer)}>
                 <Tooltip.Trigger
-                  payload="Settings"
+                  payload={`Settings ${settingsShortcut}`}
                   type="button"
                   aria-label="Settings"
-                  title={collapsed ? undefined : "Settings"}
-                  onClick={() => {
-                    setSettingsPage("general");
-                    focusMain();
-                  }}
+                  title={collapsed ? undefined : `Settings (${settingsShortcut})`}
+                  onClick={openSettings}
                   {...stylex.props(styles.navItem, styles.footerButton)}
                 >
                   <Icon>{slidersIcon}</Icon>
@@ -473,20 +602,17 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   items={settingsPages}
                   current={settingsPage}
                   collapsed={collapsed}
-                  onSelect={(id) => {
-                    setSettingsPage(id);
-                    focusMain();
-                  }}
+                  jumpHints={showJumpHints}
+                  onSelect={selectSettingsPage}
                 />
               </nav>
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
+                shortcut={backShortcut}
                 collapsed={collapsed}
-                onClick={() => {
-                  setSettingsPage(null);
-                  focusMain();
-                }}
+                title={`Back (${backShortcut})`}
+                onClick={closeSettings}
                 style={styles.back}
               />
             </>
