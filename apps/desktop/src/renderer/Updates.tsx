@@ -1,9 +1,10 @@
+import { Popover } from "@base-ui/react/popover";
 import * as stylex from "@stylexjs/stylex";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import { updateButton, updateStatusText } from "./updateStatus.ts";
-import { color, radius } from "./tokens.stylex.ts";
+import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
   from: { transform: "rotate(0deg)" },
@@ -11,6 +12,7 @@ const spin = stylex.keyframes({
 });
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+const enabledHover = ":hover:not([aria-disabled=true])";
 const buttonSize = 32;
 const ringRadius = 14;
 const ringCircumference = 2 * Math.PI * ringRadius;
@@ -26,19 +28,20 @@ const styles = stylex.create({
     padding: 0,
     borderWidth: 0,
     borderRadius: radius.round,
-    backgroundColor: { default: "transparent", ":hover:not(:disabled)": color.sidebarRowHover },
-    color: { default: color.mutedForeground, ":hover:not(:disabled)": color.foreground },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
+    backgroundColor: { default: "transparent", [enabledHover]: color.sidebarRowHover },
+    color: { default: color.mutedForeground, [enabledHover]: color.foreground },
+    cursor: "pointer",
     transitionProperty: "background-color, color",
     transitionDuration: "150ms",
   },
   pending: {
     backgroundColor: {
       default: color.sidebarRowSelected,
-      ":hover:not(:disabled)": color.sidebarRowHover,
+      [enabledHover]: color.sidebarRowHover,
     },
     color: color.foreground,
   },
+  unavailable: { cursor: "not-allowed" },
   failed: { color: color.errorForeground },
   dimmed: { opacity: 0.6 },
   spinner: { display: "grid" },
@@ -77,6 +80,61 @@ const styles = stylex.create({
     whiteSpace: "nowrap",
   },
   error: { margin: 0, color: color.errorForeground, fontSize: 12, textAlign: "right" },
+  positioner: { zIndex: 10 },
+  card: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    width: "22rem",
+    maxWidth: "var(--available-width)",
+    maxHeight: "min(28rem, var(--available-height))",
+    padding: space.md,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.medium,
+    backgroundColor: color.card,
+    color: color.foreground,
+    boxShadow: "0 8px 24px rgb(0 0 0 / 12%)",
+    fontFamily: font.sans,
+    fontSize: 12,
+    lineHeight: 1.45,
+    WebkitFontSmoothing: "antialiased",
+    opacity: 1,
+    transitionProperty: "opacity",
+    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+  },
+  cardHidden: { opacity: 0 },
+  cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },
+  cardVersion: { margin: 0, color: color.mutedForeground, fontVariantNumeric: "tabular-nums" },
+  notesHeading: { margin: 0, marginTop: 6, fontSize: 12, fontWeight: 600 },
+  notes: {
+    flexShrink: 1,
+    minHeight: 0,
+    maxHeight: "15rem",
+    overflowY: "auto",
+    margin: 0,
+    paddingLeft: 16,
+    color: color.mutedForeground,
+    overflowWrap: "anywhere",
+  },
+  note: { marginBlock: 2 },
+  releaseLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    flexShrink: 0,
+    marginTop: 6,
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: radius.small,
+    backgroundColor: "transparent",
+    color: { default: color.mutedForeground, ":hover": color.foreground },
+    fontFamily: "inherit",
+    fontSize: 12,
+    cursor: "pointer",
+  },
 });
 
 function Glyph({ size = 16, children }: { size?: number; children: ReactNode }) {
@@ -179,6 +237,96 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The update action failed. Try again.";
 }
 
+type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
+
+function cardTitle(update: PendingUpdate): string {
+  return update.kind === "ready"
+    ? "Update ready to install"
+    : `Downloading update · ${Math.round(update.percent)}%`;
+}
+
+function ReleaseCardTrigger({
+  update,
+  ...button
+}: { update: PendingUpdate } & ComponentProps<"button">) {
+  const [open, setOpen] = useState(false);
+  const focusReturnedByEscape = useRef(false);
+
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(next, details) => {
+        // A click runs the update action instead of pinning the card open.
+        if (details.reason === "trigger-press") {
+          details.cancel();
+          return;
+        }
+        if (!next && details.reason === "escape-key") focusReturnedByEscape.current = true;
+        setOpen(next);
+      }}
+    >
+      <Popover.Trigger
+        {...button}
+        openOnHover
+        delay={100}
+        closeDelay={150}
+        onFocus={(event) => {
+          if (!focusReturnedByEscape.current && event.currentTarget.matches(":focus-visible"))
+            setOpen(true);
+          focusReturnedByEscape.current = false;
+        }}
+      />
+      <Popover.Portal>
+        <Popover.Positioner
+          side="top"
+          align="center"
+          sideOffset={8}
+          collisionPadding={8}
+          {...stylex.props(styles.positioner)}
+        >
+          <Popover.Popup
+            initialFocus={false}
+            className={({ transitionStatus }) =>
+              stylex.props(
+                styles.card,
+                (transitionStatus === "starting" || transitionStatus === "ending") &&
+                  styles.cardHidden,
+              ).className
+            }
+          >
+            <Popover.Title {...stylex.props(styles.cardTitle)}>{cardTitle(update)}</Popover.Title>
+            <p {...stylex.props(styles.cardVersion)}>Version {update.version}</p>
+            {update.notes.length > 0 && (
+              <>
+                <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
+                <ul {...stylex.props(styles.notes)}>
+                  {update.notes.map((note) => (
+                    <li key={note} {...stylex.props(styles.note)}>
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => void window.voice.openRelease()}
+              {...stylex.props(styles.releaseLink)}
+            >
+              View release on GitHub
+              <Glyph size={12}>
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              </Glyph>
+            </button>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 export function SidebarUpdates({
   updates,
   session,
@@ -189,6 +337,7 @@ export function SidebarUpdates({
   const [actionError, setActionError] = useState("");
   const status = updates.status;
   const { action, label, tooltip } = updateButton(status, session);
+  const pending = status.kind === "downloading" || status.kind === "ready" ? status : null;
 
   async function run(task: () => Promise<void>) {
     setActionError("");
@@ -199,33 +348,38 @@ export function SidebarUpdates({
     }
   }
 
+  // aria-disabled instead of disabled keeps the button hoverable and focusable for the card.
+  const button = {
+    type: "button",
+    "aria-label": label,
+    "aria-disabled": action === null || undefined,
+    onClick: () => {
+      if (action === null) return;
+      void run(() =>
+        action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
+      );
+    },
+    children: <StatusIcon status={status} />,
+    ...stylex.props(
+      styles.button,
+      (status.kind === "ready" || status.kind === "installing" || status.kind === "downloading") &&
+        styles.pending,
+      status.kind === "failed" && styles.failed,
+      status.kind === "disabled" && styles.dimmed,
+      action === null && styles.unavailable,
+    ),
+  } satisfies ComponentProps<"button">;
+
   return (
     <div {...stylex.props(styles.sidebar)}>
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
         {updateStatusText(status)}
       </p>
-      <button
-        type="button"
-        aria-label={label}
-        title={tooltip}
-        disabled={action === null}
-        onClick={() =>
-          void run(() =>
-            action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
-          )
-        }
-        {...stylex.props(
-          styles.button,
-          (status.kind === "ready" ||
-            status.kind === "installing" ||
-            status.kind === "downloading") &&
-            styles.pending,
-          status.kind === "failed" && styles.failed,
-          status.kind === "disabled" && styles.dimmed,
-        )}
-      >
-        <StatusIcon status={status} />
-      </button>
+      {pending ? (
+        <ReleaseCardTrigger update={pending} {...button} />
+      ) : (
+        <button {...button} title={tooltip} />
+      )}
       {actionError && (
         <p role="alert" {...stylex.props(styles.error)}>
           {actionError}
