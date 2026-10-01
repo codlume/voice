@@ -1,83 +1,72 @@
 import { useEffect, useEffectEvent, useState } from "react";
 
-const jumpLimit = 9;
-
-function keys(key: string): string[] {
-  return ["⌘", key.toUpperCase()];
-}
-
-function shortcut(title: string, key: string) {
-  return { title, key, keys: keys(key), hint: keys(key).join("") };
-}
-
-export const shortcuts = {
-  toggleSidebar: shortcut("Toggle sidebar", "b"),
-  openSettings: shortcut("Open Settings", ","),
-  closeSettings: shortcut("Leave Settings", "["),
-};
-
-type Command = keyof typeof shortcuts;
-
-type ShortcutAction = { command: Command } | { command: "jump"; index: number };
-
 type ShortcutEvent = Pick<
   KeyboardEvent,
   "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"
 >;
 
-const commandsByKey = new Map(
-  Object.entries(shortcuts).map(([command, { key }]) => [key, command as Command]),
-);
+export type Shortcut = { key: string; keys: readonly string[]; hint: string };
+
+function shortcut(key: string): Shortcut {
+  const keys = ["⌘", key.toUpperCase()];
+  return { key, keys, hint: keys.join("") };
+}
+
+export const shortcuts = {
+  toggleSidebar: shortcut("b"),
+  openSettings: shortcut(","),
+  closeSettings: shortcut("["),
+};
+
+export const jumpShortcuts = Array.from({ length: 9 }, (_, index) => shortcut(String(index + 1)));
 
 function noOtherModifiers(event: ShortcutEvent): boolean {
   return !event.ctrlKey && !event.altKey && !event.shiftKey;
 }
 
-export function matchShortcut(event: ShortcutEvent): ShortcutAction | null {
-  if (!event.metaKey || !noOtherModifiers(event)) return null;
-  const command = commandsByKey.get(event.key.toLowerCase());
-  if (command) return { command };
+export function matches({ key }: Shortcut, event: ShortcutEvent): boolean {
+  if (!event.metaKey || !noOtherModifiers(event)) return false;
   // Match digits by physical key: layouts like AZERTY put symbols on the digit row.
-  const digit = Number(/^(?:Digit|Numpad)(\d)$/.exec(event.code)?.[1] ?? 0);
-  return digit >= 1 && digit <= jumpLimit ? { command: "jump", index: digit - 1 } : null;
+  if (/^\d$/.test(key)) return event.code === `Digit${key}` || event.code === `Numpad${key}`;
+  return event.key.toLowerCase() === key;
 }
 
-export const jumpKeys = keys(`1–${jumpLimit}`);
-
-export function jumpLabel(index: number): string | undefined {
-  return index < jumpLimit ? keys(String(index + 1)).join("") : undefined;
-}
-
-export function withShortcut(label: string, hint: string): string {
+export function withShortcut(label: string, { hint }: Shortcut): string {
   return `${label} (${hint})`;
 }
 
-/** Runs window shortcuts, and returns whether ⌘ is held on its own so callers can show hints. */
-export function useShortcuts(
-  handlers: Record<Command, () => void> & { jump: (index: number) => void },
-): boolean {
-  const [commandHeld, setCommandHeld] = useState(false);
-  const run = useEffectEvent((action: ShortcutAction) => {
-    if (action.command === "jump") handlers.jump(action.index);
-    else handlers[action.command]();
+export type Binding = { shortcut: Shortcut; run: () => void };
+
+export function useShortcuts(bindings: readonly Binding[]) {
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented) return;
+    const binding = bindings.find((candidate) => matches(candidate.shortcut, event));
+    if (!binding) return;
+    event.preventDefault();
+    if (!event.repeat) binding.run();
   });
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+}
+
+export function useCommandHeld(): boolean {
+  const [held, setHeld] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       // Some input paths report metaKey false on the Meta keydown itself, so check the key.
-      setCommandHeld(event.key === "Meta" && noOtherModifiers(event));
-      if (event.defaultPrevented) return;
-      const action = matchShortcut(event);
-      if (action === null) return;
-      event.preventDefault();
-      if (!event.repeat) run(action);
+      setHeld(event.key === "Meta" && noOtherModifiers(event));
     }
     function onKeyUp(event: KeyboardEvent) {
-      if (event.key === "Meta") setCommandHeld(false);
+      if (event.key === "Meta") setHeld(false);
     }
     // Switching apps with ⌘-Tab never delivers the Meta keyup to this window.
     function onBlur() {
-      setCommandHeld(false);
+      setHeld(false);
     }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -89,5 +78,5 @@ export function useShortcuts(
     };
   }, []);
 
-  return commandHeld;
+  return held;
 }

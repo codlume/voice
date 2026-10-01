@@ -1,29 +1,32 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { jumpLabel, matchShortcut, shortcuts } from "./shortcuts.ts";
+import { jumpShortcuts, matches, shortcuts, type Shortcut } from "./shortcuts.ts";
+
+const all: Shortcut[] = [...Object.values(shortcuts), ...jumpShortcuts];
 
 function press(
   key: string,
   modifiers: { code?: string; ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean } = {},
 ) {
-  return matchShortcut({
+  const event = {
     key,
     code: modifiers.code ?? "",
     metaKey: modifiers.meta ?? true,
     ctrlKey: modifiers.ctrl ?? false,
     altKey: modifiers.alt ?? false,
     shiftKey: modifiers.shift ?? false,
-  });
+  };
+  return all.filter((shortcut) => matches(shortcut, event));
 }
 
-describe("matchShortcut", () => {
+describe("matches", () => {
   test.each([
-    ["b", { command: "toggleSidebar" }],
-    ["B", { command: "toggleSidebar" }],
-    [",", { command: "openSettings" }],
-    ["[", { command: "closeSettings" }],
-  ])("⌘%s", (key, action) => {
-    expect(press(key)).toEqual(action);
+    ["b", shortcuts.toggleSidebar],
+    ["B", shortcuts.toggleSidebar],
+    [",", shortcuts.openSettings],
+    ["[", shortcuts.closeSettings],
+  ])("⌘%s", (key, shortcut) => {
+    expect(press(key)).toEqual([shortcut]);
   });
 
   test.each([
@@ -31,15 +34,15 @@ describe("matchShortcut", () => {
     ["9", "Digit9", 8],
     ["1", "Numpad1", 0],
   ])("⌘%s (%s) jumps", (key, code, index) => {
-    expect(press(key, { code })).toEqual({ command: "jump", index });
+    expect(press(key, { code })).toEqual([jumpShortcuts[index]]);
   });
 
   test("⌘0 is not a jump", () => {
-    expect(press("0", { code: "Digit0" })).toBeNull();
+    expect(press("0", { code: "Digit0" })).toEqual([]);
   });
 
   test("digits fall back to the physical key on non-US layouts", () => {
-    expect(press("&", { code: "Digit1" })).toEqual({ command: "jump", index: 0 });
+    expect(press("&", { code: "Digit1" })).toEqual([jumpShortcuts[0]]);
   });
 
   test.each([
@@ -48,29 +51,18 @@ describe("matchShortcut", () => {
     ["⌃⌘B", { ctrl: true }],
     ["plain B", { meta: false }],
   ])("%s does nothing", (_, modifiers) => {
-    expect(press("b", modifiers)).toBeNull();
+    expect(press("b", modifiers)).toEqual([]);
   });
 
   test("⇧⌘1 does nothing", () => {
-    expect(press("!", { code: "Digit1", shift: true })).toBeNull();
+    expect(press("!", { code: "Digit1", shift: true })).toEqual([]);
   });
 });
 
 test("shortcut hints", () => {
   expect(shortcuts.toggleSidebar.hint).toBe("⌘B");
   expect(shortcuts.openSettings.hint).toBe("⌘,");
-});
-
-test("every sidebar hint is a shortcut that jumps to that item", () => {
-  const labelled = Array.from({ length: 12 }, (_, index) => index).filter(
-    (index) => jumpLabel(index) !== undefined,
+  expect(jumpShortcuts.map(({ hint }) => hint)).toEqual(
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => `⌘${digit}`),
   );
-  expect(labelled).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-  for (const index of labelled) {
-    expect(jumpLabel(index)).toBe(`⌘${index + 1}`);
-    expect(press(String(index + 1), { code: `Digit${index + 1}` })).toEqual({
-      command: "jump",
-      index,
-    });
-  }
 });

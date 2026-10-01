@@ -11,7 +11,15 @@ import {
   ShortcutsSettings,
   SystemSettings,
 } from "./Settings.tsx";
-import { jumpLabel, shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
+import {
+  jumpShortcuts,
+  shortcuts,
+  useCommandHeld,
+  useShortcuts,
+  withShortcut,
+  type Binding,
+  type Shortcut,
+} from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -374,7 +382,7 @@ function NavItem({
 }: {
   label: string;
   icon: ReactNode;
-  shortcut: string | undefined;
+  shortcut: Shortcut | undefined;
   current?: boolean;
   collapsed: boolean;
   showShortcut: boolean;
@@ -402,7 +410,7 @@ function NavItem({
       </span>
       {showHint && (
         <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
-          {shortcut}
+          {shortcut.hint}
         </kbd>
       )}
     </Tooltip.Trigger>
@@ -427,7 +435,7 @@ function NavItems<Id extends string>({
       key={id}
       label={label}
       icon={icon}
-      shortcut={jumpLabel(index)}
+      shortcut={jumpShortcuts[index]}
       current={current === id}
       collapsed={collapsed}
       showShortcut={showShortcut}
@@ -464,38 +472,45 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
     focusMain();
   }
 
-  function openSettings() {
-    if (settingsPage === null) selectSettingsPage("general");
-  }
-
   function closeSettings() {
-    if (settingsPage === null) return;
     setSettingsPage(null);
     focusMain();
   }
 
-  function jump(index: number) {
-    if (settingsPage === null) {
-      const item = appPages.at(index);
-      if (item) selectAppPage(item.id);
-    } else {
-      const item = settingsPages.at(index);
-      if (item) selectSettingsPage(item.id);
-    }
-  }
+  const navTargets =
+    settingsPage === null
+      ? appPages.map(
+          ({ id }) =>
+            () =>
+              selectAppPage(id),
+        )
+      : settingsPages.map(
+          ({ id }) =>
+            () =>
+              selectSettingsPage(id),
+        );
 
-  const showShortcut =
-    useShortcuts({ toggleSidebar, openSettings, closeSettings, jump }) && !collapsed;
+  useShortcuts([
+    { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
+    settingsPage === null
+      ? { shortcut: shortcuts.openSettings, run: () => selectSettingsPage("general") }
+      : { shortcut: shortcuts.closeSettings, run: closeSettings },
+    ...navTargets.flatMap((run, index): Binding[] => {
+      const shortcut = jumpShortcuts[index];
+      return shortcut ? [{ shortcut, run }] : [];
+    }),
+  ]);
+  const showShortcut = useCommandHeld() && !collapsed;
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
-  const settingsLabel = withShortcut("Settings", shortcuts.openSettings.hint);
+  const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar)}>
         <button
           type="button"
           aria-label={toggleLabel}
-          title={withShortcut(toggleLabel, shortcuts.toggleSidebar.hint)}
+          title={withShortcut(toggleLabel, shortcuts.toggleSidebar)}
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
@@ -537,7 +552,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   type="button"
                   aria-label="Settings"
                   title={collapsed ? undefined : settingsLabel}
-                  onClick={openSettings}
+                  onClick={() => selectSettingsPage("general")}
                   {...stylex.props(styles.navItem, styles.footerButton)}
                 >
                   <Icon>{slidersIcon}</Icon>
@@ -561,7 +576,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
-                shortcut={shortcuts.closeSettings.hint}
+                shortcut={shortcuts.closeSettings}
                 collapsed={collapsed}
                 showShortcut={showShortcut}
                 onClick={closeSettings}

@@ -19,7 +19,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import { hotkeyLabels } from "./checklist.ts";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { Select } from "./Select.tsx";
-import { jumpKeys, shortcuts } from "./shortcuts.ts";
+import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -505,7 +505,7 @@ function ShortcutRow({
 }: {
   title: string;
   detail?: string | undefined;
-  keys: string[];
+  keys: readonly string[];
 }) {
   return (
     <div {...stylex.props(styles.row)}>
@@ -550,13 +550,13 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
 
       <Section label="Voice window">
         <div {...stylex.props(styles.card)}>
-          {Object.values(shortcuts).map(({ title, keys }) => (
-            <ShortcutRow key={title} title={title} keys={keys} />
-          ))}
+          <ShortcutRow title="Toggle sidebar" keys={shortcuts.toggleSidebar.keys} />
+          <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
+          <ShortcutRow title="Leave Settings" keys={shortcuts.closeSettings.keys} />
           <ShortcutRow
             title="Go to sidebar item"
             detail="Jump to an item in the sidebar, top to bottom."
-            keys={jumpKeys}
+            keys={["⌘", `1–${jumpShortcuts.length}`]}
           />
         </div>
       </Section>
