@@ -86,10 +86,11 @@ try {
     const answered = execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
     assert(answered === "ok", `no confirmation sheet to answer ${choice}`);
   };
-  const installed = (state) => state === "ready" || state === "installed";
+  // Install reports 0% before it checks the file on disk, so any other download status is a fetch.
+  const fetching = (status) => status.state === "downloading" && status.progress !== 0;
 
   await untilModels(
-    (m) => m.asr.state === "ready" && installed(m.cleanup.state),
+    (m) => m.asr.state === "ready" && m.cleanup.state === "ready",
     "both models loaded",
   );
   await click(button("Settings"), "Settings opens");
@@ -106,11 +107,17 @@ try {
   note("cleanup off unloads, on reloads");
 
   const uninstallCleanup = button(`Uninstall ${names.cleanup}`);
+  const beforeCancel = snapshots.items.length;
   await click(uninstallCleanup, "cleanup Uninstall clickable");
   answerDialog("Cancel");
   await untilPage(enabled(uninstallCleanup), "cancelled uninstall settles");
   const afterCancel = await page.evaluate("window.voice.getSnapshot()");
-  assert(installed(afterCancel.models.cleanup.state), "Cancel keeps the cleanup model");
+  assert(
+    [...snapshots.items.slice(beforeCancel), afterCancel].every(
+      (s) => s.models.cleanup.state === "ready",
+    ),
+    "Cancel keeps the cleanup model loaded",
+  );
   assert(linked(join(models, modelFiles.cleanup)), "Cancel keeps the cleanup file");
   note("cancel keeps the model");
 
@@ -135,9 +142,13 @@ try {
     symlinkSync(join(cache, modelFiles[id]), join(models, modelFiles[id]));
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Install ${names[id]}`), `${id} Install clickable`);
-    await untilModels(
-      (m) => (id === "asr" ? m.asr.state === "ready" : installed(m.cleanup.state)),
+    const { models: settled } = await untilModels(
+      (m) => ["ready", "failed"].includes(m[id].state) || fetching(m[id]),
       `${id} reinstalled`,
+    );
+    assert(
+      settled[id].state === "ready",
+      `${id} reinstalls from the linked file without a download: ${JSON.stringify(settled[id])}`,
     );
     note(`${id} reinstalled`);
   }
