@@ -428,6 +428,17 @@ export function SystemSettings({
               onChange={(showInDock) => update({ showInDock })}
             />
           </Row>
+          <Row
+            id="setting-always-show-pill"
+            title="Show Flow Bar at all times"
+            detail="When off, the Flow Bar appears only while you dictate."
+          >
+            <Switch
+              id="setting-always-show-pill"
+              checked={settings.alwaysShowPill}
+              onChange={(alwaysShowPill) => update({ alwaysShowPill })}
+            />
+          </Row>
         </div>
       </Section>
 

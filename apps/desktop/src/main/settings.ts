@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
   muteWhileDictating: false,
   showInDock: true,
+  alwaysShowPill: true,
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
@@ -48,6 +49,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     muteWhileDictating: flag(r.muteWhileDictating, DEFAULT_SETTINGS.muteWhileDictating),
     showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
+    alwaysShowPill: flag(r.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill),
     cleanup: {
       enabled: flag(c.enabled, d.enabled),
       styling: pick(STYLINGS, c.styling, d.styling),
@@ -65,6 +67,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     theme: patch.theme ?? settings.theme,
     muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
     showInDock: patch.showInDock ?? settings.showInDock,
+    alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
   });

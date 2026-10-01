@@ -24,6 +24,7 @@ const base: Snapshot = {
     microphone: null,
     muteWhileDictating: false,
     showInDock: true,
+    alwaysShowPill: true,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
@@ -208,6 +209,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
           showInDock: patch.showInDock ?? snapshot.settings.showInDock,
+          alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
         },
@@ -256,7 +258,9 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
 
 function PillPreview() {
   const snapshot = useSnapshot();
-  return snapshot ? <PillCapsule session={snapshot.session} /> : null;
+  return snapshot ? (
+    <PillCapsule session={snapshot.session} alwaysShowPill={snapshot.settings.alwaysShowPill} />
+  ) : null;
 }
 
 function HubPreview() {
@@ -288,7 +292,7 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule session={session} />
+            <PillCapsule session={session} alwaysShowPill />
           </div>
         </figure>
       ))}

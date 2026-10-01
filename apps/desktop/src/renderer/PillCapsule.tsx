@@ -50,6 +50,7 @@ const styles = stylex.create({
     opacity: 1,
     boxShadow: `inset 0 0 0 1px ${darkPill.line}, 0 2px 8px rgba(0, 0, 0, 0.28)`,
   },
+  hidden: { opacity: 0 },
   wide: { width: 296 },
   content: {
     display: "flex",
@@ -168,8 +169,14 @@ function Check({ pasted }: { pasted: boolean }) {
   );
 }
 
-export function PillCapsule({ session }: { session: PillState }) {
-  const view = pillView(session);
+export function PillCapsule({
+  session,
+  alwaysShowPill,
+}: {
+  session: PillState;
+  alwaysShowPill: boolean;
+}) {
+  const view = pillView(session, alwaysShowPill);
   return (
     <div {...stylex.props(styles.frame)}>
       <div
@@ -177,7 +184,8 @@ export function PillCapsule({ session }: { session: PillState }) {
         role="status"
         {...stylex.props(
           styles.capsule,
-          view.kind === "idle" ? styles.idle : styles.open,
+          view.kind === "idle" || view.kind === "hidden" ? styles.idle : styles.open,
+          view.kind === "hidden" && styles.hidden,
           view.kind === "message" && styles.wide,
         )}
       >

@@ -3,13 +3,26 @@ import { describe, expect, test } from "vite-plus/test";
 import type { Outcome } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
 
-const done = (outcome: Outcome) => pillView({ kind: "done", outcome });
+const done = (outcome: Outcome) => pillView({ kind: "done", outcome }, true);
 
 describe("pillView", () => {
   test("shows listening only for the listening phase", () => {
-    expect(pillView({ kind: "listening" })).toEqual({ kind: "listening" });
-    expect(pillView({ kind: "processing" })).toEqual({ kind: "processing" });
-    expect(pillView({ kind: "idle" })).toEqual({ kind: "idle" });
+    expect(pillView({ kind: "listening" }, true)).toEqual({ kind: "listening" });
+    expect(pillView({ kind: "processing" }, true)).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "idle" }, true)).toEqual({ kind: "idle" });
+  });
+
+  test("hides only the idle bar when the Flow Bar is not shown at all times", () => {
+    expect(pillView({ kind: "idle" }, false)).toEqual({ kind: "hidden" });
+    expect(pillView({ kind: "listening" }, false)).toEqual({ kind: "listening" });
+    expect(pillView({ kind: "processing" }, false)).toEqual({ kind: "processing" });
+    expect(
+      pillView({ kind: "done", outcome: { kind: "inserted", method: "paste" } }, false),
+    ).toEqual({ kind: "inserted", method: "paste" });
+    expect(pillView({ kind: "done", outcome: { kind: "empty" } }, false)).toEqual({
+      kind: "message",
+      text: "Nothing heard",
+    });
   });
 
   test("shows the check only when text was inserted, and says so when it went through paste", () => {

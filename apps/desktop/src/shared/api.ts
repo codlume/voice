@@ -68,6 +68,7 @@ export type Settings = {
   hotkey: Hotkey;
   muteWhileDictating: boolean;
   showInDock: boolean;
+  alwaysShowPill: boolean;
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
@@ -83,6 +84,7 @@ export type SettingsPatch = {
   hotkey?: Hotkey;
   muteWhileDictating?: boolean;
   showInDock?: boolean;
+  alwaysShowPill?: boolean;
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;
