@@ -45,14 +45,16 @@ are already configured. Signing and upload secrets still need to be added.
 The workflow builds a DMG for manual installation and a ZIP for updates.
 Both live at `/releases/<version>/mac-arm64/`. After promotion, the workflow
 also attaches the DMG to a GitHub release. Stable uses the release-please
-release. Each Nightly gets its own prerelease tagged `v<version>` on the
-built commit, such as `v0.1.1-nightly.20260926.42` for the UTC date and
-workflow run number. Its notes list the pull requests merged since the
-previous Nightly. Nightly prereleases are kept, not pruned; the six-hour
-schedule bounds how many accumulate. Release-please ignores these tags
-because it only matches the version in `.release-please-manifest.json`. The
-app embeds the build channel and `RELEASE_BASE_URL`. Each channel has its
-own `/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
+release. Its notes are GitHub's generated release notes, which list each
+pull request since the previous stable tag with its author. Each Nightly
+gets its own prerelease tagged `v<version>` on the built commit, such as
+`v0.1.1-nightly.20260926.42` for the UTC date and workflow run number. Its
+notes list the pull requests merged since the previous Nightly. Nightly
+prereleases are kept, not pruned; the six-hour schedule bounds how many
+accumulate. Release-please ignores these tags because it only matches the
+version in `.release-please-manifest.json`. The app embeds the build channel
+and `RELEASE_BASE_URL`. Each channel has its own
+`/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
 absolute URLs for immutable release artifacts.
 
 The publisher checks every artifact's size and SHA-256 after uploading it.
