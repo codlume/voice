@@ -35,7 +35,6 @@ const styles = stylex.create({
   },
   cardHidden: { opacity: 0 },
   cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },
-  cardVersion: { margin: 0, color: color.mutedForeground, fontVariantNumeric: "tabular-nums" },
   notesHeading: { margin: 0, marginTop: 6, fontSize: 12, fontWeight: 600 },
   notes: {
     flexShrink: 1,
@@ -160,7 +159,6 @@ function ReleaseCard({ update }: { update: PendingUpdate }) {
           <Popover.Title {...stylex.props(styles.cardTitle)}>
             {releaseCardTitle(update)}
           </Popover.Title>
-          <p {...stylex.props(styles.cardVersion)}>Version {update.version}</p>
           {update.notes.length > 0 && (
             <>
               <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>

@@ -138,6 +138,11 @@ const hubScenes: Record<string, Snapshot> = {
       },
     ]),
   ),
+  "ready-dictating": {
+    ...ready,
+    session: { kind: "listening" },
+    updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
+  },
   nightly: {
     ...ready,
     settings: { ...ready.settings, updateChannel: "nightly" },
