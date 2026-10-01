@@ -493,6 +493,10 @@ async function main() {
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
+  ipcMain.handle(Channel.openRelease, () => {
+    const url = updates.releaseUrl();
+    if (url) void shell.openExternal(url);
+  });
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);

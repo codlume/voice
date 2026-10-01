@@ -1,7 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
-import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  pendingUpdate,
+  type PillState,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
+import { ReleaseCardTrigger } from "./ReleaseCard.tsx";
 import { updateButton, updateStatusText } from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
@@ -11,6 +17,7 @@ const spin = stylex.keyframes({
 });
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+const enabledHover = ":hover:not([aria-disabled=true])";
 const buttonSize = 32;
 const ringRadius = 14;
 const ringCircumference = 2 * Math.PI * ringRadius;
@@ -26,19 +33,20 @@ const styles = stylex.create({
     padding: 0,
     borderWidth: 0,
     borderRadius: radius.round,
-    backgroundColor: { default: "transparent", ":hover:not(:disabled)": color.sidebarRowHover },
-    color: { default: color.mutedForeground, ":hover:not(:disabled)": color.foreground },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
+    backgroundColor: { default: "transparent", [enabledHover]: color.sidebarRowHover },
+    color: { default: color.mutedForeground, [enabledHover]: color.foreground },
+    cursor: "pointer",
     transitionProperty: "background-color, color",
     transitionDuration: "150ms",
   },
-  pending: {
+  hasUpdate: {
     backgroundColor: {
       default: color.sidebarRowSelected,
-      ":hover:not(:disabled)": color.sidebarRowHover,
+      [enabledHover]: color.sidebarRowHover,
     },
     color: color.foreground,
   },
+  unavailable: { cursor: "not-allowed" },
   failed: { color: color.errorForeground },
   dimmed: { opacity: 0.6 },
   spinner: { display: "grid" },
@@ -204,28 +212,29 @@ export function SidebarUpdates({
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
         {updateStatusText(status)}
       </p>
-      <button
-        type="button"
-        aria-label={label}
-        title={tooltip}
+      <ReleaseCardTrigger
+        update={pendingUpdate(status)}
+        label={label}
+        tooltip={tooltip}
         disabled={action === null}
         onClick={() =>
           void run(() =>
             action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
           )
         }
-        {...stylex.props(
+        style={[
           styles.button,
           (status.kind === "ready" ||
             status.kind === "installing" ||
             status.kind === "downloading") &&
-            styles.pending,
+            styles.hasUpdate,
           status.kind === "failed" && styles.failed,
           status.kind === "disabled" && styles.dimmed,
-        )}
+          action === null && styles.unavailable,
+        ]}
       >
         <StatusIcon status={status} />
-      </button>
+      </ReleaseCardTrigger>
       {actionError && (
         <p role="alert" {...stylex.props(styles.error)}>
           {actionError}

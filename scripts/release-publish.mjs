@@ -50,7 +50,7 @@ function requireInstallerFiles(names) {
   }
 }
 
-export function prepareFeed(source, version, baseUrl, artifacts) {
+export function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
   const feed = readFeed(source);
   if (feed.version !== version)
     throw new Error("Builder feed version differs from artifact version");
@@ -85,6 +85,7 @@ export function prepareFeed(source, version, baseUrl, artifacts) {
     }
     feed.path = `${baseUrl}/releases/${version}/mac-arm64/${encodeURIComponent(name)}`;
   }
+  if (releaseNotes.trim()) feed.releaseNotes = releaseNotes;
   return stringify(feed);
 }
 
@@ -139,7 +140,15 @@ export async function preflightRelease({ store, channel, version, baseUrl }) {
   return true;
 }
 
-export async function publishRelease({ store, channel, version, baseUrl, artifacts, builderFeed }) {
+export async function publishRelease({
+  store,
+  channel,
+  version,
+  baseUrl,
+  artifacts,
+  builderFeed,
+  releaseNotes = "",
+}) {
   parseVersion(version);
   if (
     !["stable", "nightly"].includes(channel) ||
@@ -148,7 +157,7 @@ export async function publishRelease({ store, channel, version, baseUrl, artifac
     throw new Error("Invalid release channel and version");
   }
   const url = releaseBaseUrl(baseUrl);
-  const feed = prepareFeed(builderFeed, version, url, artifacts);
+  const feed = prepareFeed(builderFeed, version, url, artifacts, releaseNotes);
   const feedKey = `channels/${channel}/mac-arm64/latest-mac.yml`;
   // GitHub Actions serializes promotion per channel. Re-read under that lock.
   const prior = await store.get(feedKey);
@@ -246,6 +255,7 @@ if (process.argv[1]?.endsWith("/release-publish.mjs")) {
     RELEASE_BASE_URL: baseUrl,
     R2_BUCKET: bucket,
     R2_ACCOUNT_ID: account,
+    RELEASE_NOTES_FILE: notesFile,
   } = process.env;
   if (!bucket || !account || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
     throw new Error("R2 bucket, account, and AWS-compatible credentials are required");
@@ -254,6 +264,7 @@ if (process.argv[1]?.endsWith("/release-publish.mjs")) {
   const names = readdirSync(dir).filter((name) => /\.(zip|dmg|blockmap)$/.test(name));
   const artifacts = new Map(names.map((name) => [basename(name), readFileSync(join(dir, name))]));
   const builderFeed = readFileSync(join(dir, "latest-mac.yml"), "utf8");
+  const releaseNotes = notesFile ? readFileSync(notesFile, "utf8") : "";
   console.log(
     await publishRelease({
       store: r2Store(bucket),
@@ -262,6 +273,7 @@ if (process.argv[1]?.endsWith("/release-publish.mjs")) {
       baseUrl,
       artifacts,
       builderFeed,
+      releaseNotes,
     }),
   );
 }

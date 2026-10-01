@@ -1,6 +1,12 @@
 import type { AppUpdater } from "electron-updater";
 
-import type { UpdateChannel, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  pendingUpdate,
+  type UpdateChannel,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
+import { releaseNoteItems } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
 
@@ -115,11 +121,17 @@ export function createUpdates({
       if ((channel === "nightly") !== version.includes("-nightly.")) {
         throw new Error("The update feed contains a different release channel");
       }
+      const notes = releaseNoteItems(result.updateInfo.releaseNotes);
       operation = "download";
-      publish({ kind: "downloading", version, percent: 0 });
+      publish({ kind: "downloading", version, notes, percent: 0 });
       const progress = ({ percent }: { percent: number }) => {
         if (current())
-          publish({ kind: "downloading", version, percent: Math.max(0, Math.min(100, percent)) });
+          publish({
+            kind: "downloading",
+            version,
+            notes,
+            percent: Math.max(0, Math.min(100, percent)),
+          });
       };
       engine.on("download-progress", progress);
       try {
@@ -127,7 +139,7 @@ export function createUpdates({
       } finally {
         engine.removeListener("download-progress", progress);
       }
-      if (current()) publish({ kind: "ready", version });
+      if (current()) publish({ kind: "ready", version, notes });
     } catch {
       if (current())
         publish({
@@ -170,6 +182,13 @@ export function createUpdates({
       pollTimer.unref();
     },
     check,
+    releaseUrl(): string | null {
+      const update = pendingUpdate(snapshot.status);
+      return (
+        update &&
+        `https://github.com/codlume/voice/releases/tag/v${encodeURIComponent(update.version)}`
+      );
+    },
     async setChannel(channel: UpdateChannel) {
       if (restarting) throw new Error("Voice is restarting for an update.");
       if (snapshot.channel === channel || disposed) return;

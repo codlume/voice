@@ -1,4 +1,4 @@
-import type { PillState, UpdateStatus } from "../shared/api.ts";
+import type { PendingUpdate, PillState, UpdateStatus } from "../shared/api.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -25,6 +25,12 @@ export function updateStatusText(status: UpdateStatus): string {
   }
 }
 
+export function releaseCardTitle(update: PendingUpdate): string {
+  return update.kind === "ready"
+    ? `Restart to install ${update.version}`
+    : updateStatusText(update);
+}
+
 export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
@@ -37,7 +43,7 @@ export function updateButton(status: UpdateStatus, session: PillState): UpdateBu
     case "ready":
       return session.kind === "listening" || session.kind === "processing"
         ? button(null, "Finish dictation before restarting")
-        : button("restart", `Restart to install ${status.version}`);
+        : button("restart", releaseCardTitle(status));
     case "checking":
     case "downloading":
     case "installing":

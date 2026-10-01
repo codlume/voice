@@ -50,9 +50,11 @@ pull request since the previous stable tag with its author.
 Each Nightly gets its own prerelease tagged `v<version>` on the
 built commit, such as `v0.1.1-nightly.20260926.42` for the UTC date and
 workflow run number. Its notes list the pull requests merged since the
-previous Nightly. Nightly prereleases are kept, not pruned; the six-hour
-schedule bounds how many accumulate. Release-please ignores these tags
-because it only matches the version in `.release-please-manifest.json`. The
+previous Nightly. The channel feed carries the same notes as the GitHub
+release, and the app shows them on its update button. Nightly prereleases
+are kept, not pruned; the six-hour schedule bounds how many accumulate.
+Release-please ignores these tags because it only matches the version in
+`.release-please-manifest.json`. The
 app embeds the build channel and `RELEASE_BASE_URL`. Each channel has its
 own `/channels/<channel>/mac-arm64/latest-mac.yml` feed. The feed contains
 absolute URLs for immutable release artifacts.

@@ -14,6 +14,7 @@ const voice: VoiceApi = {
   diagnosticsStartedAtLaunch: process.argv.includes(DIAGNOSTICS_ARGUMENT),
   checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
   restartForUpdate: () => ipcRenderer.invoke(Channel.restartForUpdate),
+  openRelease: () => ipcRenderer.invoke(Channel.openRelease),
   getSnapshot: () => ipcRenderer.invoke(Channel.getSnapshot),
   onSnapshot: (listener) => subscribe<Snapshot>(Channel.snapshot, listener),
   onLevel: (listener) => subscribe<number>(Channel.level, listener),

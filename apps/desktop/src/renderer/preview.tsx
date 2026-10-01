@@ -70,11 +70,23 @@ const pillScenes: Record<string, PillState> = {
   }),
 };
 
+const releaseNotes = [
+  "feat(desktop): add keyboard shortcuts and a Shortcuts settings page by @mhadrys in #119",
+  "feat(desktop): add a Show Flow Bar at all times setting by @mhadrys in #120",
+  "feat(desktop): add Open at login and Show in Dock settings by @mhadrys in #118",
+  "feat(desktop): add a Data and Privacy settings page by @mhadrys in #117",
+  "fix(desktop): keep Voice in Cmd-Tab and the Dock by @mhadrys in #116",
+  "feat(desktop): split settings into General and System by @mhadrys in #115",
+  "fix(asr): keep the final transcript when the speech model restarts mid-session, so a long dictation is never lost by @mhadrys in #114",
+  "fix(insertion): fall back to paste in terminals that reject accessibility writes by @mhadrys in #113",
+];
+
 const updateScenes: Record<string, UpdateStatus> = {
   checking: { kind: "checking" },
   current: { kind: "current" },
-  downloading: { kind: "downloading", version: "1.5.0", percent: 48 },
-  ready: { kind: "ready", version: "1.5.0" },
+  downloading: { kind: "downloading", version: "1.5.0", notes: releaseNotes, percent: 48 },
+  ready: { kind: "ready", version: "1.5.0", notes: releaseNotes },
+  "ready-no-notes": { kind: "ready", version: "1.5.0", notes: [] },
   failed: { kind: "failed", message: "Could not check for updates. Try again." },
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };
@@ -126,6 +138,11 @@ const hubScenes: Record<string, Snapshot> = {
       },
     ]),
   ),
+  "ready-dictating": {
+    ...ready,
+    session: { kind: "listening" },
+    updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
+  },
   nightly: {
     ...ready,
     settings: { ...ready.settings, updateChannel: "nightly" },
@@ -181,6 +198,9 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           status: { kind: "installing", version: snapshot.updates.status.version },
         },
       });
+    },
+    openRelease: async () => {
+      console.info("openRelease");
     },
     getSnapshot: async () => snapshot,
     onSnapshot: (listener) => {

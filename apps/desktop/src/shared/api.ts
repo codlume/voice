@@ -17,10 +17,17 @@ export type UpdateStatus =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "current" }
-  | { kind: "downloading"; version: string; percent: number }
-  | { kind: "ready"; version: string }
+  | { kind: "downloading"; version: string; notes: readonly string[]; percent: number }
+  | { kind: "ready"; version: string; notes: readonly string[] }
   | { kind: "installing"; version: string }
   | { kind: "failed"; message: string };
+
+/** An update the user can read about before installing it. */
+export type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
+
+export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
+  return status.kind === "downloading" || status.kind === "ready" ? status : null;
+}
 
 export type UpdatesSnapshot = {
   version: string;
@@ -108,6 +115,7 @@ export type VoiceApi = {
   diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
   restartForUpdate(): Promise<void>;
+  openRelease(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   onLevel(listener: (level: number) => void): () => void;
@@ -123,6 +131,7 @@ export type VoiceApi = {
 export const Channel = {
   checkForUpdates: "voice:checkForUpdates",
   restartForUpdate: "voice:restartForUpdate",
+  openRelease: "voice:openRelease",
   getSnapshot: "voice:getSnapshot",
   snapshot: "voice:snapshot",
   level: "voice:level",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
+import { parse } from "yaml";
 import { compareVersions, nightlyVersion } from "./release-version.mjs";
 import { preflightRelease, publishRelease } from "./release-publish.mjs";
 
@@ -81,6 +82,40 @@ test("publishes artifacts first, then promotes a verified feed", async () => {
     await publishRelease({ store, channel: "nightly", baseUrl, ...fixture("0.0.2-nightly.183") }),
     "skipped-older",
   );
+});
+
+test("the feed carries release notes, and a rerun with edited notes is already published", async () => {
+  const store = memoryStore();
+  const release = fixture("0.0.2");
+  const releaseNotes =
+    "## What's Changed\n* feat: add a setting by @someone in https://github.com/codlume/voice/pull/120\n";
+  assert.equal(
+    await publishRelease({ store, channel: "stable", baseUrl, ...release, releaseNotes }),
+    "published",
+  );
+  const key = "channels/stable/mac-arm64/latest-mac.yml";
+  const published = store.objects.get(key);
+  assert.equal(parse(published.toString()).releaseNotes, releaseNotes);
+  assert.equal(
+    await publishRelease({
+      store,
+      channel: "stable",
+      baseUrl,
+      ...release,
+      releaseNotes: "## What's Changed\n* edited after release\n",
+    }),
+    "already-published",
+  );
+  assert.equal(store.objects.get(key), published);
+});
+
+test("blank release notes leave the feed without a releaseNotes key", async () => {
+  for (const releaseNotes of [undefined, "", "  \n"]) {
+    const store = memoryStore();
+    await publishRelease({ store, channel: "stable", baseUrl, ...fixture("0.0.2"), releaseNotes });
+    const feed = parse(store.objects.get("channels/stable/mac-arm64/latest-mac.yml").toString());
+    assert.equal(Object.hasOwn(feed, "releaseNotes"), false);
+  }
 });
 
 test("a version cannot be replaced with different bytes", async () => {

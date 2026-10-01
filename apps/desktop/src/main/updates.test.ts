@@ -6,9 +6,14 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import type { UpdatesSnapshot } from "../shared/api.ts";
 import { createUpdates, parseReleaseConfig } from "./updates.ts";
 
-function result(version = "0.0.2", isUpdateAvailable = true): UpdateCheckResult {
+function result(
+  version = "0.0.2",
+  isUpdateAvailable = true,
+  releaseNotes: string | null = null,
+): UpdateCheckResult {
   const updateInfo = {
     version,
+    releaseNotes,
     files: [],
     path: "Voice.zip",
     sha512: "hash",
@@ -92,7 +97,7 @@ describe("updates", () => {
     updates.start();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2" });
+    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
     expect(engine.autoInstallOnAppQuit).toBe(false);
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
@@ -125,7 +130,7 @@ describe("updates", () => {
       channel: "latest",
       useMultipleRangeRequest: false,
     });
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2" });
+    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
   });
 
   test("coalesces checks and drains an old download before changing feeds", async () => {
@@ -143,7 +148,11 @@ describe("updates", () => {
     expect(engine.setFeedURL).toHaveBeenCalledOnce();
     download.resolve(["Voice.zip"]);
     await Promise.all([first, duplicate, switching]);
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.3-nightly.9" });
+    expect(updates.snapshot.status).toEqual({
+      kind: "ready",
+      version: "0.0.3-nightly.9",
+      notes: [],
+    });
     expect(
       snapshots.some(
         (s) => s.channel === "nightly" && s.status.kind === "ready" && s.status.version === "0.0.2",
@@ -159,8 +168,39 @@ describe("updates", () => {
     expect(updates.snapshot.status.kind).toBe("failed");
     await updates.check();
     await updates.check();
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2" });
+    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
     expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  test("carries the feed's release notes through download to the ready update", async () => {
+    const { updates, engine, snapshots } = setup();
+    engine.checkForUpdates.mockResolvedValue(
+      result(
+        "0.0.2",
+        true,
+        "## What's Changed\n* feat: add a setting by @someone in https://github.com/codlume/voice/pull/120\n\n**Full Changelog**: https://github.com/codlume/voice/compare/v0.0.1...v0.0.2",
+      ),
+    );
+    await updates.check();
+    const notes = ["feat: add a setting by @someone in #120"];
+    expect(snapshots.find((s) => s.status.kind === "downloading")?.status).toEqual({
+      kind: "downloading",
+      version: "0.0.2",
+      notes,
+      percent: 0,
+    });
+    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes });
+  });
+
+  test("links the release page only while an update is downloading or ready", async () => {
+    const { updates, engine } = setup();
+    expect(updates.releaseUrl()).toBeNull();
+    engine.checkForUpdates.mockResolvedValue(result("0.0.2"));
+    await updates.check();
+    expect(updates.releaseUrl()).toBe("https://github.com/codlume/voice/releases/tag/v0.0.2");
+    await updates.restart();
+    expect(updates.snapshot.status.kind).toBe("installing");
+    expect(updates.releaseUrl()).toBeNull();
   });
 
   test("rejects a wrong-channel feed before downloading", async () => {
