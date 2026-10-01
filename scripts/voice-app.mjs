@@ -54,6 +54,17 @@ export class Stream {
   }
 }
 
+// Every snapshot the page reports, starting with the current one.
+export async function snapshotStream(page) {
+  const snapshots = new Stream();
+  await page.bind("__voiceSnapshot", (payload) => snapshots.push(JSON.parse(payload)));
+  await page.evaluate(`
+    window.voice.onSnapshot((s) => __voiceSnapshot(JSON.stringify(s)));
+    window.voice.getSnapshot().then((s) => __voiceSnapshot(JSON.stringify(s)));
+    true`);
+  return snapshots;
+}
+
 export class Page {
   #nextId = 1;
   #pending = new Map();
@@ -159,6 +170,8 @@ export async function prepareTestModels() {
   return dir;
 }
 
+export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
+
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
   const cache = await prepareTestModels();
@@ -166,8 +179,8 @@ export async function prepareUserData(name) {
   rmSync(userData, { recursive: true, force: true });
   const models = join(userData, "models");
   mkdirSync(models, { recursive: true });
-  for (const model of ["parakeet-tdt-0.6b-v3", S1_MINI_FILE]) {
-    symlinkSync(join(cache, model), join(models, model));
+  for (const file of Object.values(modelFiles)) {
+    symlinkSync(join(cache, file), join(models, file));
   }
   return userData;
 }

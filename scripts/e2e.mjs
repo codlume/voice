@@ -11,10 +11,10 @@ import {
   prepareUserData,
   refuseIfVoiceIsRunning,
   repoDir,
+  snapshotStream,
   start,
   stopChildren,
   stopChildrenOnSignal,
-  Stream,
 } from "./voice-app.mjs";
 
 const helperDir = join(repoDir, "native/voice-helper");
@@ -317,12 +317,7 @@ async function main() {
     pages.push(pill, hub);
     const type = activationType(child.pid);
     assert(type === "Foreground", `Voice must stay in the Dock and Cmd-Tab, but is ${type}`);
-    const snapshots = new Stream();
-    await pill.bind("__voiceE2E", (payload) => snapshots.push(JSON.parse(payload)));
-    await pill.evaluate(`
-      window.voice.onSnapshot((s) => __voiceE2E(JSON.stringify(s)));
-      window.voice.getSnapshot().then((s) => __voiceE2E(JSON.stringify(s)));
-      true`);
+    const snapshots = await snapshotStream(pill);
 
     const first = await snapshots.waitFor((s) => s.permissions.accessibility !== "notDetermined", {
       timeoutMs: 15_000,

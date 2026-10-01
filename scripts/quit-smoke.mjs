@@ -8,10 +8,10 @@ import {
   Page,
   prepareUserData,
   repoDir,
+  snapshotStream,
   start,
   stopChildren,
   stopChildrenOnSignal,
-  Stream,
 } from "./voice-app.mjs";
 
 const ports = { cdp: 9446, inspect: 9447 };
@@ -102,12 +102,7 @@ async function runTrial(mode, trial, userData) {
   let quitAt;
   try {
     hub = await Page.connect(ports.cdp, "hub.html");
-    const snapshots = new Stream();
-    await hub.bind("__voiceQuitSmoke", (payload) => snapshots.push(JSON.parse(payload)));
-    await hub.evaluate(`
-      window.voice.onSnapshot((s) => __voiceQuitSmoke(JSON.stringify(s)));
-      window.voice.getSnapshot().then((s) => __voiceQuitSmoke(JSON.stringify(s)));
-      true`);
+    const snapshots = await snapshotStream(hub);
     const wanted = mode === "cleaning" ? "ready" : mode;
     const snapshot = await snapshots.waitFor(
       (s) => [wanted, "ready", "failed"].includes(s.models.cleanup.state),
