@@ -493,6 +493,13 @@ async function main() {
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
+  ipcMain.handle(Channel.openRelease, () => {
+    const status = updates.snapshot.status;
+    if (!("version" in status)) return;
+    void shell.openExternal(
+      `https://github.com/codlume/voice/releases/tag/v${encodeURIComponent(status.version)}`,
+    );
+  });
   ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);

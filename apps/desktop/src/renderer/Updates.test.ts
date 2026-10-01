@@ -7,7 +7,7 @@ const idle: PillState = { kind: "idle" };
 
 describe("update controls", () => {
   test("restart is offered only when an update is ready and dictation is inactive", () => {
-    const ready: UpdateStatus = { kind: "ready", version: "1.5.0" };
+    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: [] };
     const sessions: PillState[] = [
       idle,
       { kind: "listening" },
@@ -36,7 +36,7 @@ describe("update controls", () => {
       { kind: "current" },
       { kind: "failed", message: "Connection timed out" },
       { kind: "checking" },
-      { kind: "downloading", version: "1.5.0", percent: 48.4 },
+      { kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 },
       { kind: "installing", version: "1.5.0" },
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
@@ -62,8 +62,8 @@ describe("update controls", () => {
     expect(updateStatusText({ kind: "disabled", reason: "Only packaged builds update" })).toBe(
       "Only packaged builds update",
     );
-    expect(updateStatusText({ kind: "downloading", version: "1.5.0", percent: 48.4 })).toBe(
-      "Downloading 1.5.0 · 48%",
-    );
+    expect(
+      updateStatusText({ kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 }),
+    ).toBe("Downloading 1.5.0 · 48%");
   });
 });

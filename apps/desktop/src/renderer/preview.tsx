@@ -73,8 +73,8 @@ const pillScenes: Record<string, PillState> = {
 const updateScenes: Record<string, UpdateStatus> = {
   checking: { kind: "checking" },
   current: { kind: "current" },
-  downloading: { kind: "downloading", version: "1.5.0", percent: 48 },
-  ready: { kind: "ready", version: "1.5.0" },
+  downloading: { kind: "downloading", version: "1.5.0", notes: [], percent: 48 },
+  ready: { kind: "ready", version: "1.5.0", notes: [] },
   failed: { kind: "failed", message: "Could not check for updates. Try again." },
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };
@@ -182,6 +182,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         },
       });
     },
+    openRelease: async () => {},
     getSnapshot: async () => snapshot,
     onSnapshot: (listener) => {
       listeners.add(listener);
