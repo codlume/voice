@@ -255,7 +255,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
 function CrashReportsRow({ on }: { on: boolean }) {
   const id = useId();
   return (
-    <li {...stylex.props(styles.row)}>
+    <div {...stylex.props(styles.row)}>
       <span {...stylex.props(styles.mark, styles.markEmpty)} />
       <div {...stylex.props(styles.rowText)}>
         <label htmlFor={id} {...stylex.props(styles.rowTitle)}>
@@ -272,7 +272,7 @@ function CrashReportsRow({ on }: { on: boolean }) {
           void window.voice.updateSettings({ diagnostics: checked ? "on" : "off" })
         }
       />
-    </li>
+    </div>
   );
 }
 
@@ -299,12 +299,14 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
           {done} of {rows.length} done
         </p>
       </div>
-      <ul {...stylex.props(styles.card, styles.list)}>
-        {rows.map((row) => (
-          <SetupRow key={row.id} row={row} />
-        ))}
+      <div {...stylex.props(styles.card)}>
+        <ul {...stylex.props(styles.list)}>
+          {rows.map((row) => (
+            <SetupRow key={row.id} row={row} />
+          ))}
+        </ul>
         <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
-      </ul>
+      </div>
     </section>
   );
 }
