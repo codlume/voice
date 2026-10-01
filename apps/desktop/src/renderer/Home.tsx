@@ -6,6 +6,7 @@ import { useEffect, useId, useState } from "react";
 import type { Hotkey, Snapshot } from "../shared/api.ts";
 import { checklist, hotkeyLabels, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { GlobeHint } from "./Settings.tsx";
+import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
@@ -42,7 +43,7 @@ const styles = stylex.create({
     borderTopColor: color.border,
   },
   rowText: { flexGrow: 1, minWidth: 0 },
-  rowTitle: { margin: 0, fontWeight: 500 },
+  rowTitle: { display: "block", margin: 0, fontWeight: 500 },
   rowSubtitle: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   status: {
     display: "flex",
@@ -84,6 +85,7 @@ const styles = stylex.create({
   markReady: { borderColor: color.success, backgroundColor: color.success },
   markFailed: { borderColor: color.error },
   markBusy: { borderStyle: "dashed", borderColor: color.foreground },
+  markEmpty: { borderColor: "transparent" },
   primary: {
     flexShrink: 0,
     minWidth: 76,
@@ -183,8 +185,6 @@ function run(command: SetupCommand): Promise<void> {
       return window.voice.setupModels();
     case "requestPermission":
       return window.voice.requestPermission(command.kind);
-    case "setDiagnostics":
-      return window.voice.updateSettings({ diagnostics: command.consent });
   }
 }
 
@@ -252,6 +252,30 @@ function SetupRow({ row }: { row: ChecklistRow }) {
   );
 }
 
+function CrashReportsRow({ on }: { on: boolean }) {
+  const id = useId();
+  return (
+    <div {...stylex.props(styles.row)}>
+      <span {...stylex.props(styles.mark, styles.markEmpty)} />
+      <div {...stylex.props(styles.rowText)}>
+        <label htmlFor={id} {...stylex.props(styles.rowTitle)}>
+          Crash reports
+        </label>
+        <p {...stylex.props(styles.rowSubtitle)}>
+          Crashes and timings only. Never your words or audio.
+        </p>
+      </div>
+      <Switch
+        id={id}
+        checked={on}
+        onChange={(checked) =>
+          void window.voice.updateSettings({ diagnostics: checked ? "on" : "off" })
+        }
+      />
+    </div>
+  );
+}
+
 function Setup({ snapshot }: { snapshot: Snapshot }) {
   const { ready, rows } = checklist(snapshot);
   if (ready) {
@@ -275,11 +299,14 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
           {done} of {rows.length} done
         </p>
       </div>
-      <ul {...stylex.props(styles.card, styles.list)}>
-        {rows.map((row) => (
-          <SetupRow key={row.id} row={row} />
-        ))}
-      </ul>
+      <div {...stylex.props(styles.card)}>
+        <ul {...stylex.props(styles.list)}>
+          {rows.map((row) => (
+            <SetupRow key={row.id} row={row} />
+          ))}
+        </ul>
+        <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
+      </div>
     </section>
   );
 }

@@ -24,7 +24,7 @@ const base: Snapshot = {
     muteWhileDictating: false,
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
-    diagnostics: "unanswered",
+    diagnostics: "off",
   },
   microphones: {
     kind: "ready",

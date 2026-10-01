@@ -48,14 +48,14 @@ describe("parseSettings", () => {
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
-      diagnostics: "unanswered",
+      diagnostics: "off",
     });
   });
 
-  test.each([undefined, null, true, "yes", "ON", 1, {}])(
-    "treats a missing or invalid diagnostics choice %j as unanswered",
+  test.each([undefined, null, true, "yes", "ON", 1, {}, "unanswered"])(
+    "treats a missing or invalid diagnostics choice %j as off",
     (diagnostics) => {
-      expect(parseSettings({ diagnostics }).diagnostics).toBe("unanswered");
+      expect(parseSettings({ diagnostics }).diagnostics).toBe("off");
     },
   );
 
@@ -108,7 +108,7 @@ describe("applyPatch", () => {
       muteWhileDictating: false,
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
-      diagnostics: "unanswered",
+      diagnostics: "off",
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
   });
@@ -172,11 +172,11 @@ describe("load and save", () => {
     expect(loadSettings(NodePath.join(dir, "settings.json"))).toEqual(DEFAULT_SETTINGS);
   });
 
-  test("a settings file from before diagnostics loads as unanswered", async () => {
+  test("a settings file from before diagnostics loads as off", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { diagnostics: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, diagnostics: "unanswered" });
+    expect(loadSettings(file)).toEqual({ ...older, diagnostics: "off" });
   });
 
   test("a corrupt file yields defaults", async () => {

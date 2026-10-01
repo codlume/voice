@@ -185,8 +185,8 @@ describe("startDiagnostics consent", () => {
     await SentryNode.close();
   });
 
-  test.each(["unanswered", "off"] as const)("%s sends nothing", async (consent) => {
-    const h = harness(consent);
+  test("off sends nothing", async () => {
+    const h = harness("off");
     await h.dictate();
     h.diagnostics.helperExited({ code: 3, signal: null });
     SentryNode.captureException(new Error(RAW));
@@ -195,7 +195,6 @@ describe("startDiagnostics consent", () => {
   });
 
   test.each([
-    ["unanswered", DSN],
     ["off", DSN],
     ["on", ""],
   ] as const)(
