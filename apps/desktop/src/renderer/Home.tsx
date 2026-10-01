@@ -204,8 +204,7 @@ function CheckIcon() {
 }
 
 function SetupRow({ row }: { row: ChecklistRow }) {
-  const { status, control } = row;
-  const id = useId();
+  const { status, actions } = row;
   return (
     <li {...stylex.props(styles.row)}>
       <span
@@ -219,13 +218,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
         {status.kind === "ready" && <CheckIcon />}
       </span>
       <div {...stylex.props(styles.rowText)}>
-        {control?.kind === "switch" ? (
-          <label htmlFor={id} {...stylex.props(styles.rowTitle)}>
-            {row.title}
-          </label>
-        ) : (
-          <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
-        )}
+        <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
         <p {...stylex.props(styles.rowSubtitle)}>{row.subtitle}</p>
       </div>
       <div
@@ -244,26 +237,17 @@ function SetupRow({ row }: { row: ChecklistRow }) {
           </Progress.Root>
         )}
       </div>
-      {control?.kind === "button" && (
+      {actions.map((action) => (
         <button
+          key={action.label}
           type="button"
-          aria-label={`${control.label} ${row.title}`}
-          onClick={() => void run(control.command)}
+          aria-label={`${action.label} ${row.title}`}
+          onClick={() => void run(action.command)}
           {...stylex.props(styles.primary)}
         >
-          {control.label}
+          {action.label}
         </button>
-      )}
-      {control?.kind === "switch" && (
-        <Switch
-          id={id}
-          checked={control.checked}
-          disabled={control.checked}
-          onChange={() => {
-            if (!control.checked) void run(control.command);
-          }}
-        />
-      )}
+      ))}
     </li>
   );
 }
