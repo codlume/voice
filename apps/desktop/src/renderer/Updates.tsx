@@ -1,14 +1,9 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
-import {
-  pendingUpdate,
-  type PillState,
-  type UpdateStatus,
-  type UpdatesSnapshot,
-} from "../shared/api.ts";
-import { ReleaseCardTrigger } from "./ReleaseCard.tsx";
-import { updateButton, updateStatusText } from "./updateStatus.ts";
+import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import { UpdateCardTrigger } from "./UpdateCard.tsx";
+import { updateButton, updateCard, updateStatusText } from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -23,7 +18,7 @@ const ringRadius = 14;
 const ringCircumference = 2 * Math.PI * ringRadius;
 
 const styles = stylex.create({
-  sidebar: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 },
+  sidebar: { display: "flex", justifyContent: "flex-end" },
   button: {
     position: "relative",
     display: "grid",
@@ -84,7 +79,6 @@ const styles = stylex.create({
     clipPath: "inset(50%)",
     whiteSpace: "nowrap",
   },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12, textAlign: "right" },
 });
 
 function Glyph({ size = 16, children }: { size?: number; children: ReactNode }) {
@@ -194,12 +188,13 @@ export function SidebarUpdates({
   updates: UpdatesSnapshot;
   session: PillState;
 }) {
-  const [actionError, setActionError] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const status = updates.status;
   const { action, label, tooltip } = updateButton(status, session);
+  const card = updateCard(status, actionError);
 
   async function run(task: () => Promise<void>) {
-    setActionError("");
+    setActionError(null);
     try {
       await task();
     } catch (error) {
@@ -210,10 +205,10 @@ export function SidebarUpdates({
   return (
     <div {...stylex.props(styles.sidebar)}>
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
-        {updateStatusText(status)}
+        {actionError ?? updateStatusText(status)}
       </p>
-      <ReleaseCardTrigger
-        update={pendingUpdate(status)}
+      <UpdateCardTrigger
+        card={card}
         label={label}
         tooltip={tooltip}
         disabled={action === null}
@@ -228,18 +223,13 @@ export function SidebarUpdates({
             status.kind === "installing" ||
             status.kind === "downloading") &&
             styles.hasUpdate,
-          status.kind === "failed" && styles.failed,
+          card?.kind === "error" && styles.failed,
           status.kind === "disabled" && styles.dimmed,
           action === null && styles.unavailable,
         ]}
       >
         <StatusIcon status={status} />
-      </ReleaseCardTrigger>
-      {actionError && (
-        <p role="alert" {...stylex.props(styles.error)}>
-          {actionError}
-        </p>
-      )}
+      </UpdateCardTrigger>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useRef, useState, type ReactNode } from "react";
 
 import type { PendingUpdate } from "../shared/api.ts";
-import { releaseCardTitle } from "./updateStatus.ts";
+import { releaseCardTitle, type UpdateCard } from "./updateStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
@@ -35,6 +35,8 @@ const styles = stylex.create({
   },
   cardHidden: { opacity: 0 },
   cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },
+  errorTitle: { color: color.errorForeground },
+  errorMessage: { margin: 0, color: color.mutedForeground, overflowWrap: "anywhere" },
   notesHeading: { margin: 0, marginTop: 6, fontSize: 12, fontWeight: 600 },
   notes: {
     flexShrink: 1,
@@ -65,12 +67,8 @@ const styles = stylex.create({
   },
 });
 
-/**
- * The update button. While an update is pending, hovering or keyboard-focusing it shows
- * the release card, and a click still runs the button's own action.
- */
-export function ReleaseCardTrigger({
-  update,
+export function UpdateCardTrigger({
+  card,
   label,
   tooltip,
   disabled,
@@ -78,7 +76,7 @@ export function ReleaseCardTrigger({
   style,
   children,
 }: {
-  update: PendingUpdate | null;
+  card: UpdateCard | null;
   label: string;
   tooltip: string;
   disabled: boolean;
@@ -88,7 +86,7 @@ export function ReleaseCardTrigger({
 }) {
   const [open, setOpen] = useState(false);
   const focusReturnedByEscape = useRef(false);
-  if (open && !update) setOpen(false);
+  if (open && !card) setOpen(false);
 
   return (
     // One trigger for every status, so the button keeps focus when an update starts or finishes.
@@ -106,21 +104,21 @@ export function ReleaseCardTrigger({
       }}
     >
       <Popover.Trigger
-        openOnHover={update !== null}
+        openOnHover={card !== null}
         delay={100}
         closeDelay={150}
         aria-label={label}
-        aria-haspopup={update ? "dialog" : undefined}
-        aria-expanded={update ? open : undefined}
+        aria-haspopup={card ? "dialog" : undefined}
+        aria-expanded={card ? open : undefined}
         // aria-disabled instead of disabled keeps the button hoverable and focusable for the card.
         aria-disabled={disabled || undefined}
-        title={update ? undefined : tooltip}
+        title={card ? undefined : tooltip}
         onClick={() => {
           if (!disabled) onClick();
         }}
         onFocus={(event) => {
           if (
-            update &&
+            card &&
             !focusReturnedByEscape.current &&
             event.currentTarget.matches(":focus-visible")
           )
@@ -131,12 +129,20 @@ export function ReleaseCardTrigger({
       >
         {children}
       </Popover.Trigger>
-      {update && <ReleaseCard update={update} />}
+      {card && (
+        <CardPopup>
+          {card.kind === "release" ? (
+            <ReleaseCard update={card.update} />
+          ) : (
+            <ErrorCard message={card.message} />
+          )}
+        </CardPopup>
+      )}
     </Popover.Root>
   );
 }
 
-function ReleaseCard({ update }: { update: PendingUpdate }) {
+function CardPopup({ children }: { children: ReactNode }) {
   return (
     <Popover.Portal>
       <Popover.Positioner
@@ -156,45 +162,62 @@ function ReleaseCard({ update }: { update: PendingUpdate }) {
             ).className
           }
         >
-          <Popover.Title {...stylex.props(styles.cardTitle)}>
-            {releaseCardTitle(update)}
-          </Popover.Title>
-          {update.notes.length > 0 && (
-            <>
-              <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
-              <ul {...stylex.props(styles.notes)}>
-                {update.notes.map((note) => (
-                  <li key={note} {...stylex.props(styles.note)}>
-                    {note}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={() => void window.voice.openRelease()}
-            {...stylex.props(styles.releaseLink)}
-          >
-            View release on GitHub
-            <svg
-              aria-hidden="true"
-              width={12}
-              height={12}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M15 3h6v6" />
-              <path d="M10 14 21 3" />
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            </svg>
-          </button>
+          {children}
         </Popover.Popup>
       </Popover.Positioner>
     </Popover.Portal>
+  );
+}
+
+function ErrorCard({ message }: { message: string }) {
+  return (
+    <>
+      <Popover.Title {...stylex.props(styles.cardTitle, styles.errorTitle)}>
+        Update failed
+      </Popover.Title>
+      <Popover.Description {...stylex.props(styles.errorMessage)}>{message}</Popover.Description>
+    </>
+  );
+}
+
+function ReleaseCard({ update }: { update: PendingUpdate }) {
+  return (
+    <>
+      <Popover.Title {...stylex.props(styles.cardTitle)}>{releaseCardTitle(update)}</Popover.Title>
+      {update.notes.length > 0 && (
+        <>
+          <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
+          <ul {...stylex.props(styles.notes)}>
+            {update.notes.map((note) => (
+              <li key={note} {...stylex.props(styles.note)}>
+                {note}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => void window.voice.openRelease()}
+        {...stylex.props(styles.releaseLink)}
+      >
+        View release on GitHub
+        <svg
+          aria-hidden="true"
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="M10 14 21 3" />
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
+      </button>
+    </>
   );
 }

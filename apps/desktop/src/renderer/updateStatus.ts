@@ -1,4 +1,9 @@
-import type { PendingUpdate, PillState, UpdateStatus } from "../shared/api.ts";
+import {
+  pendingUpdate,
+  type PendingUpdate,
+  type PillState,
+  type UpdateStatus,
+} from "../shared/api.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -31,15 +36,25 @@ export function releaseCardTitle(update: PendingUpdate): string {
     : updateStatusText(update);
 }
 
+export type UpdateCard =
+  | { kind: "release"; update: PendingUpdate }
+  | { kind: "error"; message: string };
+
+export function updateCard(status: UpdateStatus, actionError: string | null): UpdateCard | null {
+  if (actionError !== null) return { kind: "error", message: actionError };
+  if (status.kind === "failed") return { kind: "error", message: status.message };
+  const update = pendingUpdate(status);
+  return update && { kind: "release", update };
+}
+
 export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
   switch (status.kind) {
     case "idle":
     case "current":
-      return button("check", "Check for updates");
     case "failed":
-      return { action: "check", label: "Check for updates", tooltip: status.message };
+      return button("check", "Check for updates");
     case "ready":
       return session.kind === "listening" || session.kind === "processing"
         ? button(null, "Finish dictation before restarting")
