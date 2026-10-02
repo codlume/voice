@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import type { ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
   CLEANUP_BASE_MS,
   CLEANUP_MAX_MS,
@@ -69,6 +70,7 @@ function harness(opts: Options = {}) {
   const hung: ((text: string) => void)[] = [];
   const levels: number[] = [];
   const logs: string[] = [];
+  const entries: DiagnosticLog[] = [];
   const phases: string[] = [];
   const reports: SessionReport[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
@@ -87,7 +89,10 @@ function harness(opts: Options = {}) {
       },
     },
     onLevel: (level) => levels.push(level),
-    log: (message) => logs.push(message),
+    log: (message, entry) => {
+      logs.push(message);
+      if (entry) entries.push(entry);
+    },
     onSessionDone: (report) => reports.push(report),
   });
   const id = () => {
@@ -104,6 +109,7 @@ function harness(opts: Options = {}) {
     hung,
     levels,
     logs,
+    entries,
     phases,
     reports,
     dictation,
@@ -116,6 +122,27 @@ async function flush() {
 }
 
 describe("createDictation", () => {
+  test("forwards only parameter-free helper log lines to diagnostics", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "log", level: "info", message: "hotkey tap installed" });
+    h.dictation.onHelperEvent({
+      type: "log",
+      level: "error",
+      message: "capture.stop 1234 ignored: no such active session",
+    });
+    h.dictation.onHelperEvent({
+      type: "log",
+      level: "error",
+      message: "microphone list failed: x",
+    });
+    expect(h.logs).toEqual([
+      "helper info: hotkey tap installed",
+      "helper error: capture.stop 1234 ignored: no such active session",
+      "helper error: microphone list failed: x",
+    ]);
+    expect(h.entries).toEqual([{ message: "hotkey tap installed", level: "info" }]);
+  });
+
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
@@ -483,6 +510,10 @@ describe("createDictation", () => {
     await flush();
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me" });
     expect(h.store.state.last).toEqual({ raw: "keep me", text: "keep me" });
+    expect(h.logs).toContain("cleanup failed: model crashed");
+    expect(h.entries).toEqual([
+      { message: "cleanup failed", level: "warn", attributes: { "error.type": "Error" } },
+    ]);
   });
 
   test("a cleanup that overruns its budget is aborted, inserts the raw text, and ignores the late result", async () => {
@@ -508,6 +539,13 @@ describe("createDictation", () => {
     expect(h.signals[0]!.aborted).toBe(true);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three" });
     expect(h.logs).toContainEqual(expect.stringContaining("cleanup timed out"));
+    expect(h.entries).toEqual([
+      {
+        message: "cleanup timed out",
+        level: "warn",
+        attributes: { "cleanup.budget_ms": cleanupBudgetMs("one two three") },
+      },
+    ]);
     h.hung[0]!("late polished text");
     await flush();
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([

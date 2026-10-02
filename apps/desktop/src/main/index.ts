@@ -28,6 +28,7 @@ import {
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { createCleanup } from "./cleanup.ts";
+import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
@@ -45,14 +46,13 @@ const PILL_HEIGHT = 48;
 const PILL_BOTTOM_MARGIN = 12;
 const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
+const DIAGNOSTICS_FLUSH_MS = 1000;
 
 const LOGIN_ITEMS_PANE = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 };
-
-const log = (message: string) => console.log(`[voice] ${message}`);
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
 // only. A packaged app ignores them and never hands them to its helper.
@@ -154,7 +154,8 @@ async function main() {
   const userData = app.getPath("userData");
   const modelsDir = NodePath.join(userData, "models");
   const settingsFile = NodePath.join(userData, "settings.json");
-  log(`userData ${userData}`);
+  // Printed before diagnostics start, and a path to the user's home never leaves the machine.
+  console.log(`[voice] userData ${userData}`);
 
   const manifest: unknown = JSON.parse(
     readFileSync(NodePath.join(app.getAppPath(), "package.json"), "utf8"),
@@ -203,6 +204,10 @@ async function main() {
     consent: () => store.state.settings.diagnostics,
     crashDumpsDir: app.getPath("crashDumps"),
   });
+  const log = (message: string, entry?: DiagnosticLog) => {
+    console.log(`[voice] ${message}`);
+    if (entry) diagnostics.log(entry);
+  };
   const webPreferences: WebPreferences = {
     preload,
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
@@ -589,10 +594,19 @@ async function main() {
     const result = await Promise.race([stopped, timeout]);
     clearTimeout(timer);
     if (result === "timeout") {
-      log(`quit: shutdown still running after ${SHUTDOWN_TIMEOUT_MS} ms`);
-      if (forUpdate)
-        throw new Error("Voice is still stopping. Quit and reopen Voice before updating.");
-    } else if (forUpdate && result.some((item) => item.status === "rejected")) {
+      log(`quit: shutdown still running after ${SHUTDOWN_TIMEOUT_MS} ms`, {
+        message: "shutdown overran",
+        level: "warn",
+        attributes: { "shutdown.timeout_ms": SHUTDOWN_TIMEOUT_MS },
+      });
+    }
+    // Logs wait in a buffer, and Electron main never emits beforeExit to send them.
+    await diagnostics.flush(DIAGNOSTICS_FLUSH_MS);
+    if (!forUpdate) return;
+    if (result === "timeout") {
+      throw new Error("Voice is still stopping. Quit and reopen Voice before updating.");
+    }
+    if (result.some((item) => item.status === "rejected")) {
       throw new Error("Voice could not stop safely. Quit and reopen Voice before updating.");
     }
   }

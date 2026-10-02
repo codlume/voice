@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
+import { isHelperLog, type DiagnosticLog } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { step, type Effect as SessionEffect, type Session, type SessionEvent } from "./session.ts";
 import type { Store } from "./store.ts";
@@ -14,7 +15,7 @@ export type DictationOptions = {
   send: (command: HelperCommand) => void;
   cleanup: Pick<Cleanup, "clean" | "loaded">;
   onLevel: (level: number) => void;
-  log: (message: string) => void;
+  log: (message: string, entry?: DiagnosticLog) => void;
   onSessionDone: (report: SessionReport) => void;
   now?: () => number;
 };
@@ -27,6 +28,12 @@ export function cleanupBudgetMs(raw: string): number {
   const words = raw.split(/\s+/).filter(Boolean).length;
   return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
 }
+
+// An error name is code, not data, unless something rewrote it into free text.
+const errorType = (error: unknown) =>
+  error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : "Error";
+
+const cleanupFailure = (message: string, entry: DiagnosticLog) => ({ message, entry });
 
 export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
@@ -149,19 +156,31 @@ export function createDictation(options: DictationOptions): Dictation {
           Effect.tryPromise({
             try: (signal) => cleanup.clean(effect.raw, { styling }, signal),
             catch: (error) =>
-              `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+              cleanupFailure(
+                `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+                {
+                  message: "cleanup failed",
+                  level: "warn",
+                  attributes: { "error.type": errorType(error) },
+                },
+              ),
           }).pipe(
             Effect.timeoutFail({
               duration: budgetMs,
-              onTimeout: () => `cleanup timed out after ${budgetMs} ms`,
+              onTimeout: () =>
+                cleanupFailure(`cleanup timed out after ${budgetMs} ms`, {
+                  message: "cleanup timed out",
+                  level: "warn",
+                  attributes: { "cleanup.budget_ms": budgetMs },
+                }),
             }),
             Effect.match({
               onSuccess: (text) => {
                 track(effect.id, { cleanupMs: now() - startedAt });
                 dispatch({ type: "cleaned", id: effect.id, text });
               },
-              onFailure: (message) => {
-                log(message);
+              onFailure: ({ message, entry }) => {
+                log(message, entry);
                 dispatch({ type: "cleanupFailed", id: effect.id });
               },
             }),
@@ -201,7 +220,11 @@ export function createDictation(options: DictationOptions): Dictation {
   function onHelperEvent(event: HelperEvent) {
     switch (event.type) {
       case "ready":
-        log(`helper ready (protocol v${event.version})`);
+        log(`helper ready (protocol v${event.version})`, {
+          message: "helper ready",
+          level: "info",
+          attributes: { "helper.protocol_version": event.version },
+        });
         return;
       case "hotkey":
         if (event.action === "down") {
@@ -278,7 +301,10 @@ export function createDictation(options: DictationOptions): Dictation {
         }));
         return;
       case "log":
-        log(`helper ${event.level}: ${event.message}`);
+        log(
+          `helper ${event.level}: ${event.message}`,
+          isHelperLog(event.message) ? { message: event.message, level: event.level } : undefined,
+        );
         return;
     }
   }

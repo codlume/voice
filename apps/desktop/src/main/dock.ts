@@ -1,3 +1,5 @@
+import type { DiagnosticLog } from "./diagnostics-scrub.ts";
+
 const DOCK_SHOW_SETTLE_MS = 1000;
 
 // Electron ignores dock.hide() within a second of dock.show(), so changes run one at a time,
@@ -8,7 +10,7 @@ export function createDockSync(deps: {
   wait: (ms: number) => Promise<void>;
   // Leaving the Dock deactivates Voice, which would drop the open hub behind other apps.
   afterChange: () => void;
-  log: (message: string) => void;
+  log: (message: string, entry?: DiagnosticLog) => void;
 }): () => Promise<void> {
   const { dock, showInDock, wait, afterChange, log } = deps;
   let change: Promise<void> = Promise.resolve();
@@ -24,7 +26,10 @@ export function createDockSync(deps: {
         afterChange();
       })
       .catch((error: unknown) =>
-        log(`dock: ${error instanceof Error ? error.message : String(error)}`),
+        log(`dock: ${error instanceof Error ? error.message : String(error)}`, {
+          message: "dock update failed",
+          level: "warn",
+        }),
       );
     return change;
   };

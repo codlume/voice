@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { createDockSync } from "./dock.ts";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -8,6 +9,7 @@ function harness(options: { show?: () => Promise<void> } = {}) {
   const calls: Array<"show" | "hide"> = [];
   const waits: Array<() => void> = [];
   const logs: string[] = [];
+  const entries: DiagnosticLog[] = [];
   let afterChanges = 0;
   let showInDock = true;
   const sync = createDockSync({
@@ -21,7 +23,10 @@ function harness(options: { show?: () => Promise<void> } = {}) {
     showInDock: () => showInDock,
     wait: () => new Promise((resolve) => waits.push(resolve)),
     afterChange: () => afterChanges++,
-    log: (message) => logs.push(message),
+    log: (message, entry) => {
+      logs.push(message);
+      if (entry) entries.push(entry);
+    },
   });
   // Each settings change reaches main in its own IPC task, so a request lands after the
   // previous one has started. The applied promise is boxed so awaiting the request does not
@@ -36,7 +41,7 @@ function harness(options: { show?: () => Promise<void> } = {}) {
     const done = applied.then(() => true);
     while (!(await Promise.race([done, flush().then(() => false)]))) waits.shift()?.();
   }
-  return { calls, logs, waits, afterChanges: () => afterChanges, request, drain };
+  return { calls, logs, entries, waits, afterChanges: () => afterChanges, request, drain };
 }
 
 describe("createDockSync", () => {
@@ -65,6 +70,7 @@ describe("createDockSync", () => {
     const dock = harness({ show: () => Promise.reject(new Error("no dock")) });
     await dock.drain((await dock.request(true)).applied);
     expect(dock.logs).toEqual(["dock: no dock"]);
+    expect(dock.entries).toEqual([{ message: "dock update failed", level: "warn" }]);
     await dock.drain((await dock.request(false)).applied);
     expect(dock.calls).toEqual(["show", "hide"]);
     expect(dock.afterChanges()).toBe(1);

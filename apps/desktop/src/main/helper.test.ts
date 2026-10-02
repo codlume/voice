@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
+import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { RESTART_MIN_MS, startHelper, type Helper, type HelperExit } from "./helper.ts";
 import type { HelperEvent } from "./protocol.ts";
 
@@ -16,6 +17,7 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
   const exits: number[] = [];
   const exitReasons: HelperExit[] = [];
   const logs: string[] = [];
+  const entries: DiagnosticLog[] = [];
   const waiters: { pred: (event: HelperEvent) => boolean; resolve: () => void }[] = [];
   process.env.VOICE_FAKE_HELPER = JSON.stringify(config);
   const helper = startHelper({
@@ -38,7 +40,10 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
       exits.push(Date.now());
       exitReasons.push(exit);
     },
-    log: (message) => logs.push(message),
+    log: (message, entry) => {
+      logs.push(message);
+      if (entry) entries.push(entry);
+    },
   });
   const waitFor = (pred: (event: HelperEvent) => boolean, ms = 5000) =>
     new Promise<void>((resolve, reject) => {
@@ -56,7 +61,7 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
     events.filter(
       (e): e is Observed & { event: Extract<HelperEvent, { type: T }> } => e.event.type === type,
     );
-  return { helper, events, exits, exitReasons, logs, waitFor, of };
+  return { helper, events, exits, exitReasons, logs, entries, waitFor, of };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,6 +141,13 @@ describe("startHelper", () => {
     await expect
       .poll(() => h.logs.join("\n"))
       .toMatch(/helper: speaks protocol v2 but this build expects v6; refusing/);
+    expect(h.entries).toEqual([
+      {
+        message: "helper protocol mismatch",
+        level: "fatal",
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 6 },
+      },
+    ]);
     await sleep(RESTART_MIN_MS + 150);
     expect(h.events).toEqual([]);
     expect(h.exits).toEqual([]);
@@ -197,6 +209,7 @@ describe("startHelper", () => {
     const line = h.logs.find((l) => l.includes("unparseable"));
     expect(line).toBe("helper: unparseable transcript line (52 chars)");
     expect(h.logs.join("\n")).not.toContain("secret");
+    expect(h.entries).toEqual([{ message: "helper event unparseable", level: "error" }]);
   });
 
   test("a write still in flight when the helper exits is logged and dropped, not thrown", async () => {
@@ -212,6 +225,11 @@ describe("startHelper", () => {
     const text = "x".repeat(1 << 20);
     expect(() => h.helper.send({ type: "insert", id: "s1", text })).not.toThrow();
     await expect.poll(() => h.logs.join("\n")).toMatch(/helper: stdin .*EPIPE/);
+    expect(h.entries).toContainEqual({
+      message: "helper stdin failed",
+      level: "warn",
+      attributes: { "error.code": "EPIPE" },
+    });
     await expect.poll(() => h.exits.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -222,5 +240,10 @@ describe("startHelper", () => {
     await sleep(60);
     expect(() => h.helper.send({ type: "permissions.check" })).not.toThrow();
     expect(h.logs.some((line) => line.includes("dropped permissions.check"))).toBe(true);
+    expect(h.entries).toContainEqual({
+      message: "helper command dropped",
+      level: "warn",
+      attributes: { "command.type": "permissions.check" },
+    });
   });
 });
