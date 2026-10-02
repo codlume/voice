@@ -276,7 +276,9 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
-  back: { flexShrink: 0, marginTop: "auto" },
+  back: { flex: 1 },
+  backCollapsed: { flex: "none", width: navItemSize },
+  backUpdates: { flex: "none", paddingTop: (navItemSize - 32) / 2 },
   tooltipPositioner: {
     zIndex: 10,
     width: "var(--positioner-width)",
@@ -591,15 +593,26 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                   onSelect={selectSettingsPage}
                 />
               </nav>
-              <NavItem
-                label="Back"
-                icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
-                shortcut={shortcuts.closeSettings}
-                collapsed={collapsed}
-                showShortcut={showShortcut}
-                onClick={closeSettings}
-                style={styles.back}
-              />
+              <div {...stylex.props(styles.footer)}>
+                <NavItem
+                  label="Back"
+                  icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
+                  shortcut={shortcuts.closeSettings}
+                  collapsed={collapsed}
+                  showShortcut={showShortcut}
+                  onClick={closeSettings}
+                  style={[styles.back, collapsed && styles.backCollapsed]}
+                />
+                <div
+                  {...stylex.props(
+                    styles.footerUpdates,
+                    styles.backUpdates,
+                    collapsed && styles.footerHidden,
+                  )}
+                >
+                  <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+                </div>
+              </div>
             </>
           )}
         </aside>
