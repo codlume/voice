@@ -47,7 +47,7 @@ export function updateCard(status: UpdateStatus, actionError: string | null): Up
   return update && { kind: "release", update };
 }
 
-export type UpdateButton = { action: "check" | "restart" | null; label: string; tooltip: string };
+export type UpdateButton = { action: "check" | "restart" | null; label: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
   switch (status.kind) {
@@ -72,5 +72,5 @@ export function updateButton(status: UpdateStatus, session: PillState): UpdateBu
 }
 
 function button(action: UpdateButton["action"], label: string): UpdateButton {
-  return { action, label, tooltip: label };
+  return { action, label };
 }

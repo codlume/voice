@@ -70,7 +70,6 @@ const styles = stylex.create({
 export function UpdateCardTrigger({
   card,
   label,
-  tooltip,
   disabled,
   onClick,
   style,
@@ -78,7 +77,6 @@ export function UpdateCardTrigger({
 }: {
   card: UpdateCard | null;
   label: string;
-  tooltip: string;
   disabled: boolean;
   onClick: () => void;
   style: stylex.StyleXStyles;
@@ -112,7 +110,7 @@ export function UpdateCardTrigger({
         aria-expanded={card ? open : undefined}
         // aria-disabled instead of disabled keeps the button hoverable and focusable for the card.
         aria-disabled={disabled || undefined}
-        title={card ? undefined : tooltip}
+        title={card ? undefined : label}
         onClick={() => {
           if (!disabled) onClick();
         }}

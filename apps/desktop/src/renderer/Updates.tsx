@@ -190,7 +190,7 @@ export function SidebarUpdates({
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const status = updates.status;
-  const { action, label, tooltip } = updateButton(status, session);
+  const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
 
   async function run(task: () => Promise<void>) {
@@ -210,7 +210,6 @@ export function SidebarUpdates({
       <UpdateCardTrigger
         card={card}
         label={label}
-        tooltip={tooltip}
         disabled={action === null}
         onClick={() =>
           void run(() =>
