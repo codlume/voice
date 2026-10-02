@@ -1,0 +1,82 @@
+---
+import * as stylex from "@stylexjs/stylex";
+
+import Page from "../layouts/Page.astro";
+import { CONTACT_EMAIL, OPERATOR_NAME, POLICY_UPDATED } from "../site.ts";
+import { styles } from "../styles.ts";
+
+export const prerender = true;
+
+const h2 = stylex.attrs(styles.heading);
+const p = stylex.attrs(styles.text);
+const ul = stylex.attrs(styles.list);
+const li = stylex.attrs(styles.item);
+const a = stylex.attrs(styles.link);
+---
+
+<Page
+  title="Terms of Service | Voice"
+  description="The terms for using the Voice Mac app, the Voice website, and Voice accounts."
+  path="/terms"
+>
+  <main {...stylex.attrs(styles.prose)}>
+    <h1 {...stylex.attrs(styles.headline)}>Terms of Service</h1>
+    <p {...stylex.attrs(styles.updated)}>
+      Last updated <time datetime={POLICY_UPDATED}>{POLICY_UPDATED}</time>
+    </p>
+
+    <h2 {...h2}>Who we are</h2>
+    <p {...p}>
+      Voice is provided by {OPERATOR_NAME} ("we"). These terms cover the Voice Mac app, this
+      website, and Voice accounts. By using Voice, you agree to these terms. If you do not agree, do
+      not use Voice.
+    </p>
+
+    <h2 {...h2}>Using Voice</h2>
+    <p {...p}>
+      Voice is free of charge. You may use the app for personal and professional dictation.
+    </p>
+    <p {...p}>
+      We provide Voice "as is", without warranties of any kind, to the extent the law allows.
+    </p>
+
+    <h2 {...h2}>Voice accounts</h2>
+    <p {...p}>Accounts are optional. If you create one, you agree not to:</p>
+    <ul {...ul}>
+      <li {...li}>abuse the account service;</li>
+      <li {...li}>attack the service or try to disrupt it;</li>
+      <li {...li}>use automated tools to abuse sign-up.</li>
+    </ul>
+    <p {...p}>When you sign in with Google, you must also follow Google's terms.</p>
+    <p {...p}>We may suspend accounts that abuse the service.</p>
+
+    <h2 {...h2}>Stopping</h2>
+    <p {...p}>
+      You can stop using Voice at any time. You can delete your account at any time in Settings &gt;
+      Account.
+    </p>
+
+    <h2 {...h2}>Liability</h2>
+    <p {...p}>
+      Our liability is limited to the extent permitted by law. Nothing in these terms excludes or
+      limits liability that the law does not allow us to exclude or limit. This includes liability
+      for intent or gross negligence, and liability under mandatory consumer law.
+    </p>
+
+    <h2 {...h2}>Privacy</h2>
+    <p {...p}>
+      Our <a href="/privacy" {...a}>Privacy Policy</a> explains how we handle your data.
+    </p>
+
+    <h2 {...h2}>Changes</h2>
+    <p {...p}>
+      We may change these terms. When we do, we update this page and the "Last updated" date.
+    </p>
+
+    <h2 {...h2}>Contact</h2>
+    <p {...p}>
+      If you have questions about these terms,
+      contact us at <a href={`mailto:${CONTACT_EMAIL}`} {...a}>{CONTACT_EMAIL}</a>.
+    </p>
+  </main>
+</Page>
