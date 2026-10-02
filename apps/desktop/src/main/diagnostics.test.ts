@@ -348,6 +348,15 @@ describe("startDiagnostics consent", () => {
     expect(await h.sent()).toEqual([]);
   });
 
+  test("an envelope item that is neither an event, a transaction, nor a log is not sent", async () => {
+    const h = harness("on");
+    SentryNode.setUser({ id: "someone" });
+    SentryNode.startSession();
+    SentryNode.captureSession(true);
+    expect(await h.items("session")).toEqual([]);
+    expect((await h.sent()).join()).not.toContain("someone");
+  });
+
   test("turning consent off at runtime stops sending at once", async () => {
     const h = harness("on");
     h.setConsent("off");
