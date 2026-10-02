@@ -234,11 +234,13 @@ export function GeneralSettings({
   microphones,
   microphoneTest,
   microphonePermission,
+  updates,
 }: {
   settings: Settings;
   microphones: MicrophoneCatalog;
   microphoneTest: MicrophoneTest;
   microphonePermission: PermissionState;
+  updates: UpdatesSnapshot;
 }) {
   const [microphoneError, setMicrophoneError] = useState("");
   const [savingMicrophone, setSavingMicrophone] = useState(false);
@@ -301,6 +303,17 @@ export function GeneralSettings({
     }
   }
 
+  const [updateError, setUpdateError] = useState("");
+
+  async function changeChannel(channel: UpdateChannel) {
+    setUpdateError("");
+    try {
+      await window.voice.updateSettings({ updateChannel: channel });
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
+    }
+  }
+
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>General</h1>
@@ -352,6 +365,46 @@ export function GeneralSettings({
           </p>
         )}
       </Section>
+
+      <Section label="About">
+        <div {...stylex.props(styles.card)}>
+          <Row
+            id="setting-update-channel"
+            title="Update channel"
+            detail="Stable gets regular releases. Nightly gets early builds."
+            disabled={updates.status.kind === "installing"}
+          >
+            <Select
+              id="setting-update-channel"
+              value={updates.channel}
+              options={updateChannels}
+              disabled={updates.status.kind === "installing"}
+              onChange={(channel) => void changeChannel(channel)}
+            />
+          </Row>
+          <div {...stylex.props(styles.row)}>
+            <div {...stylex.props(styles.rowText)}>
+              <span {...stylex.props(styles.rowTitle)}>Installed version</span>
+              <p {...stylex.props(styles.rowDetail)}>
+                {updates.version} · {updates.installedChannel === "nightly" ? "Nightly" : "Stable"}
+              </p>
+            </div>
+          </div>
+          <div {...stylex.props(styles.row)}>
+            <div {...stylex.props(styles.rowText)}>
+              <span {...stylex.props(styles.rowTitle)}>Update status</span>
+              <p role="status" aria-live="polite" {...stylex.props(styles.rowDetail)}>
+                {updateStatusText(updates.status)}
+              </p>
+              {updateError && (
+                <p role="alert" {...stylex.props(styles.error)}>
+                  {updateError}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </Section>
     </div>
   );
 }
@@ -367,23 +420,10 @@ const loginItemDetails: Record<LoginItem, string> = {
 export function SystemSettings({
   settings,
   loginItem,
-  updates,
 }: {
   settings: Settings;
   loginItem: LoginItem;
-  updates: UpdatesSnapshot;
 }) {
-  const [updateError, setUpdateError] = useState("");
-
-  async function changeChannel(channel: UpdateChannel) {
-    setUpdateError("");
-    try {
-      await window.voice.updateSettings({ updateChannel: channel });
-    } catch (error) {
-      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
-    }
-  }
-
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>System</h1>
@@ -447,46 +487,6 @@ export function SystemSettings({
               onChange={(alwaysShowPill) => update({ alwaysShowPill })}
             />
           </Row>
-        </div>
-      </Section>
-
-      <Section label="Updates">
-        <div {...stylex.props(styles.card)}>
-          <Row
-            id="setting-update-channel"
-            title="Update channel"
-            detail="Stable gets regular releases. Nightly gets early builds."
-            disabled={updates.status.kind === "installing"}
-          >
-            <Select
-              id="setting-update-channel"
-              value={updates.channel}
-              options={updateChannels}
-              disabled={updates.status.kind === "installing"}
-              onChange={(channel) => void changeChannel(channel)}
-            />
-          </Row>
-          <div {...stylex.props(styles.row)}>
-            <div {...stylex.props(styles.rowText)}>
-              <span {...stylex.props(styles.rowTitle)}>Installed version</span>
-              <p {...stylex.props(styles.rowDetail)}>
-                {updates.version} · {updates.installedChannel === "nightly" ? "Nightly" : "Stable"}
-              </p>
-            </div>
-          </div>
-          <div {...stylex.props(styles.row)}>
-            <div {...stylex.props(styles.rowText)}>
-              <span {...stylex.props(styles.rowTitle)}>Update status</span>
-              <p role="status" aria-live="polite" {...stylex.props(styles.rowDetail)}>
-                {updateStatusText(updates.status)}
-              </p>
-              {updateError && (
-                <p role="alert" {...stylex.props(styles.error)}>
-                  {updateError}
-                </p>
-              )}
-            </div>
-          </div>
         </div>
       </Section>
     </div>
