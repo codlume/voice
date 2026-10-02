@@ -18,7 +18,6 @@ const ringRadius = 14;
 const ringCircumference = 2 * Math.PI * ringRadius;
 
 const styles = stylex.create({
-  sidebar: { display: "flex", justifyContent: "flex-end" },
   button: {
     position: "relative",
     display: "grid",
@@ -203,7 +202,7 @@ export function SidebarUpdates({
   }
 
   return (
-    <div {...stylex.props(styles.sidebar)}>
+    <>
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
         {actionError ?? updateStatusText(status)}
       </p>
@@ -229,6 +228,6 @@ export function SidebarUpdates({
       >
         <StatusIcon status={status} />
       </UpdateCardTrigger>
-    </div>
+    </>
   );
 }
