@@ -32,14 +32,19 @@ function fakeModule(behavior: Behavior = {}) {
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
     signals: [] as (AbortSignal | undefined)[],
+    downloadSignals: [] as (AbortSignal | undefined)[],
   };
   const module: CleanupModule = {
     findS1Mini,
-    async downloadS1Mini({ dir, onProgress }) {
+    async downloadS1Mini({ dir, onProgress, signal: abort }) {
       calls.downloads += 1;
+      calls.downloadSignals.push(abort);
       if (behavior.downloadError) throw new Error(behavior.downloadError);
       onProgress?.(0.5);
-      await behavior.downloadGate;
+      await Promise.race([
+        behavior.downloadGate,
+        new Promise((_, reject) => abort?.addEventListener("abort", () => reject(abort.reason))),
+      ]);
       const path = NodePath.join(dir, S1_MINI_FILE);
       await writeFile(path, "weights");
       return path;
@@ -308,6 +313,20 @@ describe("createCleanup", () => {
     ]);
     await cleanup.install();
     expect(fake.calls.downloads).toBe(1);
+  });
+
+  test("dispose during a download stops the download instead of waiting for it", async () => {
+    const fake = fakeModule({ downloadGate: new Promise(() => {}) });
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const disposing = cleanup.dispose();
+
+    expect(fake.calls.downloadSignals[0]?.aborted).toBe(true);
+    await Promise.all([installing, disposing]);
+    expect(fake.calls.loads).toBe(0);
+    expect(cleanup.loaded()).toBe(false);
   });
 
   test("a download failure reports failed and does not try to load", async () => {
