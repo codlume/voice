@@ -315,6 +315,21 @@ describe("createDictation", () => {
     expect(json).not.toContain(id.slice(0, 8));
   });
 
+  test("releaseToInsertMs counts from the release even when capture caught up later", () => {
+    const h = harness({ cleanupEnabled: false });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    vi.advanceTimersByTime(300);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(200);
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 500 });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "hi", audioMs: 0, asrMs: 10 });
+    vi.advanceTimersByTime(100);
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
+  });
+
   test("reports a failed session once, with its language", () => {
     const h = harness({ dictationLanguage: "pl" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
@@ -346,6 +361,25 @@ describe("createDictation", () => {
       finishedAt: Date.now(),
       capture: null,
     });
+  });
+
+  test("reports a second refused press while the first refusal is still shown", () => {
+    const h = harness({ asrModel: { state: "missing" } });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.reports).toHaveLength(1);
+    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS - 500);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.store.state.session).toMatchObject({
+      phase: "done",
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+    });
+    expect(h.reports).toHaveLength(2);
+    expect(h.reports[1]).toEqual({
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+      finishedAt: Date.now(),
+      capture: null,
+    });
+    expect(h.logs.filter((line) => line.startsWith("session "))).toHaveLength(2);
   });
 
   test("cleans with the user's styling and no other settings", async () => {
@@ -649,6 +683,17 @@ describe("createDictation", () => {
       { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
       { type: "capture.cancel", id },
     ]);
+  });
+
+  test("a release while capture is still starting does not extend the start watchdog", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
   });
 
   test("the transcription watchdog waits longer while the speech model is still loading", () => {

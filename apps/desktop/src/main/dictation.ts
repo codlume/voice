@@ -99,9 +99,12 @@ export function createDictation(options: DictationOptions): Dictation {
     for (const effect of effects) run(effect);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
-      armWatchdog(state);
+      const phaseChanged = state.phase !== before.phase;
+      if (phaseChanged) armWatchdog(state);
     }
-    if (state.phase === "done" && before.phase !== "done") finish(state.id, state.outcome);
+    if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
+      finish(state.id, state.outcome);
+    }
   }
 
   function armWatchdog(state: Session) {
@@ -138,7 +141,7 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         return;
       case "stopCapture":
-        track(effect.id, { releasedAt: now() });
+        track(effect.id, { releasedAt: effect.releasedAt });
         send({ type: "capture.stop", id: effect.id });
         return;
       case "cancelCapture":
