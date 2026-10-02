@@ -13,6 +13,10 @@ describe("assertPlausibleCleanup", () => {
     ["im sorry i missed your call", "I'm sorry I missed your call."],
     ["sure thing see you at five", "Sure thing, see you at five."],
     ["here's the plan for monday", "Here's the plan for Monday."],
+    ["here's the plan for monday", "Here is the plan for Monday."],
+    ["i'm sorry i missed your call", "I am sorry I missed your call."],
+    ["i can't make it on friday", "I cannot make it on Friday."],
+    ["here is the plan for monday", "Here's the plan for Monday."],
   ])("accepts a real cleanup of %j", (input, output) => {
     expect(() => assertPlausibleCleanup(input, output, false)).not.toThrow();
   });
@@ -39,6 +43,13 @@ describe("assertPlausibleCleanup", () => {
     ["call ada", "Call Ada.<|im_end|>"],
   ])("rejects leaked template markup for %j", (input, output) => {
     expect(() => assertPlausibleCleanup(input, output, false)).toThrow("template markup");
+  });
+
+  test("rejects an empty output for speech too long to be filler", () => {
+    const filler = "um uh so like um you know uh";
+    expect(() => assertPlausibleCleanup(filler, "", false)).not.toThrow();
+    const speech = Array.from({ length: 30 }, (_, i) => `word${i}`).join(" ");
+    expect(() => assertPlausibleCleanup(speech, "", false)).toThrow("empty");
   });
 
   test("rejects output cut off at the token limit", () => {

@@ -137,6 +137,17 @@ test("long input is cleaned in sentence chunks and rejoined", async () => {
   expect(cleaned).toBe(raw.toUpperCase());
 });
 
+test("a chunk that comes back empty fails the clean instead of silently dropping its text", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  const sentence = "we should ship the beta on october twelfth and the stable release after that.";
+  const raw = Array.from({ length: 60 }, () => sentence).join(" ");
+  let chunks = 0;
+  native.reply = (chunk) => ({ response: ++chunks === 2 ? "" : chunk });
+
+  await expect(s1.clean(raw, style)).rejects.toThrow("empty");
+  expect(chunks).toBeGreaterThanOrEqual(2);
+});
+
 test("an aborted clean stops the generation and rejects with the reason, and the next clean runs", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   native.stall = true;

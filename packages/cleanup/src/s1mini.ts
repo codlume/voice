@@ -101,18 +101,15 @@ async function openEngine(modelPath: string): Promise<Engine> {
   }
 }
 
-const CHAT_OPENERS = [
-  "sorry",
-  "im sorry",
-  "i am sorry",
-  "i cannot",
-  "i cant",
-  "as an ai",
-  "sure",
-  "certainly",
-  "of course",
-  "here is",
-  "heres",
+const CHAT_OPENER_SPELLINGS = [
+  ["sorry"],
+  ["im sorry", "i am sorry"],
+  ["i cannot", "i cant"],
+  ["as an ai"],
+  ["sure"],
+  ["certainly"],
+  ["of course"],
+  ["here is", "heres"],
 ];
 
 const words = (text: string) =>
@@ -122,16 +119,21 @@ const words = (text: string) =>
     .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 
-// An empty output is valid: S1-mini returns "" for filler-only speech.
+const MAX_FILLER_WORDS = 20;
+
 export function assertPlausibleCleanup(input: string, output: string, truncated: boolean): void {
   if (truncated) throw new Error("Cleanup output was cut off at the token limit");
+  if (!output && words(input).split(" ").length > MAX_FILLER_WORDS)
+    throw new Error("Cleanup output is empty for speech too long to be filler");
   if (output.length > MAX_OUTPUT_RATIO * input.length)
     throw new Error(`Cleanup output is over ${MAX_OUTPUT_RATIO}x the input length`);
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
   const said = ` ${words(input)} `;
   const cleaned = ` ${words(output)} `;
-  const opener = CHAT_OPENERS.find((phrase) => cleaned.startsWith(` ${phrase} `));
-  if (opener && !said.includes(` ${opener} `))
+  const opener = CHAT_OPENER_SPELLINGS.find((group) =>
+    group.some((phrase) => cleaned.startsWith(` ${phrase} `)),
+  );
+  if (opener && !opener.some((phrase) => said.includes(` ${phrase} `)))
     throw new Error("Cleanup output reads like a chat reply");
 }
