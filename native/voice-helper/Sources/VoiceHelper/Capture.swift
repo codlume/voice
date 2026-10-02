@@ -63,6 +63,10 @@ final class Capture {
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var mic: MicSource?
     private var file: FileSource?
+    /// TCC answers `authorizationStatus` over XPC at ~21 ms a call, so a press reads this and
+    /// only the idle path asks again. Revoking microphone access quits the app unless the user
+    /// picks "Later", and that case is caught by the refresh after the next session.
+    private var microphoneAuthorized = false
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
 
@@ -102,7 +106,7 @@ final class Capture {
                 file.start()
                 return
             }
-            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "microphone access is not granted")
             }
             let mic = try self.mic ?? makeMic()
@@ -235,8 +239,7 @@ final class Capture {
 
     func prepareIdleMic() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, case .idle = state, testAudioPath == nil,
-                AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            guard let self, case .idle = state, testAudioPath == nil, refreshMicrophoneAuthorization()
             else { return }
             do throws(CaptureError) {
                 if mic?.preference?.uid != microphone?.uid { disposeMic() }
@@ -262,7 +265,7 @@ final class Capture {
                 file.start()
                 return
             }
-            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "Allow microphone access for Voice, then test again.")
             }
             let mic = try self.mic ?? makeMic()
@@ -337,6 +340,11 @@ final class Capture {
         default:
             break
         }
+    }
+
+    private func refreshMicrophoneAuthorization() -> Bool {
+        microphoneAuthorized = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        return microphoneAuthorized
     }
 
     private func makeMic() throws(CaptureError) -> MicSource {
