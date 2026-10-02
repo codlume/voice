@@ -84,8 +84,12 @@ final class HotkeyTap {
         ) else {
             if !reportedFailure {
                 reportedFailure = true
-                let reason = AXIsProcessTrusted() ? "CGEvent.tapCreate returned nil" : "accessibility not granted"
-                output.log(.error, "hotkey tap unavailable: \(reason)")
+                output.log(
+                    .error,
+                    AXIsProcessTrusted()
+                        ? "hotkey tap unavailable: CGEvent.tapCreate returned nil"
+                        : "hotkey tap unavailable: accessibility not granted"
+                )
             }
             return false
         }

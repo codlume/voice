@@ -1,7 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import * as NodePath from "node:path";
+
 import type { Event } from "@sentry/electron/main";
 import { describe, expect, test } from "vite-plus/test";
 
-import { HELPER_EXIT_MESSAGE, scrubEvent, scrubLogs } from "./diagnostics-scrub.ts";
+import { HELPER_EXIT_MESSAGE, HELPER_LOGS, scrubEvent, scrubLogs } from "./diagnostics-scrub.ts";
 
 const DICTATION =
   "Hi Anna, can we move our meeting to Thursday at three thirty? https://example.com/anna 4242";
@@ -369,5 +372,15 @@ describe("scrubLogs", () => {
     const before = structuredClone(logPayload);
     scrubLogs(logPayload);
     expect(logPayload).toEqual(before);
+  });
+
+  // A helper line is matched by its exact text, so a reworded line would stop leaving silently.
+  test("every allowlisted helper line is a literal in the helper source", () => {
+    const sources = NodePath.join(import.meta.dirname, "../../../../native/voice-helper/Sources");
+    const swift = readdirSync(sources, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".swift"))
+      .map((file) => readFileSync(NodePath.join(sources, file), "utf8"))
+      .join("\n");
+    expect(HELPER_LOGS.filter((message) => !swift.includes(`"${message}"`))).toEqual([]);
   });
 });

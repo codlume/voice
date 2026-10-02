@@ -170,9 +170,7 @@ export function startDiagnostics(options: {
   function log(entry: DiagnosticLog) {
     // The SDK would send an undefined attribute as an empty string.
     const attributes = Object.fromEntries(
-      Object.entries("attributes" in entry ? (entry.attributes ?? {}) : {}).filter(
-        ([, value]) => value !== undefined,
-      ),
+      Object.entries(entry.attributes ?? {}).filter(([, value]) => value !== undefined),
     );
     sdk.logger[entry.level](entry.message, attributes);
   }

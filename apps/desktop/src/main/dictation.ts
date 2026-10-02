@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
-import { isHelperLog, type DiagnosticLog } from "./diagnostics-scrub.ts";
+import { errorType, isHelperLog, type DiagnosticLog } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { step, type Effect as SessionEffect, type Session, type SessionEvent } from "./session.ts";
 import type { Store } from "./store.ts";
@@ -29,11 +29,7 @@ export function cleanupBudgetMs(raw: string): number {
   return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
 }
 
-// An error name is code, not data, unless something rewrote it into free text.
-const errorType = (error: unknown) =>
-  error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : "Error";
-
-const cleanupFailure = (message: string, entry: DiagnosticLog) => ({ message, entry });
+type CleanupFailure = { message: string; entry: DiagnosticLog };
 
 export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
@@ -155,24 +151,25 @@ export function createDictation(options: DictationOptions): Dictation {
         Effect.runFork(
           Effect.tryPromise({
             try: (signal) => cleanup.clean(effect.raw, { styling }, signal),
-            catch: (error) =>
-              cleanupFailure(
-                `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-                {
-                  message: "cleanup failed",
-                  level: "warn",
-                  attributes: { "error.type": errorType(error) },
-                },
-              ),
+            catch: (error): CleanupFailure => ({
+              message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+              entry: {
+                message: "cleanup failed",
+                level: "warn",
+                attributes: { "error.type": errorType(error) },
+              },
+            }),
           }).pipe(
             Effect.timeoutFail({
               duration: budgetMs,
-              onTimeout: () =>
-                cleanupFailure(`cleanup timed out after ${budgetMs} ms`, {
+              onTimeout: (): CleanupFailure => ({
+                message: `cleanup timed out after ${budgetMs} ms`,
+                entry: {
                   message: "cleanup timed out",
                   level: "warn",
                   attributes: { "cleanup.budget_ms": budgetMs },
-                }),
+                },
+              }),
             }),
             Effect.match({
               onSuccess: (text) => {

@@ -122,6 +122,9 @@ async function flush() {
 }
 
 describe("createDictation", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   test("forwards only parameter-free helper log lines to diagnostics", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "log", level: "info", message: "hotkey tap installed" });
@@ -142,9 +145,6 @@ describe("createDictation", () => {
     ]);
     expect(h.entries).toEqual([{ message: "hotkey tap installed", level: "info" }]);
   });
-
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
 
   test.each(dictationLanguages)("passes $label to speech recognition", ({ value }) => {
     const h = harness({ dictationLanguage: value });

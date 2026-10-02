@@ -27,7 +27,7 @@ export const SESSION_MEASUREMENTS = [
 ] as const satisfies readonly (keyof SessionTimings)[];
 
 // Helper log lines that carry no parameters. Any other helper line stays on this machine.
-const HELPER_LOGS = [
+export const HELPER_LOGS = [
   "could not monitor microphone changes",
   "clipboard changed during paste; not restoring previous contents",
   "asr.remove ignored while the speech model downloads",
@@ -58,19 +58,24 @@ type AppLog = keyof typeof LOGS;
 const LOG_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-export type DiagnosticLog =
-  | {
-      [N in AppLog]: {
-        message: N;
-        level: LogLevel;
-        attributes?: { [K in (typeof LOGS)[N][number]]?: string | number | boolean | undefined };
-      };
-    }[AppLog]
-  | { message: HelperLog; level: LogLevel };
+type LogMessage = AppLog | HelperLog;
+type LogAttributeKey<N extends LogMessage> = N extends AppLog ? (typeof LOGS)[N][number] : never;
+
+export type DiagnosticLog = {
+  [N in LogMessage]: {
+    message: N;
+    level: LogLevel;
+    attributes?: { [K in LogAttributeKey<N>]?: string | number | boolean | undefined };
+  };
+}[LogMessage];
 
 const HELPER_LOG_MESSAGES: ReadonlySet<string> = new Set(HELPER_LOGS);
 export const isHelperLog = (message: string): message is HelperLog =>
   HELPER_LOG_MESSAGES.has(message);
+
+// An error name is code, not data, unless something rewrote it into free text.
+export const errorType = (error: unknown) =>
+  error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : "Error";
 
 const MESSAGES: ReadonlySet<string> = new Set([HELPER_EXIT_MESSAGE]);
 const TAGS: ReadonlySet<string> = new Set([
