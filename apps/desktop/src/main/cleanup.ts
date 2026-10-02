@@ -45,6 +45,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
   let model: Model = { phase: "none" };
   let chain: Promise<void> = Promise.resolve();
+  let download: AbortController | undefined;
 
   const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
 
@@ -109,11 +110,13 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         if (!claimIdle()) return;
         options.onStatus({ state: "downloading", progress: 0 });
         const module = await loadModule();
+        download = new AbortController();
         let modelPath: string;
         try {
           modelPath = await module.downloadS1Mini({
             dir: options.modelsDir,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
+            signal: download.signal,
           });
         } catch (error) {
           options.onStatus({ state: "failed", message: message(error) });
@@ -139,6 +142,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
       return model.model.clean(raw, style, signal);
     },
-    dispose: () => disposeThen(),
+    dispose: () => {
+      download?.abort(new Error("Voice is closing"));
+      return disposeThen();
+    },
   };
 }
