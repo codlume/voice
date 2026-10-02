@@ -13,6 +13,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 const voice: VoiceApi = {
   diagnosticsStartedAtLaunch: process.argv.includes(DIAGNOSTICS_ARGUMENT),
   checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(Channel.downloadUpdate),
   restartForUpdate: () => ipcRenderer.invoke(Channel.restartForUpdate),
   openRelease: () => ipcRenderer.invoke(Channel.openRelease),
   getSnapshot: () => ipcRenderer.invoke(Channel.getSnapshot),

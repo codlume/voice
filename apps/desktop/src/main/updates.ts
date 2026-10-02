@@ -94,7 +94,11 @@ export function createUpdates({
     engine.on("error", onError);
   }
 
-  async function performCheck(expectedGeneration: number, channel: UpdateChannel) {
+  async function performCheck(
+    expectedGeneration: number,
+    channel: UpdateChannel,
+    download: boolean,
+  ) {
     if (!engine || !release) return;
     const current = () => !disposed && generation === expectedGeneration;
     publish({ kind: "checking" });
@@ -122,6 +126,10 @@ export function createUpdates({
         throw new Error("The update feed contains a different release channel");
       }
       const notes = releaseNoteItems(result.updateInfo.releaseNotes);
+      if (!download) {
+        publish({ kind: "available", version, notes });
+        return;
+      }
       operation = "download";
       publish({ kind: "downloading", version, notes, percent: 0 });
       const progress = ({ percent }: { percent: number }) => {
@@ -152,15 +160,24 @@ export function createUpdates({
     }
   }
 
-  function check(): Promise<void> {
-    if (!enabled || disposed || restarting || snapshot.status.kind === "ready")
-      return Promise.resolve();
+  function run(download: boolean): Promise<void> {
+    if (!enabled || disposed || restarting) return Promise.resolve();
     if (running) return running;
-    const expectedGeneration = generation;
-    running = performCheck(expectedGeneration, snapshot.channel).finally(() => {
+    running = performCheck(generation, snapshot.channel, download).finally(() => {
       running = null;
     });
     return running;
+  }
+
+  function check(): Promise<void> {
+    const { kind } = snapshot.status;
+    return kind === "available" || kind === "ready" ? Promise.resolve() : run(false);
+  }
+
+  // Downloading re-checks the feed, so an update that sat available for hours never
+  // downloads a release the feed has since replaced.
+  function download(): Promise<void> {
+    return snapshot.status.kind === "available" ? run(true) : Promise.resolve();
   }
 
   return {
@@ -182,6 +199,7 @@ export function createUpdates({
       pollTimer.unref();
     },
     check,
+    download,
     releaseUrl(): string | null {
       const update = pendingUpdate(snapshot.status);
       return (

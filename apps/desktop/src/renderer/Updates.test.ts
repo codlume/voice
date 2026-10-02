@@ -17,8 +17,9 @@ function cardText(card: UpdateCard | null) {
 const idle: PillState = { kind: "idle" };
 
 describe("update controls", () => {
-  test("restart is offered only when an update is ready and dictation is inactive", () => {
+  test("dictation blocks restart but not download", () => {
     const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: [] };
+    const available: UpdateStatus = { kind: "available", version: "1.5.0", notes: [] };
     const sessions: PillState[] = [
       idle,
       { kind: "listening" },
@@ -37,13 +38,18 @@ describe("update controls", () => {
       },
       { action: "restart", label: "Restart to install 1.5.0" },
     ]);
+    expect(updateButton(available, { kind: "listening" })).toEqual({
+      action: "download",
+      label: "Download 1.5.0",
+    });
   });
 
-  test("the button checks for updates only when no update work is in flight", () => {
+  test("the button checks when idle, downloads an available update, and waits on work in flight", () => {
     const statuses: UpdateStatus[] = [
       { kind: "idle" },
       { kind: "current" },
       { kind: "failed", message: "Connection timed out" },
+      { kind: "available", version: "1.5.0", notes: [] },
       { kind: "checking" },
       { kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 },
       { kind: "installing", version: "1.5.0" },
@@ -53,6 +59,7 @@ describe("update controls", () => {
       { action: "check", label: "Check for updates" },
       { action: "check", label: "Check for updates" },
       { action: "check", label: "Check for updates" },
+      { action: "download", label: "Download 1.5.0" },
       { action: null, label: "Checking for updates…" },
       { action: null, label: "Downloading 1.5.0 · 48%" },
       { action: null, label: "Installing 1.5.0…" },
@@ -70,6 +77,9 @@ describe("update controls", () => {
     expect(updateStatusText({ kind: "disabled", reason: "Only packaged builds update" })).toBe(
       "Only packaged builds update",
     );
+    expect(updateStatusText({ kind: "available", version: "1.5.0", notes: [] })).toBe(
+      "Version 1.5.0 is available",
+    );
     expect(
       updateStatusText({ kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 }),
     ).toBe("Downloading 1.5.0 · 48%");
@@ -80,6 +90,7 @@ describe("update controls", () => {
       { kind: "idle" },
       { kind: "checking" },
       { kind: "current" },
+      { kind: "available", version: "1.5.0", notes: ["fix: one"] },
       { kind: "downloading", version: "1.5.0", notes: ["fix: one"], percent: 48.4 },
       { kind: "ready", version: "1.5.0", notes: ["fix: one"] },
       { kind: "installing", version: "1.5.0" },
@@ -90,6 +101,7 @@ describe("update controls", () => {
       null,
       null,
       null,
+      "Download 1.5.0",
       "Downloading 1.5.0 · 48%",
       "Restart to install 1.5.0",
       null,

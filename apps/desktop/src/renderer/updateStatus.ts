@@ -15,6 +15,8 @@ export function updateStatusText(status: UpdateStatus): string {
       return "Checking for updates…";
     case "current":
       return "Voice is up to date";
+    case "available":
+      return `Version ${status.version} is available`;
     case "downloading":
       return `Downloading ${status.version} · ${Math.round(status.percent)}%`;
     case "ready":
@@ -31,9 +33,18 @@ export function updateStatusText(status: UpdateStatus): string {
 }
 
 export function releaseCardTitle(update: PendingUpdate): string {
-  return update.kind === "ready"
-    ? `Restart to install ${update.version}`
-    : updateStatusText(update);
+  switch (update.kind) {
+    case "available":
+      return `Download ${update.version}`;
+    case "ready":
+      return `Restart to install ${update.version}`;
+    case "downloading":
+      return updateStatusText(update);
+    default: {
+      const exhaustive: never = update;
+      return exhaustive;
+    }
+  }
 }
 
 export type UpdateCard =
@@ -47,7 +58,7 @@ export function updateCard(status: UpdateStatus, actionError: string | null): Up
   return update && { kind: "release", update };
 }
 
-export type UpdateButton = { action: "check" | "restart" | null; label: string };
+export type UpdateButton = { action: "check" | "download" | "restart" | null; label: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
   switch (status.kind) {
@@ -55,6 +66,8 @@ export function updateButton(status: UpdateStatus, session: PillState): UpdateBu
     case "current":
     case "failed":
       return button("check", "Check for updates");
+    case "available":
+      return button("download", releaseCardTitle(status));
     case "ready":
       return session.kind === "listening" || session.kind === "processing"
         ? button(null, "Finish dictation before restarting")

@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 
 import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
-import { updateButton, updateCard, updateStatusText } from "./updateStatus.ts";
+import { updateButton, updateCard, updateStatusText, type UpdateButton } from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -120,7 +120,26 @@ function RefreshGlyph({ checking }: { checking: boolean }) {
   );
 }
 
+function DownloadGlyph() {
+  return (
+    <Glyph>
+      <path d="M12 15V3" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+    </Glyph>
+  );
+}
+
 function StatusIcon({ status }: { status: UpdateStatus }) {
+  if (status.kind === "available") {
+    return (
+      <>
+        <DownloadGlyph />
+        <span {...stylex.props(styles.badge)} />
+      </>
+    );
+  }
+
   if (status.kind === "downloading") {
     const offset = ringCircumference * (1 - status.percent / 100);
     return (
@@ -148,11 +167,7 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
             {...stylex.props(styles.ringProgress)}
           />
         </svg>
-        <Glyph>
-          <path d="M12 15V3" />
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <path d="m7 10 5 5 5-5" />
-        </Glyph>
+        <DownloadGlyph />
       </>
     );
   }
@@ -175,6 +190,12 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
 
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
+
+const actions: Record<NonNullable<UpdateButton["action"]>, () => Promise<void>> = {
+  check: () => window.voice.checkForUpdates(),
+  download: () => window.voice.downloadUpdate(),
+  restart: () => window.voice.restartForUpdate(),
+};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The update action failed. Try again.";
@@ -210,16 +231,15 @@ export function SidebarUpdates({
         card={card}
         label={label}
         disabled={action === null}
-        onClick={() =>
-          void run(() =>
-            action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
-          )
-        }
+        onClick={() => {
+          if (action) void run(actions[action]);
+        }}
         style={[
           styles.button,
-          (status.kind === "ready" ||
-            status.kind === "installing" ||
-            status.kind === "downloading") &&
+          (status.kind === "available" ||
+            status.kind === "downloading" ||
+            status.kind === "ready" ||
+            status.kind === "installing") &&
             styles.hasUpdate,
           card?.kind === "error" && styles.failed,
           status.kind === "disabled" && styles.dimmed,

@@ -426,6 +426,13 @@ async function main() {
     if (last) clipboard.writeText(last[which]);
   }
   function refreshTray(state: AppState) {
+    const { kind } = state.updates.status;
+    const updateItem =
+      kind === "available"
+        ? { label: "Download update…", run: () => updates.download() }
+        : kind === "ready"
+          ? { label: "Restart to update…", run: () => updates.restart() }
+          : { label: "Check for updates…", run: () => updates.check() };
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Voice", click: showHub },
@@ -436,20 +443,19 @@ async function main() {
         },
         { type: "separator" },
         {
-          label:
-            state.updates.status.kind === "ready" ? "Restart to update…" : "Check for updates…",
+          label: updateItem.label,
           enabled:
             state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
           click: () => {
             showHub();
-            void (
-              state.updates.status.kind === "ready" ? updates.restart() : updates.check()
-            ).catch((error: unknown) =>
-              dialog.showErrorBox(
-                "Voice update",
-                error instanceof Error ? error.message : "Update failed.",
-              ),
-            );
+            void updateItem
+              .run()
+              .catch((error: unknown) =>
+                dialog.showErrorBox(
+                  "Voice update",
+                  error instanceof Error ? error.message : "Update failed.",
+                ),
+              );
           },
         },
         { label: "Quit", role: "quit" },
@@ -541,6 +547,7 @@ async function main() {
 
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
+  ipcMain.handle(Channel.downloadUpdate, () => updates.download());
   ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
   ipcMain.handle(Channel.openRelease, () => {
     const url = updates.releaseUrl();

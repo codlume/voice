@@ -91,6 +91,7 @@ const releaseNotes = [
 const updateScenes: Record<string, UpdateStatus> = {
   checking: { kind: "checking" },
   current: { kind: "current" },
+  available: { kind: "available", version: "1.5.0", notes: releaseNotes },
   downloading: { kind: "downloading", version: "1.5.0", notes: releaseNotes, percent: 48 },
   ready: { kind: "ready", version: "1.5.0", notes: releaseNotes },
   "ready-no-notes": { kind: "ready", version: "1.5.0", notes: [] },
@@ -200,6 +201,16 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         () => set({ ...snapshot, updates: { ...snapshot.updates, status: { kind: "current" } } }),
         500,
       );
+    },
+    downloadUpdate: async () => {
+      if (snapshot.updates.status.kind !== "available") throw new Error("No update is available.");
+      const { version, notes } = snapshot.updates.status;
+      const show = (status: UpdateStatus) =>
+        set({ ...snapshot, updates: { ...snapshot.updates, status } });
+      [0, 35, 70, 100].forEach((percent, step) =>
+        setTimeout(() => show({ kind: "downloading", version, notes, percent }), step * 400),
+      );
+      setTimeout(() => show({ kind: "ready", version, notes }), 1_800);
     },
     restartForUpdate: async () => {
       if (snapshot.updates.status.kind !== "ready") throw new Error("No update is ready.");
