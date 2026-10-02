@@ -21,3 +21,13 @@ private func layoutData(id: String) throws -> Data {
 @Test func dvorakTypesVAtTheAnsiPeriodKey() throws {
     #expect(PasteKey.keycode(typing: "v", in: try layoutData(id: "com.apple.keylayout.Dvorak")) == 47)
 }
+
+@MainActor
+@Test func dvorakQwertyCommandPastesAtTheAnsiVKey() throws {
+    #expect(PasteKey.keycode(typing: "v", in: try layoutData(id: "com.apple.keylayout.DVORAK-QWERTYCMD")) == 9)
+}
+
+@MainActor
+@Test func russianPastesAtTheAnsiVKey() throws {
+    #expect(PasteKey.keycode(typing: "v", in: try layoutData(id: "com.apple.keylayout.Russian")) == 9)
+}
