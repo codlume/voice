@@ -24,7 +24,7 @@ jobs:
       stable_version: ${{ steps.detect.outputs.stable_version }}
       stable_sha: ${{ steps.detect.outputs.stable_sha }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
@@ -129,7 +129,7 @@ jobs:
       - name: Build, sign, notarize, and verify
         if: steps.preflight.outputs.skip != 'true'
         run: node scripts/release-build.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.preflight.outputs.skip != 'true'
         with:
           name: nightly-mac-arm64
@@ -189,7 +189,7 @@ jobs:
       - name: Build, sign, notarize, and verify
         if: steps.preflight.outputs.skip != 'true'
         run: node scripts/release-build.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.preflight.outputs.skip != 'true'
         with:
           name: stable-mac-arm64
@@ -229,7 +229,7 @@ jobs:
           cache: true
           run-install: true
       - run: aws --version
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: nightly-mac-arm64
           path: apps/desktop/release/
@@ -300,7 +300,7 @@ jobs:
           cache: true
           run-install: true
       - run: aws --version
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: stable-mac-arm64
           path: apps/desktop/release/
