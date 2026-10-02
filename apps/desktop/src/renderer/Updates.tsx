@@ -2,6 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
 import {
+  pendingUpdate,
   sameTranscript,
   type PillState,
   type Snapshot,
@@ -133,7 +134,26 @@ function RefreshGlyph({ checking }: { checking: boolean }) {
   );
 }
 
+function DownloadGlyph() {
+  return (
+    <Glyph>
+      <path d="M12 15V3" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+    </Glyph>
+  );
+}
+
 function StatusIcon({ status }: { status: UpdateStatus }) {
+  if (status.kind === "available") {
+    return (
+      <>
+        <DownloadGlyph />
+        <span {...stylex.props(styles.badge)} />
+      </>
+    );
+  }
+
   if (status.kind === "downloading") {
     const offset = ringCircumference * (1 - status.percent / 100);
     return (
@@ -161,11 +181,7 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
             {...stylex.props(styles.ringProgress)}
           />
         </svg>
-        <Glyph>
-          <path d="M12 15V3" />
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <path d="m7 10 5 5 5-5" />
-        </Glyph>
+        <DownloadGlyph />
       </>
     );
   }
@@ -242,15 +258,14 @@ export function SidebarUpdates({
         card={card}
         label={label}
         disabled={action === null}
-        onClick={() =>
-          action === "restart" ? confirmRestart() : void run(() => window.voice.checkForUpdates())
-        }
+        onClick={() => {
+          if (action === "restart") confirmRestart();
+          else if (action === "download") void run(() => window.voice.downloadUpdate());
+          else void run(() => window.voice.checkForUpdates());
+        }}
         style={[
           styles.button,
-          (status.kind === "ready" ||
-            status.kind === "installing" ||
-            status.kind === "downloading") &&
-            styles.hasUpdate,
+          (pendingUpdate(status) !== null || status.kind === "installing") && styles.hasUpdate,
           card?.kind === "error" && styles.failed,
           status.kind === "disabled" && styles.dimmed,
           action === null && styles.unavailable,

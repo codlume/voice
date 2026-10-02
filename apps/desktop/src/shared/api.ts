@@ -18,16 +18,19 @@ export type UpdateStatus =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "current" }
+  | { kind: "available"; version: string; notes: readonly string[] }
   | { kind: "downloading"; version: string; notes: readonly string[]; percent: number }
   | { kind: "ready"; version: string; notes: readonly string[] }
   | { kind: "installing"; version: string }
   | { kind: "failed"; message: string };
 
 /** An update the user can read about before installing it. */
-export type PendingUpdate = Extract<UpdateStatus, { kind: "downloading" | "ready" }>;
+export type PendingUpdate = Extract<UpdateStatus, { kind: "available" | "downloading" | "ready" }>;
 
 export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
-  return status.kind === "downloading" || status.kind === "ready" ? status : null;
+  return status.kind === "available" || status.kind === "downloading" || status.kind === "ready"
+    ? status
+    : null;
 }
 
 export type UpdatesSnapshot = {
@@ -124,6 +127,7 @@ export function sameTranscript(a: Snapshot["last"], b: Snapshot["last"]): boolea
 export type VoiceApi = {
   diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
   restartForUpdate(request: RestartRequest): Promise<void>;
   /** The tray asks the hub to confirm a restart. A request made before anyone listens is kept. */
   onRestartRequest(listener: () => void): () => void;
@@ -143,6 +147,7 @@ export type VoiceApi = {
 
 export const Channel = {
   checkForUpdates: "voice:checkForUpdates",
+  downloadUpdate: "voice:downloadUpdate",
   restartForUpdate: "voice:restartForUpdate",
   requestRestart: "voice:requestRestart",
   openRelease: "voice:openRelease",

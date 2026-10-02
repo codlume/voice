@@ -21,6 +21,7 @@ ipcRenderer.on(Channel.requestRestart, () => {
 const voice: VoiceApi = {
   diagnosticsStartedAtLaunch: process.argv.includes(DIAGNOSTICS_ARGUMENT),
   checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(Channel.downloadUpdate),
   restartForUpdate: (request) => ipcRenderer.invoke(Channel.restartForUpdate, request),
   onRestartRequest: (listener) => {
     restartListeners.add(listener);

@@ -423,7 +423,11 @@ async function main() {
         { type: "separator" },
         {
           label:
-            state.updates.status.kind === "ready" ? "Restart to update…" : "Check for updates…",
+            state.updates.status.kind === "available"
+              ? "Download update…"
+              : state.updates.status.kind === "ready"
+                ? "Restart to update…"
+                : "Check for updates…",
           enabled:
             state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
           click: () => {
@@ -431,7 +435,9 @@ async function main() {
               requestRestart();
             } else {
               showHub();
-              void updates.check();
+              void (state.updates.status.kind === "available"
+                ? updates.download()
+                : updates.check());
             }
           },
         },
@@ -506,6 +512,7 @@ async function main() {
 
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
+  ipcMain.handle(Channel.downloadUpdate, () => updates.download());
   ipcMain.handle(Channel.restartForUpdate, (_event, value: unknown) => {
     const request = parseRestartRequest(value);
     if (!request) return;

@@ -122,7 +122,6 @@ export function createUpdates({
     engine.allowPrerelease = channel === "nightly";
     // The library's channel setter enables downgrades, even for ordinary checks.
     engine.allowDowngrade = channel !== snapshot.installedChannel;
-    let operation: "check" | "download" = "check";
     try {
       const result = await engine.checkForUpdates();
       if (!current()) return;
@@ -135,46 +134,73 @@ export function createUpdates({
       if ((channel === "nightly") !== version.includes("-nightly.")) {
         throw new Error("The update feed contains a different release channel");
       }
-      const notes = releaseNoteItems(result.updateInfo.releaseNotes);
-      operation = "download";
-      publish({ kind: "downloading", version, notes, percent: 0 });
-      const progress = ({ percent }: { percent: number }) => {
-        if (current())
-          publish({
-            kind: "downloading",
-            version,
-            notes,
-            percent: Math.max(0, Math.min(100, percent)),
-          });
-      };
-      engine.on("download-progress", progress);
-      try {
-        await engine.downloadUpdate();
-      } finally {
-        engine.removeListener("download-progress", progress);
-      }
-      if (current()) publish({ kind: "ready", version, notes });
+      publish({
+        kind: "available",
+        version,
+        notes: releaseNoteItems(result.updateInfo.releaseNotes),
+      });
     } catch {
       if (current())
         publish({
           kind: "failed",
-          message:
-            operation === "check"
-              ? "Could not check for updates. Check your connection and try again."
-              : "The update could not be downloaded. Check your connection and try again.",
+          message: "Could not check for updates. Check your connection and try again.",
         });
     }
   }
 
-  function check(): Promise<void> {
-    if (!enabled || disposed || restarting || snapshot.status.kind === "ready")
-      return Promise.resolve();
+  // The engine downloads the release its last check found. No check runs while an update
+  // is available, so that is the release the user chose.
+  async function performDownload(
+    expectedGeneration: number,
+    { version, notes }: Extract<UpdateStatus, { kind: "available" }>,
+  ) {
+    if (!engine) return;
+    const current = () => !disposed && generation === expectedGeneration;
+    publish({ kind: "downloading", version, notes, percent: 0 });
+    const progress = ({ percent }: { percent: number }) => {
+      if (current())
+        publish({
+          kind: "downloading",
+          version,
+          notes,
+          percent: Math.max(0, Math.min(100, percent)),
+        });
+    };
+    engine.on("download-progress", progress);
+    try {
+      await engine.downloadUpdate();
+    } catch {
+      if (current())
+        publish({
+          kind: "failed",
+          message: "The update could not be downloaded. Check your connection and try again.",
+        });
+      return;
+    } finally {
+      engine.removeListener("download-progress", progress);
+    }
+    if (current()) publish({ kind: "ready", version, notes });
+  }
+
+  function run(task: (expectedGeneration: number) => Promise<void>): Promise<void> {
+    if (!enabled || disposed || restarting) return Promise.resolve();
     if (running) return running;
-    const expectedGeneration = generation;
-    running = performCheck(expectedGeneration, snapshot.channel).finally(() => {
+    running = task(generation).finally(() => {
       running = null;
     });
     return running;
+  }
+
+  function check(): Promise<void> {
+    const { kind } = snapshot.status;
+    if (kind === "available" || kind === "ready") return Promise.resolve();
+    return run((expectedGeneration) => performCheck(expectedGeneration, snapshot.channel));
+  }
+
+  function download(): Promise<void> {
+    const update = snapshot.status;
+    if (update.kind !== "available") return Promise.resolve();
+    return run((expectedGeneration) => performDownload(expectedGeneration, update));
   }
 
   return {
@@ -196,6 +222,7 @@ export function createUpdates({
       pollTimer.unref();
     },
     check,
+    download,
     releaseUrl(): string | null {
       const update = pendingUpdate(snapshot.status);
       return (
