@@ -1,7 +1,12 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
-import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  pendingUpdate,
+  type PillState,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import { updateButton, updateCard, updateStatusText, type UpdateButton } from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
@@ -236,11 +241,7 @@ export function SidebarUpdates({
         }}
         style={[
           styles.button,
-          (status.kind === "available" ||
-            status.kind === "downloading" ||
-            status.kind === "ready" ||
-            status.kind === "installing") &&
-            styles.hasUpdate,
+          (pendingUpdate(status) !== null || status.kind === "installing") && styles.hasUpdate,
           card?.kind === "error" && styles.failed,
           status.kind === "disabled" && styles.dimmed,
           action === null && styles.unavailable,

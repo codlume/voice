@@ -133,20 +133,20 @@ describe("updates", () => {
     await updates.download();
     await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
     expect(updates.snapshot.status.kind).toBe("ready");
-    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
     updates.dispose();
   });
 
-  test("download re-checks the feed and fetches the release it currently offers", async () => {
+  test("download fetches the update the user saw without checking the feed again", async () => {
     const { updates, engine, snapshots } = setup();
     await updates.check();
     engine.checkForUpdates.mockResolvedValue(result("0.0.3"));
+    const before = snapshots.length;
     await updates.download();
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.3", notes: [] });
-    expect(
-      snapshots.some((s) => s.status.kind === "downloading" && s.status.version === "0.0.2"),
-    ).toBe(false);
+    expect(snapshots.slice(before).map((s) => s.status.kind)).toEqual(["downloading", "ready"]);
+    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
   });
 
   test("development never contacts a feed, even on manual actions", async () => {
@@ -188,12 +188,12 @@ describe("updates", () => {
     const first = updates.download();
     await vi.waitFor(() => expect(engine.downloadUpdate).toHaveBeenCalledOnce());
     const duplicate = updates.check();
-    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
     engine.checkForUpdates.mockResolvedValue(result("0.0.3-nightly.9"));
     const switching = updates.setChannel("nightly");
     engine.emit("download-progress", { percent: 99 });
     expect(updates.snapshot.status.kind).toBe("checking");
-    expect(engine.setFeedURL).toHaveBeenCalledTimes(2);
+    expect(engine.setFeedURL).toHaveBeenCalledOnce();
     download.resolve(["Voice.zip"]);
     await Promise.all([first, duplicate, switching]);
     expect(updates.snapshot.status).toEqual({
@@ -233,7 +233,7 @@ describe("updates", () => {
     await updates.check();
     await updates.download();
     expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
-    expect(engine.checkForUpdates).toHaveBeenCalledTimes(4);
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
     expect(engine.downloadUpdate).toHaveBeenCalledTimes(2);
   });
 
