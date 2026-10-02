@@ -14,6 +14,7 @@ export function startRendererDiagnostics() {
   void import("@sentry/electron/renderer").then((Sentry) =>
     Sentry.init({
       sendDefaultPii: false,
+      enableLogs: false,
       integrations: (defaults) => defaults.filter(({ name }) => INTEGRATIONS.has(name)),
     }),
   );
