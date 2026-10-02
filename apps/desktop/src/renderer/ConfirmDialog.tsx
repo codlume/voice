@@ -23,7 +23,7 @@ const styles = stylex.create({
     position: "fixed",
     top: "50%",
     left: "50%",
-    width: "min(360px, calc(100vw - 32px))",
+    width: "min(420px, calc(100vw - 32px))",
     padding: space.lg,
     borderWidth: 1,
     borderStyle: "solid",
@@ -51,26 +51,32 @@ const styles = stylex.create({
   },
   actions: {
     display: "flex",
+    // Buttons do not shrink, so a row wider than the popup must wrap rather than spill out.
+    flexWrap: "wrap",
     justifyContent: "flex-end",
     gap: space.sm,
     marginTop: space.lg,
   },
 });
 
+type ConfirmAction = {
+  label: string;
+  variant: "primary" | "destructive";
+  onClick: () => void;
+};
+
 export function ConfirmDialog({
   open,
   onOpenChange,
   title,
   description,
-  confirmLabel,
-  onConfirm,
+  actions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
-  confirmLabel: string;
-  onConfirm: () => void;
+  actions: readonly ConfirmAction[];
 }) {
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -100,9 +106,15 @@ export function ConfirmDialog({
           <div {...stylex.props(styles.actions)}>
             {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
             <AlertDialog.Close render={<Button variant="secondary" />}>Cancel</AlertDialog.Close>
-            <AlertDialog.Close render={<Button variant="destructive" />} onClick={onConfirm}>
-              {confirmLabel}
-            </AlertDialog.Close>
+            {actions.map(({ label, variant, onClick }) => (
+              <AlertDialog.Close
+                key={label}
+                render={<Button variant={variant} />}
+                onClick={onClick}
+              >
+                {label}
+              </AlertDialog.Close>
+            ))}
           </div>
         </AlertDialog.Popup>
       </AlertDialog.Portal>

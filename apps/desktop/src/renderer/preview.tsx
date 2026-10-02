@@ -150,6 +150,16 @@ const hubScenes: Record<string, Snapshot> = {
       },
     ]),
   ),
+  "ready-no-transcript": {
+    ...ready,
+    last: null,
+    updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
+  },
+  "ready-not-inserted": {
+    ...ready,
+    session: done({ kind: "notInserted", reason: "focusChanged" }),
+    updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
+  },
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -201,7 +211,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         500,
       );
     },
-    restartForUpdate: async () => {
+    restartForUpdate: async (request) => {
+      console.info("restartForUpdate", JSON.stringify(request));
       if (snapshot.updates.status.kind !== "ready") throw new Error("No update is ready.");
       set({
         ...snapshot,
@@ -211,6 +222,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         },
       });
     },
+    onRestartRequest: () => () => {},
     openRelease: async () => {
       console.info("openRelease");
     },

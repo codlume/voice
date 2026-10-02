@@ -598,7 +598,11 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
               />
             )}
             <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
-              <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+              <SidebarUpdates
+                updates={snapshot.updates}
+                session={snapshot.session}
+                last={snapshot.last}
+              />
             </div>
           </div>
         </aside>

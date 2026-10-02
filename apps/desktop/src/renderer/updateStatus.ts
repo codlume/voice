@@ -2,6 +2,8 @@ import {
   pendingUpdate,
   type PendingUpdate,
   type PillState,
+  type RestartChoice,
+  type Snapshot,
   type UpdateStatus,
 } from "../shared/api.ts";
 
@@ -73,4 +75,31 @@ export function updateButton(status: UpdateStatus, session: PillState): UpdateBu
 
 function button(action: UpdateButton["action"], label: string): UpdateButton {
   return { action, label };
+}
+
+export type RestartPrompt = {
+  description: string;
+  actions: readonly { label: string; choice: RestartChoice }[];
+};
+
+const restartAction = { label: "Restart", choice: "restart" } as const;
+const copyAndRestartAction = {
+  label: "Copy transcript and restart",
+  choice: "copyTranscriptAndRestart",
+} as const;
+
+export function restartPrompt(last: Snapshot["last"], session: PillState): RestartPrompt {
+  if (last === null) {
+    return {
+      description: "Voice will close and reopen with the downloaded version.",
+      actions: [restartAction],
+    };
+  }
+  // A transcript that never reached its target exists nowhere else, so restarting must save it.
+  const needsRecovery = session.kind === "done" && session.outcome.kind !== "inserted";
+  return {
+    description:
+      "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents.",
+    actions: needsRecovery ? [copyAndRestartAction] : [restartAction, copyAndRestartAction],
+  };
 }
