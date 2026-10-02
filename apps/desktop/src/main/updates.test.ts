@@ -4,7 +4,7 @@ import type { UpdateCheckResult } from "electron-updater";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { UpdatesSnapshot } from "../shared/api.ts";
-import { createUpdates, parseReleaseConfig } from "./updates.ts";
+import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
 
 function result(
   version = "0.0.2",
@@ -83,6 +83,30 @@ describe("release configuration", () => {
       { channel: "stable", updateUrl: "https://example.com?token=secret" },
     ]) {
       expect(parseReleaseConfig(value)).toBeNull();
+    }
+  });
+});
+
+describe("restart requests", () => {
+  test("accept a known choice with the transcript the user saw, and nothing else", () => {
+    const last = { raw: "um ship it", text: "Ship it." };
+    expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", last })).toEqual({
+      choice: "copyTranscriptAndRestart",
+      last,
+    });
+    expect(parseRestartRequest({ choice: "restart", last: null })).toEqual({
+      choice: "restart",
+      last: null,
+    });
+    for (const value of [
+      null,
+      "restart",
+      { choice: "restart" },
+      { choice: "quit", last: null },
+      { choice: "restart", last: { raw: "um ship it" } },
+      { choice: "restart", last: { raw: 1, text: "Ship it." } },
+    ]) {
+      expect(parseRestartRequest(value)).toBeNull();
     }
   });
 });
@@ -216,6 +240,19 @@ describe("updates", () => {
     expect(prepareRestart).not.toHaveBeenCalled();
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
     expect(updates.snapshot.status.kind).toBe("ready");
+  });
+
+  test("runs the pre-install step only once a restart is allowed", async () => {
+    const { updates, engine, canRestart } = setup();
+    await updates.check();
+    const beforeInstall = vi.fn();
+    canRestart.mockReturnValue(false);
+    await expect(updates.restart(beforeInstall)).rejects.toThrow("Finish dictation");
+    expect(beforeInstall).not.toHaveBeenCalled();
+    canRestart.mockReturnValue(true);
+    await updates.restart(beforeInstall);
+    expect(beforeInstall).toHaveBeenCalledOnce();
+    expect(engine.quitAndInstall).toHaveBeenCalledOnce();
   });
 
   test("install waits for native shutdown exactly once", async () => {

@@ -114,11 +114,17 @@ export type Snapshot = {
 };
 
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";
+/** `last` is the transcript the user saw when they chose, so main can refuse if a newer one arrived. */
+export type RestartRequest = { choice: RestartChoice; last: Snapshot["last"] };
+
+export function sameTranscript(a: Snapshot["last"], b: Snapshot["last"]): boolean {
+  return a?.raw === b?.raw && a?.text === b?.text;
+}
 
 export type VoiceApi = {
   diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
-  restartForUpdate(choice: RestartChoice): Promise<void>;
+  restartForUpdate(request: RestartRequest): Promise<void>;
   /** The tray asks the hub to confirm a restart. A request made before anyone listens is kept. */
   onRestartRequest(listener: () => void): () => void;
   openRelease(): Promise<void>;

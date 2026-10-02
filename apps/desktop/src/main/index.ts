@@ -20,6 +20,7 @@ import { autoUpdater } from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
+  sameTranscript,
   type LoginItem,
   type PermissionKind,
   type SettingsPatch,
@@ -39,7 +40,7 @@ import { idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
-import { createUpdates, parseReleaseConfig } from "./updates.ts";
+import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -505,13 +506,18 @@ async function main() {
 
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
-  ipcMain.handle(Channel.restartForUpdate, (_event, choice: unknown) => {
-    if (choice !== "restart" && choice !== "copyTranscriptAndRestart") return;
-    if (choice === "copyTranscriptAndRestart") {
-      const last = store.state.last;
-      if (last) clipboard.writeText(last.text || last.raw);
+  ipcMain.handle(Channel.restartForUpdate, (_event, value: unknown) => {
+    const request = parseRestartRequest(value);
+    if (!request) return;
+    const last = store.state.last;
+    if (!sameTranscript(request.last, last)) {
+      throw new Error("A new transcript arrived. Check it, then restart.");
     }
-    return updates.restart();
+    return updates.restart(
+      request.choice === "copyTranscriptAndRestart" && last
+        ? () => clipboard.writeText(last.text || last.raw)
+        : undefined,
+    );
   });
   ipcMain.handle(Channel.openRelease, () => {
     const url = updates.releaseUrl();

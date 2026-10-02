@@ -211,8 +211,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
         500,
       );
     },
-    restartForUpdate: async (choice) => {
-      console.info("restartForUpdate", choice);
+    restartForUpdate: async (request) => {
+      console.info("restartForUpdate", JSON.stringify(request));
       if (snapshot.updates.status.kind !== "ready") throw new Error("No update is ready.");
       set({
         ...snapshot,

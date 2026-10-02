@@ -1,7 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
-import type { PillState, Snapshot, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  sameTranscript,
+  type PillState,
+  type Snapshot,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
@@ -187,9 +193,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The update action failed. Try again.";
 }
 
-const sameTranscript = (a: Snapshot["last"], b: Snapshot["last"]) =>
-  a?.raw === b?.raw && a?.text === b?.text;
-
 export function SidebarUpdates({
   updates,
   session,
@@ -262,7 +265,10 @@ export function SidebarUpdates({
           actions={confirm.prompt.actions.map((option) => ({
             label: option.label,
             variant: "primary",
-            onClick: () => void run(() => window.voice.restartForUpdate(option.choice)),
+            onClick: () =>
+              void run(() =>
+                window.voice.restartForUpdate({ choice: option.choice, last: confirm.last }),
+              ),
           }))}
         />
       )}
