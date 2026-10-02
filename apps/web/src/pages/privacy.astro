@@ -1,0 +1,212 @@
+---
+import * as stylex from "@stylexjs/stylex";
+
+import Page from "../layouts/Page.astro";
+import { CONTACT_EMAIL, OPERATOR_NAME, POLICY_UPDATED } from "../site.ts";
+import { styles } from "../styles.ts";
+
+export const prerender = true;
+
+const h2 = stylex.attrs(styles.heading);
+const p = stylex.attrs(styles.text);
+const ul = stylex.attrs(styles.list);
+const li = stylex.attrs(styles.item);
+const a = stylex.attrs(styles.link);
+const mailto = `mailto:${CONTACT_EMAIL}`;
+---
+
+<Page
+  title="Privacy Policy | Voice"
+  description="How the Voice Mac app, the Voice website, and Voice accounts handle your data."
+  path="/privacy"
+>
+  <main {...stylex.attrs(styles.prose)}>
+    <h1 {...stylex.attrs(styles.headline)}>Privacy Policy</h1>
+    <p {...stylex.attrs(styles.updated)}>
+      Last updated <time datetime={POLICY_UPDATED}>{POLICY_UPDATED}</time>
+    </p>
+
+    <p {...stylex.attrs(styles.lede)}>
+      Voice transcribes your speech on your Mac. Your audio and your words do not leave your Mac.
+    </p>
+
+    <h2 {...h2}>Who we are</h2>
+    <p {...p}>
+      Voice is operated by {OPERATOR_NAME} ("we").
+      You can reach us at <a href={mailto} {...a}>{CONTACT_EMAIL}</a>.
+    </p>
+    <p {...p}>
+      This policy covers the Voice Mac app, this website (voice.codlume.com), and Voice accounts.
+    </p>
+
+    <h2 {...h2}>What stays on your Mac</h2>
+    <ul {...ul}>
+      <li {...li}>
+        <strong>Speech recognition.</strong> Voice recognizes speech locally, using the Parakeet model.
+        Voice captures audio only while you hold the dictation shortcut. The audio is held in memory
+        only. It is never written to disk and never sent anywhere. Voice discards it after
+        transcription, or when you cancel.
+      </li>
+      <li {...li}>
+        <strong>Cleanup.</strong> This optional step tidies up the transcribed text. It is on by
+        default and works in English. It runs locally with a local model. Nothing is sent.
+      </li>
+      <li {...li}>
+        <strong>Transcripts and files.</strong> Voice keeps the last transcript in memory until you
+        quit Voice. It saves no history. The only file Voice writes for you is its settings file. It
+        holds your microphone, shortcut, and preferences, and none of your text.
+      </li>
+      <li {...li}>
+        <strong>Typing into apps.</strong> Voice types into the focused app through macOS
+        Accessibility. It reads the contents of the focused field only to confirm that the text
+        landed. What it reads stays in memory and is never stored or sent. If Voice has to paste, it
+        uses the clipboard temporarily. Afterwards it restores your previous clipboard contents,
+        unless something else changed the clipboard in the meantime. Voice never reads the name of
+        the focused app, your screen, or your windows.
+      </li>
+      <li {...li}>
+        <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear
+        you while you hold the shortcut. Accessibility lets it detect the shortcut and type text. The
+        keyboard listener only looks for the shortcut. Your keystrokes are not recorded or sent.
+      </li>
+    </ul>
+
+    <h2 {...h2}>What the Mac app sends over the network</h2>
+    <ul {...ul}>
+      <li {...li}>
+        <strong>Model downloads.</strong> Voice fetches the speech and cleanup models from Hugging
+        Face (huggingface.co), and only when you click to download them. Hugging Face sees a normal
+        download request, including your IP address. Voice sends no personal data from the app.
+      </li>
+      <li {...li}>
+        <strong>Update checks.</strong> About 15 seconds after launch, and then every 4 hours, Voice
+        requests the update feed from downloads.voice.codlume.com, which is hosted on Cloudflare. The
+        request includes your release channel, your IP address, and a random identifier. The update
+        library generates this identifier on its first check and stores it on your Mac. We do not
+        use it to identify you. You can reset it by deleting the app's data.
+      </li>
+      <li {...li}>
+        <strong>Diagnostics (opt-in, off by default).</strong> If you turn on sharing in Settings &gt;
+        Data and Privacy, or during setup, Voice sends crash reports, dictation timings, and app
+        events (such as a failed cleanup) to Sentry, hosted in the EU (Germany). Reports never
+        include your words, your audio, your clipboard, or the app you dictate into. Voice removes
+        error messages, and your Mac username in file paths, before sending. Turning sharing off
+        stops sending immediately. Sentry receives your IP address as part of the connection. We
+        configure Sentry not to store it. Sentry deletes reports after the retention period for our
+        plan.
+      </li>
+    </ul>
+
+    <h2 {...h2}>Voice accounts</h2>
+    <p {...p}>
+      Accounts are optional and not yet available in every Voice build. You never have to sign in,
+      and dictation works the same whether you are signed in or not.
+    </p>
+    <ul {...ul}>
+      <li {...li}>
+        <strong>Sign in with Google.</strong> Voice asks Google only for your name, email address,
+        and profile picture (the openid, email, and profile scopes), plus Google's identifier for
+        your account. We use them to create your account, show who is signed in, and recognize you
+        when you sign in again. We do not request access to Gmail, Calendar, Drive, or any other
+        Google data. We do not ask Google for offline access.
+      </li>
+      <li {...li}>
+        <strong>Storage.</strong> We store account records, sessions, and the Google tokens issued
+        at sign-in in a Cloudflare D1 database located in Western Europe. Stored tokens are
+        encrypted. Each session also records the IP address and browser or app details (user
+        agent) it was created from. On your Mac, your session token is kept encrypted in the macOS
+        Keychain.
+      </li>
+      <li {...li}>
+        <strong>Security records.</strong> To limit abuse, the account service keeps short-lived
+        rate-limit records keyed by IP address.
+      </li>
+      <li {...li}>
+        <strong>Signing out and deleting your account.</strong> Signing out ends the session on the
+        server and removes it from your Mac. Delete account (in Settings &gt; Account) removes your
+        user record, your sessions, and your linked Google account record. We keep your account
+        until you delete it.
+      </li>
+      <li {...li}>
+        <strong>Nightly and Stable.</strong> Nightly and Stable builds use separate account
+        databases.
+      </li>
+      <li {...li}>
+        <strong>What never reaches the account service.</strong> We never send audio, transcripts,
+        clipboard contents, or app context to the account service.
+      </li>
+    </ul>
+    <p {...p}>
+      We use Google user data only to provide sign-in. We do not sell it, use it for advertising, or
+      use it to train models. We share it only with the service providers listed below.
+    </p>
+
+    <h2 {...h2}>The website</h2>
+    <p {...p}>
+      This website uses no cookies, no analytics, and no third-party scripts. Cloudflare serves the
+      site. It processes your IP address and request details to deliver the site and protect it
+      from abuse.
+    </p>
+
+    <h2 {...h2}>Service providers</h2>
+    <ul {...ul}>
+      <li {...li}>
+        <strong>Cloudflare</strong> serves this website, the update downloads, and the account
+        service. The account database is in Western Europe.
+      </li>
+      <li {...li}>
+        <strong>Sentry</strong> receives diagnostics, only if you opt in. It is hosted in the EU.
+      </li>
+      <li {...li}>
+        <strong>Google</strong> provides sign-in, only if you sign in.
+      </li>
+      <li {...li}>
+        <strong>Hugging Face</strong> serves the model downloads, only when you click download.
+      </li>
+    </ul>
+    <p {...p}>We do not sell personal data or share it for advertising.</p>
+
+    <h2 {...h2}>Legal bases</h2>
+    <p {...p}>Under the GDPR, we rely on these legal bases:</p>
+    <ul {...ul}>
+      <li {...li}>
+        <strong>Accounts.</strong> Performance of a contract. We need this data to provide the
+        account you asked for.
+      </li>
+      <li {...li}>
+        <strong>Diagnostics.</strong> Your consent. You can withdraw it at any time in Settings.
+      </li>
+      <li {...li}>
+        <strong>Update checks, website delivery, and abuse protection.</strong> Our legitimate
+        interests in keeping the app up to date and our services secure.
+      </li>
+    </ul>
+
+    <h2 {...h2}>International transfers</h2>
+    <p {...p}>
+      Some providers (Cloudflare, Google, and Hugging Face) may process data outside the European
+      Economic Area. They rely on safeguards such as the EU Standard Contractual Clauses or the
+      EU-US Data Privacy Framework.
+    </p>
+
+    <h2 {...h2}>Your rights</h2>
+    <p {...p}>
+      You have the right to access, correct, and delete your personal data. You can also restrict or
+      object to its processing, and receive it in a portable format. Where we rely on your consent,
+      you can withdraw it at any time.
+    </p>
+    <p {...p}>
+      To exercise these rights, contact us at <a href={mailto} {...a}>{CONTACT_EMAIL}</a>. You also
+      have the right to complain to your local data protection authority.
+    </p>
+
+    <h2 {...h2}>Children</h2>
+    <p {...p}>Voice accounts are not intended for children under 16.</p>
+
+    <h2 {...h2}>Changes</h2>
+    <p {...p}>
+      When we change this policy, we update this page and the "Last updated" date. We announce
+      significant changes in the app or in the release notes.
+    </p>
+  </main>
+</Page>
