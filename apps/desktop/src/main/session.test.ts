@@ -117,7 +117,7 @@ describe("hold and release", () => {
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 300 }]);
   });
 
   test("a tap released before capture.started is tooShort once capture starts", () => {
@@ -155,7 +155,7 @@ describe("hold and release", () => {
   test("a hold of 250 ms or more stops capture and transcribes", () => {
     const { state, effects } = run([down(0), started(50), up(250)]);
     expect(state).toEqual({ phase: "transcribing", id: ID });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 250 }]);
   });
 
   test("Escape during starting cancels capture and returns straight to idle", () => {

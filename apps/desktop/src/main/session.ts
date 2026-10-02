@@ -29,7 +29,7 @@ export type SessionEvent =
 
 export type Effect =
   | { type: "startCapture"; id: string }
-  | { type: "stopCapture"; id: string }
+  | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string }
   | { type: "insert"; id: string; text: string }
@@ -60,7 +60,10 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
   if (releasedAt - pressedAt < MIN_HOLD_MS) {
     return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
   }
-  return { state: { phase: "transcribing", id }, effects: [{ type: "stopCapture", id }] };
+  return {
+    state: { phase: "transcribing", id },
+    effects: [{ type: "stopCapture", id, releasedAt }],
+  };
 }
 
 function insert(id: string, raw: string, text: string): Step {

@@ -99,8 +99,8 @@ export function createDictation(options: DictationOptions): Dictation {
     for (const effect of effects) run(effect);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
-      // A release recorded during `starting` changes the state but not the deadline.
-      if (state.phase !== before.phase) armWatchdog(state);
+      const phaseChanged = state.phase !== before.phase;
+      if (phaseChanged) armWatchdog(state);
     }
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
       finish(state.id, state.outcome);
@@ -141,7 +141,7 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         return;
       case "stopCapture":
-        track(effect.id, { releasedAt: now() });
+        track(effect.id, { releasedAt: effect.releasedAt });
         send({ type: "capture.stop", id: effect.id });
         return;
       case "cancelCapture":

@@ -315,6 +315,21 @@ describe("createDictation", () => {
     expect(json).not.toContain(id.slice(0, 8));
   });
 
+  test("releaseToInsertMs counts from the release even when capture caught up later", () => {
+    const h = harness({ cleanupEnabled: false });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    vi.advanceTimersByTime(300);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(200);
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 500 });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "hi", audioMs: 0, asrMs: 10 });
+    vi.advanceTimersByTime(100);
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
+  });
+
   test("reports a failed session once, with its language", () => {
     const h = harness({ dictationLanguage: "pl" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
