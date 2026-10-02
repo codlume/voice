@@ -96,15 +96,17 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   };
 }
 
-// Logs bypass scrubEvent and the SDK's beforeSendLog sees neither scope attributes nor renderer
-// logs, so every log item is scrubbed here, on its way out. An envelope left empty is not sent.
-function scrubLogItems([headers, items]: Envelope): Envelope | undefined {
+// The SDK's beforeSendLog sees neither scope attributes nor renderer logs, so logs are scrubbed
+// here.
+function scrubEnvelope([headers, items]: Envelope): Envelope | undefined {
   const kept: EnvelopeItem[] = [];
   for (const item of items) {
-    if (item[0].type !== "log") {
+    const type = item[0].type;
+    if (type === "event" || type === "transaction") {
       kept.push(item);
       continue;
     }
+    if (type !== "log") continue;
     const logs = scrubLogs(item[1]);
     if (logs.items.length > 0) kept.push([{ ...item[0], item_count: logs.items.length }, logs]);
   }
@@ -159,7 +161,7 @@ export function startDiagnostics(options: {
       return {
         ...base,
         send: (envelope) => {
-          const scrubbed = on() ? scrubLogItems(envelope) : undefined;
+          const scrubbed = on() ? scrubEnvelope(envelope) : undefined;
           return scrubbed ? base.send(scrubbed) : Promise.resolve({});
         },
       };
