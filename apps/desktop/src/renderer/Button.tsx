@@ -24,6 +24,16 @@ const styles = stylex.create({
     color: color.primaryForeground,
     fontWeight: 500,
   },
+  destructive: {
+    minWidth: 76,
+    borderWidth: 0,
+    backgroundColor: {
+      default: color.error,
+      ":hover": `color-mix(in srgb, ${color.error} 90%, transparent)`,
+    },
+    color: color.primaryForeground,
+    fontWeight: 500,
+  },
   secondary: {
     borderWidth: 1,
     borderStyle: "solid",
@@ -37,7 +47,7 @@ export function Button({
   variant = "primary",
   ...props
 }: Omit<ComponentProps<"button">, "type" | "className" | "style"> & {
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "destructive";
 }) {
   return <button type="button" {...props} {...stylex.props(styles.button, styles[variant])} />;
 }

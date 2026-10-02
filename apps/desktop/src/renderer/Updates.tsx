@@ -1,9 +1,22 @@
 import * as stylex from "@stylexjs/stylex";
-import { useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
-import type { PillState, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import {
+  sameTranscript,
+  type PillState,
+  type Snapshot,
+  type UpdateStatus,
+  type UpdatesSnapshot,
+} from "../shared/api.ts";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
-import { updateButton, updateCard, updateStatusText } from "./updateStatus.ts";
+import {
+  restartPrompt,
+  updateButton,
+  updateCard,
+  updateStatusText,
+  type RestartPrompt,
+} from "./updateStatus.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -183,14 +196,33 @@ function errorMessage(error: unknown): string {
 export function SidebarUpdates({
   updates,
   session,
+  last,
 }: {
   updates: UpdatesSnapshot;
   session: PillState;
+  last: Snapshot["last"];
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
+  // The prompt is fixed when it opens, so its choices match the transcript the user saw.
+  const [confirm, setConfirm] = useState<{
+    open: boolean;
+    last: Snapshot["last"];
+    prompt: RestartPrompt;
+  } | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
+
+  // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
+  if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
+    setConfirm({ ...confirm, open: false });
+
+  const confirmRestart = () =>
+    setConfirm({ open: true, last, prompt: restartPrompt(last, session) });
+  const onRestartRequest = useEffectEvent(() => {
+    if (action === "restart") confirmRestart();
+  });
+  useEffect(() => window.voice.onRestartRequest(() => onRestartRequest()), []);
 
   async function run(task: () => Promise<void>) {
     setActionError(null);
@@ -211,9 +243,7 @@ export function SidebarUpdates({
         label={label}
         disabled={action === null}
         onClick={() =>
-          void run(() =>
-            action === "restart" ? window.voice.restartForUpdate() : window.voice.checkForUpdates(),
-          )
+          action === "restart" ? confirmRestart() : void run(() => window.voice.checkForUpdates())
         }
         style={[
           styles.button,
@@ -228,6 +258,22 @@ export function SidebarUpdates({
       >
         <StatusIcon status={status} />
       </UpdateCardTrigger>
+      {confirm && (
+        <ConfirmDialog
+          open={confirm.open}
+          onOpenChange={(open) => setConfirm({ ...confirm, open })}
+          title="Restart Voice to install the update?"
+          description={confirm.prompt.description}
+          actions={confirm.prompt.actions.map((option) => ({
+            label: option.label,
+            variant: "primary",
+            onClick: () =>
+              void run(() =>
+                window.voice.restartForUpdate({ choice: option.choice, last: confirm.last }),
+              ),
+          }))}
+        />
+      )}
     </>
   );
 }
