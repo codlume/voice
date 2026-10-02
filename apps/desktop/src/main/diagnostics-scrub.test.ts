@@ -1,7 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import * as NodePath from "node:path";
+
 import type { Event } from "@sentry/electron/main";
 import { describe, expect, test } from "vite-plus/test";
 
-import { HELPER_EXIT_MESSAGE, scrubEvent } from "./diagnostics-scrub.ts";
+import { HELPER_EXIT_MESSAGE, HELPER_LOGS, scrubEvent, scrubLogs } from "./diagnostics-scrub.ts";
 
 const DICTATION =
   "Hi Anna, can we move our meeting to Thursday at three thirty? https://example.com/anna 4242";
@@ -259,5 +262,125 @@ describe("scrubEvent", () => {
     const before = structuredClone(errorEvent);
     scrubEvent(errorEvent);
     expect(errorEvent).toEqual(before);
+  });
+});
+
+const sdkAttributes = {
+  "sentry.release": { value: "voice@0.14.0", type: "string" },
+  "sentry.environment": { value: "stable", type: "string" },
+  "sentry.sdk.name": { value: "sentry.javascript.electron", type: "string" },
+  "sentry.sdk.version": { value: "7.20.0", type: "string" },
+  "sentry.timestamp.sequence": { value: 0, type: "integer" },
+};
+
+const logPayload = {
+  version: 2,
+  items: [
+    {
+      timestamp: 1_790_000_001.05,
+      level: "info",
+      body: "dictation session finished",
+      trace_id: "11111111111111111111111111111111",
+      severity_number: 9,
+      attributes: {
+        outcome: { value: "inserted", type: "string" },
+        asrMs: { value: 120, type: "integer" },
+        insertMs: { value: 30.5, type: "double" },
+        "insert.method": { value: { nested: DICTATION }, type: "string" },
+        audioMs: { value: "4242", type: "integer" },
+        startMs: { value: Number.NaN, type: "double" },
+        ...sdkAttributes,
+        "user.email": { value: "anna@example.com", type: "string" },
+        "user.id": { value: "someone", type: "string" },
+        "server.address": { value: "someones-macbook", type: "string" },
+        "electron.process": { value: "browser", type: "string" },
+        "os.name": { value: "macOS", type: "string" },
+        "app.home": { value: home, type: "string" },
+        "sentry.trace.parent_span_id": { value: "3333333333333333", type: "string" },
+        "sentry.message.template": { value: "finished %s", type: "string" },
+        "sentry.message.parameter.0": { value: DICTATION, type: "string" },
+        transcript: { value: DICTATION, type: "string" },
+      },
+      extra: DICTATION,
+    },
+    {
+      timestamp: 1_790_000_002,
+      level: "error",
+      body: "helper exited",
+      attributes: {
+        "helper.error": { value: `spawn ${home}/voice-helper ENOENT`, type: "string" },
+        "helper.signal": { value: ["SIGKILL", DICTATION], type: "array" },
+      },
+    },
+    {
+      timestamp: 1_790_000_003,
+      level: "info",
+      body: "hotkey tap installed",
+      attributes: { "helper.protocol_version": { value: 4242, type: "integer" } },
+    },
+    { timestamp: 1_790_000_004, level: "info", body: DICTATION, attributes: sdkAttributes },
+    { timestamp: 1_790_000_004, level: "info", body: "toString" },
+    { timestamp: 1_790_000_004, level: "verbose", body: "helper ready" },
+    { level: "info", body: "helper ready" },
+    "Anna",
+  ],
+};
+
+describe("scrubLogs", () => {
+  test("keeps only allowlisted messages and each one's attributes", () => {
+    const scrubbed = scrubLogs(logPayload);
+    expect(leaks(JSON.stringify(scrubbed))).toEqual([]);
+    expect(scrubbed).toEqual({
+      version: 2,
+      items: [
+        {
+          timestamp: 1_790_000_001.05,
+          level: "info",
+          body: "dictation session finished",
+          trace_id: "11111111111111111111111111111111",
+          severity_number: 9,
+          attributes: {
+            outcome: { value: "inserted", type: "string" },
+            asrMs: { value: 120, type: "integer" },
+            insertMs: { value: 30.5, type: "double" },
+            ...sdkAttributes,
+          },
+        },
+        {
+          timestamp: 1_790_000_002,
+          level: "error",
+          body: "helper exited",
+          attributes: {
+            "helper.error": {
+              value:
+                "spawn /Users/<redacted>/Library/Application Support/Voice/voice-helper ENOENT",
+              type: "string",
+            },
+          },
+        },
+        { timestamp: 1_790_000_003, level: "info", body: "hotkey tap installed", attributes: {} },
+      ],
+    });
+  });
+
+  test("a payload that is not a log container keeps nothing", () => {
+    expect(scrubLogs(DICTATION)).toEqual({ items: [] });
+    expect(scrubLogs({ items: { body: "helper ready" } })).toEqual({ items: [] });
+  });
+
+  test("builds new logs and leaves the original untouched", () => {
+    const before = structuredClone(logPayload);
+    scrubLogs(logPayload);
+    expect(logPayload).toEqual(before);
+  });
+
+  // A helper line is matched by its exact text, so a reworded line would stop leaving silently.
+  test("every allowlisted helper line is a literal in the helper source", () => {
+    const sources = NodePath.join(import.meta.dirname, "../../../../native/voice-helper/Sources");
+    const swift = readdirSync(sources, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".swift"))
+      .map((file) => readFileSync(NodePath.join(sources, file), "utf8"))
+      .join("\n");
+    expect(HELPER_LOGS.filter((message) => !swift.includes(`"${message}"`))).toEqual([]);
   });
 });

@@ -2,8 +2,9 @@ import type { Event, Exception, StackFrame } from "@sentry/electron/main";
 
 import type { SessionTimings } from "./dictation.ts";
 
-// Every diagnostic leaves the machine through scrubEvent. It copies only the fields listed here
-// into a new event, so anything the SDK or a future integration adds is dropped by default.
+// Every diagnostic leaves the machine through scrubEvent or scrubLogs. They copy only the fields
+// listed here into a new event or log, so anything the SDK or a future integration adds is
+// dropped by default.
 
 export const HELPER_EXIT_MESSAGE = "Voice helper exited unexpectedly";
 export const SESSION_TRANSACTION = "dictation.session";
@@ -24,6 +25,60 @@ export const SESSION_MEASUREMENTS = [
   "insertMs",
   "releaseToInsertMs",
 ] as const satisfies readonly (keyof SessionTimings)[];
+
+// Helper log lines that carry no parameters. Any other helper line stays on this machine.
+export const HELPER_LOGS = [
+  "could not monitor microphone changes",
+  "clipboard changed during paste; not restoring previous contents",
+  "asr.remove ignored while the speech model downloads",
+  "asr.remove ignored while the speech model loads",
+  "streaming ASR incomplete; retrying complete capture",
+  "hotkey tap unavailable: CGEvent.tapCreate returned nil",
+  "hotkey tap unavailable: accessibility not granted",
+  "hotkey tap installed",
+] as const;
+type HelperLog = (typeof HELPER_LOGS)[number];
+
+// The only log messages that leave the machine, each with the attributes it may carry.
+export const LOGS = {
+  "dictation session finished": [...SESSION_ATTRIBUTES, ...SESSION_MEASUREMENTS],
+  "helper ready": ["helper.protocol_version"],
+  "helper protocol mismatch": ["helper.protocol_version", "helper.expected_version"],
+  "helper exited": HELPER_TAGS,
+  "helper event unparseable": [],
+  "helper stdin failed": ["error.code"],
+  "helper command dropped": ["command.type"],
+  "cleanup failed": ["error.type"],
+  "cleanup timed out": ["cleanup.budget_ms"],
+  "shutdown overran": ["shutdown.timeout_ms"],
+  "dock update failed": [],
+} as const satisfies Record<string, readonly string[]>;
+type AppLog = keyof typeof LOGS;
+
+const LOG_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+type LogMessage = AppLog | HelperLog;
+type LogAttributeKey<N extends LogMessage> = N extends AppLog ? (typeof LOGS)[N][number] : never;
+
+export type DiagnosticLog = {
+  [N in LogMessage]: {
+    message: N;
+    level: LogLevel;
+    attributes?: { [K in LogAttributeKey<N>]?: string | number | boolean | undefined };
+  };
+}[LogMessage];
+
+// Every message is printed locally; only an entry, when given, may leave the machine.
+export type Log = (message: string, entry?: DiagnosticLog) => void;
+
+const HELPER_LOG_MESSAGES: ReadonlySet<string> = new Set(HELPER_LOGS);
+export const isHelperLog = (message: string): message is HelperLog =>
+  HELPER_LOG_MESSAGES.has(message);
+
+// An error name is code, not data, unless something rewrote it into free text.
+export const errorType = (error: unknown) =>
+  error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : "Error";
 
 const MESSAGES: ReadonlySet<string> = new Set([HELPER_EXIT_MESSAGE]);
 const TAGS: ReadonlySet<string> = new Set([
@@ -177,5 +232,80 @@ export function scrubEvent(event: Event): Event {
     contexts: traceContext ? { trace: traceContext } : undefined,
     transaction: event.transaction === SESSION_TRANSACTION ? SESSION_TRANSACTION : undefined,
     measurements: measurements(event.measurements),
+  });
+}
+
+// Describe the build, not the machine or the user. Everything else the SDK attaches to a log
+// (user, host, OS, device, process, message template and parameters) is dropped.
+const LOG_SDK_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "sentry.release",
+  "sentry.environment",
+  "sentry.sdk.name",
+  "sentry.sdk.version",
+  "sentry.timestamp.sequence",
+]);
+const LEVELS: ReadonlySet<string> = new Set(LOG_LEVELS);
+const LOG_ATTRIBUTES: ReadonlyMap<string, readonly string[]> = new Map([
+  ...Object.entries(LOGS),
+  ...HELPER_LOGS.map((message) => [message, []] as const),
+]);
+
+type LogAttribute =
+  | { value: string; type: "string" }
+  | { value: number; type: "integer" | "double" }
+  | { value: boolean; type: "boolean" };
+
+type ScrubbedLog = {
+  timestamp: number;
+  level: LogLevel;
+  body: string;
+  trace_id?: string;
+  severity_number?: number;
+  attributes: Record<string, LogAttribute>;
+};
+
+const isLevel = (value: unknown): value is LogLevel =>
+  typeof value === "string" && LEVELS.has(value);
+
+function logAttribute(value: unknown): LogAttribute | undefined {
+  const { value: raw, type } = record(value);
+  if (type === "string" && typeof raw === "string") return { value: redact(raw), type };
+  const finite = number(raw);
+  if ((type === "integer" || type === "double") && finite !== undefined)
+    return { value: finite, type };
+  if (type === "boolean" && typeof raw === "boolean") return { value: raw, type };
+}
+
+function logAttributes(value: unknown, keys: readonly string[]): Record<string, LogAttribute> {
+  const kept: Record<string, LogAttribute> = {};
+  for (const [key, entry] of Object.entries(record(value))) {
+    const clean =
+      keys.includes(key) || LOG_SDK_ATTRIBUTES.has(key) ? logAttribute(entry) : undefined;
+    if (clean !== undefined) kept[key] = clean;
+  }
+  return kept;
+}
+
+function log(value: unknown): ScrubbedLog | undefined {
+  const { body, level, ...item } = record(value);
+  if (typeof body !== "string") return;
+  const keys = LOG_ATTRIBUTES.get(body);
+  const timestamp = number(item.timestamp);
+  if (keys === undefined || !isLevel(level) || timestamp === undefined) return;
+  return compact<ScrubbedLog>({
+    timestamp,
+    level,
+    body,
+    trace_id: text(item.trace_id),
+    severity_number: number(item.severity_number),
+    attributes: logAttributes(item.attributes, keys),
+  });
+}
+
+export function scrubLogs(payload: unknown): { version?: number; items: ScrubbedLog[] } {
+  const { version, items } = record(payload);
+  return compact({
+    version: number(version),
+    items: Array.isArray(items) ? items.flatMap((item) => log(item) ?? []) : [],
   });
 }

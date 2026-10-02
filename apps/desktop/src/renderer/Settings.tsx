@@ -502,7 +502,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
           <Row
             id="setting-diagnostics"
             title="Share crash reports"
-            detail="Sends crashes and dictation timings, such as how long transcription took. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
+            detail="Sends crashes, dictation timings, and app events, such as a helper restart or a failed cleanup. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
           >
             <Switch
               id="setting-diagnostics"

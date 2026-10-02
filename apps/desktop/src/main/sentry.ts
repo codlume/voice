@@ -2,8 +2,11 @@
 // Bundled into main.cjs, it added about 30 ms to every launch, sharing or not.
 export {
   captureMessage,
+  flush,
   init,
+  logger,
   makeElectronTransport as makeTransport,
   setMeasurement,
   startInactiveSpan,
+  withActiveSpan,
 } from "@sentry/electron/main";

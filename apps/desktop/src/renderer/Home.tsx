@@ -231,7 +231,7 @@ function CrashReportsRow({ on }: { on: boolean }) {
           Crash reports
         </label>
         <p {...stylex.props(styles.rowSubtitle)}>
-          Crashes and timings only. Never your words or audio.
+          Crashes, timings, and app events. Never your words or audio.
         </p>
       </div>
       <Switch

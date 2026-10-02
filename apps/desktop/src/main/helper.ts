@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
+import type { Log } from "./diagnostics-scrub.ts";
 import {
   HELPER_PROTOCOL_VERSION,
   parseHelperEvent,
@@ -24,7 +25,7 @@ export type HelperOptions = {
   onEvent: (event: HelperEvent) => void;
   onExit: (exit: HelperExit) => void;
   configure: () => HelperCommand[];
-  log: (message: string) => void;
+  log: Log;
 };
 
 export type Helper = {
@@ -49,7 +50,10 @@ export function startHelper(options: HelperOptions): Helper {
       const event = parseHelperEvent(line);
       if (!event) {
         const type = /"type"\s*:\s*"([^"]*)"/.exec(line)?.[1] ?? "?";
-        options.log(`helper: unparseable ${type} line (${line.length} chars)`);
+        options.log(`helper: unparseable ${type} line (${line.length} chars)`, {
+          message: "helper event unparseable",
+          level: "error",
+        });
         return;
       }
       if (event.type === "ready") {
@@ -57,6 +61,14 @@ export function startHelper(options: HelperOptions): Helper {
           // A restart would only meet the same binary, so this ends the helper for good.
           options.log(
             `helper: speaks protocol v${event.version} but this build expects v${HELPER_PROTOCOL_VERSION}; refusing to use it`,
+            {
+              message: "helper protocol mismatch",
+              level: "fatal",
+              attributes: {
+                "helper.protocol_version": event.version,
+                "helper.expected_version": HELPER_PROTOCOL_VERSION,
+              },
+            },
           );
           void stop();
           return;
@@ -68,7 +80,13 @@ export function startHelper(options: HelperOptions): Helper {
     createInterface({ input: proc.stderr }).on("line", (line) => options.log(`helper: ${line}`));
     // A write racing the helper's exit fails with EPIPE; without a listener that would throw
     // out of the event loop and take main down with it. The close handler does the recovery.
-    proc.stdin.on("error", (error) => options.log(`helper: stdin ${error.message}`));
+    proc.stdin.on("error", (error: NodeJS.ErrnoException) =>
+      options.log(`helper: stdin ${error.message}`, {
+        message: "helper stdin failed",
+        level: "warn",
+        attributes: { "error.code": error.code },
+      }),
+    );
 
     const onEnd = (reason: string, exit: HelperExit) => {
       if (ended) return;
@@ -89,7 +107,11 @@ export function startHelper(options: HelperOptions): Helper {
 
   function send(command: HelperCommand) {
     if (!child?.stdin.writable) {
-      options.log(`helper: dropped ${command.type} while not running`);
+      options.log(`helper: dropped ${command.type} while not running`, {
+        message: "helper command dropped",
+        level: "warn",
+        attributes: { "command.type": command.type },
+      });
       return;
     }
     child.stdin.write(`${JSON.stringify(command)}\n`);
