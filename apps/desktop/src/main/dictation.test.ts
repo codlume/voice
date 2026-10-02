@@ -651,6 +651,17 @@ describe("createDictation", () => {
     ]);
   });
 
+  test("a release while capture is still starting does not extend the start watchdog", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+  });
+
   test("the transcription watchdog waits longer while the speech model is still loading", () => {
     const h = harness({ asrModel: { state: "loading" } });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });

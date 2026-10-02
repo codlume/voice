@@ -99,7 +99,8 @@ export function createDictation(options: DictationOptions): Dictation {
     for (const effect of effects) run(effect);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
-      armWatchdog(state);
+      // A release recorded during `starting` changes the state but not the deadline.
+      if (state.phase !== before.phase) armWatchdog(state);
     }
     if (state.phase === "done" && before.phase !== "done") finish(state.id, state.outcome);
   }
