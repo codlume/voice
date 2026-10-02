@@ -2,6 +2,7 @@ import type { AppUpdater } from "electron-updater";
 
 import {
   pendingUpdate,
+  type RestartRequest,
   type UpdateChannel,
   type UpdateStatus,
   type UpdatesSnapshot,
@@ -23,6 +24,21 @@ export function parseReleaseConfig(value: unknown): ReleaseConfig | null {
   } catch {
     return null;
   }
+}
+
+export function parseRestartRequest(value: unknown): RestartRequest | null {
+  if (typeof value !== "object" || value === null) return null;
+  if (
+    !("choice" in value) ||
+    (value.choice !== "restart" && value.choice !== "copyTranscriptAndRestart")
+  )
+    return null;
+  if (!("last" in value)) return null;
+  const last = value.last;
+  if (last === null) return { choice: value.choice, last };
+  if (typeof last !== "object" || !("raw" in last) || !("text" in last)) return null;
+  if (typeof last.raw !== "string" || typeof last.text !== "string") return null;
+  return { choice: value.choice, last: { raw: last.raw, text: last.text } };
 }
 
 type Engine = Pick<
@@ -47,7 +63,6 @@ export function createUpdates({
   initial,
   onChange,
   canRestart,
-  confirmRestart,
   prepareRestart,
   onRestartFailure,
 }: {
@@ -56,7 +71,6 @@ export function createUpdates({
   initial: UpdatesSnapshot;
   onChange: (snapshot: UpdatesSnapshot) => void;
   canRestart: () => boolean;
-  confirmRestart: () => Promise<boolean>;
   prepareRestart: () => Promise<void>;
   onRestartFailure: () => void;
 }) {
@@ -228,16 +242,13 @@ export function createUpdates({
       await running;
       if (expectedGeneration === generation) await check();
     },
-    async restart() {
+    async restart(beforeInstall?: () => void) {
       if (!enabled || !engine || restarting || disposed || snapshot.status.kind !== "ready") return;
       if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
-      const expectedGeneration = generation;
       const version = snapshot.status.version;
       restarting = true;
       try {
-        if (!(await confirmRestart())) return;
-        if (!canRestart() || expectedGeneration !== generation)
-          throw new Error("Finish dictation before restarting Voice.");
+        beforeInstall?.();
         publish({ kind: "installing", version });
         await prepareRestart();
         engine.quitAndInstall();

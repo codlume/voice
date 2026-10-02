@@ -20,6 +20,7 @@ import { autoUpdater } from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
+  sameTranscript,
   type LoginItem,
   type PermissionKind,
   type SettingsPatch,
@@ -39,7 +40,7 @@ import { idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
-import { createUpdates, parseReleaseConfig } from "./updates.ts";
+import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -298,32 +299,6 @@ async function main() {
       lifecycle === "running" &&
       !dictating() &&
       store.state.settings.updateChannel === store.state.updates.channel,
-    confirmRestart: async () => {
-      const last = store.state.last;
-      const session = store.state.session;
-      const needsRecovery =
-        last !== null && session.phase === "done" && session.outcome.kind !== "inserted";
-      const buttons = last
-        ? needsRecovery
-          ? ["Cancel", "Copy transcript and restart"]
-          : ["Cancel", "Restart", "Copy transcript and restart"]
-        : ["Cancel", "Restart"];
-      const { response } = await dialog.showMessageBox({
-        type: "question",
-        message: "Restart Voice to install the update?",
-        detail: last
-          ? "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents."
-          : "Voice will close and reopen with the downloaded version.",
-        buttons,
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (response === 0) return false;
-      if (last !== store.state.last) return false;
-      if (last && buttons[response] === "Copy transcript and restart")
-        clipboard.writeText(last.text || last.raw);
-      return true;
-    },
     prepareRestart: async () => {
       lifecycle = "stopping";
       try {
@@ -372,11 +347,11 @@ async function main() {
     }
   }
 
-  function showHub() {
+  function showHub(): BrowserWindow {
     if (hub && !hub.isDestroyed()) {
       hub.show();
       hub.focus();
-      return;
+      return hub;
     }
     hub = new BrowserWindow({
       width: 960,
@@ -404,6 +379,17 @@ async function main() {
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
     loadPage(hub, "hub");
+    return hub;
+  }
+
+  // A request sent while the hub is still loading would reach the old document and be lost.
+  function requestRestart() {
+    const contents = showHub().webContents;
+    const send = () => {
+      if (!contents.isDestroyed()) contents.send(Channel.requestRestart);
+    };
+    if (contents.isLoading()) contents.once("did-finish-load", send);
+    else send();
   }
 
   const syncDock = createDockSync({
@@ -426,13 +412,6 @@ async function main() {
     if (last) clipboard.writeText(last[which]);
   }
   function refreshTray(state: AppState) {
-    const { kind } = state.updates.status;
-    const updateItem =
-      kind === "available"
-        ? { label: "Download update…", run: () => updates.download() }
-        : kind === "ready"
-          ? { label: "Restart to update…", run: () => updates.restart() }
-          : { label: "Check for updates…", run: () => updates.check() };
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Voice", click: showHub },
@@ -443,19 +422,23 @@ async function main() {
         },
         { type: "separator" },
         {
-          label: updateItem.label,
+          label:
+            state.updates.status.kind === "available"
+              ? "Download update…"
+              : state.updates.status.kind === "ready"
+                ? "Restart to update…"
+                : "Check for updates…",
           enabled:
             state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
           click: () => {
-            showHub();
-            void updateItem
-              .run()
-              .catch((error: unknown) =>
-                dialog.showErrorBox(
-                  "Voice update",
-                  error instanceof Error ? error.message : "Update failed.",
-                ),
-              );
+            if (state.updates.status.kind === "ready") {
+              requestRestart();
+            } else {
+              showHub();
+              void (state.updates.status.kind === "available"
+                ? updates.download()
+                : updates.check());
+            }
           },
         },
         { label: "Quit", role: "quit" },
@@ -527,28 +510,22 @@ async function main() {
     }
   }
 
-  async function uninstallModel(model: Model) {
-    assertCanUninstall(model);
-    const confirmation = {
-      type: "warning" as const,
-      message: `Uninstall the ${model.kind.toLowerCase()}?`,
-      detail: `${model.lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`,
-      buttons: ["Cancel", "Uninstall"],
-      defaultId: 0,
-      cancelId: 0,
-    };
-    const { response } = await (hub && !hub.isDestroyed()
-      ? dialog.showMessageBox(hub, confirmation)
-      : dialog.showMessageBox(confirmation));
-    if (response !== 1) return;
-    assertCanUninstall(model);
-    await modelControls[model.id].uninstall();
-  }
-
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.downloadUpdate, () => updates.download());
-  ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
+  ipcMain.handle(Channel.restartForUpdate, (_event, value: unknown) => {
+    const request = parseRestartRequest(value);
+    if (!request) return;
+    const last = store.state.last;
+    if (!sameTranscript(request.last, last)) {
+      throw new Error("A new transcript arrived. Check it, then restart.");
+    }
+    return updates.restart(
+      request.choice === "copyTranscriptAndRestart" && last
+        ? () => clipboard.writeText(last.text || last.raw)
+        : undefined,
+    );
+  });
   ipcMain.handle(Channel.openRelease, () => {
     const url = updates.releaseUrl();
     if (url) void shell.openExternal(url);
@@ -578,7 +555,9 @@ async function main() {
   });
   ipcMain.handle(Channel.uninstallModel, (_event, id: unknown) => {
     const model = models.find((candidate) => candidate.id === id);
-    if (model) return uninstallModel(model);
+    if (!model) return;
+    assertCanUninstall(model);
+    return modelControls[model.id].uninstall();
   });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
