@@ -174,9 +174,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
 
   async function items(type: EnvelopeItem[0]["type"]) {
     await SentryNode.flush(2000);
-    return envelopes.flatMap(([, list]) =>
-      (list as readonly EnvelopeItem[]).filter(([header]) => header.type === type),
-    );
+    return envelopes.flatMap(([, list]) => list.filter(([header]) => header.type === type));
   }
 
   return {

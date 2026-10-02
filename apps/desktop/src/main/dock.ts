@@ -1,4 +1,4 @@
-import type { DiagnosticLog } from "./diagnostics-scrub.ts";
+import type { Log } from "./diagnostics-scrub.ts";
 
 const DOCK_SHOW_SETTLE_MS = 1000;
 
@@ -10,7 +10,7 @@ export function createDockSync(deps: {
   wait: (ms: number) => Promise<void>;
   // Leaving the Dock deactivates Voice, which would drop the open hub behind other apps.
   afterChange: () => void;
-  log: (message: string, entry?: DiagnosticLog) => void;
+  log: Log;
 }): () => Promise<void> {
   const { dock, showInDock, wait, afterChange, log } = deps;
   let change: Promise<void> = Promise.resolve();

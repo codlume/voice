@@ -69,6 +69,9 @@ export type DiagnosticLog = {
   };
 }[LogMessage];
 
+// Every message is printed locally; only an entry, when given, may leave the machine.
+export type Log = (message: string, entry?: DiagnosticLog) => void;
+
 const HELPER_LOG_MESSAGES: ReadonlySet<string> = new Set(HELPER_LOGS);
 export const isHelperLog = (message: string): message is HelperLog =>
   HELPER_LOG_MESSAGES.has(message);

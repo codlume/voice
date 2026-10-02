@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
-import type { DiagnosticLog } from "./diagnostics-scrub.ts";
+import type { Log } from "./diagnostics-scrub.ts";
 import {
   HELPER_PROTOCOL_VERSION,
   parseHelperEvent,
@@ -25,7 +25,7 @@ export type HelperOptions = {
   onEvent: (event: HelperEvent) => void;
   onExit: (exit: HelperExit) => void;
   configure: () => HelperCommand[];
-  log: (message: string, entry?: DiagnosticLog) => void;
+  log: Log;
 };
 
 export type Helper = {

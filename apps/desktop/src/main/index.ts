@@ -28,7 +28,7 @@ import {
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { createCleanup } from "./cleanup.ts";
-import type { DiagnosticLog } from "./diagnostics-scrub.ts";
+import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
@@ -204,7 +204,7 @@ async function main() {
     consent: () => store.state.settings.diagnostics,
     crashDumpsDir: app.getPath("crashDumps"),
   });
-  const log = (message: string, entry?: DiagnosticLog) => {
+  const log: Log = (message, entry) => {
     console.log(`[voice] ${message}`);
     if (entry) diagnostics.log(entry);
   };

@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Cleanup } from "./cleanup.ts";
-import { errorType, isHelperLog, type DiagnosticLog } from "./diagnostics-scrub.ts";
+import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { step, type Effect as SessionEffect, type Session, type SessionEvent } from "./session.ts";
 import type { Store } from "./store.ts";
@@ -15,7 +15,7 @@ export type DictationOptions = {
   send: (command: HelperCommand) => void;
   cleanup: Pick<Cleanup, "clean" | "loaded">;
   onLevel: (level: number) => void;
-  log: (message: string, entry?: DiagnosticLog) => void;
+  log: Log;
   onSessionDone: (report: SessionReport) => void;
   now?: () => number;
 };

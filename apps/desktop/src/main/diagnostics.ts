@@ -100,7 +100,7 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
 // logs, so every log item is scrubbed here, on its way out. An envelope left empty is not sent.
 function scrubLogItems([headers, items]: Envelope): Envelope | undefined {
   const kept: EnvelopeItem[] = [];
-  for (const item of items as readonly EnvelopeItem[]) {
+  for (const item of items) {
     if (item[0].type !== "log") {
       kept.push(item);
       continue;
