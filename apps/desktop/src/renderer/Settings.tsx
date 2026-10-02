@@ -538,6 +538,11 @@ function ModelSection({
   const [pending, setPending] = useState(false);
   const [confirmingUninstall, setConfirmingUninstall] = useState(false);
   const view = modelView(model, status, { cleanupEnabled, dictating });
+  const canUninstall = view.actions.some(
+    ({ label, disabled }) => label === "Uninstall" && !disabled,
+  );
+  // Dictation or a download can withdraw Uninstall while the dialog is open.
+  if (confirmingUninstall && !canUninstall) setConfirmingUninstall(false);
 
   async function run(action: ModelAction) {
     setError("");
