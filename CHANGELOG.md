@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.16.0 (2026-10-02)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(desktop): add a Models settings page to install and uninstall models by @hadrysm in https://github.com/codlume/voice/pull/122
+* refactor(desktop): let the cleanup package own model removal by @hadrysm in https://github.com/codlume/voice/pull/134
+* test(desktop): add an end-to-end smoke for the Models page by @hadrysm in https://github.com/codlume/voice/pull/135
+* feat(desktop): send allowlisted app events to Sentry Logs by @hadrysm in https://github.com/codlume/voice/pull/139
+* chore: add the Sentry MCP server for Claude Code and Codex by @hadrysm in https://github.com/codlume/voice/pull/138
+* feat(desktop): add the update button next to Back in Settings by @hadrysm in https://github.com/codlume/voice/pull/140
+* perf(helper): cache microphone authorization off the capture hot path by @hadrysm in https://github.com/codlume/voice/pull/148
+* perf(cleanup): bisect chunk boundaries instead of re-tokenizing per word by @hadrysm in https://github.com/codlume/voice/pull/147
+* fix(desktop): stop a cleanup model download when Voice quits by @hadrysm in https://github.com/codlume/voice/pull/146
+* fix(cleanup): stop assertPlausibleCleanup from rejecting expanded openers and accepting lost text by @hadrysm in https://github.com/codlume/voice/pull/145
+* fix(desktop): drop unscrubbed envelope items before they reach Sentry by @hadrysm in https://github.com/codlume/voice/pull/144
+* fix(desktop): keep the start watchdog deadline and report every finished session by @hadrysm in https://github.com/codlume/voice/pull/143
+* fix(helper): pick the paste key from the layout's Command table by @hadrysm in https://github.com/codlume/voice/pull/141
+* fix(helper): end a live hold when the hotkey is reconfigured by @hadrysm in https://github.com/codlume/voice/pull/142
+* ci(release): move release actions off the deprecated Node 20 runtime by @hadrysm in https://github.com/codlume/voice/pull/149
+* feat(desktop): confirm model uninstall in a styled dialog by @hadrysm in https://github.com/codlume/voice/pull/150
+* feat(web): add a privacy policy page by @hadrysm in https://github.com/codlume/voice/pull/152
+* feat(desktop): download updates only when the user asks by @hadrysm in https://github.com/codlume/voice/pull/154
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.15.0...v0.16.0
+
 ## 0.15.0 (2026-10-01)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
