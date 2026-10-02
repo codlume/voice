@@ -348,6 +348,25 @@ describe("createDictation", () => {
     });
   });
 
+  test("reports a second refused press while the first refusal is still shown", () => {
+    const h = harness({ asrModel: { state: "missing" } });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.reports).toHaveLength(1);
+    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS - 500);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.store.state.session).toMatchObject({
+      phase: "done",
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+    });
+    expect(h.reports).toHaveLength(2);
+    expect(h.reports[1]).toEqual({
+      outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
+      finishedAt: Date.now(),
+      capture: null,
+    });
+    expect(h.logs.filter((line) => line.startsWith("session "))).toHaveLength(2);
+  });
+
   test("cleans with the user's styling and no other settings", async () => {
     const h = harness({ styling: "casual" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });

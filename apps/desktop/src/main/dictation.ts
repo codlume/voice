@@ -102,7 +102,9 @@ export function createDictation(options: DictationOptions): Dictation {
       // A release recorded during `starting` changes the state but not the deadline.
       if (state.phase !== before.phase) armWatchdog(state);
     }
-    if (state.phase === "done" && before.phase !== "done") finish(state.id, state.outcome);
+    if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
+      finish(state.id, state.outcome);
+    }
   }
 
   function armWatchdog(state: Session) {
