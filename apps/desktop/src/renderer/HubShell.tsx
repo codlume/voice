@@ -109,14 +109,11 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
       microphones={snapshot.microphones}
       microphoneTest={snapshot.microphoneTest}
       microphonePermission={snapshot.permissions.microphone}
+      updates={snapshot.updates}
     />
   ),
   system: (snapshot) => (
-    <SystemSettings
-      settings={snapshot.settings}
-      loginItem={snapshot.loginItem}
-      updates={snapshot.updates}
-    />
+    <SystemSettings settings={snapshot.settings} loginItem={snapshot.loginItem} />
   ),
   models: (snapshot) => (
     <ModelsSettings
