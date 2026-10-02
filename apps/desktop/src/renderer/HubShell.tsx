@@ -252,7 +252,7 @@ const styles = stylex.create({
   },
   footer: {
     display: "flex",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: space.sm,
     width: sidebarWidth - 2 * sidebarPadding,
     marginTop: "auto",
@@ -269,14 +269,14 @@ const styles = stylex.create({
     borderRadius: radius.round,
   },
   footerUpdates: {
-    flex: 1,
-    minWidth: 0,
+    marginLeft: "auto",
     transitionProperty: "opacity, visibility",
     transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
-  back: { flexShrink: 0, marginTop: "auto" },
+  back: { flex: 1 },
+  backCollapsed: { flex: "none", width: navItemSize },
   tooltipPositioner: {
     zIndex: 10,
     width: "var(--positioner-width)",
@@ -554,43 +554,39 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
             <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
           </p>
           {settingsPage === null ? (
-            <>
-              <nav aria-label="Voice" {...stylex.props(styles.nav)}>
-                <NavItems
-                  items={appPages}
-                  current={appPage}
-                  collapsed={collapsed}
-                  showShortcut={showShortcut}
-                  onSelect={selectAppPage}
-                />
-              </nav>
-              <div {...stylex.props(styles.footer)}>
-                <Tooltip.Trigger
-                  payload={settingsLabel}
-                  type="button"
-                  aria-label="Settings"
-                  title={collapsed ? undefined : settingsLabel}
-                  onClick={() => selectSettingsPage("general")}
-                  {...stylex.props(styles.navItem, styles.footerButton)}
-                >
-                  <Icon>{slidersIcon}</Icon>
-                </Tooltip.Trigger>
-                <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
-                  <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
-                </div>
-              </div>
-            </>
+            <nav aria-label="Voice" {...stylex.props(styles.nav)}>
+              <NavItems
+                items={appPages}
+                current={appPage}
+                collapsed={collapsed}
+                showShortcut={showShortcut}
+                onSelect={selectAppPage}
+              />
+            </nav>
           ) : (
-            <>
-              <nav aria-label="Settings" {...stylex.props(styles.nav)}>
-                <NavItems
-                  items={settingsPages}
-                  current={settingsPage}
-                  collapsed={collapsed}
-                  showShortcut={showShortcut}
-                  onSelect={selectSettingsPage}
-                />
-              </nav>
+            <nav aria-label="Settings" {...stylex.props(styles.nav)}>
+              <NavItems
+                items={settingsPages}
+                current={settingsPage}
+                collapsed={collapsed}
+                showShortcut={showShortcut}
+                onSelect={selectSettingsPage}
+              />
+            </nav>
+          )}
+          <div {...stylex.props(styles.footer)}>
+            {settingsPage === null ? (
+              <Tooltip.Trigger
+                payload={settingsLabel}
+                type="button"
+                aria-label="Settings"
+                title={collapsed ? undefined : settingsLabel}
+                onClick={() => selectSettingsPage("general")}
+                {...stylex.props(styles.navItem, styles.footerButton)}
+              >
+                <Icon>{slidersIcon}</Icon>
+              </Tooltip.Trigger>
+            ) : (
               <NavItem
                 label="Back"
                 icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
@@ -598,10 +594,13 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                 collapsed={collapsed}
                 showShortcut={showShortcut}
                 onClick={closeSettings}
-                style={styles.back}
+                style={[styles.back, collapsed && styles.backCollapsed]}
               />
-            </>
-          )}
+            )}
+            <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
+              <SidebarUpdates updates={snapshot.updates} session={snapshot.session} />
+            </div>
+          </div>
         </aside>
       </SidebarTooltip>
       <main

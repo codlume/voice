@@ -1,7 +1,18 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { pendingUpdate, type PillState, type UpdateStatus } from "../shared/api.ts";
-import { releaseCardTitle, updateButton, updateStatusText } from "./updateStatus.ts";
+import type { PillState, UpdateStatus } from "../shared/api.ts";
+import {
+  releaseCardTitle,
+  updateButton,
+  updateCard,
+  updateStatusText,
+  type UpdateCard,
+} from "./updateStatus.ts";
+
+function cardText(card: UpdateCard | null) {
+  if (card === null) return null;
+  return card.kind === "release" ? releaseCardTitle(card.update) : `error: ${card.message}`;
+}
 
 const idle: PillState = { kind: "idle" };
 
@@ -15,18 +26,16 @@ describe("update controls", () => {
       { kind: "done", outcome: { kind: "inserted", method: "accessibility" } },
     ];
     expect(sessions.map((session) => updateButton(ready, session))).toEqual([
-      { action: "restart", label: "Restart to install 1.5.0", tooltip: "Restart to install 1.5.0" },
+      { action: "restart", label: "Restart to install 1.5.0" },
       {
         action: null,
         label: "Finish dictation before restarting",
-        tooltip: "Finish dictation before restarting",
       },
       {
         action: null,
         label: "Finish dictation before restarting",
-        tooltip: "Finish dictation before restarting",
       },
-      { action: "restart", label: "Restart to install 1.5.0", tooltip: "Restart to install 1.5.0" },
+      { action: "restart", label: "Restart to install 1.5.0" },
     ]);
   });
 
@@ -41,16 +50,15 @@ describe("update controls", () => {
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
     expect(statuses.map((status) => updateButton(status, idle))).toEqual([
-      { action: "check", label: "Check for updates", tooltip: "Check for updates" },
-      { action: "check", label: "Check for updates", tooltip: "Check for updates" },
-      { action: "check", label: "Check for updates", tooltip: "Connection timed out" },
-      { action: null, label: "Checking for updates…", tooltip: "Checking for updates…" },
-      { action: null, label: "Downloading 1.5.0 · 48%", tooltip: "Downloading 1.5.0 · 48%" },
-      { action: null, label: "Installing 1.5.0…", tooltip: "Installing 1.5.0…" },
+      { action: "check", label: "Check for updates" },
+      { action: "check", label: "Check for updates" },
+      { action: "check", label: "Check for updates" },
+      { action: null, label: "Checking for updates…" },
+      { action: null, label: "Downloading 1.5.0 · 48%" },
+      { action: null, label: "Installing 1.5.0…" },
       {
         action: null,
         label: "Only packaged builds update",
-        tooltip: "Only packaged builds update",
       },
     ]);
   });
@@ -67,7 +75,7 @@ describe("update controls", () => {
     ).toBe("Downloading 1.5.0 · 48%");
   });
 
-  test("only a downloading or ready update gets a release card", () => {
+  test("a pending update gets a release card and a failed one gets an error card", () => {
     const statuses: UpdateStatus[] = [
       { kind: "idle" },
       { kind: "checking" },
@@ -78,20 +86,25 @@ describe("update controls", () => {
       { kind: "failed", message: "Connection timed out" },
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
-    expect(
-      statuses.map((status) => {
-        const update = pendingUpdate(status);
-        return update && releaseCardTitle(update);
-      }),
-    ).toEqual([
+    expect(statuses.map((status) => cardText(updateCard(status, null)))).toEqual([
       null,
       null,
       null,
       "Downloading 1.5.0 · 48%",
       "Restart to install 1.5.0",
       null,
-      null,
+      "error: Connection timed out",
       null,
     ]);
+  });
+
+  test("a rejected update action shows its error over the release it acted on", () => {
+    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: [] };
+    expect(cardText(updateCard(ready, "Voice could not restart."))).toBe(
+      "error: Voice could not restart.",
+    );
+    expect(cardText(updateCard({ kind: "current" }, "Voice could not check."))).toBe(
+      "error: Voice could not check.",
+    );
   });
 });
