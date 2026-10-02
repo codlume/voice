@@ -23,7 +23,7 @@ const styles = stylex.create({
     position: "fixed",
     top: "50%",
     left: "50%",
-    width: "min(360px, calc(100vw - 32px))",
+    width: "min(420px, calc(100vw - 32px))",
     padding: space.lg,
     borderWidth: 1,
     borderStyle: "solid",
@@ -51,6 +51,8 @@ const styles = stylex.create({
   },
   actions: {
     display: "flex",
+    // Buttons do not shrink, so a row wider than the popup must wrap rather than spill out.
+    flexWrap: "wrap",
     justifyContent: "flex-end",
     gap: space.sm,
     marginTop: space.lg,
