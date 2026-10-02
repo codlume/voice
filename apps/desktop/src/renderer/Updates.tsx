@@ -213,12 +213,14 @@ export function SidebarUpdates({
   const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
 
-  if (confirm?.open && !sameTranscript(confirm.last, last)) setConfirm({ ...confirm, open: false });
+  // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
+  if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
+    setConfirm({ ...confirm, open: false });
 
   const confirmRestart = () =>
     setConfirm({ open: true, last, prompt: restartPrompt(last, session) });
   const onRestartRequest = useEffectEvent(() => {
-    if (status.kind === "ready") confirmRestart();
+    if (action === "restart") confirmRestart();
   });
   useEffect(() => window.voice.onRestartRequest(() => onRestartRequest()), []);
 
