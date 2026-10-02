@@ -22,6 +22,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { hotkeyLabels } from "./checklist.ts";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
 import { Select } from "./Select.tsx";
@@ -535,6 +536,7 @@ function ModelSection({
 }) {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [confirmingUninstall, setConfirmingUninstall] = useState(false);
   const view = modelView(model, status, { cleanupEnabled, dictating });
 
   async function run(action: ModelAction) {
@@ -578,7 +580,9 @@ function ModelSection({
                   variant={label === "Uninstall" ? "secondary" : "primary"}
                   aria-label={`${label} ${model.name}`}
                   disabled={pending || disabled}
-                  onClick={() => void run(label)}
+                  onClick={() =>
+                    label === "Uninstall" ? setConfirmingUninstall(true) : void run(label)
+                  }
                 >
                   {label}
                 </Button>
@@ -592,6 +596,14 @@ function ModelSection({
           {error}
         </p>
       )}
+      <ConfirmDialog
+        open={confirmingUninstall}
+        onOpenChange={setConfirmingUninstall}
+        title={`Uninstall the ${model.kind.toLowerCase()}?`}
+        description={`${model.lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`}
+        confirmLabel="Uninstall"
+        onConfirm={() => void run("Uninstall")}
+      />
     </Section>
   );
 }

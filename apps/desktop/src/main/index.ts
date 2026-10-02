@@ -521,24 +521,6 @@ async function main() {
     }
   }
 
-  async function uninstallModel(model: Model) {
-    assertCanUninstall(model);
-    const confirmation = {
-      type: "warning" as const,
-      message: `Uninstall the ${model.kind.toLowerCase()}?`,
-      detail: `${model.lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`,
-      buttons: ["Cancel", "Uninstall"],
-      defaultId: 0,
-      cancelId: 0,
-    };
-    const { response } = await (hub && !hub.isDestroyed()
-      ? dialog.showMessageBox(hub, confirmation)
-      : dialog.showMessageBox(confirmation));
-    if (response !== 1) return;
-    assertCanUninstall(model);
-    await modelControls[model.id].uninstall();
-  }
-
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
@@ -571,7 +553,9 @@ async function main() {
   });
   ipcMain.handle(Channel.uninstallModel, (_event, id: unknown) => {
     const model = models.find((candidate) => candidate.id === id);
-    if (model) return uninstallModel(model);
+    if (!model) return;
+    assertCanUninstall(model);
+    return modelControls[model.id].uninstall();
   });
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");

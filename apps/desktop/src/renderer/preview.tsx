@@ -283,7 +283,6 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       }, 200);
     },
     uninstallModel: async (id) => {
-      if (!confirm(`Uninstall ${id}?`)) return;
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
     copyLast: async (which) => {
