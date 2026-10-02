@@ -41,6 +41,10 @@ final class HotkeyTap {
 
     func configure(_ key: HotkeyKey) {
         perform {
+            let oldKeyRelease = self.interpreter.reconcile(flags: 0)
+            if let action = oldKeyRelease {
+                self.output.emit(.hotkey(action: action))
+            }
             self.key = key
             self.interpreter = HotkeyInterpreter(key: key, initialFlags: currentFlags())
             self.syncBackstop()
