@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.0 (2026-10-02)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(web): add a terms of service page by @hadrysm in https://github.com/codlume/voice/pull/155
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.16.0...v0.17.0
+
 ## 0.16.0 (2026-10-02)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
