@@ -20,15 +20,30 @@ export function chunkTranscript(
   maxTokens: number,
   countTokens: CountTokens,
 ): string[] {
+  const parts = pieces(text, maxTokens, countTokens);
   const chunks: string[] = [];
-  let current = "";
-  for (const piece of pieces(text, maxTokens, countTokens)) {
-    if (current && countTokens((current + piece).trim()) > maxTokens) {
-      chunks.push(current.trim());
-      current = "";
-    }
-    current += piece;
+  let start = 0;
+  while (start < parts.length) {
+    const end = fittingEnd(parts, start, maxTokens, countTokens);
+    chunks.push(parts.slice(start, end).join("").trim());
+    start = end;
   }
-  chunks.push(current.trim());
   return chunks.filter(Boolean);
+}
+
+function fittingEnd(
+  parts: string[],
+  start: number,
+  maxTokens: number,
+  countTokens: CountTokens,
+): number {
+  const fits = (end: number) => countTokens(parts.slice(start, end).join("").trim()) <= maxTokens;
+  let lo = start + 1;
+  let hi = parts.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
