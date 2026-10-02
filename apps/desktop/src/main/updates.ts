@@ -47,7 +47,6 @@ export function createUpdates({
   initial,
   onChange,
   canRestart,
-  confirmRestart,
   prepareRestart,
   onRestartFailure,
 }: {
@@ -56,7 +55,6 @@ export function createUpdates({
   initial: UpdatesSnapshot;
   onChange: (snapshot: UpdatesSnapshot) => void;
   canRestart: () => boolean;
-  confirmRestart: () => Promise<boolean>;
   prepareRestart: () => Promise<void>;
   onRestartFailure: () => void;
 }) {
@@ -204,13 +202,9 @@ export function createUpdates({
     async restart() {
       if (!enabled || !engine || restarting || disposed || snapshot.status.kind !== "ready") return;
       if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
-      const expectedGeneration = generation;
       const version = snapshot.status.version;
       restarting = true;
       try {
-        if (!(await confirmRestart())) return;
-        if (!canRestart() || expectedGeneration !== generation)
-          throw new Error("Finish dictation before restarting Voice.");
         publish({ kind: "installing", version });
         await prepareRestart();
         engine.quitAndInstall();

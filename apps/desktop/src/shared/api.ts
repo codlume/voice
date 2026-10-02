@@ -113,10 +113,14 @@ export type Snapshot = {
   last: { raw: string; text: string } | null;
 };
 
+export type RestartChoice = "restart" | "copyTranscriptAndRestart";
+
 export type VoiceApi = {
   diagnosticsStartedAtLaunch: boolean;
   checkForUpdates(): Promise<void>;
-  restartForUpdate(): Promise<void>;
+  restartForUpdate(choice: RestartChoice): Promise<void>;
+  /** The tray asks the hub to confirm a restart. A request made before anyone listens is kept. */
+  onRestartRequest(listener: () => void): () => void;
   openRelease(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
@@ -134,6 +138,7 @@ export type VoiceApi = {
 export const Channel = {
   checkForUpdates: "voice:checkForUpdates",
   restartForUpdate: "voice:restartForUpdate",
+  requestRestart: "voice:requestRestart",
   openRelease: "voice:openRelease",
   getSnapshot: "voice:getSnapshot",
   snapshot: "voice:snapshot",

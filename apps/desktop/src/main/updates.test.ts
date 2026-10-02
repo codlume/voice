@@ -38,7 +38,6 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   const engine = new FakeUpdater();
   const snapshots: UpdatesSnapshot[] = [];
   const canRestart = vi.fn(() => true);
-  const confirmRestart = vi.fn(async () => true);
   const prepareRestart = vi.fn(async () => {});
   const onRestartFailure = vi.fn();
   const updates = createUpdates({
@@ -55,7 +54,6 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
     },
     onChange: (snapshot) => snapshots.push(snapshot),
     canRestart,
-    confirmRestart,
     prepareRestart,
     onRestartFailure,
   });
@@ -64,7 +62,6 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
     snapshots,
     updates,
     canRestart,
-    confirmRestart,
     prepareRestart,
     onRestartFailure,
   };
@@ -211,25 +208,19 @@ describe("updates", () => {
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
   });
 
-  test("does not install during dictation, including a session started during confirmation", async () => {
-    const { updates, engine, canRestart, confirmRestart, prepareRestart } = setup();
+  test("does not install during dictation", async () => {
+    const { updates, engine, canRestart, prepareRestart } = setup();
     await updates.check();
     canRestart.mockReturnValue(false);
-    await expect(updates.restart()).rejects.toThrow("Finish dictation");
-    expect(confirmRestart).not.toHaveBeenCalled();
-    canRestart.mockReturnValueOnce(true).mockReturnValue(false);
     await expect(updates.restart()).rejects.toThrow("Finish dictation");
     expect(prepareRestart).not.toHaveBeenCalled();
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
     expect(updates.snapshot.status.kind).toBe("ready");
   });
 
-  test("cancel preserves the ready update; install waits for native shutdown exactly once", async () => {
-    const { updates, engine, confirmRestart, prepareRestart } = setup();
+  test("install waits for native shutdown exactly once", async () => {
+    const { updates, engine, prepareRestart } = setup();
     await updates.check();
-    confirmRestart.mockResolvedValueOnce(false);
-    await updates.restart();
-    expect(updates.snapshot.status.kind).toBe("ready");
     const stopped = Promise.withResolvers<void>();
     prepareRestart.mockReturnValue(stopped.promise);
     const restarting = updates.restart();

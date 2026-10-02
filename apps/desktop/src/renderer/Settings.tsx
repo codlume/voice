@@ -601,8 +601,9 @@ function ModelSection({
         onOpenChange={setConfirmingUninstall}
         title={`Uninstall the ${model.kind.toLowerCase()}?`}
         description={`${model.lostUntilReinstalled} until you install it again, which is about a ${model.size} download.`}
-        confirmLabel="Uninstall"
-        onConfirm={() => void run("Uninstall")}
+        actions={[
+          { label: "Uninstall", variant: "destructive", onClick: () => void run("Uninstall") },
+        ]}
       />
     </Section>
   );

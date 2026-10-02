@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { PillState, UpdateStatus } from "../shared/api.ts";
+import type { Outcome, PillState, UpdateStatus } from "../shared/api.ts";
 import {
   releaseCardTitle,
+  restartPrompt,
   updateButton,
   updateCard,
   updateStatusText,
+  type RestartPrompt,
   type UpdateCard,
 } from "./updateStatus.ts";
 
@@ -14,7 +16,12 @@ function cardText(card: UpdateCard | null) {
   return card.kind === "release" ? releaseCardTitle(card.update) : `error: ${card.message}`;
 }
 
+function choices(prompt: RestartPrompt) {
+  return prompt.actions.map(({ label, choice }) => `${label} -> ${choice}`);
+}
+
 const idle: PillState = { kind: "idle" };
+const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
 
 describe("update controls", () => {
   test("restart is offered only when an update is ready and dictation is inactive", () => {
@@ -106,5 +113,35 @@ describe("update controls", () => {
     expect(cardText(updateCard({ kind: "current" }, "Voice could not check."))).toBe(
       "error: Voice could not check.",
     );
+  });
+
+  test("a restart offers to save the last transcript and requires it when it was not inserted", () => {
+    const last = { raw: "um ship it friday", text: "Ship it Friday." };
+    const inserted = done({ kind: "inserted", method: "paste" });
+    const notInserted = done({ kind: "notInserted", reason: "focusChanged" });
+
+    const withoutTranscript = restartPrompt(null, notInserted);
+    expect(choices(withoutTranscript)).toEqual(["Restart -> restart"]);
+    expect(withoutTranscript.description).toBe(
+      "Voice will close and reopen with the downloaded version.",
+    );
+
+    expect(choices(restartPrompt(last, notInserted))).toEqual([
+      "Copy transcript and restart -> copyTranscriptAndRestart",
+    ]);
+    expect(choices(restartPrompt(last, done({ kind: "failed", message: "Paste failed" })))).toEqual(
+      ["Copy transcript and restart -> copyTranscriptAndRestart"],
+    );
+
+    for (const session of [inserted, idle]) {
+      const prompt = restartPrompt(last, session);
+      expect(choices(prompt)).toEqual([
+        "Restart -> restart",
+        "Copy transcript and restart -> copyTranscriptAndRestart",
+      ]);
+      expect(prompt.description).toBe(
+        "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents.",
+      );
+    }
   });
 });

@@ -298,32 +298,6 @@ async function main() {
       lifecycle === "running" &&
       !dictating() &&
       store.state.settings.updateChannel === store.state.updates.channel,
-    confirmRestart: async () => {
-      const last = store.state.last;
-      const session = store.state.session;
-      const needsRecovery =
-        last !== null && session.phase === "done" && session.outcome.kind !== "inserted";
-      const buttons = last
-        ? needsRecovery
-          ? ["Cancel", "Copy transcript and restart"]
-          : ["Cancel", "Restart", "Copy transcript and restart"]
-        : ["Cancel", "Restart"];
-      const { response } = await dialog.showMessageBox({
-        type: "question",
-        message: "Restart Voice to install the update?",
-        detail: last
-          ? "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents."
-          : "Voice will close and reopen with the downloaded version.",
-        buttons,
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (response === 0) return false;
-      if (last !== store.state.last) return false;
-      if (last && buttons[response] === "Copy transcript and restart")
-        clipboard.writeText(last.text || last.raw);
-      return true;
-    },
     prepareRestart: async () => {
       lifecycle = "stopping";
       try {
@@ -372,11 +346,11 @@ async function main() {
     }
   }
 
-  function showHub() {
+  function showHub(): BrowserWindow {
     if (hub && !hub.isDestroyed()) {
       hub.show();
       hub.focus();
-      return;
+      return hub;
     }
     hub = new BrowserWindow({
       width: 960,
@@ -404,6 +378,17 @@ async function main() {
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
     loadPage(hub, "hub");
+    return hub;
+  }
+
+  // A request sent while the hub is still loading would reach the old document and be lost.
+  function requestRestart() {
+    const contents = showHub().webContents;
+    const send = () => {
+      if (!contents.isDestroyed()) contents.send(Channel.requestRestart);
+    };
+    if (contents.isLoading()) contents.once("did-finish-load", send);
+    else send();
   }
 
   const syncDock = createDockSync({
@@ -441,15 +426,12 @@ async function main() {
           enabled:
             state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
           click: () => {
-            showHub();
-            void (
-              state.updates.status.kind === "ready" ? updates.restart() : updates.check()
-            ).catch((error: unknown) =>
-              dialog.showErrorBox(
-                "Voice update",
-                error instanceof Error ? error.message : "Update failed.",
-              ),
-            );
+            if (state.updates.status.kind === "ready") {
+              requestRestart();
+            } else {
+              showHub();
+              void updates.check();
+            }
           },
         },
         { label: "Quit", role: "quit" },
@@ -523,7 +505,14 @@ async function main() {
 
   ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
-  ipcMain.handle(Channel.restartForUpdate, () => updates.restart());
+  ipcMain.handle(Channel.restartForUpdate, (_event, choice: unknown) => {
+    if (choice !== "restart" && choice !== "copyTranscriptAndRestart") return;
+    if (choice === "copyTranscriptAndRestart") {
+      const last = store.state.last;
+      if (last) clipboard.writeText(last.text || last.raw);
+    }
+    return updates.restart();
+  });
   ipcMain.handle(Channel.openRelease, () => {
     const url = updates.releaseUrl();
     if (url) void shell.openExternal(url);
