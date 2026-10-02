@@ -101,18 +101,17 @@ async function openEngine(modelPath: string): Promise<Engine> {
   }
 }
 
+// Each group lists the spellings a cleanup may switch between: formal styling expands "here's" to
+// "here is", so the user's spelling and the model's must both count as the user having said it.
 const CHAT_OPENERS = [
-  "sorry",
-  "im sorry",
-  "i am sorry",
-  "i cannot",
-  "i cant",
-  "as an ai",
-  "sure",
-  "certainly",
-  "of course",
-  "here is",
-  "heres",
+  ["sorry"],
+  ["im sorry", "i am sorry"],
+  ["i cannot", "i cant"],
+  ["as an ai"],
+  ["sure"],
+  ["certainly"],
+  ["of course"],
+  ["here is", "heres"],
 ];
 
 const words = (text: string) =>
@@ -131,7 +130,9 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
     throw new Error("Cleanup output contains chat template markup");
   const said = ` ${words(input)} `;
   const cleaned = ` ${words(output)} `;
-  const opener = CHAT_OPENERS.find((phrase) => cleaned.startsWith(` ${phrase} `));
-  if (opener && !said.includes(` ${opener} `))
+  const opener = CHAT_OPENERS.find((group) =>
+    group.some((phrase) => cleaned.startsWith(` ${phrase} `)),
+  );
+  if (opener && !opener.some((phrase) => said.includes(` ${phrase} `)))
     throw new Error("Cleanup output reads like a chat reply");
 }

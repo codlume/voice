@@ -13,6 +13,11 @@ describe("assertPlausibleCleanup", () => {
     ["im sorry i missed your call", "I'm sorry I missed your call."],
     ["sure thing see you at five", "Sure thing, see you at five."],
     ["here's the plan for monday", "Here's the plan for Monday."],
+    // Formal styling expands contractions; these are S1-mini's actual outputs.
+    ["here's the plan for monday", "Here is the plan for Monday."],
+    ["i'm sorry i missed your call", "I am sorry I missed your call."],
+    ["i can't make it on friday", "I cannot make it on Friday."],
+    ["here is the plan for monday", "Here's the plan for Monday."],
   ])("accepts a real cleanup of %j", (input, output) => {
     expect(() => assertPlausibleCleanup(input, output, false)).not.toThrow();
   });
