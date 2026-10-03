@@ -39,7 +39,7 @@ const base64Url = (bytes: Uint8Array) =>
     .replace(/=+$/, "");
 
 /** Starts a sign-in as Voice would (PKCE), then plays the browser through /callback/google. */
-async function browserSignIn(googleCode: string, options = { signOut: false }) {
+async function playSignIn(googleCode: string, options = { signOut: false }) {
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
@@ -52,6 +52,12 @@ async function browserSignIn(googleCode: string, options = { signOut: false }) {
     googleCode,
     ...options,
   });
+  return { ...flow, ip, state, verifier };
+}
+
+/** A sign-in that must reach the landing page with an Electron code. */
+async function browserSignIn(googleCode: string, options = { signOut: false }) {
+  const flow = await playSignIn(googleCode, options);
   expect(flow.init.status).toBe(302);
   expect(flow.callback.status).toBe(302);
   expect(flow.callback.headers.get("location")).toBe(base);
@@ -62,7 +68,7 @@ async function browserSignIn(googleCode: string, options = { signOut: false }) {
         .replaceAll("_", "/"),
     ),
   ) as { identifier: string };
-  return { ...flow, ip, identifier, state, verifier };
+  return { ...flow, identifier };
 }
 
 type SignIn = Awaited<ReturnType<typeof browserSignIn>>;
@@ -92,6 +98,27 @@ const count = async (sql: string, ...bindings: string[]) =>
   (await env.DB.prepare(sql)
     .bind(...bindings)
     .first<number>("n")) ?? 0;
+
+const rowsOf = async (userId: string) => ({
+  users: await count("select count(*) as n from user where id = ?", userId),
+  accounts: await count("select count(*) as n from account where user_id = ?", userId),
+  sessions: await count("select count(*) as n from session where user_id = ?", userId),
+});
+
+/** Runs `action` while one D1 write fails, as it does when D1 drops mid-request. */
+async function whileWriteFails<T>(
+  write: "insert on account" | "delete on user",
+  action: () => Promise<T>,
+) {
+  await env.DB.prepare(
+    `create trigger fail_write before ${write} begin select raise(abort, 'synthetic D1 interruption'); end`,
+  ).run();
+  try {
+    return await action();
+  } finally {
+    await env.DB.prepare("drop trigger fail_write").run();
+  }
+}
 
 describe("Google sign-in", () => {
   it("creates one user and one account, then reuses them on a second sign-in (catches duplicate users or accounts per Google subject)", async () => {
@@ -182,11 +209,51 @@ describe("disabled sign-in paths", () => {
       await count("select count(*) as n from user where email = ?", "eve-intruder@example.com"),
     ).toBe(0);
   });
+});
 
-  it("keep account linking off (catches linking turned on; no HTTP path shows it with one provider)", async () => {
-    const context = await createAuth(env).$context;
+describe("a user row with no account", () => {
+  // Better Auth writes the user row and then the account row, and deletes the account rows and
+  // then the user row. D1 cannot make either pair one transaction, so a cut-off in between
+  // leaves a user row every later Google sign-in for that email trips over.
 
-    expect(context.options.account?.accountLinking?.enabled).toBe(false);
+  /** The user row a cut-off write left for `email`. */
+  async function orphanOf(email: string) {
+    const id = await env.DB.prepare("select id from user where email = ?")
+      .bind(email)
+      .first<string>("id");
+    expect(id).not.toBeNull();
+    expect(await rowsOf(id ?? "")).toEqual({ users: 1, accounts: 0, sessions: 0 });
+    return id ?? "";
+  }
+
+  // Well past the grace period that keeps a first sign-in in flight, between its two writes, safe.
+  const age = (userId: string) =>
+    env.DB.prepare("update user set created_at = created_at - ? where id = ?")
+      .bind(2 * 60_000, userId)
+      .run();
+
+  it("is swept by a later Google callback, so a first sign-in that D1 cut off after the user row can start over (catches the lockout, and a sweep that takes a sign-in in flight)", async () => {
+    const cutOff = await whileWriteFails("insert on account", () => playSignIn("cut-off-create"));
+    expect(cutOff.callback.headers.get("location")).toContain("error=unable_to_create_user");
+    expect(cutOff.electronCookie).toBeNull();
+    const orphan = await orphanOf("cut-off-create@example.com");
+
+    const atOnce = await playSignIn("cut-off-create");
+    expect(atOnce.electronCookie).toBeNull();
+    expect(await rowsOf(orphan)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+
+    // Google may have reported the email unverified the first time; the row must not stay for that.
+    await env.DB.prepare("update user set email_verified = 0 where id = ?").bind(orphan).run();
+    await age(orphan);
+    const retry = await exchange(await browserSignIn("cut-off-create", { signOut: true }));
+
+    expect(retry.status).toBe(200);
+    const { user } = await retry.json<SignedIn>();
+    expect(user.email).toBe("cut-off-create@example.com");
+    expect(user.id).not.toBe(orphan);
+    expect(await rowsOf(orphan)).toEqual({ users: 0, accounts: 0, sessions: 0 });
+    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
+    expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
   });
 });
 
