@@ -10,6 +10,7 @@ const ignorePatterns = [
   "node_modules",
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
+  "apps/api/worker-configuration.d.ts",
 ];
 
 export default defineConfig({

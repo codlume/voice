@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The top level is local development only: no routes and no remote database id.
+  // Every deploy passes --env, because a bare deploy can auto-provision resources.
+  "name": "voice-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Invocation logs record full URLs, and the OAuth callback URL carries the code and state.
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "voice-api-local", "migrations_dir": "migrations" },
+  ],
+  "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+  // Bindings and secrets are not inherited, so each environment declares its own.
+  "env": {
+    "nightly": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "api-nightly.voice.codlume.com", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "voice-api-nightly",
+          "database_id": "99d300ed-a42a-4c33-b3e5-a2bfa2abfd04",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+    },
+    "stable": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "api.voice.codlume.com", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "voice-api-stable",
+          "database_id": "74e7e5be-6d97-4322-a2fc-0b9951efbfc1",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+    },
+  },
+}
