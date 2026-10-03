@@ -8,12 +8,7 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: {
-          TEST_MIGRATIONS: migrations,
-          BETTER_AUTH_SECRET: "fake-test-secret",
-          GOOGLE_CLIENT_ID: "fake-test-client-id",
-          GOOGLE_CLIENT_SECRET: "fake-test-client-secret",
-        },
+        bindings: { TEST_MIGRATIONS: migrations },
       },
     }),
   ],
