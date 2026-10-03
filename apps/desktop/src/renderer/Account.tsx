@@ -173,7 +173,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             <Button
               id="setting-delete-account"
               variant="destructive"
-              disabled={pending || (deletion !== undefined && deletion.kind !== "failed")}
+              disabled={pending || deletion !== undefined}
               onClick={() =>
                 void run(
                   () => window.voice.requestAccountDeletion(),
@@ -185,7 +185,12 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             </Button>
           </div>
         </div>
-        {deletion?.kind === "reauthRequired" && (
+        {account.notice && (
+          <p role="status" {...stylex.props(settings.row, settings.rowDetail)}>
+            {account.notice}
+          </p>
+        )}
+        {(deletion?.kind === "reauthRequired" || deletion?.kind === "reauthFailed") && (
           <div {...stylex.props(settings.row)}>
             <p role="alert" {...stylex.props(settings.rowDetail)}>
               {deletion.message}
@@ -195,7 +200,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
                 disabled={pending}
                 onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
               >
-                Sign in again
+                {deletion.kind === "reauthFailed" ? "Retry" : "Sign in again"}
               </Button>
               <Button
                 variant="secondary"

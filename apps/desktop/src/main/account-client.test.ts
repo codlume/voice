@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -19,6 +20,7 @@ import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
 import { AUTH_SESSION_ENDED_MESSAGE, SIGN_IN_TIMEOUT_MS } from "./account.ts";
 import { harness } from "./account.test-harness.ts";
+import { DELETE_ACCOUNT_FAILED_MESSAGE, SIGN_IN_ERRORS } from "./account.ts";
 import {
   authSessionStored,
   authStorageKeys,
@@ -50,8 +52,8 @@ const electron = vi.hoisted(() => {
 vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
 
 const API = { stable: "https://api.example.com", nightly: "https://api-nightly.example.com" };
-const USER = { name: "Ada Lovelace", email: "ada@example.com" };
-const GRACE = { name: "Grace Hopper", email: "grace@example.com" };
+const USER = { id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" };
+const GRACE = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
 
 type Sent = { url: string; cookie: string | null; body: string };
 const log = vi.fn();
@@ -102,6 +104,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   rmSync(electron.state.userData, { recursive: true, force: true });
 });
 
@@ -117,23 +120,26 @@ async function signIn(auth: ReturnType<typeof client>) {
   return auth.redeem(code, new AbortController().signal);
 }
 
-function snapshotAccount(auth: ReturnType<typeof client>) {
-  return harness({
-    apiUrl: API.nightly,
-    createClient: async () => auth,
-    hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
-    hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
-  });
+async function signedInClient(token = "old-token") {
+  answer = () => signedIn(token);
+  const active = client("nightly");
+  await active.checkAuthSession(new AbortController().signal);
+  return active;
 }
 
-/** Starts a sign-in through the snapshot and returns the code the landing page would show. */
+function snapshotAccount(auth: ReturnType<typeof client>) {
+  const h = harness({ hasStoredAuthSession: () => authStored(electron.state.userData, "nightly") });
+  h.createClient.mockResolvedValue(auth);
+  return h;
+}
+
 async function signInCode(h: ReturnType<typeof harness>, auth: ReturnType<typeof client>) {
   const opened = vi.spyOn(auth, "openBrowser");
   await h.account.signIn();
   const opening = opened.mock.results.at(-1);
   if (!opening) throw new Error("Sign-in did not open the browser");
   const { state } = await opening.value;
-  return Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
+  return Buffer.from(JSON.stringify({ identifier: "reauth-code", state })).toString("base64url");
 }
 
 describe("createVoiceAuthClient", () => {
@@ -176,9 +182,7 @@ describe("createVoiceAuthClient", () => {
   });
 
   test("an aborted check writes no cookie or identity, even when its answer comes later", async () => {
-    answer = () => signedIn("old-token");
-    const auth = client("nightly");
-    await auth.checkAuthSession(new AbortController().signal);
+    const auth = await signedInClient();
 
     const revoked = Promise.withResolvers<Response>();
     answer = (url) =>
@@ -404,12 +408,6 @@ describe("authSessionStored", () => {
 });
 
 describe("server sign-outs", () => {
-  async function signedInClient(token = "old-token") {
-    answer = () => signedIn(token);
-    const active = client("nightly");
-    await active.checkAuthSession(new AbortController().signal);
-    return active;
-  }
   const confirmed = (url: string) =>
     url.endsWith("/sign-out") ? json({ success: true }) : json(null);
 
@@ -819,9 +817,7 @@ describe("deletion through the real auth client", () => {
   test.each(["503", "offline", "invalid success"])(
     "%s keeps the local credential",
     async (failure) => {
-      answer = () => signedIn("kept-token");
-      const auth = client("nightly");
-      await auth.checkAuthSession(new AbortController().signal);
+      const auth = await signedInClient("kept-token");
       answer = () => {
         if (failure === "offline") throw new TypeError("fetch failed");
         return failure === "503" ? json({}, { status: 503 }) : json({ success: false });
@@ -837,15 +833,17 @@ describe("deletion through the real auth client", () => {
   );
 
   test("only the freshness refusal asks for re-authentication and captures the older credential", async () => {
-    answer = () => signedIn("old-token");
-    const auth = client("nightly");
-    await auth.checkAuthSession(new AbortController().signal);
-    answer = (url) =>
-      url.endsWith("/delete-user")
-        ? json({ code: "SESSION_EXPIRED" }, { status: 400 })
-        : json({ session: { token: "old-token" }, user: USER });
+    const auth = await signedInClient();
+    const before = sent.length;
+    answer = (url) => {
+      if (url.endsWith("/delete-user")) return json({ code: "SESSION_EXPIRED" }, { status: 400 });
+      throw new TypeError("get-session is unavailable");
+    };
     const result = await auth.deleteAccount();
     expect(result.kind).toBe("reauthRequired");
+    expect(sent.slice(before).map(({ url }) => new URL(url).pathname)).toEqual([
+      "/api/auth/delete-user",
+    ]);
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
     answer = () => signedIn("new-token");
@@ -854,18 +852,27 @@ describe("deletion through the real auth client", () => {
     await expect(auth.revokeOlderAuthSession()).rejects.toThrow("Auth session revocation failed.");
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=old-token");
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-    answer = () =>
-      json(
-        { status: true },
-        { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } },
-      );
+    answer = (url) =>
+      url.endsWith("/sign-out")
+        ? json(
+            { success: true },
+            { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } },
+          )
+        : json(null);
     await auth.revokeOlderAuthSession();
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
-    expect(sent.at(-1)).toEqual({
-      url: `${API.nightly}/api/auth/revoke-session`,
-      cookie: "better-auth.session_token=old-token",
-      body: JSON.stringify({ token: "old-token" }),
-    });
+    expect(sent.slice(-2)).toEqual([
+      {
+        url: `${API.nightly}/api/auth/sign-out`,
+        cookie: "better-auth.session_token=old-token",
+        body: "{}",
+      },
+      {
+        url: `${API.nightly}/api/auth/get-session`,
+        cookie: "better-auth.session_token=old-token",
+        body: "",
+      },
+    ]);
     answer = () => json({ session: { token: "new-token" }, user: USER });
     await auth.checkAuthSession(new AbortController().signal);
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
@@ -875,25 +882,24 @@ describe("deletion through the real auth client", () => {
   test.each(["cancel", "quit", "delete"] as const)(
     "%s after failed revocation drains the encrypted old credential on launch without restoring it",
     async (action) => {
+      let refuseSignOut = true;
       const liveSessions = new Set(["better-auth.session_token=old-token"]);
       const oldCookie = "better-auth.session_token=old-token";
       const newCookie = "better-auth.session_token=new-token";
-      answer = () => signedIn("old-token");
-      const auth = client("nightly");
-      await auth.checkAuthSession(new AbortController().signal);
+      const auth = await signedInClient();
       answer = (url) => {
         const cookie = sent.at(-1)?.cookie;
         if (url.endsWith("/electron/token")) {
           liveSessions.add(newCookie);
           return signedIn("new-token");
         }
-        if (url.endsWith("/revoke-session")) return json({}, { status: 503 });
         if (url.endsWith("/delete-user")) {
           if (cookie === oldCookie) return json({ code: "SESSION_EXPIRED" }, { status: 400 });
           liveSessions.clear();
           return json({ success: true, message: "User deleted" });
         }
         if (url.endsWith("/sign-out")) {
+          if (refuseSignOut) return json({}, { status: 503 });
           liveSessions.delete(cookie ?? "");
           return json({ success: true });
         }
@@ -906,25 +912,11 @@ describe("deletion through the real auth client", () => {
             : json(null);
         throw new Error("Unexpected auth endpoint");
       };
-      const makeAccount = (adapter: ReturnType<typeof client>) => {
-        const h = harness({
-          hasStoredAuthSession: () => authStored(electron.state.userData, "nightly"),
-        });
-        h.createClient.mockResolvedValue(adapter);
-        return h;
-      };
-      const h = makeAccount(auth);
+      const h = snapshotAccount(auth);
       await h.account.restore();
       h.account.requestDeletion();
       await h.account.confirmDeletion();
-      const opened = vi.spyOn(auth, "openBrowser");
-      await h.account.signIn();
-      const opening = opened.mock.results[0];
-      if (!opening) throw new Error("Re-authentication did not open the browser");
-      const { state } = await opening.value;
-      const code = Buffer.from(JSON.stringify({ identifier: "reauth-code", state })).toString(
-        "base64url",
-      );
+      const code = await signInCode(h, auth);
       await h.account.submitSignInCode(code);
       expect(h.state).toMatchObject({
         kind: "signedIn",
@@ -946,12 +938,14 @@ describe("deletion through the real auth client", () => {
         }
       }
       h.account.dispose();
-      const relaunched = makeAccount(client("nightly"));
+      refuseSignOut = false;
+      const relaunched = snapshotAccount(client("nightly"));
       await relaunched.account.restore();
       await vi.waitFor(() =>
         expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false),
       );
       expect(sent.filter(({ url }) => url.endsWith("/sign-out"))).toEqual([
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: oldCookie, body: "{}" },
         { url: `${API.nightly}/api/auth/sign-out`, cookie: oldCookie, body: "{}" },
       ]);
       if (action === "delete") {
@@ -964,6 +958,149 @@ describe("deletion through the real auth client", () => {
         expect(relaunched.states).toEqual([{ kind: "signedIn", ...USER }]);
         expect(liveSessions).toEqual(new Set([newCookie]));
         expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+      }
+    },
+  );
+
+  test.each([true, false])(
+    "a changed account id cancels deletion and keeps the new auth session (old sign-out succeeds: %s)",
+    async (endsOld) => {
+      const auth = await signedInClient();
+      const h = snapshotAccount(auth);
+      await h.account.restore();
+      answer = () => json({ code: "SESSION_EXPIRED" }, { status: 400 });
+      h.account.requestDeletion();
+      await h.account.confirmDeletion();
+      const code = await signInCode(h, auth);
+      answer = (url) => {
+        if (url.endsWith("/electron/token")) return signedIn("grace-token", GRACE);
+        if (url.endsWith("/sign-out"))
+          return endsOld ? json({ success: true }) : json({}, { status: 503 });
+        if (url.endsWith("/get-session")) return json(null);
+        throw new Error("Unexpected deletion after changing accounts");
+      };
+      await h.account.submitSignInCode(code);
+      expect(h.state).toEqual({
+        kind: "signedIn",
+        ...GRACE,
+        notice: `You signed in as ${GRACE.email}, so Voice did not delete ${USER.email}.`,
+      });
+      await h.account.confirmDeletion();
+      await h.account.retryDeletion();
+      expect(sent.filter(({ url }) => url.endsWith("/delete-user"))).toHaveLength(1);
+      expect(sent.filter(({ url }) => url.endsWith("/sign-out"))).toEqual([
+        {
+          url: `${API.nightly}/api/auth/sign-out`,
+          cookie: "better-auth.session_token=old-token",
+          body: "{}",
+        },
+      ]);
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(!endsOld);
+      expect(auth.cachedUser()).toEqual(GRACE);
+      answer = () => json({ user: GRACE, session: { token: "grace-token" } });
+      expect(await auth.checkAuthSession(new AbortController().signal)).toEqual({
+        kind: "active",
+        user: GRACE,
+      });
+      expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=grace-token");
+    },
+  );
+
+  test.each(["delete", "reauth", "signIn"] as const)(
+    "a stalled %s body reaches a retryable error when its deadline aborts",
+    async (phase) => {
+      if (phase !== "signIn") await signedInClient();
+      const stalledPath = phase === "delete" ? "/api/auth/delete-user" : "/api/auth/electron/token";
+      const receivedHeaders = Promise.withResolvers<void>();
+      const server = createServer((request, response) => {
+        request.resume();
+        response.setHeader("content-type", "application/json");
+        if (request.url === stalledPath) {
+          response.writeHead(200);
+          response.write('{"user":');
+        } else if (request.url === "/api/auth/delete-user") {
+          response.writeHead(400);
+          response.end(JSON.stringify({ code: "SESSION_EXPIRED" }));
+        } else {
+          response.end(JSON.stringify({ user: USER, session: { token: "old-token" } }));
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") throw new Error("Missing test server port");
+        vi.unstubAllGlobals();
+        const realFetch = globalThis.fetch;
+        vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
+          const response = await realFetch(input, init);
+          if (new URL(response.url).pathname === stalledPath) receivedHeaders.resolve();
+          return response;
+        });
+        const auth = createVoiceAuthClient({
+          apiUrl: `http://127.0.0.1:${address.port}`,
+          installedChannel: "nightly",
+          log,
+        });
+        const h = snapshotAccount(auth);
+        if (phase !== "signIn") await h.account.restore();
+        if (phase === "reauth") {
+          h.account.requestDeletion();
+          await h.account.confirmDeletion();
+        }
+        const deadline = new AbortController();
+        const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+        let done: Promise<void>;
+        if (phase === "delete") {
+          h.account.requestDeletion();
+          done = h.account.confirmDeletion();
+        } else {
+          done = h.account.submitSignInCode(await signInCode(h, auth));
+        }
+        await receivedHeaders.promise;
+        expect(timeout).toHaveBeenLastCalledWith(30_000);
+        expect(h.state).toMatchObject(
+          phase === "delete"
+            ? { kind: "signedIn", deletion: { kind: "deleting" } }
+            : { kind: "signingIn", phase: "finishing" },
+        );
+        deadline.abort(new DOMException("Request timed out", "TimeoutError"));
+        await done;
+        timeout.mockRestore();
+        if (phase === "delete") {
+          expect(h.state).toEqual({
+            kind: "signedIn",
+            ...USER,
+            deletion: { kind: "failed", message: DELETE_ACCOUNT_FAILED_MESSAGE },
+          });
+          await h.account.retryDeletion();
+          expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
+        } else {
+          expect(h.state).toEqual(
+            phase === "reauth"
+              ? {
+                  kind: "signedIn",
+                  ...USER,
+                  deletion: { kind: "reauthFailed", message: SIGN_IN_ERRORS.rejected },
+                }
+              : { kind: "error", message: SIGN_IN_ERRORS.rejected },
+          );
+          await h.account.signIn();
+          expect(h.state).toEqual({
+            kind: "signingIn",
+            purpose: phase === "reauth" ? "deleteAccount" : "signIn",
+            phase: "browser",
+          });
+        }
+        if (phase !== "signIn") {
+          expect(auth.cachedUser()).toEqual(USER);
+          expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+        }
+        h.account.dispose();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
       }
     },
   );

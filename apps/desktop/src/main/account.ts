@@ -1,4 +1,9 @@
-import { VOICE_URL_SCHEME, type AccountState, type UpdateChannel } from "../shared/api.ts";
+import {
+  VOICE_URL_SCHEME,
+  type AccountDeletion,
+  type AccountState,
+  type UpdateChannel,
+} from "../shared/api.ts";
 import { errorType, type Log } from "./diagnostics-scrub.ts";
 import type { ReleaseConfig } from "./updates.ts";
 
@@ -28,14 +33,14 @@ export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
 
-export type Identity = { name: string; email: string };
+export type Identity = { id: string; name: string; email: string };
 
 /**
  * `offline` is a failed fetch; `rejected` is the API refusing the code. `abandoned` is an exchange
  * aborted while the API answered, or outlived by a forget: nothing of it was stored.
  */
 export type RedeemResult =
-  | { kind: "signedIn"; name: string; email: string }
+  | ({ kind: "signedIn" } & Identity)
   | { kind: "offline" | "rejected"; error: unknown }
   | { kind: "abandoned" };
 
@@ -83,7 +88,8 @@ export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
 
-const sameIdentity = (a: Identity, b: Identity) => a.name === b.name && a.email === b.email;
+const sameIdentity = (a: Identity, b: Identity) =>
+  a.id === b.id && a.name === b.name && a.email === b.email;
 
 function parseHttpUrl(value: string): string | null {
   try {
@@ -269,6 +275,7 @@ export function createAccount({
     abortCheck();
     publish({
       kind: "signedIn",
+      id: state.id,
       name: state.name,
       email: state.email,
       deletion: { kind: "confirming" },
@@ -292,41 +299,28 @@ export function createAccount({
             kind: "signedIn",
             ...resumeAs,
             deletion: {
-              kind: "reauthRequired",
+              kind: "reauthFailed",
               message,
             },
           },
     );
   }
 
-  async function revokeOlderAuthSession(user: Identity) {
+  async function revokeOlderAuthSession(current: SignedInState) {
     if (apiUrl === null) return;
-    const revoking: SignedInState = {
-      kind: "signedIn",
-      ...user,
-      deletion: { kind: "revoking" },
-    };
-    publish(revoking);
+    let deletion: AccountDeletion = { kind: "confirming" };
     try {
       await (await loadClient(apiUrl)).revokeOlderAuthSession();
-      if (state === revoking)
-        publish({ kind: "signedIn", ...user, deletion: { kind: "confirming" } });
     } catch (error) {
       log("account auth session revocation failed", {
         message: "account auth session revocation failed",
         level: "warn",
         attributes: { "error.type": errorType(error) },
       });
-      if (state === revoking)
-        publish({
-          kind: "signedIn",
-          ...user,
-          deletion: {
-            kind: "revocationFailed",
-            message: REVOKE_AUTH_SESSION_FAILED_MESSAGE,
-          },
-        });
+      deletion = { kind: "revocationFailed", message: REVOKE_AUTH_SESSION_FAILED_MESSAGE };
     }
+    if (state === current && current.deletion?.kind === "revoking")
+      publish({ ...current, deletion });
   }
 
   async function endServerSignOuts(client: AuthClient) {
@@ -368,13 +362,20 @@ export function createAccount({
     // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
-      if (state !== current) return true;
-      const user = { name: result.name, email: result.email };
+      const user = { id: result.id, name: result.name, email: result.email };
       if (current.resumeAs === null) {
         leave(current.attempt, { kind: "signedIn", ...user });
       } else {
-        clearTimeout(current.timer);
-        await revokeOlderAuthSession(user);
+        const next: SignedInState =
+          user.id === current.resumeAs.id
+            ? { kind: "signedIn", ...user, deletion: { kind: "revoking" } }
+            : {
+                kind: "signedIn",
+                ...user,
+                notice: `You signed in as ${user.email}, so Voice did not delete ${current.resumeAs.email}.`,
+              };
+        leave(current.attempt, next);
+        if (state === next) await revokeOlderAuthSession(next);
       }
     } else {
       failed(current.attempt, result.error, result.kind);
@@ -472,8 +473,9 @@ export function createAccount({
     },
     async signIn() {
       const resumeAs =
-        state.kind === "signedIn" && state.deletion?.kind === "reauthRequired"
-          ? { name: state.name, email: state.email }
+        state.kind === "signedIn" &&
+        (state.deletion?.kind === "reauthRequired" || state.deletion?.kind === "reauthFailed")
+          ? { id: state.id, name: state.name, email: state.email }
           : null;
       if (
         apiUrl === null ||
@@ -561,12 +563,12 @@ export function createAccount({
     cancelDeletion() {
       if (state.kind !== "signedIn" || !state.deletion) return;
       if (state.deletion.kind === "deleting" || state.deletion.kind === "revoking") return;
-      publish({ kind: "signedIn", name: state.name, email: state.email });
+      publish({ kind: "signedIn", id: state.id, name: state.name, email: state.email });
     },
     async confirmDeletion() {
       if (state.kind !== "signedIn" || state.deletion?.kind !== "confirming" || apiUrl === null)
         return;
-      const user = { name: state.name, email: state.email };
+      const user = { id: state.id, name: state.name, email: state.email };
       const deleting: SignedInState = { kind: "signedIn", ...user, deletion: { kind: "deleting" } };
       publish(deleting);
       let result: DeleteAccountResult;
@@ -626,9 +628,17 @@ export function createAccount({
     },
     async retryDeletion() {
       if (state.kind !== "signedIn") return;
-      const { deletion, name, email } = state;
+      const { deletion, id, name, email } = state;
       if (deletion?.kind === "revocationFailed") {
-        await revokeOlderAuthSession({ name, email });
+        const revoking: SignedInState = {
+          kind: "signedIn",
+          id,
+          name,
+          email,
+          deletion: { kind: "revoking" },
+        };
+        publish(revoking);
+        await revokeOlderAuthSession(revoking);
       } else if (deletion?.kind === "failed") {
         requestDeletion();
       }

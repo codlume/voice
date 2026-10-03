@@ -7,24 +7,13 @@ import {
   SIGN_IN_ERRORS,
 } from "./account.ts";
 import {
-  CODE,
   SECOND_CODE,
   USER,
   harness,
-  startSignIn,
+  signedIn,
   flush,
   expectNoSecrets,
 } from "./account.test-harness.ts";
-
-async function signedIn() {
-  const h = harness();
-  await startSignIn(h);
-  const submitted = h.account.submitSignInCode(CODE);
-  await flush();
-  h.exchanges[0]?.resolve();
-  await submitted;
-  return h;
-}
 
 async function staleDeletion(h: Awaited<ReturnType<typeof signedIn>>, revoke: () => Promise<void>) {
   h.account.requestDeletion();
@@ -184,7 +173,7 @@ describe("account deletion through the snapshot", () => {
         expect(h.state).toEqual({
           kind: "signedIn",
           ...USER,
-          deletion: { kind: "reauthRequired", message: SIGN_IN_ERRORS.rejected },
+          deletion: { kind: "reauthFailed", message: SIGN_IN_ERRORS.rejected },
         });
       } else {
         expect(h.state).toEqual({ kind: "signedIn", ...USER });
@@ -218,18 +207,31 @@ describe("account deletion through the snapshot", () => {
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
   });
 
-  test("a different Google account requires confirmation for its own identity", async () => {
-    const h = await signedIn();
-    const revoke = vi.fn(async () => {});
-    await staleDeletion(h, revoke);
-    const other = { name: "Grace Hopper", email: "grace@example.com" };
-    h.setUser(other);
-    const submitted = h.account.submitSignInCode(SECOND_CODE);
-    await flush();
-    h.exchanges[1]?.resolve();
-    await submitted;
-    expect(revoke).toHaveBeenCalledOnce();
-    expect(h.state).toEqual({ kind: "signedIn", ...other, deletion: { kind: "confirming" } });
-    expect(h.fake.deletions).toHaveLength(1);
-  });
+  test.each(["different email", "same email"])(
+    "a different user id cancels deletion even with %s",
+    async (emailCase) => {
+      const h = await signedIn();
+      const revoke = vi.fn(async () => {});
+      await staleDeletion(h, revoke);
+      const other = {
+        id: "grace-id",
+        name: "Grace Hopper",
+        email: emailCase === "same email" ? USER.email : "grace@example.com",
+      };
+      h.setUser(other);
+      const submitted = h.account.submitSignInCode(SECOND_CODE);
+      await flush();
+      h.exchanges[1]?.resolve();
+      await submitted;
+      expect(revoke).toHaveBeenCalledOnce();
+      expect(h.state).toEqual({
+        kind: "signedIn",
+        ...other,
+        notice: `You signed in as ${other.email}, so Voice did not delete ${USER.email}.`,
+      });
+      await h.account.confirmDeletion();
+      expect(h.fake.stored).toBe(true);
+      expect(h.fake.deletions).toHaveLength(1);
+    },
+  );
 });

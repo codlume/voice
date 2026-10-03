@@ -9,18 +9,9 @@ import {
   flush,
   harness,
   startSignIn,
+  signedIn,
   withStoredAuthSession,
 } from "./account.test-harness.ts";
-
-async function signedIn() {
-  const h = harness();
-  await startSignIn(h);
-  const submitted = h.account.submitSignInCode(CODE);
-  await flush();
-  h.exchanges[0]?.resolve();
-  await submitted;
-  return h;
-}
 
 describe("sign out", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -191,7 +182,7 @@ describe("sign out", () => {
     expect(fake.stored).toBe(false);
     expect(fake.serverSignOuts).toBe(1);
     fake.signOuts[0]?.answer({ kind: "unreachable", error: new TypeError("offline") });
-    const nextUser = { name: "Grace Hopper", email: "grace@example.com" };
+    const nextUser = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
     fake.setUser(nextUser);
     const submitted = h.account.submitSignInCode(CODE);
     await flush();

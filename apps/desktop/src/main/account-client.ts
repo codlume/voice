@@ -26,12 +26,14 @@ function userOf(body: unknown): Identity | null {
   if (
     typeof user === "object" &&
     user !== null &&
+    "id" in user &&
+    typeof user.id === "string" &&
     "name" in user &&
     typeof user.name === "string" &&
     "email" in user &&
     typeof user.email === "string"
   ) {
-    return { name: user.name, email: user.email };
+    return { id: user.id, name: user.name, email: user.email };
   }
   return null;
 }
@@ -91,7 +93,7 @@ export function createVoiceAuthClient({
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
   const store = storage();
-  let olderAuthSession: { token: string; cookie: string } | null = null;
+  let refusedCookie: string | null = null;
   let generation = 0;
   function makeClient() {
     const current = generation;
@@ -159,8 +161,14 @@ export function createVoiceAuthClient({
     serverSignOuts = next;
   }
 
+  function dequeueServerSignOut(cookie: string) {
+    const remaining = serverSignOuts.filter((value) => value !== cookie);
+    saveServerSignOuts(remaining);
+    serverSignOuts = remaining;
+  }
+
   function forget() {
-    olderAuthSession = null;
+    refusedCookie = null;
     generation += 1;
     store.setItem(keys.cookie, null);
     store.setItem(keys.identity, null);
@@ -230,11 +238,7 @@ export function createVoiceAuthClient({
       attempted.add(cookie);
       const answer = await endAuthSession(cookie);
       answers.push(answer);
-      if (answer.kind === "ended") {
-        const remaining = serverSignOuts.filter((value) => value !== cookie);
-        saveServerSignOuts(remaining);
-        serverSignOuts = remaining;
-      }
+      if (answer.kind === "ended") dequeueServerSignOut(cookie);
     }
     return answers;
   }
@@ -276,8 +280,7 @@ export function createVoiceAuthClient({
             token: code,
             fetchOptions: {
               throw: true,
-              timeout: REQUEST_TIMEOUT_MS,
-              signal,
+              signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
               onResponse: ({ response }) => {
                 setCookie = response.headers.get("set-cookie");
               },
@@ -360,52 +363,29 @@ export function createVoiceAuthClient({
     deleteAccount: async () => {
       try {
         const { data, error } = await client.deleteUser({
-          fetchOptions: { timeout: REQUEST_TIMEOUT_MS },
+          fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
         });
         if (!error)
           return data?.success === true && data.message === "User deleted"
             ? { kind: "deleted" }
             : { kind: "failed" };
         if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
-        const authSession = await client.getSession({
-          fetchOptions: { timeout: REQUEST_TIMEOUT_MS },
-        });
-        if (authSession.error || !authSession.data) return { kind: "failed" };
-        olderAuthSession = { token: authSession.data.session.token, cookie: client.getCookie() };
+        refusedCookie = client.getCookie();
         return { kind: "reauthRequired" };
       } catch (error) {
         return { kind: error instanceof TypeError ? "offline" : "failed" };
       }
     },
     revokeOlderAuthSession: async () => {
-      if (olderAuthSession === null) return;
-      const { token, cookie } = olderAuthSession;
-      // Persist before the request: Cancel or quitting after a failure hands this cookie to
-      // launch's sign-out retry, without replacing the new active credential.
+      if (refusedCookie === null) return;
+      const cookie = refusedCookie;
+      // Persist before the request so Cancel or quit leaves revocation to launch's retry.
       queueServerSignOut(cookie);
-      // The old credential authorizes its own revocation, also if Google chose a different
-      // account. Bypass the plugin so this response cannot overwrite the new credential.
-      const response = await fetch(`${apiUrl}/api/auth/revoke-session`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: `${VOICE_URL_SCHEME}:/`, cookie },
-        body: JSON.stringify({ token }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      const body: unknown = response.status === 401 ? null : await response.json();
-      if (
-        response.status !== 401 &&
-        (!response.ok ||
-          typeof body !== "object" ||
-          body === null ||
-          !("status" in body) ||
-          body.status !== true)
-      ) {
+      if ((await endAuthSession(cookie)).kind !== "ended") {
         throw new Error("Auth session revocation failed.");
       }
-      const remaining = serverSignOuts.filter((value) => value !== cookie);
-      saveServerSignOuts(remaining);
-      serverSignOuts = remaining;
-      olderAuthSession = null;
+      dequeueServerSignOut(cookie);
+      refusedCookie = null;
     },
   };
 }

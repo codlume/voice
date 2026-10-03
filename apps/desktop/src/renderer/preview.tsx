@@ -179,7 +179,7 @@ const hubScenes: Record<string, Snapshot> = {
   },
   "account-signed-in": {
     ...ready,
-    account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+    account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
   },
   "account-error": {
     ...ready,
@@ -316,7 +316,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({
         ...snapshot,
-        account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+        account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
       });
     },
     cancelSignIn: async () => {
@@ -337,7 +337,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     cancelAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;
       const { name, email } = snapshot.account;
-      set({ ...snapshot, account: { kind: "signedIn", name, email } });
+      set({ ...snapshot, account: { kind: "signedIn", id: "ada-id", name, email } });
     },
     retryAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;

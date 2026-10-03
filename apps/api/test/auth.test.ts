@@ -595,23 +595,23 @@ describe("account deletion", () => {
     expect(await count("select count(*) as n from user where id = ?", previous.user.id)).toBe(0);
   });
 
-  it("lets an older device credential revoke itself while leaving the new sign-in active", async () => {
+  it("signs out an older device credential at the freshness boundary while leaving the new sign-in active", async () => {
     const first = await exchange(await browserSignIn("old-device", { signOut: true }));
-    const { token, user } = await first.json<SignedIn>();
+    const { user } = await first.json<SignedIn>();
     const oldCookie = cookieHeader(storeCookies(first));
     const next = await exchange(await browserSignIn("new-device-account", { signOut: true }));
     const currentCookie = cookieHeader(storeCookies(next));
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 600_000);
 
-    const revoked = await worker(`${base}/api/auth/revoke-session`, {
+    const revoked = await worker(`${base}/api/auth/sign-out`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: appOrigin, cookie: oldCookie },
-      body: JSON.stringify({ token }),
+      body: "{}",
     });
 
     expect(revoked.status).toBe(200);
-    expect(await revoked.json()).toEqual({ status: true });
+    expect(await revoked.json()).toEqual({ success: true });
     expect(await getSession(oldCookie)).toBeNull();
     expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(0);
     expect(await getSession(currentCookie)).not.toBeNull();

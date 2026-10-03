@@ -55,13 +55,20 @@ export type AccountState =
   | { kind: "unavailable"; reason: string }
   | { kind: "signedOut" }
   | { kind: "signingIn"; purpose: "signIn" | "deleteAccount"; phase: "browser" | "finishing" }
-  | { kind: "signedIn"; name: string; email: string; deletion?: AccountDeletion }
+  | {
+      kind: "signedIn";
+      id: string;
+      name: string;
+      email: string;
+      deletion?: AccountDeletion;
+      notice?: string;
+    }
   | { kind: "error"; message: string };
 
 export type AccountDeletion =
   | { kind: "confirming" }
   | { kind: "deleting" }
-  | { kind: "reauthRequired"; message: string }
+  | { kind: "reauthRequired" | "reauthFailed"; message: string }
   | { kind: "revoking" }
   | { kind: "revocationFailed"; message: string }
   | { kind: "failed"; message: string };
