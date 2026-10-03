@@ -1,12 +1,12 @@
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, initials, signInCode } from "./accountView.ts";
-import { actionErrorMessage } from "./actionError.ts";
+import { accountRow, initials } from "./accountView.ts";
 import { Button } from "./Button.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
+import { useAction } from "./useAction.ts";
 
 const styles = stylex.create({
   avatar: {
@@ -46,15 +46,9 @@ const rowRoles: Partial<Record<AccountState["kind"], RowRole>> = {
   error: "alert",
 };
 
-function RowText({
-  title,
-  detail,
-  role,
-}: {
-  title: string;
-  detail: string;
-  role: RowRole | undefined;
-}) {
+function RowText({ account }: { account: AccountState }) {
+  const role = rowRoles[account.kind];
+  const { title, detail } = accountRow(account);
   return (
     <div
       role={role}
@@ -67,117 +61,169 @@ function RowText({
   );
 }
 
-function AccountCard({ account }: { account: AccountState }) {
+function Card({ children }: { children: ReactNode }) {
+  return <div {...stylex.props(settings.card)}>{children}</div>;
+}
+
+function ErrorLine({ text }: { text: string }) {
+  return (
+    text && (
+      <p role="alert" {...stylex.props(settings.error)}>
+        {text}
+      </p>
+    )
+  );
+}
+
+function SignedOutRow({ account }: { account: AccountState }) {
+  const { pending, error, run } = useAction();
+  return (
+    <>
+      <Card>
+        <div {...stylex.props(settings.row)}>
+          <RowText account={account} />
+          <Button
+            id="setting-sign-in"
+            disabled={pending}
+            onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+          >
+            Sign in with Google
+          </Button>
+        </div>
+      </Card>
+      <ErrorLine text={error} />
+    </>
+  );
+}
+
+function SigningInRow({ account }: { account: AccountState }) {
+  const { pending, error, run, clearError } = useAction();
   const [code, setCode] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const { title, detail } = accountRow(account);
-  const pastedCode = signInCode(code);
-
-  async function run(action: () => Promise<void>, fallback: string) {
-    setError("");
-    setPending(true);
-    try {
-      await action();
-    } catch (caught) {
-      setError(actionErrorMessage(caught, fallback));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  const signIn = () => void run(() => window.voice.signIn(), "Could not start signing in.");
+  const pastedCode = code.trim();
   const submitCode = () => {
-    if (pastedCode === null || pending) return;
+    if (!pastedCode || pending) return;
     void run(() => window.voice.submitSignInCode(pastedCode), "Could not check the code.");
   };
-  const errorLine = error && (
-    <p role="alert" {...stylex.props(settings.error)}>
-      {error}
-    </p>
-  );
-
   return (
-    <Section label="Google sign-in">
-      <div {...stylex.props(settings.card)}>
-        <div {...stylex.props(settings.row)}>
-          {account.kind === "signedIn" && (
-            <span aria-hidden="true" {...stylex.props(styles.avatar)}>
-              {initials(account.name, account.email)}
-            </span>
-          )}
-          <RowText title={title} detail={detail} role={rowRoles[account.kind]} />
-          {account.kind === "signedOut" && (
-            <Button id="setting-sign-in" disabled={pending} onClick={signIn}>
-              Sign in with Google
-            </Button>
-          )}
-          {account.kind === "error" && (
-            <div {...stylex.props(settings.actions)}>
-              <Button disabled={pending} onClick={signIn}>
-                Retry
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={pending}
-                onClick={() =>
-                  void run(() => window.voice.dismissAccountError(), "Could not dismiss the error.")
-                }
-              >
-                Dismiss
-              </Button>
-            </div>
-          )}
-        </div>
-        {account.kind === "signingIn" && (
-          <div {...stylex.props(settings.row, styles.fallback)}>
-            <p {...stylex.props(settings.rowDetail)}>
-              If Voice does not come back on its own, paste the code shown in the browser.
-            </p>
-            <div {...stylex.props(styles.codeLine)}>
-              <input
-                id="setting-sign-in-code"
-                aria-label="Sign-in code"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Paste the code from the browser"
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value);
-                  setError("");
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.nativeEvent.isComposing) submitCode();
-                }}
-                {...stylex.props(styles.codeInput)}
-              />
-              <Button disabled={pastedCode === null || pending} onClick={submitCode}>
-                Continue
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void run(() => window.voice.cancelSignIn(), "Could not cancel signing in.")
-                }
-              >
-                Cancel sign-in
-              </Button>
-            </div>
-            {errorLine}
-          </div>
-        )}
+    <Card>
+      <div {...stylex.props(settings.row)}>
+        <RowText account={account} />
       </div>
-      {account.kind !== "signingIn" && errorLine}
-    </Section>
+      <div {...stylex.props(settings.row, styles.fallback)}>
+        <p {...stylex.props(settings.rowDetail)}>
+          If Voice does not come back on its own, paste the code shown in the browser.
+        </p>
+        <div {...stylex.props(styles.codeLine)}>
+          <input
+            id="setting-sign-in-code"
+            aria-label="Sign-in code"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Paste the code from the browser"
+            value={code}
+            onChange={(event) => {
+              setCode(event.target.value);
+              clearError();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) submitCode();
+            }}
+            {...stylex.props(styles.codeInput)}
+          />
+          <Button disabled={!pastedCode || pending} onClick={submitCode}>
+            Continue
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void run(() => window.voice.cancelSignIn(), "Could not cancel signing in.")
+            }
+          >
+            Cancel sign-in
+          </Button>
+        </div>
+        <ErrorLine text={error} />
+      </div>
+    </Card>
   );
+}
+
+function SignedInRow({ account }: { account: Extract<AccountState, { kind: "signedIn" }> }) {
+  return (
+    <Card>
+      <div {...stylex.props(settings.row)}>
+        <span aria-hidden="true" {...stylex.props(styles.avatar)}>
+          {initials(account.name, account.email)}
+        </span>
+        <RowText account={account} />
+      </div>
+    </Card>
+  );
+}
+
+function ErrorRow({ account }: { account: AccountState }) {
+  const { pending, error, run } = useAction();
+  return (
+    <>
+      <Card>
+        <div {...stylex.props(settings.row)}>
+          <RowText account={account} />
+          <div {...stylex.props(settings.actions)}>
+            <Button
+              disabled={pending}
+              onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+            >
+              Retry
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() =>
+                void run(() => window.voice.dismissAccountError(), "Could not dismiss the error.")
+              }
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      </Card>
+      <ErrorLine text={error} />
+    </>
+  );
+}
+
+function AccountRow({ account }: { account: AccountState }) {
+  switch (account.kind) {
+    case "unavailable":
+      return (
+        <Card>
+          <div {...stylex.props(settings.row)}>
+            <RowText account={account} />
+          </div>
+        </Card>
+      );
+    case "signedOut":
+      return <SignedOutRow account={account} />;
+    case "signingIn":
+      return <SigningInRow account={account} />;
+    case "signedIn":
+      return <SignedInRow account={account} />;
+    case "error":
+      return <ErrorRow account={account} />;
+    default: {
+      const exhaustive: never = account;
+      return exhaustive;
+    }
+  }
 }
 
 export function AccountSettings({ account }: { account: AccountState }) {
   return (
     <div {...stylex.props(settings.page)}>
       <h1 {...stylex.props(settings.headline)}>Account</h1>
-      {/* A new state starts clean: no leftover pasted code or action error. */}
-      <AccountCard key={account.kind} account={account} />
+      <Section label="Google sign-in">
+        <AccountRow account={account} />
+      </Section>
     </div>
   );
 }

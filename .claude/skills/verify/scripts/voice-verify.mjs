@@ -451,10 +451,7 @@ const commands = {
     const page = await connect("hub");
     const framesDir = mkdtempSync(join(tmpdir(), `voice-verify-${name}-`));
     const frames = [];
-    page.ws.addEventListener("message", ({ data }) => {
-      const message = JSON.parse(data);
-      if (message.method !== "Page.screencastFrame") return;
-      const { data: png, metadata, sessionId } = message.params;
+    page.on("Page.screencastFrame", ({ data: png, metadata, sessionId }) => {
       const file = join(framesDir, `${String(frames.length).padStart(6, "0")}.png`);
       writeFileSync(file, Buffer.from(png, "base64"));
       frames.push({ file, at: metadata.timestamp });
@@ -470,7 +467,7 @@ const commands = {
     await new Promise((resolve) => {
       process.once("SIGINT", resolve);
       process.once("SIGTERM", resolve);
-      page.ws.addEventListener("close", resolve, { once: true });
+      void page.closed.then(resolve);
     });
     const stoppedAt = Date.now() / 1000;
     await Promise.race([

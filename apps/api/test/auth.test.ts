@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { createAuth } from "../src/auth.ts";
+import { cookieHeader, playBrowser, storeCookies } from "./browser-play.ts";
 import { fakeGoogleToken, googleTokenUrl } from "./google-fake.ts";
 
 const base = "http://localhost:8787";
@@ -12,9 +13,11 @@ const appOrigin = "com.codlume.voice:/";
 let nextIp = 1;
 const freshIp = () => `198.51.100.${nextIp++}`;
 
-function worker(input: string | Request, init?: RequestInit, ip = freshIp()) {
+/** Sends a request into the Worker from one client IP; `ip: null` sends none, as a proxyless client would. */
+function worker(input: string | Request, init?: RequestInit, ip: string | null = freshIp()) {
   const request = new Request(input, init);
-  if (!request.headers.has("cf-connecting-ip")) request.headers.set("cf-connecting-ip", ip);
+  if (ip !== null && !request.headers.has("cf-connecting-ip"))
+    request.headers.set("cf-connecting-ip", ip);
   return exports.default.fetch(request);
 }
 
@@ -35,52 +38,31 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 
-type Jar = Map<string, string>;
-
-function store(response: Response, jar: Jar = new Map()) {
-  for (const line of response.headers.getSetCookie()) {
-    const pair = line.split(";")[0] ?? "";
-    const at = pair.indexOf("=");
-    const value = pair.slice(at + 1);
-    if (value) jar.set(pair.slice(0, at), value);
-    else jar.delete(pair.slice(0, at));
-  }
-  return jar;
-}
-
-const cookieHeader = (jar: Jar) => [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
-
-/** Plays the system browser from init-oauth-proxy through /callback/google. */
-async function browserSignIn(googleCode: string) {
+/** Starts a sign-in as Voice would (PKCE), then plays the browser through /callback/google. */
+async function browserSignIn(googleCode: string, options = { signOut: false }) {
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
   );
   const state = crypto.randomUUID().replaceAll("-", "");
   const ip = freshIp();
-  const init = await worker(
-    `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${challenge}&client_id=electron`,
-    { redirect: "manual" },
-    ip,
-  );
-  expect(init.status).toBe(302);
-  const google = new URL(init.headers.get("location") ?? "");
-  const jar = store(init);
-  const callback = await worker(
-    `${base}/api/auth/callback/google?code=${googleCode}&state=${google.searchParams.get("state")}`,
-    { headers: { cookie: cookieHeader(jar) }, redirect: "manual" },
-    ip,
-  );
-  expect(callback.status).toBe(302);
-  expect(callback.headers.get("location")).toBe(base);
-  store(callback, jar);
-  const code = jar.get("better-auth.electron") ?? "";
+  const flow = await playBrowser((url, init) => worker(url, init, ip), {
+    base,
+    initUrl: `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${challenge}&client_id=electron`,
+    googleCode,
+    ...options,
+  });
+  expect(flow.init.status).toBe(302);
+  expect(flow.callback.status).toBe(302);
+  expect(flow.callback.headers.get("location")).toBe(base);
   const { identifier } = JSON.parse(
-    atob(decodeURIComponent(code).replaceAll("-", "+").replaceAll("_", "/")),
-  ) as {
-    identifier: string;
-  };
-  return { google, jar, ip, identifier, state, verifier };
+    atob(
+      decodeURIComponent(flow.electronCookie ?? "")
+        .replaceAll("-", "+")
+        .replaceAll("_", "/"),
+    ),
+  ) as { identifier: string };
+  return { ...flow, ip, identifier, state, verifier };
 }
 
 type SignIn = Awaited<ReturnType<typeof browserSignIn>>;
@@ -117,7 +99,7 @@ describe("Google sign-in", () => {
     expect(first.status).toBe(200);
     const { user } = await first.json<SignedIn>();
     expect(user).toMatchObject({ name: "Ada Lovelace", email: "ada-lovelace@example.com" });
-    expect((await getSession(cookieHeader(store(first))))?.user.id).toBe(user.id);
+    expect((await getSession(cookieHeader(storeCookies(first))))?.user.id).toBe(user.id);
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(1);
 
@@ -278,13 +260,15 @@ describe("electron token exchange", () => {
 });
 
 describe("rate limiting", () => {
-  const signInSocial = (headers: Record<string, string>) =>
-    exports.default.fetch(
-      new Request(`${base}/api/auth/sign-in/social`, {
+  const signInSocial = (headers: Record<string, string>, ip: string | null = null) =>
+    worker(
+      `${base}/api/auth/sign-in/social`,
+      {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify({ provider: "google" }),
-      }),
+      },
+      ip,
     );
 
   it("is on although NODE_ENV is unset, as on a real Worker (catches Better Auth's NODE_ENV default)", async () => {
@@ -296,13 +280,13 @@ describe("rate limiting", () => {
       storage: "database",
     });
 
-    const ip = { "cf-connecting-ip": freshIp() };
+    const ip = freshIp();
     const statuses = [];
-    for (let attempt = 0; attempt < 4; attempt++) statuses.push(await signInSocial(ip));
+    for (let attempt = 0; attempt < 4; attempt++) statuses.push(await signInSocial({}, ip));
 
     expect(statuses.map((response) => response.status)).toEqual([200, 200, 200, 429]);
     expect(statuses[3]?.headers.get("X-Retry-After")).toMatch(/^\d+$/);
-    expect((await signInSocial({ "cf-connecting-ip": freshIp() })).status).toBe(200);
+    expect((await signInSocial({}, freshIp())).status).toBe(200);
   });
 
   it("keys only on cf-connecting-ip (catches a spoofable x-forwarded-for key)", async () => {
@@ -316,23 +300,13 @@ describe("rate limiting", () => {
 
 describe("browser auth session", () => {
   it("ends after the landing page signs it out, and the app's exchange still works (catches a 60-day browser session left behind)", async () => {
-    const flow = await browserSignIn("browser-session");
-    expect(flow.jar.has("better-auth.session_token")).toBe(true);
-
-    const signOut = await worker(
-      `${base}/api/auth/sign-out`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: base,
-          cookie: cookieHeader(flow.jar),
-        },
-        body: "{}",
-      },
-      flow.ip,
-    );
-    expect(signOut.status).toBe(200);
+    const flow = await browserSignIn("browser-session", { signOut: true });
+    expect(
+      flow.callback.headers.getSetCookie().some((c) => c.startsWith("better-auth.session_token=")),
+    ).toBe(true);
+    expect(flow.landing?.status).toBe(200);
+    expect(flow.signOut?.status).toBe(200);
+    expect(flow.browserSessionAfterSignOut).toBeNull();
     expect(await getSession(cookieHeader(flow.jar))).toBeNull();
 
     const response = await exchange(flow);
