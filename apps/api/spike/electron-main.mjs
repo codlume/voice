@@ -268,6 +268,24 @@ const scenarios = {
     );
   },
 
+  async ipc() {
+    const sent = [];
+    electron.webContents.getFocusedWebContents = () => ({
+      send: (channel, payload) => sent.push({ channel, payload }),
+    });
+    const client = makeClient(process.env.NIGHTLY_URL, "voice.nightly");
+    const res = await client.$fetch("/electron/token", {
+      method: "POST",
+      body: { token: "x", state: "y", code_verifier: "z" },
+    });
+    log(
+      "failed request status:",
+      res.error?.status,
+      "| sent to focused window without setupMain:",
+      JSON.stringify(sent),
+    );
+  },
+
   async q8restart() {
     const client = makeClient(process.env.NIGHTLY_URL, "voice.nightly");
     log(
