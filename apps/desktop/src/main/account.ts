@@ -14,6 +14,10 @@ export const OPEN_BROWSER_FAILED_MESSAGE = "Could not open your browser to sign 
 export const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Try again.";
 export const STALE_CODE_MESSAGE =
   "That code is from an earlier sign-in. Paste the code shown in the browser now.";
+export const AUTH_SESSION_ENDED_MESSAGE = "Your sign-in expired or was revoked.";
+export const AUTH_SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+export type Identity = { name: string; email: string };
 
 /** `offline` is a failed fetch; `rejected` is the API refusing the code. #130 shows them apart. */
 export type RedeemResult =
@@ -25,10 +29,27 @@ export type AuthClient = {
   /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
   openBrowser(): Promise<{ state: string }>;
   redeem(code: string): Promise<RedeemResult>;
+  /** The identity from the last `get-session`, decrypted from the plugin's storage. */
+  cachedUser(): Identity | null;
+  checkAuthSession(): Promise<AuthSessionCheck>;
+  /** Deletes this channel's stored auth session. */
+  forget(): void;
 };
+
+/**
+ * What the API said about the stored auth session. Only `ended` means it is gone; the API could
+ * not be reached (`unreachable`) or answered something that says nothing about it (`unknown`).
+ */
+export type AuthSessionCheck =
+  | { kind: "active"; user: Identity }
+  | { kind: "ended"; status: number }
+  | { kind: "unknown"; status: number }
+  | { kind: "unreachable"; error: unknown };
 
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
+
+const sameIdentity = (a: Identity, b: Identity) => a.name === b.name && a.email === b.email;
 
 function parseHttpUrl(value: string): string | null {
   try {
@@ -83,7 +104,7 @@ export function parseSignInCode(value: string): SignInCode | null {
     : null;
 }
 
-/** Nothing is restored yet (#129), so a build starts unavailable or signed out. */
+/** A build starts unavailable or signed out. `restore` signs in from storage after launch. */
 function initialAccountState(
   apiUrl: string | null,
   development: boolean,
@@ -132,12 +153,16 @@ const toAccountState = (state: State): AccountState =>
 export function createAccount({
   apiUrl,
   development,
+  hasStoredAuthSession,
+  checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
   onChange,
   log,
 }: {
   apiUrl: string | null;
   development: boolean;
+  hasStoredAuthSession: () => boolean;
+  checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
   onChange: (state: AccountState) => void;
   log: Log;
@@ -145,6 +170,8 @@ export function createAccount({
   let state: State = initialAccountState(apiUrl, development);
   let attempts = 0;
   let cachedClient: Promise<AuthClient> | null = null;
+  let lastCheck = Date.now();
+  let restoreStarted = false;
 
   function publish(next: State) {
     state = next;
@@ -205,9 +232,82 @@ export function createAccount({
     return true;
   }
 
+  // A result lands only on the state it was started from, so a sign-in or a sign-out while the
+  // request is in flight is never overwritten.
+  async function checkAuthSession(client: AuthClient) {
+    const checked = state;
+    lastCheck = Date.now();
+    const answer = await client.checkAuthSession();
+    if (state !== checked) return;
+    switch (answer.kind) {
+      case "active":
+        if (checked.kind !== "signedIn" || !sameIdentity(answer.user, checked)) {
+          publish({ kind: "signedIn", ...answer.user });
+        }
+        return;
+      case "ended":
+        log("account auth session ended", {
+          message: "account auth session ended",
+          level: "warn",
+          attributes: { "http.response.status_code": answer.status },
+        });
+        client.forget();
+        publish({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+        return;
+      case "unknown":
+        log("account auth session check failed", {
+          message: "account auth session check failed",
+          level: "warn",
+          attributes: { "http.response.status_code": answer.status },
+        });
+        return;
+      case "unreachable":
+        log("account auth session check failed", {
+          message: "account auth session check failed",
+          level: "warn",
+          attributes: { "error.type": errorType(answer.error) },
+        });
+        return;
+      default: {
+        const exhaustive: never = answer;
+        return exhaustive;
+      }
+    }
+  }
+
   return {
     get state(): AccountState {
       return toAccountState(state);
+    },
+    /**
+     * Signs in from the stored auth session, then asks the API whether it still holds. Runs once
+     * per launch; without a cached identity the API's answer alone decides.
+     */
+    async restore() {
+      if (restoreStarted) return;
+      restoreStarted = true;
+      if (apiUrl === null || state.kind !== "signedOut" || !hasStoredAuthSession()) return;
+      let client: AuthClient;
+      try {
+        client = await loadClient(apiUrl);
+      } catch (error) {
+        log("account restore failed", {
+          message: "account restore failed",
+          level: "warn",
+          attributes: { "error.type": errorType(error) },
+        });
+        return;
+      }
+      if (state.kind !== "signedOut") return;
+      const user = client.cachedUser();
+      if (user !== null) publish({ kind: "signedIn", ...user });
+      await checkAuthSession(client);
+    },
+    /** Called when the main window becomes visible. Checks at most once per interval. */
+    async refresh() {
+      if (state.kind !== "signedIn" || cachedClient === null) return;
+      if (Date.now() - lastCheck < checkIntervalMs) return;
+      await checkAuthSession(await cachedClient);
     },
     async signIn() {
       if (apiUrl === null || (state.kind !== "signedOut" && state.kind !== "error")) {

@@ -67,5 +67,7 @@ export default defineConfig({
   ],
   test: {
     root: appDir,
+    // Processed by Vitest so a test's `vi.mock("electron")` reaches the plugin's Conf storage.
+    server: { deps: { inline: ["@better-auth/electron"] } },
   },
 });

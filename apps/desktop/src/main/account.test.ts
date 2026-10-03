@@ -1,12 +1,16 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
+import { storage } from "@better-auth/electron/storage";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { parse } from "yaml";
 
-import { VOICE_URL_SCHEME, type AccountState } from "../shared/api.ts";
+import { VOICE_URL_SCHEME, type AccountState, type UpdateChannel } from "../shared/api.ts";
 import {
   API_URLS,
+  AUTH_SESSION_CHECK_INTERVAL_MS,
+  AUTH_SESSION_ENDED_MESSAGE,
   OPEN_BROWSER_FAILED_MESSAGE,
   PASTE_CODE_MESSAGE,
   SIGN_IN_FAILED_MESSAGE,
@@ -17,11 +21,26 @@ import {
   parseSignInCode,
   resolveApiUrl,
   type AuthClient,
+  type AuthSessionCheck,
+  type Identity,
 } from "./account.ts";
+import { authSessionStored, authStoragePrefix } from "./account-storage.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
+
+// The plugin's Conf storage asks Electron's `app` for the userData folder.
+const electronApp = vi.hoisted(() => ({ userData: "" }));
+vi.mock("electron", () => ({
+  default: {
+    app: {
+      getPath: () => electronApp.userData,
+      getName: () => "Voice",
+      getVersion: () => "0.0.1",
+    },
+  },
+}));
 
 const API_URL = "https://api-nightly.voice.codlume.com";
 const USER = { name: "Ada Lovelace", email: "ada@example.com" };
@@ -32,11 +51,15 @@ const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#toke
 
 type Call = { resolve: () => void; reject: (error: Error) => void };
 type BrowserCall = { resolve: (state?: string) => void; reject: (error: Error) => void };
+type Check = { answer: (value: AuthSessionCheck) => void };
 
 function fakeClient() {
   const requests: BrowserCall[] = [];
   const exchanges: (Call & { code: string })[] = [];
+  const checks: Check[] = [];
   let user = USER;
+  let cached: Identity | null = USER;
+  let forgotten = 0;
   const client: AuthClient = {
     openBrowser: () =>
       new Promise<{ state: string }>((resolve, reject) => {
@@ -50,18 +73,40 @@ function fakeClient() {
           reject: (error) => resolve({ kind: "rejected", error }),
         });
       }),
+    cachedUser: () => cached,
+    checkAuthSession: () =>
+      new Promise((resolve) => {
+        checks.push({ answer: resolve });
+      }),
+    forget: () => {
+      forgotten += 1;
+      cached = null;
+    },
   };
   return {
     client,
     requests,
     exchanges,
+    checks,
+    get forgotten() {
+      return forgotten;
+    },
     setUser: (next: typeof USER) => {
       user = next;
+    },
+    setCached: (next: Identity | null) => {
+      cached = next;
     },
   };
 }
 
-function harness(options: { apiUrl?: string | null; development?: boolean } = {}) {
+function harness(
+  options: {
+    apiUrl?: string | null;
+    development?: boolean;
+    hasStoredAuthSession?: () => boolean;
+  } = {},
+) {
   const apiUrl = options.apiUrl === undefined ? API_URL : options.apiUrl;
   const fake = fakeClient();
   const createClient = vi.fn(async () => fake.client);
@@ -70,6 +115,7 @@ function harness(options: { apiUrl?: string | null; development?: boolean } = {}
   const account = createAccount({
     apiUrl,
     development: options.development ?? false,
+    hasStoredAuthSession: options.hasStoredAuthSession ?? (() => false),
     createClient,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => {
@@ -103,7 +149,11 @@ function harness(options: { apiUrl?: string | null; development?: boolean } = {}
     logs,
     entries,
     states,
-    ...fake,
+    fake,
+    requests: fake.requests,
+    exchanges: fake.exchanges,
+    checks: fake.checks,
+    setUser: fake.setUser,
     get state() {
       return toSnapshot(store.state).account;
     },
@@ -541,6 +591,195 @@ describe("createAccount", () => {
     h.exchanges[0]?.resolve();
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
     expect(h.states).toEqual([{ kind: "signingIn" }]);
+  });
+});
+
+// What the plugin's storage holds for a signed-in channel: safeStorage ciphertext, base64.
+const storeCookie = (channel: UpdateChannel, value: string | null = "Y2lwaGVydGV4dA==") =>
+  storage().setItem(`${authStoragePrefix(channel)}.cookie`, value);
+const withStoredAuthSession = () => true;
+
+describe("stored auth session", () => {
+  let userData: string;
+  beforeEach(() => {
+    userData = mkdtempSync(NodePath.join(tmpdir(), "voice-account-"));
+    electronApp.userData = userData;
+  });
+  afterEach(() => rmSync(userData, { recursive: true, force: true }));
+
+  test("is read from the plugin's Conf store under the installed channel only", () => {
+    expect(authSessionStored(userData, "stable")).toBe(false);
+    storeCookie("stable");
+    expect(authSessionStored(userData, "stable")).toBe(true);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    storeCookie("nightly");
+    expect(authSessionStored(userData, "nightly")).toBe(true);
+    // A renamed prefix would sign every user out on update.
+    expect(JSON.parse(readFileSync(NodePath.join(userData, "config.json"), "utf8"))).toEqual({
+      voice: { stable: { cookie: "Y2lwaGVydGV4dA==" }, nightly: { cookie: "Y2lwaGVydGV4dA==" } },
+    });
+  });
+
+  test("a cleared or unreadable store counts as no auth session", () => {
+    storeCookie("nightly", null);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    rmSync(NodePath.join(userData, "config.json"));
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+  });
+
+  test("a Stable auth session is never sent to the Nightly API", async () => {
+    storeCookie("stable");
+    const h = harness({ hasStoredAuthSession: () => authSessionStored(userData, "nightly") });
+    await h.account.restore();
+    expect(h.createClient).not.toHaveBeenCalled();
+    expect(h.checks).toEqual([]);
+    expect(h.state).toEqual({ kind: "signedOut" });
+  });
+});
+
+describe("restore", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // Each resolves once the check is in flight, with the call's own promise wrapped so that
+  // awaiting the helper does not wait for the API's answer.
+  async function restore(h: ReturnType<typeof harness>) {
+    const done = h.account.restore();
+    await flush();
+    return { done };
+  }
+
+  async function refresh(h: ReturnType<typeof harness>) {
+    const done = h.account.refresh();
+    await flush();
+    return { done };
+  }
+
+  test("a launch without a stored auth session builds no client", async () => {
+    const h = harness();
+    await h.account.restore();
+    await h.account.refresh();
+    expect(h.createClient).not.toHaveBeenCalled();
+    expect(h.states).toEqual([]);
+  });
+
+  test("signs in from the cached identity, then takes the API's answer", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = await restore(h);
+    expect(h.createClient).toHaveBeenCalledWith(API_URL);
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expect(h.checks).toHaveLength(1);
+    h.checks[0]?.answer({ kind: "active", user: { name: "Ada King", email: USER.email } });
+    await restored.done;
+    expect(h.states).toEqual([
+      { kind: "signedIn", ...USER },
+      { kind: "signedIn", name: "Ada King", email: USER.email },
+    ]);
+    expectNoSecrets(h);
+  });
+
+  test("stays signed in with the cached identity while the API cannot answer", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = await restore(h);
+    h.checks[0]?.answer({ kind: "unreachable", error: new TypeError("fetch failed") });
+    await restored.done;
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expect(h.entries).toContainEqual({
+      message: "account auth session check failed",
+      level: "warn",
+      attributes: { "error.type": "TypeError" },
+    });
+    for (const status of [500, 503, 429]) {
+      await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
+      const refreshed = await refresh(h);
+      h.checks.at(-1)?.answer({ kind: "unknown", status });
+      await refreshed.done;
+      expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    }
+    expect(h.entries).toContainEqual({
+      message: "account auth session check failed",
+      level: "warn",
+      attributes: { "http.response.status_code": 503 },
+    });
+    expect(h.checks).toHaveLength(4);
+    expect(h.fake.forgotten).toBe(0);
+    expectNoSecrets(h);
+  });
+
+  test.each([401, 403, 200])(
+    "an auth session the API reports ended (status %i) is deleted, explained, and dismissed to signed out",
+    async (status) => {
+      const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+      const restored = await restore(h);
+      h.checks[0]?.answer({ kind: "ended", status });
+      await restored.done;
+      expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+      expect(h.fake.forgotten).toBe(1);
+      expect(h.entries).toContainEqual({
+        message: "account auth session ended",
+        level: "warn",
+        attributes: { "http.response.status_code": status },
+      });
+      h.account.dismissError();
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expectNoSecrets(h);
+    },
+  );
+
+  test("checks again at most once an hour, when the window is shown", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = await restore(h);
+    h.checks[0]?.answer({ kind: "active", user: USER });
+    await restored.done;
+    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS - 1);
+    await h.account.refresh();
+    expect(h.checks).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const refreshed = await refresh(h);
+    await h.account.refresh();
+    expect(h.checks).toHaveLength(2);
+    h.checks[1]?.answer({ kind: "ended", status: 401 });
+    await refreshed.done;
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+  });
+
+  test("without a cached identity, the API's answer alone decides", async () => {
+    const offline = harness({ hasStoredAuthSession: withStoredAuthSession });
+    offline.fake.setCached(null);
+    const unanswered = await restore(offline);
+    expect(offline.state).toEqual({ kind: "signedOut" });
+    offline.checks[0]?.answer({ kind: "unreachable", error: new TypeError("fetch failed") });
+    await unanswered.done;
+    expect(offline.states).toEqual([]);
+    expect(offline.fake.forgotten).toBe(0);
+
+    const online = harness({ hasStoredAuthSession: withStoredAuthSession });
+    online.fake.setCached(null);
+    const answered = await restore(online);
+    online.checks[0]?.answer({ kind: "active", user: USER });
+    await answered.done;
+    expect(online.states).toEqual([{ kind: "signedIn", ...USER }]);
+  });
+
+  test("restores once per launch", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = await restore(h);
+    h.checks[0]?.answer({ kind: "ended", status: 200 });
+    await restored.done;
+    h.account.dismissError();
+    await h.account.restore();
+    expect(h.createClient).toHaveBeenCalledOnce();
+    expect(h.checks).toHaveLength(1);
+  });
+
+  test("a sign-in started while the client loads wins over the restore", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = h.account.restore();
+    void h.account.signIn();
+    await restored;
+    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.checks).toEqual([]);
+    expect(h.createClient).toHaveBeenCalledOnce();
   });
 });
 
