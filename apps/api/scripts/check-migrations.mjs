@@ -11,7 +11,10 @@ const rules = [
     name: "table-rebuild",
     pattern: /\b__new_\w+|\bdrop\s+table\b|\balter\s+table\b[^;]*\brename\s+to\b/i,
   },
-  { name: "foreign-key-pragma", pattern: /\bpragma\s+(defer_)?foreign_keys\b/i },
+  {
+    name: "foreign-key-pragma",
+    pattern: /\bpragma\s+(?:[\w"`]+\s*\.\s*)?["`]?(?:defer_)?foreign_keys\b/i,
+  },
 ];
 const approval = /^--\s*migration-check:\s*approved\b(.*)$/im;
 
@@ -19,6 +22,30 @@ const dir = process.argv[2];
 if (!dir) {
   console.error("usage: check-migrations.mjs <migrations-dir>");
   process.exit(2);
+}
+
+// Comments become a space and string literals become '', so `DROP/**/TABLE` still
+// matches and a keyword inside a comment or string does not. Quoted identifiers stay.
+function statementsOnly(sql) {
+  let out = "";
+  let i = 0;
+  while (i < sql.length) {
+    const rest = sql.slice(i);
+    const token =
+      /^--[^\n]*/.exec(rest) ??
+      /^\/\*[\s\S]*?(?:\*\/|$)/.exec(rest) ??
+      /^'(?:[^']|'')*(?:'|$)/.exec(rest) ??
+      /^"[^"]*(?:"|$)|^`[^`]*(?:`|$)/.exec(rest);
+    if (!token) {
+      out += sql[i];
+      i++;
+      continue;
+    }
+    const [text] = token;
+    out += text.startsWith("'") ? "''" : text.startsWith('"') || text.startsWith("`") ? text : " ";
+    i += text.length;
+  }
+  return out;
 }
 
 let violations = 0;
@@ -33,8 +60,9 @@ for (const file of readdirSync(dir)
     violations++;
     continue;
   }
+  const statements = statementsOnly(sql);
   for (const rule of rules) {
-    if (rule.pattern.test(sql)) {
+    if (rule.pattern.test(statements)) {
       console.error(`${file}: ${rule.name}`);
       violations++;
     }
