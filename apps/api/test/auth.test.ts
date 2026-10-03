@@ -232,6 +232,13 @@ describe("a user row with no account", () => {
       .bind(2 * 60_000, userId)
       .run();
 
+  const deleteUser = (cookie: string) =>
+    worker(`${base}/api/auth/delete-user`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: appOrigin, cookie },
+      body: "{}",
+    });
+
   it("is swept by a later Google callback, so a first sign-in that D1 cut off after the user row can start over (catches the lockout, and a sweep that takes a sign-in in flight)", async () => {
     const cutOff = await whileWriteFails("insert on account", () => playSignIn("cut-off-create"));
     expect(cutOff.callback.headers.get("location")).toContain("error=unable_to_create_user");
@@ -254,6 +261,27 @@ describe("a user row with no account", () => {
     expect(await rowsOf(orphan)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
+  });
+
+  it("is swept after a deletion D1 cut off before the user row, which completes the deletion (catches the same lockout after a failed delete-user)", async () => {
+    const signedIn = await exchange(await browserSignIn("cut-off-delete", { signOut: true }));
+    const { user } = await signedIn.json<SignedIn>();
+    const deletion = await whileWriteFails("delete on user", () =>
+      deleteUser(cookieHeader(storeCookies(signedIn))),
+    );
+    expect(deletion.status).toBe(500);
+    expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+
+    // The row is as old as the sign-up, which here was a moment ago.
+    await age(user.id);
+    const retry = await exchange(await browserSignIn("cut-off-delete", { signOut: true }));
+
+    expect(retry.status).toBe(200);
+    const fresh = (await retry.json<SignedIn>()).user;
+    expect(fresh.id).not.toBe(user.id);
+    expect(await rowsOf(user.id)).toEqual({ users: 0, accounts: 0, sessions: 0 });
+    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
+    expect(await rowsOf(fresh.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
   });
 });
 
