@@ -379,7 +379,6 @@ async function main() {
   }
 
   function showHub(): BrowserWindow {
-    void account.refresh();
     if (hub && !hub.isDestroyed()) {
       hub.show();
       hub.focus();
@@ -398,14 +397,13 @@ async function main() {
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
       webPreferences,
     });
+    // The window came back (shown, unminimized, Cmd-Tab): re-read what may have changed meanwhile.
     hub.on("focus", () => {
       helper.send({ type: "permissions.check" });
       refreshLoginItem();
+      void account.refresh();
     });
     hub.on("show", syncPermissionPolling);
-    // macOS shows and unminimizes the window natively too, not only through showHub.
-    hub.on("show", () => void account.refresh());
-    hub.on("restore", () => void account.refresh());
     hub.on("hide", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
