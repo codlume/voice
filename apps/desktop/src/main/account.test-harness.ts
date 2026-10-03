@@ -22,6 +22,7 @@ export const SECOND_CODE = encode({ identifier: "electron_authorization_code_2",
 export const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#token=${token}`;
 
 type Call = {
+  signal: AbortSignal;
   resolve: () => void;
   reject: (error: Error) => void;
   fail: (kind: "offline" | "rejected", error: Error) => void;
@@ -44,11 +45,17 @@ export function fakeClient() {
       new Promise<{ state: string }>((resolve, reject) => {
         requests.push({ resolve: (state = "state1") => resolve({ state }), reject });
       }),
-    redeem: (code) =>
+    redeem: (code, signal) =>
       new Promise((resolve) => {
         exchanges.push({
           code,
+          signal,
+          // As the real adapter: an aborted exchange persists nothing, whatever the API answers.
           resolve: () => {
+            if (signal.aborted) {
+              resolve({ kind: "abandoned" });
+              return;
+            }
             stored = true;
             cached = user;
             resolve({ kind: "signedIn", ...user });

@@ -17,7 +17,7 @@ import { storage } from "@better-auth/electron/storage";
 
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { AUTH_SESSION_ENDED_MESSAGE } from "./account.ts";
+import { AUTH_SESSION_ENDED_MESSAGE, SIGN_IN_TIMEOUT_MS } from "./account.ts";
 import { harness } from "./account.test-harness.ts";
 import {
   authSessionStored,
@@ -110,7 +110,26 @@ const storedIdentity = (channel: UpdateChannel) =>
 async function signIn(auth: ReturnType<typeof client>) {
   const { state } = await auth.openBrowser();
   const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
-  return auth.redeem(code);
+  return auth.redeem(code, new AbortController().signal);
+}
+
+function snapshotAccount(auth: ReturnType<typeof client>) {
+  return harness({
+    apiUrl: API.nightly,
+    createClient: async () => auth,
+    hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
+    hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
+  });
+}
+
+/** Starts a sign-in through the snapshot and returns the code the landing page would show. */
+async function signInCode(h: ReturnType<typeof harness>, auth: ReturnType<typeof client>) {
+  const opened = vi.spyOn(auth, "openBrowser");
+  await h.account.signIn();
+  const opening = opened.mock.results.at(-1);
+  if (!opening) throw new Error("Sign-in did not open the browser");
+  const { state } = await opening.value;
+  return Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
 }
 
 describe("createVoiceAuthClient", () => {
@@ -656,7 +675,9 @@ describe("server sign-outs", () => {
     const code = Buffer.from(JSON.stringify({ identifier: "test-code", state })).toString(
       "base64url",
     );
-    expect(await active.redeem(code)).toMatchObject({ kind: "signedIn" });
+    expect(await active.redeem(code, new AbortController().signal)).toMatchObject({
+      kind: "signedIn",
+    });
     active.retireAuthSession();
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
     expect(await active.checkAuthSession(new AbortController().signal)).toEqual({
@@ -668,5 +689,101 @@ describe("server sign-outs", () => {
     answer = confirmed;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=memory-token");
+  });
+});
+
+describe("an abandoned exchange through the real auth client", () => {
+  const keys = authStorageKeys("nightly");
+  const confirmed = (url: string) =>
+    url.endsWith("/sign-out") ? json({ success: true }) : json(null);
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
+  afterEach(() => vi.useRealTimers());
+
+  test.each(["cancel", "timeout"] as const)(
+    "%s as the API answers persists nothing, ends the session it created, and stays signed out across restart",
+    async (ending) => {
+      const auth = client("nightly");
+      const h = snapshotAccount(auth);
+      const code = await signInCode(h, auth);
+      const response = signedIn("late-token");
+      const getHeader = response.headers.get.bind(response.headers);
+      // The user gives up as the answer arrives: Cancel, or the attempt's deadline.
+      vi.spyOn(response.headers, "get").mockImplementation((name) => {
+        if (name.toLowerCase() === "set-cookie" && h.state.kind === "signingIn") {
+          if (ending === "cancel") h.account.cancelSignIn();
+          else vi.advanceTimersByTime(SIGN_IN_TIMEOUT_MS);
+        }
+        return getHeader(name);
+      });
+      answer = () => response;
+      await h.account.submitSignInCode(code);
+
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expect(storage().getItem(keys.cookie)).toBeNull();
+      expect(storage().getItem(keys.identity)).toBeNull();
+      expect(auth.hasAuthSession()).toBe(false);
+      expect(auth.cachedUser()).toBeNull();
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+      expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
+      answer = confirmed;
+      expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+      expect(sent.slice(-2).map(({ url, cookie }) => [new URL(url).pathname, cookie])).toEqual([
+        ["/api/auth/sign-out", "better-auth.session_token=late-token"],
+        ["/api/auth/get-session", "better-auth.session_token=late-token"],
+      ]);
+
+      h.account.dispose();
+      const requests = sent.length;
+      const relaunched = snapshotAccount(client("nightly"));
+      await relaunched.account.restore();
+      expect(relaunched.state).toEqual({ kind: "signedOut" });
+      expect(relaunched.states).toEqual([]);
+      expect(sent).toHaveLength(requests);
+      expect(config()).not.toContain(USER.email);
+    },
+  );
+
+  test("cancel before the API answers persists nothing and has no session to end", async () => {
+    const auth = client("nightly");
+    const h = snapshotAccount(auth);
+    const code = await signInCode(h, auth);
+    const pending = Promise.withResolvers<Response>();
+    answer = () => pending.promise;
+    const submitted = h.account.submitSignInCode(code);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    h.account.cancelSignIn();
+    pending.resolve(signedIn("late-token"));
+    await submitted;
+
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expect(authStored(electron.state.userData, "nightly")).toBe(false);
+    expect(auth.hasAuthSession()).toBe(false);
+    expect(auth.cachedUser()).toBeNull();
+    expect(await auth.endServerSignOuts()).toEqual([]);
+    expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
+  });
+
+  test("an exchange answered after forget writes no identity or cookie and ends its session", async () => {
+    const auth = client("nightly");
+    const { state } = await auth.openBrowser();
+    const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
+    const pending = Promise.withResolvers<Response>();
+    answer = () => pending.promise;
+    const late = auth.redeem(code, new AbortController().signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    // What a newer sign-in does to whatever is stored before it opens the browser.
+    auth.forget();
+    pending.resolve(signedIn("late-token"));
+    const result = await late;
+
+    expect(auth.cachedUser()).toBeNull();
+    expect(auth.hasAuthSession()).toBe(false);
+    expect(storage().getItem(keys.identity)).toBeNull();
+    expect(result).toEqual({ kind: "abandoned" });
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+    answer = confirmed;
+    expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+    expect(sent.at(-2)?.cookie).toBe("better-auth.session_token=late-token");
   });
 });

@@ -434,6 +434,36 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
+  test.each(["cancel", "timeout"] as const)(
+    "%s while a code is being redeemed abandons the exchange, so a late success persists nothing",
+    async (ending) => {
+      const h = harness();
+      await startSignIn(h);
+      const submitted = h.account.submitSignInCode(CODE);
+      await flush();
+      expect(h.exchanges[0]?.signal.aborted).toBe(false);
+      if (ending === "cancel") h.account.cancelSignIn();
+      else await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expect(h.exchanges[0]?.signal.aborted).toBe(true);
+      h.exchanges[0]?.resolve();
+      await submitted;
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expect(h.fake.stored).toBe(false);
+      expect(h.fake.client.cachedUser()).toBeNull();
+      expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
+      h.account.dispose();
+
+      const relaunched = harness({ fake: h.fake });
+      await relaunched.account.restore();
+      await flush();
+      expect(relaunched.state).toEqual({ kind: "signedOut" });
+      expect(relaunched.states).toEqual([]);
+      expect(relaunched.checks).toEqual([]);
+      expectNoSecrets(h);
+    },
+  );
+
   test("a result from an older attempt is dropped", async () => {
     const h = harness();
     await startSignIn(h);
