@@ -25,8 +25,8 @@ app.onError(async (error, c) => {
       error: error.name,
     }),
   );
-  // A handler that returns no response reaches onError after secureHeaders has
-  // already run, so the error response gets the headers here, not by carry-over.
+  // While securityHeaders is the first middleware, every error response already
+  // passes through it. This keeps error responses covered if that order changes.
   await securityHeaders(c, async () => {
     c.res = c.json({ error: "Internal Server Error" }, 500);
   });
