@@ -52,7 +52,7 @@ It needs Accessibility granted to the app that launches it, such as your termina
 
 `node scripts/idle-footprint.mjs` launches the built app the same way, waits for both models and 10 more seconds, then prints the average RSS and CPU of each process in the app's tree over 20 seconds.
 
-`node scripts/models-smoke.mjs` launches the built app the same way and drives the Models page. It turns cleanup off and on, cancels and then confirms each uninstall, and installs both models again from the linked files. It fails if an uninstall deletes the shared test models or a reinstall starts a download. It answers the uninstall confirmation through System Events, so it needs Accessibility like `pnpm e2e`. To save a screenshot of each step, set `VOICE_SMOKE_SHOTS` to a path prefix.
+`node scripts/models-smoke.mjs` launches the built app the same way and drives the Models page. It turns cleanup off and on, cancels and then confirms each uninstall, and installs both models again from the linked files. It fails if an uninstall deletes the shared test models or a reinstall starts a download. To save a screenshot of each step, set `VOICE_SMOKE_SHOTS` to a path prefix.
 
 ## Package
 
