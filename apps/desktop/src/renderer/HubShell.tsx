@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
+import { AccountSettings } from "./Account.tsx";
 import { Home } from "./Home.tsx";
 import {
   DataPrivacySettings,
@@ -55,6 +56,16 @@ const appPages = [
 
 const settingsPages = [
   { id: "general", label: "General", icon: slidersIcon },
+  {
+    id: "account",
+    label: "Account",
+    icon: (
+      <>
+        <circle cx="10" cy="7" r="3.25" />
+        <path d="M3.75 16.5c.9-2.9 3.3-4.5 6.25-4.5s5.35 1.6 6.25 4.5" />
+      </>
+    ),
+  },
   {
     id: "system",
     label: "System",
@@ -112,6 +123,7 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
       updates={snapshot.updates}
     />
   ),
+  account: (snapshot) => <AccountSettings account={snapshot.account} />,
   system: (snapshot) => (
     <SystemSettings settings={snapshot.settings} loginItem={snapshot.loginItem} />
   ),

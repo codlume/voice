@@ -172,6 +172,23 @@ const hubScenes: Record<string, Snapshot> = {
     settings: { ...ready.settings, updateChannel: "nightly" },
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
+  "account-signed-out": { ...ready, account: { kind: "signedOut" } },
+  "account-signing-in": { ...ready, account: { kind: "signingIn" } },
+  "account-signed-in": {
+    ...ready,
+    account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+  },
+  "account-error": {
+    ...ready,
+    account: { kind: "error", message: "Sign-in was interrupted. Try again." },
+  },
+  "account-unavailable": {
+    ...ready,
+    account: {
+      kind: "unavailable",
+      reason: "Set VOICE_API_URL to sign in from a development build.",
+    },
+  },
 };
 
 const cycle: [PillState, number][] = [
@@ -289,7 +306,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     signIn: async () => {
       set({ ...snapshot, account: { kind: "signingIn" } });
     },
-    submitSignInCode: async () => {
+    submitSignInCode: async (code) => {
+      if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({
         ...snapshot,
         account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
