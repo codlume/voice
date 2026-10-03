@@ -9,7 +9,9 @@
     "build": "wrangler deploy --dry-run --env nightly --outdir dist",
     "check:migrations": "node scripts/check-migrations.mjs migrations",
     "db:generate": "drizzle-kit generate",
-    "check:schema": "node scripts/check-schema.mjs"
+    "check:schema": "node scripts/check-schema.mjs",
+    "db:migrate:verify": "wrangler d1 migrations apply DB --local --config wrangler.verify.jsonc --persist-to .wrangler/verify",
+    "dev:verify": "wrangler dev --config wrangler.verify.jsonc --persist-to .wrangler/verify --env-file /dev/null"
   },
   "dependencies": {
     "@better-auth/electron": "1.7.7",

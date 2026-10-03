@@ -79,7 +79,7 @@ The Deploy website workflow deploys the site when a push to `main` changes `apps
 
 ## API
 
-`apps/api` is the Voice API. It is a Hono app on Cloudflare Workers with a D1 database. It serves `/health` for now.
+`apps/api` is the Voice API. It is a Hono app on Cloudflare Workers with a D1 database. It serves `/health`, Better Auth under `/api/auth/*` with Google sign-in, and at `/` the page the browser lands on after sign-in.
 
 To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file. Until Google sign-in lands, nothing reads them, so placeholder values are enough.
 
@@ -98,5 +98,13 @@ curl -i http://localhost:8787/health
 ```
 
 The local base URL is `http://localhost:8787`.
+
+To sign in without Google, run the verify Worker instead. It is the same Worker with Google's token endpoint faked, its own local database and fake credentials, and it ignores `.dev.vars`. The Google code picks the user, so `scripts/play-browser.mjs --code ada-lovelace` signs in Ada Lovelace.
+
+```sh
+pnpm --filter @voice/api db:migrate:verify
+pnpm --filter @voice/api dev:verify
+node apps/api/scripts/play-browser.mjs --base http://localhost:8787 --code ada-lovelace
+```
 
 The Deploy API (Nightly) workflow applies pending migrations, deploys the Worker and checks `/health` when a push to `main` changes `apps/api` or the workspace dependencies. Every deploy passes `--env`. The top level of `wrangler.jsonc` is for local development only and has no Worker name or entry point, so `wrangler deploy` without `--env` fails instead of creating Cloudflare resources.
