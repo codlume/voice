@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev src/index.ts",
     "typecheck": "wrangler types --check && tsc --noEmit",
     "test": "node scripts/check-migrations.mjs migrations && node --test scripts/check-migrations.test.mjs && vp test run",
     "build": "wrangler deploy --dry-run --env nightly --outdir dist"
