@@ -16,6 +16,11 @@ export const authOptions = {
   rateLimit: { enabled: true, storage: "database" },
   advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
   user: { deleteUser: { enabled: true } },
+  // Better Auth's own messages quote request data (the OAuth state, callback errors). Only the
+  // level leaves the Worker, next to the request-id line the error handler writes.
+  logger: {
+    log: (level: string) => console.log(JSON.stringify({ source: "better-auth", level })),
+  },
   plugins: [electron()],
 } satisfies BetterAuthOptions;
 

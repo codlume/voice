@@ -12,12 +12,23 @@ export const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 export const PASTE_CODE_MESSAGE = "Paste the whole code shown in the browser.";
 export const OPEN_BROWSER_FAILED_MESSAGE = "Could not open your browser to sign in. Try again.";
 export const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Try again.";
+export const STALE_CODE_MESSAGE =
+  "That code is from an earlier sign-in. Paste the code shown in the browser now.";
+
+/** `offline` is a failed fetch; `rejected` is the API refusing the code. #130 shows them apart. */
+export type RedeemResult =
+  | { kind: "signedIn"; name: string; email: string }
+  | { kind: "offline" | "rejected"; error: unknown };
 
 /** What the module needs from the Better Auth Electron client. The adapter owns the plugin details. */
 export type AuthClient = {
-  openBrowser(): Promise<void>;
-  redeem(code: string): Promise<{ name: string; email: string }>;
+  /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
+  openBrowser(): Promise<{ state: string }>;
+  redeem(code: string): Promise<RedeemResult>;
 };
+
+/** A code as the landing page shows it, with the OAuth state it carries. */
+export type SignInCode = { code: string; state: string };
 
 function parseHttpUrl(value: string): string | null {
   try {
@@ -47,7 +58,7 @@ export function resolveApiUrl({
 
 // The code is the `better-auth.electron` cookie value: base64url JSON with the identifier and
 // state, possibly percent-encoded by the cookie serializer. The plugin decodes it the same way.
-export function parseSignInCode(value: string): string | null {
+export function parseSignInCode(value: string): SignInCode | null {
   const code = value.trim();
   let text: string;
   try {
@@ -68,7 +79,7 @@ export function parseSignInCode(value: string): string | null {
     typeof decoded.identifier === "string" &&
     "state" in decoded &&
     typeof decoded.state === "string"
-    ? code
+    ? { code, state: decoded.state }
     : null;
 }
 
@@ -86,7 +97,7 @@ function initialAccountState(
   };
 }
 
-export function parseCallbackUrl(url: string): string | null {
+export function parseCallbackUrl(url: string): SignInCode | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -102,10 +113,18 @@ export function parseCallbackUrl(url: string): string | null {
 }
 
 // One sign-in attempt. The client promise and the timer exist exactly while signing in, so a
-// late callback, a stale timer or a result from an older attempt has nothing to land on.
-type State =
-  | Exclude<AccountState, { kind: "signingIn" }>
-  | { kind: "signingIn"; attempt: number; client: Promise<AuthClient>; timer: NodeJS.Timeout };
+// late callback, a stale timer or a result from an older attempt has nothing to land on. The
+// plugin keeps every attempt's verifier, so the attempt also remembers its own OAuth state and
+// redeems only a code that carries it, once.
+type Attempt = {
+  kind: "signingIn";
+  attempt: number;
+  client: Promise<AuthClient>;
+  timer: NodeJS.Timeout;
+  oauthState: string | null;
+  redeeming: boolean;
+};
+type State = Exclude<AccountState, { kind: "signingIn" }> | Attempt;
 
 const toAccountState = (state: State): AccountState =>
   state.kind === "signingIn" ? { kind: "signingIn" } : state;
@@ -158,16 +177,29 @@ export function createAccount({
     leave(attempt, { kind: "error", message });
   }
 
-  async function complete(
-    { attempt, client }: Extract<State, { kind: "signingIn" }>,
-    code: string,
-  ) {
-    try {
-      const user = await (await client).redeem(code);
-      leave(attempt, { kind: "signedIn", name: user.name, email: user.email });
-    } catch (error) {
-      failed(attempt, error, SIGN_IN_FAILED_MESSAGE);
+  /** Redeems a code for the attempt; returns false when the code is not this attempt's. */
+  async function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
+    if (oauthState !== current.oauthState) {
+      log("account: code from another sign-in ignored");
+      return false;
     }
+    if (current.redeeming) {
+      log("account: code ignored while one is being redeemed");
+      return true;
+    }
+    current.redeeming = true;
+    let result: RedeemResult;
+    try {
+      result = await (await current.client).redeem(code);
+    } catch (error) {
+      result = { kind: "rejected", error };
+    }
+    if (result.kind === "signedIn") {
+      leave(current.attempt, { kind: "signedIn", name: result.name, email: result.email });
+    } else {
+      failed(current.attempt, result.error, SIGN_IN_FAILED_MESSAGE);
+    }
+    return true;
   }
 
   return {
@@ -187,9 +219,17 @@ export function createAccount({
       }, SIGN_IN_TIMEOUT_MS);
       timer.unref();
       const client = loadClient(apiUrl);
-      publish({ kind: "signingIn", attempt, client, timer });
+      const current: Attempt = {
+        kind: "signingIn",
+        attempt,
+        client,
+        timer,
+        oauthState: null,
+        redeeming: false,
+      };
+      publish(current);
       try {
-        await (await client).openBrowser();
+        current.oauthState = (await (await client).openBrowser()).state;
       } catch (error) {
         failed(attempt, error, OPEN_BROWSER_FAILED_MESSAGE);
       }
@@ -201,7 +241,7 @@ export function createAccount({
       }
       const code = parseSignInCode(value);
       if (code === null) throw new Error(PASTE_CODE_MESSAGE);
-      await complete(state, code);
+      if (!(await complete(state, code))) throw new Error(STALE_CODE_MESSAGE);
     },
     handleCallbackUrl(url: string) {
       const code = parseCallbackUrl(url);

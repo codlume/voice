@@ -316,3 +316,36 @@ describe("browser auth session", () => {
     expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(1);
   });
 });
+
+describe("logs", () => {
+  it("never print request data, however Better Auth phrases its own errors (catches an email, code or state in Workers Logs)", async () => {
+    const markers = {
+      email: "review-synthetic-private@example.com",
+      code: "fake-code-9f3c2a7b1d",
+      state: "fake-state-5e8d1c4a",
+    };
+    const spies = (["log", "warn", "error", "info", "debug"] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => {}),
+    );
+    try {
+      const params = new URLSearchParams({
+        error: markers.email,
+        code: markers.code,
+        state: markers.state,
+      });
+      const response = await worker(`${base}/api/auth/callback/google?${params}`, {
+        headers: { cookie: `better-auth.state=${markers.state}` },
+        redirect: "manual",
+      });
+      expect(response.status).toBeGreaterThanOrEqual(300);
+
+      const printed = spies.flatMap((spy) => spy.mock.calls.map((call) => call.join(" ")));
+      expect(printed.length).toBeGreaterThan(0);
+      for (const line of printed) {
+        for (const marker of Object.values(markers)) expect(line).not.toContain(marker);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});

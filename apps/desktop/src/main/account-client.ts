@@ -5,7 +5,7 @@ import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/clien
 import { shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
-import type { AuthClient } from "./account.ts";
+import type { AuthClient, RedeemResult } from "./account.ts";
 
 // With `throw: true` the plugin resolves to the token endpoint's body, not the `{ data, error }`
 // pair its typings declare, so the user is read from the body like any other external data.
@@ -57,18 +57,36 @@ export function createVoiceAuthClient({
     userImageProxy: { enabled: false },
   }) as ElectronPlugin;
   const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
-  if (signInUrlFile) {
-    // The plugin calls `shell.openExternal` itself, so the file is the only hook a script has.
-    const openExternal = shell.openExternal.bind(shell);
-    shell.openExternal = (url, options) => {
-      if (!url.startsWith(apiUrl)) return openExternal(url, options);
-      writeFileSync(signInUrlFile, url);
-      return Promise.resolve();
-    };
-  }
+  // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
+  // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
+  // code belongs to; in test mode the same hook writes the URL for the script that plays the browser.
+  const opened: URL[] = [];
+  const openExternal = shell.openExternal.bind(shell);
+  shell.openExternal = (url, options) => {
+    if (!url.startsWith(apiUrl)) return openExternal(url, options);
+    opened.push(new URL(url));
+    if (!signInUrlFile) return openExternal(url, options);
+    writeFileSync(signInUrlFile, url);
+    return Promise.resolve();
+  };
   return {
-    openBrowser: () => client.requestAuth({ provider: "google" }),
-    redeem: async (code) =>
-      signedInUser(await client.authenticate({ token: code, fetchOptions: { throw: true } })),
+    openBrowser: async () => {
+      opened.length = 0;
+      await client.requestAuth({ provider: "google" });
+      const state = opened.at(-1)?.searchParams.get("state");
+      if (!state) throw new Error("The sign-in request carried no state.");
+      return { state };
+    },
+    redeem: async (code): Promise<RedeemResult> => {
+      try {
+        const user = signedInUser(
+          await client.authenticate({ token: code, fetchOptions: { throw: true } }),
+        );
+        return { kind: "signedIn", ...user };
+      } catch (error) {
+        // fetch rejects with a TypeError when the network fails; anything else came from the API.
+        return { kind: error instanceof TypeError ? "offline" : "rejected", error };
+      }
+    },
   };
 }
