@@ -123,7 +123,8 @@ export function createVoiceAuthClient({
       }
       let result: Awaited<ReturnType<typeof client.getSession>>;
       try {
-        // An aborted request rejects before the plugin's hooks run, so it writes no cookie.
+        // Aborting rejects the request if it lands before the response body is read, and the
+        // plugin's hooks, which write the cookie, never run. A body already read still reaches them.
         result = await client.getSession({ fetchOptions: { signal } });
       } catch (error) {
         return { kind: "unreachable", error };
