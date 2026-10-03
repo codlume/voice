@@ -26,7 +26,9 @@ pnpm dev
 
 `pnpm dev` builds the Swift helper, starts the renderer dev server on port 5783, and opens the Voice window and the floating pill. Renderer edits reload in place. Main-process and preload edits restart Electron. To pass flags to Electron, add them after `--`, for example `pnpm dev -- --remote-debugging-port=9333`. Press Ctrl+C or quit Voice to stop everything `pnpm dev` started.
 
-In development, macOS attributes permissions to "Electron", so you grant Microphone and Accessibility to Electron once. The packaged app asks as Voice.
+On macOS, `pnpm dev` runs Electron from `apps/desktop/.dev/Voice Dev.app`. It is an APFS clone of Electron's app, so it takes almost no disk space, with its own bundle id (`com.codlume.voice.dev`) and Voice's sign-in URL scheme. Git ignores it, and `pnpm dev` rebuilds it only when the Electron version or the bundle settings change. Because macOS routes the scheme to it, the Open Voice button on the browser's sign-in page reaches a development build the way it reaches the packaged app. To sign in from `pnpm dev`, point it at an API with `VOICE_API_URL=http://localhost:8787 pnpm dev`.
+
+macOS attributes permissions to "Voice Dev", so you grant Microphone and Accessibility to Voice Dev once. Grants given to "Electron" before do not carry over. The first sign-in may also ask for your login password so Voice Dev can use the "Voice Safe Storage" Keychain item. Choose Always Allow. An Electron upgrade rebuilds Voice Dev with a new signature, and macOS asks for all three again. The packaged app asks as Voice.
 
 ## Check
 
