@@ -40,6 +40,24 @@ export type UpdatesSnapshot = {
   status: UpdateStatus;
 };
 
+/**
+ * The URL scheme the browser uses to hand a sign-in back to Voice (RFC 8252 section 7.1).
+ * Fixed reverse-DNS, not derived from the app id, because the project does not own voice.app.
+ * `electron-builder.yml` repeats it under `protocols`; a test keeps the two in step.
+ */
+export const VOICE_URL_SCHEME = "com.codlume.voice";
+
+/**
+ * The account is the signed-in credential ("auth session"), never a dictation session.
+ * `unavailable` is a build with no API URL for its channel, like the `disabled` update status.
+ */
+export type AccountState =
+  | { kind: "unavailable"; reason: string }
+  | { kind: "signedOut" }
+  | { kind: "signingIn" }
+  | { kind: "signedIn"; name: string; email: string }
+  | { kind: "error"; message: string };
+
 export type Outcome =
   | { kind: "inserted"; method: "accessibility" | "paste" }
   | { kind: "notInserted"; reason: "focusChanged" | "noFocusedField" | "secureInput" | "failed" }
@@ -113,6 +131,7 @@ export type Snapshot = {
   loginItem: LoginItem;
   models: Record<ModelId, ModelStatus>;
   settings: Settings;
+  account: AccountState;
   last: { raw: string; text: string } | null;
 };
 
@@ -143,6 +162,12 @@ export type VoiceApi = {
   installModel(id: ModelId): Promise<void>;
   uninstallModel(id: ModelId): Promise<void>;
   copyLast(which: "text" | "raw"): Promise<void>;
+  /** Opens the system browser on the API. Resolves once the browser is open, not once signed in. */
+  signIn(): Promise<void>;
+  /** The code the landing page shows, for a build that cannot receive the URL scheme. */
+  submitSignInCode(code: string): Promise<void>;
+  cancelSignIn(): Promise<void>;
+  dismissAccountError(): Promise<void>;
 };
 
 export const Channel = {
@@ -162,4 +187,8 @@ export const Channel = {
   installModel: "voice:installModel",
   uninstallModel: "voice:uninstallModel",
   copyLast: "voice:copyLast",
+  signIn: "voice:signIn",
+  submitSignInCode: "voice:submitSignInCode",
+  cancelSignIn: "voice:cancelSignIn",
+  dismissAccountError: "voice:dismissAccountError",
 } as const;

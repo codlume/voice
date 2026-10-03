@@ -1,0 +1,25 @@
+// Local only, never deployed: the real Worker with Google's token endpoint faked
+// (test/verify-worker.ts), for the verify skill and desktop demos. Run it through
+// `pnpm dev:verify`, whose --env-file keeps wrangler from loading .dev.vars.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "voice-api-verify",
+  "main": "test/verify-worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // As in production: invocation logs would record the callback URL with its code and state.
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
+  "vars": {
+    "BETTER_AUTH_URL": "http://localhost:8787",
+    "BETTER_AUTH_SECRET": "fake-verify-secret-not-for-production-use",
+    "GOOGLE_CLIENT_ID": "fake-verify-client.apps.googleusercontent.com",
+    "GOOGLE_CLIENT_SECRET": "fake-verify-client-secret",
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "voice-api-verify", "database_id": "verify-local" },
+  ],
+}

@@ -31,7 +31,7 @@ import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
 
-const styles = stylex.create({
+export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
   headline: {
     margin: 0,
@@ -157,7 +157,7 @@ function Row({
   );
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+export function Section({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
   return (
     <section aria-labelledby={id} {...stylex.props(styles.section)}>
