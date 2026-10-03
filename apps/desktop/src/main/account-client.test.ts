@@ -26,6 +26,7 @@ import { createVoiceAuthClient } from "./account-client.ts";
 import {
   AUTH_SESSION_ENDED_MESSAGE,
   DELETE_ACCOUNT_FAILED_MESSAGE,
+  DELETE_ACCOUNT_OFFLINE_MESSAGE,
   SIGN_IN_ERRORS,
 } from "./account.ts";
 import {
@@ -884,5 +885,58 @@ describe("deletion through the real auth client", () => {
     expect(await client("nightly").deleteAccount()).toEqual({ kind: "deleted" });
     http.answer = () => json({ success: true, message: "Verification email http.sent" });
     expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
+  });
+
+  test("an auth session revoked before confirmation ends the sign-in instead of trapping the deletion", async () => {
+    const auth = await signedInClient();
+    const h = snapshotAccount(auth);
+    await h.account.restore();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    http.answer = (url) => {
+      if (url.endsWith("/get-session")) return json({ code: "UNAUTHORIZED" }, { status: 401 });
+      throw new Error(`Unexpected ${new URL(url).pathname} after the auth session ended`);
+    };
+    h.account.requestDeletion();
+    await h.account.confirmDeletion();
+    expect(http.sent.filter(({ url }) => url.endsWith("/delete-user"))).toEqual([]);
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    expect(auth.cachedUser()).toBeNull();
+    await h.account.signIn();
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+    h.account.dispose();
+  });
+
+  test("a deletion whose receipt was lost ends the sign-in on retry and never claims the deletion", async () => {
+    const auth = await signedInClient();
+    const h = snapshotAccount(auth);
+    await h.account.restore();
+    let deleted = false;
+    http.answer = (url) => {
+      if (url.endsWith("/get-session")) {
+        return deleted ? json(null) : json({ session: { token: "old-token" }, user: USER });
+      }
+      if (url.endsWith("/delete-user")) {
+        deleted = true;
+        throw new TypeError("fetch failed");
+      }
+      throw new Error(`Unexpected ${new URL(url).pathname}`);
+    };
+    h.account.requestDeletion();
+    await h.account.confirmDeletion();
+    expect(h.state).toEqual({
+      kind: "signedIn",
+      ...USER,
+      deletion: { kind: "failed", message: DELETE_ACCOUNT_OFFLINE_MESSAGE },
+    });
+    await h.account.retryDeletion();
+    await h.account.confirmDeletion();
+    expect(http.sent.filter(({ url }) => url.endsWith("/delete-user"))).toHaveLength(1);
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+    expect(h.states.filter((state) => state.kind === "signedOut")).toEqual([]);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    await h.account.signIn();
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+    h.account.dispose();
   });
 });
