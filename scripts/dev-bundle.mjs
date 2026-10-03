@@ -7,10 +7,24 @@ import { VOICE_URL_SCHEME } from "../apps/desktop/src/shared/api.ts";
 const LSREGISTER =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
+// The sign-in link still works by paste, so a bundle that cannot be built never blocks pnpm dev.
+export function devElectronPath(stockElectronPath, devDir) {
+  if (process.platform !== "darwin") return stockElectronPath;
+  try {
+    return devBundleElectron(stockElectronPath, devDir);
+  } catch (error) {
+    const reason = String(error instanceof Error ? error.message : error).split("\n")[0];
+    console.error(
+      `Voice Dev bundle unavailable: ${reason}; using stock Electron, so paste the sign-in code`,
+    );
+    return stockElectronPath;
+  }
+}
+
 // macOS routes a URL scheme only to an app bundle that declares it, and the stock Electron.app
-// declares none under a bundle id every worktree shares. A clone with Voice's scheme and its own id
-// receives the sign-in link the way the packaged Voice.app does. Cloning on APFS costs no disk.
-export function devBundleElectron(electronPath, devDir) {
+// declares none. This clone declares Voice's scheme. Every worktree's clone shares one bundle id,
+// so the last-launched worktree receives the link.
+function devBundleElectron(electronPath, devDir) {
   const contents = electronPath.lastIndexOf(".app/") + ".app".length;
   const source = electronPath.slice(0, contents);
   const bundle = join(devDir, "Voice Dev.app");
