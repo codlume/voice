@@ -17,7 +17,7 @@ if (code) {
   document.getElementById("code").textContent = code;
   document.getElementById("signed-in").hidden = false;
   fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
-  location.replace("com.codlume.voice://auth/callback#token=" + encodeURIComponent(code));
+  location.replace("com.codlume.voice://auth/callback#token=" + code);
 } else {
   document.getElementById("expired").hidden = false;
 }
