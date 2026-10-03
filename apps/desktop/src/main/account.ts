@@ -386,8 +386,9 @@ export function createAccount({
       if (state.kind === "signingIn")
         return complete(state, code) === null ? "ignored" : "accepted";
       // This process never started a sign-in, so the browser finished one that a quit or an
-      // update restart cut short. Its verifier died with that process.
-      if (attempts === 0 && state.kind === "signedOut") {
+      // update restart cut short. Its verifier died with that process. A stored auth session
+      // means the last process was signed in instead, and restore is about to sign in again.
+      if (attempts === 0 && state.kind === "signedOut" && !hasStoredAuthSession()) {
         log("account: sign-in was interrupted");
         publish({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
         return "interrupted";
