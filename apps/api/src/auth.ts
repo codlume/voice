@@ -39,6 +39,10 @@ export const authOptions = {
     log: (level: string) => console.log(JSON.stringify({ source: "better-auth", level })),
   },
   plugins: [electron()],
+  // No client uses it, and Google's getUserInfo returns null without the ID token, so it could
+  // only fail. A meeting integration that needs a profile lookup should re-enable it with a
+  // getUserInfo that reads the access token.
+  disabledPaths: ["/account-info"],
   databaseHooks: {
     account: { create: { before: dropIdToken }, update: { before: dropIdToken } },
   },
