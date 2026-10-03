@@ -180,7 +180,7 @@ const hubScenes: Record<string, Snapshot> = {
   },
   "account-error": {
     ...ready,
-    account: { kind: "error", message: "Sign-in was interrupted. Try again." },
+    account: { kind: "error", message: "Sign-in was interrupted." },
   },
   "account-unavailable": {
     ...ready,

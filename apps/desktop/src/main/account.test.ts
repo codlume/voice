@@ -9,11 +9,11 @@ import {
   API_URLS,
   AUTH_SESSION_CHECK_INTERVAL_MS,
   AUTH_SESSION_ENDED_MESSAGE,
-  OPEN_BROWSER_FAILED_MESSAGE,
   PASTE_CODE_MESSAGE,
-  SIGN_IN_FAILED_MESSAGE,
+  SIGN_IN_ERRORS,
   SIGN_IN_TIMEOUT_MS,
   STALE_CODE_MESSAGE,
+  callbackUrlFromArgv,
   createAccount,
   parseCallbackUrl,
   parseSignInCode,
@@ -23,6 +23,8 @@ import {
   type Identity,
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
+import { createDictation, whenNotDictating } from "./dictation.ts";
+import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
@@ -34,7 +36,11 @@ const CODE = encode({ identifier: "electron_authorization_code_1", state: "state
 const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });
 const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#token=${token}`;
 
-type Call = { resolve: () => void; reject: (error: Error) => void };
+type Call = {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  fail: (kind: "offline" | "rejected", error: Error) => void;
+};
 type BrowserCall = { resolve: (state?: string) => void; reject: (error: Error) => void };
 type Check = { answer: (value: AuthSessionCheck) => void; signal: AbortSignal };
 
@@ -56,6 +62,7 @@ function fakeClient() {
           code,
           resolve: () => resolve({ kind: "signedIn", ...user }),
           reject: (error) => resolve({ kind: "rejected", error }),
+          fail: (kind, error) => resolve({ kind, error }),
         });
       }),
     cachedUser: () => cached,
@@ -102,6 +109,7 @@ function harness(
     development: options.development ?? false,
     hasStoredAuthSession: options.hasStoredAuthSession ?? (() => false),
     createClient,
+    signInTimeoutMs: SIGN_IN_TIMEOUT_MS,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => {
       logs.push(message);
@@ -252,6 +260,21 @@ describe("parseSignInCode", () => {
   });
 });
 
+describe("callbackUrlFromArgv", () => {
+  test("finds the callback URL in a second copy's command line", () => {
+    const url = callbackUrl(CODE);
+    expect(
+      callbackUrlFromArgv(["/Applications/Voice.app/Contents/MacOS/Voice", "--flag", url]),
+    ).toBe(url);
+    expect(callbackUrlFromArgv(["/path/Electron", ".", "--remote-debugging-port=9355"])).toBe(
+      undefined,
+    );
+    expect(callbackUrlFromArgv(["/path/Electron", `https://example.com/#token=${CODE}`])).toBe(
+      undefined,
+    );
+  });
+});
+
 describe("parseCallbackUrl", () => {
   test("accepts only the app scheme, the callback path and a valid token", () => {
     expect(parseCallbackUrl(callbackUrl(CODE))).toEqual({ code: CODE, state: "state1" });
@@ -335,14 +358,49 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
-  test("a callback with nothing pending is ignored", async () => {
+  test("a callback on a launch with nothing pending says sign-in was interrupted", async () => {
     const h = harness();
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
+    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
     expect(h.createClient).not.toHaveBeenCalled();
     expect(h.exchanges).toEqual([]);
-    expect(h.states).toEqual([]);
+
+    // Retry opens a new browser; the interrupted code belongs to the dead process's attempt.
+    await startSignIn(h, "state2");
+    expect(h.requests).toHaveLength(1);
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    expect(h.exchanges).toEqual([]);
+    expect(h.state).toEqual({ kind: "signingIn" });
+    h.account.handleCallbackUrl(callbackUrl(SECOND_CODE));
+    await flush();
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
     expectNoSecrets(h);
+  });
+
+  test("the interrupted message dismisses to signed out until the next stale callback", () => {
+    const h = harness();
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    h.account.dismissError();
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    expect(h.states).toEqual([
+      { kind: "error", message: SIGN_IN_ERRORS.interrupted },
+      { kind: "signedOut" },
+      { kind: "error", message: SIGN_IN_ERRORS.interrupted },
+    ]);
+  });
+
+  test("a late callback after a cancel in this process is not called interrupted", async () => {
+    const h = harness();
+    await startSignIn(h);
+    h.account.cancelSignIn();
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    expect(h.states).toEqual([{ kind: "signingIn" }, { kind: "signedOut" }]);
+    expect(h.logs).toContain("account: callback ignored while signedOut");
   });
 
   test("malformed callbacks and pastes leave the attempt open", async () => {
@@ -366,33 +424,51 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
-  test("a rejected exchange lands in error, which dismisses or retries from scratch", async () => {
+  test.each([
+    ["offline", new TypeError("fetch failed")],
+    ["rejected", Object.assign(new Error("NOT_FOUND"), { name: "BetterFetchError" })],
+  ] as const)(
+    "a %s exchange shows its own message, and Retry opens a new browser",
+    async (kind, error) => {
+      const h = harness();
+      await startSignIn(h);
+      h.account.handleCallbackUrl(callbackUrl(CODE));
+      await flush();
+      h.exchanges[0]?.fail(kind, error);
+      await flush();
+      expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS[kind] });
+      expect(h.entries).toContainEqual({
+        message: "account sign-in failed",
+        level: "warn",
+        attributes: { "error.type": error.name, "account.failure": kind },
+      });
+
+      // The plugin spent the verifier on the failed exchange, so Retry must not redeem again.
+      await startSignIn(h, "state2");
+      expect(h.requests).toHaveLength(2);
+      h.account.handleCallbackUrl(callbackUrl(CODE));
+      await flush();
+      expect(h.exchanges).toHaveLength(1);
+      h.account.handleCallbackUrl(callbackUrl(SECOND_CODE));
+      await flush();
+      h.exchanges[1]?.resolve();
+      await flush();
+      expect(h.state).toEqual({ kind: "signedIn", ...USER });
+      expect(h.createClient).toHaveBeenCalledOnce();
+      expectNoSecrets(h);
+    },
+  );
+
+  test("offline and rejected read differently, and an error dismisses to signed out", async () => {
+    expect(SIGN_IN_ERRORS.offline).not.toBe(SIGN_IN_ERRORS.rejected);
     const h = harness();
     await startSignIn(h);
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
-    const failure = new Error("Code verifier not found.");
-    failure.name = "BetterAuthError";
-    h.exchanges[0]?.reject(failure);
+    h.exchanges[0]?.fail("rejected", new Error("NOT_FOUND"));
     await flush();
-    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_FAILED_MESSAGE });
-    expect(h.entries).toContainEqual({
-      message: "account sign-in failed",
-      level: "warn",
-      attributes: { "error.type": "BetterAuthError" },
-    });
     h.account.dismissError();
     expect(h.state).toEqual({ kind: "signedOut" });
-    await startSignIn(h);
-    h.account.handleCallbackUrl(callbackUrl(CODE));
-    await flush();
-    h.exchanges[1]?.reject(failure);
-    await flush();
-    expect(h.state.kind).toBe("error");
-    await startSignIn(h);
-    expect(h.requests).toHaveLength(3);
-    expect(h.createClient).toHaveBeenCalledOnce();
-    expectNoSecrets(h);
   });
 
   test("a browser that cannot open lands in error", async () => {
@@ -401,7 +477,7 @@ describe("createAccount", () => {
     await flush();
     h.requests[0]?.reject(new Error("no handler"));
     await signIn;
-    expect(h.state).toEqual({ kind: "error", message: OPEN_BROWSER_FAILED_MESSAGE });
+    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.browser });
     expectNoSecrets(h);
   });
 
@@ -520,7 +596,7 @@ describe("createAccount", () => {
     const h = harness();
     h.createClient.mockRejectedValueOnce(new Error("import failed"));
     await h.account.signIn();
-    expect(h.state).toEqual({ kind: "error", message: OPEN_BROWSER_FAILED_MESSAGE });
+    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.browser });
     await startSignIn(h);
     expect(h.createClient).toHaveBeenCalledTimes(2);
   });
@@ -548,6 +624,138 @@ describe("createAccount", () => {
     h.exchanges[0]?.resolve();
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
     expect(h.states).toEqual([{ kind: "signingIn" }]);
+  });
+
+  test("reports whether each callback changed the account", async () => {
+    const h = harness();
+    expect(h.account.handleCallbackUrl(callbackUrl("electron_authorization_code_1"))).toBe(
+      "ignored",
+    );
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("interrupted");
+    h.account.dismissError();
+    await startSignIn(h, "state2");
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("ignored");
+    expect(h.account.handleCallbackUrl(callbackUrl(SECOND_CODE))).toBe("accepted");
+    await flush();
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.account.handleCallbackUrl(callbackUrl(SECOND_CODE))).toBe("ignored");
+  });
+
+  test("a callback during dictation shows Voice only after the session's outcome", async () => {
+    const h = harness();
+    const commands: HelperCommand[] = [];
+    const dictation = createDictation({
+      store: h.store,
+      send: (command) => commands.push(command),
+      cleanup: { loaded: () => true, clean: async (raw) => raw },
+      onLevel: () => {},
+      log: () => {},
+      onSessionDone: () => {},
+    });
+    // The same wiring as index.ts: only a callback that changed the account shows the hub.
+    const shownDuring: string[] = [];
+    const showWhenIdle = whenNotDictating(h.store, () =>
+      shownDuring.push(h.store.state.session.phase),
+    );
+    const takeCallback = (url: string) => {
+      if (h.account.handleCallbackUrl(url) !== "ignored") showWhenIdle();
+    };
+
+    await startSignIn(h);
+    h.account.cancelSignIn();
+    takeCallback(callbackUrl(CODE));
+    takeCallback(callbackUrl("electron_authorization_code_1"));
+    expect(shownDuring).toEqual([]);
+
+    await startSignIn(h, "state2");
+    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const session = h.store.state.session;
+    if (session.phase === "idle") throw new Error("no session");
+    const id = session.id;
+    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    takeCallback(callbackUrl(SECOND_CODE));
+    await flush();
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expect(shownDuring).toEqual([]);
+
+    vi.advanceTimersByTime(800);
+    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hello world",
+      audioMs: 800,
+      asrMs: 1,
+    });
+    await flush();
+    expect(shownDuring).toEqual([]);
+    dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    expect(h.store.state.session).toEqual({
+      phase: "done",
+      id,
+      outcome: { kind: "inserted", method: "accessibility" },
+    });
+    expect(commands.map((command) => command.type)).toEqual([
+      "capture.start",
+      "capture.stop",
+      "insert",
+    ]);
+    expect(shownDuring).toEqual(["done"]);
+  });
+
+  test("an interrupted callback outside a session shows Voice at once", () => {
+    const h = harness();
+    const shown = vi.fn();
+    const showWhenIdle = whenNotDictating(h.store, shown);
+    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") showWhenIdle();
+    expect(shown).toHaveBeenCalledOnce();
+    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
+  });
+
+  test("sign-in never starts or resumes capture", async () => {
+    const h = harness();
+    const commands: HelperCommand[] = [];
+    createDictation({
+      store: h.store,
+      send: (command) => commands.push(command),
+      cleanup: { loaded: () => true, clean: async (raw) => raw },
+      onLevel: () => {},
+      log: () => {},
+      onSessionDone: () => {},
+    });
+
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await startSignIn(h);
+    h.account.cancelSignIn();
+    await startSignIn(h);
+    await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
+    await startSignIn(h);
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    h.exchanges[0]?.fail("offline", new TypeError("fetch failed"));
+    await flush();
+    await startSignIn(h, "state2");
+    const pasted = h.account.submitSignInCode(SECOND_CODE);
+    await flush();
+    h.exchanges[1]?.resolve();
+    await pasted;
+
+    expect(h.states.map((state) => state.kind)).toEqual([
+      "error",
+      "signingIn",
+      "signedOut",
+      "signingIn",
+      "signedOut",
+      "signingIn",
+      "error",
+      "signingIn",
+      "signedIn",
+    ]);
+    expect(commands).toEqual([]);
+    expect(h.store.state.session).toBe(idle);
   });
 });
 
@@ -577,6 +785,29 @@ describe("restore", () => {
     await h.account.refresh();
     expect(h.createClient).not.toHaveBeenCalled();
     expect(h.states).toEqual([]);
+  });
+
+  test("a sign-in after a failed restore clears the stored auth session, so a quit reads as interrupted", async () => {
+    const before = harness({ hasStoredAuthSession: withStoredAuthSession });
+    before.fake.setCached(null);
+    const restored = await restore(before);
+    before.checks[0]?.answer({ kind: "unreachable", error: new TypeError("fetch failed") });
+    await restored.done;
+    expect(before.state).toEqual({ kind: "signedOut" });
+    await startSignIn(before);
+    expect(before.fake.forgotten).toBe(1);
+
+    // Voice quits while signing in; the next launch sees what the sign-in left in storage.
+    const after = harness({ hasStoredAuthSession: () => before.fake.forgotten === 0 });
+    expect(after.account.handleCallbackUrl(callbackUrl(CODE))).toBe("interrupted");
+    expect(after.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
+  });
+
+  test("a callback before restore leaves a stored auth session to restore", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("ignored");
+    await restore(h);
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
   });
 
   test("signs in from the cached identity, then takes the API's answer", async () => {
@@ -711,6 +942,22 @@ describe("restore", () => {
     await restored.done;
     expect(h.state).toEqual({ kind: "signingIn" });
     expect(h.states.filter((state) => state.kind === "signedIn")).toEqual([]);
+  });
+
+  test("a sign-in forgets the stored auth session once, after aborting its check", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    h.fake.setCached(null);
+    const restored = await restore(h);
+    const signIn = h.account.signIn();
+    expect(h.checks[0]?.signal.aborted).toBe(true);
+    await flush();
+    expect(h.fake.forgotten).toBe(1);
+    h.checks[0]?.answer({ kind: "ended", status: 401 });
+    await restored.done;
+    h.requests[0]?.resolve();
+    await signIn;
+    expect(h.fake.forgotten).toBe(1);
+    expect(h.states).toEqual([{ kind: "signingIn" }]);
   });
 
   test("quitting aborts a check still in flight", async () => {

@@ -10,8 +10,13 @@ export const API_URLS: Record<UpdateChannel, string | null> = {
 
 export const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 export const PASTE_CODE_MESSAGE = "Paste the whole code shown in the browser.";
-export const OPEN_BROWSER_FAILED_MESSAGE = "Could not open your browser to sign in. Try again.";
-export const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Try again.";
+// The error row adds "Retry to sign in again.", so these name only what went wrong.
+export const SIGN_IN_ERRORS = {
+  browser: "Could not open your browser to sign in.",
+  offline: "Could not reach the Voice server. Check your connection.",
+  rejected: "The Voice server did not accept this sign-in.",
+  interrupted: "Sign-in was interrupted.",
+} as const;
 export const STALE_CODE_MESSAGE =
   "That code is from an earlier sign-in. Paste the code shown in the browser now.";
 export const AUTH_SESSION_ENDED_MESSAGE = "Your sign-in expired or was revoked.";
@@ -19,7 +24,7 @@ export const AUTH_SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 export type Identity = { name: string; email: string };
 
-/** `offline` is a failed fetch; `rejected` is the API refusing the code. #130 shows them apart. */
+/** `offline` is a failed fetch; `rejected` is the API refusing the code. */
 export type RedeemResult =
   | { kind: "signedIn"; name: string; email: string }
   | { kind: "offline" | "rejected"; error: unknown };
@@ -134,6 +139,11 @@ export function parseCallbackUrl(url: string): SignInCode | null {
   return parseSignInCode(parsed.hash.slice("#token=".length));
 }
 
+/** A second copy of Voice hands its command line to the first; this finds a callback URL in it. */
+export function callbackUrlFromArgv(argv: readonly string[]): string | undefined {
+  return argv.find((arg) => arg.startsWith(`${VOICE_URL_SCHEME}:`));
+}
+
 // One sign-in attempt. The client promise and the timer exist exactly while signing in, so a
 // late callback, a stale timer or a result from an older attempt has nothing to land on. The
 // plugin keeps every attempt's verifier, so the attempt also remembers its own OAuth state and
@@ -157,6 +167,7 @@ export function createAccount({
   hasStoredAuthSession,
   checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
+  signInTimeoutMs,
   onChange,
   log,
 }: {
@@ -165,6 +176,7 @@ export function createAccount({
   hasStoredAuthSession: () => boolean;
   checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
+  signInTimeoutMs: number;
   onChange: (state: AccountState) => void;
   log: Log;
 }) {
@@ -203,27 +215,31 @@ export function createAccount({
     return cachedClient;
   }
 
-  function failed(attempt: number, error: unknown, message: string) {
+  function failed(attempt: number, error: unknown, failure: "browser" | "offline" | "rejected") {
     if (state.kind !== "signingIn" || state.attempt !== attempt) return;
     log("account sign-in failed", {
       message: "account sign-in failed",
       level: "warn",
-      attributes: { "error.type": errorType(error) },
+      attributes: { "error.type": errorType(error), "account.failure": failure },
     });
-    leave(attempt, { kind: "error", message });
+    leave(attempt, { kind: "error", message: SIGN_IN_ERRORS[failure] });
   }
 
-  /** Redeems a code for the attempt; returns false when the code is not this attempt's. */
-  async function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
+  /** Redeems a code for the attempt, or returns null when the code is not this attempt's. */
+  function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
     if (oauthState !== current.oauthState) {
       log("account: code from another sign-in ignored");
-      return false;
+      return null;
     }
     if (current.redeeming) {
       log("account: code ignored while one is being redeemed");
-      return true;
+      return Promise.resolve();
     }
     current.redeeming = true;
+    return redeem(current, code);
+  }
+
+  async function redeem(current: Attempt, code: string) {
     let result: RedeemResult;
     try {
       result = await (await current.client).redeem(code);
@@ -233,9 +249,8 @@ export function createAccount({
     if (result.kind === "signedIn") {
       leave(current.attempt, { kind: "signedIn", name: result.name, email: result.email });
     } else {
-      failed(current.attempt, result.error, SIGN_IN_FAILED_MESSAGE);
+      failed(current.attempt, result.error, result.kind);
     }
-    return true;
   }
 
   // A result lands only on the state it was started from, so a sign-in or a sign-out while the
@@ -332,7 +347,7 @@ export function createAccount({
       const timer = setTimeout(() => {
         log("account sign-in timed out", { message: "account sign-in timed out", level: "warn" });
         leave(attempt, { kind: "signedOut" });
-      }, SIGN_IN_TIMEOUT_MS);
+      }, signInTimeoutMs);
       timer.unref();
       const client = loadClient(apiUrl);
       const current: Attempt = {
@@ -345,9 +360,14 @@ export function createAccount({
       };
       publish(current);
       try {
-        current.oauthState = (await (await client).openBrowser()).state;
+        const opened = await client;
+        // A new sign-in abandons any stored auth session that failed to restore. Left behind, it
+        // would make a callback after a quit look like the restore case and hide the interrupted
+        // message.
+        opened.forget();
+        current.oauthState = (await opened.openBrowser()).state;
       } catch (error) {
-        failed(attempt, error, OPEN_BROWSER_FAILED_MESSAGE);
+        failed(attempt, error, "browser");
       }
     },
     async submitSignInCode(value: string) {
@@ -357,19 +377,29 @@ export function createAccount({
       }
       const code = parseSignInCode(value);
       if (code === null) throw new Error(PASTE_CODE_MESSAGE);
-      if (!(await complete(state, code))) throw new Error(STALE_CODE_MESSAGE);
+      const redeeming = complete(state, code);
+      if (redeeming === null) throw new Error(STALE_CODE_MESSAGE);
+      await redeeming;
     },
-    handleCallbackUrl(url: string) {
+    /** Whether the callback changed anything, so the caller knows whether to bring Voice forward. */
+    handleCallbackUrl(url: string): "accepted" | "interrupted" | "ignored" {
       const code = parseCallbackUrl(url);
       if (code === null) {
         log("account: malformed callback URL");
-        return;
+        return "ignored";
       }
-      if (state.kind !== "signingIn") {
-        log(`account: callback ignored while ${state.kind}`);
-        return;
+      if (state.kind === "signingIn")
+        return complete(state, code) === null ? "ignored" : "accepted";
+      // This process never started a sign-in, so the browser finished one that a quit or an
+      // update restart cut short. Its verifier died with that process. A stored auth session
+      // means the last process was signed in instead, and restore is about to sign in again.
+      if (attempts === 0 && state.kind === "signedOut" && !hasStoredAuthSession()) {
+        log("account: sign-in was interrupted");
+        publish({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
+        return "interrupted";
       }
-      void complete(state, code);
+      log(`account: callback ignored while ${state.kind}`);
+      return "ignored";
     },
     cancelSignIn() {
       if (state.kind === "signingIn") leave(state.attempt, { kind: "signedOut" });
