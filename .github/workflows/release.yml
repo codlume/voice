@@ -85,6 +85,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    # The environment holds the API token and the reviewer gate. Without it the job would
+    # silently use the repo-level CLOUDFLARE_API_TOKEN that deploys the website.
     environment: api-stable
     concurrency:
       group: deploy-api-stable
