@@ -318,6 +318,25 @@ describe("a user row with no account", () => {
   });
 });
 
+describe("account-info", () => {
+  it("is not served, even to a signed-in user (catches the route re-enabled while it can only fail without the ID token)", async () => {
+    const signedIn = await exchange(await browserSignIn("account-info"));
+    const cookie = cookieHeader(storeCookies(signedIn));
+    const { user } = await signedIn.json<SignedIn>();
+    const account = await env.DB.prepare("select id from account where user_id = ?")
+      .bind(user.id)
+      .first<{ id: string }>();
+    expect(account?.id).toBeTruthy();
+
+    for (const path of ["/api/auth/account-info", "/api/auth/account-info/"]) {
+      const response = await worker(`${base}${path}?accountId=${account?.id}`, {
+        headers: { cookie },
+      });
+      expect(response.status).toBe(404);
+    }
+  });
+});
+
 describe("origins", () => {
   const exchangeFrom = (origin: string, url = `${base}/api/auth/electron/token`) =>
     new Request(url, {
