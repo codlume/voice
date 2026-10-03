@@ -17,6 +17,8 @@ import type {
 import type { Log } from "./diagnostics-scrub.ts";
 import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 // The token and `get-session` bodies both carry `{ user }`. They are external data, so the
 // user is read from them like any other.
 function userOf(body: unknown): Identity | null {
@@ -89,6 +91,7 @@ export function createVoiceAuthClient({
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
   const store = storage();
+  let olderAuthSession: { token: string; cookie: string } | null = null;
   let generation = 0;
   function makeClient() {
     const current = generation;
@@ -157,6 +160,7 @@ export function createVoiceAuthClient({
   }
 
   function forget() {
+    olderAuthSession = null;
     generation += 1;
     store.setItem(keys.cookie, null);
     store.setItem(keys.identity, null);
@@ -272,6 +276,7 @@ export function createVoiceAuthClient({
             token: code,
             fetchOptions: {
               throw: true,
+              timeout: REQUEST_TIMEOUT_MS,
               signal,
               onResponse: ({ response }) => {
                 setCookie = response.headers.get("set-cookie");
@@ -351,6 +356,53 @@ export function createVoiceAuthClient({
         ending = null;
       });
       return ending;
+    },
+    deleteAccount: async () => {
+      try {
+        const { data, error } = await client.deleteUser({
+          fetchOptions: { timeout: REQUEST_TIMEOUT_MS },
+        });
+        if (!error)
+          return data?.success === true && data.message === "User deleted"
+            ? { kind: "deleted" }
+            : { kind: "failed" };
+        if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
+        const authSession = await client.getSession({
+          fetchOptions: { timeout: REQUEST_TIMEOUT_MS },
+        });
+        if (authSession.error || !authSession.data) return { kind: "failed" };
+        olderAuthSession = { token: authSession.data.session.token, cookie: client.getCookie() };
+        return { kind: "reauthRequired" };
+      } catch (error) {
+        return { kind: error instanceof TypeError ? "offline" : "failed" };
+      }
+    },
+    revokeOlderAuthSession: async () => {
+      if (olderAuthSession === null) return;
+      const { token, cookie } = olderAuthSession;
+      // The old credential authorizes its own revocation, also if Google chose a different
+      // account. Bypass the plugin so this response cannot overwrite the new credential.
+      const response = await fetch(`${apiUrl}/api/auth/revoke-session`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: `${VOICE_URL_SCHEME}:/`, cookie },
+        body: JSON.stringify({ token }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (response.status === 401) {
+        olderAuthSession = null;
+        return;
+      }
+      const body: unknown = await response.json();
+      if (
+        !response.ok ||
+        typeof body !== "object" ||
+        body === null ||
+        !("status" in body) ||
+        body.status !== true
+      ) {
+        throw new Error("Auth session revocation failed.");
+      }
+      olderAuthSession = null;
     },
   };
 }

@@ -55,8 +55,17 @@ export type AccountState =
   | { kind: "unavailable"; reason: string }
   | { kind: "signedOut" }
   | { kind: "signingIn" }
-  | { kind: "signedIn"; name: string; email: string }
+  | { kind: "signingIn"; purpose: "deleteAccount"; phase: "browser" | "finishing" }
+  | { kind: "signedIn"; name: string; email: string; deletion?: AccountDeletion }
   | { kind: "error"; message: string };
+
+export type AccountDeletion =
+  | { kind: "confirming" }
+  | { kind: "deleting" }
+  | { kind: "reauthRequired"; message: string }
+  | { kind: "revoking" }
+  | { kind: "revocationFailed"; message: string }
+  | { kind: "failed"; message: string };
 
 export type Outcome =
   | { kind: "inserted"; method: "accessibility" | "paste" }
@@ -169,6 +178,10 @@ export type VoiceApi = {
   submitSignInCode(code: string): Promise<void>;
   cancelSignIn(): Promise<void>;
   dismissAccountError(): Promise<void>;
+  requestAccountDeletion(): Promise<void>;
+  confirmAccountDeletion(): Promise<void>;
+  cancelAccountDeletion(): Promise<void>;
+  retryAccountDeletion(): Promise<void>;
 };
 
 export const Channel = {
@@ -193,4 +206,8 @@ export const Channel = {
   submitSignInCode: "voice:submitSignInCode",
   cancelSignIn: "voice:cancelSignIn",
   dismissAccountError: "voice:dismissAccountError",
+  requestAccountDeletion: "voice:requestAccountDeletion",
+  confirmAccountDeletion: "voice:confirmAccountDeletion",
+  cancelAccountDeletion: "voice:cancelAccountDeletion",
+  retryAccountDeletion: "voice:retryAccountDeletion",
 } as const;

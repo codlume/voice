@@ -59,6 +59,8 @@ export const LOGS = {
   "account auth session ended": ["http.response.status_code"],
   "account server sign-out queue discarded": [],
   "account server sign-out failed": ["error.type", "http.response.status_code"],
+  "account deletion failed": ["error.type"],
+  "account auth session revocation failed": ["error.type"],
 } as const satisfies Record<string, readonly string[]>;
 type AppLog = keyof typeof LOGS;
 
