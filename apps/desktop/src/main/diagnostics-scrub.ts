@@ -52,6 +52,8 @@ export const LOGS = {
   "cleanup timed out": ["cleanup.budget_ms"],
   "shutdown overran": ["shutdown.timeout_ms"],
   "dock update failed": [],
+  "account sign-in failed": ["error.type"],
+  "account sign-in timed out": [],
 } as const satisfies Record<string, readonly string[]>;
 type AppLog = keyof typeof LOGS;
 
