@@ -9,7 +9,12 @@ export default defineConfig({
       main: "./src/index.ts",
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { TEST_MIGRATIONS: migrations },
+        bindings: {
+          TEST_MIGRATIONS: migrations,
+          BETTER_AUTH_SECRET: "fake-test-secret-Zq8vN3rT1pWx6YbK4mHs9dLc",
+          GOOGLE_CLIENT_ID: "fake-test-client-id",
+          GOOGLE_CLIENT_SECRET: "fake-test-client-secret",
+        },
       },
     }),
   ],
