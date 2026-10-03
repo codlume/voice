@@ -117,3 +117,51 @@ and that macOS accepts the app's signature. Test installation and update
 with a separate staging bucket and public domain before enabling production
 settings. Local unsigned `dist:mac` builds are development artifacts and
 must not be published.
+
+## Deploy and recover the API
+
+Nightly deploys on pushes to `main` that change `apps/api`, workspace
+dependencies, or the Nightly deploy workflow. Stable deploys with a Stable
+release only when `apps/api/**` changed since the previous Stable tag.
+The `api-stable` GitHub environment requires reviewer approval and permits
+deploys only from `main`. The API job runs independently of `stable-publish`,
+so desktop publication never waits for API approval or deployment.
+Deploys are serialized per environment and never cancelled in progress.
+Each deploy logs a D1 Time Travel bookmark, applies pending remote
+migrations, deploys with `--strict`, and checks `/health`, in that order.
+If a Stable API deploy fails or its approval is rejected, use **Re-run failed
+jobs** on that release's workflow run. A later Stable release deploys the API
+only if it changes `apps/api/**` again.
+
+Before the first Stable deploy, the maintainer sets the three Worker secrets
+from `apps/api`. Enter each value at Wrangler's prompt.
+
+```sh
+vp exec wrangler secret put BETTER_AUTH_SECRET --env stable
+vp exec wrangler secret put GOOGLE_CLIENT_ID --env stable
+vp exec wrangler secret put GOOGLE_CLIENT_SECRET --env stable
+```
+
+On a missing Worker, `secret put` creates a draft Worker. After setting the
+secrets, check in Cloudflare that no `workers.dev` hostname exists, then
+allow the first deploy. Nightly uses the same order with `--env nightly`.
+If that first deploy aborts with `Aborting the upload operation because of
+conflicts`, check out the commit the job deploys and run
+`vp exec wrangler deploy --env stable` once from `apps/api`, without
+`--strict`. Then rerun the job.
+
+Keep migrations additive and compatible with the previous Worker version.
+Worker rollback does not undo database migrations. To roll back the Worker,
+run the following from `apps/api`, replacing `<env>` with `nightly` or `stable`.
+
+```sh
+vp exec wrangler rollback --env <env>
+```
+
+If the database also needs recovery, restore the bookmark printed before
+the migration. Replace `<id>` with that bookmark. Restoration discards writes
+after the bookmark, so use a Worker version compatible with the restored schema.
+
+```sh
+vp exec wrangler d1 time-travel restore DB --env <env> --bookmark <id>
+```

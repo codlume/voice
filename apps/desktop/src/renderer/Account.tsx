@@ -217,12 +217,24 @@ function AccountRow({ account }: { account: AccountState }) {
   }
 }
 
-export function AccountSettings({ account }: { account: AccountState }) {
+export function AccountSettings({
+  account,
+  otherChannelSignedIn,
+}: {
+  account: AccountState;
+  otherChannelSignedIn: boolean;
+}) {
   return (
     <div {...stylex.props(settings.page)}>
       <h1 {...stylex.props(settings.headline)}>Account</h1>
       <Section label="Google sign-in">
         <AccountRow account={account} />
+        {otherChannelSignedIn && (
+          <p {...stylex.props(settings.hint)}>
+            Stable and Nightly use separate accounts, so a sign-in from the other channel does not
+            apply here.
+          </p>
+        )}
       </Section>
     </div>
   );

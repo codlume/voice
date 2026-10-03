@@ -2,7 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 
 import Page from "../layouts/Page.astro";
-import { CONTACT_EMAIL, OPERATOR_NAME, POLICY_UPDATED } from "../site.ts";
+import { CONTACT_EMAIL, OPERATOR_NAME, TERMS_UPDATED } from "../site.ts";
 import { styles } from "../styles.ts";
 
 export const prerender = true;
@@ -22,7 +22,7 @@ const a = stylex.attrs(styles.link);
   <main {...stylex.attrs(styles.prose)}>
     <h1 {...stylex.attrs(styles.headline)}>Terms of Service</h1>
     <p {...stylex.attrs(styles.updated)}>
-      Last updated <time datetime={POLICY_UPDATED}>{POLICY_UPDATED}</time>
+      Last updated <time datetime={TERMS_UPDATED}>{TERMS_UPDATED}</time>
     </p>
 
     <h2 {...h2}>Who we are</h2>

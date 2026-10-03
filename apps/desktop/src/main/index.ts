@@ -28,7 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
-import { authSessionStored } from "./account-storage.ts";
+import { authSessionStored, otherChannelSignedIn } from "./account-storage.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   callbackUrlFromArgv,
@@ -235,6 +235,7 @@ async function main() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
+    otherChannelSignedIn: otherChannelSignedIn(userData, installedChannel),
     last: null,
   });
 
