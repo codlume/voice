@@ -99,4 +99,4 @@ curl -i http://localhost:8787/health
 
 The local base URL is `http://localhost:8787`.
 
-The Deploy API (Nightly) workflow applies pending migrations, deploys the Worker and checks `/health` when a push to `main` changes `apps/api` or the workspace dependencies. Every deploy passes `--env`, because the top level of `wrangler.jsonc` is for local development only and a bare deploy can create Cloudflare resources.
+The Deploy API (Nightly) workflow applies pending migrations, deploys the Worker and checks `/health` when a push to `main` changes `apps/api` or the workspace dependencies. Every deploy passes `--env`. The top level of `wrangler.jsonc` is for local development only and has no Worker name or entry point, so `wrangler deploy` without `--env` fails instead of creating Cloudflare resources.
