@@ -761,6 +761,18 @@ describe("restore", () => {
     expect(online.states).toEqual([{ kind: "signedIn", ...USER }]);
   });
 
+  test("a show and an unminimize in the same moment send one check", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = await restore(h);
+    h.checks[0]?.answer({ kind: "active", user: USER });
+    await restored.done;
+    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
+    void h.account.refresh();
+    void h.account.refresh();
+    await flush();
+    expect(h.checks).toHaveLength(2);
+  });
+
   test("restores once per launch", async () => {
     const h = harness({ hasStoredAuthSession: withStoredAuthSession });
     const restored = await restore(h);

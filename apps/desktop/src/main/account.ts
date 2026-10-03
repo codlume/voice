@@ -29,7 +29,7 @@ export type AuthClient = {
   /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
   openBrowser(): Promise<{ state: string }>;
   redeem(code: string): Promise<RedeemResult>;
-  /** The identity from the last `get-session`, decrypted from the plugin's storage. */
+  /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
   cachedUser(): Identity | null;
   checkAuthSession(): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
@@ -307,6 +307,8 @@ export function createAccount({
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;
       if (Date.now() - lastCheck < checkIntervalMs) return;
+      // Claimed before the client resolves, so a show and a restore in one tick send one request.
+      lastCheck = Date.now();
       await checkAuthSession(await cachedClient);
     },
     async signIn() {
