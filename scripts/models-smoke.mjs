@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -74,21 +73,14 @@ try {
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
     writeFileSync(`${shots}-${name}.png`, Buffer.from(data, "base64"));
   };
-  const answerDialog = (choice) => {
-    const script = `tell application "System Events" to tell (first process whose unix id is ${child.pid})
-      repeat 50 times
-        repeat with w in windows
-          if (count of sheets of w) > 0 then
-            click button "${choice}" of sheet 1 of w
-            return "ok"
-          end if
-        end repeat
-        delay 0.1
-      end repeat
-      return "none"
-    end tell`;
-    const answered = execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
-    assert(answered === "ok", `no confirmation sheet to answer ${choice}`);
+  const dialogButton = (text) =>
+    `[...document.querySelectorAll('[role="alertdialog"] button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+  const answerDialog = async (choice) => {
+    await click(dialogButton(choice), `confirmation dialog offers ${choice}`);
+    await untilPage(
+      `!document.querySelector('[role="alertdialog"]')`,
+      "confirmation dialog closes",
+    );
   };
 
   await untilModels(
@@ -111,7 +103,7 @@ try {
   const uninstallCleanup = button(`Uninstall ${names.cleanup}`);
   const beforeCancel = snapshots.items.length;
   await click(uninstallCleanup, "cleanup Uninstall clickable");
-  answerDialog("Cancel");
+  await answerDialog("Cancel");
   await untilPage(enabled(uninstallCleanup), "cancelled uninstall settles");
   const afterCancel = await page.evaluate("window.voice.getSnapshot()");
   assert(
@@ -125,7 +117,7 @@ try {
 
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Uninstall ${names[id]}`), `${id} Uninstall clickable`);
-    answerDialog("Uninstall");
+    await answerDialog("Uninstall");
     await untilModels((m) => m[id].state === "missing", `${id} missing`);
     assert(!linked(join(models, modelFiles[id])), `${id} link removed`);
     assert(existsSync(join(cache, modelFiles[id])), `${id} cache left intact`);
