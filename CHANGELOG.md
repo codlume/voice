@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.18.0 (2026-10-03)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(desktop): move update settings to General as About by @hadrysm in https://github.com/codlume/voice/pull/157
+* chore(agents): add a verify skill that drives the desktop app by @hadrysm in https://github.com/codlume/voice/pull/160
+* chore(agents): map Voice features for the verify skill by @hadrysm in https://github.com/codlume/voice/pull/161
+* test(desktop): answer the in-window uninstall dialog in the Models smoke by @hadrysm in https://github.com/codlume/voice/pull/159
+* fix(desktop): stop setting titles from hovering their select by @hadrysm in https://github.com/codlume/voice/pull/165
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.17.0...v0.18.0
+
 ## 0.17.0 (2026-10-02)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
