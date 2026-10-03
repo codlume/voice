@@ -167,6 +167,9 @@ export function createAccount({
     return cachedClient;
   }
 
+  // For a check after an await, where TS still has `state` narrowed by signIn's entry check.
+  const ended = (attempt: Attempt) => state !== attempt;
+
   function failed(attempt: number, error: unknown, message: string) {
     if (state.kind !== "signingIn" || state.attempt !== attempt) return;
     log("account sign-in failed", {
@@ -229,7 +232,10 @@ export function createAccount({
       };
       publish(current);
       try {
-        current.oauthState = (await (await client).openBrowser()).state;
+        const opened = await client;
+        // Cancel or the deadline may have ended this attempt while the client loaded.
+        if (ended(current)) return;
+        current.oauthState = (await opened.openBrowser()).state;
       } catch (error) {
         failed(attempt, error, OPEN_BROWSER_FAILED_MESSAGE);
       }
