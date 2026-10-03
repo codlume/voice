@@ -40,6 +40,14 @@ export type AuthClient = {
   checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
   forget(): void;
+  /** Queues a complete Cookie header for revocation without changing the active session. */
+  queueServerSignOut(cookie: string): void;
+  /** Whether an active cookie remains after the adapter reconciles stored sign-outs. */
+  hasAuthSession(): boolean;
+  /** Queues the active cookie before clearing its cookie and identity through forget. */
+  retireAuthSession(): void;
+  /** Retries queued sign-outs once; confirmed sessions leave the queue, failures stay for launch. */
+  endServerSignOuts(): Promise<ServerSignOut[]>;
 };
 
 /**
@@ -51,6 +59,8 @@ export type AuthSessionCheck =
   | { kind: "ended"; status: number }
   | { kind: "unknown"; status: number }
   | { kind: "unreachable"; error: unknown };
+
+export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
@@ -165,6 +175,7 @@ export function createAccount({
   apiUrl,
   development,
   hasStoredAuthSession,
+  hasStoredAuth,
   checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
   signInTimeoutMs,
@@ -174,6 +185,7 @@ export function createAccount({
   apiUrl: string | null;
   development: boolean;
   hasStoredAuthSession: () => boolean;
+  hasStoredAuth: () => boolean;
   checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
   signInTimeoutMs: number;
@@ -183,6 +195,7 @@ export function createAccount({
   let state: State = initialAccountState(apiUrl, development);
   let attempts = 0;
   let cachedClient: Promise<AuthClient> | null = null;
+  let loadedClient: AuthClient | null = null;
   let lastCheck = Date.now();
   let restoreStarted = false;
   // The get-session in flight. Its response would still write the cookie it carries, so anything
@@ -207,7 +220,10 @@ export function createAccount({
 
   function loadClient(url: string): Promise<AuthClient> {
     if (!cachedClient) {
-      cachedClient = createClient(url);
+      cachedClient = createClient(url).then((client) => {
+        loadedClient = client;
+        return client;
+      });
       cachedClient.catch(() => {
         cachedClient = null;
       });
@@ -226,6 +242,20 @@ export function createAccount({
       attributes: { "error.type": errorType(error), "account.failure": failure },
     });
     leave(attempt, { kind: "error", message: SIGN_IN_ERRORS[failure] });
+  }
+
+  async function endServerSignOuts(client: AuthClient) {
+    for (const answer of await client.endServerSignOuts()) {
+      if (answer.kind === "ended") continue;
+      log("account server sign-out failed", {
+        message: "account server sign-out failed",
+        level: "warn",
+        attributes:
+          answer.kind === "unknown"
+            ? { "http.response.status_code": answer.status }
+            : { "error.type": errorType(answer.error) },
+      });
+    }
   }
 
   /** Redeems a code for the attempt, or returns null when the code is not this attempt's. */
@@ -314,7 +344,8 @@ export function createAccount({
     async restore() {
       if (restoreStarted) return;
       restoreStarted = true;
-      if (apiUrl === null || state.kind !== "signedOut" || !hasStoredAuthSession()) return;
+      if (apiUrl === null || state.kind !== "signedOut") return;
+      if (!hasStoredAuth()) return;
       let client: AuthClient;
       try {
         client = await loadClient(apiUrl);
@@ -326,7 +357,8 @@ export function createAccount({
         });
         return;
       }
-      if (state.kind !== "signedOut") return;
+      void endServerSignOuts(client);
+      if (state.kind !== "signedOut" || !client.hasAuthSession()) return;
       const user = client.cachedUser();
       if (user !== null) publish({ kind: "signedIn", ...user });
       await checkAuthSession(client);
@@ -335,9 +367,12 @@ export function createAccount({
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;
       if (Date.now() - lastCheck < checkIntervalMs) return;
+      const refreshing = state;
       // Claimed before the client resolves, so a show and a restore in one tick send one request.
       lastCheck = Date.now();
-      await checkAuthSession(await cachedClient);
+      const client = await cachedClient;
+      if (state !== refreshing) return;
+      await checkAuthSession(client);
     },
     async signIn() {
       if (apiUrl === null || (state.kind !== "signedOut" && state.kind !== "error")) {
@@ -366,10 +401,8 @@ export function createAccount({
         const opened = await client;
         // Cancel or the deadline may have ended this attempt while the client loaded.
         if (ended(current)) return;
-        // A new sign-in abandons any stored auth session that failed to restore. Left behind, it
-        // would make a callback after a quit look like the restore case and hide the interrupted
-        // message.
-        opened.forget();
+        opened.retireAuthSession();
+        void endServerSignOuts(opened);
         current.oauthState = (await opened.openBrowser()).state;
       } catch (error) {
         failed(attempt, error, "browser");
@@ -408,6 +441,13 @@ export function createAccount({
     },
     cancelSignIn() {
       if (state.kind === "signingIn") leave(state.attempt, { kind: "signedOut" });
+    },
+    async signOut() {
+      if (state.kind !== "signedIn" || loadedClient === null) return;
+      abortCheck();
+      loadedClient.retireAuthSession();
+      publish({ kind: "signedOut" });
+      await endServerSignOuts(loadedClient);
     },
     dismissError() {
       if (state.kind === "error") publish({ kind: "signedOut" });

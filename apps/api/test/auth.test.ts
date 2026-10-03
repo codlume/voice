@@ -498,3 +498,27 @@ describe("revoked auth session", () => {
     expect((await getSession(other))?.user.id).toBe(user.id);
   });
 });
+
+describe("sign out", () => {
+  it("rejects the old app session and returns null for its old cookie, including a repeated sign-out", async () => {
+    const response = await exchange(await browserSignIn("sign-out-session", { signOut: true }));
+    const { user, token } = await response.json<SignedIn>();
+    const cookie = cookieHeader(storeCookies(response));
+    expect((await getSession(cookie))?.user.id).toBe(user.id);
+    const signOut = () =>
+      worker(`${base}/api/auth/sign-out`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: appOrigin, cookie },
+        body: "{}",
+      });
+
+    expect(await (await signOut()).json()).toEqual({ success: true });
+    expect(await count("select count(*) as n from session where token = ?", token)).toBe(0);
+    expect(await getSession(cookie)).toBeNull();
+    expect((await worker(`${base}/api/auth/list-sessions`, { headers: { cookie } })).status).toBe(
+      401,
+    );
+    expect(await (await signOut()).json()).toEqual({ success: true });
+    expect(await getSession(cookie)).toBeNull();
+  });
+});

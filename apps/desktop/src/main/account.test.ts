@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { parse } from "yaml";
 
-import { VOICE_URL_SCHEME, type AccountState } from "../shared/api.ts";
+import { VOICE_URL_SCHEME } from "../shared/api.ts";
 import {
   API_URLS,
   AUTH_SESSION_CHECK_INTERVAL_MS,
@@ -14,169 +14,28 @@ import {
   SIGN_IN_TIMEOUT_MS,
   STALE_CODE_MESSAGE,
   callbackUrlFromArgv,
-  createAccount,
   parseCallbackUrl,
   parseSignInCode,
   resolveApiUrl,
-  type AuthClient,
-  type AuthSessionCheck,
-  type Identity,
 } from "./account.ts";
-import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { createDictation, whenNotDictating } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
+import {
+  API_URL,
+  CODE,
+  SECOND_CODE,
+  USER,
+  callbackUrl,
+  encode,
+  expectNoSecrets,
+  flush,
+  harness,
+  restore,
+  refresh,
+  startSignIn,
+  withStoredAuthSession,
+} from "./account.test-harness.ts";
 import { idle } from "./session.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
-import { createStore, toSnapshot } from "./store.ts";
-
-const API_URL = "https://api-nightly.voice.codlume.com";
-const USER = { name: "Ada Lovelace", email: "ada@example.com" };
-const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
-const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });
-const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#token=${token}`;
-
-type Call = {
-  resolve: () => void;
-  reject: (error: Error) => void;
-  fail: (kind: "offline" | "rejected", error: Error) => void;
-};
-type BrowserCall = { resolve: (state?: string) => void; reject: (error: Error) => void };
-type Check = { answer: (value: AuthSessionCheck) => void; signal: AbortSignal };
-
-function fakeClient() {
-  const requests: BrowserCall[] = [];
-  const exchanges: (Call & { code: string })[] = [];
-  const checks: Check[] = [];
-  let user = USER;
-  let cached: Identity | null = USER;
-  let forgotten = 0;
-  const client: AuthClient = {
-    openBrowser: () =>
-      new Promise<{ state: string }>((resolve, reject) => {
-        requests.push({ resolve: (state = "state1") => resolve({ state }), reject });
-      }),
-    redeem: (code) =>
-      new Promise((resolve) => {
-        exchanges.push({
-          code,
-          resolve: () => resolve({ kind: "signedIn", ...user }),
-          reject: (error) => resolve({ kind: "rejected", error }),
-          fail: (kind, error) => resolve({ kind, error }),
-        });
-      }),
-    cachedUser: () => cached,
-    checkAuthSession: (signal) =>
-      new Promise((resolve) => {
-        checks.push({ answer: resolve, signal });
-      }),
-    forget: () => {
-      forgotten += 1;
-      cached = null;
-    },
-  };
-  return {
-    client,
-    requests,
-    exchanges,
-    checks,
-    get forgotten() {
-      return forgotten;
-    },
-    setUser: (next: typeof USER) => {
-      user = next;
-    },
-    setCached: (next: Identity | null) => {
-      cached = next;
-    },
-  };
-}
-
-function harness(
-  options: {
-    apiUrl?: string | null;
-    development?: boolean;
-    hasStoredAuthSession?: () => boolean;
-  } = {},
-) {
-  const apiUrl = options.apiUrl === undefined ? API_URL : options.apiUrl;
-  const fake = fakeClient();
-  const createClient = vi.fn(async () => fake.client);
-  const logs: string[] = [];
-  const entries: DiagnosticLog[] = [];
-  const account = createAccount({
-    apiUrl,
-    development: options.development ?? false,
-    hasStoredAuthSession: options.hasStoredAuthSession ?? (() => false),
-    createClient,
-    signInTimeoutMs: SIGN_IN_TIMEOUT_MS,
-    onChange: (value) => store.update((s) => ({ ...s, account: value })),
-    log: (message, entry) => {
-      logs.push(message);
-      if (entry) entries.push(entry);
-    },
-  });
-  const store = createStore({
-    session: idle,
-    permissions: { microphone: "granted", accessibility: "granted" },
-    loginItem: "off",
-    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
-    settings: DEFAULT_SETTINGS,
-    updates: {
-      version: "0.0.1",
-      installedChannel: "nightly",
-      channel: "nightly",
-      status: { kind: "disabled", reason: "Test" },
-    },
-    microphones: { kind: "loading" },
-    microphoneTest: { kind: "off" },
-    account: account.state,
-    last: null,
-  });
-  const states: AccountState[] = [];
-  store.subscribe((state) => states.push(toSnapshot(state).account));
-  return {
-    store,
-    account,
-    createClient,
-    logs,
-    entries,
-    states,
-    fake,
-    requests: fake.requests,
-    exchanges: fake.exchanges,
-    checks: fake.checks,
-    setUser: fake.setUser,
-    get state() {
-      return toSnapshot(store.state).account;
-    },
-  };
-}
-
-async function flush() {
-  await vi.advanceTimersByTimeAsync(0);
-}
-
-async function startSignIn(h: ReturnType<typeof harness>, state = "state1") {
-  const signIn = h.account.signIn();
-  await flush();
-  expect(h.state).toEqual({ kind: "signingIn" });
-  h.requests.at(-1)?.resolve(state);
-  await signIn;
-}
-
-function expectNoSecrets(h: ReturnType<typeof harness>) {
-  const written = [...h.logs, ...h.entries.map((entry) => JSON.stringify(entry))];
-  for (const text of written) {
-    expect(text).not.toContain(USER.email);
-    expect(text).not.toContain(CODE);
-    expect(text).not.toContain("#token=");
-    expect(text).not.toContain(API_URL);
-  }
-  for (const state of h.states) {
-    expect(JSON.stringify(state)).not.toContain(CODE);
-  }
-}
 
 describe("resolveApiUrl", () => {
   const release = { channel: "nightly" as const, updateUrl: "https://downloads.example.com" };
@@ -788,25 +647,9 @@ describe("createAccount", () => {
   });
 });
 
-const withStoredAuthSession = () => true;
-
 describe("restore", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-
-  // Each resolves once the check is in flight, with the call's own promise wrapped so that
-  // awaiting the helper does not wait for the API's answer.
-  async function restore(h: ReturnType<typeof harness>) {
-    const done = h.account.restore();
-    await flush();
-    return { done };
-  }
-
-  async function refresh(h: ReturnType<typeof harness>) {
-    const done = h.account.refresh();
-    await flush();
-    return { done };
-  }
 
   test("a launch without a stored auth session builds no client", async () => {
     const h = harness();

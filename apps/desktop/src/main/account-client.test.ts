@@ -17,7 +17,12 @@ import { storage } from "@better-auth/electron/storage";
 
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { authSessionStored, authStorageKeys } from "./account-storage.ts";
+import {
+  authSessionStored,
+  authStorageKeys,
+  authStored,
+  serverSignOutsStored,
+} from "./account-storage.ts";
 
 // The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
 // stand-in, so the test never touches the login Keychain.
@@ -47,6 +52,7 @@ const USER = { name: "Ada Lovelace", email: "ada@example.com" };
 const GRACE = { name: "Grace Hopper", email: "grace@example.com" };
 
 type Sent = { url: string; cookie: string | null };
+const log = vi.fn();
 let sent: Sent[] = [];
 let answer: (url: string) => Response | Promise<Response>;
 
@@ -57,11 +63,11 @@ const json = (body: unknown, init: ResponseInit = {}) =>
   });
 const signedIn = (token: string, user = USER) =>
   json(
-    { session: { token }, user },
+    { token, session: { token }, user },
     { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
   );
 const client = (channel: UpdateChannel) =>
-  createVoiceAuthClient({ apiUrl: API[channel], installedChannel: channel });
+  createVoiceAuthClient({ apiUrl: API[channel], installedChannel: channel, log });
 
 beforeAll(() => {
   // The plugin refuses to send requests outside Electron's main process.
@@ -74,6 +80,7 @@ beforeEach(() => {
   electron.state.userData = mkdtempSync(NodePath.join(tmpdir(), "voice-account-client-"));
   electron.state.encryption = true;
   sent = [];
+  log.mockClear();
   vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
     const request = new Request(input, init);
     sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
@@ -270,5 +277,296 @@ describe("authSessionStored", () => {
     expect(authSessionStored(userData, "nightly")).toBe(false);
     rmSync(NodePath.join(userData, "config.json"));
     expect(authSessionStored(userData, "nightly")).toBe(false);
+  });
+});
+
+describe("server sign-outs", () => {
+  async function signedInClient(token = "old-token") {
+    answer = () => signedIn(token);
+    const active = client("nightly");
+    await active.checkAuthSession(new AbortController().signal);
+    return active;
+  }
+  const confirmed = (url: string) =>
+    url.endsWith("/sign-out") ? json({ success: true }) : json(null);
+
+  test.each(["garbage ciphertext", JSON.stringify({ cookie: "wrong shape" }), "[123]"])(
+    "discards an unreadable queue once and still constructs the client (%s)",
+    async (garbage) => {
+      storage().setItem(
+        authStorageKeys("nightly").serverSignOuts,
+        garbage === "garbage ciphertext"
+          ? garbage
+          : electron.api.safeStorage.encryptString(garbage).toString("base64"),
+      );
+      const restarted = client("nightly");
+      expect(await restarted.endServerSignOuts()).toEqual([]);
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+      expect(log).toHaveBeenCalledExactlyOnceWith("account server sign-out queue discarded", {
+        message: "account server sign-out queue discarded",
+        level: "warn",
+      });
+      expect(await client("nightly").endServerSignOuts()).toEqual([]);
+      expect(log).toHaveBeenCalledOnce();
+    },
+  );
+
+  test("a Keychain decrypt failure drops the queue and allows a later sign-in", async () => {
+    const active = await signedInClient();
+    active.retireAuthSession();
+    const decrypt = vi.spyOn(electron.api.safeStorage, "decryptString").mockImplementation(() => {
+      throw new Error("Keychain reset");
+    });
+    const restarted = client("nightly");
+    decrypt.mockRestore();
+    expect(await restarted.endServerSignOuts()).toEqual([]);
+    expect(log).toHaveBeenCalledOnce();
+    answer = () => signedIn("replacement-token", GRACE);
+    expect(await signIn(restarted)).toEqual({ kind: "signedIn", ...GRACE });
+    expect(restarted.hasAuthSession()).toBe(true);
+    expect(restarted.cachedUser()).toEqual(GRACE);
+  });
+
+  test("queues an old cookie once without touching a newer active cookie or identity", async () => {
+    answer = () => signedIn("new-token", GRACE);
+    const active = client("nightly");
+    await active.checkAuthSession(new AbortController().signal);
+    const keys = authStorageKeys("nightly");
+    const activeCookie = storage().getItem(keys.cookie);
+    const identity = storage().getItem(keys.identity);
+    active.queueServerSignOut("better-auth.session_token=old-token");
+    active.queueServerSignOut("better-auth.session_token=old-token");
+    expect(storage().getItem(keys.cookie)).toBe(activeCookie);
+    expect(storage().getItem(keys.identity)).toBe(identity);
+    answer = confirmed;
+    expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+    expect(sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie)).toEqual(
+      ["better-auth.session_token=old-token"],
+    );
+    expect(active.hasAuthSession()).toBe(true);
+    expect(active.cachedUser()).toEqual(GRACE);
+    expect(storage().getItem(keys.cookie)).toBe(activeCookie);
+    expect(storage().getItem(keys.identity)).toBe(identity);
+  });
+
+  test("the launch probe includes queued work without counting it as active auth", () => {
+    const { userData } = electron.state;
+    storage().setItem(authStorageKeys("stable").serverSignOuts, "Y2lwaGVydGV4dA==");
+    expect(authStored(userData, "stable")).toBe(true);
+    expect(authStored(userData, "nightly")).toBe(false);
+    expect(authSessionStored(userData, "stable")).toBe(false);
+    expect(serverSignOutsStored(userData, "stable")).toBe(true);
+    expect(new Set(Object.values(authStorageKeys("stable"))).size).toBe(3);
+  });
+
+  test("clears active auth at once and stores only encrypted retry cookies", async () => {
+    const active = await signedInClient();
+    active.retireAuthSession();
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    expect(active.cachedUser()).toBeNull();
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+    expect(config()).not.toContain("old-token");
+    answer = confirmed;
+    expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+    expect(sent.slice(-2).map(({ url, cookie }) => [url, cookie])).toEqual([
+      [`${API.nightly}/api/auth/sign-out`, "better-auth.session_token=old-token"],
+      [`${API.nightly}/api/auth/get-session`, "better-auth.session_token=old-token"],
+    ]);
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+  });
+
+  test.each(["offline", "503"])(
+    "retains %s sign-outs for a later launch and removes them only after confirmation",
+    async (failure) => {
+      const active = await signedInClient();
+      active.retireAuthSession();
+      answer =
+        failure === "offline"
+          ? () => Promise.reject(new TypeError("fetch failed"))
+          : () => json({}, { status: 503 });
+      expect((await active.endServerSignOuts())[0]?.kind).toBe(
+        failure === "offline" ? "unreachable" : "unknown",
+      );
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+      const restarted = client("nightly");
+      expect(restarted.cachedUser()).toBeNull();
+      answer = confirmed;
+      expect(await restarted.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+      expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    },
+  );
+
+  test.each(["active", "HTML", "malformed JSON", "403"])(
+    "retains the retry after %s rather than trusting POST success",
+    async (failure) => {
+      const active = await signedInClient();
+      active.retireAuthSession();
+      answer = (url) => {
+        if (failure === "403") return json({ code: "INVALID_ORIGIN" }, { status: 403 });
+        if (failure === "HTML") return new Response("<html>Sign in to Wi-Fi</html>");
+        if (failure === "malformed JSON") return new Response("{");
+        return url.endsWith("/sign-out") ? json({ success: true }) : signedIn("old-token");
+      };
+      expect((await active.endServerSignOuts())[0]?.kind).not.toBe("ended");
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+      expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    },
+  );
+
+  test("a late get-session cannot write an old cookie or identity back after retirement", async () => {
+    const active = await signedInClient();
+    const pending = Promise.withResolvers<Response>();
+    answer = () => pending.promise;
+    const oldCheck = active.checkAuthSession(new AbortController().signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    active.retireAuthSession();
+    answer = () => signedIn("new-token", GRACE);
+    await active.checkAuthSession(new AbortController().signal);
+    pending.resolve(signedIn("old-token"));
+    await oldCheck;
+    answer = confirmed;
+    await active.endServerSignOuts();
+    expect(active.cachedUser()).toEqual(GRACE);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+    answer = () => json(null);
+    await active.checkAuthSession(new AbortController().signal);
+    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+  });
+
+  test("an aborted check cannot restore a cookie or identity after sign-out", async () => {
+    const active = await signedInClient();
+    const pending = Promise.withResolvers<Response>();
+    answer = () => pending.promise;
+    const controller = new AbortController();
+    const checking = active.checkAuthSession(controller.signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    controller.abort();
+    active.retireAuthSession();
+    pending.resolve(signedIn("old-token", GRACE));
+    expect(await checking).toMatchObject({ kind: "unreachable" });
+    expect(active.hasAuthSession()).toBe(false);
+    expect(active.cachedUser()).toBeNull();
+    expect(client("nightly").hasAuthSession()).toBe(false);
+    expect(client("nightly").cachedUser()).toBeNull();
+    expect(storage().getItem(authStorageKeys("nightly").cookie)).toBeNull();
+    expect(storage().getItem(authStorageKeys("nightly").identity)).toBeNull();
+  });
+
+  test("a response already read cannot write either key after retirement", async () => {
+    const active = await signedInClient();
+    const response = signedIn("refreshed-old-token", GRACE);
+    const getHeader = response.headers.get.bind(response.headers);
+    let retired = false;
+    vi.spyOn(response.headers, "get").mockImplementation((name) => {
+      if (name.toLowerCase() === "set-cookie" && !retired) {
+        retired = true;
+        active.retireAuthSession();
+      }
+      return getHeader(name);
+    });
+    answer = () => response;
+    await active.checkAuthSession(new AbortController().signal);
+    expect(retired).toBe(true);
+    expect(active.hasAuthSession()).toBe(false);
+    expect(active.cachedUser()).toBeNull();
+    expect(storage().getItem(authStorageKeys("nightly").cookie)).toBeNull();
+    expect(storage().getItem(authStorageKeys("nightly").identity)).toBeNull();
+  });
+
+  test("keeps multiple offline sign-outs and does not send them to another channel", async () => {
+    const active = await signedInClient("token-a");
+    active.retireAuthSession();
+    answer = () => signedIn("token-b");
+    await active.checkAuthSession(new AbortController().signal);
+    active.retireAuthSession();
+    answer = confirmed;
+    expect(await client("stable").endServerSignOuts()).toEqual([]);
+    const restarted = client("nightly");
+    expect(await restarted.endServerSignOuts()).toEqual([
+      { kind: "ended", status: 200 },
+      { kind: "ended", status: 200 },
+    ]);
+    expect(sent.slice(-4).map(({ cookie }) => cookie)).toEqual([
+      "better-auth.session_token=token-a",
+      "better-auth.session_token=token-a",
+      "better-auth.session_token=token-b",
+      "better-auth.session_token=token-b",
+    ]);
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+  });
+
+  test("drains a sign-out added while another is in flight without overlapping retries", async () => {
+    const active = await signedInClient("token-a");
+    active.retireAuthSession();
+    const pending = Promise.withResolvers<Response>();
+    answer = () => pending.promise;
+    const first = active.endServerSignOuts();
+    await vi.waitFor(() => expect(sent.at(-1)?.url).toContain("/sign-out"));
+    answer = () => signedIn("token-b");
+    await active.checkAuthSession(new AbortController().signal);
+    active.retireAuthSession();
+    expect(active.endServerSignOuts()).toBe(first);
+    answer = confirmed;
+    pending.resolve(json({ success: true }));
+    expect(await first).toEqual([
+      { kind: "ended", status: 200 },
+      { kind: "ended", status: 200 },
+    ]);
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+    expect(sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie)).toEqual(
+      ["better-auth.session_token=token-a", "better-auth.session_token=token-b"],
+    );
+  });
+
+  test("unavailable encryption never overwrites an existing encrypted retry queue", async () => {
+    const active = await signedInClient();
+    active.retireAuthSession();
+    const encrypted = storage().getItem("voice.nightly.retired_auth_sessions");
+    electron.state.encryption = false;
+    expect(await client("nightly").endServerSignOuts()).toEqual([]);
+    expect(storage().getItem("voice.nightly.retired_auth_sessions")).toBe(encrypted);
+    electron.state.encryption = true;
+    answer = confirmed;
+    expect(await client("nightly").endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+  });
+
+  test("reconciles a crash after enqueueing, leaving a newer active cookie alone", async () => {
+    await signedInClient();
+    storage().setItem(
+      "voice.nightly.retired_auth_sessions",
+      electron.api.safeStorage
+        .encryptString(JSON.stringify(["better-auth.session_token=old-token"]))
+        .toString("base64"),
+    );
+    const restarted = client("nightly");
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    expect(restarted.cachedUser()).toBeNull();
+    answer = () => signedIn("new-token");
+    await restarted.checkAuthSession(new AbortController().signal);
+    expect(client("nightly").cachedUser()).toEqual(USER);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+  });
+
+  test("with no encryption, clears private plugin memory and never persists a retry token", async () => {
+    electron.state.encryption = false;
+    const active = client("nightly");
+    const { state } = await active.openBrowser();
+    answer = () => signedIn("memory-token");
+    const code = Buffer.from(JSON.stringify({ identifier: "test-code", state })).toString(
+      "base64url",
+    );
+    expect(await active.redeem(code)).toMatchObject({ kind: "signedIn" });
+    active.retireAuthSession();
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    expect(await active.checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "unknown",
+      status: 0,
+    });
+    expect(config()).not.toContain("memory-token");
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+    answer = confirmed;
+    expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=memory-token");
   });
 });
