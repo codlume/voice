@@ -27,7 +27,7 @@ describe("sign-in code across the landing page and the account module", () => {
       expect(cookieValue.endsWith("%3D")).toBe(padded);
 
       const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
-      const elements: Record<string, Record<string, unknown>> = {
+      const elements = {
         "signed-in": { hidden: true },
         expired: { hidden: true },
         open: { href: "" },
@@ -38,7 +38,7 @@ describe("sign-in code across the landing page and the account module", () => {
       runInNewContext(script, {
         document: {
           cookie: `better-auth.state=s; better-auth.electron=${cookieValue}`,
-          getElementById: (id: string) => elements[id],
+          getElementById: (id: keyof typeof elements) => elements[id],
         },
         fetch: () => Promise.resolve(new Response()),
         location: {
@@ -48,11 +48,10 @@ describe("sign-in code across the landing page and the account module", () => {
         },
       });
 
-      const shown = elements.code?.textContent;
-      expect(shown).toBe(cookieValue);
-      expect(parseSignInCode(String(shown))).toEqual({ code: cookieValue, state });
+      expect(elements.code.textContent).toBe(cookieValue);
+      expect(parseSignInCode(elements.code.textContent)).toEqual({ code: cookieValue, state });
       expect(parseCallbackUrl(opened)).toEqual({ code: cookieValue, state });
-      expect(parseCallbackUrl(String(elements.open?.href))).toEqual({ code: cookieValue, state });
+      expect(parseCallbackUrl(elements.open.href)).toEqual({ code: cookieValue, state });
       expect(
         JSON.parse(Buffer.from(decodeURIComponent(cookieValue), "base64url").toString("utf8")),
       ).toEqual(claims);
