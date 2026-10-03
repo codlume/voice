@@ -57,7 +57,10 @@ export function createAuth(env: Env) {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/callback/:id") return;
-        await sweepUsersWithoutAccount();
+        // A failed sweep leaves the lockout for the next callback to clear; the sign-in goes on.
+        await sweepUsersWithoutAccount().catch(() =>
+          console.error(JSON.stringify({ source: "user-sweep", level: "error" })),
+        );
       }),
     },
     socialProviders: {
