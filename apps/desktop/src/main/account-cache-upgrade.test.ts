@@ -152,14 +152,14 @@ test("deletion refuses a cached identity the cookie does not belong to and shows
   h.account.dispose();
 });
 
-test.each(["503", "ended", "missing id"])(
+test.each(["503", "missing id"])(
   "%s resolving a legacy cache id preserves auth and cannot start deletion",
   async (failure) => {
     const { h, cookie } = await legacyAccount();
     http.answer = () =>
       failure === "503"
         ? json({}, { status: 503 })
-        : json(failure === "ended" ? null : { user: legacyUser, session: { token: "old-token" } });
+        : json({ user: legacyUser, session: { token: "old-token" } });
     h.account.requestDeletion();
     await h.account.confirmDeletion();
     expect(h.state).toMatchObject({

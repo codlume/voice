@@ -404,6 +404,18 @@ export function createAccount({
     return deadline.aborted ? { kind: "unreachable", error: deadline.reason } : answer;
   }
 
+  // The API no longer has the auth session, so the stored one is gone and only a fresh sign-in can
+  // show what is left.
+  function endAuthSession(client: AuthClient, status: number) {
+    log("account auth session ended", {
+      message: "account auth session ended",
+      level: "warn",
+      attributes: { "http.response.status_code": status },
+    });
+    client.forget();
+    publish({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+  }
+
   // A result lands only on the state it was started from, so a sign-in or a sign-out while the
   // request is in flight is never overwritten.
   async function checkAuthSession(client: AuthClient) {
@@ -422,13 +434,7 @@ export function createAccount({
         }
         return;
       case "ended":
-        log("account auth session ended", {
-          message: "account auth session ended",
-          level: "warn",
-          attributes: { "http.response.status_code": answer.status },
-        });
-        client.forget();
-        publish({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+        endAuthSession(client, answer.status);
         return;
       case "unknown":
         log("account auth session check failed", {
@@ -602,6 +608,12 @@ export function createAccount({
         // can be another account's. The cookie's account is asked for and must be the confirmed one.
         const answer = await askAuthSession(client);
         if (state !== deleting || answer === null) return;
+        // Revoked, or already deleted by a request whose receipt was lost. A failed deletion
+        // would only offer a retry that asks the same question again.
+        if (answer.kind === "ended") {
+          endAuthSession(client, answer.status);
+          return;
+        }
         if (answer.kind !== "active") {
           outcome = { kind: answer.kind === "unreachable" ? "offline" : "failed" };
         } else if (!sameAccount(user, answer.user)) {
