@@ -1,22 +1,20 @@
 #!/usr/bin/env node
-// Fails on migrations that rebuild a table or toggle foreign keys. On D1,
-// dropping a parent table fires cascades and deletes child rows, and toggling
-// foreign keys does not prevent it. A file that needs one anyway carries
-// `-- migration-check: approved <reason>`.
+// Fails on migrations that drop, rename or rebuild a table, drop a column, or set a
+// foreign-key or legacy_alter_table pragma. On D1, dropping a parent table fires
+// cascades and deletes child rows, and toggling foreign keys does not prevent it.
+// The check applies the migrations to an in-memory SQLite database and compares the
+// schema before and after each file, so quoting and comments cannot hide a change.
+// A file that needs one anyway starts with `-- migration-check: approved <reason>`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync, constants } from "node:sqlite";
 
-const rules = [
-  {
-    name: "table-rebuild",
-    pattern: /\b__new_\w+|\bdrop\s+table\b|\balter\s+table\b[^;]*\brename\s+to\b/i,
-  },
-  {
-    name: "foreign-key-pragma",
-    pattern: /\bpragma\s+(?:[\w"`]+\s*\.\s*)?["`]?(?:defer_)?foreign_keys\b/i,
-  },
-];
-const approval = /^--\s*migration-check:\s*approved\b(.*)$/im;
+const unsafePragmas = new Map([
+  ["foreign_keys", "foreign-key-pragma"],
+  ["defer_foreign_keys", "foreign-key-pragma"],
+  ["legacy_alter_table", "legacy-alter-table-pragma"],
+]);
+const approvalPrefix = "-- migration-check: approved";
 
 const dir = process.argv[2];
 if (!dir) {
@@ -24,48 +22,70 @@ if (!dir) {
   process.exit(2);
 }
 
-// Comments become a space and string literals become '', so `DROP/**/TABLE` still
-// matches and a keyword inside a comment or string does not. Quoted identifiers stay.
-function statementsOnly(sql) {
-  let out = "";
-  let i = 0;
-  while (i < sql.length) {
-    const rest = sql.slice(i);
-    const token =
-      /^--[^\n]*/.exec(rest) ??
-      /^\/\*[\s\S]*?(?:\*\/|$)/.exec(rest) ??
-      /^'(?:[^']|'')*(?:'|$)/.exec(rest) ??
-      /^"[^"]*(?:"|$)|^`[^`]*(?:`|$)/.exec(rest);
-    if (!token) {
-      out += sql[i];
-      i++;
-      continue;
-    }
-    const [text] = token;
-    out += text.startsWith("'") ? "''" : text.startsWith('"') || text.startsWith("`") ? text : " ";
-    i += text.length;
-  }
-  return out;
+const db = new DatabaseSync(":memory:");
+const pragmaRules = new Set();
+// SQLite hands the authorizer the parsed, unquoted pragma name.
+db.setAuthorizer((action, name) => {
+  const rule = action === constants.SQLITE_PRAGMA && unsafePragmas.get(name?.toLowerCase());
+  if (rule) pragmaRules.add(rule);
+  return constants.SQLITE_OK;
+});
+
+function schema() {
+  const tables = db
+    .prepare(
+      "SELECT name, rootpage FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    )
+    .all();
+  return new Map(
+    tables.map(({ name, rootpage }) => [
+      name,
+      {
+        rootpage,
+        columns: db
+          .prepare("SELECT name FROM pragma_table_info(?)")
+          .all(name)
+          .map((column) => column.name),
+      },
+    ]),
+  );
 }
 
-let violations = 0;
+function violations(before, after) {
+  const rules = new Set(pragmaRules);
+  for (const [name, table] of before) {
+    const next = after.get(name);
+    if (!next || next.rootpage !== table.rootpage) rules.add("table-rebuild");
+    else if (table.columns.some((column) => !next.columns.includes(column)))
+      rules.add("column-drop");
+  }
+  return rules;
+}
+
+let failures = 0;
 for (const file of readdirSync(dir)
   .filter((name) => name.endsWith(".sql"))
   .toSorted()) {
   const sql = readFileSync(join(dir, file), "utf8");
-  const marker = sql.match(approval);
-  if (marker) {
-    if (marker[1].trim()) continue;
-    console.error(`${file}: approval-without-reason`);
-    violations++;
+  const firstLine = sql.split("\n", 1)[0].trim();
+  const approved = firstLine.startsWith(approvalPrefix);
+  const before = schema();
+  pragmaRules.clear();
+  let rules;
+  try {
+    db.exec(sql);
+    rules = violations(before, schema());
+  } catch (error) {
+    console.error(`${file}: sql-error\n  ${error.message}`);
+    failures++;
     continue;
   }
-  const statements = statementsOnly(sql);
-  for (const rule of rules) {
-    if (rule.pattern.test(statements)) {
-      console.error(`${file}: ${rule.name}`);
-      violations++;
-    }
+  if (approved) {
+    rules = firstLine.slice(approvalPrefix.length).trim()
+      ? new Set()
+      : new Set(["approval-without-reason"]);
   }
+  for (const rule of rules) console.error(`${file}: ${rule}`);
+  failures += rules.size;
 }
-process.exit(violations > 0 ? 1 : 0);
+process.exit(failures > 0 ? 1 : 0);
