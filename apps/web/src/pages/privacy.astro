@@ -113,13 +113,13 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       <li {...li}>
         <strong>Storage.</strong> We store your name, email address, Google account identifier, and
         profile picture URL in a Cloudflare D1 database located in Western Europe. We also store
-        auth sessions and the access token Google issues at sign-in. The access token is stored
-        encrypted. We do not store the ID token Google also sends, which repeats the same profile
-        details. Each auth session records the IP address and browser or app details (user agent)
-        it was created from. On your Mac, Voice stores your auth session, and your name and email
-        address so it can show who is signed in while offline, encrypted in its data folder. The
-        encryption key is kept in the macOS Keychain. If encryption is unavailable, Voice keeps
-        them only in memory, and you sign in again after restarting.
+        auth sessions and an encrypted copy of the access token Google issues at sign-in. We do
+        not store the ID token Google also sends, which repeats the profile details above. Each
+        auth session records the IP address and browser or app details (user agent) it was created
+        from. On your Mac, Voice stores your auth session, and your name and email address so it
+        can show who is signed in while offline, encrypted in its data folder. The encryption key
+        is kept in the macOS Keychain. If encryption is unavailable, Voice keeps them only in
+        memory, and you sign in again after restarting.
       </li>
       <li {...li}>
         <strong>Security records.</strong> To limit abuse, the account service keeps rate-limit
