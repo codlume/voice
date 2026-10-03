@@ -7,7 +7,7 @@ import { safeStorage, shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
 import type { AuthClient, AuthSessionCheck, Identity, RedeemResult } from "./account.ts";
-import { authStoragePrefix } from "./account-storage.ts";
+import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 // The token and `get-session` bodies both carry `{ user }`. They are external data, so the
 // user is read from them like any other.
@@ -45,29 +45,29 @@ export function createVoiceAuthClient({
   /** Test mode: the plugin's `shell.openExternal` writes the sign-in URL here instead. */
   signInUrlFile?: string;
 }): AuthClient {
-  const prefix = authStoragePrefix(installedChannel);
+  const keys = authStorageKeys(installedChannel);
   const store = storage();
   const plugin = electronClient({
     protocol: VOICE_URL_SCHEME,
     // Required by the plugin's types, read only for sign-in without a provider.
     signInURL: apiUrl,
-    storagePrefix: prefix,
+    storagePrefix: authStoragePrefix(installedChannel),
     storage: store,
     // The plugin would cache every get-session body, a captive portal's HTML included, and never
     // reads it back. Voice keeps its own copy of the last validated identity instead.
     disableCache: true,
     userImageProxy: { enabled: false },
   }) as ElectronPlugin;
-  const identityKey = `${prefix}.identity`;
   // Encrypted like the plugin's own items. Without encryption nothing is written, so the
   // identity, like the auth session, lasts only until quit.
   const saveIdentity = (user: Identity) => {
     if (!safeStorage.isEncryptionAvailable()) return;
-    store.setItem(identityKey, safeStorage.encryptString(JSON.stringify(user)).toString("base64"));
+    store.setItem(
+      keys.identity,
+      safeStorage.encryptString(JSON.stringify(user)).toString("base64"),
+    );
   };
-  // The get-session in flight, aborted before a sign-in redeems a code, so that a stale answer
-  // cannot overwrite the new auth session's cookie or identity.
-  let check: AbortController | null = null;
+
   const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
   // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
@@ -90,7 +90,6 @@ export function createVoiceAuthClient({
       return { state };
     },
     redeem: async (code): Promise<RedeemResult> => {
-      check?.abort();
       try {
         // With `throw: true` the plugin resolves to the token endpoint's body, not the
         // `{ data, error }` pair its typings declare.
@@ -106,7 +105,7 @@ export function createVoiceAuthClient({
       }
     },
     cachedUser: () => {
-      const stored = store.getItem(identityKey);
+      const stored = store.getItem(keys.identity);
       if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
       try {
         return userOf({
@@ -116,21 +115,18 @@ export function createVoiceAuthClient({
         return null;
       }
     },
-    checkAuthSession: async (): Promise<AuthSessionCheck> => {
+    checkAuthSession: async (signal): Promise<AuthSessionCheck> => {
       // Without encryption a restored cookie cannot be read, and the API would answer null to a
       // request that carried none.
       if (!safeStorage.isEncryptionAvailable() && client.getCookie() === "") {
         return { kind: "unknown", status: 0 };
       }
-      const controller = new AbortController();
-      check = controller;
       let result: Awaited<ReturnType<typeof client.getSession>>;
       try {
-        result = await client.getSession({ fetchOptions: { signal: controller.signal } });
+        // An aborted request rejects before the plugin's hooks run, so it writes no cookie.
+        result = await client.getSession({ fetchOptions: { signal } });
       } catch (error) {
         return { kind: "unreachable", error };
-      } finally {
-        if (check === controller) check = null;
       }
       const { data, error } = result;
       if (error) {
@@ -143,12 +139,12 @@ export function createVoiceAuthClient({
       // A captive portal's HTML page also arrives as a 200, with a string for data.
       const user = userOf(data);
       if (user === null) return { kind: "unknown", status: 200 };
-      if (!controller.signal.aborted) saveIdentity(user);
+      if (!signal.aborted) saveIdentity(user);
       return { kind: "active", user };
     },
     forget: () => {
-      store.setItem(`${prefix}.cookie`, null);
-      store.setItem(identityKey, null);
+      store.setItem(keys.cookie, null);
+      store.setItem(keys.identity, null);
     },
   };
 }

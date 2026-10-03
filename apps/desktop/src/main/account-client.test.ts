@@ -13,9 +13,11 @@ import {
   vi,
 } from "vite-plus/test";
 
+import { storage } from "@better-auth/electron/storage";
+
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { authSessionStored } from "./account-storage.ts";
+import { authSessionStored, authStorageKeys } from "./account-storage.ts";
 
 // The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
 // stand-in, so the test never touches the login Keychain.
@@ -76,6 +78,8 @@ beforeEach(() => {
     const request = new Request(input, init);
     sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
     return new Promise<Response>((resolve, reject) => {
+      // As real fetch does, an aborted signal rejects, before or during the request.
+      if (request.signal.aborted) reject(request.signal.reason);
       request.signal.addEventListener("abort", () => reject(request.signal.reason));
       Promise.resolve(answer(request.url)).then(resolve, reject);
     });
@@ -111,7 +115,9 @@ describe("createVoiceAuthClient", () => {
     expect(config()).not.toContain(USER.email);
     const restarted = client("nightly");
     expect(restarted.cachedUser()).toEqual(USER);
-    expect(await restarted.checkAuthSession()).toMatchObject({ kind: "unreachable" });
+    expect(await restarted.checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unreachable",
+    });
     expect(client("nightly").cachedUser()).toEqual(USER);
   });
 
@@ -124,24 +130,30 @@ describe("createVoiceAuthClient", () => {
     ["a JSON body without a user", () => json({ ok: true })],
   ])("%s never replaces the stored identity", async (_name, respond) => {
     answer = () => signedIn("token-1");
-    await client("nightly").checkAuthSession();
+    await client("nightly").checkAuthSession(new AbortController().signal);
     const before = storedIdentity("nightly");
 
     answer = respond;
-    expect(await client("nightly").checkAuthSession()).toMatchObject({ kind: "unknown" });
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unknown",
+    });
     expect(storedIdentity("nightly")).toBe(before);
     expect(client("nightly").cachedUser()).toEqual(USER);
   });
 
-  test("a check still in flight cannot overwrite a sign-in that lands meanwhile", async () => {
+  test("an aborted check writes no cookie or identity, even when its answer comes later", async () => {
     answer = () => signedIn("old-token");
     const auth = client("nightly");
-    await auth.checkAuthSession();
+    await auth.checkAuthSession(new AbortController().signal);
 
     const revoked = Promise.withResolvers<Response>();
     answer = (url) =>
       url.endsWith("/get-session") ? revoked.promise : signedIn("new-token", GRACE);
-    const stale = auth.checkAuthSession();
+    const check = new AbortController();
+    const stale = auth.checkAuthSession(check.signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    // What the account module does when a sign-in starts during a check.
+    check.abort();
     expect(await signIn(auth)).toEqual({ kind: "signedIn", ...GRACE });
     // The server ended the old auth session, and its late answer clears the cookie.
     revoked.resolve(
@@ -151,19 +163,28 @@ describe("createVoiceAuthClient", () => {
 
     expect(client("nightly").cachedUser()).toEqual(GRACE);
     answer = () => signedIn("new-token", GRACE);
-    expect(await client("nightly").checkAuthSession()).toEqual({ kind: "active", user: GRACE });
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "active",
+      user: GRACE,
+    });
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
   });
 
   test("keeps each channel's auth session for its own API", async () => {
     answer = (url) => (url.startsWith(API.stable) ? signedIn("stable-token") : json(null));
     const stable = client("stable");
-    expect(await stable.checkAuthSession()).toEqual({ kind: "active", user: USER });
+    expect(await stable.checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "active",
+      user: USER,
+    });
     expect(authSessionStored(electron.state.userData, "stable")).toBe(true);
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
 
-    expect(await client("nightly").checkAuthSession()).toEqual({ kind: "ended", status: 200 });
-    await stable.checkAuthSession();
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "ended",
+      status: 200,
+    });
+    await stable.checkAuthSession(new AbortController().signal);
 
     expect(sent.map(({ url, cookie }) => [new URL(url).origin, cookie])).toEqual([
       [API.stable, null],
@@ -174,7 +195,7 @@ describe("createVoiceAuthClient", () => {
 
   test("restores the identity of the last answer from storage, and forget clears it", async () => {
     answer = () => signedIn("token-1");
-    await client("nightly").checkAuthSession();
+    await client("nightly").checkAuthSession(new AbortController().signal);
 
     const restarted = client("nightly");
     expect(restarted.cachedUser()).toEqual(USER);
@@ -182,7 +203,7 @@ describe("createVoiceAuthClient", () => {
     expect(restarted.cachedUser()).toBeNull();
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
     answer = () => json(null);
-    await restarted.checkAuthSession();
+    await restarted.checkAuthSession(new AbortController().signal);
     expect(sent.at(-1)?.cookie).toBeNull();
   });
 
@@ -199,18 +220,53 @@ describe("createVoiceAuthClient", () => {
     ],
   ])("reads %s from get-session", async (_name, respond, expected) => {
     answer = respond;
-    expect(await client("nightly").checkAuthSession()).toEqual(expected);
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual(
+      expected,
+    );
   });
 
   test("a failed fetch is unreachable, not ended", async () => {
     answer = () => Promise.reject(new TypeError("fetch failed"));
-    expect(await client("nightly").checkAuthSession()).toMatchObject({ kind: "unreachable" });
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unreachable",
+    });
   });
 
   test("without encryption and nothing in memory, it does not ask the API", async () => {
     electron.state.encryption = false;
     answer = () => json(null);
-    expect(await client("nightly").checkAuthSession()).toEqual({ kind: "unknown", status: 0 });
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "unknown",
+      status: 0,
+    });
     expect(sent).toEqual([]);
+  });
+});
+
+// What the plugin's storage holds for a signed-in channel: safeStorage ciphertext, base64.
+const storeCookie = (channel: UpdateChannel, value: string | null = "Y2lwaGVydGV4dA==") =>
+  storage().setItem(authStorageKeys(channel).cookie, value);
+
+describe("authSessionStored", () => {
+  test("is read from the plugin's Conf store under the installed channel only", () => {
+    const { userData } = electron.state;
+    expect(authSessionStored(userData, "stable")).toBe(false);
+    storeCookie("stable");
+    expect(authSessionStored(userData, "stable")).toBe(true);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    storeCookie("nightly");
+    expect(authSessionStored(userData, "nightly")).toBe(true);
+    // A renamed prefix would sign every user out on update.
+    expect(JSON.parse(config())).toEqual({
+      voice: { stable: { cookie: "Y2lwaGVydGV4dA==" }, nightly: { cookie: "Y2lwaGVydGV4dA==" } },
+    });
+  });
+
+  test("a cleared or unreadable store counts as no auth session", () => {
+    const { userData } = electron.state;
+    storeCookie("nightly", null);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    rmSync(NodePath.join(userData, "config.json"));
+    expect(authSessionStored(userData, "nightly")).toBe(false);
   });
 });

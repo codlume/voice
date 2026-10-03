@@ -6,6 +6,12 @@ import type { UpdateChannel } from "../shared/api.ts";
 // Stable and Nightly share one data folder, so each channel keeps its auth session apart.
 export const authStoragePrefix = (channel: UpdateChannel) => `voice.${channel}`;
 
+/** The plugin's cookie key and Voice's own identity key for a channel, built in one place. */
+export function authStorageKeys(channel: UpdateChannel) {
+  const prefix = authStoragePrefix(channel);
+  return { cookie: `${prefix}.cookie`, identity: `${prefix}.identity` };
+}
+
 // The plugin's storage is a Conf store in userData/config.json, and Conf nests dot paths, so
 // `voice.nightly.cookie` is stored at voice > nightly > cookie. Reading the file directly keeps a
 // launch with no stored auth session free of Conf, Better Auth and the Keychain.
@@ -18,8 +24,8 @@ export function authSessionStored(userData: string, channel: UpdateChannel): boo
   } catch {
     return false;
   }
-  const cookie = `${authStoragePrefix(channel)}.cookie`
-    .split(".")
+  const cookie = authStorageKeys(channel)
+    .cookie.split(".")
     .reduce<unknown>(
       (node, key) => (typeof node === "object" && node !== null ? Reflect.get(node, key) : null),
       config,
