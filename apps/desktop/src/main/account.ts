@@ -89,6 +89,10 @@ export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
 
+// The confirmation dialog names the account by email; a cached id is the stricter test when present.
+const sameAccount = (confirmed: CachedIdentity, live: Identity) =>
+  confirmed.id === undefined ? confirmed.email === live.email : confirmed.id === live.id;
+
 const sameIdentity = (a: Identity, b: CachedIdentity) =>
   a.id === b.id && a.name === b.name && a.email === b.email;
 
@@ -580,30 +584,38 @@ export function createAccount({
       try {
         client = await loadClient(apiUrl);
         if (state !== deleting) return;
-        if (user.id === undefined) {
-          const controller = new AbortController();
-          abortCheck();
-          checking = controller;
-          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
-          const answer = await client.checkAuthSession(signal);
-          if (checking === controller) checking = null;
-          if (state !== deleting || controller.signal.aborted) return;
-          if (answer.kind !== "active" || signal.aborted) {
-            publish({
-              kind: "signedIn",
-              ...user,
-              deletion: {
-                kind: "failed",
-                message:
-                  answer.kind === "unreachable" || signal.aborted
-                    ? DELETE_ACCOUNT_OFFLINE_MESSAGE
-                    : DELETE_ACCOUNT_FAILED_MESSAGE,
-              },
-            });
-            return;
-          }
-          user = answer.user;
+        // The API deletes whichever account the stored cookie belongs to, and the cached identity
+        // can be another account's. The cookie's account is asked for and must be the confirmed one.
+        const controller = new AbortController();
+        abortCheck();
+        checking = controller;
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
+        const answer = await client.checkAuthSession(signal);
+        if (checking === controller) checking = null;
+        if (state !== deleting || controller.signal.aborted) return;
+        if (answer.kind !== "active" || signal.aborted) {
+          publish({
+            kind: "signedIn",
+            ...user,
+            deletion: {
+              kind: "failed",
+              message:
+                answer.kind === "unreachable" || signal.aborted
+                  ? DELETE_ACCOUNT_OFFLINE_MESSAGE
+                  : DELETE_ACCOUNT_FAILED_MESSAGE,
+            },
+          });
+          return;
         }
+        if (!sameAccount(user, answer.user)) {
+          publish({
+            kind: "signedIn",
+            ...answer.user,
+            notice: `Voice is signed in as ${answer.user.email}, so it did not delete ${user.email}.`,
+          });
+          return;
+        }
+        user = answer.user;
         result = await client.deleteAccount();
       } catch (error) {
         log("account deletion failed", {

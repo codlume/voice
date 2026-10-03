@@ -19,7 +19,7 @@ Settings > Account signs the user in with Google. `Sign in with Google` opens th
 - `account-ended`: when the API no longer knows the auth session, the page says "Your sign-in expired or was revoked." with Retry and Dismiss. Voice asks the API at launch and when the window gets focus (shown, unminimized, Cmd-Tab), at most once an hour.
 - `account-sign-out`: `Sign out` appears while signed in and returns to signed out immediately. If the API is offline, Voice retries ending that auth session on the next launch without signing back in.
 
-- `account-delete`: `Delete account` opens the existing confirmation dialog. Cancel preserves the account. Confirm removes it only after the API confirms success. A network or server failure keeps the user signed in with Retry.
+- `account-delete`: `Delete account` opens the existing confirmation dialog. Cancel preserves the account. Confirm removes it only after the API confirms success. A network or server failure keeps the user signed in with Retry. Before deleting, Voice asks the API which account the stored cookie belongs to. If that is not the account the dialog named, nothing is deleted; the page shows the cookie's account with a notice, and deletion needs a fresh confirmation.
 - `account-delete-reauth`: a stale deletion asks for `Sign in again`. After the normal browser flow, Voice revokes the older device auth session before showing confirmation again. Cancelling that confirmation leaves one live device auth session. Signing in as a different user id cancels deletion, keeps the new account signed in, and names both email addresses in a notice. If revocation fails, Retry tries again and Cancel deletion keeps the new sign-in; Voice retries the old session on launch.
 
 ## How to get to it (user POV)
