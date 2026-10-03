@@ -25,6 +25,7 @@ import {
   type PermissionKind,
   type SettingsPatch,
   type Snapshot,
+  VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
@@ -116,6 +117,18 @@ app.on("open-url", (event, url) => {
   event.preventDefault();
   handleCallbackUrl(url);
 });
+
+// Test runs launch the stock Electron.app, which does not declare the scheme. Making it the
+// default handler would take the sign-in link away from a Voice that can receive it.
+function receivesCallbackUrls(): boolean {
+  if (!development) return true;
+  try {
+    const info = readFileSync(NodePath.join(process.execPath, "../../Info.plist"), "utf8");
+    return info.includes(`<string>${VOICE_URL_SCHEME}</string>`);
+  } catch {
+    return false;
+  }
+}
 
 function loadPage(window: BrowserWindow, page: "hub" | "pill") {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -689,6 +702,11 @@ async function main() {
   });
 
   showHub();
+  // The most recently launched Voice opens the link, so Stable, Nightly and a development build
+  // each take it back when they start.
+  if (receivesCallbackUrls() && !app.setAsDefaultProtocolClient(VOICE_URL_SCHEME)) {
+    log(`account: could not become the ${VOICE_URL_SCHEME} handler`);
+  }
   updates.start();
   void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
