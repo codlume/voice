@@ -944,6 +944,22 @@ describe("restore", () => {
     expect(h.states.filter((state) => state.kind === "signedIn")).toEqual([]);
   });
 
+  test("a sign-in forgets the stored auth session once, after aborting its check", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    h.fake.setCached(null);
+    const restored = await restore(h);
+    const signIn = h.account.signIn();
+    expect(h.checks[0]?.signal.aborted).toBe(true);
+    await flush();
+    expect(h.fake.forgotten).toBe(1);
+    h.checks[0]?.answer({ kind: "ended", status: 401 });
+    await restored.done;
+    h.requests[0]?.resolve();
+    await signIn;
+    expect(h.fake.forgotten).toBe(1);
+    expect(h.states).toEqual([{ kind: "signingIn" }]);
+  });
+
   test("quitting aborts a check still in flight", async () => {
     const h = harness({ hasStoredAuthSession: withStoredAuthSession });
     await restore(h);
