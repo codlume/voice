@@ -360,7 +360,12 @@ export function createAccount({
       };
       publish(current);
       try {
-        current.oauthState = (await (await client).openBrowser()).state;
+        const opened = await client;
+        // A new sign-in abandons any stored auth session that failed to restore. Left behind, it
+        // would make a callback after a quit look like the restore case and hide the interrupted
+        // message.
+        opened.forget();
+        current.oauthState = (await opened.openBrowser()).state;
       } catch (error) {
         failed(attempt, error, "browser");
       }
