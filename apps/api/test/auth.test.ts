@@ -104,6 +104,12 @@ const count = async (sql: string, ...bindings: string[]) =>
     .bind(...bindings)
     .first<number>("n")) ?? 0;
 
+// Well past the grace period that keeps a first sign-in in flight, between its two writes, safe.
+const age = (userId: string) =>
+  env.DB.prepare("update user set created_at = created_at - ? where id = ?")
+    .bind(2 * 60_000, userId)
+    .run();
+
 const rowsOf = async (userId: string) => ({
   users: await count("select count(*) as n from user where id = ?", userId),
   accounts: await count("select count(*) as n from account where user_id = ?", userId),
@@ -230,12 +236,6 @@ describe("a user row with no account", () => {
     expect(await rowsOf(id ?? "")).toEqual({ users: 1, accounts: 0, sessions: 0 });
     return id ?? "";
   }
-
-  // Well past the grace period that keeps a first sign-in in flight, between its two writes, safe.
-  const age = (userId: string) =>
-    env.DB.prepare("update user set created_at = created_at - ? where id = ?")
-      .bind(2 * 60_000, userId)
-      .run();
 
   it("is swept by a later Google callback, so a first sign-in that D1 cut off after the user row can start over (catches the lockout, and a sweep that takes a sign-in in flight)", async () => {
     const cutOff = await whileWriteFails("insert on account", () => playSignIn("cut-off-create"));
