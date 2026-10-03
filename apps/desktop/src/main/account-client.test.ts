@@ -18,9 +18,13 @@ import { storage } from "@better-auth/electron/storage";
 
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { AUTH_SESSION_ENDED_MESSAGE, SIGN_IN_TIMEOUT_MS } from "./account.ts";
 import { harness } from "./account.test-harness.ts";
-import { DELETE_ACCOUNT_FAILED_MESSAGE, SIGN_IN_ERRORS } from "./account.ts";
+import {
+  AUTH_SESSION_ENDED_MESSAGE,
+  DELETE_ACCOUNT_FAILED_MESSAGE,
+  SIGN_IN_ERRORS,
+  SIGN_IN_TIMEOUT_MS,
+} from "./account.ts";
 import {
   authSessionStored,
   authStorageKeys,
@@ -128,9 +132,12 @@ async function signedInClient(token = "old-token") {
 }
 
 function snapshotAccount(auth: ReturnType<typeof client>) {
-  const h = harness({ hasStoredAuthSession: () => authStored(electron.state.userData, "nightly") });
-  h.createClient.mockResolvedValue(auth);
-  return h;
+  return harness({
+    apiUrl: API.nightly,
+    createClient: async () => auth,
+    hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
+    hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
+  });
 }
 
 async function signInCode(h: ReturnType<typeof harness>, auth: ReturnType<typeof client>) {
@@ -315,12 +322,7 @@ describe("stored auth expiry through the account snapshot", () => {
     sent = [];
     answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
     const restarted = client("nightly");
-    const h = harness({
-      apiUrl: API.nightly,
-      createClient: async () => restarted,
-      hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
-      hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
-    });
+    const h = snapshotAccount(restarted);
     await h.account.restore();
     await restarted.endServerSignOuts();
     return h;
@@ -338,7 +340,7 @@ describe("stored auth expiry through the account snapshot", () => {
       expect(storage().getItem(keys.cookie)).toBeNull();
       expect(storage().getItem(keys.identity)).toBeNull();
       expect(sent.filter(({ cookie }) => cookie === null)).toEqual([
-        { url: `${API.nightly}/api/auth/get-session`, cookie: null },
+        { url: `${API.nightly}/api/auth/get-session`, cookie: null, body: "" },
       ]);
       h.account.dismissError();
       expect(h.state).toEqual({ kind: "signedOut" });
@@ -358,8 +360,8 @@ describe("stored auth expiry through the account snapshot", () => {
       expect(storage().getItem(keys.cookie)).toBeNull();
       expect(storage().getItem(keys.identity)).toBeNull();
       expect(sent).toEqual([
-        { url: `${API.nightly}/api/auth/sign-out`, cookie: expiredCookie },
-        { url: `${API.nightly}/api/auth/get-session`, cookie: expiredCookie },
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: expiredCookie, body: "{}" },
+        { url: `${API.nightly}/api/auth/get-session`, cookie: expiredCookie, body: "" },
       ]);
     },
   );
@@ -696,8 +698,6 @@ describe("server sign-outs", () => {
 
 describe("an abandoned exchange through the real auth client", () => {
   const keys = authStorageKeys("nightly");
-  const confirmed = (url: string) =>
-    url.endsWith("/sign-out") ? json({ success: true }) : json(null);
 
   beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
   afterEach(() => vi.useRealTimers());
