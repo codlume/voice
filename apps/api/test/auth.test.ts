@@ -55,12 +55,8 @@ async function playSignIn(googleCode: string, options = { signOut: false }) {
   return { ...flow, ip, state, verifier };
 }
 
-/** A sign-in that must reach the landing page with an Electron code. */
-async function browserSignIn(googleCode: string, options = { signOut: false }) {
-  const flow = await playSignIn(googleCode, options);
-  expect(flow.init.status).toBe(302);
-  expect(flow.callback.status).toBe(302);
-  expect(flow.callback.headers.get("location")).toBe(base);
+/** The Electron code a callback left in its cookie, as the landing page reads it. */
+function withIdentifier<T extends { electronCookie: string | null }>(flow: T) {
   const { identifier } = JSON.parse(
     atob(
       decodeURIComponent(flow.electronCookie ?? "")
@@ -69,6 +65,15 @@ async function browserSignIn(googleCode: string, options = { signOut: false }) {
     ),
   ) as { identifier: string };
   return { ...flow, identifier };
+}
+
+/** A sign-in that must reach the landing page with an Electron code. */
+async function browserSignIn(googleCode: string, options = { signOut: false }) {
+  const flow = await playSignIn(googleCode, options);
+  expect(flow.init.status).toBe(302);
+  expect(flow.callback.status).toBe(302);
+  expect(flow.callback.headers.get("location")).toBe(base);
+  return withIdentifier(flow);
 }
 
 type SignIn = Awaited<ReturnType<typeof browserSignIn>>;
@@ -295,6 +300,37 @@ describe("a user row with no account", () => {
     expect(other.electronCookie).toBeNull();
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
+  });
+
+  it("never ends up shared when two Google identities with one email sign in at once, with or without a swept row (catches the race that linked both into one user)", async () => {
+    for (const [person, seedOrphan] of [
+      ["race", false],
+      ["race-over-orphan", true],
+    ] as const) {
+      if (seedOrphan) {
+        await whileWriteFails("insert on account", () => playSignIn(person));
+        await age(await orphanOf(`${person}@example.com`));
+      }
+      const codes = [person, `${person}/other-google-account`];
+
+      const flows = await Promise.all(codes.map((code) => playSignIn(code)));
+
+      const signedIn = flows.filter((flow) => flow.electronCookie !== null);
+      expect(signedIn).toHaveLength(1);
+      for (const [index, flow] of flows.entries()) {
+        if (flow.electronCookie === null) continue;
+        const response = await exchange(withIdentifier(flow));
+        expect(response.status).toBe(200);
+        const { user } = await response.json<SignedIn>();
+        const accounts = await env.DB.prepare("select account_id from account where user_id = ?")
+          .bind(user.id)
+          .all<{ account_id: string }>();
+        expect(accounts.results).toEqual([{ account_id: `google-${codes[index]}` }]);
+      }
+      expect(
+        await count("select count(*) as n from user where email = ?", `${person}@example.com`),
+      ).toBe(1);
+    }
   });
 });
 
