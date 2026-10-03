@@ -403,6 +403,9 @@ async function main() {
       refreshLoginItem();
     });
     hub.on("show", syncPermissionPolling);
+    // macOS shows and unminimizes the window natively too, not only through showHub.
+    hub.on("show", () => void account.refresh());
+    hub.on("restore", () => void account.refresh());
     hub.on("hide", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
