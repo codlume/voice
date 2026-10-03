@@ -332,6 +332,19 @@ describe("a user row with no account", () => {
       ).toBe(1);
     }
   });
+
+  it("does not stop a sign-in when the sweep itself fails (catches a sweep error ending the callback)", async () => {
+    await whileWriteFails("insert on account", () => playSignIn("sweep-fails"));
+    const orphan = await orphanOf("sweep-fails@example.com");
+    await age(orphan);
+
+    const bystander = await whileWriteFails("delete on user", () =>
+      browserSignIn("sweep-bystander", { signOut: true }),
+    );
+
+    expect((await exchange(bystander)).status).toBe(200);
+    expect(await rowsOf(orphan)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+  });
 });
 
 describe("origins", () => {
