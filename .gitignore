@@ -13,3 +13,4 @@ release
 models/
 test-results/
 test-fixtures/audio/
+.dev.vars*
