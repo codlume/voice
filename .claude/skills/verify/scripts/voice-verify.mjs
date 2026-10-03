@@ -139,6 +139,18 @@ const mtime = (path) => (existsSync(path) ? statSync(path).mtimeMs : 0);
 const osascript = (script) =>
   execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 
+// A second copy of Voice on the instance's userData, as when the user opens Voice again.
+function openSecondCopy(state, ...extraArgs) {
+  const env = {
+    ...process.env,
+    VOICE_HELPER_TEST: "1",
+    VOICE_USER_DATA_DIR: state.userData,
+    VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return spawnSync(electronPath, [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
+}
+
 const commands = {
   async doctor() {
     const state = readState();
@@ -350,35 +362,10 @@ const commands = {
   },
 
   async callback() {
-    const [code, mode] = args;
-    if (!code || (mode && mode !== "--second-instance"))
-      fail("usage: callback <code> [--second-instance]");
+    const [code] = args;
+    if (!code) fail("usage: callback <code>");
     const state = requireInstance();
     const url = `com.codlume.voice://auth/callback#token=${code}`;
-    if (mode) {
-      // A second copy of Voice on the same userData, launched with the URL on its command line.
-      // It must lose the single-instance lock, hand its argv to the instance, and exit.
-      const env = { ...process.env, VOICE_HELPER_TEST: "1", VOICE_USER_DATA_DIR: state.userData };
-      delete env.ELECTRON_RUN_AS_NODE;
-      const started = Date.now();
-      const second = spawnSync(electronPath, [".", url], {
-        cwd: desktopDir,
-        env,
-        encoding: "utf8",
-        timeout: 20_000,
-      });
-      out({
-        delivered: url.replace(/#token=.*/, "#token=<code>"),
-        secondInstance: {
-          pid: second.pid,
-          exitCode: second.status,
-          signal: second.signal,
-          ms: Date.now() - started,
-        },
-        firstInstanceAlive: alive(state.electronPid),
-      });
-      return;
-    }
     // The landing page opens this URL. A development build cannot receive it from macOS, so the
     // main-process test hook emits the same open-url event the OS would.
     const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
@@ -406,19 +393,32 @@ const commands = {
     if (await hubOpen()) fail("the Voice window did not close");
     // Opening Voice again starts a second copy, which hands over to the running one through the
     // single-instance lock. The running copy then shows its window, as for a user.
-    const env = {
-      ...process.env,
-      VOICE_HELPER_TEST: "1",
-      VOICE_USER_DATA_DIR: state.userData,
-      VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
-    };
-    delete env.ELECTRON_RUN_AS_NODE;
-    const second = spawnSync(electronPath, ["."], { cwd: desktopDir, env, timeout: 30_000 });
+    const second = openSecondCopy(state);
     for (let i = 0; i < 100 && !(await hubOpen()); i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!(await hubOpen())) fail("the Voice window did not come back");
     out({ reopened: true, secondCopyExit: second.status });
+  },
+
+  async "second-instance"() {
+    const [code] = args;
+    if (!code) fail("usage: second-instance <code>");
+    const state = requireInstance();
+    // The copy must lose the single-instance lock, hand its argv to the instance, and exit.
+    const url = `com.codlume.voice://auth/callback#token=${code}`;
+    const started = Date.now();
+    const second = openSecondCopy(state, url);
+    out({
+      delivered: url.replace(/#token=.*/, "#token=<code>"),
+      secondInstance: {
+        pid: second.pid,
+        exitCode: second.status,
+        signal: second.signal,
+        ms: Date.now() - started,
+      },
+      firstInstanceAlive: alive(state.electronPid),
+    });
   },
 
   async wait() {
@@ -722,9 +722,8 @@ const commands = {
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
-  callback <code> [--second-instance]
-                                 deliver the landing page's com.codlume.voice:// URL to the main process,
-                                 or launch a second Voice with it on the command line
+  callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
+  second-instance <code>         launch a second Voice with that URL as its argument; print its exit
   reopen                         close the Voice window, then open Voice again (second copy hands over)
   record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
