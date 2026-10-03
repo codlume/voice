@@ -147,6 +147,8 @@ export type Snapshot = {
   models: Record<ModelId, ModelStatus>;
   settings: Settings;
   account: AccountState;
+  /** The other channel's storage prefix holds an auth session, read once at launch. */
+  otherChannelSignedIn: boolean;
   last: { raw: string; text: string } | null;
 };
 

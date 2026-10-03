@@ -33,6 +33,7 @@ import {
   authSessionStored,
   authStorageKeys,
   authStored,
+  otherChannelSignedIn,
   serverSignOutsStored,
 } from "./account-storage.ts";
 
@@ -938,5 +939,20 @@ describe("deletion through the real auth client", () => {
     await h.account.signIn();
     expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     h.account.dispose();
+  });
+});
+
+describe("otherChannelSignedIn", () => {
+  test.each([
+    ["stable", "nightly"],
+    ["nightly", "stable"],
+  ] as const)("a %s build sees the auth session %s stored", (installed, other) => {
+    const { userData } = electron.state;
+    storeCookie(installed);
+    expect(otherChannelSignedIn(userData, installed)).toBe(false);
+    storeCookie(other);
+    expect(otherChannelSignedIn(userData, installed)).toBe(true);
+    storeCookie(other, null);
+    expect(otherChannelSignedIn(userData, installed)).toBe(false);
   });
 });
