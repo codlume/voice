@@ -1,11 +1,9 @@
-import { electron } from "@better-auth/electron";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { authOptions } from "./src/auth.ts";
 
-// Read only by `auth generate` so it emits the electron and rate_limit tables.
-// Every security-relevant setting lives in src/auth.ts.
+// Read only by `auth generate`, which needs no Worker bindings.
 export const auth = betterAuth({
+  ...authOptions,
   database: drizzleAdapter({}, { provider: "sqlite" }),
-  rateLimit: { enabled: true, storage: "database" },
-  plugins: [electron()],
 });

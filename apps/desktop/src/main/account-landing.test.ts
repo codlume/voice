@@ -5,6 +5,8 @@ import { describe, expect, test } from "vite-plus/test";
 import { landingPage } from "../../../api/src/landing.ts";
 import { parseCallbackUrl, parseSignInCode } from "./account.ts";
 
+// The only test that reads across the two apps. It pins the landing page's URL literal to the
+// desktop's parsers, so neither side can change the code's shape alone.
 // The API's landing page and the desktop's parsers agree on one code: the `better-auth.electron`
 // cookie value as the page shows it. The server stores base64url JSON with padding and the cookie
 // serializer percent-encodes the padding, so the value ends in %3D. The plugin's `authenticate`

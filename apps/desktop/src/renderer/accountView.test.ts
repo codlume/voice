@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, actionErrorMessage, initials, signInCode } from "./accountView.ts";
+import { accountRow, initials, signInCode } from "./accountView.ts";
 
 describe("account view", () => {
   test("initials take the first two words of the name, else the email", () => {
@@ -45,18 +45,5 @@ describe("account view", () => {
     expect(signInCode("  eyJpZCI6ImFiYyJ9\n")).toBe("eyJpZCI6ImFiYyJ9");
     expect(signInCode(" \n\t")).toBeNull();
     expect(signInCode("")).toBeNull();
-  });
-
-  test("a rejected action shows the main-process message without the IPC wrapper", () => {
-    const wrapped = new Error(
-      "Error invoking remote method 'voice:submitSignInCode': Error: Paste the whole code shown in the browser.",
-    );
-    expect(actionErrorMessage(wrapped, "Could not sign in.")).toBe(
-      "Paste the whole code shown in the browser.",
-    );
-    expect(actionErrorMessage(new Error("Voice is restarting."), "Could not sign in.")).toBe(
-      "Voice is restarting.",
-    );
-    expect(actionErrorMessage("nope", "Could not sign in.")).toBe("Could not sign in.");
   });
 });

@@ -209,8 +209,8 @@ describe("disabled sign-in paths", () => {
 });
 
 describe("origins", () => {
-  const exchangeFrom = (origin: string) =>
-    new Request("https://api-nightly.voice.codlume.com/api/auth/electron/token", {
+  const exchangeFrom = (origin: string, url = `${base}/api/auth/electron/token`) =>
+    new Request(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -223,30 +223,18 @@ describe("origins", () => {
     });
 
   it("rejects an untrusted origin (catches a disabled or widened origin check)", async () => {
-    const response = await worker(
-      new Request(`${base}/api/auth/electron/token`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          cookie: "better-auth.session_token=none",
-          origin: "https://evil.example",
-        },
-        body: "{}",
-      }),
-    );
-
-    expect(response.status).toBe(403);
+    expect((await worker(exchangeFrom("https://evil.example"))).status).toBe(403);
   });
 
   it("trust only the environment origin and the app scheme in production (catches localhost trusted outside local development)", async () => {
-    const auth = createAuth({ ...env, BETTER_AUTH_URL: "https://api-nightly.voice.codlume.com" });
+    const nightly = "https://api-nightly.voice.codlume.com";
+    const auth = createAuth({ ...env, BETTER_AUTH_URL: nightly });
+    const from = (origin: string) => exchangeFrom(origin, `${nightly}/api/auth/electron/token`);
 
-    expect((await auth.handler(exchangeFrom("http://localhost:8787"))).status).toBe(403);
-    expect((await auth.handler(exchangeFrom("https://evil.example"))).status).toBe(403);
-    expect((await auth.handler(exchangeFrom(appOrigin))).status).toBe(404);
-    expect((await auth.handler(exchangeFrom("https://api-nightly.voice.codlume.com"))).status).toBe(
-      404,
-    );
+    expect((await auth.handler(from("http://localhost:8787"))).status).toBe(403);
+    expect((await auth.handler(from("https://evil.example"))).status).toBe(403);
+    expect((await auth.handler(from(appOrigin))).status).toBe(404);
+    expect((await auth.handler(from(nightly))).status).toBe(404);
   });
 });
 

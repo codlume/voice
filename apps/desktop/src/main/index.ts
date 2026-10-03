@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -28,7 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
-import { createAccount, initialAccountState, resolveApiUrl } from "./account.ts";
+import { createAccount, resolveApiUrl } from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -175,8 +175,22 @@ async function main() {
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
-  const apiUrl = resolveApiUrl({ development, release, env: process.env });
-  const initialAccount = initialAccountState(apiUrl, development);
+  const account = createAccount({
+    apiUrl: resolveApiUrl({ development, release, env: process.env }),
+    development,
+    createClient: (apiUrl) =>
+      import("./account-client.ts").then((m) =>
+        m.createVoiceAuthClient({
+          apiUrl,
+          installedChannel,
+          // The verify skill plays the browser: it reads the sign-in URL from this file instead.
+          ...(testMode && { signInUrlFile: NodePath.join(userData, "sign-in-url.txt") }),
+        }),
+      ),
+    onChange: (value) => store.update((s) => ({ ...s, account: value })),
+    log: (message, entry) => log(message, entry),
+  });
+  handleCallbackUrl = account.handleCallbackUrl;
   const settings = loadSettings(settingsFile, installedChannel);
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
@@ -203,7 +217,7 @@ async function main() {
     },
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
-    account: initialAccount,
+    account: account.state,
     last: null,
   });
 
@@ -225,26 +239,6 @@ async function main() {
     preload,
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
   };
-
-  const account = createAccount({
-    apiUrl,
-    initial: initialAccount,
-    createClient: (url) =>
-      import("./account-client.ts").then((m) => m.createVoiceAuthClient(url, installedChannel)),
-    onChange: (value) => store.update((s) => ({ ...s, account: value })),
-    log,
-  });
-  handleCallbackUrl = account.handleCallbackUrl;
-  // The verify skill plays the browser: it reads the sign-in URL from this file instead.
-  if (testMode) {
-    const openExternal = shell.openExternal.bind(shell);
-    shell.openExternal = (url, options) => {
-      if (apiUrl === null || !url.startsWith(apiUrl)) return openExternal(url, options);
-      writeFileSync(NodePath.join(userData, "sign-in-url.txt"), url);
-      log("account: test mode wrote the sign-in URL instead of opening the browser");
-      return Promise.resolve();
-    };
-  }
 
   // The user can change Login Items in System Settings, so macOS owns this state.
   function refreshLoginItem() {

@@ -13,13 +13,10 @@ export const PASTE_CODE_MESSAGE = "Paste the whole code shown in the browser.";
 export const OPEN_BROWSER_FAILED_MESSAGE = "Could not open your browser to sign in. Try again.";
 export const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Try again.";
 
-/** The part of the Better Auth Electron client the module uses. Tests fake it. */
+/** What the module needs from the Better Auth Electron client. The adapter owns the plugin details. */
 export type AuthClient = {
-  requestAuth(options: { provider: "google" }): Promise<void>;
-  authenticate(options: {
-    token: string;
-    fetchOptions: { throw: true };
-  }): Promise<{ user: { name: string; email: string } }>;
+  openBrowser(): Promise<void>;
+  redeem(code: string): Promise<{ name: string; email: string }>;
 };
 
 function parseHttpUrl(value: string): string | null {
@@ -76,7 +73,7 @@ export function parseSignInCode(value: string): string | null {
 }
 
 /** Nothing is restored yet (#129), so a build starts unavailable or signed out. */
-export function initialAccountState(
+function initialAccountState(
   apiUrl: string | null,
   development: boolean,
 ): Extract<AccountState, { kind: "unavailable" | "signedOut" }> {
@@ -115,18 +112,18 @@ const toAccountState = (state: State): AccountState =>
 
 export function createAccount({
   apiUrl,
-  initial,
+  development,
   createClient,
   onChange,
   log,
 }: {
   apiUrl: string | null;
-  initial: ReturnType<typeof initialAccountState>;
+  development: boolean;
   createClient: (apiUrl: string) => Promise<AuthClient>;
   onChange: (state: AccountState) => void;
   log: Log;
 }) {
-  let state: State = initial;
+  let state: State = initialAccountState(apiUrl, development);
   let attempts = 0;
   let cachedClient: Promise<AuthClient> | null = null;
 
@@ -166,9 +163,7 @@ export function createAccount({
     code: string,
   ) {
     try {
-      const { user } = await (
-        await client
-      ).authenticate({ token: code, fetchOptions: { throw: true } });
+      const user = await (await client).redeem(code);
       leave(attempt, { kind: "signedIn", name: user.name, email: user.email });
     } catch (error) {
       failed(attempt, error, SIGN_IN_FAILED_MESSAGE);
@@ -194,7 +189,7 @@ export function createAccount({
       const client = loadClient(apiUrl);
       publish({ kind: "signingIn", attempt, client, timer });
       try {
-        await (await client).requestAuth({ provider: "google" });
+        await (await client).openBrowser();
       } catch (error) {
         failed(attempt, error, OPEN_BROWSER_FAILED_MESSAGE);
       }
