@@ -479,6 +479,14 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
   useEffect(focusMain, []);
+  // A sign-in error can arrive from the browser while another page shows, or before the hub
+  // opens, as when the browser finishes a sign-in that a quit cut short.
+  const accountKind = snapshot.account.kind;
+  const [shownAccountKind, setShownAccountKind] = useState<typeof accountKind | null>(null);
+  if (accountKind !== shownAccountKind) {
+    setShownAccountKind(accountKind);
+    if (accountKind === "error") setSettingsPage("account");
+  }
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedKey) === "true",
   );
