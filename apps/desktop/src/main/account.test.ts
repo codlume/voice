@@ -221,12 +221,9 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
-  test("cancel or timeout while the client is still loading never opens the browser", async () => {
-    const endings = [
-      (h: ReturnType<typeof harness>) => h.account.cancelSignIn(),
-      () => vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS),
-    ];
-    for (const end of endings) {
+  test.each(["cancel", "timeout"] as const)(
+    "%s while the client is still loading never opens the browser",
+    async (ending) => {
       const h = harness();
       h.fake.setStored(true);
       let loaded!: (client: typeof h.fake.client) => void;
@@ -239,7 +236,8 @@ describe("createAccount", () => {
       const signIn = h.account.signIn();
       await flush();
       expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
-      await end(h);
+      if (ending === "cancel") h.account.cancelSignIn();
+      else await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
       expect(h.state).toEqual({ kind: "signedOut" });
       loaded(h.fake.client);
       await flush();
@@ -250,8 +248,8 @@ describe("createAccount", () => {
       await signIn;
       expect(h.state).toEqual({ kind: "signedOut" });
       expectNoSecrets(h);
-    }
-  });
+    },
+  );
 
   test("a callback on a launch with nothing pending says sign-in was interrupted", async () => {
     const h = harness();
