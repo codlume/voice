@@ -43,7 +43,7 @@ vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
 const API = { stable: "https://api.example.com", nightly: "https://api-nightly.example.com" };
 const USER = { name: "Ada Lovelace", email: "ada@example.com" };
 
-type Sent = { url: string; cookie: string | null };
+type Sent = { url: string; cookie: string | null; body: string };
 let sent: Sent[] = [];
 let answer: (url: string) => Response | Promise<Response>;
 
@@ -73,7 +73,11 @@ beforeEach(() => {
   sent = [];
   vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
     const request = new Request(input, init);
-    sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
+    sent.push({
+      url: request.url,
+      cookie: request.headers.get("cookie") || null,
+      body: await request.text(),
+    });
     return answer(request.url);
   });
 });
@@ -140,5 +144,70 @@ describe("createVoiceAuthClient", () => {
     answer = () => json(null);
     expect(await client("nightly").checkAuthSession()).toEqual({ kind: "unknown", status: 0 });
     expect(sent).toEqual([]);
+  });
+});
+
+describe("deletion through the real auth client", () => {
+  test.each(["503", "offline", "invalid success"])(
+    "%s keeps the local credential",
+    async (failure) => {
+      answer = () => signedIn("kept-token");
+      const auth = client("nightly");
+      await auth.checkAuthSession();
+      answer = () => {
+        if (failure === "offline") throw new TypeError("fetch failed");
+        return failure === "503" ? json({}, { status: 503 }) : json({ success: false });
+      };
+      const result = await auth.deleteAccount();
+      expect(result.kind).toBe(failure === "offline" ? "offline" : "failed");
+      expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+      expect(auth.cachedUser()).toEqual(USER);
+      answer = () => json({ session: { token: "kept-token" }, user: USER });
+      await auth.checkAuthSession();
+      expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=kept-token");
+    },
+  );
+
+  test("only the freshness refusal asks for re-authentication and captures the older credential", async () => {
+    answer = () => signedIn("old-token");
+    const auth = client("nightly");
+    await auth.checkAuthSession();
+    answer = (url) =>
+      url.endsWith("/delete-user")
+        ? json({ code: "SESSION_EXPIRED" }, { status: 400 })
+        : json({ session: { token: "old-token" }, user: USER });
+    const result = await auth.deleteAccount();
+    expect(result.kind).toBe("reauthRequired");
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+    answer = () => signedIn("new-token");
+    await auth.checkAuthSession();
+    answer = () =>
+      json(
+        { status: true },
+        { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } },
+      );
+    if (result.kind !== "reauthRequired") throw new Error("Expected re-authentication.");
+    await result.revokeOlderAuthSession();
+    expect(sent.at(-1)).toEqual({
+      url: `${API.nightly}/api/auth/revoke-session`,
+      cookie: "better-auth.session_token=old-token",
+      body: JSON.stringify({ token: "old-token" }),
+    });
+    answer = () => json({ session: { token: "new-token" }, user: USER });
+    await auth.checkAuthSession();
+    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+  });
+
+  test("an unauthorized deletion is a failure, never a deleted account", async () => {
+    answer = () => json({ code: "UNAUTHORIZED" }, { status: 401 });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
+  });
+
+  test("a successful deletion is reported only with the server's deletion receipt", async () => {
+    answer = () => json({ success: true, message: "User deleted" });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "deleted" });
+    answer = () => json({ success: true, message: "Verification email sent" });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
   });
 });

@@ -609,6 +609,10 @@ async function main() {
   );
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
+  ipcMain.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
+  ipcMain.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
+  ipcMain.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
+  ipcMain.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
 
   app.on("second-instance", showHub);
   app.on("activate", showHub);

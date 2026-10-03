@@ -81,7 +81,10 @@ export function createVoiceAuthClient({
         // With `throw: true` the plugin resolves to the token endpoint's body, not the
         // `{ data, error }` pair its typings declare.
         const user = userOf(
-          await client.authenticate({ token: code, fetchOptions: { throw: true } }),
+          await client.authenticate({
+            token: code,
+            fetchOptions: { throw: true, timeout: 30_000 },
+          }),
         );
         if (user === null) throw new Error("The sign-in response carried no user.");
         // The plugin caches the identity only from `get-session`, and an offline launch restores
@@ -127,6 +130,50 @@ export function createVoiceAuthClient({
       // A captive portal's HTML page also arrives as a 200, with a string for data.
       const user = userOf(data);
       return user ? { kind: "active", user } : { kind: "unknown", status: 200 };
+    },
+    deleteAccount: async () => {
+      try {
+        const { data, error } = await client.deleteUser({ fetchOptions: { timeout: 30_000 } });
+        if (!error)
+          return data?.success === true && data.message === "User deleted"
+            ? { kind: "deleted" }
+            : { kind: "failed" };
+        if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
+        const authSession = await client.getSession({ fetchOptions: { timeout: 30_000 } });
+        if (authSession.error || !authSession.data) return { kind: "failed" };
+        const token = authSession.data.session.token;
+        const cookie = client.getCookie();
+        return {
+          kind: "reauthRequired",
+          revokeOlderAuthSession: async () => {
+            // The old credential authorizes its own revocation, also if Google chose a different
+            // account. Bypass the plugin so this response cannot overwrite the new credential.
+            const response = await fetch(`${apiUrl}/api/auth/revoke-session`, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                origin: `${VOICE_URL_SCHEME}:/`,
+                cookie,
+              },
+              body: JSON.stringify({ token }),
+              signal: AbortSignal.timeout(30_000),
+            });
+            if (response.status === 401) return;
+            const body: unknown = await response.json();
+            if (
+              !response.ok ||
+              typeof body !== "object" ||
+              body === null ||
+              !("status" in body) ||
+              body.status !== true
+            ) {
+              throw new Error("Auth session revocation failed.");
+            }
+          },
+        };
+      } catch (error) {
+        return { kind: error instanceof TypeError ? "offline" : "failed" };
+      }
     },
     forget: () => {
       store.setItem(`${prefix}.cookie`, null);

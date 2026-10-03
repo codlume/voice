@@ -47,6 +47,10 @@ const voice: VoiceApi = {
   submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),
   cancelSignIn: () => ipcRenderer.invoke(Channel.cancelSignIn),
   dismissAccountError: () => ipcRenderer.invoke(Channel.dismissAccountError),
+  requestAccountDeletion: () => ipcRenderer.invoke(Channel.requestAccountDeletion),
+  confirmAccountDeletion: () => ipcRenderer.invoke(Channel.confirmAccountDeletion),
+  cancelAccountDeletion: () => ipcRenderer.invoke(Channel.cancelAccountDeletion),
+  retryAccountDeletion: () => ipcRenderer.invoke(Channel.retryAccountDeletion),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

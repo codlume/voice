@@ -380,3 +380,87 @@ describe("revoked auth session", () => {
     expect((await getSession(other))?.user.id).toBe(user.id);
   });
 });
+
+describe("account deletion", () => {
+  const deleteAccount = (cookie: string) =>
+    worker(`${base}/api/auth/delete-user`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: appOrigin, cookie },
+      body: "{}",
+    });
+
+  it("refuses deletion at the ten-minute freshness boundary and preserves the account", async () => {
+    const response = await exchange(await browserSignIn("stale-deletion", { signOut: true }));
+    const { user } = await response.json<SignedIn>();
+    const cookie = cookieHeader(storeCookies(response));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 600_000);
+
+    const refused = await deleteAccount(cookie);
+
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: "SESSION_EXPIRED" });
+    expect((await getSession(cookie))?.user.id).toBe(user.id);
+    expect(await count("select count(*) as n from user where id = ?", user.id)).toBe(1);
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(1);
+    expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(1);
+  });
+
+  it("deletes a fresh account, every auth session, and its linked Google account", async () => {
+    const first = await exchange(await browserSignIn("fresh-deletion", { signOut: true }));
+    const { user } = await first.json<SignedIn>();
+    const oldCookie = cookieHeader(storeCookies(first));
+    const second = await exchange(await browserSignIn("fresh-deletion", { signOut: true }));
+    const currentCookie = cookieHeader(storeCookies(second));
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(2);
+
+    const deleted = await deleteAccount(currentCookie);
+
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toMatchObject({ success: true, message: "User deleted" });
+    expect(await count("select count(*) as n from user where id = ?", user.id)).toBe(0);
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(0);
+    expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(0);
+    expect(await getSession(oldCookie)).toBeNull();
+    expect(await getSession(currentCookie)).toBeNull();
+  });
+
+  it("creates a new user when the deleted Google account signs in again", async () => {
+    const first = await exchange(await browserSignIn("new-after-deletion", { signOut: true }));
+    const previous = await first.json<SignedIn>();
+    expect((await deleteAccount(cookieHeader(storeCookies(first)))).status).toBe(200);
+
+    const next = await exchange(await browserSignIn("new-after-deletion", { signOut: true }));
+    expect(next.status).toBe(200);
+    const { user } = await next.json<SignedIn>();
+    expect(user.id).not.toBe(previous.user.id);
+    expect(user.email).toBe(previous.user.email);
+    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
+    expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(1);
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(1);
+    expect(await count("select count(*) as n from user where id = ?", previous.user.id)).toBe(0);
+  });
+
+  it("lets an older device credential revoke itself while leaving the new sign-in active", async () => {
+    const first = await exchange(await browserSignIn("old-device", { signOut: true }));
+    const { token, user } = await first.json<SignedIn>();
+    const oldCookie = cookieHeader(storeCookies(first));
+    const next = await exchange(await browserSignIn("new-device-account", { signOut: true }));
+    const currentCookie = cookieHeader(storeCookies(next));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 600_000);
+
+    const revoked = await worker(`${base}/api/auth/revoke-session`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: appOrigin, cookie: oldCookie },
+      body: JSON.stringify({ token }),
+    });
+
+    expect(revoked.status).toBe(200);
+    expect(await revoked.json()).toEqual({ status: true });
+    expect(await getSession(oldCookie)).toBeNull();
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(0);
+    expect(await getSession(currentCookie)).not.toBeNull();
+    expect(await count("select count(*) as n from user where id = ?", user.id)).toBe(1);
+  });
+});

@@ -319,6 +319,24 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     dismissAccountError: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
     },
+    requestAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      set({ ...snapshot, account: { ...snapshot.account, deletion: { kind: "confirming" } } });
+    },
+    confirmAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn" || snapshot.account.deletion?.kind !== "confirming")
+        return;
+      set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    cancelAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      const { name, email } = snapshot.account;
+      set({ ...snapshot, account: { kind: "signedIn", name, email } });
+    },
+    retryAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      set({ ...snapshot, account: { ...snapshot.account, deletion: { kind: "confirming" } } });
+    },
     startMicrophoneTest: async () => {
       set({ ...snapshot, microphoneTest: { kind: "starting" } });
       setTimeout(() => {

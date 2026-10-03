@@ -11,12 +11,14 @@ Settings > Account signs the user in with Google. `Sign in with Google` opens th
 - `account-error`: a rejected code shows the error with `Retry` (signs in again) and `Dismiss` (back to signed out).
 - `account-unavailable`: a build with no API URL says accounts are unavailable and offers no button.
 - `account-restore`: after a restart Voice is still signed in, also with the API down. The auth session is stored encrypted in `config.json` under `voice.<installedChannel>` (a development build uses `voice.stable`).
+- `account-delete`: `Delete account` opens the existing confirmation dialog. Cancel preserves the account. Confirm removes it only after the API confirms success. A network or server failure keeps the user signed in with Retry.
+- `account-delete-reauth`: a stale deletion asks for `Sign in again`. After the normal browser flow, Voice revokes the older device auth session before showing confirmation again. Cancelling that confirmation leaves one live device auth session.
 - `account-ended`: when the API no longer knows the auth session, the page says "Your sign-in expired or was revoked." with Retry and Dismiss. Voice asks the API at launch and when the window is shown, at most once an hour.
 
 ## How to get to it (user POV)
 
 - Voice window > `Settings` (sidebar footer, or Cmd-,) > `Account`, the second item.
-- Handles: `Sign in with Google` (`#setting-sign-in`), `Sign-in code` (`#setting-sign-in-code`), `Continue`, `Cancel sign-in`, `Retry`, `Dismiss`. The headline is `Account`.
+- Handles: `Sign in with Google` (`#setting-sign-in`), `Sign-in code` (`#setting-sign-in-code`), `Continue`, `Cancel sign-in`, `Retry`, `Dismiss`. Deletion handles are `#setting-delete-account`, `[role=alertdialog]`, `Sign in again`, `Cancel deletion`, and Retry. The headline is `Account`.
 
 ## Driving it with voice-verify
 
@@ -35,6 +37,9 @@ To film a flow, start `vv record account-sign-in` in the background first, and `
 - **Restart.** Signed in, `stop --keep-user-data`, then `launch --keep-user-data` with the same environment. `vv wait hub 'window.voice.getSnapshot().then(s => s.account.kind === "signedIn")'` passes without a sign-in, and the Worker log shows one `GET /api/auth/get-session` for the launch.
 - **Offline.** Stop the verify Worker, then relaunch as above. The account stays `signedIn` and `main.log` has "account auth session check failed".
 - **Expired or revoked.** Launch with `VOICE_AUTH_SESSION_CHECK_MS=60000` as well (test mode only; the hourly check becomes one minute). With the Worker running, end the auth session on the server: `pnpm --filter @voice/api exec wrangler d1 execute DB --local --config wrangler.verify.jsonc --persist-to .wrangler/verify --command "delete from session"`. `vv reopen` within the minute leaves it `signedIn` with no new `get-session`. After the minute, `vv reopen` lands in `error` with the message, `vv click Dismiss` reaches `signedOut`, and `config.json` holds `null` for the channel's cookie, so the next launch builds no client.
+- **Delete confirmation and success.** While signed in, `vv click css:#setting-delete-account`, wait for `[role=alertdialog]`, and `vv shot account-delete-confirmation`. `vv click Cancel` keeps `signedIn`. Open again, then `vv click 'css:[role=alertdialog] button:last-child'`. Wait for `signedOut`, and `vv shot account-deleted`. Query local verify D1 for the previous user id and check zero user, session, and account rows. The channel cookie and identity cache in scratch `config.json` are null.
+- **Stale deletion.** In local verify D1 set the signed-in device session's `created_at` to a millisecond timestamp eleven minutes ago. Confirm deletion and wait for `s.account.kind === "signedIn" && s.account.deletion?.kind === "reauthRequired"`. Capture the prompt, click `Sign in again`, then use `vv browser` with the same synthetic Google identity and paste its code. Wait for the second confirmation. Query local D1 and check one auth session for that user, then Cancel and check that it stays signed in. Confirming instead reaches signed out and zero auth rows.
+- **Offline deletion.** Stop only your verify Worker. Confirm deletion and wait for `s.account.kind === "signedIn" && s.account.deletion?.kind === "failed"`. `vv shot account-delete-offline` shows the identity, error, and Retry. The scratch cookie is still stored. Restart your local Worker, click Retry, and confirm to delete.
 - **Nothing in plain text.** While signed in, `grep -rlaF` the scratch userData for the email, the name, `session_token` and the token from `select token from session` in local D1. Each finds nothing. `config.json` holds base64 values that decode to safeStorage ciphertext (`v10…`).
 - **Unavailable.** `stop`, then launch without `VOICE_API_URL`. The Account page reads "Accounts are unavailable" with a reason that names `VOICE_API_URL`, and has no button.
 
