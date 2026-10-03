@@ -16,6 +16,7 @@
     "@better-auth/electron": "1.7.7",
     "@stylexjs/stylex": "catalog:",
     "better-auth": "1.7.7",
+    "conf": "15.1.0",
     "effect": "3.22.2",
     "electron-updater": "6.8.9",
     "node-llama-cpp": "3.21.1"

@@ -28,6 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
+import { authSessionStored } from "./account-storage.ts";
 import { createAccount, resolveApiUrl } from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
@@ -175,9 +176,13 @@ async function main() {
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
+  const testCheckIntervalMs = testMode ? Number(process.env.VOICE_AUTH_SESSION_CHECK_MS) : 0;
   const account = createAccount({
     apiUrl: resolveApiUrl({ development, release, env: process.env }),
     development,
+    hasStoredAuthSession: () => authSessionStored(userData, installedChannel),
+    // The verify skill shortens the hourly check to bring the window back after it.
+    ...(testCheckIntervalMs > 0 && { checkIntervalMs: testCheckIntervalMs }),
     createClient: (apiUrl) =>
       import("./account-client.ts").then((m) =>
         m.createVoiceAuthClient({
@@ -374,6 +379,7 @@ async function main() {
   }
 
   function showHub(): BrowserWindow {
+    void account.refresh();
     if (hub && !hub.isDestroyed()) {
       hub.show();
       hub.focus();
@@ -404,6 +410,8 @@ async function main() {
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
+    // Restore loads Better Auth and reads the Keychain, so it waits for the first frame.
+    hub.once("ready-to-show", () => void account.restore());
     loadPage(hub, "hub");
     return hub;
   }
