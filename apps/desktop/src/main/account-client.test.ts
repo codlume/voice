@@ -821,7 +821,7 @@ describe("deletion through the real auth client", () => {
     async (failure) => {
       answer = () => signedIn("kept-token");
       const auth = client("nightly");
-      await auth.checkAuthSession();
+      await auth.checkAuthSession(new AbortController().signal);
       answer = () => {
         if (failure === "offline") throw new TypeError("fetch failed");
         return failure === "503" ? json({}, { status: 503 }) : json({ success: false });
@@ -831,7 +831,7 @@ describe("deletion through the real auth client", () => {
       expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
       expect(auth.cachedUser()).toEqual(USER);
       answer = () => json({ session: { token: "kept-token" }, user: USER });
-      await auth.checkAuthSession();
+      await auth.checkAuthSession(new AbortController().signal);
       expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=kept-token");
     },
   );
@@ -839,7 +839,7 @@ describe("deletion through the real auth client", () => {
   test("only the freshness refusal asks for re-authentication and captures the older credential", async () => {
     answer = () => signedIn("old-token");
     const auth = client("nightly");
-    await auth.checkAuthSession();
+    await auth.checkAuthSession(new AbortController().signal);
     answer = (url) =>
       url.endsWith("/delete-user")
         ? json({ code: "SESSION_EXPIRED" }, { status: 400 })
@@ -847,27 +847,126 @@ describe("deletion through the real auth client", () => {
     const result = await auth.deleteAccount();
     expect(result.kind).toBe("reauthRequired");
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
     answer = () => signedIn("new-token");
-    await auth.checkAuthSession();
+    await auth.checkAuthSession(new AbortController().signal);
     answer = () => json({}, { status: 503 });
     await expect(auth.revokeOlderAuthSession()).rejects.toThrow("Auth session revocation failed.");
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=old-token");
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
     answer = () =>
       json(
         { status: true },
         { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } },
       );
     await auth.revokeOlderAuthSession();
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
     expect(sent.at(-1)).toEqual({
       url: `${API.nightly}/api/auth/revoke-session`,
       cookie: "better-auth.session_token=old-token",
       body: JSON.stringify({ token: "old-token" }),
     });
     answer = () => json({ session: { token: "new-token" }, user: USER });
-    await auth.checkAuthSession();
+    await auth.checkAuthSession(new AbortController().signal);
     expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
   });
+
+  test.each(["cancel", "quit", "delete"] as const)(
+    "%s after failed revocation drains the encrypted old credential on launch without restoring it",
+    async (action) => {
+      const liveSessions = new Set(["better-auth.session_token=old-token"]);
+      const oldCookie = "better-auth.session_token=old-token";
+      const newCookie = "better-auth.session_token=new-token";
+      answer = () => signedIn("old-token");
+      const auth = client("nightly");
+      await auth.checkAuthSession(new AbortController().signal);
+      answer = (url) => {
+        const cookie = sent.at(-1)?.cookie;
+        if (url.endsWith("/electron/token")) {
+          liveSessions.add(newCookie);
+          return signedIn("new-token");
+        }
+        if (url.endsWith("/revoke-session")) return json({}, { status: 503 });
+        if (url.endsWith("/delete-user")) {
+          if (cookie === oldCookie) return json({ code: "SESSION_EXPIRED" }, { status: 400 });
+          liveSessions.clear();
+          return json({ success: true, message: "User deleted" });
+        }
+        if (url.endsWith("/sign-out")) {
+          liveSessions.delete(cookie ?? "");
+          return json({ success: true });
+        }
+        if (url.endsWith("/get-session"))
+          return cookie && liveSessions.has(cookie)
+            ? json({
+                session: { token: cookie === oldCookie ? "old-token" : "new-token" },
+                user: USER,
+              })
+            : json(null);
+        throw new Error("Unexpected auth endpoint");
+      };
+      const makeAccount = (adapter: ReturnType<typeof client>) => {
+        const h = harness({
+          hasStoredAuthSession: () => authStored(electron.state.userData, "nightly"),
+        });
+        h.createClient.mockResolvedValue(adapter);
+        return h;
+      };
+      const h = makeAccount(auth);
+      await h.account.restore();
+      h.account.requestDeletion();
+      await h.account.confirmDeletion();
+      const opened = vi.spyOn(auth, "openBrowser");
+      await h.account.signIn();
+      const opening = opened.mock.results[0];
+      if (!opening) throw new Error("Re-authentication did not open the browser");
+      const { state } = await opening.value;
+      const code = Buffer.from(JSON.stringify({ identifier: "reauth-code", state })).toString(
+        "base64url",
+      );
+      await h.account.submitSignInCode(code);
+      expect(h.state).toMatchObject({
+        kind: "signedIn",
+        ...USER,
+        deletion: { kind: "revocationFailed" },
+      });
+      expect(liveSessions).toEqual(new Set([oldCookie, newCookie]));
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+      expect(config()).not.toContain("old-token");
+      expect(config()).not.toContain("new-token");
+      if (action !== "quit") {
+        h.account.cancelDeletion();
+        expect(h.state).toEqual({ kind: "signedIn", ...USER });
+        if (action === "delete") {
+          h.account.requestDeletion();
+          await h.account.confirmDeletion();
+          expect(h.state).toEqual({ kind: "signedOut" });
+          expect(liveSessions.size).toBe(0);
+        }
+      }
+      h.account.dispose();
+      const relaunched = makeAccount(client("nightly"));
+      await relaunched.account.restore();
+      await vi.waitFor(() =>
+        expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false),
+      );
+      expect(sent.filter(({ url }) => url.endsWith("/sign-out"))).toEqual([
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: oldCookie, body: "{}" },
+      ]);
+      if (action === "delete") {
+        expect(relaunched.state).toEqual({ kind: "signedOut" });
+        expect(relaunched.states).toEqual([]);
+        expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+        expect(liveSessions.size).toBe(0);
+      } else {
+        expect(relaunched.state).toEqual({ kind: "signedIn", ...USER });
+        expect(relaunched.states).toEqual([{ kind: "signedIn", ...USER }]);
+        expect(liveSessions).toEqual(new Set([newCookie]));
+        expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+      }
+    },
+  );
 
   test("an unauthorized deletion is a failure, never a deleted account", async () => {
     answer = () => json({ code: "UNAUTHORIZED" }, { status: 401 });

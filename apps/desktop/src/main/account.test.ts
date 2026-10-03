@@ -173,6 +173,7 @@ describe("createAccount", () => {
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
     expect(h.states).toEqual([
       { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signingIn", purpose: "signIn", phase: "finishing" },
       { kind: "signedIn", ...USER },
     ]);
     expectNoSecrets(h);
@@ -435,7 +436,7 @@ describe("createAccount", () => {
     await flush();
     expect(h.exchanges).toHaveLength(1);
     await pasted;
-    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "finishing" });
     h.exchanges[0]?.resolve();
     await flush();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
@@ -550,7 +551,10 @@ describe("createAccount", () => {
     h.account.dispose();
     h.exchanges[0]?.resolve();
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
-    expect(h.states).toEqual([{ kind: "signingIn", purpose: "signIn", phase: "browser" }]);
+    expect(h.states).toEqual([
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signingIn", purpose: "signIn", phase: "finishing" },
+    ]);
   });
 
   test("reports whether each callback changed the account", async () => {
@@ -677,7 +681,9 @@ describe("createAccount", () => {
       "signingIn",
       "signedOut",
       "signingIn",
+      "signingIn",
       "error",
+      "signingIn",
       "signingIn",
       "signedIn",
     ]);

@@ -225,6 +225,15 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             >
               Retry
             </Button>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() =>
+                void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.")
+              }
+            >
+              Cancel deletion
+            </Button>
           </div>
         )}
       </Card>

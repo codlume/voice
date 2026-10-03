@@ -380,6 +380,9 @@ export function createVoiceAuthClient({
     revokeOlderAuthSession: async () => {
       if (olderAuthSession === null) return;
       const { token, cookie } = olderAuthSession;
+      // Persist before the request: Cancel or quitting after a failure hands this cookie to
+      // launch's sign-out retry, without replacing the new active credential.
+      queueServerSignOut(cookie);
       // The old credential authorizes its own revocation, also if Google chose a different
       // account. Bypass the plugin so this response cannot overwrite the new credential.
       const response = await fetch(`${apiUrl}/api/auth/revoke-session`, {
@@ -388,20 +391,20 @@ export function createVoiceAuthClient({
         body: JSON.stringify({ token }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (response.status === 401) {
-        olderAuthSession = null;
-        return;
-      }
-      const body: unknown = await response.json();
+      const body: unknown = response.status === 401 ? null : await response.json();
       if (
-        !response.ok ||
-        typeof body !== "object" ||
-        body === null ||
-        !("status" in body) ||
-        body.status !== true
+        response.status !== 401 &&
+        (!response.ok ||
+          typeof body !== "object" ||
+          body === null ||
+          !("status" in body) ||
+          body.status !== true)
       ) {
         throw new Error("Auth session revocation failed.");
       }
+      const remaining = serverSignOuts.filter((value) => value !== cookie);
+      saveServerSignOuts(remaining);
+      serverSignOuts = remaining;
       olderAuthSession = null;
     },
   };

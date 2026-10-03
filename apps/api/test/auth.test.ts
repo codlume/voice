@@ -565,6 +565,18 @@ describe("account deletion", () => {
     expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(0);
     expect(await getSession(oldCookie)).toBeNull();
     expect(await getSession(currentCookie)).toBeNull();
+
+    const queued = await worker(`${base}/api/auth/sign-out`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: appOrigin, cookie: oldCookie },
+      body: "{}",
+    });
+    expect(queued.status).toBe(200);
+    expect(await queued.json()).toEqual({ success: true });
+    expect(await getSession(oldCookie)).toBeNull();
+    expect(await count("select count(*) as n from user where id = ?", user.id)).toBe(0);
+    expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(0);
+    expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(0);
   });
 
   it("creates a new user when the deleted Google account signs in again", async () => {

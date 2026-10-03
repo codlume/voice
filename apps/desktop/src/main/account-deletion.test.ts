@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
-import { SIGN_IN_TIMEOUT_MS, SIGN_IN_ERRORS } from "./account.ts";
+import {
+  AUTH_SESSION_CHECK_INTERVAL_MS,
+  DELETE_ACCOUNT_FAILED_MESSAGE,
+  DELETE_ACCOUNT_OFFLINE_MESSAGE,
+  SIGN_IN_TIMEOUT_MS,
+  SIGN_IN_ERRORS,
+} from "./account.ts";
 import {
   CODE,
   SECOND_CODE,
@@ -10,41 +16,69 @@ import {
   expectNoSecrets,
 } from "./account.test-harness.ts";
 
+async function signedIn() {
+  const h = harness();
+  await startSignIn(h);
+  const submitted = h.account.submitSignInCode(CODE);
+  await flush();
+  h.exchanges[0]?.resolve();
+  await submitted;
+  return h;
+}
+
+async function staleDeletion(h: Awaited<ReturnType<typeof signedIn>>, revoke: () => Promise<void>) {
+  h.account.requestDeletion();
+  const deleting = h.account.confirmDeletion();
+  await flush();
+  h.fake.revocations.mockImplementation(revoke);
+  h.fake.deletions[0]?.answer({ kind: "reauthRequired" });
+  await deleting;
+  expect(h.state).toMatchObject({
+    kind: "signedIn",
+    ...USER,
+    deletion: { kind: "reauthRequired" },
+  });
+  const signIn = h.account.signIn();
+  await flush();
+  expect(h.state).toEqual({ kind: "signingIn", purpose: "deleteAccount", phase: "browser" });
+  h.requests.at(-1)?.resolve("state2");
+  await signIn;
+}
+
 describe("account deletion through the snapshot", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  async function signedIn() {
-    const h = harness();
-    await startSignIn(h);
-    const submitted = h.account.submitSignInCode(CODE);
+  test("deletion aborts a launch check before publishing confirmation and a late answer cannot restore auth", async () => {
+    const h = harness({ hasStoredAuthSession: () => true });
+    const restoring = h.account.restore();
     await flush();
-    h.exchanges[0]?.resolve();
-    await submitted;
-    return h;
-  }
-
-  async function staleDeletion(
-    h: Awaited<ReturnType<typeof signedIn>>,
-    revoke: () => Promise<void>,
-  ) {
+    h.store.subscribe((value) => {
+      if (value.account.kind === "signedIn" && value.account.deletion?.kind === "confirming")
+        expect(h.checks[0]?.signal.aborted).toBe(true);
+    });
     h.account.requestDeletion();
+    expect(h.checks[0]?.signal.aborted).toBe(true);
     const deleting = h.account.confirmDeletion();
     await flush();
-    h.fake.revocations.mockImplementation(revoke);
-    h.fake.deletions[0]?.answer({ kind: "reauthRequired" });
+    h.fake.deletions[0]?.answer({ kind: "deleted" });
     await deleting;
-    expect(h.state).toMatchObject({
-      kind: "signedIn",
-      ...USER,
-      deletion: { kind: "reauthRequired" },
-    });
-    const signIn = h.account.signIn();
-    await flush();
-    expect(h.state).toEqual({ kind: "signingIn", purpose: "deleteAccount", phase: "browser" });
-    h.requests.at(-1)?.resolve("state2");
-    await signIn;
-  }
+    h.checks[0]?.answer({ kind: "active", user: USER });
+    await restoring;
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expect(h.fake.stored).toBe(false);
+    expect(h.fake.client.cachedUser()).toBeNull();
+  });
+
+  test("a refresh waiting for the client cannot check after deletion starts", async () => {
+    const h = await signedIn();
+    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
+    const refreshing = h.account.refresh();
+    h.account.requestDeletion();
+    await refreshing;
+    expect(h.checks).toEqual([]);
+    expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
+  });
 
   test("requires confirmation and cancel sends no deletion request", async () => {
     const h = await signedIn();
@@ -55,7 +89,7 @@ describe("account deletion through the snapshot", () => {
     expect(h.fake.deletions).toEqual([]);
     h.account.cancelDeletion();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
-    expect(h.fake.forgotten).toBe(0);
+    expect(h.fake.forgotten).toBe(1);
   });
 
   test("only a successful deletion forgets the local auth session and shows signed out", async () => {
@@ -67,10 +101,10 @@ describe("account deletion through the snapshot", () => {
     await h.account.confirmDeletion();
     h.account.cancelDeletion();
     expect(h.fake.deletions).toHaveLength(1);
-    expect(h.fake.forgotten).toBe(0);
+    expect(h.fake.forgotten).toBe(1);
     h.fake.deletions[0]?.answer({ kind: "deleted" });
     await deleting;
-    expect(h.fake.forgotten).toBe(1);
+    expect(h.fake.forgotten).toBe(2);
     expect(h.state).toEqual({ kind: "signedOut" });
   });
 
@@ -86,9 +120,13 @@ describe("account deletion through the snapshot", () => {
       expect(h.state).toMatchObject({
         kind: "signedIn",
         ...USER,
-        deletion: { kind: "failed", message: expect.any(String) },
+        deletion: {
+          kind: "failed",
+          message:
+            kind === "offline" ? DELETE_ACCOUNT_OFFLINE_MESSAGE : DELETE_ACCOUNT_FAILED_MESSAGE,
+        },
       });
-      expect(h.fake.forgotten).toBe(0);
+      expect(h.fake.forgotten).toBe(1);
       await h.account.retryDeletion();
       expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
       const retry = h.account.confirmDeletion();
@@ -96,7 +134,7 @@ describe("account deletion through the snapshot", () => {
       h.fake.deletions[1]?.answer({ kind: "deleted" });
       await retry;
       expect(h.state).toEqual({ kind: "signedOut" });
-      expect(h.fake.forgotten).toBe(1);
+      expect(h.fake.forgotten).toBe(2);
     },
   );
 
@@ -124,7 +162,7 @@ describe("account deletion through the snapshot", () => {
     h.account.cancelDeletion();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
     expect(h.fake.deletions).toHaveLength(1);
-    expect(h.fake.forgotten).toBe(0);
+    expect(h.fake.forgotten).toBe(1);
     expectNoSecrets(h);
   });
 
@@ -151,7 +189,7 @@ describe("account deletion through the snapshot", () => {
       } else {
         expect(h.state).toEqual({ kind: "signedIn", ...USER });
       }
-      expect(h.fake.forgotten).toBe(0);
+      expect(h.fake.forgotten).toBe(1);
       expect(revoke).not.toHaveBeenCalled();
     },
   );
@@ -172,7 +210,6 @@ describe("account deletion through the snapshot", () => {
       ...USER,
       deletion: { kind: "revocationFailed" },
     });
-    h.account.cancelDeletion();
     h.account.requestDeletion();
     await h.account.confirmDeletion();
     expect(h.fake.deletions).toHaveLength(1);

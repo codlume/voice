@@ -266,6 +266,7 @@ export function createAccount({
 
   function requestDeletion() {
     if (state.kind !== "signedIn" || (state.deletion && state.deletion.kind !== "failed")) return;
+    abortCheck();
     publish({
       kind: "signedIn",
       name: state.name,
@@ -559,12 +560,7 @@ export function createAccount({
     requestDeletion,
     cancelDeletion() {
       if (state.kind !== "signedIn" || !state.deletion) return;
-      if (
-        state.deletion.kind === "deleting" ||
-        state.deletion.kind === "revoking" ||
-        state.deletion.kind === "revocationFailed"
-      )
-        return;
+      if (state.deletion.kind === "deleting" || state.deletion.kind === "revoking") return;
       publish({ kind: "signedIn", name: state.name, email: state.email });
     },
     async confirmDeletion() {

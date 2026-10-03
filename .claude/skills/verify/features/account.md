@@ -20,7 +20,7 @@ Settings > Account signs the user in with Google. `Sign in with Google` opens th
 - `account-sign-out`: `Sign out` appears while signed in and returns to signed out immediately. If the API is offline, Voice retries ending that auth session on the next launch without signing back in.
 
 - `account-delete`: `Delete account` opens the existing confirmation dialog. Cancel preserves the account. Confirm removes it only after the API confirms success. A network or server failure keeps the user signed in with Retry.
-- `account-delete-reauth`: a stale deletion asks for `Sign in again`. After the normal browser flow, Voice revokes the older device auth session before showing confirmation again. Cancelling that confirmation leaves one live device auth session.
+- `account-delete-reauth`: a stale deletion asks for `Sign in again`. After the normal browser flow, Voice revokes the older device auth session before showing confirmation again. Cancelling that confirmation leaves one live device auth session. If revocation fails, Retry tries again and Cancel deletion keeps the new sign-in; Voice retries the old session on launch.
 
 ## How to get to it (user POV)
 
@@ -53,6 +53,7 @@ To film a flow, start `vv record account-sign-in` in the background first, and `
 
 - **Offline deletion.** Stop only your verify Worker. Confirm deletion and wait for `s.account.kind === "signedIn" && s.account.deletion?.kind === "failed"`. `vv shot account-delete-offline` shows the identity, error, and Retry. The scratch cookie is still stored. Restart your local Worker, click Retry, and confirm to delete.
 
+- **Failed revocation.** With a local HTTP fault returning 503 only for `/api/auth/revoke-session`, follow stale deletion through sign-in again. The error offers Retry and Cancel deletion. Cancel stays signed in. The scratch `retired_auth_sessions` key is encrypted. Relaunch with `--keep-user-data`; the old session disappears from local D1 and the new session and signed-in identity remain. A successful deletion also makes pending old cookies harmless: the next launch confirms they are gone and drains the queue without restoring an account.
 - **Nothing in plain text.** While signed in, `grep -rlaF` the scratch userData for the email, the name, `session_token` and the token from `select token from session` in local D1. Each finds nothing. `config.json` holds base64 values that decode to safeStorage ciphertext (`v10…`).
 - **Timeout.** Launch with `VOICE_SIGN_IN_TIMEOUT_MS=15000` as well (test mode only). Sign in and wait for `signedOut` with a 30000 ms limit. `main.log` says "account sign-in timed out". A `vv browser` code delivered with `vv callback` afterwards is ignored.
 - **Offline sign-in.** Sign in and run `vv browser`. Stop the verify Worker, then paste its `electronCookie` and `vv click Continue`. The page shows "Could not reach the Voice server. Check your connection." Start the Worker again before `Retry`.
