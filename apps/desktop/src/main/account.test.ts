@@ -224,6 +224,7 @@ describe("createAccount", () => {
     ];
     for (const end of endings) {
       const h = harness();
+      h.fake.setStored(true);
       let loaded!: (client: typeof h.fake.client) => void;
       h.createClient.mockImplementationOnce(
         () =>
@@ -238,8 +239,10 @@ describe("createAccount", () => {
       expect(h.state).toEqual({ kind: "signedOut" });
       loaded(h.fake.client);
       await flush();
-      expect(h.requests).toEqual([]);
+      expect(h.fake.stored).toBe(true);
       expect(h.fake.forgotten).toBe(0);
+      expect(h.fake.serverSignOuts).toBe(0);
+      expect(h.requests).toEqual([]);
       await signIn;
       expect(h.state).toEqual({ kind: "signedOut" });
       expectNoSecrets(h);
