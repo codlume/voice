@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { parse } from "yaml";
 
 import { VOICE_URL_SCHEME, type AccountState } from "../shared/api.ts";
 import {
@@ -11,7 +12,6 @@ import {
   SIGN_IN_FAILED_MESSAGE,
   SIGN_IN_TIMEOUT_MS,
   createAccount,
-  initialAccountState,
   parseCallbackUrl,
   parseSignInCode,
   resolveApiUrl,
@@ -28,20 +28,20 @@ const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
 const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#token=${token}`;
 
-type Call<T> = { options: T; resolve: () => void; reject: (error: Error) => void };
+type Call = { resolve: () => void; reject: (error: Error) => void };
 
 function fakeClient() {
-  const requests: Call<{ provider: "google" }>[] = [];
-  const exchanges: Call<{ token: string; fetchOptions: { throw: true } }>[] = [];
+  const requests: Call[] = [];
+  const exchanges: (Call & { code: string })[] = [];
   let user = USER;
   const client: AuthClient = {
-    requestAuth: (options) =>
+    openBrowser: () =>
       new Promise<void>((resolve, reject) => {
-        requests.push({ options, resolve, reject });
+        requests.push({ resolve, reject });
       }),
-    authenticate: (options) =>
+    redeem: (code) =>
       new Promise((resolve, reject) => {
-        exchanges.push({ options, resolve: () => resolve({ user }), reject });
+        exchanges.push({ code, resolve: () => resolve(user), reject });
       }),
   };
   return {
@@ -54,9 +54,22 @@ function fakeClient() {
   };
 }
 
-function harness(options: { apiUrl?: string | null } = {}) {
+function harness(options: { apiUrl?: string | null; development?: boolean } = {}) {
   const apiUrl = options.apiUrl === undefined ? API_URL : options.apiUrl;
-  const initial = initialAccountState(apiUrl, false);
+  const fake = fakeClient();
+  const createClient = vi.fn(async () => fake.client);
+  const logs: string[] = [];
+  const entries: DiagnosticLog[] = [];
+  const account = createAccount({
+    apiUrl,
+    development: options.development ?? false,
+    createClient,
+    onChange: (value) => store.update((s) => ({ ...s, account: value })),
+    log: (message, entry) => {
+      logs.push(message);
+      if (entry) entries.push(entry);
+    },
+  });
   const store = createStore({
     session: idle,
     permissions: { microphone: "granted", accessibility: "granted" },
@@ -71,25 +84,11 @@ function harness(options: { apiUrl?: string | null } = {}) {
     },
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
-    account: initial,
+    account: account.state,
     last: null,
   });
-  const fake = fakeClient();
-  const createClient = vi.fn(async () => fake.client);
-  const logs: string[] = [];
-  const entries: DiagnosticLog[] = [];
   const states: AccountState[] = [];
   store.subscribe((state) => states.push(toSnapshot(state).account));
-  const account = createAccount({
-    apiUrl,
-    initial,
-    createClient,
-    onChange: (value) => store.update((s) => ({ ...s, account: value })),
-    log: (message, entry) => {
-      logs.push(message);
-      if (entry) entries.push(entry);
-    },
-  });
   return {
     store,
     account,
@@ -169,12 +168,12 @@ describe("resolveApiUrl", () => {
   });
 
   test("the initial state names the fix for a development build", () => {
-    expect(initialAccountState(API_URL, true)).toEqual({ kind: "signedOut" });
-    expect(initialAccountState(null, true)).toEqual({
+    expect(harness({ development: true }).state).toEqual({ kind: "signedOut" });
+    expect(harness({ apiUrl: null, development: true }).state).toEqual({
       kind: "unavailable",
       reason: expect.stringContaining("VOICE_API_URL"),
     });
-    expect(initialAccountState(null, false)).toEqual({
+    expect(harness({ apiUrl: null }).state).toEqual({
       kind: "unavailable",
       reason: "Accounts are unavailable in this build.",
     });
@@ -241,12 +240,10 @@ describe("createAccount", () => {
     const h = harness();
     expect(h.state).toEqual({ kind: "signedOut" });
     await startSignIn(h);
-    expect(h.requests.map((call) => call.options)).toEqual([{ provider: "google" }]);
+    expect(h.requests).toHaveLength(1);
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
-    expect(h.exchanges.map((call) => call.options)).toEqual([
-      { token: CODE, fetchOptions: { throw: true } },
-    ]);
+    expect(h.exchanges.map((call) => call.code)).toEqual([CODE]);
     h.exchanges[0]?.resolve();
     await flush();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
@@ -259,7 +256,7 @@ describe("createAccount", () => {
     await startSignIn(h);
     const submitted = h.account.submitSignInCode(`  ${CODE}\n`);
     await flush();
-    expect(h.exchanges[0]?.options.token).toBe(CODE);
+    expect(h.exchanges[0]?.code).toBe(CODE);
     h.exchanges[0]?.resolve();
     await submitted;
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
@@ -449,15 +446,9 @@ describe("createAccount", () => {
 
 describe("URL scheme", () => {
   test("electron-builder registers the scheme the account module expects", () => {
-    const yaml = readFileSync(
-      NodePath.join(import.meta.dirname, "../../electron-builder.yml"),
-      "utf8",
-    );
-    const schemes =
-      /^protocols:\n(?:[ \t]+[^\n]*\n)*?[ \t]+schemes:\n((?:[ \t]+- [^\n]*\n)+)/m.exec(yaml)?.[1];
-    expect(schemes).toBeDefined();
-    expect([...(schemes ?? "").matchAll(/- (\S+)/g)].map((match) => match[1])).toEqual([
-      VOICE_URL_SCHEME,
-    ]);
+    const config = parse(
+      readFileSync(NodePath.join(import.meta.dirname, "../../electron-builder.yml"), "utf8"),
+    ) as { protocols: { schemes: string[] }[] };
+    expect(config.protocols.flatMap((protocol) => protocol.schemes)).toEqual([VOICE_URL_SCHEME]);
   });
 });

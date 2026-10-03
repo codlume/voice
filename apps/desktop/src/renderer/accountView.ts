@@ -36,9 +36,3 @@ export function accountRow(state: AccountState): { title: string; detail: string
 export function signInCode(input: string): string | null {
   return input.trim() || null;
 }
-
-/** `ipcRenderer.invoke` wraps a main-process rejection as "Error invoking remote method '<channel>': Error: <message>". */
-export function actionErrorMessage(caught: unknown, fallback: string): string {
-  if (!(caught instanceof Error)) return fallback;
-  return caught.message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, "");
-}

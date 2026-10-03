@@ -1,12 +1,15 @@
+import { writeFileSync } from "node:fs";
+
 import { electronClient } from "@better-auth/electron/client";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
+import { shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
 import type { AuthClient } from "./account.ts";
 
 // With `throw: true` the plugin resolves to the token endpoint's body, not the `{ data, error }`
 // pair its typings declare, so the user is read from the body like any other external data.
-function signedInUser(body: unknown): { user: { name: string; email: string } } {
+function signedInUser(body: unknown): { name: string; email: string } {
   const user = typeof body === "object" && body !== null && "user" in body ? body.user : null;
   if (
     typeof user === "object" &&
@@ -16,7 +19,7 @@ function signedInUser(body: unknown): { user: { name: string; email: string } } 
     "email" in user &&
     typeof user.email === "string"
   ) {
-    return { user: { name: user.name, email: user.email } };
+    return { name: user.name, email: user.email };
   }
   throw new Error("The sign-in response carried no user.");
 }
@@ -29,7 +32,16 @@ type ElectronPlugin = Omit<ReturnType<typeof electronClient>, "fetchPlugins"> &
 
 // The only file that loads Better Auth. It is imported lazily on the first Sign in click.
 // The auth session lives in memory for now; #129 swaps in the plugin's encrypted storage.
-export function createVoiceAuthClient(apiUrl: string, installedChannel: UpdateChannel): AuthClient {
+export function createVoiceAuthClient({
+  apiUrl,
+  installedChannel,
+  signInUrlFile,
+}: {
+  apiUrl: string;
+  installedChannel: UpdateChannel;
+  /** Test mode: the plugin's `shell.openExternal` writes the sign-in URL here instead. */
+  signInUrlFile?: string;
+}): AuthClient {
   const memory = new Map<string, unknown>();
   const plugin = electronClient({
     protocol: VOICE_URL_SCHEME,
@@ -45,8 +57,18 @@ export function createVoiceAuthClient(apiUrl: string, installedChannel: UpdateCh
     userImageProxy: { enabled: false },
   }) as ElectronPlugin;
   const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
+  if (signInUrlFile) {
+    // The plugin calls `shell.openExternal` itself, so the file is the only hook a script has.
+    const openExternal = shell.openExternal.bind(shell);
+    shell.openExternal = (url, options) => {
+      if (!url.startsWith(apiUrl)) return openExternal(url, options);
+      writeFileSync(signInUrlFile, url);
+      return Promise.resolve();
+    };
+  }
   return {
-    requestAuth: (options) => client.requestAuth(options),
-    authenticate: async (options) => signedInUser(await client.authenticate(options)),
+    openBrowser: () => client.requestAuth({ provider: "google" }),
+    redeem: async (code) =>
+      signedInUser(await client.authenticate({ token: code, fetchOptions: { throw: true } })),
   };
 }

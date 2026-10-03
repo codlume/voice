@@ -2,7 +2,8 @@ import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, actionErrorMessage, initials, signInCode } from "./accountView.ts";
+import { accountRow, initials, signInCode } from "./accountView.ts";
+import { actionErrorMessage } from "./actionError.ts";
 import { Button } from "./Button.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
