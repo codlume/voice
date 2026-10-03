@@ -403,7 +403,7 @@ export function createAccount({
 
   // The API no longer has the auth session, so the stored one is gone and only a fresh sign-in can
   // show what is left.
-  function endAuthSession(client: AuthClient, status: number) {
+  function forgetEndedAuthSession(client: AuthClient, status: number) {
     log("account auth session ended", {
       message: "account auth session ended",
       level: "warn",
@@ -431,7 +431,7 @@ export function createAccount({
         }
         return;
       case "ended":
-        endAuthSession(client, answer.status);
+        forgetEndedAuthSession(client, answer.status);
         return;
       case "unknown":
         log("account auth session check failed", {
@@ -608,7 +608,7 @@ export function createAccount({
         // Revoked, or already deleted by a request whose receipt was lost. A failed deletion
         // would only offer a retry that asks the same question again.
         if (answer.kind === "ended") {
-          endAuthSession(client, answer.status);
+          forgetEndedAuthSession(client, answer.status);
           return;
         }
         if (answer.kind !== "active") {
