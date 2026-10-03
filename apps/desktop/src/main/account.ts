@@ -24,16 +24,24 @@ export const AUTH_SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 export type Identity = { name: string; email: string };
 
-/** `offline` is a failed fetch; `rejected` is the API refusing the code. */
+/**
+ * `offline` is a failed fetch; `rejected` is the API refusing the code. `abandoned` is an exchange
+ * aborted while the API answered, or outlived by a forget: nothing of it was stored.
+ */
 export type RedeemResult =
   | { kind: "signedIn"; name: string; email: string }
-  | { kind: "offline" | "rejected"; error: unknown };
+  | { kind: "offline" | "rejected"; error: unknown }
+  | { kind: "abandoned" };
 
 /** What the module needs from the Better Auth Electron client. The adapter owns the plugin details. */
 export type AuthClient = {
   /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
   openBrowser(): Promise<{ state: string }>;
-  redeem(code: string): Promise<RedeemResult>;
+  /**
+   * Exchanges the code for an auth session and stores it with its identity. Aborting abandons the
+   * exchange: nothing is stored, and a session the API created anyway is queued for server sign-out.
+   */
+  redeem(code: string, signal: AbortSignal): Promise<RedeemResult>;
   /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
   cachedUser(): Identity | null;
   /** Asks `get-session`. Aborted before its body is read, it answers `unreachable` and writes nothing. */
@@ -157,14 +165,15 @@ export function callbackUrlFromArgv(argv: readonly string[]): string | undefined
 // One sign-in attempt. The client promise and the timer exist exactly while signing in, so a
 // late callback, a stale timer or a result from an older attempt has nothing to land on. The
 // plugin keeps every attempt's verifier, so the attempt also remembers its own OAuth state and
-// redeems only a code that carries it, once.
+// redeems only a code that carries it, once. The exchange of that code is aborted with the attempt,
+// so an answer that arrives after Cancel or the deadline stores nothing.
 type Attempt = {
   kind: "signingIn";
   attempt: number;
   client: Promise<AuthClient>;
   timer: NodeJS.Timeout;
   oauthState: string | null;
-  redeeming: boolean;
+  exchange: AbortController | null;
 };
 type State = Exclude<AccountState, { kind: "signingIn" }> | Attempt;
 
@@ -215,6 +224,7 @@ export function createAccount({
   function leave(attempt: number, next: Exclude<State, { kind: "signingIn" }>) {
     if (state.kind !== "signingIn" || state.attempt !== attempt) return;
     clearTimeout(state.timer);
+    state.exchange?.abort();
     publish(next);
   }
 
@@ -264,21 +274,22 @@ export function createAccount({
       log("account: code from another sign-in ignored");
       return null;
     }
-    if (current.redeeming) {
+    if (current.exchange) {
       log("account: code ignored while one is being redeemed");
       return Promise.resolve();
     }
-    current.redeeming = true;
-    return redeem(current, code);
+    current.exchange = new AbortController();
+    return redeem(current, code, current.exchange.signal);
   }
 
-  async function redeem(current: Attempt, code: string) {
+  async function redeem(current: Attempt, code: string, signal: AbortSignal) {
     let result: RedeemResult;
     try {
-      result = await (await current.client).redeem(code);
+      result = await (await current.client).redeem(code, signal);
     } catch (error) {
       result = { kind: "rejected", error };
     }
+    if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
       leave(current.attempt, { kind: "signedIn", name: result.name, email: result.email });
     } else {
@@ -394,7 +405,7 @@ export function createAccount({
         client,
         timer,
         oauthState: null,
-        redeeming: false,
+        exchange: null,
       };
       publish(current);
       try {

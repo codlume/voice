@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
-import { cookieNameRegex, getSessionCookie } from "better-auth/cookies";
+import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
@@ -32,6 +32,16 @@ function userOf(body: unknown): Identity | null {
     return { name: user.name, email: user.email };
   }
   return null;
+}
+
+// The Cookie header the plugin would send back for these Set-Cookie entries, for a session that
+// never reached storage.
+function cookieHeaderOf(setCookie: string): string {
+  const pairs: string[] = [];
+  for (const [name, cookie] of parseSetCookieHeader(setCookie)) {
+    if (cookieNameRegex.test(name)) pairs.push(`${name}=${encodeURIComponent(cookie.value)}`);
+  }
+  return pairs.join("; ");
 }
 
 // The plugin filters expired entries from request headers, but crash recovery needs their identity.
@@ -247,20 +257,44 @@ export function createVoiceAuthClient({
       if (!state) throw new Error("The sign-in request carried no state.");
       return { state };
     },
-    redeem: async (code): Promise<RedeemResult> => {
+    redeem: async (code, signal): Promise<RedeemResult> => {
+      const started = generation;
+      // An abort starts a new generation at once, so the plugin's cookie write for this exchange
+      // is refused, and whatever it already stored is cleared.
+      signal.addEventListener("abort", forget, { once: true });
+      // Read before the body, which an abort may cut short: the session the API created still
+      // has to be ended.
+      let setCookie: string | null = null;
+      let result: RedeemResult;
       try {
         // With `throw: true` the plugin resolves to the token endpoint's body, not the
         // `{ data, error }` pair its typings declare.
         const user = userOf(
-          await client.authenticate({ token: code, fetchOptions: { throw: true } }),
+          await client.authenticate({
+            token: code,
+            fetchOptions: {
+              throw: true,
+              signal,
+              onResponse: ({ response }) => {
+                setCookie = response.headers.get("set-cookie");
+              },
+            },
+          }),
         );
         if (user === null) throw new Error("The sign-in response carried no user.");
-        saveIdentity(user);
-        return { kind: "signedIn", ...user };
+        result = { kind: "signedIn", ...user };
       } catch (error) {
         // fetch rejects with a TypeError when the network fails; anything else came from the API.
-        return { kind: error instanceof TypeError ? "offline" : "rejected", error };
+        result = { kind: error instanceof TypeError ? "offline" : "rejected", error };
+      } finally {
+        signal.removeEventListener("abort", forget);
       }
+      if (started !== generation) {
+        if (setCookie !== null) queueServerSignOut(cookieHeaderOf(setCookie));
+        return { kind: "abandoned" };
+      }
+      if (result.kind === "signedIn") saveIdentity(result);
+      return result;
     },
     cachedUser: () => {
       const stored = store.getItem(keys.identity);
