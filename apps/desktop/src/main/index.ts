@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import * as NodePath from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -28,6 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
+import { createAccount, initialAccountState, resolveApiUrl } from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -94,6 +95,14 @@ function readLoginItem(): LoginItem {
 }
 
 const preload = NodePath.join(__dirname, "preload.cjs");
+
+// macOS delivers a launch by URL only to a listener that exists before ready. The account module
+// takes over once main() has built it; a URL that arrives earlier is dropped.
+let handleCallbackUrl: (url: string) => void = () => {};
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  handleCallbackUrl(url);
+});
 
 function loadPage(window: BrowserWindow, page: "hub" | "pill") {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -166,6 +175,8 @@ async function main() {
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
+  const apiUrl = resolveApiUrl({ development, release, env: process.env });
+  const initialAccount = initialAccountState(apiUrl, development);
   const settings = loadSettings(settingsFile, installedChannel);
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let saving: Promise<void> = Promise.resolve();
@@ -192,7 +203,7 @@ async function main() {
     },
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
-    account: { kind: "unavailable", reason: "Accounts are not wired up yet." },
+    account: initialAccount,
     last: null,
   });
 
@@ -214,6 +225,26 @@ async function main() {
     preload,
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
   };
+
+  const account = createAccount({
+    apiUrl,
+    initial: initialAccount,
+    createClient: (url) =>
+      import("./account-client.ts").then((m) => m.createVoiceAuthClient(url, installedChannel)),
+    onChange: (value) => store.update((s) => ({ ...s, account: value })),
+    log,
+  });
+  handleCallbackUrl = account.handleCallbackUrl;
+  // The verify skill plays the browser: it reads the sign-in URL from this file instead.
+  if (testMode) {
+    const openExternal = shell.openExternal.bind(shell);
+    shell.openExternal = (url, options) => {
+      if (apiUrl === null || !url.startsWith(apiUrl)) return openExternal(url, options);
+      writeFileSync(NodePath.join(userData, "sign-in-url.txt"), url);
+      log("account: test mode wrote the sign-in URL instead of opening the browser");
+      return Promise.resolve();
+    };
+  }
 
   // The user can change Login Items in System Settings, so macOS owns this state.
   function refreshLoginItem() {
@@ -462,9 +493,13 @@ async function main() {
     }
   });
 
-  async function updateSettings(patch: SettingsPatch) {
+  function assertNotRestarting() {
     if (lifecycle !== "running" || store.state.updates.status.kind === "installing")
       throw new Error("Voice is restarting.");
+  }
+
+  async function updateSettings(patch: SettingsPatch) {
+    assertNotRestarting();
     const previous = store.state.settings;
     const next = applyPatch(previous, patch);
     store.update((s) => ({ ...s, settings: next }));
@@ -563,6 +598,15 @@ async function main() {
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
   });
+  ipcMain.handle(Channel.signIn, () => {
+    assertNotRestarting();
+    return account.signIn();
+  });
+  ipcMain.handle(Channel.submitSignInCode, (_event, code: unknown) =>
+    account.submitSignInCode(typeof code === "string" ? code : ""),
+  );
+  ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
+  ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
 
   app.on("second-instance", showHub);
   app.on("activate", showHub);
@@ -603,6 +647,7 @@ async function main() {
     if (lifecycle === "stopping") return;
     lifecycle = "stopping";
     updates.dispose();
+    account.dispose();
     stopPermissionPolling();
     void shutdown().then(() => {
       lifecycle = "stopped";
