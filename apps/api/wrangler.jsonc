@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The top level is local development only. It has no name, entry point or routes, so
+  // a deploy without --env fails. Local tools pass the entry point themselves.
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Invocation logs record full URLs, and the OAuth callback URL carries the code and state.
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
+  // The placeholder id stops Wrangler from auto-provisioning a database, even for a
+  // deploy given an entry point. Local D1 keys its storage on it.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "voice-api-local", "database_id": "local-only" },
+  ],
+  "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+  // Bindings and secrets are not inherited, so each environment declares its own.
+  "env": {
+    "nightly": {
+      "name": "voice-api-nightly",
+      "main": "src/index.ts",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "api-nightly.voice.codlume.com", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "voice-api-nightly",
+          "database_id": "99d300ed-a42a-4c33-b3e5-a2bfa2abfd04",
+        },
+      ],
+      "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+    },
+    "stable": {
+      "name": "voice-api-stable",
+      "main": "src/index.ts",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "api.voice.codlume.com", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "voice-api-stable",
+          "database_id": "74e7e5be-6d97-4322-a2fc-0b9951efbfc1",
+        },
+      ],
+      "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
+    },
+  },
+}

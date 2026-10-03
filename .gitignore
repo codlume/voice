@@ -5,6 +5,8 @@ release
 .build
 .astro/
 .wrangler/
+.dev.vars*
+.env*
 *.tsbuildinfo
 .DS_Store
 *.log
