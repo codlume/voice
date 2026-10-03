@@ -31,7 +31,7 @@ export type AuthClient = {
   redeem(code: string): Promise<RedeemResult>;
   /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
   cachedUser(): Identity | null;
-  /** Asks `get-session`. An aborted request answers `unreachable` and writes nothing. */
+  /** Asks `get-session`. Aborted before its body is read, it answers `unreachable` and writes nothing. */
   checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
   forget(): void;
