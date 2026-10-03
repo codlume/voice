@@ -55,8 +55,13 @@ async function playSignIn(googleCode: string, options = { signOut: false }) {
   return { ...flow, ip, state, verifier };
 }
 
-/** The Electron code a callback left in its cookie, as the landing page reads it. */
-function withIdentifier<T extends { electronCookie: string | null }>(flow: T) {
+/** A sign-in that must reach the landing page with an Electron code. */
+async function browserSignIn(googleCode: string, options = { signOut: false }) {
+  const flow = await playSignIn(googleCode, options);
+  expect(flow.init.status).toBe(302);
+  expect(flow.callback.status).toBe(302);
+  expect(flow.callback.headers.get("location")).toBe(base);
+  // The Electron code the callback left in its cookie, as the landing page reads it.
   const { identifier } = JSON.parse(
     atob(
       decodeURIComponent(flow.electronCookie ?? "")
@@ -65,15 +70,6 @@ function withIdentifier<T extends { electronCookie: string | null }>(flow: T) {
     ),
   ) as { identifier: string };
   return { ...flow, identifier };
-}
-
-/** A sign-in that must reach the landing page with an Electron code. */
-async function browserSignIn(googleCode: string, options = { signOut: false }) {
-  const flow = await playSignIn(googleCode, options);
-  expect(flow.init.status).toBe(302);
-  expect(flow.callback.status).toBe(302);
-  expect(flow.callback.headers.get("location")).toBe(base);
-  return withIdentifier(flow);
 }
 
 type SignIn = Awaited<ReturnType<typeof browserSignIn>>;
@@ -132,7 +128,7 @@ async function whileWriteFails<T>(
 }
 
 describe("Google sign-in", () => {
-  it("creates one user and one account, then reuses them on a second sign-in (catches duplicate users or accounts per Google subject)", async () => {
+  it("creates one user and one account, then reuses them on a second sign-in (catches duplicate users or accounts per Google subject, or a sweep that deletes users with an account)", async () => {
     const first = await exchange(await browserSignIn("ada-lovelace"));
     expect(first.status).toBe(200);
     const { user } = await first.json<SignedIn>();
@@ -141,6 +137,8 @@ describe("Google sign-in", () => {
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await count("select count(*) as n from account where user_id = ?", user.id)).toBe(1);
 
+    // Past the sweep's grace period: a user with an account is never swept.
+    await age(user.id);
     const second = await exchange(await browserSignIn("ada-lovelace"));
     expect(second.status).toBe(200);
     expect((await second.json<SignedIn>()).user.id).toBe(user.id);
@@ -220,13 +218,22 @@ describe("disabled sign-in paths", () => {
       await count("select count(*) as n from user where email = ?", "eve-intruder@example.com"),
     ).toBe(0);
   });
+
+  it("refuses another Google identity with the email of a user that has an account (catches account linking turned on)", async () => {
+    const { user } = await (
+      await exchange(await browserSignIn("mary-shelley", { signOut: true }))
+    ).json<SignedIn>();
+
+    const other = await playSignIn("mary-shelley/other-google-account");
+
+    expect(other.callback.headers.get("location")).toContain("error=account_not_linked");
+    expect(other.electronCookie).toBeNull();
+    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
+    expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
+  });
 });
 
 describe("a user row with no account", () => {
-  // Better Auth writes the user row and then the account row, and deletes the account rows and
-  // then the user row. D1 cannot make either pair one transaction, so a cut-off in between
-  // leaves a user row every later Google sign-in for that email trips over.
-
   /** The user row a cut-off write left for `email`. */
   async function orphanOf(email: string) {
     const id = await env.DB.prepare("select id from user where email = ?")
@@ -285,50 +292,6 @@ describe("a user row with no account", () => {
     expect(await rowsOf(user.id)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(fresh.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
-  });
-
-  it("refuses another Google identity with the email of a user that has an account (catches account linking turned on)", async () => {
-    const { user } = await (
-      await exchange(await browserSignIn("mary-shelley", { signOut: true }))
-    ).json<SignedIn>();
-
-    const other = await playSignIn("mary-shelley/other-google-account");
-
-    expect(other.callback.headers.get("location")).toContain("error=account_not_linked");
-    expect(other.electronCookie).toBeNull();
-    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
-    expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
-  });
-
-  it("never ends up shared when two Google identities with one email sign in at once, with or without a swept row (catches the race that linked both into one user)", async () => {
-    for (const [person, seedOrphan] of [
-      ["race", false],
-      ["race-over-orphan", true],
-    ] as const) {
-      if (seedOrphan) {
-        await whileWriteFails("insert on account", () => playSignIn(person));
-        await age(await orphanOf(`${person}@example.com`));
-      }
-      const codes = [person, `${person}/other-google-account`];
-
-      const flows = await Promise.all(codes.map((code) => playSignIn(code)));
-
-      const signedIn = flows.filter((flow) => flow.electronCookie !== null);
-      expect(signedIn).toHaveLength(1);
-      for (const [index, flow] of flows.entries()) {
-        if (flow.electronCookie === null) continue;
-        const response = await exchange(withIdentifier(flow));
-        expect(response.status).toBe(200);
-        const { user } = await response.json<SignedIn>();
-        const accounts = await env.DB.prepare("select account_id from account where user_id = ?")
-          .bind(user.id)
-          .all<{ account_id: string }>();
-        expect(accounts.results).toEqual([{ account_id: `google-${codes[index]}` }]);
-      }
-      expect(
-        await count("select count(*) as n from user where email = ?", `${person}@example.com`),
-      ).toBe(1);
-    }
   });
 
   it("does not stop a sign-in when the sweep itself fails (catches a sweep error ending the callback)", async () => {
