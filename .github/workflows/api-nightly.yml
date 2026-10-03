@@ -38,6 +38,8 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+      - name: Record D1 Time Travel bookmark
+        run: vp exec wrangler d1 time-travel info DB --env nightly
       - name: Apply migrations
         run: vp exec wrangler d1 migrations apply DB --env nightly --remote
       - name: Deploy
