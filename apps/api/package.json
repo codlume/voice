@@ -8,7 +8,8 @@
     "test": "node scripts/check-migrations.mjs migrations && node --test scripts/check-migrations.test.mjs test/landing-script.test.mjs && vp test run",
     "build": "wrangler deploy --dry-run --env nightly --outdir dist",
     "check:migrations": "node scripts/check-migrations.mjs migrations",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "check:schema": "node scripts/check-schema.mjs"
   },
   "dependencies": {
     "@better-auth/electron": "1.7.7",
