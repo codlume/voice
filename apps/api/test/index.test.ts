@@ -7,7 +7,7 @@ import app from "../src/index.ts";
 app.get("/boom/:id", () => {
   throw new Error("secret detail that must not leak");
 });
-// @ts-expect-error A handler that returns nothing reaches onError without unwinding through the middleware.
+// @ts-expect-error Hono reports a missing response to onError after the middleware chain has finished.
 app.get("/no-response", () => undefined);
 
 function expectSecurityHeaders(response: Response) {
@@ -91,7 +91,7 @@ describe("errors", () => {
     expect(line).not.toContain("secret detail");
   });
 
-  it("keep the security headers when a handler returns no response (catches onError responses that skip secureHeaders)", async () => {
+  it("keep the security headers when a handler returns no response (catches the error path Hono takes outside the middleware chain)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await app.fetch(
