@@ -787,3 +787,26 @@ describe("an abandoned exchange through the real auth client", () => {
     expect(sent.at(-2)?.cookie).toBe("better-auth.session_token=late-token");
   });
 });
+
+describe("a session Voice does not keep", () => {
+  test("an answer with a session cookie but no user is rejected and its session is queued for sign-out", async () => {
+    const auth = client("nightly");
+    const { state } = await auth.openBrowser();
+    const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
+    answer = () =>
+      json(
+        { token: "stray-token", session: { token: "stray-token" } },
+        {
+          headers: { "set-cookie": "better-auth.session_token=stray-token; Max-Age=3600; Path=/" },
+        },
+      );
+    expect(await auth.redeem(code, new AbortController().signal)).toMatchObject({
+      kind: "rejected",
+    });
+    expect(auth.cachedUser()).toBeNull();
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+    answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+    expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
+    expect(sent.at(-2)?.cookie).toBe("better-auth.session_token=stray-token");
+  });
+});

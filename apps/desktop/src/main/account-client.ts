@@ -34,11 +34,10 @@ function userOf(body: unknown): Identity | null {
   return null;
 }
 
-// The Cookie header the plugin would send back for these Set-Cookie entries, for a session that
-// never reached storage.
-function cookieHeaderOf(setCookie: string): string {
+// The Cookie header the plugin sends for these cookies, as its own `getCookie` builds it.
+function cookieHeader(cookies: Iterable<[string, { value: string }]>): string {
   const pairs: string[] = [];
-  for (const [name, cookie] of parseSetCookieHeader(setCookie)) {
+  for (const [name, cookie] of cookies) {
     if (cookieNameRegex.test(name)) pairs.push(`${name}=${encodeURIComponent(cookie.value)}`);
   }
   return pairs.join("; ");
@@ -50,20 +49,18 @@ function storedSessionToken(stored: unknown): string | null {
   try {
     const parsed: unknown = JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64")));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-    const entries: [string, unknown][] = Object.entries(parsed);
-    const pairs: string[] = [];
-    for (const [name, cookie] of entries) {
+    const cookies: [string, { value: string }][] = [];
+    for (const [name, cookie] of Object.entries(parsed)) {
       if (
-        cookieNameRegex.test(name) &&
         typeof cookie === "object" &&
         cookie !== null &&
         "value" in cookie &&
         typeof cookie.value === "string"
       ) {
-        pairs.push(`${name}=${encodeURIComponent(cookie.value)}`);
+        cookies.push([name, { value: cookie.value }]);
       }
     }
-    return getSessionCookie(new Headers({ cookie: pairs.join("; ") }));
+    return getSessionCookie(new Headers({ cookie: cookieHeader(cookies) }));
   } catch {
     return null;
   }
@@ -262,9 +259,9 @@ export function createVoiceAuthClient({
       // An abort starts a new generation at once, so the plugin's cookie write for this exchange
       // is refused, and whatever it already stored is cleared.
       signal.addEventListener("abort", forget, { once: true });
-      // Read before the body, which an abort may cut short: the session the API created still
-      // has to be ended.
-      let setCookie: string | null = null;
+      // Read before the body, which an abort may cut short: a session the API created but Voice
+      // does not keep still has to be ended.
+      let setCookie = null as string | null;
       let user: Identity | null = null;
       let error: unknown = null;
       try {
@@ -288,10 +285,11 @@ export function createVoiceAuthClient({
       } finally {
         signal.removeEventListener("abort", forget);
       }
-      if (started !== generation) {
-        if (setCookie !== null) queueServerSignOut(cookieHeaderOf(setCookie));
-        return { kind: "abandoned" };
+      const abandoned = started !== generation;
+      if (setCookie !== null && (abandoned || user === null)) {
+        queueServerSignOut(cookieHeader(parseSetCookieHeader(setCookie)));
       }
+      if (abandoned) return { kind: "abandoned" };
       // fetch rejects with a TypeError when the network fails; anything else came from the API.
       if (user === null)
         return { kind: error instanceof TypeError ? "offline" : "rejected", error };

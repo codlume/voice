@@ -289,6 +289,7 @@ export function createAccount({
     } catch (error) {
       result = { kind: "rejected", error };
     }
+    // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
       leave(current.attempt, { kind: "signedIn", name: result.name, email: result.email });
