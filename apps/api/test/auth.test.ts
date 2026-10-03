@@ -283,6 +283,19 @@ describe("a user row with no account", () => {
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(fresh.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
   });
+
+  it("refuses another Google identity with the email of a user that has an account (catches account linking turned on)", async () => {
+    const { user } = await (
+      await exchange(await browserSignIn("mary-shelley", { signOut: true }))
+    ).json<SignedIn>();
+
+    const other = await playSignIn("mary-shelley/other-google-account");
+
+    expect(other.callback.headers.get("location")).toContain("error=account_not_linked");
+    expect(other.electronCookie).toBeNull();
+    expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
+    expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
+  });
 });
 
 describe("origins", () => {
