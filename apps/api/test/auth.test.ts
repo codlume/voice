@@ -467,3 +467,34 @@ describe("logs", () => {
     }
   });
 });
+
+describe("revoked auth session", () => {
+  it("is rejected on the next request, and get-session answers null (catches a cached session that outlives its revocation, and pins the answer the desktop reads as ended)", async () => {
+    const revoked = await exchange(await browserSignIn("revoked-session"));
+    const { user } = await revoked.json<SignedIn>();
+    const revokedCookie = cookieHeader(storeCookies(revoked));
+    const other = cookieHeader(
+      storeCookies(await exchange(await browserSignIn("revoked-session"))),
+    );
+    expect((await getSession(revokedCookie))?.user.id).toBe(user.id);
+
+    const revoke = await worker(`${base}/api/auth/revoke-other-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: appOrigin, cookie: other },
+      body: "{}",
+    });
+    expect(revoke.status).toBe(200);
+
+    const next = await worker(`${base}/api/auth/get-session`, {
+      headers: { cookie: revokedCookie },
+    });
+    expect(next.status).toBe(200);
+    expect(await next.json()).toBeNull();
+    expect(next.headers.getSetCookie().join("\n")).toMatch(/better-auth\.session_token=;/);
+    const listed = await worker(`${base}/api/auth/list-sessions`, {
+      headers: { cookie: revokedCookie },
+    });
+    expect(listed.status).toBe(401);
+    expect((await getSession(other))?.user.id).toBe(user.id);
+  });
+});
