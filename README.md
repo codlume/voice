@@ -76,3 +76,27 @@ pnpm --filter @voice/web run deploy
 `preview` serves the output of `build` locally in workerd, the Workers runtime. `deploy` builds and runs `wrangler deploy`. It needs `wrangler login` or a `CLOUDFLARE_API_TOKEN` in the environment.
 
 The Deploy website workflow deploys the site when a push to `main` changes `apps/web` or the workspace dependencies. Run it manually from GitHub Actions to redeploy. It needs a `CLOUDFLARE_API_TOKEN` repository secret that can edit Workers scripts and the `voice.codlume.com` custom domain, and a `CLOUDFLARE_ACCOUNT_ID` repository variable. A new Voice release needs no deploy, because the page reads the stable feed on each request.
+
+## API
+
+`apps/api` is the Voice API. It is a Hono app on Cloudflare Workers with a D1 database. It serves `/health` for now.
+
+To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file.
+
+```sh
+BETTER_AUTH_SECRET=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+Then apply the migrations to the local database and start the Worker:
+
+```sh
+pnpm --filter @voice/api exec wrangler d1 migrations apply DB --local
+pnpm --filter @voice/api dev
+curl -i http://localhost:8787/health
+```
+
+The local base URL is `http://localhost:8787`.
+
+The Deploy API (Nightly) workflow applies pending migrations, deploys the Worker and checks `/health` when a push to `main` changes `apps/api` or the workspace dependencies. Every deploy passes `--env`, because the top level of `wrangler.jsonc` is for local development only and a bare deploy can create Cloudflare resources.
