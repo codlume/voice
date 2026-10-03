@@ -192,6 +192,7 @@ async function main() {
     },
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
+    account: { kind: "unavailable", reason: "Accounts are not wired up yet." },
     last: null,
   });
 
