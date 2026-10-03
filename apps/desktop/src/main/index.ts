@@ -40,10 +40,10 @@ import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
-import { createDictation, type Dictation } from "./dictation.ts";
+import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
-import { idle } from "./session.ts";
+import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
@@ -76,6 +76,12 @@ if (development) {
   }
 }
 
+// The verify skill plays the browser through this file, and can shorten the sign-in timeout.
+const signInUrlFile = testMode ? NodePath.join(app.getPath("userData"), "sign-in-url.txt") : null;
+const testTimeoutMs = testMode ? Number(process.env.VOICE_SIGN_IN_TIMEOUT_MS) : Number.NaN;
+const signInTimeoutMs =
+  Number.isSafeInteger(testTimeoutMs) && testTimeoutMs > 0 ? testTimeoutMs : SIGN_IN_TIMEOUT_MS;
+
 function helperBinary(): string {
   if (!development) return NodePath.join(process.resourcesPath, "bin", "voice-helper");
   return (
@@ -103,7 +109,8 @@ function readLoginItem(): LoginItem {
 const preload = NodePath.join(__dirname, "preload.cjs");
 
 // macOS delivers a launch by URL only to a listener that exists before ready. main() points this
-// at the account module synchronously, before any event can arrive.
+// at the account module synchronously, before any event can arrive, and once the hub exists, at
+// a handler that also brings the hub forward.
 let handleCallbackUrl: (url: string) => void = () => {};
 app.on("open-url", (event, url) => {
   event.preventDefault();
@@ -193,16 +200,10 @@ async function main() {
         m.createVoiceAuthClient({
           apiUrl,
           installedChannel,
-          // The verify skill plays the browser: it reads the sign-in URL from this file instead.
-          ...(testMode && { signInUrlFile: NodePath.join(userData, "sign-in-url.txt") }),
+          ...(signInUrlFile && { signInUrlFile }),
         }),
       ),
-    canSignIn: () => !restarting(),
-    // Test mode only, so the verify skill can watch a timeout without waiting ten minutes.
-    signInTimeoutMs:
-      testMode && process.env.VOICE_SIGN_IN_TIMEOUT_MS
-        ? Number(process.env.VOICE_SIGN_IN_TIMEOUT_MS)
-        : SIGN_IN_TIMEOUT_MS,
+    signInTimeoutMs,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => log(message, entry),
   });
@@ -329,9 +330,6 @@ async function main() {
     },
   });
 
-  const dictating = () =>
-    store.state.session.phase !== "idle" && store.state.session.phase !== "done";
-
   const updates = createUpdates({
     engine: store.state.updates.status.kind === "disabled" ? null : autoUpdater,
     release,
@@ -339,7 +337,7 @@ async function main() {
     onChange: (value) => store.update((s) => ({ ...s, updates: value })),
     canRestart: () =>
       lifecycle === "running" &&
-      !dictating() &&
+      !dictating(store.state.session) &&
       store.state.settings.updateChannel === store.state.updates.channel,
     prepareRestart: async () => {
       lifecycle = "stopping";
@@ -508,12 +506,9 @@ async function main() {
     }
   });
 
-  function restarting() {
-    return lifecycle !== "running" || store.state.updates.status.kind === "installing";
-  }
-
   function assertNotRestarting() {
-    if (restarting()) throw new Error("Voice is restarting.");
+    if (lifecycle !== "running" || store.state.updates.status.kind === "installing")
+      throw new Error("Voice is restarting.");
   }
 
   async function updateSettings(patch: SettingsPatch) {
@@ -559,7 +554,7 @@ async function main() {
     if (state === "downloading" || state === "loading") {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    if (model.neededWhileDictating && dictating()) {
+    if (model.neededWhileDictating && dictating(store.state.session)) {
       throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
     }
   }
@@ -616,22 +611,29 @@ async function main() {
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
   });
-  ipcMain.handle(Channel.signIn, () => account.signIn());
+  ipcMain.handle(Channel.signIn, () => {
+    assertNotRestarting();
+    return account.signIn();
+  });
   ipcMain.handle(Channel.submitSignInCode, (_event, code: unknown) =>
     account.submitSignInCode(typeof code === "string" ? code : ""),
   );
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
 
+  // A callback that changed the account brings the hub forward, but never mid-session: the
+  // target app must keep focus until insertion. A launch by URL shows the hub anyway.
+  const showHubWhenIdle = whenNotDictating(store, showHub);
+  handleCallbackUrl = (url) => {
+    if (account.handleCallbackUrl(url) !== "ignored") showHubWhenIdle();
+  };
   // Voice's own lock hands over a second copy's command line, which carries the callback URL
   // when the browser launched that copy.
   app.on("second-instance", (_event, argv) => {
     const url = callbackUrlFromArgv(argv);
-    if (url) account.handleCallbackUrl(url);
-    showHub();
+    if (url) handleCallbackUrl(url);
+    else showHub();
   });
-  // A returning browser brings Voice to the front. A launch by URL shows the hub anyway.
-  app.on("open-url", showHub);
   app.on("activate", showHub);
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});

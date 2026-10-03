@@ -7,7 +7,13 @@ import { supportsCleanup, type DictationLanguage } from "../shared/dictation-lan
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
-import { step, type Effect as SessionEffect, type Session, type SessionEvent } from "./session.ts";
+import {
+  dictating,
+  step,
+  type Effect as SessionEffect,
+  type Session,
+  type SessionEvent,
+} from "./session.ts";
 import type { Store } from "./store.ts";
 
 export type DictationOptions = {
@@ -310,4 +316,21 @@ export function createDictation(options: DictationOptions): Dictation {
   }
 
   return { dispatch, onHelperEvent };
+}
+
+/**
+ * Returns a request that runs `show` now, or once the current session reaches its outcome.
+ * Showing a window mid-session would take focus from the target app and fail the insertion.
+ */
+export function whenNotDictating(store: Store, show: () => void): () => void {
+  let pending = false;
+  store.subscribe((state) => {
+    if (!pending || dictating(state.session)) return;
+    pending = false;
+    show();
+  });
+  return () => {
+    if (dictating(store.state.session)) pending = true;
+    else show();
+  };
 }

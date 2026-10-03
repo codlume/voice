@@ -10,7 +10,6 @@ import {
   AUTH_SESSION_CHECK_INTERVAL_MS,
   AUTH_SESSION_ENDED_MESSAGE,
   PASTE_CODE_MESSAGE,
-  RESTARTING_MESSAGE,
   SIGN_IN_ERRORS,
   SIGN_IN_TIMEOUT_MS,
   STALE_CODE_MESSAGE,
@@ -24,7 +23,7 @@ import {
   type Identity,
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
-import { createDictation } from "./dictation.ts";
+import { createDictation, whenNotDictating } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
@@ -105,13 +104,11 @@ function harness(
   const createClient = vi.fn(async () => fake.client);
   const logs: string[] = [];
   const entries: DiagnosticLog[] = [];
-  let restarting = false;
   const account = createAccount({
     apiUrl,
     development: options.development ?? false,
     hasStoredAuthSession: options.hasStoredAuthSession ?? (() => false),
     createClient,
-    canSignIn: () => !restarting,
     signInTimeoutMs: SIGN_IN_TIMEOUT_MS,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => {
@@ -150,9 +147,6 @@ function harness(
     exchanges: fake.exchanges,
     checks: fake.checks,
     setUser: fake.setUser,
-    setRestarting: (value: boolean) => {
-      restarting = value;
-    },
     get state() {
       return toSnapshot(store.state).account;
     },
@@ -477,24 +471,6 @@ describe("createAccount", () => {
     expect(h.state).toEqual({ kind: "signedOut" });
   });
 
-  test("sign-in is refused while Voice quits or installs an update", async () => {
-    const h = harness();
-    h.setRestarting(true);
-    await expect(h.account.signIn()).rejects.toThrow(RESTARTING_MESSAGE);
-    expect(h.createClient).not.toHaveBeenCalled();
-    expect(h.states).toEqual([]);
-
-    h.setRestarting(false);
-    const signIn = h.account.signIn();
-    await flush();
-    h.requests[0]?.reject(new Error("no handler"));
-    await signIn;
-    h.setRestarting(true);
-    await expect(h.account.signIn()).rejects.toThrow(RESTARTING_MESSAGE);
-    expect(h.requests).toHaveLength(1);
-    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.browser });
-  });
-
   test("a browser that cannot open lands in error", async () => {
     const h = harness();
     const signIn = h.account.signIn();
@@ -648,6 +624,95 @@ describe("createAccount", () => {
     h.exchanges[0]?.resolve();
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
     expect(h.states).toEqual([{ kind: "signingIn" }]);
+  });
+
+  test("reports whether each callback changed the account", async () => {
+    const h = harness();
+    expect(h.account.handleCallbackUrl(callbackUrl("electron_authorization_code_1"))).toBe(
+      "ignored",
+    );
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("interrupted");
+    h.account.dismissError();
+    await startSignIn(h, "state2");
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("ignored");
+    expect(h.account.handleCallbackUrl(callbackUrl(SECOND_CODE))).toBe("accepted");
+    await flush();
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.account.handleCallbackUrl(callbackUrl(SECOND_CODE))).toBe("ignored");
+  });
+
+  test("a callback during dictation shows Voice only after the session's outcome", async () => {
+    const h = harness();
+    const commands: HelperCommand[] = [];
+    const dictation = createDictation({
+      store: h.store,
+      send: (command) => commands.push(command),
+      cleanup: { loaded: () => true, clean: async (raw) => raw },
+      onLevel: () => {},
+      log: () => {},
+      onSessionDone: () => {},
+    });
+    // The same wiring as index.ts: only a callback that changed the account shows the hub.
+    const shownDuring: string[] = [];
+    const showWhenIdle = whenNotDictating(h.store, () =>
+      shownDuring.push(h.store.state.session.phase),
+    );
+    const takeCallback = (url: string) => {
+      if (h.account.handleCallbackUrl(url) !== "ignored") showWhenIdle();
+    };
+
+    await startSignIn(h);
+    h.account.cancelSignIn();
+    takeCallback(callbackUrl(CODE));
+    takeCallback(callbackUrl("electron_authorization_code_1"));
+    expect(shownDuring).toEqual([]);
+
+    await startSignIn(h, "state2");
+    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const session = h.store.state.session;
+    if (session.phase === "idle") throw new Error("no session");
+    const id = session.id;
+    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    takeCallback(callbackUrl(SECOND_CODE));
+    await flush();
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expect(shownDuring).toEqual([]);
+
+    vi.advanceTimersByTime(800);
+    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hello world",
+      audioMs: 800,
+      asrMs: 1,
+    });
+    await flush();
+    expect(shownDuring).toEqual([]);
+    dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    expect(h.store.state.session).toEqual({
+      phase: "done",
+      id,
+      outcome: { kind: "inserted", method: "accessibility" },
+    });
+    expect(commands.map((command) => command.type)).toEqual([
+      "capture.start",
+      "capture.stop",
+      "insert",
+    ]);
+    expect(shownDuring).toEqual(["done"]);
+  });
+
+  test("an interrupted callback outside a session shows Voice at once", () => {
+    const h = harness();
+    const shown = vi.fn();
+    const showWhenIdle = whenNotDictating(h.store, shown);
+    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") showWhenIdle();
+    expect(shown).toHaveBeenCalledOnce();
+    expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
   });
 
   test("sign-in never starts or resumes capture", async () => {

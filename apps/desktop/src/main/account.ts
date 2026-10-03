@@ -17,7 +17,6 @@ export const SIGN_IN_ERRORS = {
   rejected: "The Voice server did not accept this sign-in.",
   interrupted: "Sign-in was interrupted.",
 } as const;
-export const RESTARTING_MESSAGE = "Voice is restarting. Sign in after it reopens.";
 export const STALE_CODE_MESSAGE =
   "That code is from an earlier sign-in. Paste the code shown in the browser now.";
 export const AUTH_SESSION_ENDED_MESSAGE = "Your sign-in expired or was revoked.";
@@ -168,7 +167,6 @@ export function createAccount({
   hasStoredAuthSession,
   checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
-  canSignIn,
   signInTimeoutMs,
   onChange,
   log,
@@ -178,8 +176,6 @@ export function createAccount({
   hasStoredAuthSession: () => boolean;
   checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
-  /** False while Voice quits or installs an update, either of which loses the PKCE verifier. */
-  canSignIn: () => boolean;
   signInTimeoutMs: number;
   onChange: (state: AccountState) => void;
   log: Log;
@@ -229,17 +225,21 @@ export function createAccount({
     leave(attempt, { kind: "error", message: SIGN_IN_ERRORS[failure] });
   }
 
-  /** Redeems a code for the attempt; returns false when the code is not this attempt's. */
-  async function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
+  /** Redeems a code for the attempt, or returns null when the code is not this attempt's. */
+  function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
     if (oauthState !== current.oauthState) {
       log("account: code from another sign-in ignored");
-      return false;
+      return null;
     }
     if (current.redeeming) {
       log("account: code ignored while one is being redeemed");
-      return true;
+      return Promise.resolve();
     }
     current.redeeming = true;
+    return redeem(current, code);
+  }
+
+  async function redeem(current: Attempt, code: string) {
     let result: RedeemResult;
     try {
       result = await (await current.client).redeem(code);
@@ -251,7 +251,6 @@ export function createAccount({
     } else {
       failed(current.attempt, result.error, result.kind);
     }
-    return true;
   }
 
   // A result lands only on the state it was started from, so a sign-in or a sign-out while the
@@ -343,7 +342,6 @@ export function createAccount({
         return;
       }
       abortCheck();
-      if (!canSignIn()) throw new Error(RESTARTING_MESSAGE);
       attempts += 1;
       const attempt = attempts;
       const timer = setTimeout(() => {
@@ -374,26 +372,28 @@ export function createAccount({
       }
       const code = parseSignInCode(value);
       if (code === null) throw new Error(PASTE_CODE_MESSAGE);
-      if (!(await complete(state, code))) throw new Error(STALE_CODE_MESSAGE);
+      const redeeming = complete(state, code);
+      if (redeeming === null) throw new Error(STALE_CODE_MESSAGE);
+      await redeeming;
     },
-    handleCallbackUrl(url: string) {
+    /** Whether the callback changed anything, so the caller knows whether to bring Voice forward. */
+    handleCallbackUrl(url: string): "accepted" | "interrupted" | "ignored" {
       const code = parseCallbackUrl(url);
       if (code === null) {
         log("account: malformed callback URL");
-        return;
+        return "ignored";
       }
-      if (state.kind === "signingIn") {
-        void complete(state, code);
-        return;
-      }
+      if (state.kind === "signingIn")
+        return complete(state, code) === null ? "ignored" : "accepted";
       // This process never started a sign-in, so the browser finished one that a quit or an
       // update restart cut short. Its verifier died with that process.
       if (attempts === 0 && state.kind === "signedOut") {
         log("account: sign-in was interrupted");
         publish({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
-        return;
+        return "interrupted";
       }
       log(`account: callback ignored while ${state.kind}`);
+      return "ignored";
     },
     cancelSignIn() {
       if (state.kind === "signingIn") leave(state.attempt, { kind: "signedOut" });
