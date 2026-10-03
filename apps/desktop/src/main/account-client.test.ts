@@ -78,9 +78,11 @@ beforeEach(() => {
     const request = new Request(input, init);
     sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
     return new Promise<Response>((resolve, reject) => {
-      // As real fetch does, an aborted signal rejects, before or during the request.
-      if (request.signal.aborted) reject(request.signal.reason);
-      request.signal.addEventListener("abort", () => reject(request.signal.reason));
+      // As real fetch does, an aborted signal rejects, before or during the request. The caller's
+      // own signal, because the copy a Request makes follows it only weakly and can be collected.
+      const signal = init?.signal ?? request.signal;
+      if (signal.aborted) reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason));
       Promise.resolve(answer(request.url)).then(resolve, reject);
     });
   });
