@@ -43,8 +43,8 @@ describe("sign-in code across the landing page and the account module", () => {
       });
 
       expect(shown.textContent).toBe(cookieValue);
-      expect(parseSignInCode(shown.textContent)).toBe(cookieValue);
-      expect(parseCallbackUrl(opened)).toBe(cookieValue);
+      expect(parseSignInCode(shown.textContent)).toEqual({ code: cookieValue, state });
+      expect(parseCallbackUrl(opened)).toEqual({ code: cookieValue, state });
       expect(
         JSON.parse(Buffer.from(decodeURIComponent(cookieValue), "base64url").toString("utf8")),
       ).toEqual(claims);

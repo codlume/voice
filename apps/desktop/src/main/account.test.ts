@@ -11,6 +11,7 @@ import {
   PASTE_CODE_MESSAGE,
   SIGN_IN_FAILED_MESSAGE,
   SIGN_IN_TIMEOUT_MS,
+  STALE_CODE_MESSAGE,
   createAccount,
   parseCallbackUrl,
   parseSignInCode,
@@ -26,22 +27,28 @@ const API_URL = "https://api-nightly.voice.codlume.com";
 const USER = { name: "Ada Lovelace", email: "ada@example.com" };
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
+const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });
 const callbackUrl = (token: string) => `${VOICE_URL_SCHEME}://auth/callback#token=${token}`;
 
 type Call = { resolve: () => void; reject: (error: Error) => void };
+type BrowserCall = { resolve: (state?: string) => void; reject: (error: Error) => void };
 
 function fakeClient() {
-  const requests: Call[] = [];
+  const requests: BrowserCall[] = [];
   const exchanges: (Call & { code: string })[] = [];
   let user = USER;
   const client: AuthClient = {
     openBrowser: () =>
-      new Promise<void>((resolve, reject) => {
-        requests.push({ resolve, reject });
+      new Promise<{ state: string }>((resolve, reject) => {
+        requests.push({ resolve: (state = "state1") => resolve({ state }), reject });
       }),
     redeem: (code) =>
-      new Promise((resolve, reject) => {
-        exchanges.push({ code, resolve: () => resolve(user), reject });
+      new Promise((resolve) => {
+        exchanges.push({
+          code,
+          resolve: () => resolve({ kind: "signedIn", ...user }),
+          reject: (error) => resolve({ kind: "rejected", error }),
+        });
       }),
   };
   return {
@@ -107,11 +114,11 @@ async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-async function startSignIn(h: ReturnType<typeof harness>) {
+async function startSignIn(h: ReturnType<typeof harness>, state = "state1") {
   const signIn = h.account.signIn();
   await flush();
   expect(h.state).toEqual({ kind: "signingIn" });
-  h.requests.at(-1)?.resolve();
+  h.requests.at(-1)?.resolve(state);
   await signIn;
 }
 
@@ -182,14 +189,14 @@ describe("resolveApiUrl", () => {
 
 describe("parseSignInCode", () => {
   test("accepts the cookie value, trimmed, padded or percent-encoded", () => {
-    expect(parseSignInCode(CODE)).toBe(CODE);
-    expect(parseSignInCode(`  ${CODE}\n`)).toBe(CODE);
+    expect(parseSignInCode(CODE)).toEqual({ code: CODE, state: "state1" });
+    expect(parseSignInCode(`  ${CODE}\n`)).toEqual({ code: CODE, state: "state1" });
     const padded = Buffer.from(JSON.stringify({ identifier: "i", state: "st" })).toString("base64");
     expect(padded.endsWith("=")).toBe(true);
-    expect(parseSignInCode(padded)).toBe(padded);
+    expect(parseSignInCode(padded)).toEqual({ code: padded, state: "st" });
     const encoded = encodeURIComponent(padded);
     expect(encoded).toContain("%3D");
-    expect(parseSignInCode(encoded)).toBe(encoded);
+    expect(parseSignInCode(encoded)).toEqual({ code: encoded, state: "st" });
   });
 
   test("rejects anything that is not base64url JSON with an identifier and a state", () => {
@@ -212,10 +219,10 @@ describe("parseSignInCode", () => {
 
 describe("parseCallbackUrl", () => {
   test("accepts only the app scheme, the callback path and a valid token", () => {
-    expect(parseCallbackUrl(callbackUrl(CODE))).toBe(CODE);
+    expect(parseCallbackUrl(callbackUrl(CODE))).toEqual({ code: CODE, state: "state1" });
     const padded = Buffer.from(JSON.stringify({ identifier: "i", state: "st" })).toString("base64");
     const encoded = encodeURIComponent(padded);
-    expect(parseCallbackUrl(callbackUrl(encoded))).toBe(encoded);
+    expect(parseCallbackUrl(callbackUrl(encoded))).toEqual({ code: encoded, state: "st" });
     for (const url of [
       `https://auth/callback#token=${CODE}`,
       `${VOICE_URL_SCHEME}://auth/other#token=${CODE}`,
@@ -360,6 +367,71 @@ describe("createAccount", () => {
     h.requests[0]?.reject(new Error("no handler"));
     await signIn;
     expect(h.state).toEqual({ kind: "error", message: OPEN_BROWSER_FAILED_MESSAGE });
+    expectNoSecrets(h);
+  });
+
+  test("a cancelled attempt's code never signs in during a newer attempt (the plugin keeps every verifier)", async () => {
+    const h = harness();
+    await startSignIn(h, "state1");
+    h.account.cancelSignIn();
+    await startSignIn(h, "state2");
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await expect(h.account.submitSignInCode(CODE)).rejects.toThrow(STALE_CODE_MESSAGE);
+    await flush();
+    expect(h.exchanges).toEqual([]);
+    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(
+      h.logs.filter((line) => line === "account: code from another sign-in ignored"),
+    ).toHaveLength(2);
+    h.account.handleCallbackUrl(callbackUrl(SECOND_CODE));
+    await flush();
+    expect(h.exchanges.map((call) => call.code)).toEqual([SECOND_CODE]);
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expectNoSecrets(h);
+  });
+
+  test("a timed-out attempt's callback is ignored by the retry that followed it", async () => {
+    const h = harness();
+    await startSignIn(h, "state1");
+    await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
+    expect(h.state).toEqual({ kind: "signedOut" });
+    await startSignIn(h, "state2");
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    expect(h.exchanges).toEqual([]);
+    expect(h.state).toEqual({ kind: "signingIn" });
+    expectNoSecrets(h);
+  });
+
+  test("a code arriving before the browser opened is ignored, not redeemed against the wrong attempt", async () => {
+    const h = harness();
+    const signIn = h.account.signIn();
+    await flush();
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    expect(h.exchanges).toEqual([]);
+    h.requests[0]?.resolve("state1");
+    await signIn;
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    await flush();
+    expect(h.exchanges.map((call) => call.code)).toEqual([CODE]);
+  });
+
+  test("a paste and a callback for the same code redeem once and keep the first result", async () => {
+    const h = harness();
+    await startSignIn(h);
+    h.account.handleCallbackUrl(callbackUrl(CODE));
+    const pasted = h.account.submitSignInCode(CODE);
+    await flush();
+    expect(h.exchanges).toHaveLength(1);
+    await pasted;
+    expect(h.state).toEqual({ kind: "signingIn" });
+    h.exchanges[0]?.resolve();
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    expect(h.logs).toContain("account: code ignored while one is being redeemed");
     expectNoSecrets(h);
   });
 
