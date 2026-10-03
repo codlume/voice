@@ -23,7 +23,7 @@ jobs:
       stable: ${{ steps.detect.outputs.stable }}
       stable_version: ${{ steps.detect.outputs.stable_version }}
       stable_sha: ${{ steps.detect.outputs.stable_sha }}
-      stable_api_changed: ${{ steps.detect.outputs.stable_api_changed }}
+      stable_api_changed: ${{ steps.api.outputs.changed }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -64,19 +64,23 @@ jobs:
           desktop_version="$(git show "${tag}:apps/desktop/package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
           [[ "${version}" == "${desktop_version}" && "${tag}" == "v${version}" ]] || exit 1
           gh release view "${tag}" --json tagName >/dev/null
-          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*-*' "${sha}^" 2>/dev/null || true)"
-          if [[ -z "${previous}" ]]; then
-            previous="$(git hash-object -t tree /dev/null)"
-          fi
-          changed="$(git diff --name-only "${previous}" "${sha}" -- apps/api)"
           {
             echo "stable=true"
             echo "stable_version=${version}"
             echo "stable_sha=${sha}"
-            if [[ -n "${changed}" ]]; then
-              echo "stable_api_changed=true"
-            fi
           } >> "${GITHUB_OUTPUT}"
+      - name: Detect Stable API changes
+        id: api
+        if: steps.detect.outputs.stable == 'true'
+        env:
+          STABLE_SHA: ${{ steps.detect.outputs.stable_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*-*' "${STABLE_SHA}^")"
+          if ! git diff --quiet "${previous}" "${STABLE_SHA}" -- apps/api; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
 
   stable-api-deploy:
     needs: release-please
