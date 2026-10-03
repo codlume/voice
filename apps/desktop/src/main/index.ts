@@ -658,8 +658,16 @@ async function main() {
   showHub();
   updates.start();
   void cleanup.loadIfDownloaded();
-  // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it.
-  if (testMode) Object.assign(globalThis, { voiceTest: { cleanup } });
+  // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
+  // verify skill deliver a sign-in callback URL, which macOS routes only to a packaged build.
+  if (testMode) {
+    Object.assign(globalThis, {
+      voiceTest: {
+        cleanup,
+        openUrl: (url: string) => app.emit("open-url", { preventDefault() {} }, url),
+      },
+    });
+  }
 }
 
 // Called last because main runs synchronously until whenReady and reads module constants.

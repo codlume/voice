@@ -33,7 +33,7 @@ const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
 const statePath = join(tmpdir(), "voice-verify.json");
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence");
-const ports = { voice: 9355, target: 9356 };
+const ports = { voice: 9355, target: 9356, inspect: 9357 };
 
 const [command = "help", ...args] = process.argv.slice(2);
 const show = (value) => JSON.stringify(value);
@@ -223,7 +223,13 @@ const commands = {
     // after earlier unclean exits.
     const child = start(
       electronPath,
-      [".", `--remote-debugging-port=${ports.voice}`, "-ApplePersistenceIgnoreState", "YES"],
+      [
+        ".",
+        `--remote-debugging-port=${ports.voice}`,
+        `--inspect=${ports.inspect}`,
+        "-ApplePersistenceIgnoreState",
+        "YES",
+      ],
       { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
     );
     child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
@@ -234,6 +240,7 @@ const commands = {
       ownerPid: process.pid,
       electronPid: child.pid,
       port: ports.voice,
+      inspectPort: ports.inspect,
       userData,
       fakeMicrophonePath,
       logPath,
@@ -333,6 +340,23 @@ const commands = {
     const page = await connect(which);
     out(await page.evaluate(expression));
     page.close();
+  },
+
+  async callback() {
+    const [code] = args;
+    if (!code) fail("usage: callback <code>");
+    const state = requireInstance();
+    // The landing page opens this URL. A development build cannot receive it from macOS, so the
+    // main-process test hook emits the same open-url event the OS would.
+    const url = `com.codlume.voice://auth/callback#token=${code}`;
+    const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
+    const main = await Page.open(targets[0].webSocketDebuggerUrl);
+    try {
+      await main.evaluate(`globalThis.voiceTest.openUrl(${show(url)})`);
+    } finally {
+      main.close();
+    }
+    out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
   },
 
   async wait() {
@@ -676,6 +700,7 @@ const commands = {
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
   browser [google-code]          play the browser's part of a pending sign-in against the local Worker
+  callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
   record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result

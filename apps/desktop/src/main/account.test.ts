@@ -215,7 +215,8 @@ describe("parseCallbackUrl", () => {
   test("accepts only the app scheme, the callback path and a valid token", () => {
     expect(parseCallbackUrl(callbackUrl(CODE))).toBe(CODE);
     const padded = Buffer.from(JSON.stringify({ identifier: "i", state: "st" })).toString("base64");
-    expect(parseCallbackUrl(callbackUrl(encodeURIComponent(padded)))).toBe(padded);
+    const encoded = encodeURIComponent(padded);
+    expect(parseCallbackUrl(callbackUrl(encoded))).toBe(encoded);
     for (const url of [
       `https://auth/callback#token=${CODE}`,
       `${VOICE_URL_SCHEME}://auth/other#token=${CODE}`,

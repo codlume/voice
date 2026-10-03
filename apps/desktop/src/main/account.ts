@@ -99,11 +99,9 @@ export function parseCallbackUrl(url: string): string | null {
   if (parsed.protocol !== `${VOICE_URL_SCHEME}:`) return null;
   if (`/${parsed.hostname}${parsed.pathname}` !== "/auth/callback") return null;
   if (!parsed.hash.startsWith("#token=")) return null;
-  try {
-    return parseSignInCode(decodeURIComponent(parsed.hash.slice("#token=".length)));
-  } catch {
-    return null;
-  }
+  // The landing page puts the cookie value in the fragment as is, so the token is the same
+  // string the user would paste.
+  return parseSignInCode(parsed.hash.slice("#token=".length));
 }
 
 // One sign-in attempt. The client promise and the timer exist exactly while signing in, so a

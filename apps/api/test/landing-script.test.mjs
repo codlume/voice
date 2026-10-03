@@ -43,7 +43,8 @@ test("shows the code, signs the browser out, then opens Voice with the code", ()
         keepalive: true,
       },
     },
-    { replace: `com.codlume.voice://auth/callback#token=${encodeURIComponent(code)}` },
+    // The cookie serializer already percent-encoded the value, so the fragment carries it as is.
+    { replace: `com.codlume.voice://auth/callback#token=${code}` },
   ]);
 });
 
