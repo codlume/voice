@@ -46,17 +46,6 @@ const styles = stylex.create({
     flexGrow: 1,
     minWidth: 0,
   },
-  textButton: {
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: color.primary,
-    font: "inherit",
-    fontSize: 12.5,
-    fontWeight: 500,
-    cursor: "pointer",
-    textDecoration: { default: "none", ":hover": "underline" },
-  },
   codeLine: { display: "flex", alignItems: "center", gap: space.sm },
   codeInput: {
     flexGrow: 1,
@@ -149,13 +138,9 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
           <div {...stylex.props(styles.waitingText)}>
             <RowText account={account} />
             {!pasting && (
-              <button
-                type="button"
-                onClick={() => setPasting(true)}
-                {...stylex.props(styles.textButton)}
-              >
+              <Button variant="text" onClick={() => setPasting(true)}>
                 Paste a code instead
-              </button>
+              </Button>
             )}
           </div>
           <Button

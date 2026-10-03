@@ -119,7 +119,8 @@ app.on("open-url", (event, url) => {
 });
 
 // Test runs launch the stock Electron.app, which does not declare the scheme. Making it the
-// default handler would take the sign-in link away from a Voice that can receive it.
+// default handler would take the sign-in link away from a Voice that can receive it. Only
+// pnpm dev on macOS runs a bundle that declares it; elsewhere the read fails and Voice skips.
 function receivesCallbackUrls(): boolean {
   if (!development) return true;
   try {
@@ -710,7 +711,8 @@ async function main() {
   updates.start();
   void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
-  // verify skill deliver a sign-in callback URL, which macOS routes only to a packaged build.
+  // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
+  // Electron.app the verify instance runs.
   if (testMode) {
     Object.assign(globalThis, {
       voiceTest: {
