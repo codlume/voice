@@ -36,6 +36,7 @@ const fresh: Snapshot = {
     defaultUid: "builtin",
   },
   microphoneTest: { kind: "off" },
+  account: { kind: "signedOut" },
   last: null,
 };
 

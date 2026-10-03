@@ -45,6 +45,7 @@ const base: Snapshot = {
     defaultUid: "builtin",
   },
   microphoneTest: { kind: "off" },
+  account: { kind: "signedOut" },
   last: null,
 };
 
@@ -284,6 +285,21 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     },
     setOpenAtLogin: async (on) => {
       set({ ...snapshot, loginItem: on ? "on" : "off" });
+    },
+    signIn: async () => {
+      set({ ...snapshot, account: { kind: "signingIn" } });
+    },
+    submitSignInCode: async () => {
+      set({
+        ...snapshot,
+        account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+      });
+    },
+    cancelSignIn: async () => {
+      set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    dismissAccountError: async () => {
+      set({ ...snapshot, account: { kind: "signedOut" } });
     },
     startMicrophoneTest: async () => {
       set({ ...snapshot, microphoneTest: { kind: "starting" } });
