@@ -10,6 +10,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 
+import { playBrowser } from "../test/browser-play.ts";
+
 const { values: args } = parseArgs({
   options: { base: { type: "string" }, "init-url": { type: "string" }, code: { type: "string" } },
 });
@@ -21,58 +23,27 @@ if (!args.base || !args.code) {
 }
 const base = new URL(args.base).origin;
 
-const jar = new Map();
-const cookieHeader = () => [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
-async function browse(path, init = {}) {
-  const response = await fetch(new URL(path, base), {
-    ...init,
-    redirect: "manual",
-    headers: jar.size > 0 ? { ...init.headers, cookie: cookieHeader() } : init.headers,
-  });
-  for (const line of response.headers.getSetCookie()) {
-    const pair = line.split(";")[0];
-    const at = pair.indexOf("=");
-    if (at + 1 < pair.length) jar.set(pair.slice(0, at), pair.slice(at + 1));
-    else jar.delete(pair.slice(0, at));
-  }
-  return response;
-}
-
 let initUrl = args["init-url"];
 let verifier;
 if (!initUrl) {
   verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const state = randomBytes(16).toString("hex");
-  initUrl = `/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${challenge}&client_id=electron`;
+  initUrl = `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${challenge}&client_id=electron`;
 }
 
-const steps = {};
-const init = await browse(initUrl);
-const google = new URL(init.headers.get("location") ?? "about:blank");
-steps.init = { status: init.status, location: google.origin + google.pathname };
-
-const callback = await browse(
-  `/api/auth/callback/google?code=${encodeURIComponent(args.code)}&state=${google.searchParams.get("state")}`,
-);
-steps.callback = { status: callback.status, location: callback.headers.get("location") };
-const electronCookie = jar.get("better-auth.electron") ?? null;
-
-const landing = await browse("/");
-steps.landing = {
-  status: landing.status,
-  contentSecurityPolicy: landing.headers.get("content-security-policy"),
+const flow = await playBrowser(fetch, { base, initUrl, googleCode: args.code, signOut: true });
+const { google, callback, landing, electronCookie } = flow;
+const steps = {
+  init: { status: flow.init.status, location: google.origin + google.pathname },
+  callback: { status: callback.status, location: callback.headers.get("location") },
+  landing: {
+    status: landing.status,
+    contentSecurityPolicy: landing.headers.get("content-security-policy"),
+  },
+  signOut: { status: flow.signOut.status },
+  browserSessionAfterSignOut: flow.browserSessionAfterSignOut,
 };
-
-// What the landing page's script does before it opens Voice.
-const signOut = await browse("/api/auth/sign-out", {
-  method: "POST",
-  headers: { "content-type": "application/json", origin: base },
-  body: "{}",
-});
-steps.signOut = { status: signOut.status };
-const browserSession = await browse("/api/auth/get-session");
-steps.browserSessionAfterSignOut = await browserSession.json();
 
 if (verifier && electronCookie) {
   const { identifier, state } = JSON.parse(
@@ -88,12 +59,12 @@ if (verifier && electronCookie) {
 }
 
 const ok =
-  init.status === 302 &&
+  flow.init.status === 302 &&
   google.origin === "https://accounts.google.com" &&
   callback.status === 302 &&
   electronCookie !== null &&
   landing.status === 200 &&
-  signOut.status === 200 &&
+  flow.signOut.status === 200 &&
   steps.browserSessionAfterSignOut === null &&
   (steps.exchange === undefined || steps.exchange.status === 200);
 

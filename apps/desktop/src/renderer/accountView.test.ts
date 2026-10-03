@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, initials, signInCode } from "./accountView.ts";
+import { accountRow, initials } from "./accountView.ts";
 
 describe("account view", () => {
   test("initials take the first two words of the name, else the email", () => {
@@ -39,11 +39,5 @@ describe("account view", () => {
       { title: "ada@example.com", detail: "ada@example.com" },
       { title: "Sign-in was interrupted", detail: "Retry to sign in again." },
     ]);
-  });
-
-  test("a pasted code is trimmed and an empty paste is no code", () => {
-    expect(signInCode("  eyJpZCI6ImFiYyJ9\n")).toBe("eyJpZCI6ImFiYyJ9");
-    expect(signInCode(" \n\t")).toBeNull();
-    expect(signInCode("")).toBeNull();
   });
 });

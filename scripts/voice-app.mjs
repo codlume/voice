@@ -68,7 +68,7 @@ export async function snapshotStream(page) {
 export class Page {
   #nextId = 1;
   #pending = new Map();
-  #bindings = new Map();
+  #events = new Map();
 
   static async connect(port, urlPart, { timeoutMs = 30_000 } = {}) {
     const deadline = Date.now() + timeoutMs;
@@ -93,6 +93,7 @@ export class Page {
 
   constructor(ws) {
     this.ws = ws;
+    this.closed = new Promise((resolve) => ws.addEventListener("close", resolve, { once: true }));
     ws.addEventListener("message", ({ data }) => {
       const message = JSON.parse(data);
       if (message.id !== undefined) {
@@ -100,8 +101,8 @@ export class Page {
         this.#pending.delete(message.id);
         if (message.error) settle.reject(new Error(message.error.message));
         else settle.resolve(message.result);
-      } else if (message.method === "Runtime.bindingCalled") {
-        this.#bindings.get(message.params.name)?.(message.params.payload);
+      } else {
+        this.#events.get(message.method)?.(message.params);
       }
     });
   }
@@ -122,10 +123,17 @@ export class Page {
     return result.value;
   }
 
+  /** One listener per CDP event method. */
+  on(method, listener) {
+    this.#events.set(method, listener);
+  }
+
   async bind(name, listener) {
     await this.call("Runtime.enable");
     await this.call("Runtime.addBinding", { name });
-    this.#bindings.set(name, listener);
+    this.on("Runtime.bindingCalled", (params) => {
+      if (params.name === name) listener(params.payload);
+    });
   }
 
   close() {

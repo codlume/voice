@@ -31,8 +31,3 @@ export function accountRow(state: AccountState): { title: string; detail: string
     }
   }
 }
-
-/** A pasted code with surrounding whitespace removed, or null when nothing was pasted. */
-export function signInCode(input: string): string | null {
-  return input.trim() || null;
-}
