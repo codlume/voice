@@ -1,3 +1,4 @@
+import { Field } from "@base-ui/react/field";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import * as stylex from "@stylexjs/stylex";
@@ -131,29 +132,35 @@ export function GlobeHint() {
   );
 }
 
+// A native label passes its :hover and clicks to the labelled control, which is wrong for Select
+// triggers. Switch rows opt in to keep click-to-toggle on the title.
 function Row({
-  id,
   title,
   detail,
   disabled = false,
+  nativeLabel = false,
   children,
 }: {
-  id: string;
   title: string;
   detail: string;
   disabled?: boolean;
+  nativeLabel?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div {...stylex.props(styles.row, disabled && styles.disabled)}>
+    <Field.Root {...stylex.props(styles.row, disabled && styles.disabled)}>
       <div {...stylex.props(styles.rowText)}>
-        <label htmlFor={id} {...stylex.props(styles.rowTitle)}>
+        <Field.Label
+          nativeLabel={nativeLabel}
+          render={nativeLabel ? undefined : <div />}
+          {...stylex.props(styles.rowTitle)}
+        >
           {title}
-        </label>
+        </Field.Label>
         <p {...stylex.props(styles.rowDetail)}>{detail}</p>
       </div>
       {children}
-    </div>
+    </Field.Root>
   );
 }
 
@@ -321,7 +328,6 @@ export function GeneralSettings({
       <Section label="Input">
         <div {...stylex.props(styles.card)}>
           <MicrophoneRow
-            selectId="setting-microphone"
             detail={microphoneDetail}
             test={microphoneTest}
             permission={microphonePermission}
@@ -347,7 +353,6 @@ export function GeneralSettings({
       <Section label="Dictation language">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-dictation-language"
             title="Spoken language"
             detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
           >
@@ -369,7 +374,6 @@ export function GeneralSettings({
       <Section label="About">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-update-channel"
             title="Update channel"
             detail="Stable gets regular releases. Nightly gets early builds."
             disabled={updates.status.kind === "installing"}
@@ -431,7 +435,7 @@ export function SystemSettings({
       <Section label="Startup">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-open-at-login"
+            nativeLabel
             title="Open at login"
             detail={loginItemDetails[loginItem]}
             disabled={loginItem === "unavailable"}
@@ -449,7 +453,7 @@ export function SystemSettings({
       <Section label="Audio">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-mute-while-dictating"
+            nativeLabel
             title="Mute all audio while dictating"
             detail="Silences supported output devices while recording, then restores their previous audio state."
           >
@@ -466,7 +470,7 @@ export function SystemSettings({
         <div {...stylex.props(styles.card)}>
           <ThemePicker theme={settings.theme} />
           <Row
-            id="setting-show-in-dock"
+            nativeLabel
             title="Show in Dock"
             detail="When off, Voice stays out of the Dock and Cmd-Tab. Open it from the menu bar."
           >
@@ -477,7 +481,7 @@ export function SystemSettings({
             />
           </Row>
           <Row
-            id="setting-always-show-pill"
+            nativeLabel
             title="Show Flow Bar at all times"
             detail="When off, the Flow Bar appears only while you dictate."
           >
@@ -501,7 +505,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
       <Section label="Diagnostics">
         <div {...stylex.props(styles.card)}>
           <Row
-            id="setting-diagnostics"
+            nativeLabel
             title="Share crash reports"
             detail="Sends crashes, dictation timings, and app events, such as a helper restart or a failed cleanup. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
           >
@@ -673,7 +677,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
 
       <Section label="Dictation">
         <div {...stylex.props(styles.card)}>
-          <Row id="setting-hotkey" title="Hold to talk" detail="Hold the key while you speak.">
+          <Row title="Hold to talk" detail="Hold the key while you speak.">
             <Select
               id="setting-hotkey"
               value={settings.hotkey}
