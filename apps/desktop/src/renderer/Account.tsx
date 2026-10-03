@@ -149,15 +149,27 @@ function SigningInRow({ account }: { account: AccountState }) {
 }
 
 function SignedInRow({ account }: { account: Extract<AccountState, { kind: "signedIn" }> }) {
+  const { pending, error, run } = useAction();
   return (
-    <Card>
-      <div {...stylex.props(settings.row)}>
-        <span aria-hidden="true" {...stylex.props(styles.avatar)}>
-          {initials(account.name, account.email)}
-        </span>
-        <RowText account={account} />
-      </div>
-    </Card>
+    <>
+      <Card>
+        <div {...stylex.props(settings.row)}>
+          <span aria-hidden="true" {...stylex.props(styles.avatar)}>
+            {initials(account.name, account.email)}
+          </span>
+          <RowText account={account} />
+          <Button
+            id="setting-sign-out"
+            variant="secondary"
+            disabled={pending}
+            onClick={() => void run(() => window.voice.signOut(), "Could not sign out.")}
+          >
+            Sign out
+          </Button>
+        </div>
+      </Card>
+      <ErrorLine text={error} />
+    </>
   );
 }
 

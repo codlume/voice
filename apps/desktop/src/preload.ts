@@ -44,6 +44,7 @@ const voice: VoiceApi = {
   uninstallModel: (id) => ipcRenderer.invoke(Channel.uninstallModel, id),
   copyLast: (which) => ipcRenderer.invoke(Channel.copyLast, which),
   signIn: () => ipcRenderer.invoke(Channel.signIn),
+  signOut: () => ipcRenderer.invoke(Channel.signOut),
   submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),
   cancelSignIn: () => ipcRenderer.invoke(Channel.cancelSignIn),
   dismissAccountError: () => ipcRenderer.invoke(Channel.dismissAccountError),

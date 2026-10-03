@@ -6,7 +6,13 @@ import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/clien
 import { safeStorage, shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
-import type { AuthClient, AuthSessionCheck, Identity, RedeemResult } from "./account.ts";
+import type {
+  AuthClient,
+  AuthSessionCheck,
+  Identity,
+  RedeemResult,
+  ServerSignOut,
+} from "./account.ts";
 import { authStoragePrefix } from "./account-storage.ts";
 
 // The token and `get-session` bodies both carry `{ user }`. They are external data, so the
@@ -47,15 +53,109 @@ export function createVoiceAuthClient({
 }): AuthClient {
   const prefix = authStoragePrefix(installedChannel);
   const store = storage();
-  const plugin = electronClient({
-    protocol: VOICE_URL_SCHEME,
-    // Required by the plugin's types, read only for sign-in without a provider.
-    signInURL: apiUrl,
-    storagePrefix: prefix,
-    storage: store,
-    userImageProxy: { enabled: false },
-  }) as ElectronPlugin;
-  const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
+  let generation = 0;
+  function makeClient() {
+    const current = generation;
+    const plugin = electronClient({
+      protocol: VOICE_URL_SCHEME,
+      // Required by the plugin's types, read only for sign-in without a provider.
+      signInURL: apiUrl,
+      storagePrefix: prefix,
+      storage: {
+        getItem: store.getItem,
+        // A request started before local sign-out must not restore its cookie or identity.
+        setItem: (key, value) => {
+          if (current === generation) store.setItem(key, value);
+        },
+      },
+      userImageProxy: { enabled: false },
+    }) as ElectronPlugin;
+    return createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
+  }
+  let client = makeClient();
+  const retiredKey = `${prefix}.retired_auth_sessions`;
+  let retired: string[] = [];
+  const storedRetired = store.getItem(retiredKey);
+  if (typeof storedRetired === "string" && safeStorage.isEncryptionAvailable()) {
+    const parsed: unknown = JSON.parse(
+      safeStorage.decryptString(Buffer.from(storedRetired, "base64")),
+    );
+    if (!Array.isArray(parsed) || !parsed.every((cookie) => typeof cookie === "string")) {
+      throw new Error("Invalid stored sign-outs.");
+    }
+    retired = parsed;
+  }
+
+  function saveRetired(next: string[]) {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    store.setItem(
+      retiredKey,
+      next.length ? safeStorage.encryptString(JSON.stringify(next)).toString("base64") : null,
+    );
+  }
+
+  function forget() {
+    generation += 1;
+    store.setItem(`${prefix}.cookie`, null);
+    store.setItem(`${prefix}.local_cache`, null);
+    // The plugin also has private memory storage when encryption is unavailable.
+    client = makeClient();
+  }
+
+  if (retired.length && (!client.getCookie() || retired.includes(client.getCookie()))) forget();
+
+  async function endAuthSession(cookie: string): Promise<ServerSignOut> {
+    const headers = { cookie, origin: `${VOICE_URL_SCHEME}:/`, "content-type": "application/json" };
+    const request = (path: string, init: RequestInit = {}) =>
+      fetch(`${apiUrl}/api/auth/${path}`, {
+        credentials: "omit",
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+        headers,
+        ...init,
+      });
+    try {
+      const response = await request("sign-out", { method: "POST", body: "{}" });
+      if (!response.ok) return { kind: "unknown", status: response.status };
+      const result: unknown = await response.json();
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("success" in result) ||
+        result.success !== true
+      )
+        return { kind: "unknown", status: response.status };
+      // Better Auth catches a failed database deletion and still returns success. Confirm it.
+      const checked = await request("get-session");
+      if (checked.status === 401 || checked.status === 403) {
+        return { kind: "ended", status: checked.status };
+      }
+      if (checked.ok && (await checked.json()) === null) {
+        return { kind: "ended", status: checked.status };
+      }
+      return { kind: "unknown", status: checked.status };
+    } catch (error) {
+      return { kind: "unreachable", error };
+    }
+  }
+
+  let ending: Promise<ServerSignOut[]> | null = null;
+  async function drainRetired() {
+    const attempted = new Set<string>();
+    const answers: ServerSignOut[] = [];
+    let cookie: string | undefined;
+    while ((cookie = retired.find((value) => !attempted.has(value))) !== undefined) {
+      attempted.add(cookie);
+      const answer = await endAuthSession(cookie);
+      answers.push(answer);
+      if (answer.kind === "ended") {
+        const remaining = retired.filter((value) => value !== cookie);
+        saveRetired(remaining);
+        retired = remaining;
+      }
+    }
+    return answers;
+  }
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
   // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
   // code belongs to; in test mode the same hook writes the URL for the script that plays the browser.
@@ -128,9 +228,21 @@ export function createVoiceAuthClient({
       const user = userOf(data);
       return user ? { kind: "active", user } : { kind: "unknown", status: 200 };
     },
-    forget: () => {
-      store.setItem(`${prefix}.cookie`, null);
-      store.setItem(`${prefix}.local_cache`, null);
+    forget,
+    retireAuthSession: () => {
+      const cookie = client.getCookie();
+      if (cookie) {
+        const next = [...new Set([...retired, cookie])];
+        saveRetired(next);
+        retired = next;
+      }
+      forget();
+    },
+    endRetiredAuthSessions: () => {
+      ending ??= drainRetired().finally(() => {
+        ending = null;
+      });
+      return ending;
     },
   };
 }

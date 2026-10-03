@@ -34,6 +34,8 @@ export type AuthClient = {
   checkAuthSession(): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
   forget(): void;
+  retireAuthSession(): void;
+  endRetiredAuthSessions(): Promise<ServerSignOut[]>;
 };
 
 /**
@@ -45,6 +47,8 @@ export type AuthSessionCheck =
   | { kind: "ended"; status: number }
   | { kind: "unknown"; status: number }
   | { kind: "unreachable"; error: unknown };
+
+export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
@@ -154,6 +158,7 @@ export function createAccount({
   apiUrl,
   development,
   hasStoredAuthSession,
+  hasRetiredAuthSession,
   checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
   onChange,
@@ -162,6 +167,7 @@ export function createAccount({
   apiUrl: string | null;
   development: boolean;
   hasStoredAuthSession: () => boolean;
+  hasRetiredAuthSession: () => boolean;
   checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
   onChange: (state: AccountState) => void;
@@ -170,6 +176,7 @@ export function createAccount({
   let state: State = initialAccountState(apiUrl, development);
   let attempts = 0;
   let cachedClient: Promise<AuthClient> | null = null;
+  let loadedClient: AuthClient | null = null;
   let lastCheck = Date.now();
   let restoreStarted = false;
 
@@ -186,7 +193,10 @@ export function createAccount({
 
   function loadClient(url: string): Promise<AuthClient> {
     if (!cachedClient) {
-      cachedClient = createClient(url);
+      cachedClient = createClient(url).then((client) => {
+        loadedClient = client;
+        return client;
+      });
       cachedClient.catch(() => {
         cachedClient = null;
       });
@@ -202,6 +212,20 @@ export function createAccount({
       attributes: { "error.type": errorType(error) },
     });
     leave(attempt, { kind: "error", message });
+  }
+
+  async function endRetired(client: AuthClient) {
+    for (const answer of await client.endRetiredAuthSessions()) {
+      if (answer.kind === "ended") continue;
+      log("account server sign-out failed", {
+        message: "account server sign-out failed",
+        level: "warn",
+        attributes:
+          answer.kind === "unknown"
+            ? { "http.response.status_code": answer.status }
+            : { "error.type": errorType(answer.error) },
+      });
+    }
   }
 
   /** Redeems a code for the attempt; returns false when the code is not this attempt's. */
@@ -283,7 +307,9 @@ export function createAccount({
     async restore() {
       if (restoreStarted) return;
       restoreStarted = true;
-      if (apiUrl === null || state.kind !== "signedOut" || !hasStoredAuthSession()) return;
+      if (apiUrl === null || state.kind !== "signedOut") return;
+      const retired = hasRetiredAuthSession();
+      if (!hasStoredAuthSession() && !retired) return;
       let client: AuthClient;
       try {
         client = await loadClient(apiUrl);
@@ -295,7 +321,8 @@ export function createAccount({
         });
         return;
       }
-      if (state.kind !== "signedOut") return;
+      if (retired) void endRetired(client);
+      if (state.kind !== "signedOut" || !hasStoredAuthSession()) return;
       const user = client.cachedUser();
       if (user !== null) publish({ kind: "signedIn", ...user });
       await checkAuthSession(client);
@@ -357,6 +384,12 @@ export function createAccount({
     },
     cancelSignIn() {
       if (state.kind === "signingIn") leave(state.attempt, { kind: "signedOut" });
+    },
+    async signOut() {
+      if (state.kind !== "signedIn" || loadedClient === null) return;
+      loadedClient.retireAuthSession();
+      publish({ kind: "signedOut" });
+      await endRetired(loadedClient);
     },
     dismissError() {
       if (state.kind === "error") publish({ kind: "signedOut" });

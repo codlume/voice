@@ -11,14 +11,18 @@ export const authStoragePrefix = (channel: UpdateChannel) => `voice.${channel}`;
 // launch with no stored auth session free of Conf, Better Auth and the Keychain.
 // The plugin's own sign-out leaves an encrypted "{}" here, which counts as stored, so a sign-out
 // must clear the channel through the client's `forget`.
-export function authSessionStored(userData: string, channel: UpdateChannel): boolean {
+function encryptedItemStored(
+  userData: string,
+  channel: UpdateChannel,
+  storageKey: string,
+): boolean {
   let config: unknown;
   try {
     config = JSON.parse(readFileSync(NodePath.join(userData, "config.json"), "utf8"));
   } catch {
     return false;
   }
-  const cookie = `${authStoragePrefix(channel)}.cookie`
+  const cookie = `${authStoragePrefix(channel)}.${storageKey}`
     .split(".")
     .reduce<unknown>(
       (node, key) => (typeof node === "object" && node !== null ? Reflect.get(node, key) : null),
@@ -26,3 +30,9 @@ export function authSessionStored(userData: string, channel: UpdateChannel): boo
     );
   return typeof cookie === "string" && cookie !== "";
 }
+
+export const authSessionStored = (userData: string, channel: UpdateChannel) =>
+  encryptedItemStored(userData, channel, "cookie");
+
+export const retiredAuthSessionStored = (userData: string, channel: UpdateChannel) =>
+  encryptedItemStored(userData, channel, "retired_auth_sessions");

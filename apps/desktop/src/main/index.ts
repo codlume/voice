@@ -28,7 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
-import { authSessionStored } from "./account-storage.ts";
+import { authSessionStored, retiredAuthSessionStored } from "./account-storage.ts";
 import { createAccount, resolveApiUrl } from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
@@ -181,6 +181,7 @@ async function main() {
     apiUrl: resolveApiUrl({ development, release, env: process.env }),
     development,
     hasStoredAuthSession: () => authSessionStored(userData, installedChannel),
+    hasRetiredAuthSession: () => retiredAuthSessionStored(userData, installedChannel),
     // The verify skill shortens the hourly check to bring the window back after it.
     ...(testCheckIntervalMs > 0 && { checkIntervalMs: testCheckIntervalMs }),
     createClient: (apiUrl) =>
@@ -608,6 +609,7 @@ async function main() {
     account.submitSignInCode(typeof code === "string" ? code : ""),
   );
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
+  ipcMain.handle(Channel.signOut, () => account.signOut());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
 
   app.on("second-instance", showHub);

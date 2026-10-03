@@ -23,8 +23,13 @@ import {
   type AuthClient,
   type AuthSessionCheck,
   type Identity,
+  type ServerSignOut,
 } from "./account.ts";
-import { authSessionStored, authStoragePrefix } from "./account-storage.ts";
+import {
+  authSessionStored,
+  authStoragePrefix,
+  retiredAuthSessionStored,
+} from "./account-storage.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
@@ -57,6 +62,8 @@ function fakeClient() {
   const requests: BrowserCall[] = [];
   const exchanges: (Call & { code: string })[] = [];
   const checks: Check[] = [];
+  const signOuts: { answer: (value: ServerSignOut) => void }[] = [];
+  let retired = 0;
   let user = USER;
   let cached: Identity | null = USER;
   let forgotten = 0;
@@ -82,12 +89,31 @@ function fakeClient() {
       forgotten += 1;
       cached = null;
     },
+    retireAuthSession: () => {
+      retired += 1;
+      client.forget();
+    },
+    endRetiredAuthSessions: () =>
+      retired === 0
+        ? Promise.resolve([])
+        : new Promise((resolve) => {
+            signOuts.push({
+              answer: (value) => {
+                if (value.kind === "ended") retired = 0;
+                resolve([value]);
+              },
+            });
+          }),
   };
   return {
     client,
     requests,
     exchanges,
     checks,
+    signOuts,
+    get retired() {
+      return retired;
+    },
     get forgotten() {
       return forgotten;
     },
@@ -105,10 +131,11 @@ function harness(
     apiUrl?: string | null;
     development?: boolean;
     hasStoredAuthSession?: () => boolean;
+    fake?: ReturnType<typeof fakeClient>;
   } = {},
 ) {
   const apiUrl = options.apiUrl === undefined ? API_URL : options.apiUrl;
-  const fake = fakeClient();
+  const fake = options.fake ?? fakeClient();
   const createClient = vi.fn(async () => fake.client);
   const logs: string[] = [];
   const entries: DiagnosticLog[] = [];
@@ -116,6 +143,7 @@ function harness(
     apiUrl,
     development: options.development ?? false,
     hasStoredAuthSession: options.hasStoredAuthSession ?? (() => false),
+    hasRetiredAuthSession: () => fake.retired > 0,
     createClient,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => {
@@ -599,6 +627,13 @@ describe("stored auth session", () => {
     expect(authSessionStored(userData, "nightly")).toBe(false);
   });
 
+  test("pending sign-outs are separate from the active cookie and from other channels", () => {
+    storage().setItem(`${authStoragePrefix("stable")}.retired_auth_sessions`, "Y2lwaGVydGV4dA==");
+    expect(retiredAuthSessionStored(userData, "stable")).toBe(true);
+    expect(retiredAuthSessionStored(userData, "nightly")).toBe(false);
+    expect(authSessionStored(userData, "stable")).toBe(false);
+  });
+
   test("a Stable auth session is never sent to the Nightly API", async () => {
     storeCookie("stable");
     const h = harness({ hasStoredAuthSession: () => authSessionStored(userData, "nightly") });
@@ -606,6 +641,129 @@ describe("stored auth session", () => {
     expect(h.createClient).not.toHaveBeenCalled();
     expect(h.checks).toEqual([]);
     expect(h.state).toEqual({ kind: "signedOut" });
+  });
+});
+
+describe("sign out", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  async function signedIn() {
+    const h = harness();
+    await startSignIn(h);
+    const submitted = h.account.submitSignInCode(CODE);
+    await flush();
+    h.exchanges[0]?.resolve();
+    await submitted;
+    return h;
+  }
+
+  test("shows signedOut immediately, clears local auth, and ends the server session", async () => {
+    const h = await signedIn();
+    const done = h.account.signOut();
+    expect(h.state).toEqual({ kind: "signedOut" });
+    await flush();
+    expect(h.fake.forgotten).toBe(1);
+    expect(h.fake.retired).toBe(1);
+    await h.account.signOut();
+    expect(h.fake.signOuts).toHaveLength(1);
+    h.fake.signOuts[0]?.answer({ kind: "ended", status: 200 });
+    await done;
+    expect(h.fake.retired).toBe(0);
+    expect(h.states.at(-1)).toEqual({ kind: "signedOut" });
+    expectNoSecrets(h);
+  });
+
+  test.each([
+    { kind: "unreachable", error: new TypeError("fetch failed") } as const,
+    { kind: "unknown", status: 503 } as const,
+  ])(
+    "a failed server sign-out stays signed out and retries on successive launches (%s)",
+    async (failure) => {
+      const h = await signedIn();
+      const done = h.account.signOut();
+      await flush();
+      h.fake.signOuts[0]?.answer(failure);
+      await done;
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expect(h.fake.retired).toBe(1);
+      h.account.dispose();
+
+      const offline = harness({ fake: h.fake });
+      await offline.account.restore();
+      await flush();
+      expect(offline.state).toEqual({ kind: "signedOut" });
+      expect(offline.checks).toEqual([]);
+      h.fake.signOuts[1]?.answer(failure);
+      await flush();
+      expect(h.fake.retired).toBe(1);
+      offline.account.dispose();
+
+      const online = harness({ fake: h.fake });
+      await online.account.restore();
+      await flush();
+      h.fake.signOuts[2]?.answer({ kind: "ended", status: 200 });
+      await flush();
+      expect(h.fake.retired).toBe(0);
+      expect(online.state).toEqual({ kind: "signedOut" });
+      expect(online.states).toEqual([]);
+      expectNoSecrets(online);
+      const next = harness({ fake: h.fake });
+      await next.account.restore();
+      expect(next.createClient).not.toHaveBeenCalled();
+    },
+  );
+
+  test("a retry reporting the session already gone never restores the cached identity", async () => {
+    const fake = fakeClient();
+    fake.client.retireAuthSession();
+    fake.setCached(USER);
+    const h = harness({ fake });
+    await h.account.restore();
+    await flush();
+    fake.signOuts[0]?.answer({ kind: "ended", status: 401 });
+    await flush();
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expect(h.states).toEqual([]);
+    expect(h.checks).toEqual([]);
+    expect(fake.retired).toBe(0);
+  });
+
+  test("a launch retry cannot overwrite a new sign-in", async () => {
+    const fake = fakeClient();
+    fake.client.retireAuthSession();
+    const h = harness({ fake });
+    await h.account.restore();
+    await startSignIn(h);
+    const submitted = h.account.submitSignInCode(CODE);
+    await flush();
+    fake.exchanges[0]?.resolve();
+    await submitted;
+    fake.signOuts[0]?.answer({ kind: "ended", status: 200 });
+    await flush();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+  });
+
+  test("a session check completing after sign-out cannot sign the user back in", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    const restored = h.account.restore();
+    await flush();
+    const done = h.account.signOut();
+    expect(h.state).toEqual({ kind: "signedOut" });
+    await flush();
+    h.checks[0]?.answer({ kind: "active", user: USER });
+    await restored;
+    h.fake.signOuts[0]?.answer({ kind: "ended", status: 200 });
+    await done;
+    expect(h.state).toEqual({ kind: "signedOut" });
+  });
+
+  test("sign-out is inert in states without an active account", async () => {
+    for (const h of [harness(), harness({ apiUrl: null })]) {
+      await h.account.signOut();
+      expect(h.createClient).not.toHaveBeenCalled();
+      expect(h.states).toEqual([]);
+    }
   });
 });
 
