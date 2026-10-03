@@ -1,8 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // The top level is local development only: no name, no entry point, no routes and no
-  // remote database id, so a deploy without --env fails instead of auto-provisioning.
-  // Local tools pass the entry point themselves.
+  // The top level is local development only. It has no name, entry point or routes, so
+  // a deploy without --env fails. Local tools pass the entry point themselves.
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
@@ -11,7 +10,11 @@
   "observability": {
     "logs": { "enabled": true, "invocation_logs": false },
   },
-  "d1_databases": [{ "binding": "DB", "database_name": "voice-api-local" }],
+  // The placeholder id stops Wrangler from auto-provisioning a database, even for a
+  // deploy given an entry point. Local D1 keys its storage on it.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "voice-api-local", "database_id": "local-only" },
+  ],
   "secrets": { "required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] },
   // Bindings and secrets are not inherited, so each environment declares its own.
   "env": {
