@@ -5,6 +5,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -372,6 +373,165 @@ const commands = {
     }
   },
 
+  async type() {
+    const [target, ...words] = args;
+    if (!target || words.length === 0) fail("usage: type <css:selector> <text...>");
+    const selector = target.replace(/^css:/, "");
+    const text = words.join(" ");
+    const page = await connect("hub");
+    try {
+      const matches = await page.evaluate(`(() => {
+        const matches = [...document.querySelectorAll(${show(selector)})].filter(${visible});
+        if (matches.length === 1) matches[0].focus();
+        return { count: matches.length, focused: matches.length === 1 && document.activeElement === matches[0] };
+      })()`);
+      if (matches.count !== 1)
+        fail(`${show(selector)} matches ${matches.count} visible elements; expected one`);
+      if (!matches.focused) fail(`${show(selector)} did not take focus`);
+      // insertText goes through the browser's input pipeline, so React sees it as a paste.
+      await page.call("Input.insertText", { text });
+      out({ typed: text.length });
+    } finally {
+      page.close();
+    }
+  },
+
+  async browser() {
+    const [googleCode = "ada-lovelace"] = args;
+    const urlFile = join(requireInstance().userData, "sign-in-url.txt");
+    if (!existsSync(urlFile)) fail("no pending sign-in; click Sign in with Google first");
+    const signInUrl = new URL(readFileSync(urlFile, "utf8").trim());
+    rmSync(urlFile);
+    const api = signInUrl.origin;
+    const jar = new Map();
+    const request = async (url, init = {}) => {
+      const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+      const response = await fetch(url, {
+        ...init,
+        redirect: "manual",
+        headers: { ...init.headers, ...(cookie && { cookie }) },
+      });
+      for (const line of response.headers.getSetCookie()) {
+        const [pair] = line.split(";");
+        const split = pair.indexOf("=");
+        const name = pair.slice(0, split).trim();
+        const value = pair.slice(split + 1).trim();
+        if (value === "" || /;\s*max-age=0\b/i.test(line)) jar.delete(name);
+        else jar.set(name, value);
+      }
+      return response;
+    };
+
+    const init = await request(signInUrl);
+    const google = init.status === 302 ? new URL(init.headers.get("location"), api) : null;
+    if (google?.hostname !== "accounts.google.com")
+      fail(`sign-in URL answered ${init.status}; expected a 302 to accounts.google.com`);
+    const callbackUrl = new URL("/api/auth/callback/google", api);
+    callbackUrl.searchParams.set("code", googleCode);
+    callbackUrl.searchParams.set("state", google.searchParams.get("state") ?? "");
+    const callback = await request(callbackUrl);
+    const electronCookie = jar.get("better-auth.electron");
+    if (callback.status !== 302 || !electronCookie)
+      fail(`Google callback answered ${callback.status} without a better-auth.electron cookie`);
+    const landing = await request(new URL("/", api));
+    if (landing.status !== 200 || !(await landing.text()).includes("better-auth.electron"))
+      fail(`landing page answered ${landing.status} without the better-auth.electron script`);
+    const signOut = await request(new URL("/api/auth/sign-out", api), {
+      method: "POST",
+      headers: { origin: api, "content-type": "application/json" },
+      body: "{}",
+    });
+    const session = await request(new URL("/api/auth/get-session", api));
+    const sessionText = await session.text();
+    let sessionAfterSignOut;
+    try {
+      sessionAfterSignOut = JSON.parse(sessionText);
+    } catch {
+      sessionAfterSignOut = `${session.status}: ${sessionText}`;
+    }
+    out({
+      init: init.status,
+      callback: callback.status,
+      landing: landing.status,
+      signOut: signOut.status,
+      sessionAfterSignOut,
+      code: decodeURIComponent(electronCookie),
+    });
+  },
+
+  async record() {
+    const [name] = args;
+    if (!name) fail("usage: record <name>");
+    const output = join(evidenceDir(), `${name}.mp4`);
+    const page = await connect("hub");
+    const framesDir = mkdtempSync(join(tmpdir(), `voice-verify-${name}-`));
+    const frames = [];
+    page.ws.addEventListener("message", ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.method !== "Page.screencastFrame") return;
+      const { data: png, metadata, sessionId } = message.params;
+      const file = join(framesDir, `${String(frames.length).padStart(6, "0")}.png`);
+      writeFileSync(file, Buffer.from(png, "base64"));
+      frames.push({ file, at: metadata.timestamp });
+      void page.call("Page.screencastFrameAck", { sessionId });
+    });
+    await page.call("Page.startScreencast", {
+      format: "png",
+      everyNthFrame: 1,
+      maxWidth: 960,
+      maxHeight: 640,
+    });
+    out({ recording: output, pid: process.pid, stop: `kill -TERM ${process.pid}` });
+    await new Promise((resolve) => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+      page.ws.addEventListener("close", resolve, { once: true });
+    });
+    const stoppedAt = Date.now() / 1000;
+    await Promise.race([
+      page.call("Page.stopScreencast"),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]).catch(() => {});
+    page.close();
+    if (frames.length === 0) fail(`no frames captured; ${framesDir} is empty`);
+
+    // The concat demuxer drops the last entry's duration unless the file is listed once more.
+    const list = frames.flatMap(({ file, at }, index) => [
+      `file '${file}'`,
+      `duration ${Math.max(0.04, (frames[index + 1]?.at ?? stoppedAt) - at).toFixed(3)}`,
+    ]);
+    list.push(`file '${frames.at(-1).file}'`);
+    const listPath = join(framesDir, "list.txt");
+    writeFileSync(listPath, `${list.join("\n")}\n`);
+    const ffmpeg = spawnSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listPath,
+        "-vsync",
+        "vfr",
+        "-pix_fmt",
+        "yuv420p",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        output,
+      ],
+      { encoding: "utf8" },
+    );
+    if (ffmpeg.error?.code === "ENOENT")
+      return out({ frames: framesDir, count: frames.length, note: "ffmpeg not found" });
+    if (ffmpeg.status !== 0) fail(`ffmpeg failed; frames kept in ${framesDir}\n${ffmpeg.stderr}`);
+    rmSync(framesDir, { recursive: true, force: true });
+    out({ video: output, frames: frames.length, seconds: +(stoppedAt - frames[0].at).toFixed(1) });
+  },
+
   async shot() {
     const [name, which = "hub"] = args;
     if (!name) fail("usage: shot <name> [hub|pill]");
@@ -514,6 +674,9 @@ const commands = {
   snapshot                       full app snapshot JSON
   text                           current sidebar nav and visible page text
   click <name|css:sel> [page]    click the one visible element with that accessible name
+  type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
+  browser [google-code]          play the browser's part of a pending sign-in against the local Worker
+  record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
