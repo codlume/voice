@@ -120,15 +120,12 @@ must not be published.
 
 ## Deploy and recover the API
 
-Nightly deploys on pushes to `main` that change `apps/api`, workspace
-dependencies, or the Nightly deploy workflow. Stable deploys with a Stable
-release only when `apps/api/**` changed since the previous Stable tag.
+Stable deploys the API with a Stable release only when `apps/api/**` changed
+since the previous Stable tag. The gate does not watch the lockfile, so a
+lockfile-only dependency bump reaches Stable with the next API change.
 The `api-stable` GitHub environment requires reviewer approval and permits
 deploys only from `main`. The API job runs independently of `stable-publish`,
 so desktop publication never waits for API approval or deployment.
-Deploys are serialized per environment and never cancelled in progress.
-Each deploy logs a D1 Time Travel bookmark, applies pending remote
-migrations, deploys with `--strict`, and checks `/health`, in that order.
 If a Stable API deploy fails or its approval is rejected, use **Re-run failed
 jobs** on that release's workflow run. A later Stable release deploys the API
 only if it changes `apps/api/**` again.
