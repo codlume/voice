@@ -31,7 +31,8 @@ export type AuthClient = {
   redeem(code: string): Promise<RedeemResult>;
   /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
   cachedUser(): Identity | null;
-  checkAuthSession(): Promise<AuthSessionCheck>;
+  /** Asks `get-session`. An aborted request answers `unreachable` and writes nothing. */
+  checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
   forget(): void;
 };
@@ -172,6 +173,14 @@ export function createAccount({
   let cachedClient: Promise<AuthClient> | null = null;
   let lastCheck = Date.now();
   let restoreStarted = false;
+  // The get-session in flight. Its response would still write the cookie it carries, so anything
+  // that replaces the auth session aborts it first.
+  let checking: AbortController | null = null;
+
+  function abortCheck() {
+    checking?.abort();
+    checking = null;
+  }
 
   function publish(next: State) {
     state = next;
@@ -233,8 +242,12 @@ export function createAccount({
   // request is in flight is never overwritten.
   async function checkAuthSession(client: AuthClient) {
     const checked = state;
+    const controller = new AbortController();
+    abortCheck();
+    checking = controller;
     lastCheck = Date.now();
-    const answer = await client.checkAuthSession();
+    const answer = await client.checkAuthSession(controller.signal);
+    if (checking === controller) checking = null;
     if (state !== checked) return;
     switch (answer.kind) {
       case "active":
@@ -313,6 +326,7 @@ export function createAccount({
         log(`account: sign-in ignored while ${state.kind}`);
         return;
       }
+      abortCheck();
       attempts += 1;
       const attempt = attempts;
       const timer = setTimeout(() => {
@@ -364,6 +378,7 @@ export function createAccount({
       if (state.kind === "error") publish({ kind: "signedOut" });
     },
     dispose() {
+      abortCheck();
       if (state.kind !== "signingIn") return;
       clearTimeout(state.timer);
       state = { kind: "signedOut" };
