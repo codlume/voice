@@ -34,6 +34,6 @@ Each file has an H1, one paragraph on user-visible behavior, then exactly these 
 - [Last dictation](./last-dictation.md): view and copy the last transcript, raw or cleaned, from Home or the tray.
 - [Models](./models.md): see, install, and uninstall the speech and cleanup models from Settings > Models and the Home checklist.
 - [Settings](./settings.md): General, System, Shortcuts, and Data and Privacy controls.
-- [Account](./account.md): sign in with Google from Settings > Account through the pasted code against a local API Worker, cancel, errors, and the unavailable state. Proven end to end on 2026-10-03.
+- [Account](./account.md): sign in with Google from Settings > Account through the pasted code against a local API Worker, cancel, errors, staying signed in across a restart and offline, an expired or revoked auth session, and the unavailable state. Proven end to end on 2026-10-03.
 
 Not mapped yet: the Home setup checklist and permission prompts, update check, download, and restart (About card, sidebar update card, and tray), quit and relaunch (`node scripts/quit-smoke.mjs`), and keyboard navigation in the Voice window.
