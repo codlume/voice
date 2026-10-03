@@ -15,6 +15,8 @@ node .claude/skills/verify/scripts/voice-verify.mjs <command>
 
 It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Only one verify instance exists at a time. Its state lives in `$TMPDIR/voice-verify.json`.
 
+Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists every entry point. A proof that covers only one of several entry points is incomplete.
+
 ## Launch
 
 1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server:
