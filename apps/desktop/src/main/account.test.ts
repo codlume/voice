@@ -342,10 +342,10 @@ describe("createAccount", () => {
     ];
     for (const end of endings) {
       const h = harness();
-      let loaded!: (client: AuthClient) => void;
+      let loaded!: (client: typeof h.fake.client) => void;
       h.createClient.mockImplementationOnce(
         () =>
-          new Promise<AuthClient>((resolve) => {
+          new Promise<typeof h.fake.client>((resolve) => {
             loaded = resolve;
           }),
       );
@@ -354,7 +354,7 @@ describe("createAccount", () => {
       expect(h.state).toEqual({ kind: "signingIn" });
       await end(h);
       expect(h.state).toEqual({ kind: "signedOut" });
-      loaded(h.client);
+      loaded(h.fake.client);
       await flush();
       expect(h.requests).toEqual([]);
       await signIn;
