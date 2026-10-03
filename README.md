@@ -81,7 +81,7 @@ The Deploy website workflow deploys the site when a push to `main` changes `apps
 
 `apps/api` is the Voice API. It is a Hono app on Cloudflare Workers with a D1 database. It serves `/health` for now.
 
-To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file.
+To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file. Until Google sign-in lands, nothing reads them, so placeholder values are enough.
 
 ```sh
 BETTER_AUTH_SECRET=...
