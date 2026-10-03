@@ -29,7 +29,12 @@ import {
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { authSessionStored } from "./account-storage.ts";
-import { createAccount, resolveApiUrl } from "./account.ts";
+import {
+  SIGN_IN_TIMEOUT_MS,
+  callbackUrlFromArgv,
+  createAccount,
+  resolveApiUrl,
+} from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -97,8 +102,8 @@ function readLoginItem(): LoginItem {
 
 const preload = NodePath.join(__dirname, "preload.cjs");
 
-// macOS delivers a launch by URL only to a listener that exists before ready. The account module
-// takes over once main() has built it; a URL that arrives earlier is dropped.
+// macOS delivers a launch by URL only to a listener that exists before ready. main() points this
+// at the account module synchronously, before any event can arrive.
 let handleCallbackUrl: (url: string) => void = () => {};
 app.on("open-url", (event, url) => {
   event.preventDefault();
@@ -192,6 +197,12 @@ async function main() {
           ...(testMode && { signInUrlFile: NodePath.join(userData, "sign-in-url.txt") }),
         }),
       ),
+    canSignIn: () => !restarting(),
+    // Test mode only, so the verify skill can watch a timeout without waiting ten minutes.
+    signInTimeoutMs:
+      testMode && process.env.VOICE_SIGN_IN_TIMEOUT_MS
+        ? Number(process.env.VOICE_SIGN_IN_TIMEOUT_MS)
+        : SIGN_IN_TIMEOUT_MS,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
     log: (message, entry) => log(message, entry),
   });
@@ -497,9 +508,12 @@ async function main() {
     }
   });
 
+  function restarting() {
+    return lifecycle !== "running" || store.state.updates.status.kind === "installing";
+  }
+
   function assertNotRestarting() {
-    if (lifecycle !== "running" || store.state.updates.status.kind === "installing")
-      throw new Error("Voice is restarting.");
+    if (restarting()) throw new Error("Voice is restarting.");
   }
 
   async function updateSettings(patch: SettingsPatch) {
@@ -602,17 +616,22 @@ async function main() {
   ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
     copyLast(which === "raw" ? "raw" : "text");
   });
-  ipcMain.handle(Channel.signIn, () => {
-    assertNotRestarting();
-    return account.signIn();
-  });
+  ipcMain.handle(Channel.signIn, () => account.signIn());
   ipcMain.handle(Channel.submitSignInCode, (_event, code: unknown) =>
     account.submitSignInCode(typeof code === "string" ? code : ""),
   );
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
 
-  app.on("second-instance", showHub);
+  // Voice's own lock hands over a second copy's command line, which carries the callback URL
+  // when the browser launched that copy.
+  app.on("second-instance", (_event, argv) => {
+    const url = callbackUrlFromArgv(argv);
+    if (url) account.handleCallbackUrl(url);
+    showHub();
+  });
+  // A returning browser brings Voice to the front. A launch by URL shows the hub anyway.
+  app.on("open-url", showHub);
   app.on("activate", showHub);
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});

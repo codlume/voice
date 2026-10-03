@@ -10,8 +10,14 @@ export const API_URLS: Record<UpdateChannel, string | null> = {
 
 export const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 export const PASTE_CODE_MESSAGE = "Paste the whole code shown in the browser.";
-export const OPEN_BROWSER_FAILED_MESSAGE = "Could not open your browser to sign in. Try again.";
-export const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Try again.";
+// The error row adds "Retry to sign in again.", so these name only what went wrong.
+export const SIGN_IN_ERRORS = {
+  browser: "Could not open your browser to sign in.",
+  offline: "Could not reach the Voice server. Check your connection.",
+  rejected: "The Voice server did not accept this sign-in.",
+  interrupted: "Sign-in was interrupted.",
+} as const;
+export const RESTARTING_MESSAGE = "Voice is restarting. Sign in after it reopens.";
 export const STALE_CODE_MESSAGE =
   "That code is from an earlier sign-in. Paste the code shown in the browser now.";
 export const AUTH_SESSION_ENDED_MESSAGE = "Your sign-in expired or was revoked.";
@@ -19,7 +25,7 @@ export const AUTH_SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 export type Identity = { name: string; email: string };
 
-/** `offline` is a failed fetch; `rejected` is the API refusing the code. #130 shows them apart. */
+/** `offline` is a failed fetch; `rejected` is the API refusing the code. */
 export type RedeemResult =
   | { kind: "signedIn"; name: string; email: string }
   | { kind: "offline" | "rejected"; error: unknown };
@@ -134,6 +140,11 @@ export function parseCallbackUrl(url: string): SignInCode | null {
   return parseSignInCode(parsed.hash.slice("#token=".length));
 }
 
+/** A second copy of Voice hands its command line to the first; this finds a callback URL in it. */
+export function callbackUrlFromArgv(argv: readonly string[]): string | undefined {
+  return argv.find((arg) => arg.startsWith(`${VOICE_URL_SCHEME}:`));
+}
+
 // One sign-in attempt. The client promise and the timer exist exactly while signing in, so a
 // late callback, a stale timer or a result from an older attempt has nothing to land on. The
 // plugin keeps every attempt's verifier, so the attempt also remembers its own OAuth state and
@@ -157,6 +168,8 @@ export function createAccount({
   hasStoredAuthSession,
   checkIntervalMs = AUTH_SESSION_CHECK_INTERVAL_MS,
   createClient,
+  canSignIn,
+  signInTimeoutMs,
   onChange,
   log,
 }: {
@@ -165,6 +178,9 @@ export function createAccount({
   hasStoredAuthSession: () => boolean;
   checkIntervalMs?: number;
   createClient: (apiUrl: string) => Promise<AuthClient>;
+  /** False while Voice quits or installs an update, either of which loses the PKCE verifier. */
+  canSignIn: () => boolean;
+  signInTimeoutMs: number;
   onChange: (state: AccountState) => void;
   log: Log;
 }) {
@@ -206,14 +222,14 @@ export function createAccount({
   // For a check after an await, where TS still has `state` narrowed by signIn's entry check.
   const ended = (attempt: Attempt) => state !== attempt;
 
-  function failed(attempt: number, error: unknown, message: string) {
+  function failed(attempt: number, error: unknown, failure: "browser" | "offline" | "rejected") {
     if (state.kind !== "signingIn" || state.attempt !== attempt) return;
     log("account sign-in failed", {
       message: "account sign-in failed",
       level: "warn",
-      attributes: { "error.type": errorType(error) },
+      attributes: { "error.type": errorType(error), "account.failure": failure },
     });
-    leave(attempt, { kind: "error", message });
+    leave(attempt, { kind: "error", message: SIGN_IN_ERRORS[failure] });
   }
 
   /** Redeems a code for the attempt; returns false when the code is not this attempt's. */
@@ -236,7 +252,7 @@ export function createAccount({
     if (result.kind === "signedIn") {
       leave(current.attempt, { kind: "signedIn", name: result.name, email: result.email });
     } else {
-      failed(current.attempt, result.error, SIGN_IN_FAILED_MESSAGE);
+      failed(current.attempt, result.error, result.kind);
     }
     return true;
   }
@@ -330,12 +346,13 @@ export function createAccount({
         return;
       }
       abortCheck();
+      if (!canSignIn()) throw new Error(RESTARTING_MESSAGE);
       attempts += 1;
       const attempt = attempts;
       const timer = setTimeout(() => {
         log("account sign-in timed out", { message: "account sign-in timed out", level: "warn" });
         leave(attempt, { kind: "signedOut" });
-      }, SIGN_IN_TIMEOUT_MS);
+      }, signInTimeoutMs);
       timer.unref();
       const client = loadClient(apiUrl);
       const current: Attempt = {
@@ -353,7 +370,7 @@ export function createAccount({
         if (ended(current)) return;
         current.oauthState = (await opened.openBrowser()).state;
       } catch (error) {
-        failed(attempt, error, OPEN_BROWSER_FAILED_MESSAGE);
+        failed(attempt, error, "browser");
       }
     },
     async submitSignInCode(value: string) {
@@ -371,11 +388,18 @@ export function createAccount({
         log("account: malformed callback URL");
         return;
       }
-      if (state.kind !== "signingIn") {
-        log(`account: callback ignored while ${state.kind}`);
+      if (state.kind === "signingIn") {
+        void complete(state, code);
         return;
       }
-      void complete(state, code);
+      // This process never started a sign-in, so the browser finished one that a quit or an
+      // update restart cut short. Its verifier died with that process.
+      if (attempts === 0 && state.kind === "signedOut") {
+        log("account: sign-in was interrupted");
+        publish({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
+        return;
+      }
+      log(`account: callback ignored while ${state.kind}`);
     },
     cancelSignIn() {
       if (state.kind === "signingIn") leave(state.attempt, { kind: "signedOut" });
