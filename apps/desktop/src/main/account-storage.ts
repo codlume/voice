@@ -32,3 +32,8 @@ export function authSessionStored(userData: string, channel: UpdateChannel): boo
     );
   return typeof cookie === "string" && cookie !== "";
 }
+
+/** Whether the other channel's build left an auth session here, for the separate-accounts note. */
+export function otherChannelSignedIn(userData: string, installedChannel: UpdateChannel): boolean {
+  return authSessionStored(userData, installedChannel === "stable" ? "nightly" : "stable");
+}

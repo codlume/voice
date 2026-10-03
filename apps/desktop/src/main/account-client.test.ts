@@ -17,7 +17,7 @@ import { storage } from "@better-auth/electron/storage";
 
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { authSessionStored, authStorageKeys } from "./account-storage.ts";
+import { authSessionStored, authStorageKeys, otherChannelSignedIn } from "./account-storage.ts";
 
 // The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
 // stand-in, so the test never touches the login Keychain.
@@ -270,5 +270,20 @@ describe("authSessionStored", () => {
     expect(authSessionStored(userData, "nightly")).toBe(false);
     rmSync(NodePath.join(userData, "config.json"));
     expect(authSessionStored(userData, "nightly")).toBe(false);
+  });
+});
+
+describe("otherChannelSignedIn", () => {
+  test.each([
+    ["stable", "nightly"],
+    ["nightly", "stable"],
+  ] as const)("a %s build sees the auth session %s stored", (installed, other) => {
+    const { userData } = electron.state;
+    storeCookie(installed);
+    expect(otherChannelSignedIn(userData, installed)).toBe(false);
+    storeCookie(other);
+    expect(otherChannelSignedIn(userData, installed)).toBe(true);
+    storeCookie(other, null);
+    expect(otherChannelSignedIn(userData, installed)).toBe(false);
   });
 });
