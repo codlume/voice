@@ -60,7 +60,7 @@ describe("/health", () => {
 });
 
 describe("errors", () => {
-  it("return a generic 500 with security headers and log one line without the URL, message or client request id (catches leaking details)", async () => {
+  it("return a generic 500 with security headers and the logged request id, and log one line without the URL, message or client request id (catches leaking details and errors nobody can trace)", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await app.fetch(
@@ -84,6 +84,7 @@ describe("errors", () => {
     expect(entry).toMatchObject({ route: "/boom/:id", status: 500, error: "Error" });
     expect(entry.requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(entry.requestId).not.toBe("client-supplied-id");
+    expect(response.headers.get("X-Request-Id")).toBe(entry.requestId);
     expect(line).not.toContain("user-7731");
     expect(line).not.toContain("query-secret");
     expect(line).not.toContain("secret detail");
