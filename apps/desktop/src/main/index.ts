@@ -411,8 +411,9 @@ async function main() {
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
-    // Restore loads Better Auth and reads the Keychain, so it waits for the first frame.
-    hub.once("ready-to-show", () => void account.restore());
+    // Restore loads Better Auth and reads the Keychain, so it waits until the window has loaded.
+    // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
+    hub.webContents.once("did-finish-load", () => void account.restore());
     loadPage(hub, "hub");
     return hub;
   }
