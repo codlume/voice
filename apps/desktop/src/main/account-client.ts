@@ -53,8 +53,21 @@ export function createVoiceAuthClient({
     signInURL: apiUrl,
     storagePrefix: prefix,
     storage: store,
+    // The plugin would cache every get-session body, a captive portal's HTML included, and never
+    // reads it back. Voice keeps its own copy of the last validated identity instead.
+    disableCache: true,
     userImageProxy: { enabled: false },
   }) as ElectronPlugin;
+  const identityKey = `${prefix}.identity`;
+  // Encrypted like the plugin's own items. Without encryption nothing is written, so the
+  // identity, like the auth session, lasts only until quit.
+  const saveIdentity = (user: Identity) => {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    store.setItem(identityKey, safeStorage.encryptString(JSON.stringify(user)).toString("base64"));
+  };
+  // The get-session in flight, aborted before a sign-in redeems a code, so that a stale answer
+  // cannot overwrite the new auth session's cookie or identity.
+  let check: AbortController | null = null;
   const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
   // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
@@ -77,6 +90,7 @@ export function createVoiceAuthClient({
       return { state };
     },
     redeem: async (code): Promise<RedeemResult> => {
+      check?.abort();
       try {
         // With `throw: true` the plugin resolves to the token endpoint's body, not the
         // `{ data, error }` pair its typings declare.
@@ -84,22 +98,20 @@ export function createVoiceAuthClient({
           await client.authenticate({ token: code, fetchOptions: { throw: true } }),
         );
         if (user === null) throw new Error("The sign-in response carried no user.");
-        // The plugin caches the identity only from `get-session`, and an offline launch restores
-        // from that cache.
-        void client.getSession().catch(() => {});
+        saveIdentity(user);
         return { kind: "signedIn", ...user };
       } catch (error) {
         // fetch rejects with a TypeError when the network fails; anything else came from the API.
         return { kind: error instanceof TypeError ? "offline" : "rejected", error };
       }
     },
-    // The plugin writes this cache on every `get-session` but never reads it back. Like its own
-    // storage adapter, it stores base64 of safeStorage ciphertext.
     cachedUser: () => {
-      const stored = store.getItem(`${prefix}.local_cache`);
+      const stored = store.getItem(identityKey);
       if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
       try {
-        return userOf(JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))));
+        return userOf({
+          user: JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
+        });
       } catch {
         return null;
       }
@@ -110,11 +122,15 @@ export function createVoiceAuthClient({
       if (!safeStorage.isEncryptionAvailable() && client.getCookie() === "") {
         return { kind: "unknown", status: 0 };
       }
+      const controller = new AbortController();
+      check = controller;
       let result: Awaited<ReturnType<typeof client.getSession>>;
       try {
-        result = await client.getSession();
+        result = await client.getSession({ fetchOptions: { signal: controller.signal } });
       } catch (error) {
         return { kind: "unreachable", error };
+      } finally {
+        if (check === controller) check = null;
       }
       const { data, error } = result;
       if (error) {
@@ -126,11 +142,13 @@ export function createVoiceAuthClient({
       if (data === null) return { kind: "ended", status: 200 };
       // A captive portal's HTML page also arrives as a 200, with a string for data.
       const user = userOf(data);
-      return user ? { kind: "active", user } : { kind: "unknown", status: 200 };
+      if (user === null) return { kind: "unknown", status: 200 };
+      if (!controller.signal.aborted) saveIdentity(user);
+      return { kind: "active", user };
     },
     forget: () => {
       store.setItem(`${prefix}.cookie`, null);
-      store.setItem(`${prefix}.local_cache`, null);
+      store.setItem(identityKey, null);
     },
   };
 }

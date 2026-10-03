@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -42,6 +42,7 @@ vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
 
 const API = { stable: "https://api.example.com", nightly: "https://api-nightly.example.com" };
 const USER = { name: "Ada Lovelace", email: "ada@example.com" };
+const GRACE = { name: "Grace Hopper", email: "grace@example.com" };
 
 type Sent = { url: string; cookie: string | null };
 let sent: Sent[] = [];
@@ -52,9 +53,9 @@ const json = (body: unknown, init: ResponseInit = {}) =>
     ...init,
     headers: { "content-type": "application/json", ...init.headers },
   });
-const signedIn = (token: string) =>
+const signedIn = (token: string, user = USER) =>
   json(
-    { session: { token }, user: USER },
+    { session: { token }, user },
     { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
   );
 const client = (channel: UpdateChannel) =>
@@ -74,7 +75,10 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
     const request = new Request(input, init);
     sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
-    return answer(request.url);
+    return new Promise<Response>((resolve, reject) => {
+      request.signal.addEventListener("abort", () => reject(request.signal.reason));
+      Promise.resolve(answer(request.url)).then(resolve, reject);
+    });
   });
 });
 afterEach(() => {
@@ -82,7 +86,75 @@ afterEach(() => {
   rmSync(electron.state.userData, { recursive: true, force: true });
 });
 
+const config = () => readFileSync(NodePath.join(electron.state.userData, "config.json"), "utf8");
+const storedIdentity = (channel: UpdateChannel) =>
+  (JSON.parse(config()) as Record<string, Record<string, Record<string, unknown>>>).voice?.[channel]
+    ?.identity;
+
+/** Plays a whole sign-in: the browser opens, then the landing page's code is redeemed. */
+async function signIn(auth: ReturnType<typeof client>) {
+  const { state } = await auth.openBrowser();
+  const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
+  return auth.redeem(code);
+}
+
 describe("createVoiceAuthClient", () => {
+  test("stores the identity before a sign-in reports success, so an offline restart restores it", async () => {
+    answer = (url) =>
+      url.endsWith("/electron/token")
+        ? signedIn("token-1")
+        : Promise.reject(new TypeError("fetch failed"));
+    expect(await signIn(client("nightly"))).toEqual({ kind: "signedIn", ...USER });
+    expect(sent.map(({ url }) => new URL(url).pathname)).toEqual(["/api/auth/electron/token"]);
+
+    expect(typeof storedIdentity("nightly")).toBe("string");
+    expect(config()).not.toContain(USER.email);
+    const restarted = client("nightly");
+    expect(restarted.cachedUser()).toEqual(USER);
+    expect(await restarted.checkAuthSession()).toMatchObject({ kind: "unreachable" });
+    expect(client("nightly").cachedUser()).toEqual(USER);
+  });
+
+  test.each([
+    [
+      "a captive portal page",
+      () => new Response("<html>Wi-Fi</html>", { headers: { "content-type": "text/html" } }),
+    ],
+    ["a 503", () => json({ error: "down" }, { status: 503 })],
+    ["a JSON body without a user", () => json({ ok: true })],
+  ])("%s never replaces the stored identity", async (_name, respond) => {
+    answer = () => signedIn("token-1");
+    await client("nightly").checkAuthSession();
+    const before = storedIdentity("nightly");
+
+    answer = respond;
+    expect(await client("nightly").checkAuthSession()).toMatchObject({ kind: "unknown" });
+    expect(storedIdentity("nightly")).toBe(before);
+    expect(client("nightly").cachedUser()).toEqual(USER);
+  });
+
+  test("a check still in flight cannot overwrite a sign-in that lands meanwhile", async () => {
+    answer = () => signedIn("old-token");
+    const auth = client("nightly");
+    await auth.checkAuthSession();
+
+    const revoked = Promise.withResolvers<Response>();
+    answer = (url) =>
+      url.endsWith("/get-session") ? revoked.promise : signedIn("new-token", GRACE);
+    const stale = auth.checkAuthSession();
+    expect(await signIn(auth)).toEqual({ kind: "signedIn", ...GRACE });
+    // The server ended the old auth session, and its late answer clears the cookie.
+    revoked.resolve(
+      json(null, { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } }),
+    );
+    expect(await stale).toMatchObject({ kind: "unreachable" });
+
+    expect(client("nightly").cachedUser()).toEqual(GRACE);
+    answer = () => signedIn("new-token", GRACE);
+    expect(await client("nightly").checkAuthSession()).toEqual({ kind: "active", user: GRACE });
+    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+  });
+
   test("keeps each channel's auth session for its own API", async () => {
     answer = (url) => (url.startsWith(API.stable) ? signedIn("stable-token") : json(null));
     const stable = client("stable");
