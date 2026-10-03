@@ -10,6 +10,7 @@ import {
   client,
   snapshotAccount,
   signInCode,
+  requests,
 } from "./account-client.test-harness.ts";
 import { expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
@@ -17,8 +18,6 @@ import { authSessionStored, authStorageKeys } from "./account-storage.ts";
 
 const legacyUser = { name: USER.name, email: USER.email };
 const keys = authStorageKeys("nightly");
-const requests = () =>
-  http.sent.map(({ url, cookie: requestCookie }) => [new URL(url).pathname, requestCookie]);
 
 async function legacyAccount() {
   await signedInClient();
@@ -80,9 +79,7 @@ test.each([USER, GRACE])(
       ...USER,
       deletion: { kind: "reauthRequired" },
     });
-    expect(
-      http.sent.map(({ url, cookie: requestCookie }) => [new URL(url).pathname, requestCookie]),
-    ).toEqual([
+    expect(requests()).toEqual([
       ["/api/auth/get-session", "better-auth.session_token=old-token"],
       ["/api/auth/delete-user", "better-auth.session_token=old-token"],
     ]);

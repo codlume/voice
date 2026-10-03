@@ -15,18 +15,23 @@ import {
   expectNoSecrets,
 } from "./account.test-harness.ts";
 
-/** Confirms, then answers the check of which account the stored cookie belongs to. */
-async function confirmDeletion(h: ReturnType<typeof harness>, user = USER) {
+/**
+ * Confirms and answers the check of which account the stored cookie belongs to. The deletion's
+ * own promise is returned unawaited, so a test can answer the deletion request in between.
+ */
+async function confirmAsCookieOwner(h: ReturnType<typeof harness>, user = USER) {
+  const asked = h.checks.length;
   const done = h.account.confirmDeletion();
   await flush();
-  h.checks.at(-1)?.answer({ kind: "active", user });
+  expect(h.checks).toHaveLength(asked + 1);
+  h.checks[asked]?.answer({ kind: "active", user });
   await flush();
   return { done };
 }
 
 async function staleDeletion(h: Awaited<ReturnType<typeof signedIn>>, revoke: () => Promise<void>) {
   h.account.requestDeletion();
-  const { done: deleting } = await confirmDeletion(h);
+  const { done: deleting } = await confirmAsCookieOwner(h);
   h.fake.revocations.mockImplementation(revoke);
   h.fake.deletions[0]?.answer({ kind: "reauthRequired" });
   await deleting;
@@ -56,7 +61,7 @@ describe("account deletion through the snapshot", () => {
     });
     h.account.requestDeletion();
     expect(h.checks[0]?.signal.aborted).toBe(true);
-    const { done: deleting } = await confirmDeletion(h);
+    const { done: deleting } = await confirmAsCookieOwner(h);
     h.fake.deletions[0]?.answer({ kind: "deleted" });
     await deleting;
     h.checks[0]?.answer({ kind: "active", user: USER });
@@ -97,7 +102,7 @@ describe("account deletion through the snapshot", () => {
     // A fresh confirmation names the account the cookie belongs to.
     h.account.requestDeletion();
     expect(h.state).toEqual({ kind: "signedIn", ...other, deletion: { kind: "confirming" } });
-    const { done: retried } = await confirmDeletion(h, other);
+    const { done: retried } = await confirmAsCookieOwner(h, other);
     h.fake.deletions[0]?.answer({ kind: "deleted" });
     await retried;
     expect(h.state).toEqual({ kind: "signedOut" });
@@ -119,7 +124,7 @@ describe("account deletion through the snapshot", () => {
   test("only a successful deletion forgets the local auth session and shows signed out", async () => {
     const h = await signedIn();
     h.account.requestDeletion();
-    const { done: deleting } = await confirmDeletion(h);
+    const { done: deleting } = await confirmAsCookieOwner(h);
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "deleting" } });
     await h.account.confirmDeletion();
     h.account.cancelDeletion();
@@ -136,7 +141,7 @@ describe("account deletion through the snapshot", () => {
     async (kind) => {
       const h = await signedIn();
       h.account.requestDeletion();
-      const { done: deleting } = await confirmDeletion(h);
+      const { done: deleting } = await confirmAsCookieOwner(h);
       h.fake.deletions[0]?.answer({ kind });
       await deleting;
       expect(h.state).toMatchObject({
@@ -151,7 +156,7 @@ describe("account deletion through the snapshot", () => {
       expect(h.fake.forgotten).toBe(1);
       await h.account.retryDeletion();
       expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
-      const { done: retry } = await confirmDeletion(h);
+      const { done: retry } = await confirmAsCookieOwner(h);
       h.fake.deletions[1]?.answer({ kind: "deleted" });
       await retry;
       expect(h.state).toEqual({ kind: "signedOut" });

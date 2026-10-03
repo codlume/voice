@@ -47,6 +47,9 @@ export type RedeemResult =
 
 export type DeleteAccountResult = { kind: "deleted" | "reauthRequired" | "failed" | "offline" };
 
+/** What confirming a deletion came to: the API's answer, or a cookie that is another account's. */
+type DeletionOutcome = DeleteAccountResult | { kind: "otherAccount"; user: Identity };
+
 /** What the module needs from the Better Auth Electron client. The adapter owns the plugin details. */
 export type AuthClient = {
   /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
@@ -373,20 +376,32 @@ export function createAccount({
       if (current.resumeAs === null) {
         leave(current.attempt, { kind: "signedIn", ...user });
       } else {
-        const next: SignedInState =
-          user.id === current.resumeAs.id
-            ? { kind: "signedIn", ...user, deletion: { kind: "revoking" } }
-            : {
-                kind: "signedIn",
-                ...user,
-                notice: `You signed in as ${user.email}, so Voice did not delete ${current.resumeAs.email}.`,
-              };
+        const next: SignedInState = sameAccount(current.resumeAs, user)
+          ? { kind: "signedIn", ...user, deletion: { kind: "revoking" } }
+          : {
+              kind: "signedIn",
+              ...user,
+              notice: `You signed in as ${user.email}, so Voice did not delete ${current.resumeAs.email}.`,
+            };
         leave(current.attempt, next);
         if (state === next) await revokeOlderAuthSession(next);
       }
     } else {
       failed(current.attempt, result.error, result.kind);
     }
+  }
+
+  // One bounded get-session for a decision. Null when a sign-out, a sign-in or dispose aborted
+  // it; past the deadline, unreachable.
+  async function askAuthSession(client: AuthClient): Promise<AuthSessionCheck | null> {
+    const controller = new AbortController();
+    abortCheck();
+    checking = controller;
+    const deadline = AbortSignal.timeout(30_000);
+    const answer = await client.checkAuthSession(AbortSignal.any([controller.signal, deadline]));
+    if (checking === controller) checking = null;
+    if (controller.signal.aborted) return null;
+    return deadline.aborted ? { kind: "unreachable", error: deadline.reason } : answer;
   }
 
   // A result lands only on the state it was started from, so a sign-in or a sign-out while the
@@ -579,72 +594,48 @@ export function createAccount({
       let user = identityOf(state);
       const deleting: SignedInState = { kind: "signedIn", ...user, deletion: { kind: "deleting" } };
       publish(deleting);
-      let result: DeleteAccountResult;
-      let client: AuthClient;
+      let outcome: DeletionOutcome;
       try {
-        client = await loadClient(apiUrl);
+        const client = await loadClient(apiUrl);
         if (state !== deleting) return;
         // The API deletes whichever account the stored cookie belongs to, and the cached identity
         // can be another account's. The cookie's account is asked for and must be the confirmed one.
-        const controller = new AbortController();
-        abortCheck();
-        checking = controller;
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
-        const answer = await client.checkAuthSession(signal);
-        if (checking === controller) checking = null;
-        if (state !== deleting || controller.signal.aborted) return;
-        if (answer.kind !== "active" || signal.aborted) {
-          publish({
-            kind: "signedIn",
-            ...user,
-            deletion: {
-              kind: "failed",
-              message:
-                answer.kind === "unreachable" || signal.aborted
-                  ? DELETE_ACCOUNT_OFFLINE_MESSAGE
-                  : DELETE_ACCOUNT_FAILED_MESSAGE,
-            },
-          });
-          return;
+        const answer = await askAuthSession(client);
+        if (state !== deleting || answer === null) return;
+        if (answer.kind !== "active") {
+          outcome = { kind: answer.kind === "unreachable" ? "offline" : "failed" };
+        } else if (!sameAccount(user, answer.user)) {
+          outcome = { kind: "otherAccount", user: answer.user };
+        } else {
+          user = answer.user;
+          outcome = await client.deleteAccount();
+          if (outcome.kind === "deleted" && state === deleting) client.forget();
         }
-        if (!sameAccount(user, answer.user)) {
-          publish({
-            kind: "signedIn",
-            ...answer.user,
-            notice: `Voice is signed in as ${answer.user.email}, so it did not delete ${user.email}.`,
-          });
-          return;
-        }
-        user = answer.user;
-        result = await client.deleteAccount();
       } catch (error) {
         log("account deletion failed", {
           message: "account deletion failed",
           level: "warn",
           attributes: { "error.type": errorType(error) },
         });
-        if (state === deleting)
-          publish({
-            kind: "signedIn",
-            ...user,
-            deletion: { kind: "failed", message: DELETE_ACCOUNT_FAILED_MESSAGE },
-          });
-        return;
+        outcome = { kind: "failed" };
       }
       if (state !== deleting) return;
-      switch (result.kind) {
+      switch (outcome.kind) {
         case "deleted":
-          client.forget();
           publish({ kind: "signedOut" });
+          return;
+        case "otherAccount":
+          publish({
+            kind: "signedIn",
+            ...outcome.user,
+            notice: `Voice is signed in as ${outcome.user.email}, so it did not delete ${user.email}.`,
+          });
           return;
         case "reauthRequired":
           publish({
             kind: "signedIn",
             ...user,
-            deletion: {
-              kind: "reauthRequired",
-              message: DELETE_ACCOUNT_REAUTH_MESSAGE,
-            },
+            deletion: { kind: "reauthRequired", message: DELETE_ACCOUNT_REAUTH_MESSAGE },
           });
           return;
         case "failed":
@@ -655,14 +646,14 @@ export function createAccount({
             deletion: {
               kind: "failed",
               message:
-                result.kind === "offline"
+                outcome.kind === "offline"
                   ? DELETE_ACCOUNT_OFFLINE_MESSAGE
                   : DELETE_ACCOUNT_FAILED_MESSAGE,
             },
           });
           return;
         default: {
-          const exhaustive: never = result.kind;
+          const exhaustive: never = outcome;
           return exhaustive;
         }
       }

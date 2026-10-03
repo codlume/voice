@@ -95,6 +95,10 @@ afterEach(() => {
   rmSync(electron.state.userData, { recursive: true, force: true });
 });
 
+/** Each request so far as its path and Cookie header. */
+export const requests = () =>
+  http.sent.map(({ url, cookie }) => [new URL(url).pathname, cookie] as const);
+
 export const config = () =>
   readFileSync(NodePath.join(electron.state.userData, "config.json"), "utf8");
 export const storedIdentity = (channel: UpdateChannel) =>
