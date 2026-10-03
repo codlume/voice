@@ -42,7 +42,7 @@ export type AuthClient = {
   forget(): void;
   /** Queues a complete Cookie header for revocation without changing the active session. */
   queueServerSignOut(cookie: string): void;
-  /** Whether an active cookie remains after the adapter reconciles stored sign-outs. */
+  /** Whether local auth remains to check after the adapter reconciles stored sign-outs. */
   hasAuthSession(): boolean;
   /** Queues the active cookie before clearing its cookie and identity through forget. */
   retireAuthSession(): void;

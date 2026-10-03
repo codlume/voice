@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
+import { cookieNameRegex, getSessionCookie } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
@@ -31,6 +32,31 @@ function userOf(body: unknown): Identity | null {
     return { name: user.name, email: user.email };
   }
   return null;
+}
+
+// The plugin filters expired entries from request headers, but crash recovery needs their identity.
+function storedSessionToken(stored: unknown): string | null {
+  if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
+  try {
+    const parsed: unknown = JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64")));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const entries: [string, unknown][] = Object.entries(parsed);
+    const pairs: string[] = [];
+    for (const [name, cookie] of entries) {
+      if (
+        cookieNameRegex.test(name) &&
+        typeof cookie === "object" &&
+        cookie !== null &&
+        "value" in cookie &&
+        typeof cookie.value === "string"
+      ) {
+        pairs.push(`${name}=${encodeURIComponent(cookie.value)}`);
+      }
+    }
+    return getSessionCookie(new Headers({ cookie: pairs.join("; ") }));
+  } catch {
+    return null;
+  }
 }
 
 // The plugin's declared fetch hooks do not satisfy better-auth's own plugin type under
@@ -131,10 +157,20 @@ export function createVoiceAuthClient({
     client = makeClient();
   }
 
-  // A crash after enqueue but before forget leaves the same cookie in both keys. Retire it
-  // locally on launch; a different active cookie belongs to a newer sign-in and must survive.
-  if (serverSignOuts.length && (!client.getCookie() || serverSignOuts.includes(client.getCookie())))
-    forget();
+  // A crash after enqueue but before forget can leave its cookie or only its identity behind.
+  // A different stored credential belongs to a newer sign-in and must survive, even if expired.
+  if (serverSignOuts.length) {
+    const stored = store.getItem(keys.cookie);
+    const token = storedSessionToken(stored);
+    if (
+      stored === null ||
+      stored === "" ||
+      (token !== null &&
+        serverSignOuts.some((cookie) => getSessionCookie(new Headers({ cookie })) === token))
+    ) {
+      forget();
+    }
+  }
 
   // The plugin overwrites a supplied Cookie header and clears active storage on /sign-out.
   // Raw fetch keeps revocation of an old cookie separate from the current signed-in session.
@@ -268,7 +304,10 @@ export function createVoiceAuthClient({
     },
     forget,
     queueServerSignOut,
-    hasAuthSession: () => client.getCookie() !== "",
+    hasAuthSession: () => {
+      const stored = store.getItem(keys.cookie);
+      return (typeof stored === "string" && stored !== "") || client.getCookie() !== "";
+    },
     retireAuthSession: () => {
       queueServerSignOut(client.getCookie());
       forget();
