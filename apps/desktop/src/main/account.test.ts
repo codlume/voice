@@ -300,6 +300,34 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
+  test("cancel or timeout while the client is still loading never opens the browser", async () => {
+    const endings = [
+      (h: ReturnType<typeof harness>) => h.account.cancelSignIn(),
+      () => vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS),
+    ];
+    for (const end of endings) {
+      const h = harness();
+      let loaded!: (client: AuthClient) => void;
+      h.createClient.mockImplementationOnce(
+        () =>
+          new Promise<AuthClient>((resolve) => {
+            loaded = resolve;
+          }),
+      );
+      const signIn = h.account.signIn();
+      await flush();
+      expect(h.state).toEqual({ kind: "signingIn" });
+      await end(h);
+      expect(h.state).toEqual({ kind: "signedOut" });
+      loaded(h.client);
+      await flush();
+      expect(h.requests).toEqual([]);
+      await signIn;
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expectNoSecrets(h);
+    }
+  });
+
   test("a callback with nothing pending is ignored", async () => {
     const h = harness();
     h.account.handleCallbackUrl(callbackUrl(CODE));
