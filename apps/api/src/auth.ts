@@ -2,7 +2,7 @@ import { electron } from "@better-auth/electron";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import { and, eq, lt, notExists, sql } from "drizzle-orm";
+import { and, eq, lt, notExists } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./auth-schema.ts";
 
@@ -10,8 +10,9 @@ import * as schema from "./auth-schema.ts";
 // row, and a deletion removes the account rows and then the user row. D1 failing in between leaves
 // a user row with no account, and with linking off every later Google sign-in for that email ends
 // in account_not_linked. Each Google callback first deletes such rows, so the next sign-in starts
-// over with a fresh user. The grace period keeps a first sign-in in flight, between its two
-// writes, safe: a request lives for seconds, and a D1 statement gives up after 30 s.
+// over with a fresh user. The grace period spares a first sign-in still between its two writes:
+// a D1 statement gives up after 30 s, and the work between them takes milliseconds. A sweep that
+// did catch one would only fail that attempt's account insert, and the retry starts over.
 const userWithoutAccountGraceMs = 60_000;
 
 // Every setting that needs no Worker binding. The schema generator (auth.cli.ts) reads the same
@@ -37,17 +38,16 @@ export const authOptions = {
 export function createAuth(env: Env) {
   const db = drizzle(env.DB, { schema });
   const sweepUsersWithoutAccount = () =>
-    db.delete(schema.user).where(
-      and(
-        lt(schema.user.createdAt, new Date(Date.now() - userWithoutAccountGraceMs)),
-        notExists(
-          db
-            .select({ one: sql`1` })
-            .from(schema.account)
-            .where(eq(schema.account.userId, schema.user.id)),
+    db
+      .delete(schema.user)
+      .where(
+        and(
+          lt(schema.user.createdAt, new Date(Date.now() - userWithoutAccountGraceMs)),
+          notExists(
+            db.select().from(schema.account).where(eq(schema.account.userId, schema.user.id)),
+          ),
         ),
-      ),
-    );
+      );
   return betterAuth({
     ...authOptions,
     baseURL: env.BETTER_AUTH_URL,
