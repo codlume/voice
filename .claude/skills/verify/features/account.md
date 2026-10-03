@@ -33,7 +33,7 @@ To film a flow, start `vv record account-sign-in` in the background first, and `
 
 ## Gotchas
 
-- These recipes were written before their first live run. Record what differs when you run them.
+- Every recipe above ran against the real app on 2026-10-03 (paste path, callback path, cancel, malformed paste, error). `vv` is a shell function or a spelled-out command; zsh does not split a `$VV` variable into words.
 - The verify Worker must be migrated and must listen on the port in `VOICE_API_URL`. When 8787 is taken, run `pnpm --filter @voice/api dev:verify --port 8797 --var BETTER_AUTH_URL:http://localhost:8797` and launch with `VOICE_API_URL=http://localhost:8797`.
 - `browser` consumes the pending sign-in URL and deletes `sign-in-url.txt`. Click `Sign in with Google` again before the next `browser`.
 - A rejected code consumes the PKCE verifier, so after an error, `Retry` starts a new sign-in. An old code never works again.
