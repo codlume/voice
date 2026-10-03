@@ -238,7 +238,7 @@ describe("createAccount", () => {
       );
       const signIn = h.account.signIn();
       await flush();
-      expect(h.state).toEqual({ kind: "signingIn" });
+      expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
       await end(h);
       expect(h.state).toEqual({ kind: "signedOut" });
       loaded(h.fake.client);
