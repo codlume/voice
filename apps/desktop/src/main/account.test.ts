@@ -815,6 +815,22 @@ describe("restore", () => {
     expect(h.states).toEqual([]);
   });
 
+  test("a sign-in after a failed restore clears the stored auth session, so a quit reads as interrupted", async () => {
+    const before = harness({ hasStoredAuthSession: withStoredAuthSession });
+    before.fake.setCached(null);
+    const restored = await restore(before);
+    before.checks[0]?.answer({ kind: "unreachable", error: new TypeError("fetch failed") });
+    await restored.done;
+    expect(before.state).toEqual({ kind: "signedOut" });
+    await startSignIn(before);
+    expect(before.fake.forgotten).toBe(1);
+
+    // Voice quits while signing in; the next launch sees what the sign-in left in storage.
+    const after = harness({ hasStoredAuthSession: () => before.fake.forgotten === 0 });
+    expect(after.account.handleCallbackUrl(callbackUrl(CODE))).toBe("interrupted");
+    expect(after.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
+  });
+
   test("a callback before restore leaves a stored auth session to restore", async () => {
     const h = harness({ hasStoredAuthSession: withStoredAuthSession });
     expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("ignored");
