@@ -854,7 +854,10 @@ describe("deletion through the real auth client", () => {
       const auth = await signedInClient();
       const h = snapshotAccount(auth);
       await h.account.restore();
-      http.answer = () => json({ code: "SESSION_EXPIRED" }, { status: 400 });
+      http.answer = (url) =>
+        url.endsWith("/get-session")
+          ? json({ user: USER, session: { token: "old-token" } })
+          : json({ code: "SESSION_EXPIRED" }, { status: 400 });
       h.account.requestDeletion();
       await h.account.confirmDeletion();
       const code = await signInCode(h, auth);

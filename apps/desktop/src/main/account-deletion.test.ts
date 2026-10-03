@@ -15,10 +15,18 @@ import {
   expectNoSecrets,
 } from "./account.test-harness.ts";
 
+/** Confirms, then answers the check of which account the stored cookie belongs to. */
+async function confirmDeletion(h: ReturnType<typeof harness>, user = USER) {
+  const done = h.account.confirmDeletion();
+  await flush();
+  h.checks.at(-1)?.answer({ kind: "active", user });
+  await flush();
+  return { done };
+}
+
 async function staleDeletion(h: Awaited<ReturnType<typeof signedIn>>, revoke: () => Promise<void>) {
   h.account.requestDeletion();
-  const deleting = h.account.confirmDeletion();
-  await flush();
+  const { done: deleting } = await confirmDeletion(h);
   h.fake.revocations.mockImplementation(revoke);
   h.fake.deletions[0]?.answer({ kind: "reauthRequired" });
   await deleting;
@@ -48,8 +56,7 @@ describe("account deletion through the snapshot", () => {
     });
     h.account.requestDeletion();
     expect(h.checks[0]?.signal.aborted).toBe(true);
-    const deleting = h.account.confirmDeletion();
-    await flush();
+    const { done: deleting } = await confirmDeletion(h);
     h.fake.deletions[0]?.answer({ kind: "deleted" });
     await deleting;
     h.checks[0]?.answer({ kind: "active", user: USER });
@@ -69,6 +76,34 @@ describe("account deletion through the snapshot", () => {
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
   });
 
+  test("deletion asks the API whose account the cookie is and refuses any other account", async () => {
+    const h = await signedIn();
+    const other = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
+    h.account.requestDeletion();
+    const deleting = h.account.confirmDeletion();
+    await flush();
+    expect(h.fake.deletions).toEqual([]);
+    expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "deleting" } });
+    h.checks.at(-1)?.answer({ kind: "active", user: other });
+    await deleting;
+    expect(h.fake.deletions).toEqual([]);
+    expect(h.fake.forgotten).toBe(1);
+    expect(h.state).toEqual({
+      kind: "signedIn",
+      ...other,
+      notice: `Voice is signed in as ${other.email}, so it did not delete ${USER.email}.`,
+    });
+
+    // A fresh confirmation names the account the cookie belongs to.
+    h.account.requestDeletion();
+    expect(h.state).toEqual({ kind: "signedIn", ...other, deletion: { kind: "confirming" } });
+    const { done: retried } = await confirmDeletion(h, other);
+    h.fake.deletions[0]?.answer({ kind: "deleted" });
+    await retried;
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expectNoSecrets(h);
+  });
+
   test("requires confirmation and cancel sends no deletion request", async () => {
     const h = await signedIn();
     await h.account.confirmDeletion();
@@ -84,8 +119,7 @@ describe("account deletion through the snapshot", () => {
   test("only a successful deletion forgets the local auth session and shows signed out", async () => {
     const h = await signedIn();
     h.account.requestDeletion();
-    const deleting = h.account.confirmDeletion();
-    await flush();
+    const { done: deleting } = await confirmDeletion(h);
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "deleting" } });
     await h.account.confirmDeletion();
     h.account.cancelDeletion();
@@ -102,8 +136,7 @@ describe("account deletion through the snapshot", () => {
     async (kind) => {
       const h = await signedIn();
       h.account.requestDeletion();
-      const deleting = h.account.confirmDeletion();
-      await flush();
+      const { done: deleting } = await confirmDeletion(h);
       h.fake.deletions[0]?.answer({ kind });
       await deleting;
       expect(h.state).toMatchObject({
@@ -118,8 +151,7 @@ describe("account deletion through the snapshot", () => {
       expect(h.fake.forgotten).toBe(1);
       await h.account.retryDeletion();
       expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
-      const retry = h.account.confirmDeletion();
-      await flush();
+      const { done: retry } = await confirmDeletion(h);
       h.fake.deletions[1]?.answer({ kind: "deleted" });
       await retry;
       expect(h.state).toEqual({ kind: "signedOut" });

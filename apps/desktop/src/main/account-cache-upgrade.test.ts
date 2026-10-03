@@ -17,6 +17,8 @@ import { authSessionStored, authStorageKeys } from "./account-storage.ts";
 
 const legacyUser = { name: USER.name, email: USER.email };
 const keys = authStorageKeys("nightly");
+const requests = () =>
+  http.sent.map(({ url, cookie: requestCookie }) => [new URL(url).pathname, requestCookie]);
 
 async function legacyAccount() {
   await signedInClient();
@@ -55,8 +57,11 @@ test.each([USER, GRACE])(
     let oldEnded = false;
     http.sent = [];
     http.answer = (url) => {
-      if (url.endsWith("/get-session"))
+      if (url.endsWith("/get-session")) {
+        if (http.sent.at(-1)?.cookie === "better-auth.session_token=new-token")
+          return json({ user: nextUser, session: { token: "new-token" } });
         return oldEnded ? json(null) : json({ user: USER, session: { token: "old-token" } });
+      }
       if (url.endsWith("/electron/token")) return signedIn("new-token", nextUser);
       if (url.endsWith("/sign-out")) {
         oldEnded = true;
@@ -103,6 +108,52 @@ test.each([USER, GRACE])(
     h.account.dispose();
   },
 );
+
+test("deletion refuses a cached identity the cookie does not belong to and shows the cookie's account", async () => {
+  http.answer = () => signedIn("beta-token", GRACE);
+  await client("nightly").checkAuthSession(new AbortController().signal);
+  // What a late answer from a cancelled sign-in wrote before exchanges were fenced.
+  storage().setItem(
+    keys.identity,
+    electron.api.safeStorage.encryptString(JSON.stringify(USER)).toString("base64"),
+  );
+  http.answer = () => {
+    throw new TypeError("offline");
+  };
+  const auth = client("nightly");
+  const h = snapshotAccount(auth);
+  await h.account.restore();
+  expect(h.state).toEqual({ kind: "signedIn", ...USER });
+
+  http.sent = [];
+  http.answer = (url) => {
+    if (url.endsWith("/get-session"))
+      return json({ user: GRACE, session: { token: "beta-token" } });
+    if (url.endsWith("/delete-user")) return json({ success: true, message: "User deleted" });
+    throw new Error("Unexpected auth endpoint");
+  };
+  h.account.requestDeletion();
+  await h.account.confirmDeletion();
+  expect(requests()).toEqual([["/api/auth/get-session", "better-auth.session_token=beta-token"]]);
+  expect(h.state).toEqual({
+    kind: "signedIn",
+    ...GRACE,
+    notice: `Voice is signed in as ${GRACE.email}, so it did not delete ${USER.email}.`,
+  });
+  expect(auth.cachedUser()).toEqual(GRACE);
+  expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+
+  h.account.requestDeletion();
+  await h.account.confirmDeletion();
+  expect(h.state).toEqual({ kind: "signedOut" });
+  expect(requests()).toEqual([
+    ["/api/auth/get-session", "better-auth.session_token=beta-token"],
+    ["/api/auth/get-session", "better-auth.session_token=beta-token"],
+    ["/api/auth/delete-user", "better-auth.session_token=beta-token"],
+  ]);
+  expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+  h.account.dispose();
+});
 
 test.each(["503", "ended", "missing id"])(
   "%s resolving a legacy cache id preserves auth and cannot start deletion",
