@@ -116,9 +116,10 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         auth sessions and the tokens Google issues at sign-in. The access token is stored
         encrypted. The ID token, which holds the same profile details, is stored as Google issued
         it. Each auth session records the IP address and browser or app details (user agent)
-        it was created from. On your Mac, your auth session is stored encrypted in Voice's data
-        folder. The encryption key is kept in the macOS Keychain. If encryption is unavailable,
-        Voice keeps the auth session only in memory, and you sign in again after restarting.
+        it was created from. On your Mac, Voice stores your auth session, and your name and email
+        address so it can show who is signed in while offline, encrypted in its data folder. The
+        encryption key is kept in the macOS Keychain. If encryption is unavailable, Voice keeps
+        them only in memory, and you sign in again after restarting.
       </li>
       <li {...li}>
         <strong>Security records.</strong> To limit abuse, the account service keeps rate-limit
@@ -126,10 +127,13 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       </li>
       <li {...li}>
         <strong>Signing out and deleting your account.</strong> Sign out in Settings &gt; Account
-        removes the auth session from your Mac and ends it on the server. If you sign out while
-        offline, Voice retries the server sign-out on the next launch. Delete account on the same
-        page removes your user record, your auth sessions, and your linked Google account record,
-        including its stored Google tokens. We keep your account until you delete it.
+        ends the auth session on the server and removes it from your Mac. If the server cannot be
+        reached, Voice keeps the old auth session encrypted on your Mac only to end it on the server
+        when Voice next starts. Delete account on the same page removes your user record, your auth
+        sessions, and your linked Google account record, including its stored Google tokens. If you
+        signed in more than 10 minutes earlier, Voice first asks you to sign in again with the same
+        Google account, and then ends the older auth session. We keep your account until you delete
+        it.
       </li>
       <li {...li}>
         <strong>Nightly and Stable.</strong> Nightly and Stable builds keep separate accounts in
