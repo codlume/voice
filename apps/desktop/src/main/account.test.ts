@@ -380,6 +380,7 @@ describe("createAccount", () => {
       loaded(h.fake.client);
       await flush();
       expect(h.requests).toEqual([]);
+      expect(h.fake.forgotten).toBe(0);
       await signIn;
       expect(h.state).toEqual({ kind: "signedOut" });
       expectNoSecrets(h);
