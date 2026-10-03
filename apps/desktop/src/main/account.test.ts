@@ -815,6 +815,13 @@ describe("restore", () => {
     expect(h.states).toEqual([]);
   });
 
+  test("a callback before restore leaves a stored auth session to restore", async () => {
+    const h = harness({ hasStoredAuthSession: withStoredAuthSession });
+    expect(h.account.handleCallbackUrl(callbackUrl(CODE))).toBe("ignored");
+    await restore(h);
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+  });
+
   test("signs in from the cached identity, then takes the API's answer", async () => {
     const h = harness({ hasStoredAuthSession: withStoredAuthSession });
     const restored = await restore(h);
