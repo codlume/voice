@@ -279,9 +279,6 @@ export function createAccount({
     return cachedClient;
   }
 
-  // For a check after an await, where TS still has `state` narrowed by signIn's entry check.
-  const ended = (attempt: Attempt) => state !== attempt;
-
   function requestDeletion() {
     if (state.kind !== "signedIn" || (state.deletion && state.deletion.kind !== "failed")) return;
     abortCheck();
@@ -539,7 +536,7 @@ export function createAccount({
       try {
         const opened = await client;
         // Cancel or the deadline may have ended this attempt while the client loaded.
-        if (ended(current)) return;
+        if (state !== current) return;
         if (resumeAs === null) {
           opened.retireAuthSession();
           void endServerSignOuts(opened);
