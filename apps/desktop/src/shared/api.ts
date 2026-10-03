@@ -57,7 +57,7 @@ export type AccountState =
   | { kind: "signingIn"; purpose: "signIn" | "deleteAccount"; phase: "browser" | "finishing" }
   | {
       kind: "signedIn";
-      id: string;
+      id?: string;
       name: string;
       email: string;
       deletion?: AccountDeletion;

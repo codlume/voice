@@ -33,7 +33,8 @@ export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
 
-export type Identity = { id: string; name: string; email: string };
+export type CachedIdentity = { id?: string; name: string; email: string };
+export type Identity = CachedIdentity & { id: string };
 
 /**
  * `offline` is a failed fetch; `rejected` is the API refusing the code. `abandoned` is an exchange
@@ -56,7 +57,7 @@ export type AuthClient = {
    */
   redeem(code: string, signal: AbortSignal): Promise<RedeemResult>;
   /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
-  cachedUser(): Identity | null;
+  cachedUser(): CachedIdentity | null;
   /** Asks `get-session`. Aborted before its body is read, it answers `unreachable` and writes nothing. */
   checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
@@ -88,8 +89,12 @@ export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 /** A code as the landing page shows it, with the OAuth state it carries. */
 export type SignInCode = { code: string; state: string };
 
-const sameIdentity = (a: Identity, b: Identity) =>
+const sameIdentity = (a: Identity, b: CachedIdentity) =>
   a.id === b.id && a.name === b.name && a.email === b.email;
+
+function identityOf({ id, name, email }: CachedIdentity): CachedIdentity {
+  return id === undefined ? { name, email } : { id, name, email };
+}
 
 function parseHttpUrl(value: string): string | null {
   try {
@@ -275,9 +280,7 @@ export function createAccount({
     abortCheck();
     publish({
       kind: "signedIn",
-      id: state.id,
-      name: state.name,
-      email: state.email,
+      ...identityOf(state),
       deletion: { kind: "confirming" },
     });
   }
@@ -474,6 +477,7 @@ export function createAccount({
     async signIn() {
       const resumeAs =
         state.kind === "signedIn" &&
+        state.id !== undefined &&
         (state.deletion?.kind === "reauthRequired" || state.deletion?.kind === "reauthFailed")
           ? { id: state.id, name: state.name, email: state.email }
           : null;
@@ -563,18 +567,43 @@ export function createAccount({
     cancelDeletion() {
       if (state.kind !== "signedIn" || !state.deletion) return;
       if (state.deletion.kind === "deleting" || state.deletion.kind === "revoking") return;
-      publish({ kind: "signedIn", id: state.id, name: state.name, email: state.email });
+      publish({ kind: "signedIn", ...identityOf(state) });
     },
     async confirmDeletion() {
       if (state.kind !== "signedIn" || state.deletion?.kind !== "confirming" || apiUrl === null)
         return;
-      const user = { id: state.id, name: state.name, email: state.email };
+      let user = identityOf(state);
       const deleting: SignedInState = { kind: "signedIn", ...user, deletion: { kind: "deleting" } };
       publish(deleting);
       let result: DeleteAccountResult;
       let client: AuthClient;
       try {
         client = await loadClient(apiUrl);
+        if (state !== deleting) return;
+        if (user.id === undefined) {
+          const controller = new AbortController();
+          abortCheck();
+          checking = controller;
+          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
+          const answer = await client.checkAuthSession(signal);
+          if (checking === controller) checking = null;
+          if (state !== deleting || controller.signal.aborted) return;
+          if (answer.kind !== "active" || signal.aborted) {
+            publish({
+              kind: "signedIn",
+              ...user,
+              deletion: {
+                kind: "failed",
+                message:
+                  answer.kind === "unreachable" || signal.aborted
+                    ? DELETE_ACCOUNT_OFFLINE_MESSAGE
+                    : DELETE_ACCOUNT_FAILED_MESSAGE,
+              },
+            });
+            return;
+          }
+          user = answer.user;
+        }
         result = await client.deleteAccount();
       } catch (error) {
         log("account deletion failed", {
@@ -628,13 +657,11 @@ export function createAccount({
     },
     async retryDeletion() {
       if (state.kind !== "signedIn") return;
-      const { deletion, id, name, email } = state;
+      const { deletion } = state;
       if (deletion?.kind === "revocationFailed") {
         const revoking: SignedInState = {
           kind: "signedIn",
-          id,
-          name,
-          email,
+          ...identityOf(state),
           deletion: { kind: "revoking" },
         };
         publish(revoking);

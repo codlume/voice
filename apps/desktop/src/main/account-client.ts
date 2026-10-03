@@ -10,6 +10,7 @@ import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
+  CachedIdentity,
   Identity,
   RedeemResult,
   ServerSignOut,
@@ -19,23 +20,27 @@ import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// The token and `get-session` bodies both carry `{ user }`. They are external data, so the
-// user is read from them like any other.
-function userOf(body: unknown): Identity | null {
-  const user = typeof body === "object" && body !== null && "user" in body ? body.user : null;
+function cachedIdentityOf(user: unknown): CachedIdentity | null {
   if (
     typeof user === "object" &&
     user !== null &&
-    "id" in user &&
-    typeof user.id === "string" &&
     "name" in user &&
     typeof user.name === "string" &&
     "email" in user &&
     typeof user.email === "string"
   ) {
-    return { id: user.id, name: user.name, email: user.email };
+    if (!("id" in user)) return { name: user.name, email: user.email };
+    if (typeof user.id === "string") return { id: user.id, name: user.name, email: user.email };
   }
   return null;
+}
+
+// Older encrypted caches contain only a name and email. Live responses must identify the account.
+function userOf(body: unknown): Identity | null {
+  const user = cachedIdentityOf(
+    typeof body === "object" && body !== null && "user" in body ? body.user : null,
+  );
+  return user?.id === undefined ? null : { ...user, id: user.id };
 }
 
 // The Cookie header the plugin sends for these cookies, as its own `getCookie` builds it.
@@ -308,9 +313,9 @@ export function createVoiceAuthClient({
       const stored = store.getItem(keys.identity);
       if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
       try {
-        return userOf({
-          user: JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
-        });
+        return cachedIdentityOf(
+          JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
+        );
       } catch {
         return null;
       }
