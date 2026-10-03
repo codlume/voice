@@ -5,5 +5,5 @@
     "moduleResolution": "Bundler",
     "types": ["node", "@cloudflare/vitest-plugin/types"]
   },
-  "include": ["src", "test", "worker-configuration.d.ts", "vite.config.ts"]
+  "include": ["src", "test", "worker-configuration.d.ts", "vite.config.ts", "drizzle.config.ts"]
 }
