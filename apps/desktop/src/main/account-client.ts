@@ -157,7 +157,7 @@ export function createVoiceAuthClient({
     client = makeClient();
   }
 
-  // A crash after enqueue but before forget can leave its cookie or only its identity behind.
+  // A crash after enqueue but before forget finishes can leave its cookie or only its identity behind.
   // A different stored credential belongs to a newer sign-in and must survive, even if expired.
   if (serverSignOuts.length) {
     const stored = store.getItem(keys.cookie);
