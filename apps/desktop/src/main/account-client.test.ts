@@ -17,6 +17,8 @@ import { storage } from "@better-auth/electron/storage";
 
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
+import { AUTH_SESSION_ENDED_MESSAGE } from "./account.ts";
+import { harness } from "./account.test-harness.ts";
 import {
   authSessionStored,
   authStorageKeys,
@@ -249,6 +251,104 @@ describe("createVoiceAuthClient", () => {
       status: 0,
     });
     expect(sent).toEqual([]);
+  });
+});
+
+describe("stored auth expiry through the account snapshot", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const keys = authStorageKeys("nightly");
+  const expiredCookie = "better-auth.session_token=expired-token";
+  const oldCookie = "better-auth.session_token=old-token";
+
+  async function storeSession(auxiliaryCookie = false) {
+    answer = () => {
+      const response = signedIn("expired-token");
+      if (auxiliaryCookie) {
+        response.headers.append(
+          "set-cookie",
+          "better-auth.auxiliary=fixture; Max-Age=7200; Path=/",
+        );
+      }
+      return response;
+    };
+    const active = client("nightly");
+    expect(await signIn(active)).toEqual({ kind: "signedIn", ...USER });
+    return active;
+  }
+
+  async function restoreExpiredSession() {
+    vi.setSystemTime(new Date("2026-01-01T01:00:01Z"));
+    sent = [];
+    answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+    const restarted = client("nightly");
+    const h = harness({
+      apiUrl: API.nightly,
+      createClient: async () => restarted,
+      hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
+      hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
+    });
+    await h.account.restore();
+    await restarted.endServerSignOuts();
+    return h;
+  }
+
+  test.each([false, true])(
+    "explains expiry and clears stored auth before Dismiss, with an unrelated queue=%s",
+    async (unrelatedQueue) => {
+      const active = await storeSession();
+      if (unrelatedQueue) active.queueServerSignOut(oldCookie);
+
+      const h = await restoreExpiredSession();
+
+      expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+      expect(storage().getItem(keys.cookie)).toBeNull();
+      expect(storage().getItem(keys.identity)).toBeNull();
+      expect(sent.filter(({ cookie }) => cookie === null)).toEqual([
+        { url: `${API.nightly}/api/auth/get-session`, cookie: null },
+      ]);
+      h.account.dismissError();
+      expect(h.state).toEqual({ kind: "signedOut" });
+    },
+  );
+
+  test.each([false, true])(
+    "retires a crash-queued expired session silently, with a surviving auxiliary cookie=%s",
+    async (auxiliaryCookie) => {
+      const active = await storeSession(auxiliaryCookie);
+      active.queueServerSignOut(expiredCookie);
+
+      const h = await restoreExpiredSession();
+
+      expect(h.state).toEqual({ kind: "signedOut" });
+      expect(h.states).toEqual([]);
+      expect(storage().getItem(keys.cookie)).toBeNull();
+      expect(storage().getItem(keys.identity)).toBeNull();
+      expect(sent).toEqual([
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: expiredCookie },
+        { url: `${API.nightly}/api/auth/get-session`, cookie: expiredCookie },
+      ]);
+    },
+  );
+
+  test("unavailable encryption preserves stored auth without a request or expiry error", async () => {
+    const active = await storeSession();
+    active.queueServerSignOut(oldCookie);
+    const before = config();
+    electron.state.encryption = false;
+
+    const h = await restoreExpiredSession();
+
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expect(h.states).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(config()).toBe(before);
   });
 });
 

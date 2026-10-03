@@ -119,21 +119,24 @@ export function harness(
     apiUrl?: string | null;
     development?: boolean;
     hasStoredAuthSession?: () => boolean;
+    hasStoredAuth?: () => boolean;
+    createClient?: Parameters<typeof createAccount>[0]["createClient"];
     fake?: ReturnType<typeof fakeClient>;
   } = {},
 ) {
   const apiUrl = options.apiUrl === undefined ? API_URL : options.apiUrl;
   const fake = options.fake ?? fakeClient();
   if (!options.fake && options.hasStoredAuthSession) fake.setStored(options.hasStoredAuthSession());
-  const createClient = vi.fn(async () => fake.client);
+  const createClient = vi.fn(options.createClient ?? (async () => fake.client));
   const logs: string[] = [];
   const entries: DiagnosticLog[] = [];
   const account = createAccount({
     apiUrl,
     development: options.development ?? false,
     hasStoredAuthSession: options.hasStoredAuthSession ?? (() => fake.stored),
-    hasStoredAuth: () =>
-      (options.hasStoredAuthSession?.() ?? fake.stored) || fake.serverSignOuts > 0,
+    hasStoredAuth:
+      options.hasStoredAuth ??
+      (() => (options.hasStoredAuthSession?.() ?? fake.stored) || fake.serverSignOuts > 0),
     createClient,
     signInTimeoutMs: SIGN_IN_TIMEOUT_MS,
     onChange: (value) => store.update((s) => ({ ...s, account: value })),
