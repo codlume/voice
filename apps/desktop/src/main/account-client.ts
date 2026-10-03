@@ -1,15 +1,17 @@
 import { writeFileSync } from "node:fs";
 
 import { electronClient } from "@better-auth/electron/client";
+import { storage } from "@better-auth/electron/storage";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
-import { shell } from "electron";
+import { safeStorage, shell } from "electron";
 
 import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
-import type { AuthClient, RedeemResult } from "./account.ts";
+import type { AuthClient, AuthSessionCheck, Identity, RedeemResult } from "./account.ts";
+import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
-// With `throw: true` the plugin resolves to the token endpoint's body, not the `{ data, error }`
-// pair its typings declare, so the user is read from the body like any other external data.
-function signedInUser(body: unknown): { name: string; email: string } {
+// The token and `get-session` bodies both carry `{ user }`. They are external data, so the
+// user is read from them like any other.
+function userOf(body: unknown): Identity | null {
   const user = typeof body === "object" && body !== null && "user" in body ? body.user : null;
   if (
     typeof user === "object" &&
@@ -21,7 +23,7 @@ function signedInUser(body: unknown): { name: string; email: string } {
   ) {
     return { name: user.name, email: user.email };
   }
-  throw new Error("The sign-in response carried no user.");
+  return null;
 }
 
 // The plugin's declared fetch hooks do not satisfy better-auth's own plugin type under
@@ -30,8 +32,9 @@ function signedInUser(body: unknown): { name: string; email: string } {
 type ElectronPlugin = Omit<ReturnType<typeof electronClient>, "fetchPlugins"> &
   Pick<BetterAuthClientPlugin, "fetchPlugins">;
 
-// The only file that loads Better Auth. It is imported lazily on the first Sign in click.
-// The auth session lives in memory for now; #129 swaps in the plugin's encrypted storage.
+// The only file that loads Better Auth. It is imported lazily, on the first Sign in click or at
+// launch when an auth session is stored. The plugin encrypts what it stores with safeStorage and
+// keeps it in memory only when encryption is unavailable.
 export function createVoiceAuthClient({
   apiUrl,
   installedChannel,
@@ -42,20 +45,29 @@ export function createVoiceAuthClient({
   /** Test mode: the plugin's `shell.openExternal` writes the sign-in URL here instead. */
   signInUrlFile?: string;
 }): AuthClient {
-  const memory = new Map<string, unknown>();
+  const keys = authStorageKeys(installedChannel);
+  const store = storage();
   const plugin = electronClient({
     protocol: VOICE_URL_SCHEME,
     // Required by the plugin's types, read only for sign-in without a provider.
     signInURL: apiUrl,
-    storagePrefix: `voice.${installedChannel}`,
-    storage: {
-      getItem: (name) => memory.get(name) ?? null,
-      setItem: (name, value) => {
-        memory.set(name, value);
-      },
-    },
+    storagePrefix: authStoragePrefix(installedChannel),
+    storage: store,
+    // The plugin would cache every get-session body, a captive portal's HTML included, and never
+    // reads it back. Voice keeps its own copy of the last validated identity instead.
+    disableCache: true,
     userImageProxy: { enabled: false },
   }) as ElectronPlugin;
+  // Encrypted like the plugin's own items. Without encryption nothing is written, so the
+  // identity, like the auth session, lasts only until quit.
+  const saveIdentity = (user: Identity) => {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    store.setItem(
+      keys.identity,
+      safeStorage.encryptString(JSON.stringify(user)).toString("base64"),
+    );
+  };
+
   const client = createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
   // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
@@ -79,14 +91,61 @@ export function createVoiceAuthClient({
     },
     redeem: async (code): Promise<RedeemResult> => {
       try {
-        const user = signedInUser(
+        // With `throw: true` the plugin resolves to the token endpoint's body, not the
+        // `{ data, error }` pair its typings declare.
+        const user = userOf(
           await client.authenticate({ token: code, fetchOptions: { throw: true } }),
         );
+        if (user === null) throw new Error("The sign-in response carried no user.");
+        saveIdentity(user);
         return { kind: "signedIn", ...user };
       } catch (error) {
         // fetch rejects with a TypeError when the network fails; anything else came from the API.
         return { kind: error instanceof TypeError ? "offline" : "rejected", error };
       }
+    },
+    cachedUser: () => {
+      const stored = store.getItem(keys.identity);
+      if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
+      try {
+        return userOf({
+          user: JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
+        });
+      } catch {
+        return null;
+      }
+    },
+    checkAuthSession: async (signal): Promise<AuthSessionCheck> => {
+      // Without encryption a restored cookie cannot be read, and the API would answer null to a
+      // request that carried none.
+      if (!safeStorage.isEncryptionAvailable() && client.getCookie() === "") {
+        return { kind: "unknown", status: 0 };
+      }
+      let result: Awaited<ReturnType<typeof client.getSession>>;
+      try {
+        // Aborting rejects the request if it lands before the response body is read, and the
+        // plugin's hooks, which write the cookie, never run. A body already read still reaches them.
+        result = await client.getSession({ fetchOptions: { signal } });
+      } catch (error) {
+        return { kind: "unreachable", error };
+      }
+      const { data, error } = result;
+      if (error) {
+        return error.status === 401 || error.status === 403
+          ? { kind: "ended", status: error.status }
+          : { kind: "unknown", status: error.status };
+      }
+      // Better Auth 1.7.7 answers 200 with null for an auth session it no longer has.
+      if (data === null) return { kind: "ended", status: 200 };
+      // A captive portal's HTML page also arrives as a 200, with a string for data.
+      const user = userOf(data);
+      if (user === null) return { kind: "unknown", status: 200 };
+      if (!signal.aborted) saveIdentity(user);
+      return { kind: "active", user };
+    },
+    forget: () => {
+      store.setItem(keys.cookie, null);
+      store.setItem(keys.identity, null);
     },
   };
 }

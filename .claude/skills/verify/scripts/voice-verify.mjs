@@ -209,7 +209,12 @@ const commands = {
     if (!existsSync(join(desktopDir, "dist-electron/main.cjs")))
       fail("app not built: run pnpm build");
 
-    const userData = await prepareUserData("voice-verify");
+    // --keep-user-data relaunches on the folder a `stop --keep-user-data` left, to test a restart.
+    const keptUserData = join(tmpdir(), "voice-verify");
+    const keep = args.includes("--keep-user-data");
+    if (keep && !existsSync(keptUserData))
+      fail("no kept userData; run stop --keep-user-data first");
+    const userData = keep ? keptUserData : await prepareUserData("voice-verify");
     const fakeMicrophonePath = join(userData, "capture.wav");
     const logPath = join(userData, "main.log");
     const env = {
@@ -254,8 +259,8 @@ const commands = {
       if (stopping) return;
       stopping = true;
       await stopChildren();
+      // `stop` deletes the scratch userData unless told to keep it; a plain launch wipes it anyway.
       rmSync(statePath, { force: true });
-      rmSync(userData, { recursive: true, force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
@@ -296,6 +301,7 @@ const commands = {
   async stop() {
     const state = readState();
     if (!state) return out("no verify instance recorded");
+    const keep = args.includes("--keep-user-data");
     if (alive(state.ownerPid)) {
       process.kill(state.ownerPid, "SIGTERM");
       for (let i = 0; i < 100 && alive(state.ownerPid); i += 1) {
@@ -308,10 +314,11 @@ const commands = {
       signalGroup(state.electronPid, "SIGKILL");
     }
     rmSync(statePath, { force: true });
-    rmSync(state.userData, { recursive: true, force: true });
+    if (!keep) rmSync(state.userData, { recursive: true, force: true });
     out({
       stopped: state.runId,
       evidence: existsSync(state.evidence) ? state.evidence : "none captured",
+      ...(keep && { keptUserData: state.userData }),
     });
   },
 
@@ -357,6 +364,36 @@ const commands = {
       main.close();
     }
     out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
+  },
+
+  async reopen() {
+    const state = requireInstance();
+    const hubOpen = async () =>
+      (await (await fetch(`http://127.0.0.1:${state.port}/json`)).json()).some((target) =>
+        target.url.endsWith("hub.html"),
+      );
+    const hub = await connect("hub");
+    await hub.evaluate("window.close()").catch(() => {});
+    hub.close();
+    for (let i = 0; i < 50 && (await hubOpen()); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (await hubOpen()) fail("the Voice window did not close");
+    // Opening Voice again starts a second copy, which hands over to the running one through the
+    // single-instance lock. The running copy then shows its window, as for a user.
+    const env = {
+      ...process.env,
+      VOICE_HELPER_TEST: "1",
+      VOICE_USER_DATA_DIR: state.userData,
+      VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
+    };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const second = spawnSync(electronPath, ["."], { cwd: desktopDir, env, timeout: 30_000 });
+    for (let i = 0; i < 100 && !(await hubOpen()); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!(await hubOpen())) fail("the Voice window did not come back");
+    out({ reopened: true, secondCopyExit: second.status });
   },
 
   async wait() {
@@ -651,14 +688,17 @@ const commands = {
   help() {
     out(`usage: node .claude/skills/verify/scripts/voice-verify.mjs <command>
   doctor                         read-only health report
-  launch                         start the disposable instance (foreground; run in background)
-  stop                           tear down the instance this skill started; evidence survives
+  launch [--keep-user-data]      start the disposable instance (foreground; run in background);
+                                 the flag reuses the userData a stop --keep-user-data left
+  stop [--keep-user-data]        tear down the instance this skill started; evidence survives,
+                                 and with the flag so does the scratch userData
   snapshot                       full app snapshot JSON
   text                           current sidebar nav and visible page text
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
   callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
+  reopen                         close the Voice window, then open Voice again (second copy hands over)
   record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
