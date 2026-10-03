@@ -6,8 +6,9 @@
     "dev": "wrangler dev",
     "types": "wrangler types",
     "typecheck": "wrangler types --check && tsc --noEmit",
-    "test": "vp test run",
+    "test": "node scripts/check-migrations.mjs migrations && node --test scripts/check-migrations.test.mjs && vp test run",
     "build": "wrangler deploy --dry-run --env nightly --outdir dist",
+    "check:migrations": "node scripts/check-migrations.mjs migrations",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
