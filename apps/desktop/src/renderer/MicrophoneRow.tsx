@@ -1,3 +1,4 @@
+import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -116,14 +117,12 @@ function useLevel(episode: number | null) {
 }
 
 export function MicrophoneRow({
-  selectId,
   detail,
   test,
   permission,
   canTest,
   children,
 }: {
-  selectId: string;
   detail: string;
   test: MicrophoneTest;
   permission: PermissionState;
@@ -153,12 +152,12 @@ export function MicrophoneRow({
   }
 
   return (
-    <div {...stylex.props(styles.row)}>
+    <Field.Root {...stylex.props(styles.row)}>
       <div {...stylex.props(styles.line)}>
         <div {...stylex.props(styles.text)}>
-          <label htmlFor={selectId} {...stylex.props(styles.title)}>
+          <Field.Label nativeLabel={false} render={<div />} {...stylex.props(styles.title)}>
             Microphone
-          </label>
+          </Field.Label>
           <p {...stylex.props(styles.detail)}>{detail}</p>
         </div>
         <div {...stylex.props(styles.controls)}>
@@ -207,6 +206,6 @@ export function MicrophoneRow({
           </div>
         </div>
       </div>
-    </div>
+    </Field.Root>
   );
 }
