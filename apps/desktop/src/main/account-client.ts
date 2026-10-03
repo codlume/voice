@@ -265,11 +265,12 @@ export function createVoiceAuthClient({
       // Read before the body, which an abort may cut short: the session the API created still
       // has to be ended.
       let setCookie: string | null = null;
-      let result: RedeemResult;
+      let user: Identity | null = null;
+      let error: unknown = null;
       try {
         // With `throw: true` the plugin resolves to the token endpoint's body, not the
         // `{ data, error }` pair its typings declare.
-        const user = userOf(
+        user = userOf(
           await client.authenticate({
             token: code,
             fetchOptions: {
@@ -282,10 +283,8 @@ export function createVoiceAuthClient({
           }),
         );
         if (user === null) throw new Error("The sign-in response carried no user.");
-        result = { kind: "signedIn", ...user };
-      } catch (error) {
-        // fetch rejects with a TypeError when the network fails; anything else came from the API.
-        result = { kind: error instanceof TypeError ? "offline" : "rejected", error };
+      } catch (caught) {
+        error = caught;
       } finally {
         signal.removeEventListener("abort", forget);
       }
@@ -293,8 +292,11 @@ export function createVoiceAuthClient({
         if (setCookie !== null) queueServerSignOut(cookieHeaderOf(setCookie));
         return { kind: "abandoned" };
       }
-      if (result.kind === "signedIn") saveIdentity(result);
-      return result;
+      // fetch rejects with a TypeError when the network fails; anything else came from the API.
+      if (user === null)
+        return { kind: error instanceof TypeError ? "offline" : "rejected", error };
+      saveIdentity(user);
+      return { kind: "signedIn", ...user };
     },
     cachedUser: () => {
       const stored = store.getItem(keys.identity);
