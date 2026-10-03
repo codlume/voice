@@ -54,8 +54,7 @@ export const VOICE_URL_SCHEME = "com.codlume.voice";
 export type AccountState =
   | { kind: "unavailable"; reason: string }
   | { kind: "signedOut" }
-  | { kind: "signingIn" }
-  | { kind: "signingIn"; purpose: "deleteAccount"; phase: "browser" | "finishing" }
+  | { kind: "signingIn"; purpose: "signIn" | "deleteAccount"; phase: "browser" | "finishing" }
   | { kind: "signedIn"; name: string; email: string; deletion?: AccountDeletion }
   | { kind: "error"; message: string };
 

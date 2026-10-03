@@ -16,7 +16,7 @@ describe("account view", () => {
     const states: AccountState[] = [
       { kind: "unavailable", reason: "Set VOICE_API_URL to sign in from a development build." },
       { kind: "signedOut" },
-      { kind: "signingIn" },
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
       { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
       { kind: "signedIn", name: " ", email: "ada@example.com" },
       { kind: "error", message: "Sign-in was interrupted" },

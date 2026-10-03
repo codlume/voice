@@ -173,7 +173,10 @@ const hubScenes: Record<string, Snapshot> = {
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
   "account-signed-out": { ...ready, account: { kind: "signedOut" } },
-  "account-signing-in": { ...ready, account: { kind: "signingIn" } },
+  "account-signing-in": {
+    ...ready,
+    account: { kind: "signingIn", purpose: "signIn", phase: "browser" },
+  },
   "account-signed-in": {
     ...ready,
     account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
@@ -304,7 +307,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       set({ ...snapshot, loginItem: on ? "on" : "off" });
     },
     signIn: async () => {
-      set({ ...snapshot, account: { kind: "signingIn" } });
+      set({ ...snapshot, account: { kind: "signingIn", purpose: "signIn", phase: "browser" } });
     },
     signOut: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
