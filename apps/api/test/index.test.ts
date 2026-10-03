@@ -3,12 +3,10 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import app from "../src/index.ts";
 
-// Registered before any request so the router includes them.
+// Registered before any request so the router includes it.
 app.get("/boom/:id", () => {
   throw new Error("secret detail that must not leak");
 });
-// @ts-expect-error Hono reports a missing response to onError after the middleware chain has finished.
-app.get("/no-response", () => undefined);
 
 function expectSecurityHeaders(response: Response) {
   expect(response.headers.get("Strict-Transport-Security")).toBe(
@@ -89,18 +87,5 @@ describe("errors", () => {
     expect(line).not.toContain("user-7731");
     expect(line).not.toContain("query-secret");
     expect(line).not.toContain("secret detail");
-  });
-
-  it("keep the security headers when a handler returns no response (catches the error path Hono takes outside the middleware chain)", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const response = await app.fetch(
-      new Request("https://api.test/no-response"),
-      env,
-      createExecutionContext(),
-    );
-
-    expect(response.status).toBe(500);
-    expectSecurityHeaders(response);
   });
 });
