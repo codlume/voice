@@ -11,6 +11,7 @@ const ignorePatterns = [
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
   "apps/api/worker-configuration.d.ts",
+  "apps/api/migrations/meta/**",
 ];
 
 export default defineConfig({
