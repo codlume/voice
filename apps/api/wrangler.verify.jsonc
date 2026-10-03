@@ -9,6 +9,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // As in production: invocation logs would record the callback URL with its code and state.
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
   "vars": {
     "BETTER_AUTH_URL": "http://localhost:8787",
     "BETTER_AUTH_SECRET": "fake-verify-secret-not-for-production-use",
