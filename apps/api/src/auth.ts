@@ -10,9 +10,11 @@ import * as schema from "./auth-schema.ts";
 // row, and a deletion removes the account rows and then the user row. D1 failing in between leaves
 // a user row with no account, and with linking off every later Google sign-in for that email ends
 // in account_not_linked. Each Google callback first deletes such rows, so the next sign-in starts
-// over with a fresh user. The grace period spares a first sign-in still between its two writes:
-// a D1 statement gives up after 30 s, and the work between them takes milliseconds. A sweep that
-// did catch one would only fail that attempt's account insert, and the retry starts over.
+// over with a fresh user. The grace period spares a first sign-in still between its writes:
+// createdAt is stamped before the user insert, D1 gives up on a statement after 30 s, and the work
+// between the two inserts takes milliseconds. A sweep that did catch one would only make that
+// attempt's account insert fail its foreign key, and the retry starts over. The sweep scans the
+// user table once per callback; at a much larger user count, move it to a Cron Trigger.
 const userWithoutAccountGraceMs = 60_000;
 
 // Every setting that needs no Worker binding. The schema generator (auth.cli.ts) reads the same
