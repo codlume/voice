@@ -10,9 +10,9 @@
   "observability": {
     "logs": { "enabled": true, "invocation_logs": false },
   },
+  "vars": { "BETTER_AUTH_URL": "http://localhost:8787" },
   // The placeholder id stops Wrangler from auto-provisioning a database, even for a
   // deploy given an entry point. Local D1 keys its storage on it.
-  "vars": { "BETTER_AUTH_URL": "http://localhost:8787" },
   "d1_databases": [
     { "binding": "DB", "database_name": "voice-api-local", "database_id": "local-only" },
   ],

@@ -16,6 +16,6 @@
     "GOOGLE_CLIENT_SECRET": "fake-verify-client-secret",
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "voice-api-verify", "migrations_dir": "migrations" },
+    { "binding": "DB", "database_name": "voice-api-verify", "database_id": "verify-local" },
   ],
 }
