@@ -22,17 +22,28 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 function cachedIdentityOf(user: unknown): CachedIdentity | null {
   if (
-    typeof user === "object" &&
-    user !== null &&
-    "name" in user &&
-    typeof user.name === "string" &&
-    "email" in user &&
-    typeof user.email === "string"
+    typeof user !== "object" ||
+    user === null ||
+    !("name" in user) ||
+    typeof user.name !== "string" ||
+    !("email" in user) ||
+    typeof user.email !== "string"
   ) {
-    if (!("id" in user)) return { name: user.name, email: user.email };
-    if (typeof user.id === "string") return { id: user.id, name: user.name, email: user.email };
+    return null;
   }
-  return null;
+  const identity: CachedIdentity = { name: user.name, email: user.email };
+  if ("id" in user) {
+    if (typeof user.id !== "string") return null;
+    identity.id = user.id;
+  }
+  if (
+    "image" in user &&
+    typeof user.image === "string" &&
+    URL.parse(user.image)?.protocol === "https:"
+  ) {
+    identity.image = user.image;
+  }
+  return identity;
 }
 
 // Older encrypted caches contain only a name and email. Live responses must identify the account.

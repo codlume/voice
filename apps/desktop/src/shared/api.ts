@@ -60,6 +60,7 @@ export type AccountState =
       id?: string;
       name: string;
       email: string;
+      image?: string;
       deletion?: AccountDeletion;
       notice?: string;
     }

@@ -34,7 +34,7 @@ export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
 
-export type CachedIdentity = { id?: string; name: string; email: string };
+export type CachedIdentity = { id?: string; name: string; email: string; image?: string };
 export type Identity = CachedIdentity & { id: string };
 
 /**
@@ -98,10 +98,15 @@ const sameAccount = (confirmed: CachedIdentity, live: Identity) =>
   confirmed.id === undefined ? confirmed.email === live.email : confirmed.id === live.id;
 
 const sameIdentity = (a: Identity, b: CachedIdentity) =>
-  a.id === b.id && a.name === b.name && a.email === b.email;
+  a.id === b.id && a.name === b.name && a.email === b.email && a.image === b.image;
 
-function identityOf({ id, name, email }: CachedIdentity): CachedIdentity {
-  return id === undefined ? { name, email } : { id, name, email };
+function identityOf({
+  kind: _kind,
+  deletion: _deletion,
+  notice: _notice,
+  ...identity
+}: SignedInState) {
+  return identity;
 }
 
 function parseHttpUrl(value: string): string | null {
@@ -370,7 +375,7 @@ export function createAccount({
     // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
-      const user = { id: result.id, name: result.name, email: result.email };
+      const { kind: _, ...user } = result;
       if (current.resumeAs === null) {
         leave(current.attempt, { kind: "signedIn", ...user });
       } else {
@@ -502,7 +507,7 @@ export function createAccount({
         state.kind === "signedIn" &&
         state.id !== undefined &&
         (state.deletion?.kind === "reauthRequired" || state.deletion?.kind === "reauthFailed")
-          ? { id: state.id, name: state.name, email: state.email }
+          ? { ...identityOf(state), id: state.id }
           : null;
       if (
         apiUrl === null ||

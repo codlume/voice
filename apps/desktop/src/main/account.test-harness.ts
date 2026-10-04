@@ -40,7 +40,7 @@ export function fakeClient() {
   const signOuts: { answer: (value: ServerSignOut) => void }[] = [];
   let serverSignOuts = 0;
   let stored = false;
-  let user = USER;
+  let user: Identity = USER;
   let cached: Identity | null = USER;
   let forgotten = 0;
   const client: AuthClient = {
@@ -119,7 +119,7 @@ export function fakeClient() {
     get forgotten() {
       return forgotten;
     },
-    setUser: (next: typeof USER) => {
+    setUser: (next: Identity) => {
       user = next;
     },
     setCached: (next: Identity | null) => {

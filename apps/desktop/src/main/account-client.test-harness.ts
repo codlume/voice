@@ -52,7 +52,7 @@ export const json = (body: unknown, init: ResponseInit = {}) =>
     ...init,
     headers: { "content-type": "application/json", ...init.headers },
   });
-export const signedIn = (token: string, user = USER) =>
+export const signedIn = (token: string, user: Record<string, unknown> = USER) =>
   json(
     { token, session: { token }, user },
     { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
