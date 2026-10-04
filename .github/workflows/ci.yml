@@ -44,8 +44,8 @@ jobs:
       - name: Check generated API schema
         run: vp run --filter @voice/api check:schema
 
-      - name: Test release scripts
-        run: node --test scripts/release-*.test.mjs
+      - name: Test scripts
+        run: node --test scripts/release-*.test.mjs scripts/dev-bundle.test.mjs
 
       - name: Build desktop
         run: vp run build

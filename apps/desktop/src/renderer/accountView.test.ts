@@ -32,8 +32,8 @@ describe("account view", () => {
           "Sign in to use your Voice account. Your browser opens so you can pick a Google account.",
       },
       {
-        title: "Waiting for your browser…",
-        detail: "Finish signing in with Google, then come back to Voice.",
+        title: "Finish signing in in your browser",
+        detail: "Choose your Google account, then click Open Voice.",
       },
       { title: "Ada Lovelace", detail: "ada@example.com" },
       { title: "ada@example.com", detail: "ada@example.com" },

@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { devElectronPath } from "./dev-bundle.mjs";
+
 const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const distDir = join(desktopDir, "dist-electron");
@@ -16,7 +18,10 @@ const helperBuild = spawnSync("swift", ["build", "--package-path", "native/voice
 });
 if (helperBuild.status !== 0) process.exit(helperBuild.status ?? 1);
 
-const electronPath = createRequire(join(desktopDir, "package.json"))("electron");
+const electronPath = devElectronPath(
+  createRequire(join(desktopDir, "package.json"))("electron"),
+  join(desktopDir, ".dev"),
+);
 // macOS charges permission prompts to the app that launched the terminal, which may not be allowed
 // the microphone at all. disclaim makes Electron answer for itself, as the packaged Voice.app does.
 const disclaimPath = join(repoDir, "native/voice-helper/.build/debug/disclaim");

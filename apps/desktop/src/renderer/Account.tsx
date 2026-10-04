@@ -9,6 +9,8 @@ import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
+const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
+
 const styles = stylex.create({
   avatar: {
     display: "grid",
@@ -23,7 +25,27 @@ const styles = stylex.create({
     fontWeight: 600,
     letterSpacing: "0.02em",
   },
-  fallback: { flexDirection: "column", alignItems: "stretch", gap: space.sm },
+  waiting: {
+    width: 16,
+    height: 16,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: `color-mix(in srgb, ${color.primary} 25%, transparent)`,
+    borderTopColor: color.primary,
+    borderRadius: radius.round,
+    animationName: { default: spin, "@media (prefers-reduced-motion: reduce)": "none" },
+    animationDuration: "1.2s",
+    animationTimingFunction: "linear",
+    animationIterationCount: "infinite",
+  },
+  waitingText: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 6,
+    flexGrow: 1,
+    minWidth: 0,
+  },
   codeLine: { display: "flex", alignItems: "center", gap: space.sm },
   codeInput: {
     flexGrow: 1,
@@ -99,6 +121,7 @@ function SignedOutRow({ account }: { account: AccountState }) {
 
 function SigningInRow({ account }: { account: Extract<AccountState, { kind: "signingIn" }> }) {
   const { pending, error, run, clearError } = useAction();
+  const [pasting, setPasting] = useState(false);
   const [code, setCode] = useState("");
   const pastedCode = code.trim();
   const submitCode = () => {
@@ -106,34 +129,20 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
     void run(() => window.voice.submitSignInCode(pastedCode), "Could not check the code.");
   };
   return (
-    <Card>
-      <div {...stylex.props(settings.row)}>
-        <RowText account={account} />
-      </div>
-      <div {...stylex.props(settings.row, styles.fallback)}>
-        <p {...stylex.props(settings.rowDetail)}>
-          If Voice does not come back on its own, paste the code shown in the browser.
-        </p>
-        <div {...stylex.props(styles.codeLine)}>
-          <input
-            id="setting-sign-in-code"
-            aria-label="Sign-in code"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Paste the code from the browser"
-            value={code}
-            onChange={(event) => {
-              setCode(event.target.value);
-              clearError();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) submitCode();
-            }}
-            {...stylex.props(styles.codeInput)}
-          />
-          <Button disabled={!pastedCode || pending} onClick={submitCode}>
-            Continue
-          </Button>
+    <>
+      <Card>
+        <div {...stylex.props(settings.row)}>
+          <span aria-hidden="true" {...stylex.props(styles.avatar)}>
+            <span {...stylex.props(styles.waiting)} />
+          </span>
+          <div {...stylex.props(styles.waitingText)}>
+            <RowText account={account} />
+            {!pasting && (
+              <Button variant="text" onClick={() => setPasting(true)}>
+                Paste a code instead
+              </Button>
+            )}
+          </div>
           <Button
             variant="secondary"
             disabled={account.purpose === "deleteAccount" && account.phase === "finishing"}
@@ -144,9 +153,33 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
             Cancel sign-in
           </Button>
         </div>
-        <ErrorLine text={error} />
-      </div>
-    </Card>
+        {pasting && (
+          <div {...stylex.props(settings.row, styles.codeLine)}>
+            <input
+              id="setting-sign-in-code"
+              aria-label="Sign-in code"
+              autoComplete="off"
+              autoFocus
+              spellCheck={false}
+              placeholder="Paste the code from the browser"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                clearError();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) submitCode();
+              }}
+              {...stylex.props(styles.codeInput)}
+            />
+            <Button disabled={!pastedCode || pending} onClick={submitCode}>
+              Continue
+            </Button>
+          </div>
+        )}
+      </Card>
+      <ErrorLine text={error} />
+    </>
   );
 }
 

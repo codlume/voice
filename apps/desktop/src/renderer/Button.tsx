@@ -34,6 +34,14 @@ const styles = stylex.create({
     color: color.primaryForeground,
     fontWeight: 500,
   },
+  text: {
+    paddingBlock: 0,
+    paddingInline: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    color: { default: color.mutedForeground, ":hover": color.foreground },
+    fontSize: 12.5,
+  },
   secondary: {
     borderWidth: 1,
     borderStyle: "solid",
@@ -47,7 +55,7 @@ export function Button({
   variant = "primary",
   ...props
 }: Omit<ComponentProps<"button">, "type" | "className" | "style"> & {
-  variant?: "primary" | "secondary" | "destructive";
+  variant?: "primary" | "secondary" | "destructive" | "text";
 }) {
   return <button type="button" {...props} {...stylex.props(styles.button, styles[variant])} />;
 }

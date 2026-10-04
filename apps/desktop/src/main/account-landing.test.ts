@@ -18,7 +18,7 @@ describe("sign-in code across the landing page and the account module", () => {
     { state: "ABCDEFGHIJKLMNOP", padded: true },
     { state: "ABCDEFGHIJKLMNOPQR", padded: false },
   ])(
-    "the pasted code and the callback URL token are the same string, and the plugin can decode it (padded: $padded)",
+    "the pasted code, the automatic callback and the Open Voice link carry one code the plugin can decode (padded: $padded)",
     ({ state, padded }) => {
       const claims = { identifier: "A".repeat(32), state };
       const cookieValue = encodeURIComponent(
@@ -27,12 +27,18 @@ describe("sign-in code across the landing page and the account module", () => {
       expect(cookieValue.endsWith("%3D")).toBe(padded);
 
       const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
-      const shown = { textContent: "" };
+      const elements = {
+        "signed-in": { hidden: true },
+        expired: { hidden: true },
+        open: { href: "" },
+        code: { textContent: "" },
+        copy: { addEventListener() {} },
+      };
       let opened = "";
       runInNewContext(script, {
         document: {
           cookie: `better-auth.state=s; better-auth.electron=${cookieValue}`,
-          getElementById: (id: string) => (id === "code" ? shown : { hidden: true }),
+          getElementById: (id: keyof typeof elements) => elements[id],
         },
         fetch: () => Promise.resolve(new Response()),
         location: {
@@ -42,9 +48,10 @@ describe("sign-in code across the landing page and the account module", () => {
         },
       });
 
-      expect(shown.textContent).toBe(cookieValue);
-      expect(parseSignInCode(shown.textContent)).toEqual({ code: cookieValue, state });
+      expect(elements.code.textContent).toBe(cookieValue);
+      expect(parseSignInCode(elements.code.textContent)).toEqual({ code: cookieValue, state });
       expect(parseCallbackUrl(opened)).toEqual({ code: cookieValue, state });
+      expect(parseCallbackUrl(elements.open.href)).toEqual({ code: cookieValue, state });
       expect(
         JSON.parse(Buffer.from(decodeURIComponent(cookieValue), "base64url").toString("utf8")),
       ).toEqual(claims);
