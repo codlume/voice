@@ -107,7 +107,7 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
-// The initials stay underneath, so they show while the picture loads and after it fails.
+// The initials stay underneath, so they show while the picture loads.
 function Avatar({
   name,
   email,
@@ -125,8 +125,6 @@ function Avatar({
         <img
           src={image}
           alt=""
-          width={40}
-          height={40}
           decoding="async"
           draggable={false}
           referrerPolicy="no-referrer"
