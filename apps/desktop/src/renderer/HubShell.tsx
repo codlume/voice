@@ -329,7 +329,7 @@ const styles = stylex.create({
     borderRadius: radius.large,
   },
   styleMain: { paddingBlock: space.xl },
-  column: { maxWidth: 600, marginInline: "auto" },
+  column: { maxWidth: 800, marginInline: "auto" },
 });
 
 function Icon({ children }: { children: ReactNode }) {
