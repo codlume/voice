@@ -58,7 +58,18 @@ const styles = stylex.create({
   header: { display: "flex", alignItems: "center", gap: 10, padding: space.sm },
   identity: { display: "flex", flexDirection: "column", minWidth: 0 },
   name: { fontWeight: 600 },
-  email: { color: color.mutedForeground, fontSize: 12 },
+  // A compact item that hugs the email, so its highlight stays inside the header.
+  email: {
+    alignSelf: "flex-start",
+    maxWidth: "calc(100% + 8px)",
+    marginInline: -4,
+    paddingInline: 4,
+    borderRadius: radius.small,
+    color: color.mutedForeground,
+    fontSize: 12,
+    cursor: "pointer",
+    outline: "none",
+  },
   truncate: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   separator: { height: 1, marginBlock: 4, backgroundColor: color.border },
   item: {
@@ -119,6 +130,8 @@ function SignedInMenu({
   const itemClassName = ({ highlighted, disabled }: Menu.Item.State) =>
     stylex.props(styles.item, highlighted && styles.highlighted, disabled && styles.disabled)
       .className;
+  const emailClassName = ({ highlighted }: Menu.Item.State) =>
+    stylex.props(styles.email, highlighted && styles.highlighted).className;
   return (
     <Menu.Root
       onOpenChange={(open) => {
@@ -161,9 +174,10 @@ function SignedInMenu({
               <Avatar identity={account} size={48} />
               <div {...stylex.props(styles.identity)}>
                 <span {...stylex.props(styles.name, styles.truncate)}>{title}</span>
-                <span {...stylex.props(styles.email)}>
-                  <HiddenEmail email={account.email} />
-                </span>
+                <HiddenEmail
+                  email={account.email}
+                  render={<Menu.Item closeOnClick={false} className={emailClassName} />}
+                />
               </div>
             </div>
             <Menu.Separator {...stylex.props(styles.separator)} />

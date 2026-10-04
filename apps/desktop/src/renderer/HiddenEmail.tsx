@@ -1,3 +1,4 @@
+import { useRender } from "@base-ui/react/use-render";
 import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 
@@ -31,22 +32,30 @@ const styles = stylex.create({
   hidden: { filter: "blur(4px)", userSelect: "none" },
 });
 
-export function HiddenEmail({ email }: { email: string }) {
+// The button styles sit on the default element, not in the props below, because Base UI joins
+// classNames as strings and would break a render element's className function, like Menu.Item's.
+export function HiddenEmail({
+  email,
+  render = <button type="button" {...stylex.props(styles.button)} />,
+}: {
+  email: string;
+  render?: useRender.RenderProp;
+}) {
   // Remembering which email was revealed hides a different account's email without a remount.
   const [revealedFor, setRevealedFor] = useState<string | null>(null);
   const revealed = revealedFor === email;
-  return (
-    <button
-      type="button"
-      aria-label={revealed ? undefined : "Show email"}
-      title={revealed ? "Click to hide email" : "Click to reveal email"}
-      onClick={() => setRevealedFor(revealed ? null : email)}
-      {...stylex.props(styles.button)}
-    >
-      {/* Blurring the button itself would blur its focus outline too. */}
-      <span {...stylex.props(styles.text, !revealed && styles.hidden)}>
-        {revealed ? email : emailDecoy(email)}
-      </span>
-    </button>
-  );
+  return useRender({
+    render,
+    props: {
+      "aria-label": revealed ? undefined : "Show email",
+      title: revealed ? "Click to hide email" : "Click to reveal email",
+      onClick: () => setRevealedFor(revealed ? null : email),
+      // Blurring the clickable element itself would blur its focus outline too.
+      children: (
+        <span {...stylex.props(styles.text, !revealed && styles.hidden)}>
+          {revealed ? email : emailDecoy(email)}
+        </span>
+      ),
+    },
+  });
 }
