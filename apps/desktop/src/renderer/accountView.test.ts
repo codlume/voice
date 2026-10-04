@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, emailDecoy, initials } from "./accountView.ts";
+import { accountName, accountRow, emailDecoy, initials } from "./accountView.ts";
 
 describe("account view", () => {
   test("initials take the first two words of the name, else the email", () => {
@@ -13,12 +13,10 @@ describe("account view", () => {
   });
 
   test("each state has its own row text", () => {
-    const states: AccountState[] = [
+    const states: Exclude<AccountState, { kind: "signedIn" }>[] = [
       { kind: "unavailable", reason: "Set VOICE_API_URL to sign in from a development build." },
       { kind: "signedOut" },
       { kind: "signingIn", purpose: "signIn", phase: "browser" },
-      { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
-      { kind: "signedIn", id: "ada-id", name: " ", email: "ada@example.com" },
       { kind: "error", message: "Sign-in was interrupted" },
     ];
     expect(states.map(accountRow)).toEqual([
@@ -35,10 +33,13 @@ describe("account view", () => {
         title: "Finish signing in in your browser",
         detail: "Choose your Google account, then click Open Voice.",
       },
-      { title: "Ada Lovelace", detail: "ada@example.com" },
-      { title: "Google account", detail: "ada@example.com" },
       { title: "Sign-in was interrupted", detail: "Retry to sign in again." },
     ]);
+  });
+
+  test("the account name falls back to Google account when the name is blank", () => {
+    expect(accountName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
+    expect(accountName({ name: "  ", email: "ada@example.com" })).toBe("Google account");
   });
 
   test("the email decoy keeps the email's shape but none of its text", () => {

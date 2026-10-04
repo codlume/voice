@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useRef } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow } from "./accountView.ts";
+import { accountName } from "./accountView.ts";
 import { Avatar } from "./Avatar.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { titlebar } from "./titlebar.ts";
@@ -114,7 +114,7 @@ function SignedInMenu({
   const { pending, error, run, clearError } = useAction();
   // The menu moves focus while it closes, so Account opens only after it has closed.
   const openAccountOnClose = useRef(false);
-  const { title } = accountRow(account);
+  const title = accountName(account);
   const label = `Account, ${title}`;
   const itemClassName = ({ highlighted, disabled }: Menu.Item.State) =>
     stylex.props(styles.item, highlighted && styles.highlighted, disabled && styles.disabled)

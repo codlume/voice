@@ -1,4 +1,4 @@
-import type { AccountState } from "../shared/api.ts";
+import type { AccountIdentity, AccountState } from "../shared/api.ts";
 
 export function initials(name: string, email: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -6,7 +6,14 @@ export function initials(name: string, email: string): string {
   return letters.join("").toUpperCase();
 }
 
-export function accountRow(state: AccountState): { title: string; detail: string } {
+export function accountName(identity: AccountIdentity): string {
+  return identity.name.trim() || "Google account";
+}
+
+export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): {
+  title: string;
+  detail: string;
+} {
   switch (state.kind) {
     case "unavailable":
       return { title: "Accounts are unavailable", detail: state.reason };
@@ -24,8 +31,6 @@ export function accountRow(state: AccountState): { title: string; detail: string
             : "Finish signing in in your browser",
         detail: "Choose your Google account, then click Open Voice.",
       };
-    case "signedIn":
-      return { title: state.name.trim() || "Google account", detail: state.email };
     case "error":
       return { title: state.message, detail: "Retry to sign in again." };
     default: {

@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow } from "./accountView.ts";
+import { accountName, accountRow } from "./accountView.ts";
 import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
@@ -43,7 +43,7 @@ const rowRoles: Partial<Record<AccountState["kind"], RowRole>> = {
   error: "alert",
 };
 
-function RowText({ account }: { account: AccountState }) {
+function RowText({ account }: { account: Exclude<AccountState, { kind: "signedIn" }> }) {
   const role = rowRoles[account.kind];
   const { title, detail } = accountRow(account);
   return (
@@ -72,7 +72,7 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
-function SignedOutRow({ account }: { account: AccountState }) {
+function SignedOutRow({ account }: { account: Extract<AccountState, { kind: "signedOut" }> }) {
   const { pending, error, run } = useAction();
   return (
     <>
@@ -164,7 +164,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
         <div {...stylex.props(settings.row)}>
           <Avatar identity={account} size={40} />
           <div {...stylex.props(settings.rowText)}>
-            <span {...stylex.props(settings.rowTitle)}>{accountRow(account).title}</span>
+            <span {...stylex.props(settings.rowTitle)}>{accountName(account)}</span>
             <p {...stylex.props(settings.rowDetail)}>
               <HiddenEmail key={account.email} email={account.email} />
             </p>
@@ -275,7 +275,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
   );
 }
 
-function ErrorRow({ account }: { account: AccountState }) {
+function ErrorRow({ account }: { account: Extract<AccountState, { kind: "error" }> }) {
   const { pending, error, run } = useAction();
   return (
     <>
