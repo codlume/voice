@@ -414,8 +414,6 @@ async function main() {
     }
     hub = new BrowserWindow({
       ...hubWindowSize(screen.getPrimaryDisplay().workArea),
-      minWidth: 720,
-      minHeight: 480,
       title: "Voice",
       titleBarStyle: "hidden",
       trafficLightPosition: { x: 16, y: 18 },
