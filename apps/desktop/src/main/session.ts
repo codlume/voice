@@ -48,6 +48,9 @@ export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
 
 export const idle: Session = { phase: "idle" };
 
+/** A session between the hotkey and its outcome, while the target app must keep focus. */
+export const dictating = (session: Session) => session.phase !== "idle" && session.phase !== "done";
+
 function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   const ms = outcome.kind === "inserted" ? IDLE_AFTER_INSERTED_MS : IDLE_AFTER_OTHER_MS;
   return {

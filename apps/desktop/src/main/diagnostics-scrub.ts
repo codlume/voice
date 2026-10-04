@@ -52,7 +52,7 @@ export const LOGS = {
   "cleanup timed out": ["cleanup.budget_ms"],
   "shutdown overran": ["shutdown.timeout_ms"],
   "dock update failed": [],
-  "account sign-in failed": ["error.type"],
+  "account sign-in failed": ["error.type", "account.failure"],
   "account sign-in timed out": [],
   "account restore failed": ["error.type"],
   "account auth session check failed": ["error.type", "http.response.status_code"],
