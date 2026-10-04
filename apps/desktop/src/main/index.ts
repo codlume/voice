@@ -546,7 +546,10 @@ async function main() {
     if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
     if (next.showInDock !== previous.showInDock) void syncDock();
     saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
-    await saving;
+    await saving.catch((error: Error) => {
+      log(`settings: save failed (${String(error.cause)})`);
+      throw error;
+    });
     if (next.updateChannel === store.state.settings.updateChannel)
       await updates.setChannel(next.updateChannel);
   }
