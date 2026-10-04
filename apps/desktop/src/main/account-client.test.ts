@@ -1,0 +1,274 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import * as NodePath from "node:path";
+
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vite-plus/test";
+
+import { storage } from "@better-auth/electron/storage";
+
+import type { UpdateChannel } from "../shared/api.ts";
+import { createVoiceAuthClient } from "./account-client.ts";
+import { authSessionStored, authStorageKeys } from "./account-storage.ts";
+
+// The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
+// stand-in, so the test never touches the login Keychain.
+const electron = vi.hoisted(() => {
+  const state = { userData: "", encryption: true };
+  const api = {
+    app: {
+      getPath: () => state.userData,
+      getName: () => "Voice",
+      getVersion: () => "0.0.1",
+      userAgentFallback: "Voice test",
+    },
+    safeStorage: {
+      isEncryptionAvailable: () => state.encryption,
+      encryptString: (text: string) => Buffer.from(`enc:${text}`),
+      decryptString: (bytes: Buffer) => bytes.toString().replace(/^enc:/, ""),
+    },
+    shell: { openExternal: async () => {} },
+    webContents: { getFocusedWebContents: () => null },
+  };
+  return { state, api };
+});
+vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
+
+const API = { stable: "https://api.example.com", nightly: "https://api-nightly.example.com" };
+const USER = { name: "Ada Lovelace", email: "ada@example.com" };
+const GRACE = { name: "Grace Hopper", email: "grace@example.com" };
+
+type Sent = { url: string; cookie: string | null };
+let sent: Sent[] = [];
+let answer: (url: string) => Response | Promise<Response>;
+
+const json = (body: unknown, init: ResponseInit = {}) =>
+  new Response(JSON.stringify(body), {
+    ...init,
+    headers: { "content-type": "application/json", ...init.headers },
+  });
+const signedIn = (token: string, user = USER) =>
+  json(
+    { session: { token }, user },
+    { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
+  );
+const client = (channel: UpdateChannel) =>
+  createVoiceAuthClient({ apiUrl: API[channel], installedChannel: channel });
+
+beforeAll(() => {
+  // The plugin refuses to send requests outside Electron's main process.
+  Object.assign(process, { type: "browser" });
+});
+afterAll(() => {
+  Object.assign(process, { type: undefined });
+});
+beforeEach(() => {
+  electron.state.userData = mkdtempSync(NodePath.join(tmpdir(), "voice-account-client-"));
+  electron.state.encryption = true;
+  sent = [];
+  vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
+    return new Promise<Response>((resolve, reject) => {
+      // As real fetch does, an aborted signal rejects, before or during the request. The caller's
+      // own signal, because the copy a Request makes follows it only weakly and can be collected.
+      const signal = init?.signal ?? request.signal;
+      if (signal.aborted) reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason));
+      Promise.resolve(answer(request.url)).then(resolve, reject);
+    });
+  });
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  rmSync(electron.state.userData, { recursive: true, force: true });
+});
+
+const config = () => readFileSync(NodePath.join(electron.state.userData, "config.json"), "utf8");
+const storedIdentity = (channel: UpdateChannel) =>
+  (JSON.parse(config()) as Record<string, Record<string, Record<string, unknown>>>).voice?.[channel]
+    ?.identity;
+
+/** Plays a whole sign-in: the browser opens, then the landing page's code is redeemed. */
+async function signIn(auth: ReturnType<typeof client>) {
+  const { state } = await auth.openBrowser();
+  const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
+  return auth.redeem(code);
+}
+
+describe("createVoiceAuthClient", () => {
+  test("stores the identity before a sign-in reports success, so an offline restart restores it", async () => {
+    answer = (url) =>
+      url.endsWith("/electron/token")
+        ? signedIn("token-1")
+        : Promise.reject(new TypeError("fetch failed"));
+    expect(await signIn(client("nightly"))).toEqual({ kind: "signedIn", ...USER });
+    expect(sent.map(({ url }) => new URL(url).pathname)).toEqual(["/api/auth/electron/token"]);
+
+    expect(typeof storedIdentity("nightly")).toBe("string");
+    expect(config()).not.toContain(USER.email);
+    const restarted = client("nightly");
+    expect(restarted.cachedUser()).toEqual(USER);
+    expect(await restarted.checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unreachable",
+    });
+    expect(client("nightly").cachedUser()).toEqual(USER);
+  });
+
+  test.each([
+    [
+      "a captive portal page",
+      () => new Response("<html>Wi-Fi</html>", { headers: { "content-type": "text/html" } }),
+    ],
+    ["a 503", () => json({ error: "down" }, { status: 503 })],
+    ["a JSON body without a user", () => json({ ok: true })],
+  ])("%s never replaces the stored identity", async (_name, respond) => {
+    answer = () => signedIn("token-1");
+    await client("nightly").checkAuthSession(new AbortController().signal);
+    const before = storedIdentity("nightly");
+
+    answer = respond;
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unknown",
+    });
+    expect(storedIdentity("nightly")).toBe(before);
+    expect(client("nightly").cachedUser()).toEqual(USER);
+  });
+
+  test("an aborted check writes no cookie or identity, even when its answer comes later", async () => {
+    answer = () => signedIn("old-token");
+    const auth = client("nightly");
+    await auth.checkAuthSession(new AbortController().signal);
+
+    const revoked = Promise.withResolvers<Response>();
+    answer = (url) =>
+      url.endsWith("/get-session") ? revoked.promise : signedIn("new-token", GRACE);
+    const check = new AbortController();
+    const stale = auth.checkAuthSession(check.signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    // What the account module does when a sign-in starts during a check.
+    check.abort();
+    expect(await signIn(auth)).toEqual({ kind: "signedIn", ...GRACE });
+    // The server ended the old auth session, and its late answer clears the cookie.
+    revoked.resolve(
+      json(null, { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } }),
+    );
+    expect(await stale).toMatchObject({ kind: "unreachable" });
+
+    expect(client("nightly").cachedUser()).toEqual(GRACE);
+    answer = () => signedIn("new-token", GRACE);
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "active",
+      user: GRACE,
+    });
+    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+  });
+
+  test("keeps each channel's auth session for its own API", async () => {
+    answer = (url) => (url.startsWith(API.stable) ? signedIn("stable-token") : json(null));
+    const stable = client("stable");
+    expect(await stable.checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "active",
+      user: USER,
+    });
+    expect(authSessionStored(electron.state.userData, "stable")).toBe(true);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "ended",
+      status: 200,
+    });
+    await stable.checkAuthSession(new AbortController().signal);
+
+    expect(sent.map(({ url, cookie }) => [new URL(url).origin, cookie])).toEqual([
+      [API.stable, null],
+      [API.nightly, null],
+      [API.stable, "better-auth.session_token=stable-token"],
+    ]);
+  });
+
+  test("restores the identity of the last answer from storage, and forget clears it", async () => {
+    answer = () => signedIn("token-1");
+    await client("nightly").checkAuthSession(new AbortController().signal);
+
+    const restarted = client("nightly");
+    expect(restarted.cachedUser()).toEqual(USER);
+    restarted.forget();
+    expect(restarted.cachedUser()).toBeNull();
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    answer = () => json(null);
+    await restarted.checkAuthSession(new AbortController().signal);
+    expect(sent.at(-1)?.cookie).toBeNull();
+  });
+
+  test.each([
+    ["a revoked auth session (200 null)", () => json(null), { kind: "ended", status: 200 }],
+    ["401", () => json({ code: "UNAUTHORIZED" }, { status: 401 }), { kind: "ended", status: 401 }],
+    ["403", () => json({ code: "FORBIDDEN" }, { status: 403 }), { kind: "ended", status: 403 }],
+    ["503", () => json({}, { status: 503 }), { kind: "unknown", status: 503 }],
+    [
+      "a captive portal page",
+      () =>
+        new Response("<html>Sign in to Wi-Fi</html>", { headers: { "content-type": "text/html" } }),
+      { kind: "unknown", status: 200 },
+    ],
+  ])("reads %s from get-session", async (_name, respond, expected) => {
+    answer = respond;
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual(
+      expected,
+    );
+  });
+
+  test("a failed fetch is unreachable, not ended", async () => {
+    answer = () => Promise.reject(new TypeError("fetch failed"));
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
+      kind: "unreachable",
+    });
+  });
+
+  test("without encryption and nothing in memory, it does not ask the API", async () => {
+    electron.state.encryption = false;
+    answer = () => json(null);
+    expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
+      kind: "unknown",
+      status: 0,
+    });
+    expect(sent).toEqual([]);
+  });
+});
+
+// What the plugin's storage holds for a signed-in channel: safeStorage ciphertext, base64.
+const storeCookie = (channel: UpdateChannel, value: string | null = "Y2lwaGVydGV4dA==") =>
+  storage().setItem(authStorageKeys(channel).cookie, value);
+
+describe("authSessionStored", () => {
+  test("is read from the plugin's Conf store under the installed channel only", () => {
+    const { userData } = electron.state;
+    expect(authSessionStored(userData, "stable")).toBe(false);
+    storeCookie("stable");
+    expect(authSessionStored(userData, "stable")).toBe(true);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    storeCookie("nightly");
+    expect(authSessionStored(userData, "nightly")).toBe(true);
+    // A renamed prefix would sign every user out on update.
+    expect(JSON.parse(config())).toEqual({
+      voice: { stable: { cookie: "Y2lwaGVydGV4dA==" }, nightly: { cookie: "Y2lwaGVydGV4dA==" } },
+    });
+  });
+
+  test("a cleared or unreadable store counts as no auth session", () => {
+    const { userData } = electron.state;
+    storeCookie("nightly", null);
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+    rmSync(NodePath.join(userData, "config.json"));
+    expect(authSessionStored(userData, "nightly")).toBe(false);
+  });
+});

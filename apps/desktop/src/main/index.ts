@@ -28,6 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
+import { authSessionStored } from "./account-storage.ts";
 import { createAccount, resolveApiUrl } from "./account.ts";
 import { createCleanup } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
@@ -175,9 +176,13 @@ async function main() {
       ? parseReleaseConfig(manifest.voiceRelease)
       : null;
   const installedChannel = release?.channel ?? "stable";
+  const testCheckIntervalMs = testMode ? Number(process.env.VOICE_AUTH_SESSION_CHECK_MS) : 0;
   const account = createAccount({
     apiUrl: resolveApiUrl({ development, release, env: process.env }),
     development,
+    hasStoredAuthSession: () => authSessionStored(userData, installedChannel),
+    // The verify skill shortens the hourly check to bring the window back after it.
+    ...(testCheckIntervalMs > 0 && { checkIntervalMs: testCheckIntervalMs }),
     createClient: (apiUrl) =>
       import("./account-client.ts").then((m) =>
         m.createVoiceAuthClient({
@@ -392,9 +397,11 @@ async function main() {
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
       webPreferences,
     });
+    // The window came back (shown, unminimized, Cmd-Tab): re-read what may have changed meanwhile.
     hub.on("focus", () => {
       helper.send({ type: "permissions.check" });
       refreshLoginItem();
+      void account.refresh();
     });
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
@@ -404,6 +411,9 @@ async function main() {
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
+    // Restore loads Better Auth and reads the Keychain, so it waits until the window has loaded.
+    // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
+    hub.webContents.once("did-finish-load", () => void account.restore());
     loadPage(hub, "hub");
     return hub;
   }
