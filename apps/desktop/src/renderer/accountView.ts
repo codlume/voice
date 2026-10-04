@@ -1,8 +1,10 @@
 import type { AccountIdentity, AccountState } from "../shared/api.ts";
 
+const UNNAMED_ACCOUNT = "Google account";
+
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "G";
+  if (words.length === 0) return UNNAMED_ACCOUNT.charAt(0);
   return words
     .slice(0, 2)
     .map((word) => word[0])
@@ -11,7 +13,7 @@ export function initials(name: string): string {
 }
 
 export function accountName(identity: AccountIdentity): string {
-  return identity.name.trim() || "Google account";
+  return identity.name.trim() || UNNAMED_ACCOUNT;
 }
 
 export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): {
