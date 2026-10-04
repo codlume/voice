@@ -306,6 +306,9 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     signIn: async () => {
       set({ ...snapshot, account: { kind: "signingIn" } });
     },
+    signOut: async () => {
+      set({ ...snapshot, account: { kind: "signedOut" } });
+    },
     submitSignInCode: async (code) => {
       if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({

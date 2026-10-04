@@ -28,7 +28,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
-import { authSessionStored } from "./account-storage.ts";
+import { authSessionStored, authStored } from "./account-storage.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   callbackUrlFromArgv,
@@ -193,12 +193,14 @@ async function main() {
     apiUrl: resolveApiUrl({ development, release, env: process.env }),
     development,
     hasStoredAuthSession: () => authSessionStored(userData, installedChannel),
+    hasStoredAuth: () => authStored(userData, installedChannel),
     // The verify skill shortens the hourly check to bring the window back after it.
     ...(testCheckIntervalMs > 0 && { checkIntervalMs: testCheckIntervalMs }),
     createClient: (apiUrl) =>
       import("./account-client.ts").then((m) =>
         m.createVoiceAuthClient({
           apiUrl,
+          log,
           installedChannel,
           ...(signInUrlFile && { signInUrlFile }),
         }),
@@ -619,6 +621,7 @@ async function main() {
     account.submitSignInCode(typeof code === "string" ? code : ""),
   );
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
+  ipcMain.handle(Channel.signOut, () => account.signOut());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
 
   // A callback that changed the account brings the hub forward, but never mid-session: the

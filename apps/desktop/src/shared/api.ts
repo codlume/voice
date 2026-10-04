@@ -164,6 +164,7 @@ export type VoiceApi = {
   copyLast(which: "text" | "raw"): Promise<void>;
   /** Opens the system browser on the API. Resolves once the browser is open, not once signed in. */
   signIn(): Promise<void>;
+  signOut(): Promise<void>;
   /** The code the landing page shows, for a build that cannot receive the URL scheme. */
   submitSignInCode(code: string): Promise<void>;
   cancelSignIn(): Promise<void>;
@@ -188,6 +189,7 @@ export const Channel = {
   uninstallModel: "voice:uninstallModel",
   copyLast: "voice:copyLast",
   signIn: "voice:signIn",
+  signOut: "voice:signOut",
   submitSignInCode: "voice:submitSignInCode",
   cancelSignIn: "voice:cancelSignIn",
   dismissAccountError: "voice:dismissAccountError",
