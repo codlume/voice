@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, initials } from "./accountView.ts";
+import { accountRow, emailDecoy, initials } from "./accountView.ts";
 
 describe("account view", () => {
   test("initials take the first two words of the name, else the email", () => {
@@ -39,5 +39,19 @@ describe("account view", () => {
       { title: "Google account", detail: "ada@example.com" },
       { title: "Sign-in was interrupted", detail: "Retry to sign in again." },
     ]);
+  });
+
+  test("the email decoy keeps the email's shape but none of its text", () => {
+    const email = "ada.lovelace@example.com";
+    const decoy = emailDecoy(email);
+    expect(decoy).toHaveLength(email.length);
+    expect(decoy.indexOf("@")).toBe(email.indexOf("@"));
+    expect([...decoy].map((char, index) => (char === "." ? index : -1))).toEqual(
+      [...email].map((char, index) => (char === "." ? index : -1)),
+    );
+    expect(decoy).toMatch(/^[a-z2-9]+\.[a-z2-9]+@[a-z2-9]+\.[a-z2-9]+$/);
+    for (const part of ["ada", "lovelace", "example", "com"]) expect(decoy).not.toContain(part);
+    expect(emailDecoy(email)).toBe(decoy);
+    expect(emailDecoy("grace.hopper@example.com")).not.toBe(decoy);
   });
 });

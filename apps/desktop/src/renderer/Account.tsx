@@ -6,6 +6,7 @@ import { accountRow } from "./accountView.ts";
 import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { HiddenEmail } from "./HiddenEmail.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -162,7 +163,12 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
       <Card>
         <div {...stylex.props(settings.row)}>
           <Avatar identity={account} size={40} />
-          <RowText account={account} />
+          <div {...stylex.props(settings.rowText)}>
+            <span {...stylex.props(settings.rowTitle)}>{accountRow(account).title}</span>
+            <p {...stylex.props(settings.rowDetail)}>
+              <HiddenEmail key={account.email} email={account.email} />
+            </p>
+          </div>
           <div {...stylex.props(settings.actions)}>
             <Button
               id="setting-sign-out"
