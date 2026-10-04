@@ -43,6 +43,7 @@ import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
+import { hubWindowSize } from "./hub-window.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
@@ -412,8 +413,7 @@ async function main() {
       return hub;
     }
     hub = new BrowserWindow({
-      width: 960,
-      height: 640,
+      ...hubWindowSize(screen.getPrimaryDisplay().workArea),
       minWidth: 720,
       minHeight: 480,
       title: "Voice",
