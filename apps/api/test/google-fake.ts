@@ -2,10 +2,9 @@
 // code picks the user, so `ada-lovelace` signs in Ada Lovelace, ada-lovelace@example.com.
 // A slash adds a second Google identity with the same email: `ada-lovelace/work` is
 // another subject whose email is still ada-lovelace@example.com.
-// `grace-hopper` has Google's default profile picture, and `alan-turing` a picture URL Google
-// refuses; everyone else has none.
 export const googleTokenUrl = "https://oauth2.googleapis.com/token";
 
+// Google answers alan-turing's URL with 400, to exercise the initials fallback.
 const pictures: Record<string, string> = {
   "grace-hopper": "https://lh3.googleusercontent.com/a/default-user=s96-c",
   "alan-turing": "https://lh3.googleusercontent.com/a/missing-picture=s96-c",
