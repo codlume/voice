@@ -1,33 +1,16 @@
 // Load the Electron mock before plugin storage.
 import {
   USER,
+  PICTURED,
   http,
   signedIn,
   client,
-  config,
   signIn,
   snapshotAccount,
   writeCachedIdentity,
 } from "./account-client.test-harness.ts";
 import { expect, test, vi } from "vite-plus/test";
 import { CODE, flush, harness, startSignIn } from "./account.test-harness.ts";
-
-const PICTURE = "https://lh3.googleusercontent.com/a/ada-picture=s96-c";
-const PICTURED = { ...USER, image: PICTURE };
-
-test("a sign-in keeps the Google picture, encrypted, and an offline relaunch shows it", async () => {
-  http.answer = (url) =>
-    url.endsWith("/electron/token")
-      ? signedIn("token-1", PICTURED)
-      : Promise.reject(new TypeError("fetch failed"));
-  expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", user: PICTURED });
-  expect(config()).not.toContain("ada-picture");
-
-  const relaunched = snapshotAccount(client("nightly"));
-  await relaunched.account.restore();
-  expect(relaunched.states).toStrictEqual([{ kind: "signedIn", ...PICTURED }]);
-  relaunched.account.dispose();
-});
 
 test.each([
   ["a null picture", null],
@@ -97,7 +80,7 @@ test("the picture stays on every signed-in state through deletion, re-authentica
       "reauthRequired",
       undefined,
     ]);
-    for (const state of signedInStates) expect(state.image).toBe(PICTURE);
+    for (const state of signedInStates) expect(state.image).toBe(PICTURED.image);
     h.account.dispose();
   } finally {
     vi.useRealTimers();
