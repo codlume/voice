@@ -13,9 +13,11 @@ const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
 
 const styles = stylex.create({
   avatar: {
+    position: "relative",
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
+    overflow: "hidden",
     width: 40,
     height: 40,
     borderRadius: radius.round,
@@ -24,6 +26,13 @@ const styles = stylex.create({
     fontSize: 15,
     fontWeight: 600,
     letterSpacing: "0.02em",
+  },
+  picture: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
   },
   waiting: {
     width: 16,
@@ -95,6 +104,37 @@ function ErrorLine({ text }: { text: string }) {
         {text}
       </p>
     )
+  );
+}
+
+// The initials stay underneath, so they show while the picture loads and after it fails.
+function Avatar({
+  name,
+  email,
+  image,
+}: {
+  name: string;
+  email: string;
+  image: string | undefined;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  return (
+    <span aria-hidden="true" {...stylex.props(styles.avatar)}>
+      {initials(name, email)}
+      {image && image !== failed && (
+        <img
+          src={image}
+          alt=""
+          width={40}
+          height={40}
+          decoding="async"
+          draggable={false}
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(image)}
+          {...stylex.props(styles.picture)}
+        />
+      )}
+    </span>
   );
 }
 
@@ -190,9 +230,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
     <>
       <Card>
         <div {...stylex.props(settings.row)}>
-          <span aria-hidden="true" {...stylex.props(styles.avatar)}>
-            {initials(account.name, account.email)}
-          </span>
+          <Avatar name={account.name} email={account.email} image={account.image} />
           <RowText account={account} />
           <div {...stylex.props(settings.actions)}>
             <Button
