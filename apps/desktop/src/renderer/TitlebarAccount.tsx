@@ -58,7 +58,6 @@ const styles = stylex.create({
   header: { display: "flex", alignItems: "center", gap: 10, padding: space.sm },
   identity: { display: "flex", flexDirection: "column", minWidth: 0 },
   name: { fontWeight: 600 },
-  // A compact item that hugs the email, so its highlight stays inside the header.
   email: {
     alignSelf: "flex-start",
     maxWidth: "calc(100% + 8px)",

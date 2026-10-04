@@ -41,15 +41,14 @@ export function HiddenEmail({
   email: string;
   render?: useRender.RenderProp;
 }) {
-  // Remembering which email was revealed hides a different account's email without a remount.
-  const [revealedFor, setRevealedFor] = useState<string | null>(null);
-  const revealed = revealedFor === email;
+  const [revealedEmail, setRevealedEmail] = useState<string | null>(null);
+  const revealed = revealedEmail === email;
   return useRender({
     render,
     props: {
       "aria-label": revealed ? undefined : "Show email",
       title: revealed ? "Click to hide email" : "Click to reveal email",
-      onClick: () => setRevealedFor(revealed ? null : email),
+      onClick: () => setRevealedEmail(revealed ? null : email),
       // Blurring the clickable element itself would blur its focus outline too.
       children: (
         <span {...stylex.props(styles.text, !revealed && styles.hidden)}>

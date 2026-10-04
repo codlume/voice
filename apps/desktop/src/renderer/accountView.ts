@@ -1,6 +1,5 @@
 import type { AccountIdentity, AccountState } from "../shared/api.ts";
 
-// A nameless account shows "G", for Google account, so the avatar never hints at the email.
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "G";
@@ -47,8 +46,6 @@ export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): 
 
 const DECOY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
-// The decoy depends only on the length and the separator positions, so it carries nothing else
-// of the address.
 export function emailDecoy(email: string): string {
   return Array.from(email, (char, index) =>
     "@.-_".includes(char) ? char : DECOY_ALPHABET[(index * 7) % DECOY_ALPHABET.length],
