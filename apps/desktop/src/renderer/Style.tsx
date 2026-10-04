@@ -5,6 +5,7 @@ import { useId, useRef, useState } from "react";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
+import { actionErrorMessage } from "./actionError.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
@@ -147,9 +148,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
       await window.voice.updateSettings({ cleanup });
     } catch (error) {
       if (version === saveVersion.current) {
-        setSaveError(
-          error instanceof Error ? error.message : "Could not save your style settings.",
-        );
+        setSaveError(actionErrorMessage(error, "Could not save your style settings."));
       }
     }
   }

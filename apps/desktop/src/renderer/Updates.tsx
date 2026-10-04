@@ -18,6 +18,7 @@ import {
   updateStatusText,
   type RestartPrompt,
 } from "./updateStatus.ts";
+import { useAction } from "./useAction.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const spin = stylex.keyframes({
@@ -205,10 +206,6 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The update action failed. Try again.";
-}
-
 export function SidebarUpdates({
   updates,
   session,
@@ -218,7 +215,7 @@ export function SidebarUpdates({
   session: PillState;
   last: Snapshot["last"];
 }) {
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { error: actionError, run: runAction } = useAction();
   // The prompt is fixed when it opens, so its choices match the transcript the user saw.
   const [confirm, setConfirm] = useState<{
     open: boolean;
@@ -227,7 +224,7 @@ export function SidebarUpdates({
   } | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
-  const card = updateCard(status, actionError);
+  const card = updateCard(status, actionError || null);
 
   // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
   if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
@@ -241,18 +238,13 @@ export function SidebarUpdates({
   useEffect(() => window.voice.onRestartRequest(() => onRestartRequest()), []);
 
   async function run(task: () => Promise<void>) {
-    setActionError(null);
-    try {
-      await task();
-    } catch (error) {
-      setActionError(errorMessage(error));
-    }
+    await runAction(task, "The update action failed. Try again.");
   }
 
   return (
     <>
       <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
-        {actionError ?? updateStatusText(status)}
+        {actionError || updateStatusText(status)}
       </p>
       <UpdateCardTrigger
         card={card}
