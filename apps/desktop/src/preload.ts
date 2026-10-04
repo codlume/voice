@@ -43,6 +43,10 @@ const voice: VoiceApi = {
   installModel: (id) => ipcRenderer.invoke(Channel.installModel, id),
   uninstallModel: (id) => ipcRenderer.invoke(Channel.uninstallModel, id),
   copyLast: (which) => ipcRenderer.invoke(Channel.copyLast, which),
+  signIn: () => ipcRenderer.invoke(Channel.signIn),
+  submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),
+  cancelSignIn: () => ipcRenderer.invoke(Channel.cancelSignIn),
+  dismissAccountError: () => ipcRenderer.invoke(Channel.dismissAccountError),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

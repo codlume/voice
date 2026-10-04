@@ -1,5 +1,10 @@
 appId: com.voice.app
 productName: Voice
+# The sign-in callback scheme. VOICE_URL_SCHEME in src/shared/api.ts must match; a test checks it.
+protocols:
+  - name: Voice
+    schemes:
+      - com.codlume.voice
 directories:
   output: release
 files:

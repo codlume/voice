@@ -24,6 +24,7 @@ function harness() {
     settings: { ...DEFAULT_SETTINGS, microphone: usb },
     microphones: { kind: "ready", devices: [usb], defaultUid: "usb" },
     microphoneTest: { kind: "off" },
+    account: { kind: "signedOut" },
     last: null,
   });
   const commands: HelperCommand[] = [];

@@ -5,6 +5,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -32,7 +33,7 @@ const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
 const statePath = join(tmpdir(), "voice-verify.json");
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence");
-const ports = { voice: 9355, target: 9356 };
+const ports = { voice: 9355, target: 9356, inspect: 9357 };
 
 const [command = "help", ...args] = process.argv.slice(2);
 const show = (value) => JSON.stringify(value);
@@ -222,7 +223,13 @@ const commands = {
     // after earlier unclean exits.
     const child = start(
       electronPath,
-      [".", `--remote-debugging-port=${ports.voice}`, "-ApplePersistenceIgnoreState", "YES"],
+      [
+        ".",
+        `--remote-debugging-port=${ports.voice}`,
+        `--inspect=${ports.inspect}`,
+        "-ApplePersistenceIgnoreState",
+        "YES",
+      ],
       { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
     );
     child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
@@ -233,6 +240,7 @@ const commands = {
       ownerPid: process.pid,
       electronPid: child.pid,
       port: ports.voice,
+      inspectPort: ports.inspect,
       userData,
       fakeMicrophonePath,
       logPath,
@@ -334,6 +342,23 @@ const commands = {
     page.close();
   },
 
+  async callback() {
+    const [code] = args;
+    if (!code) fail("usage: callback <code>");
+    const state = requireInstance();
+    // The landing page opens this URL. A development build cannot receive it from macOS, so the
+    // main-process test hook emits the same open-url event the OS would.
+    const url = `com.codlume.voice://auth/callback#token=${code}`;
+    const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
+    const main = await Page.open(targets[0].webSocketDebuggerUrl);
+    try {
+      await main.evaluate(`globalThis.voiceTest.openUrl(${show(url)})`);
+    } finally {
+      main.close();
+    }
+    out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
+  },
+
   async wait() {
     const [which, expression, timeout = "10000"] = args;
     if (!["hub", "pill"].includes(which) || !expression)
@@ -370,6 +395,123 @@ const commands = {
     } finally {
       page.close();
     }
+  },
+
+  async type() {
+    const [target, ...words] = args;
+    if (!target || words.length === 0) fail("usage: type <css:selector> <text...>");
+    const selector = target.replace(/^css:/, "");
+    const text = words.join(" ");
+    const page = await connect("hub");
+    try {
+      const matches = await page.evaluate(`(() => {
+        const matches = [...document.querySelectorAll(${show(selector)})].filter(${visible});
+        if (matches.length === 1) matches[0].focus();
+        return { count: matches.length, focused: matches.length === 1 && document.activeElement === matches[0] };
+      })()`);
+      if (matches.count !== 1)
+        fail(`${show(selector)} matches ${matches.count} visible elements; expected one`);
+      if (!matches.focused) fail(`${show(selector)} did not take focus`);
+      // insertText goes through the browser's input pipeline, so React sees it as a paste.
+      await page.call("Input.insertText", { text });
+      out({ typed: text.length });
+    } finally {
+      page.close();
+    }
+  },
+
+  async browser() {
+    const [googleCode = "ada-lovelace"] = args;
+    const urlFile = join(requireInstance().userData, "sign-in-url.txt");
+    if (!existsSync(urlFile)) fail("no pending sign-in; click Sign in with Google first");
+    const signInUrl = readFileSync(urlFile, "utf8").trim();
+    // A pending URL is good for one browser visit, like a real tab.
+    rmSync(urlFile);
+    const play = spawnSync(
+      process.execPath,
+      [
+        join(repoDir, "apps/api/scripts/play-browser.mjs"),
+        "--base",
+        new URL(signInUrl).origin,
+        "--init-url",
+        signInUrl,
+        "--code",
+        googleCode,
+      ],
+      { encoding: "utf8" },
+    );
+    if (play.status !== 0) fail(`play-browser.mjs failed:\n${play.stdout}${play.stderr}`);
+    out(play.stdout.trim());
+  },
+
+  async record() {
+    const [name] = args;
+    if (!name) fail("usage: record <name>");
+    const output = join(evidenceDir(), `${name}.mp4`);
+    const page = await connect("hub");
+    const framesDir = mkdtempSync(join(tmpdir(), `voice-verify-${name}-`));
+    const frames = [];
+    page.on("Page.screencastFrame", ({ data: png, metadata, sessionId }) => {
+      const file = join(framesDir, `${String(frames.length).padStart(6, "0")}.png`);
+      writeFileSync(file, Buffer.from(png, "base64"));
+      frames.push({ file, at: metadata.timestamp });
+      void page.call("Page.screencastFrameAck", { sessionId });
+    });
+    await page.call("Page.startScreencast", {
+      format: "png",
+      everyNthFrame: 1,
+      maxWidth: 960,
+      maxHeight: 640,
+    });
+    out({ recording: output, pid: process.pid, stop: `kill -TERM ${process.pid}` });
+    await new Promise((resolve) => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+      void page.closed.then(resolve);
+    });
+    const stoppedAt = Date.now() / 1000;
+    await Promise.race([
+      page.call("Page.stopScreencast"),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]).catch(() => {});
+    page.close();
+    if (frames.length === 0) fail(`no frames captured; ${framesDir} is empty`);
+
+    // The concat demuxer drops the last entry's duration unless the file is listed once more.
+    const list = frames.flatMap(({ file, at }, index) => [
+      `file '${file}'`,
+      `duration ${Math.max(0.04, (frames[index + 1]?.at ?? stoppedAt) - at).toFixed(3)}`,
+    ]);
+    list.push(`file '${frames.at(-1).file}'`);
+    const listPath = join(framesDir, "list.txt");
+    writeFileSync(listPath, `${list.join("\n")}\n`);
+    const ffmpeg = spawnSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listPath,
+        "-vsync",
+        "vfr",
+        "-pix_fmt",
+        "yuv420p",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        output,
+      ],
+      { encoding: "utf8" },
+    );
+    if (ffmpeg.error?.code === "ENOENT")
+      return out({ frames: framesDir, count: frames.length, note: "ffmpeg not found" });
+    if (ffmpeg.status !== 0) fail(`ffmpeg failed; frames kept in ${framesDir}\n${ffmpeg.stderr}`);
+    rmSync(framesDir, { recursive: true, force: true });
+    out({ video: output, frames: frames.length, seconds: +(stoppedAt - frames[0].at).toFixed(1) });
   },
 
   async shot() {
@@ -514,6 +656,10 @@ const commands = {
   snapshot                       full app snapshot JSON
   text                           current sidebar nav and visible page text
   click <name|css:sel> [page]    click the one visible element with that accessible name
+  type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
+  browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
+  callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
+  record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
