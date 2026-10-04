@@ -320,7 +320,7 @@ export function createVoiceAuthClient({
       if (user === null)
         return { kind: error instanceof TypeError ? "offline" : "rejected", error };
       saveIdentity(user);
-      return { kind: "signedIn", ...user };
+      return { kind: "signedIn", user };
     },
     cachedUser: () => {
       const stored = store.getItem(keys.identity);

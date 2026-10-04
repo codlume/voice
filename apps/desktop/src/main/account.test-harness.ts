@@ -61,7 +61,7 @@ export function fakeClient() {
             }
             stored = true;
             cached = user;
-            resolve({ kind: "signedIn", ...user });
+            resolve({ kind: "signedIn", user });
           },
           reject: (error) => resolve({ kind: "rejected", error }),
           fail: (kind, error) => resolve({ kind, error }),

@@ -42,7 +42,7 @@ export type Identity = AccountIdentity & { id: string };
  * aborted while the API answered, or outlived by a forget: nothing of it was stored.
  */
 export type RedeemResult =
-  | ({ kind: "signedIn" } & Identity)
+  | { kind: "signedIn"; user: Identity }
   | { kind: "offline" | "rejected"; error: unknown }
   | { kind: "abandoned" };
 
@@ -375,7 +375,7 @@ export function createAccount({
     // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
-      const { kind: _, ...user } = result;
+      const { user } = result;
       if (current.resumeAs === null) {
         leave(current.attempt, { kind: "signedIn", ...user });
       } else {

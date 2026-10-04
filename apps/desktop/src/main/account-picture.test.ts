@@ -22,7 +22,7 @@ test("a sign-in keeps the Google picture, encrypted, and an offline relaunch sho
     url.endsWith("/electron/token")
       ? signedIn("token-1", PICTURED)
       : Promise.reject(new TypeError("fetch failed"));
-  expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", ...PICTURED });
+  expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", user: PICTURED });
   expect(config()).not.toContain("ada-picture");
 
   const relaunched = snapshotAccount(client("nightly"));
@@ -41,7 +41,7 @@ test.each([
   ["a host that only ends like Google's", "https://evilgoogleusercontent.com/a/ada-picture"],
 ])("%s signs in without a picture", async (_name, image) => {
   http.answer = () => signedIn("token-1", { ...USER, image });
-  expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", ...USER });
+  expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", user: USER });
   expect(client("nightly").cachedUser()).toStrictEqual(USER);
 });
 
