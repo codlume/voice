@@ -30,6 +30,7 @@ const base: Snapshot = {
     theme: "system",
     microphone: null,
     muteWhileDictating: false,
+    copyToClipboard: false,
     showInDock: true,
     alwaysShowPill: true,
     dictationLanguage: "en",
@@ -286,6 +287,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
+          copyToClipboard: patch.copyToClipboard ?? snapshot.settings.copyToClipboard,
           showInDock: patch.showInDock ?? snapshot.settings.showInDock,
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
@@ -377,7 +379,11 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
 function PillPreview() {
   const snapshot = useSnapshot();
   return snapshot ? (
-    <PillCapsule session={snapshot.session} alwaysShowPill={snapshot.settings.alwaysShowPill} />
+    <PillCapsule
+      session={snapshot.session}
+      alwaysShowPill={snapshot.settings.alwaysShowPill}
+      copyToClipboard={snapshot.settings.copyToClipboard}
+    />
   ) : null;
 }
 
@@ -410,7 +416,7 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule session={session} alwaysShowPill />
+            <PillCapsule session={session} alwaysShowPill copyToClipboard={false} />
           </div>
         </figure>
       ))}

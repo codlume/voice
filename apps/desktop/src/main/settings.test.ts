@@ -24,6 +24,15 @@ describe("parseSettings", () => {
     expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(muteWhileDictating);
   });
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
+    "defaults missing or invalid copy-to-clipboard preference %j to off",
+    (copyToClipboard) => {
+      expect(parseSettings({ copyToClipboard }).copyToClipboard).toBe(false);
+    },
+  );
+  test.each([true, false])("keeps boolean copy-to-clipboard preference %j", (copyToClipboard) => {
+    expect(parseSettings({ copyToClipboard }).copyToClipboard).toBe(copyToClipboard);
+  });
+  test.each([undefined, null, "true", "false", 0, 1, {}, []])(
     "defaults missing or invalid Dock preference %j to shown",
     (showInDock) => {
       expect(parseSettings({ showInDock }).showInDock).toBe(true);
@@ -64,6 +73,7 @@ describe("parseSettings", () => {
       theme: "system",
       microphone: null,
       muteWhileDictating: false,
+      copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",
@@ -111,6 +121,13 @@ describe("applyPatch", () => {
     expect(applyPatch(enabled, { theme: "dark" }).muteWhileDictating).toBe(true);
     expect(applyPatch(enabled, { muteWhileDictating: false })).toEqual(DEFAULT_SETTINGS);
   });
+  test("copy-to-clipboard is off by default, survives unrelated patches, and can be turned back off", () => {
+    expect(DEFAULT_SETTINGS.copyToClipboard).toBe(false);
+    const enabled = applyPatch(DEFAULT_SETTINGS, { copyToClipboard: true });
+    expect(enabled).toEqual({ ...DEFAULT_SETTINGS, copyToClipboard: true });
+    expect(applyPatch(enabled, { theme: "dark" }).copyToClipboard).toBe(true);
+    expect(applyPatch(enabled, { copyToClipboard: false })).toEqual(DEFAULT_SETTINGS);
+  });
   test("changes language without losing cleanup preference and retains it across unrelated patches", () => {
     const polish = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: "pl" });
     expect(polish).toEqual({ ...DEFAULT_SETTINGS, dictationLanguage: "pl" });
@@ -126,6 +143,7 @@ describe("applyPatch", () => {
       theme: "system",
       microphone: null,
       muteWhileDictating: false,
+      copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",

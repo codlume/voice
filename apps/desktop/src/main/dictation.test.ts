@@ -34,6 +34,7 @@ type Options = {
   styling?: CleanupStyle["styling"];
   cleanFails?: boolean;
   cleanHangs?: boolean;
+  copyToClipboard?: boolean;
 };
 
 function harness(opts: Options = {}) {
@@ -54,6 +55,7 @@ function harness(opts: Options = {}) {
     settings: {
       ...DEFAULT_SETTINGS,
       dictationLanguage: opts.dictationLanguage ?? DEFAULT_SETTINGS.dictationLanguage,
+      copyToClipboard: opts.copyToClipboard ?? DEFAULT_SETTINGS.copyToClipboard,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
         styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
@@ -75,6 +77,7 @@ function harness(opts: Options = {}) {
   const entries: DiagnosticLog[] = [];
   const phases: string[] = [];
   const reports: SessionReport[] = [];
+  const copies: string[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
@@ -96,6 +99,7 @@ function harness(opts: Options = {}) {
       if (entry) entries.push(entry);
     },
     onSessionDone: (report) => reports.push(report),
+    copy: (text) => copies.push(text),
   });
   const id = () => {
     const session = store.state.session;
@@ -114,6 +118,7 @@ function harness(opts: Options = {}) {
     entries,
     phases,
     reports,
+    copies,
     dictation,
     id,
   };
@@ -121,6 +126,17 @@ function harness(opts: Options = {}) {
 
 async function flush() {
   await vi.advanceTimersByTimeAsync(0);
+}
+
+async function dictate(h: ReturnType<typeof harness>, text: string) {
+  h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+  const id = h.id();
+  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+  vi.advanceTimersByTime(800);
+  h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+  h.dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
+  await flush();
+  return id;
 }
 
 describe("createDictation", () => {
@@ -637,6 +653,61 @@ describe("createDictation", () => {
       "one",
       "Two.",
     ]);
+  });
+
+  describe("copy transcript to clipboard", () => {
+    test("copies the cleaned text once, only after insertion reports back", async () => {
+      const h = harness({ copyToClipboard: true });
+      const id = await dictate(h, "hello world");
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world." });
+      expect(h.copies).toEqual([]);
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.copies).toEqual(["hello world."]);
+      vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
+      expect(h.store.state.session).toEqual(idle);
+      expect(h.copies).toEqual(["hello world."]);
+    });
+
+    test("copies the text when insertion fails", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false });
+      const id = await dictate(h, "keep me");
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "none",
+        reason: "noFocusedField",
+      });
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted" },
+      });
+      expect(h.copies).toEqual(["keep me"]);
+    });
+
+    test("copies the text when the helper never answers the insert", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false });
+      await dictate(h, "stuck");
+      vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
+      expect(h.copies).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(h.copies).toEqual(["stuck"]);
+    });
+
+    test("copies the text when the helper exits mid-insert", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false });
+      await dictate(h, "x");
+      h.dictation.dispatch({ type: "helperExited" });
+      expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "failed" } });
+      expect(h.copies).toEqual(["x"]);
+    });
+
+    test("copies nothing when the setting is off", async () => {
+      const h = harness();
+      const id = await dictate(h, "hello world");
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "inserted" } });
+      expect(h.copies).toEqual([]);
+    });
   });
 
   test("an insert the helper never answers ends notInserted after the watchdog", () => {

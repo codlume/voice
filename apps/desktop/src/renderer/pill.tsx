@@ -8,7 +8,11 @@ import { useSnapshot } from "./useSnapshot.ts";
 function Pill() {
   const snapshot = useSnapshot();
   return snapshot ? (
-    <PillCapsule session={snapshot.session} alwaysShowPill={snapshot.settings.alwaysShowPill} />
+    <PillCapsule
+      session={snapshot.session}
+      alwaysShowPill={snapshot.settings.alwaysShowPill}
+      copyToClipboard={snapshot.settings.copyToClipboard}
+    />
   ) : null;
 }
 

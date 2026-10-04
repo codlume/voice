@@ -149,6 +149,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     onLevel: () => {},
     log: () => {},
     onSessionDone: diagnostics.sessionDone,
+    copy: () => {},
     now: () => clock,
   });
 

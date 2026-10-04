@@ -53,7 +53,9 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       </li>
       <li {...li}>
         <strong>Transcripts and files.</strong> Voice keeps the last transcript in memory until you
-        quit Voice. It saves no history. Its settings file holds your microphone, shortcut, and
+        quit Voice. It saves no history. If you turn on Copy transcript to clipboard, each transcript
+        also stays on your clipboard after Voice quits, where other apps and clipboard managers can
+        read it like anything you copy. Its settings file holds your microphone, shortcut, and
         preferences, and none of your text.
       </li>
       <li {...li}>
@@ -61,8 +63,8 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         Accessibility. It reads the contents of the focused field only to confirm that the text
         landed. What it reads stays in memory and is never stored or sent. If Voice has to paste, it
         uses the clipboard temporarily. Afterwards it restores your previous clipboard contents,
-        unless something else changed the clipboard in the meantime. Voice never reads the name of
-        the focused app, your screen, or your windows.
+        unless something else changed the clipboard in the meantime or you turned on Copy transcript
+        to clipboard. Voice never reads the name of the focused app, your screen, or your windows.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear

@@ -112,6 +112,7 @@ export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
   muteWhileDictating: boolean;
+  copyToClipboard: boolean;
   showInDock: boolean;
   alwaysShowPill: boolean;
   dictationLanguage: DictationLanguage;
@@ -128,6 +129,7 @@ export type SettingsPatch = {
   microphone?: Microphone | null;
   hotkey?: Hotkey;
   muteWhileDictating?: boolean;
+  copyToClipboard?: boolean;
   showInDock?: boolean;
   alwaysShowPill?: boolean;
   dictationLanguage?: DictationLanguage;

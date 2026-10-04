@@ -7,14 +7,29 @@ type PillView =
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
   | { kind: "message"; text: string };
 
-const notInsertedText: Record<Extract<Outcome, { kind: "notInserted" }>["reason"], string> = {
-  focusChanged: "Not inserted. Focus changed",
-  noFocusedField: "Not inserted. No text field",
-  secureInput: "Not inserted. Secure field",
-  failed: "Not inserted. Copy it from Voice",
+const notInsertedText: Record<
+  Extract<Outcome, { kind: "notInserted" }>["reason"],
+  { copyOff: string; copyOn: string }
+> = {
+  focusChanged: {
+    copyOff: "Not inserted. Focus changed",
+    copyOn: "Focus changed. Copied to clipboard",
+  },
+  noFocusedField: {
+    copyOff: "Not inserted. No text field",
+    copyOn: "No text field. Copied to clipboard",
+  },
+  secureInput: {
+    copyOff: "Not inserted. Secure field",
+    copyOn: "Secure field. Copied to clipboard",
+  },
+  failed: {
+    copyOff: "Not inserted. Copy it from Voice",
+    copyOn: "Not inserted. Copied to clipboard",
+  },
 };
 
-function outcomeView(outcome: Outcome): PillView {
+function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
   switch (outcome.kind) {
     case "inserted":
       return { kind: "inserted", method: outcome.method };
@@ -22,15 +37,20 @@ function outcomeView(outcome: Outcome): PillView {
       return { kind: "message", text: "Nothing heard" };
     case "tooShort":
       return { kind: "message", text: "Too short. Hold to talk" };
-    case "notInserted":
-      return { kind: "message", text: notInsertedText[outcome.reason] };
+    case "notInserted": {
+      const text = notInsertedText[outcome.reason];
+      return { kind: "message", text: copyToClipboard ? text.copyOn : text.copyOff };
+    }
     case "failed":
       return { kind: "message", text: outcome.message };
   }
 }
 
-export function pillView(session: PillState): PillView {
-  return session.kind === "done" ? outcomeView(session.outcome) : session;
+export function pillView(
+  session: PillState,
+  { copyToClipboard }: { copyToClipboard: boolean },
+): PillView {
+  return session.kind === "done" ? outcomeView(session.outcome, copyToClipboard) : session;
 }
 
 export const BAR_COUNT = 11;

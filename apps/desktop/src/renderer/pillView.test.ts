@@ -3,13 +3,15 @@ import { describe, expect, test } from "vite-plus/test";
 import type { Outcome } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
 
-const done = (outcome: Outcome) => pillView({ kind: "done", outcome });
+const done = (outcome: Outcome, copyToClipboard = false) =>
+  pillView({ kind: "done", outcome }, { copyToClipboard });
 
 describe("pillView", () => {
   test("shows listening only for the listening phase", () => {
-    expect(pillView({ kind: "listening" })).toEqual({ kind: "listening" });
-    expect(pillView({ kind: "processing" })).toEqual({ kind: "processing" });
-    expect(pillView({ kind: "idle" })).toEqual({ kind: "idle" });
+    const off = { copyToClipboard: false };
+    expect(pillView({ kind: "listening" }, off)).toEqual({ kind: "listening" });
+    expect(pillView({ kind: "processing" }, off)).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "idle" }, off)).toEqual({ kind: "idle" });
   });
 
   test("shows the check only when text was inserted, and says so when it went through paste", () => {
@@ -37,6 +39,23 @@ describe("pillView", () => {
     ],
   ])("%j reads %s", (outcome, text) => {
     expect(done(outcome)).toEqual({ kind: "message", text });
+  });
+
+  test.each<[Outcome, string]>([
+    [{ kind: "notInserted", reason: "focusChanged" }, "Focus changed. Copied to clipboard"],
+    [{ kind: "notInserted", reason: "noFocusedField" }, "No text field. Copied to clipboard"],
+    [{ kind: "notInserted", reason: "secureInput" }, "Secure field. Copied to clipboard"],
+    [{ kind: "notInserted", reason: "failed" }, "Not inserted. Copied to clipboard"],
+  ])("with copy to clipboard on, %j reads %s", (outcome, text) => {
+    expect(done(outcome, true)).toEqual({ kind: "message", text });
+  });
+
+  test.each<Outcome>([
+    { kind: "empty" },
+    { kind: "tooShort" },
+    { kind: "failed", message: "Set up the speech model in Voice first" },
+  ])("with copy to clipboard on, %j never claims a copy", (outcome) => {
+    expect(done(outcome, true)).toEqual(done(outcome));
   });
 });
 
