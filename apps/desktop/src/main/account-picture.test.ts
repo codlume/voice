@@ -1,17 +1,15 @@
 // Load the Electron mock before plugin storage.
 import {
   USER,
-  electron,
   http,
   signedIn,
   client,
   config,
   signIn,
   snapshotAccount,
+  writeCachedIdentity,
 } from "./account-client.test-harness.ts";
 import { expect, test, vi } from "vite-plus/test";
-import { storage } from "@better-auth/electron/storage";
-import { authStorageKeys } from "./account-storage.ts";
 import { CODE, flush, harness, startSignIn } from "./account.test-harness.ts";
 
 const PICTURE = "https://lh3.googleusercontent.com/a/ada-picture=s96-c";
@@ -51,13 +49,9 @@ test.each([
 ])(
   "an account that %s a picture since the cache was written shows the live one after the launch check",
   async (_name, cached, live) => {
-    const keys = authStorageKeys("nightly");
     http.answer = () => signedIn("token-1");
     await client("nightly").checkAuthSession(new AbortController().signal);
-    storage().setItem(
-      keys.identity,
-      electron.api.safeStorage.encryptString(JSON.stringify(cached)).toString("base64"),
-    );
+    writeCachedIdentity(cached);
 
     http.answer = () => signedIn("token-1", live);
     const relaunched = snapshotAccount(client("nightly"));
@@ -71,7 +65,7 @@ test.each([
   },
 );
 
-test("the picture stays on every signed-in state through deletion, its sign-in again and cancel", async () => {
+test("the picture stays on every signed-in state through deletion, re-authentication and cancel", async () => {
   vi.useFakeTimers();
   try {
     const h = harness();

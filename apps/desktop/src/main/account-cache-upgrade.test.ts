@@ -11,6 +11,7 @@ import {
   snapshotAccount,
   signInCode,
   requests,
+  writeCachedIdentity,
 } from "./account-client.test-harness.ts";
 import { expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
@@ -21,10 +22,7 @@ const keys = authStorageKeys("nightly");
 
 async function legacyAccount() {
   await signedInClient();
-  storage().setItem(
-    keys.identity,
-    electron.api.safeStorage.encryptString(JSON.stringify(legacyUser)).toString("base64"),
-  );
+  writeCachedIdentity(legacyUser);
   const cookie = storage().getItem(keys.cookie);
   http.answer = () => {
     throw new TypeError("offline");
@@ -110,10 +108,7 @@ test("deletion refuses a cached identity the cookie does not belong to and shows
   http.answer = () => signedIn("beta-token", GRACE);
   await client("nightly").checkAuthSession(new AbortController().signal);
   // What a late answer from a cancelled sign-in wrote before exchanges were fenced.
-  storage().setItem(
-    keys.identity,
-    electron.api.safeStorage.encryptString(JSON.stringify(USER)).toString("base64"),
-  );
+  writeCachedIdentity(USER);
   http.answer = () => {
     throw new TypeError("offline");
   };
@@ -222,4 +217,9 @@ test("a legacy id lookup deadline keeps auth and allows Retry and Cancel", async
   expect(h.state).toEqual({ kind: "signedIn", ...legacyUser });
   pending.resolve(json(null));
   h.account.dispose();
+});
+
+test("a cached identity with a non-string id is not read back", () => {
+  writeCachedIdentity({ ...USER, id: 42 });
+  expect(client("nightly").cachedUser()).toBeNull();
 });

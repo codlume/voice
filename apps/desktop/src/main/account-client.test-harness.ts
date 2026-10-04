@@ -1,11 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
+import { storage } from "@better-auth/electron/storage";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vite-plus/test";
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
 import { harness } from "./account.test-harness.ts";
-import { authSessionStored, authStored } from "./account-storage.ts";
+import { authSessionStored, authStorageKeys, authStored } from "./account-storage.ts";
 
 // The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
 // stand-in, so the test never touches the login Keychain.
@@ -104,6 +105,11 @@ export const config = () =>
 export const storedIdentity = (channel: UpdateChannel) =>
   (JSON.parse(config()) as Record<string, Record<string, Record<string, unknown>>>).voice?.[channel]
     ?.identity;
+export const writeCachedIdentity = (identity: unknown) =>
+  storage().setItem(
+    authStorageKeys("nightly").identity,
+    electron.api.safeStorage.encryptString(JSON.stringify(identity)).toString("base64"),
+  );
 
 /** Plays a whole sign-in: the browser opens, then the landing page's code is redeemed. */
 export async function signIn(auth: ReturnType<typeof client>) {
