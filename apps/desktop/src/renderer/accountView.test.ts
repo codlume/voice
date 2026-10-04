@@ -4,12 +4,12 @@ import type { AccountState } from "../shared/api.ts";
 import { accountName, accountRow, emailDecoy, initials } from "./accountView.ts";
 
 describe("account view", () => {
-  test("initials take the first two words of the name, else the email", () => {
-    expect(initials("Ada Lovelace", "ada@example.com")).toBe("AL");
-    expect(initials("ada king lovelace", "ada@example.com")).toBe("AK");
-    expect(initials("  Grace  ", "grace@example.com")).toBe("G");
-    expect(initials("", "ada@example.com")).toBe("A");
-    expect(initials("   ", "zoe@example.com")).toBe("Z");
+  test("initials take the first two words of the name, else G for Google account", () => {
+    expect(initials("Ada Lovelace")).toBe("AL");
+    expect(initials("ada king lovelace")).toBe("AK");
+    expect(initials("  Grace  ")).toBe("G");
+    expect(initials("")).toBe("G");
+    expect(initials("   ")).toBe("G");
   });
 
   test("each state has its own row text", () => {

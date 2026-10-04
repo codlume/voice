@@ -1,9 +1,14 @@
 import type { AccountIdentity, AccountState } from "../shared/api.ts";
 
-export function initials(name: string, email: string): string {
+// A nameless account shows "G", for Google account, so the avatar never hints at the email.
+export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
-  const letters = words.length > 0 ? words.slice(0, 2).map((word) => word[0]) : [email.trim()[0]];
-  return letters.join("").toUpperCase();
+  if (words.length === 0) return "G";
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }
 
 export function accountName(identity: AccountIdentity): string {
