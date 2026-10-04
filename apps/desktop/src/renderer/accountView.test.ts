@@ -53,6 +53,7 @@ describe("account view", () => {
       const decoy = emailDecoy(email);
       expect(decoy).toHaveLength(email.length);
       expect(separators(decoy)).toEqual(separators(email));
+      expect(decoy).toBe(emailDecoy(email.replace(/[^@._-]/g, "z")));
       for (const part of parts) expect(decoy).not.toContain(part);
     }
   });
