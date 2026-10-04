@@ -6,11 +6,10 @@ import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/clien
 import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
-import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
+import { VOICE_URL_SCHEME, type AccountIdentity, type UpdateChannel } from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
-  CachedIdentity,
   Identity,
   RedeemResult,
   ServerSignOut,
@@ -20,19 +19,33 @@ import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
-function cachedIdentityOf(user: unknown): CachedIdentity | null {
+// Google serves profile pictures from googleusercontent.com. The hub has no CSP, so a picture on
+// any other host would let the API make Voice fetch from wherever it names.
+function isGooglePicture(image: string) {
+  const url = URL.parse(image);
+  return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
+}
+
+function cachedIdentityOf(user: unknown): AccountIdentity | null {
   if (
-    typeof user === "object" &&
-    user !== null &&
-    "name" in user &&
-    typeof user.name === "string" &&
-    "email" in user &&
-    typeof user.email === "string"
+    typeof user !== "object" ||
+    user === null ||
+    !("name" in user) ||
+    typeof user.name !== "string" ||
+    !("email" in user) ||
+    typeof user.email !== "string"
   ) {
-    if (!("id" in user)) return { name: user.name, email: user.email };
-    if (typeof user.id === "string") return { id: user.id, name: user.name, email: user.email };
+    return null;
   }
-  return null;
+  const identity: AccountIdentity = { name: user.name, email: user.email };
+  if ("id" in user) {
+    if (typeof user.id !== "string") return null;
+    identity.id = user.id;
+  }
+  if ("image" in user && typeof user.image === "string" && isGooglePicture(user.image)) {
+    identity.image = user.image;
+  }
+  return identity;
 }
 
 // Older encrypted caches contain only a name and email. Live responses must identify the account.
@@ -307,7 +320,7 @@ export function createVoiceAuthClient({
       if (user === null)
         return { kind: error instanceof TypeError ? "offline" : "rejected", error };
       saveIdentity(user);
-      return { kind: "signedIn", ...user };
+      return { kind: "signedIn", user };
     },
     cachedUser: () => {
       const stored = store.getItem(keys.identity);

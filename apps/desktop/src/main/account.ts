@@ -1,6 +1,7 @@
 import {
   VOICE_URL_SCHEME,
   type AccountDeletion,
+  type AccountIdentity,
   type AccountState,
   type UpdateChannel,
 } from "../shared/api.ts";
@@ -34,15 +35,14 @@ export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
 
-export type CachedIdentity = { id?: string; name: string; email: string };
-export type Identity = CachedIdentity & { id: string };
+export type Identity = AccountIdentity & { id: string };
 
 /**
  * `offline` is a failed fetch; `rejected` is the API refusing the code. `abandoned` is an exchange
  * aborted while the API answered, or outlived by a forget: nothing of it was stored.
  */
 export type RedeemResult =
-  | ({ kind: "signedIn" } & Identity)
+  | { kind: "signedIn"; user: Identity }
   | { kind: "offline" | "rejected"; error: unknown }
   | { kind: "abandoned" };
 
@@ -61,7 +61,7 @@ export type AuthClient = {
    */
   redeem(code: string, signal: AbortSignal): Promise<RedeemResult>;
   /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
-  cachedUser(): CachedIdentity | null;
+  cachedUser(): AccountIdentity | null;
   /** Asks `get-session`. Aborted before its body is read, it answers `unreachable` and writes nothing. */
   checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
   /** Deletes this channel's stored auth session. */
@@ -94,14 +94,19 @@ export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 export type SignInCode = { code: string; state: string };
 
 // The confirmation dialog names the account by email; a cached id is the stricter test when present.
-const sameAccount = (confirmed: CachedIdentity, live: Identity) =>
+const sameAccount = (confirmed: AccountIdentity, live: Identity) =>
   confirmed.id === undefined ? confirmed.email === live.email : confirmed.id === live.id;
 
-const sameIdentity = (a: Identity, b: CachedIdentity) =>
-  a.id === b.id && a.name === b.name && a.email === b.email;
+const sameIdentity = (a: Identity, b: AccountIdentity) =>
+  a.id === b.id && a.name === b.name && a.email === b.email && a.image === b.image;
 
-function identityOf({ id, name, email }: CachedIdentity): CachedIdentity {
-  return id === undefined ? { name, email } : { id, name, email };
+function identityOf({
+  kind: _kind,
+  deletion: _deletion,
+  notice: _notice,
+  ...identity
+}: SignedInState): AccountIdentity {
+  return identity;
 }
 
 function parseHttpUrl(value: string): string | null {
@@ -370,7 +375,7 @@ export function createAccount({
     // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
-      const user = { id: result.id, name: result.name, email: result.email };
+      const { user } = result;
       if (current.resumeAs === null) {
         leave(current.attempt, { kind: "signedIn", ...user });
       } else {
@@ -502,7 +507,7 @@ export function createAccount({
         state.kind === "signedIn" &&
         state.id !== undefined &&
         (state.deletion?.kind === "reauthRequired" || state.deletion?.kind === "reauthFailed")
-          ? { id: state.id, name: state.name, email: state.email }
+          ? { ...identityOf(state), id: state.id }
           : null;
       if (
         apiUrl === null ||

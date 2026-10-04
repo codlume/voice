@@ -87,7 +87,10 @@ function exchange(flow: SignIn, overrides: { state?: string; code_verifier?: str
   });
 }
 
-type SignedIn = { token: string; user: { id: string; name: string; email: string } };
+type SignedIn = {
+  token: string;
+  user: { id: string; name: string; email: string; image: string | null };
+};
 
 async function getSession(cookie: string) {
   const response = await worker(`${base}/api/auth/get-session`, { headers: { cookie } });
@@ -162,6 +165,11 @@ describe("Google sign-in", () => {
     ]);
     expect(google.searchParams.get("prompt")).toBe("select_account");
     expect(google.searchParams.get("access_type")).toBeNull();
+  });
+
+  it("returns the Google picture as the user's image (catches a dropped picture claim)", async () => {
+    const { user } = await (await exchange(await browserSignIn("grace-hopper"))).json<SignedIn>();
+    expect(user.image).toBe("https://lh3.googleusercontent.com/a/default-user=s96-c");
   });
 
   it("stores the access token encrypted and no ID token, on the first and a repeat sign-in (catches plaintext OAuth tokens or a stored ID token in D1)", async () => {

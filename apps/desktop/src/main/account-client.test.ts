@@ -3,6 +3,7 @@ import {
   API,
   USER,
   GRACE,
+  PICTURED,
   electron,
   http,
   log,
@@ -38,23 +39,31 @@ import {
 } from "./account-storage.ts";
 
 describe("createVoiceAuthClient", () => {
-  test("stores the identity before a sign-in reports success, so an offline restart restores it", async () => {
-    http.answer = (url) =>
-      url.endsWith("/electron/token")
-        ? signedIn("token-1")
-        : Promise.reject(new TypeError("fetch failed"));
-    expect(await signIn(client("nightly"))).toEqual({ kind: "signedIn", ...USER });
-    expect(http.sent.map(({ url }) => new URL(url).pathname)).toEqual(["/api/auth/electron/token"]);
+  test.each([
+    ["an identity", USER],
+    ["an identity with a picture", PICTURED],
+  ])(
+    "stores %s before a sign-in reports success, so an offline restart restores it",
+    async (_name, user) => {
+      http.answer = (url) =>
+        url.endsWith("/electron/token")
+          ? signedIn("token-1", user)
+          : Promise.reject(new TypeError("fetch failed"));
+      expect(await signIn(client("nightly"))).toEqual({ kind: "signedIn", user });
+      expect(http.sent.map(({ url }) => new URL(url).pathname)).toEqual([
+        "/api/auth/electron/token",
+      ]);
 
-    expect(typeof storedIdentity("nightly")).toBe("string");
-    expect(config()).not.toContain(USER.email);
-    const restarted = client("nightly");
-    expect(restarted.cachedUser()).toEqual(USER);
-    expect(await restarted.checkAuthSession(new AbortController().signal)).toMatchObject({
-      kind: "unreachable",
-    });
-    expect(client("nightly").cachedUser()).toEqual(USER);
-  });
+      expect(typeof storedIdentity("nightly")).toBe("string");
+      expect(config()).not.toContain(user.email);
+      const restarted = client("nightly");
+      expect(restarted.cachedUser()).toEqual(user);
+      expect(await restarted.checkAuthSession(new AbortController().signal)).toMatchObject({
+        kind: "unreachable",
+      });
+      expect(client("nightly").cachedUser()).toEqual(user);
+    },
+  );
 
   test.each([
     [
@@ -87,7 +96,7 @@ describe("createVoiceAuthClient", () => {
     await vi.waitFor(() => expect(http.sent).toHaveLength(2));
     // What the account module does when a sign-in starts during a check.
     check.abort();
-    expect(await signIn(auth)).toEqual({ kind: "signedIn", ...GRACE });
+    expect(await signIn(auth)).toEqual({ kind: "signedIn", user: GRACE });
     // The server ended the old auth session, and its late answer clears the cookie.
     revoked.resolve(
       json(null, { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } }),
@@ -185,7 +194,7 @@ async function storeSession(auxiliaryCookie = false) {
     return response;
   };
   const active = client("nightly");
-  expect(await signIn(active)).toEqual({ kind: "signedIn", ...USER });
+  expect(await signIn(active)).toEqual({ kind: "signedIn", user: USER });
   return active;
 }
 
@@ -330,7 +339,7 @@ describe("server sign-outs", () => {
     expect(await restarted.endServerSignOuts()).toEqual([]);
     expect(log).toHaveBeenCalledOnce();
     http.answer = () => signedIn("replacement-token", GRACE);
-    expect(await signIn(restarted)).toEqual({ kind: "signedIn", ...GRACE });
+    expect(await signIn(restarted)).toEqual({ kind: "signedIn", user: GRACE });
     expect(restarted.hasAuthSession()).toBe(true);
     expect(restarted.cachedUser()).toEqual(GRACE);
   });
