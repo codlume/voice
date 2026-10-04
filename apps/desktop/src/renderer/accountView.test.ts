@@ -43,16 +43,17 @@ describe("account view", () => {
   });
 
   test("the email decoy keeps the email's shape but none of its text", () => {
-    const email = "ada.lovelace@example.com";
-    const decoy = emailDecoy(email);
-    expect(decoy).toHaveLength(email.length);
-    expect(decoy.indexOf("@")).toBe(email.indexOf("@"));
-    expect([...decoy].map((char, index) => (char === "." ? index : -1))).toEqual(
-      [...email].map((char, index) => (char === "." ? index : -1)),
-    );
-    expect(decoy).toMatch(/^[a-z2-9]+\.[a-z2-9]+@[a-z2-9]+\.[a-z2-9]+$/);
-    for (const part of ["ada", "lovelace", "example", "com"]) expect(decoy).not.toContain(part);
-    expect(emailDecoy(email)).toBe(decoy);
-    expect(emailDecoy("grace.hopper@example.com")).not.toBe(decoy);
+    const cases: [string, string[]][] = [
+      ["ada.lovelace@example.com", ["ada"]],
+      ["grace-hopper_1@navy.mil", ["grace", "navy"]],
+    ];
+    const separators = (text: string) =>
+      [...text].flatMap((char, index) => ("@.-_".includes(char) ? [`${index}${char}`] : []));
+    for (const [email, parts] of cases) {
+      const decoy = emailDecoy(email);
+      expect(decoy).toHaveLength(email.length);
+      expect(separators(decoy)).toEqual(separators(email));
+      for (const part of parts) expect(decoy).not.toContain(part);
+    }
   });
 });

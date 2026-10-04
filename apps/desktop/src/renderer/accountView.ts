@@ -47,16 +47,10 @@ export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): 
 
 const DECOY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
+// The decoy depends only on the length and the separator positions, so it carries nothing else
+// of the address.
 export function emailDecoy(email: string): string {
-  let state = 0x811c9dc5;
-  for (let index = 0; index < email.length; index += 1) {
-    state ^= email.charCodeAt(index);
-    state = Math.imul(state, 0x01000193);
-  }
-  const nextChar = () => {
-    state = Math.imul(state ^ (state >>> 13), 0x85ebca6b);
-    state = Math.imul(state ^ (state >>> 16), 0xc2b2ae35);
-    return DECOY_ALPHABET.charAt(Math.abs(state) % DECOY_ALPHABET.length);
-  };
-  return Array.from(email, (char) => ("@.-_".includes(char) ? char : nextChar())).join("");
+  return Array.from(email, (char, index) =>
+    "@.-_".includes(char) ? char : DECOY_ALPHABET[(index * 7) % DECOY_ALPHABET.length],
+  ).join("");
 }
