@@ -16,9 +16,9 @@ describe("account view", () => {
     const states: AccountState[] = [
       { kind: "unavailable", reason: "Set VOICE_API_URL to sign in from a development build." },
       { kind: "signedOut" },
-      { kind: "signingIn" },
-      { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
-      { kind: "signedIn", name: " ", email: "ada@example.com" },
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
+      { kind: "signedIn", id: "ada-id", name: " ", email: "ada@example.com" },
       { kind: "error", message: "Sign-in was interrupted" },
     ];
     expect(states.map(accountRow)).toEqual([

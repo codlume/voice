@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import type { AccountState } from "../shared/api.ts";
 import { accountRow, initials } from "./accountView.ts";
 import { Button } from "./Button.tsx";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -96,7 +97,7 @@ function SignedOutRow({ account }: { account: AccountState }) {
   );
 }
 
-function SigningInRow({ account }: { account: AccountState }) {
+function SigningInRow({ account }: { account: Extract<AccountState, { kind: "signingIn" }> }) {
   const { pending, error, run, clearError } = useAction();
   const [code, setCode] = useState("");
   const pastedCode = code.trim();
@@ -135,6 +136,7 @@ function SigningInRow({ account }: { account: AccountState }) {
           </Button>
           <Button
             variant="secondary"
+            disabled={account.purpose === "deleteAccount" && account.phase === "finishing"}
             onClick={() =>
               void run(() => window.voice.cancelSignIn(), "Could not cancel signing in.")
             }
@@ -150,6 +152,7 @@ function SigningInRow({ account }: { account: AccountState }) {
 
 function SignedInRow({ account }: { account: Extract<AccountState, { kind: "signedIn" }> }) {
   const { pending, error, run } = useAction();
+  const deletion = account.deletion;
   return (
     <>
       <Card>
@@ -158,17 +161,108 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             {initials(account.name, account.email)}
           </span>
           <RowText account={account} />
-          <Button
-            id="setting-sign-out"
-            variant="secondary"
-            disabled={pending}
-            onClick={() => void run(() => window.voice.signOut(), "Could not sign out.")}
-          >
-            Sign out
-          </Button>
+          <div {...stylex.props(settings.actions)}>
+            <Button
+              id="setting-sign-out"
+              variant="secondary"
+              disabled={pending || deletion !== undefined}
+              onClick={() => void run(() => window.voice.signOut(), "Could not sign out.")}
+            >
+              Sign out
+            </Button>
+            <Button
+              id="setting-delete-account"
+              variant="destructive"
+              disabled={pending || deletion !== undefined}
+              onClick={() =>
+                void run(
+                  () => window.voice.requestAccountDeletion(),
+                  "Could not start deleting your account.",
+                )
+              }
+            >
+              {deletion?.kind === "deleting" ? "Deleting…" : "Delete account"}
+            </Button>
+          </div>
         </div>
+        {account.notice && (
+          <p role="status" {...stylex.props(settings.row, settings.rowDetail)}>
+            {account.notice}
+          </p>
+        )}
+        {(deletion?.kind === "reauthRequired" || deletion?.kind === "reauthFailed") && (
+          <div {...stylex.props(settings.row)}>
+            <p role="alert" {...stylex.props(settings.rowDetail)}>
+              {deletion.message}
+            </p>
+            <div {...stylex.props(settings.actions)}>
+              <Button
+                disabled={pending}
+                onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+              >
+                {deletion.kind === "reauthFailed" ? "Retry" : "Sign in again"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={() =>
+                  void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.")
+                }
+              >
+                Cancel deletion
+              </Button>
+            </div>
+          </div>
+        )}
+        {deletion?.kind === "revoking" && (
+          <div role="status" {...stylex.props(settings.row)}>
+            Ending your previous sign-in…
+          </div>
+        )}
+        {(deletion?.kind === "failed" || deletion?.kind === "revocationFailed") && (
+          <div {...stylex.props(settings.row)}>
+            <ErrorLine text={deletion.message} />
+            <Button
+              disabled={pending}
+              onClick={() =>
+                void run(() => window.voice.retryAccountDeletion(), "Could not retry deletion.")
+              }
+            >
+              Retry
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() =>
+                void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.")
+              }
+            >
+              Cancel deletion
+            </Button>
+          </div>
+        )}
       </Card>
       <ErrorLine text={error} />
+      <ConfirmDialog
+        open={deletion?.kind === "confirming"}
+        onOpenChange={(open) => {
+          if (!open)
+            void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.");
+        }}
+        title="Delete your Voice account?"
+        description={`This permanently deletes the Voice account for ${account.email} and signs you out. You can create a new, empty account by signing in again.`}
+        actions={[
+          {
+            label: "Delete account",
+            variant: "destructive",
+            onClick: () =>
+              void run(
+                () => window.voice.confirmAccountDeletion(),
+                "Could not delete your account.",
+              ),
+          },
+        ]}
+      />
     </>
   );
 }

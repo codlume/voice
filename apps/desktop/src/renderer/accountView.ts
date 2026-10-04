@@ -18,7 +18,10 @@ export function accountRow(state: AccountState): { title: string; detail: string
       };
     case "signingIn":
       return {
-        title: "Waiting for your browser…",
+        title:
+          state.purpose === "deleteAccount"
+            ? "Sign in again to delete your account"
+            : "Waiting for your browser…",
         detail: "Finish signing in with Google, then come back to Voice.",
       };
     case "signedIn":

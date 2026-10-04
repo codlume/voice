@@ -623,6 +623,10 @@ async function main() {
   ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
   ipcMain.handle(Channel.signOut, () => account.signOut());
   ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
+  ipcMain.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
+  ipcMain.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
+  ipcMain.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
+  ipcMain.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
   // target app must keep focus until insertion. A launch by URL shows the hub anyway.

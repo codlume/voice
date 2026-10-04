@@ -7,6 +7,7 @@ import {
   type AuthClient,
   type AuthSessionCheck,
   type Identity,
+  type DeleteAccountResult,
   type ServerSignOut,
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
@@ -15,7 +16,7 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 export const API_URL = "https://api-nightly.voice.codlume.com";
-export const USER = { name: "Ada Lovelace", email: "ada@example.com" };
+export const USER = { id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" };
 export const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 export const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
 export const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });
@@ -34,6 +35,8 @@ export function fakeClient() {
   const requests: BrowserCall[] = [];
   const exchanges: (Call & { code: string })[] = [];
   const checks: Check[] = [];
+  const deletions: { answer: (value: DeleteAccountResult) => void }[] = [];
+  const revocations = vi.fn(async () => {});
   const signOuts: { answer: (value: ServerSignOut) => void }[] = [];
   let serverSignOuts = 0;
   let stored = false;
@@ -64,6 +67,8 @@ export function fakeClient() {
           fail: (kind, error) => resolve({ kind, error }),
         });
       }),
+    deleteAccount: () => new Promise((resolve) => deletions.push({ answer: resolve })),
+    revokeOlderAuthSession: revocations,
     cachedUser: () => cached,
     hasAuthSession: () => stored,
     checkAuthSession: (signal) =>
@@ -100,6 +105,8 @@ export function fakeClient() {
     exchanges,
     checks,
     signOuts,
+    deletions,
+    revocations,
     get stored() {
       return stored;
     },
@@ -196,9 +203,19 @@ export async function flush() {
 export async function startSignIn(h: ReturnType<typeof harness>, state = "state1") {
   const signIn = h.account.signIn();
   await flush();
-  expect(h.state).toEqual({ kind: "signingIn" });
+  expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
   h.requests.at(-1)?.resolve(state);
   await signIn;
+}
+
+export async function signedIn() {
+  const h = harness();
+  await startSignIn(h);
+  const submitted = h.account.submitSignInCode(CODE);
+  await flush();
+  h.exchanges[0]?.resolve();
+  await submitted;
+  return h;
 }
 
 export function expectNoSecrets(h: ReturnType<typeof harness>) {

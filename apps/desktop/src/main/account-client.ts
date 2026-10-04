@@ -10,6 +10,7 @@ import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
+  CachedIdentity,
   Identity,
   RedeemResult,
   ServerSignOut,
@@ -17,10 +18,9 @@ import type {
 import type { Log } from "./diagnostics-scrub.ts";
 import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
-// The token and `get-session` bodies both carry `{ user }`. They are external data, so the
-// user is read from them like any other.
-function userOf(body: unknown): Identity | null {
-  const user = typeof body === "object" && body !== null && "user" in body ? body.user : null;
+const REQUEST_TIMEOUT_MS = 30_000;
+
+function cachedIdentityOf(user: unknown): CachedIdentity | null {
   if (
     typeof user === "object" &&
     user !== null &&
@@ -29,9 +29,18 @@ function userOf(body: unknown): Identity | null {
     "email" in user &&
     typeof user.email === "string"
   ) {
-    return { name: user.name, email: user.email };
+    if (!("id" in user)) return { name: user.name, email: user.email };
+    if (typeof user.id === "string") return { id: user.id, name: user.name, email: user.email };
   }
   return null;
+}
+
+// Older encrypted caches contain only a name and email. Live responses must identify the account.
+function userOf(body: unknown): Identity | null {
+  const user = cachedIdentityOf(
+    typeof body === "object" && body !== null && "user" in body ? body.user : null,
+  );
+  return user?.id === undefined ? null : { ...user, id: user.id };
 }
 
 // The Cookie header the plugin sends for these cookies, as its own `getCookie` builds it.
@@ -89,6 +98,7 @@ export function createVoiceAuthClient({
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
   const store = storage();
+  let refusedCookie: string | null = null;
   let generation = 0;
   function makeClient() {
     const current = generation;
@@ -156,7 +166,14 @@ export function createVoiceAuthClient({
     serverSignOuts = next;
   }
 
+  function dequeueServerSignOut(cookie: string) {
+    const remaining = serverSignOuts.filter((value) => value !== cookie);
+    saveServerSignOuts(remaining);
+    serverSignOuts = remaining;
+  }
+
   function forget() {
+    refusedCookie = null;
     generation += 1;
     store.setItem(keys.cookie, null);
     store.setItem(keys.identity, null);
@@ -226,11 +243,7 @@ export function createVoiceAuthClient({
       attempted.add(cookie);
       const answer = await endAuthSession(cookie);
       answers.push(answer);
-      if (answer.kind === "ended") {
-        const remaining = serverSignOuts.filter((value) => value !== cookie);
-        saveServerSignOuts(remaining);
-        serverSignOuts = remaining;
-      }
+      if (answer.kind === "ended") dequeueServerSignOut(cookie);
     }
     return answers;
   }
@@ -272,7 +285,7 @@ export function createVoiceAuthClient({
             token: code,
             fetchOptions: {
               throw: true,
-              signal,
+              signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
               onResponse: ({ response }) => {
                 setCookie = response.headers.get("set-cookie");
               },
@@ -300,9 +313,9 @@ export function createVoiceAuthClient({
       const stored = store.getItem(keys.identity);
       if (typeof stored !== "string" || !safeStorage.isEncryptionAvailable()) return null;
       try {
-        return userOf({
-          user: JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
-        });
+        return cachedIdentityOf(
+          JSON.parse(safeStorage.decryptString(Buffer.from(stored, "base64"))),
+        );
       } catch {
         return null;
       }
@@ -351,6 +364,33 @@ export function createVoiceAuthClient({
         ending = null;
       });
       return ending;
+    },
+    deleteAccount: async () => {
+      try {
+        const { data, error } = await client.deleteUser({
+          fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+        });
+        if (!error)
+          return data?.success === true && data.message === "User deleted"
+            ? { kind: "deleted" }
+            : { kind: "failed" };
+        if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
+        refusedCookie = client.getCookie();
+        return { kind: "reauthRequired" };
+      } catch (error) {
+        return { kind: error instanceof TypeError ? "offline" : "failed" };
+      }
+    },
+    revokeOlderAuthSession: async () => {
+      if (refusedCookie === null) return;
+      const cookie = refusedCookie;
+      // Persist before the request so Cancel or quit leaves revocation to launch's retry.
+      queueServerSignOut(cookie);
+      if ((await endAuthSession(cookie)).kind !== "ended") {
+        throw new Error("Auth session revocation failed.");
+      }
+      dequeueServerSignOut(cookie);
+      refusedCookie = null;
     },
   };
 }

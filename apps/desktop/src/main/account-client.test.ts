@@ -1,24 +1,34 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import * as NodePath from "node:path";
-
+// Load the Electron mock before the adapter and plugin storage.
 import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-  vi,
-} from "vite-plus/test";
-
+  API,
+  USER,
+  GRACE,
+  electron,
+  http,
+  log,
+  json,
+  signedIn,
+  client,
+  config,
+  storedIdentity,
+  signIn,
+  signedInClient,
+  snapshotAccount,
+  signInCode,
+} from "./account-client.test-harness.ts";
+import { rmSync } from "node:fs";
+import { createServer } from "node:http";
+import * as NodePath from "node:path";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
-
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { AUTH_SESSION_ENDED_MESSAGE, SIGN_IN_TIMEOUT_MS } from "./account.ts";
-import { harness } from "./account.test-harness.ts";
+import {
+  AUTH_SESSION_ENDED_MESSAGE,
+  DELETE_ACCOUNT_FAILED_MESSAGE,
+  DELETE_ACCOUNT_OFFLINE_MESSAGE,
+  SIGN_IN_ERRORS,
+} from "./account.ts";
 import {
   authSessionStored,
   authStorageKeys,
@@ -26,120 +36,14 @@ import {
   serverSignOutsStored,
 } from "./account-storage.ts";
 
-// The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
-// stand-in, so the test never touches the login Keychain.
-const electron = vi.hoisted(() => {
-  const state = { userData: "", encryption: true };
-  const api = {
-    app: {
-      getPath: () => state.userData,
-      getName: () => "Voice",
-      getVersion: () => "0.0.1",
-      userAgentFallback: "Voice test",
-    },
-    safeStorage: {
-      isEncryptionAvailable: () => state.encryption,
-      encryptString: (text: string) => Buffer.from(`enc:${text}`),
-      decryptString: (bytes: Buffer) => bytes.toString().replace(/^enc:/, ""),
-    },
-    shell: { openExternal: async () => {} },
-    webContents: { getFocusedWebContents: () => null },
-  };
-  return { state, api };
-});
-vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
-
-const API = { stable: "https://api.example.com", nightly: "https://api-nightly.example.com" };
-const USER = { name: "Ada Lovelace", email: "ada@example.com" };
-const GRACE = { name: "Grace Hopper", email: "grace@example.com" };
-
-type Sent = { url: string; cookie: string | null };
-const log = vi.fn();
-let sent: Sent[] = [];
-let answer: (url: string) => Response | Promise<Response>;
-
-const json = (body: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(body), {
-    ...init,
-    headers: { "content-type": "application/json", ...init.headers },
-  });
-const signedIn = (token: string, user = USER) =>
-  json(
-    { token, session: { token }, user },
-    { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
-  );
-const client = (channel: UpdateChannel) =>
-  createVoiceAuthClient({ apiUrl: API[channel], installedChannel: channel, log });
-
-beforeAll(() => {
-  // The plugin refuses to send requests outside Electron's main process.
-  Object.assign(process, { type: "browser" });
-});
-afterAll(() => {
-  Object.assign(process, { type: undefined });
-});
-beforeEach(() => {
-  electron.state.userData = mkdtempSync(NodePath.join(tmpdir(), "voice-account-client-"));
-  electron.state.encryption = true;
-  sent = [];
-  log.mockClear();
-  vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    sent.push({ url: request.url, cookie: request.headers.get("cookie") || null });
-    return new Promise<Response>((resolve, reject) => {
-      // As real fetch does, an aborted signal rejects, before or during the request. The caller's
-      // own signal, because the copy a Request makes follows it only weakly and can be collected.
-      const signal = init?.signal ?? request.signal;
-      if (signal.aborted) reject(signal.reason);
-      signal.addEventListener("abort", () => reject(signal.reason));
-      Promise.resolve(answer(request.url)).then(resolve, reject);
-    });
-  });
-});
-afterEach(() => {
-  vi.unstubAllGlobals();
-  rmSync(electron.state.userData, { recursive: true, force: true });
-});
-
-const config = () => readFileSync(NodePath.join(electron.state.userData, "config.json"), "utf8");
-const storedIdentity = (channel: UpdateChannel) =>
-  (JSON.parse(config()) as Record<string, Record<string, Record<string, unknown>>>).voice?.[channel]
-    ?.identity;
-
-/** Plays a whole sign-in: the browser opens, then the landing page's code is redeemed. */
-async function signIn(auth: ReturnType<typeof client>) {
-  const { state } = await auth.openBrowser();
-  const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
-  return auth.redeem(code, new AbortController().signal);
-}
-
-function snapshotAccount(auth: ReturnType<typeof client>) {
-  return harness({
-    apiUrl: API.nightly,
-    createClient: async () => auth,
-    hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
-    hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
-  });
-}
-
-/** Starts a sign-in through the snapshot and returns the code the landing page would show. */
-async function signInCode(h: ReturnType<typeof harness>, auth: ReturnType<typeof client>) {
-  const opened = vi.spyOn(auth, "openBrowser");
-  await h.account.signIn();
-  const opening = opened.mock.results.at(-1);
-  if (!opening) throw new Error("Sign-in did not open the browser");
-  const { state } = await opening.value;
-  return Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
-}
-
 describe("createVoiceAuthClient", () => {
   test("stores the identity before a sign-in reports success, so an offline restart restores it", async () => {
-    answer = (url) =>
+    http.answer = (url) =>
       url.endsWith("/electron/token")
         ? signedIn("token-1")
         : Promise.reject(new TypeError("fetch failed"));
     expect(await signIn(client("nightly"))).toEqual({ kind: "signedIn", ...USER });
-    expect(sent.map(({ url }) => new URL(url).pathname)).toEqual(["/api/auth/electron/token"]);
+    expect(http.sent.map(({ url }) => new URL(url).pathname)).toEqual(["/api/auth/electron/token"]);
 
     expect(typeof storedIdentity("nightly")).toBe("string");
     expect(config()).not.toContain(USER.email);
@@ -159,11 +63,11 @@ describe("createVoiceAuthClient", () => {
     ["a 503", () => json({ error: "down" }, { status: 503 })],
     ["a JSON body without a user", () => json({ ok: true })],
   ])("%s never replaces the stored identity", async (_name, respond) => {
-    answer = () => signedIn("token-1");
+    http.answer = () => signedIn("token-1");
     await client("nightly").checkAuthSession(new AbortController().signal);
     const before = storedIdentity("nightly");
 
-    answer = respond;
+    http.answer = respond;
     expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
       kind: "unknown",
     });
@@ -172,16 +76,14 @@ describe("createVoiceAuthClient", () => {
   });
 
   test("an aborted check writes no cookie or identity, even when its answer comes later", async () => {
-    answer = () => signedIn("old-token");
-    const auth = client("nightly");
-    await auth.checkAuthSession(new AbortController().signal);
+    const auth = await signedInClient();
 
     const revoked = Promise.withResolvers<Response>();
-    answer = (url) =>
+    http.answer = (url) =>
       url.endsWith("/get-session") ? revoked.promise : signedIn("new-token", GRACE);
     const check = new AbortController();
     const stale = auth.checkAuthSession(check.signal);
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    await vi.waitFor(() => expect(http.sent).toHaveLength(2));
     // What the account module does when a sign-in starts during a check.
     check.abort();
     expect(await signIn(auth)).toEqual({ kind: "signedIn", ...GRACE });
@@ -192,16 +94,16 @@ describe("createVoiceAuthClient", () => {
     expect(await stale).toMatchObject({ kind: "unreachable" });
 
     expect(client("nightly").cachedUser()).toEqual(GRACE);
-    answer = () => signedIn("new-token", GRACE);
+    http.answer = () => signedIn("new-token", GRACE);
     expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
       kind: "active",
       user: GRACE,
     });
-    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+    expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
   });
 
   test("keeps each channel's auth session for its own API", async () => {
-    answer = (url) => (url.startsWith(API.stable) ? signedIn("stable-token") : json(null));
+    http.answer = (url) => (url.startsWith(API.stable) ? signedIn("stable-token") : json(null));
     const stable = client("stable");
     expect(await stable.checkAuthSession(new AbortController().signal)).toEqual({
       kind: "active",
@@ -216,7 +118,7 @@ describe("createVoiceAuthClient", () => {
     });
     await stable.checkAuthSession(new AbortController().signal);
 
-    expect(sent.map(({ url, cookie }) => [new URL(url).origin, cookie])).toEqual([
+    expect(http.sent.map(({ url, cookie }) => [new URL(url).origin, cookie])).toEqual([
       [API.stable, null],
       [API.nightly, null],
       [API.stable, "better-auth.session_token=stable-token"],
@@ -224,7 +126,7 @@ describe("createVoiceAuthClient", () => {
   });
 
   test("restores the identity of the last answer from storage, and forget clears it", async () => {
-    answer = () => signedIn("token-1");
+    http.answer = () => signedIn("token-1");
     await client("nightly").checkAuthSession(new AbortController().signal);
 
     const restarted = client("nightly");
@@ -232,9 +134,9 @@ describe("createVoiceAuthClient", () => {
     restarted.forget();
     expect(restarted.cachedUser()).toBeNull();
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
-    answer = () => json(null);
+    http.answer = () => json(null);
     await restarted.checkAuthSession(new AbortController().signal);
-    expect(sent.at(-1)?.cookie).toBeNull();
+    expect(http.sent.at(-1)?.cookie).toBeNull();
   });
 
   test.each([
@@ -249,14 +151,14 @@ describe("createVoiceAuthClient", () => {
       { kind: "unknown", status: 200 },
     ],
   ])("reads %s from get-session", async (_name, respond, expected) => {
-    answer = respond;
+    http.answer = respond;
     expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual(
       expected,
     );
   });
 
   test("a failed fetch is unreachable, not ended", async () => {
-    answer = () => Promise.reject(new TypeError("fetch failed"));
+    http.answer = () => Promise.reject(new TypeError("fetch failed"));
     expect(await client("nightly").checkAuthSession(new AbortController().signal)).toMatchObject({
       kind: "unreachable",
     });
@@ -264,14 +166,38 @@ describe("createVoiceAuthClient", () => {
 
   test("without encryption and nothing in memory, it does not ask the API", async () => {
     electron.state.encryption = false;
-    answer = () => json(null);
+    http.answer = () => json(null);
     expect(await client("nightly").checkAuthSession(new AbortController().signal)).toEqual({
       kind: "unknown",
       status: 0,
     });
-    expect(sent).toEqual([]);
+    expect(http.sent).toEqual([]);
   });
 });
+
+async function storeSession(auxiliaryCookie = false) {
+  http.answer = () => {
+    const response = signedIn("expired-token");
+    if (auxiliaryCookie) {
+      response.headers.append("set-cookie", "better-auth.auxiliary=fixture; Max-Age=7200; Path=/");
+    }
+    return response;
+  };
+  const active = client("nightly");
+  expect(await signIn(active)).toEqual({ kind: "signedIn", ...USER });
+  return active;
+}
+
+async function restoreExpiredSession() {
+  vi.setSystemTime(new Date("2026-01-01T01:00:01Z"));
+  http.sent = [];
+  http.answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+  const restarted = client("nightly");
+  const h = snapshotAccount(restarted);
+  await h.account.restore();
+  await restarted.endServerSignOuts();
+  return h;
+}
 
 describe("stored auth expiry through the account snapshot", () => {
   beforeEach(() => {
@@ -286,38 +212,6 @@ describe("stored auth expiry through the account snapshot", () => {
   const expiredCookie = "better-auth.session_token=expired-token";
   const oldCookie = "better-auth.session_token=old-token";
 
-  async function storeSession(auxiliaryCookie = false) {
-    answer = () => {
-      const response = signedIn("expired-token");
-      if (auxiliaryCookie) {
-        response.headers.append(
-          "set-cookie",
-          "better-auth.auxiliary=fixture; Max-Age=7200; Path=/",
-        );
-      }
-      return response;
-    };
-    const active = client("nightly");
-    expect(await signIn(active)).toEqual({ kind: "signedIn", ...USER });
-    return active;
-  }
-
-  async function restoreExpiredSession() {
-    vi.setSystemTime(new Date("2026-01-01T01:00:01Z"));
-    sent = [];
-    answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
-    const restarted = client("nightly");
-    const h = harness({
-      apiUrl: API.nightly,
-      createClient: async () => restarted,
-      hasStoredAuthSession: () => authSessionStored(electron.state.userData, "nightly"),
-      hasStoredAuth: () => authStored(electron.state.userData, "nightly"),
-    });
-    await h.account.restore();
-    await restarted.endServerSignOuts();
-    return h;
-  }
-
   test.each([false, true])(
     "explains expiry and clears stored auth before Dismiss, with an unrelated queue=%s",
     async (unrelatedQueue) => {
@@ -329,8 +223,8 @@ describe("stored auth expiry through the account snapshot", () => {
       expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
       expect(storage().getItem(keys.cookie)).toBeNull();
       expect(storage().getItem(keys.identity)).toBeNull();
-      expect(sent.filter(({ cookie }) => cookie === null)).toEqual([
-        { url: `${API.nightly}/api/auth/get-session`, cookie: null },
+      expect(http.sent.filter(({ cookie }) => cookie === null)).toEqual([
+        { url: `${API.nightly}/api/auth/get-session`, cookie: null, body: "" },
       ]);
       h.account.dismissError();
       expect(h.state).toEqual({ kind: "signedOut" });
@@ -349,9 +243,9 @@ describe("stored auth expiry through the account snapshot", () => {
       expect(h.states).toEqual([]);
       expect(storage().getItem(keys.cookie)).toBeNull();
       expect(storage().getItem(keys.identity)).toBeNull();
-      expect(sent).toEqual([
-        { url: `${API.nightly}/api/auth/sign-out`, cookie: expiredCookie },
-        { url: `${API.nightly}/api/auth/get-session`, cookie: expiredCookie },
+      expect(http.sent).toEqual([
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: expiredCookie, body: "{}" },
+        { url: `${API.nightly}/api/auth/get-session`, cookie: expiredCookie, body: "" },
       ]);
     },
   );
@@ -366,7 +260,7 @@ describe("stored auth expiry through the account snapshot", () => {
 
     expect(h.state).toEqual({ kind: "signedOut" });
     expect(h.states).toEqual([]);
-    expect(sent).toEqual([]);
+    expect(http.sent).toEqual([]);
     expect(config()).toBe(before);
   });
 });
@@ -399,16 +293,10 @@ describe("authSessionStored", () => {
   });
 });
 
-describe("server sign-outs", () => {
-  async function signedInClient(token = "old-token") {
-    answer = () => signedIn(token);
-    const active = client("nightly");
-    await active.checkAuthSession(new AbortController().signal);
-    return active;
-  }
-  const confirmed = (url: string) =>
-    url.endsWith("/sign-out") ? json({ success: true }) : json(null);
+const confirmed = (url: string) =>
+  url.endsWith("/sign-out") ? json({ success: true }) : json(null);
 
+describe("server sign-outs", () => {
   test.each(["garbage ciphertext", JSON.stringify({ cookie: "wrong shape" }), "[123]"])(
     "discards an unreadable queue once and still constructs the client (%s)",
     async (garbage) => {
@@ -440,14 +328,14 @@ describe("server sign-outs", () => {
     decrypt.mockRestore();
     expect(await restarted.endServerSignOuts()).toEqual([]);
     expect(log).toHaveBeenCalledOnce();
-    answer = () => signedIn("replacement-token", GRACE);
+    http.answer = () => signedIn("replacement-token", GRACE);
     expect(await signIn(restarted)).toEqual({ kind: "signedIn", ...GRACE });
     expect(restarted.hasAuthSession()).toBe(true);
     expect(restarted.cachedUser()).toEqual(GRACE);
   });
 
   test("queues an old cookie once without touching a newer active cookie or identity", async () => {
-    answer = () => signedIn("new-token", GRACE);
+    http.answer = () => signedIn("new-token", GRACE);
     const active = client("nightly");
     await active.checkAuthSession(new AbortController().signal);
     const keys = authStorageKeys("nightly");
@@ -457,11 +345,11 @@ describe("server sign-outs", () => {
     active.queueServerSignOut("better-auth.session_token=old-token");
     expect(storage().getItem(keys.cookie)).toBe(activeCookie);
     expect(storage().getItem(keys.identity)).toBe(identity);
-    answer = confirmed;
+    http.answer = confirmed;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-    expect(sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie)).toEqual(
-      ["better-auth.session_token=old-token"],
-    );
+    expect(
+      http.sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie),
+    ).toEqual(["better-auth.session_token=old-token"]);
     expect(active.hasAuthSession()).toBe(true);
     expect(active.cachedUser()).toEqual(GRACE);
     expect(storage().getItem(keys.cookie)).toBe(activeCookie);
@@ -485,9 +373,9 @@ describe("server sign-outs", () => {
     expect(active.cachedUser()).toBeNull();
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
     expect(config()).not.toContain("old-token");
-    answer = confirmed;
+    http.answer = confirmed;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-    expect(sent.slice(-2).map(({ url, cookie }) => [url, cookie])).toEqual([
+    expect(http.sent.slice(-2).map(({ url, cookie }) => [url, cookie])).toEqual([
       [`${API.nightly}/api/auth/sign-out`, "better-auth.session_token=old-token"],
       [`${API.nightly}/api/auth/get-session`, "better-auth.session_token=old-token"],
     ]);
@@ -499,7 +387,7 @@ describe("server sign-outs", () => {
     async (failure) => {
       const active = await signedInClient();
       active.retireAuthSession();
-      answer =
+      http.answer =
         failure === "offline"
           ? () => Promise.reject(new TypeError("fetch failed"))
           : () => json({}, { status: 503 });
@@ -509,7 +397,7 @@ describe("server sign-outs", () => {
       expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
       const restarted = client("nightly");
       expect(restarted.cachedUser()).toBeNull();
-      answer = confirmed;
+      http.answer = confirmed;
       expect(await restarted.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
       expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
       expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
@@ -521,7 +409,7 @@ describe("server sign-outs", () => {
     async (failure) => {
       const active = await signedInClient();
       active.retireAuthSession();
-      answer = (url) => {
+      http.answer = (url) => {
         if (failure === "403") return json({ code: "INVALID_ORIGIN" }, { status: 403 });
         if (failure === "HTML") return new Response("<html>Sign in to Wi-Fi</html>");
         if (failure === "malformed JSON") return new Response("{");
@@ -536,30 +424,30 @@ describe("server sign-outs", () => {
   test("a late get-session cannot write an old cookie or identity back after retirement", async () => {
     const active = await signedInClient();
     const pending = Promise.withResolvers<Response>();
-    answer = () => pending.promise;
+    http.answer = () => pending.promise;
     const oldCheck = active.checkAuthSession(new AbortController().signal);
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    await vi.waitFor(() => expect(http.sent).toHaveLength(2));
     active.retireAuthSession();
-    answer = () => signedIn("new-token", GRACE);
+    http.answer = () => signedIn("new-token", GRACE);
     await active.checkAuthSession(new AbortController().signal);
     pending.resolve(signedIn("old-token"));
     await oldCheck;
-    answer = confirmed;
+    http.answer = confirmed;
     await active.endServerSignOuts();
     expect(active.cachedUser()).toEqual(GRACE);
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
-    answer = () => json(null);
+    http.answer = () => json(null);
     await active.checkAuthSession(new AbortController().signal);
-    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+    expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
   });
 
   test("an aborted check cannot restore a cookie or identity after sign-out", async () => {
     const active = await signedInClient();
     const pending = Promise.withResolvers<Response>();
-    answer = () => pending.promise;
+    http.answer = () => pending.promise;
     const controller = new AbortController();
     const checking = active.checkAuthSession(controller.signal);
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    await vi.waitFor(() => expect(http.sent).toHaveLength(2));
     controller.abort();
     active.retireAuthSession();
     pending.resolve(signedIn("old-token", GRACE));
@@ -584,7 +472,7 @@ describe("server sign-outs", () => {
       }
       return getHeader(name);
     });
-    answer = () => response;
+    http.answer = () => response;
     await active.checkAuthSession(new AbortController().signal);
     expect(retired).toBe(true);
     expect(active.hasAuthSession()).toBe(false);
@@ -596,17 +484,17 @@ describe("server sign-outs", () => {
   test("keeps multiple offline sign-outs and does not send them to another channel", async () => {
     const active = await signedInClient("token-a");
     active.retireAuthSession();
-    answer = () => signedIn("token-b");
+    http.answer = () => signedIn("token-b");
     await active.checkAuthSession(new AbortController().signal);
     active.retireAuthSession();
-    answer = confirmed;
+    http.answer = confirmed;
     expect(await client("stable").endServerSignOuts()).toEqual([]);
     const restarted = client("nightly");
     expect(await restarted.endServerSignOuts()).toEqual([
       { kind: "ended", status: 200 },
       { kind: "ended", status: 200 },
     ]);
-    expect(sent.slice(-4).map(({ cookie }) => cookie)).toEqual([
+    expect(http.sent.slice(-4).map(({ cookie }) => cookie)).toEqual([
       "better-auth.session_token=token-a",
       "better-auth.session_token=token-a",
       "better-auth.session_token=token-b",
@@ -619,23 +507,23 @@ describe("server sign-outs", () => {
     const active = await signedInClient("token-a");
     active.retireAuthSession();
     const pending = Promise.withResolvers<Response>();
-    answer = () => pending.promise;
+    http.answer = () => pending.promise;
     const first = active.endServerSignOuts();
-    await vi.waitFor(() => expect(sent.at(-1)?.url).toContain("/sign-out"));
-    answer = () => signedIn("token-b");
+    await vi.waitFor(() => expect(http.sent.at(-1)?.url).toContain("/sign-out"));
+    http.answer = () => signedIn("token-b");
     await active.checkAuthSession(new AbortController().signal);
     active.retireAuthSession();
     expect(active.endServerSignOuts()).toBe(first);
-    answer = confirmed;
+    http.answer = confirmed;
     pending.resolve(json({ success: true }));
     expect(await first).toEqual([
       { kind: "ended", status: 200 },
       { kind: "ended", status: 200 },
     ]);
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
-    expect(sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie)).toEqual(
-      ["better-auth.session_token=token-a", "better-auth.session_token=token-b"],
-    );
+    expect(
+      http.sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie),
+    ).toEqual(["better-auth.session_token=token-a", "better-auth.session_token=token-b"]);
   });
 
   test("unavailable encryption never overwrites an existing encrypted retry queue", async () => {
@@ -646,7 +534,7 @@ describe("server sign-outs", () => {
     expect(await client("nightly").endServerSignOuts()).toEqual([]);
     expect(storage().getItem("voice.nightly.retired_auth_sessions")).toBe(encrypted);
     electron.state.encryption = true;
-    answer = confirmed;
+    http.answer = confirmed;
     expect(await client("nightly").endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
   });
 
@@ -661,7 +549,7 @@ describe("server sign-outs", () => {
     const restarted = client("nightly");
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
     expect(restarted.cachedUser()).toBeNull();
-    answer = () => signedIn("new-token");
+    http.answer = () => signedIn("new-token");
     await restarted.checkAuthSession(new AbortController().signal);
     expect(client("nightly").cachedUser()).toEqual(USER);
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
@@ -671,7 +559,7 @@ describe("server sign-outs", () => {
     electron.state.encryption = false;
     const active = client("nightly");
     const { state } = await active.openBrowser();
-    answer = () => signedIn("memory-token");
+    http.answer = () => signedIn("memory-token");
     const code = Buffer.from(JSON.stringify({ identifier: "test-code", state })).toString(
       "base64url",
     );
@@ -686,127 +574,369 @@ describe("server sign-outs", () => {
     });
     expect(config()).not.toContain("memory-token");
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
-    answer = confirmed;
+    http.answer = confirmed;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-    expect(sent.at(-1)?.cookie).toBe("better-auth.session_token=memory-token");
+    expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=memory-token");
   });
 });
 
-describe("an abandoned exchange through the real auth client", () => {
-  const keys = authStorageKeys("nightly");
-  const confirmed = (url: string) =>
-    url.endsWith("/sign-out") ? json({ success: true }) : json(null);
-
-  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
-  afterEach(() => vi.useRealTimers());
-
-  test.each(["cancel", "timeout"] as const)(
-    "%s as the API answers persists nothing, ends the session it created, and stays signed out across restart",
-    async (ending) => {
-      const auth = client("nightly");
-      const h = snapshotAccount(auth);
-      const code = await signInCode(h, auth);
-      const response = signedIn("late-token");
-      const getHeader = response.headers.get.bind(response.headers);
-      // The user gives up as the answer arrives: Cancel, or the attempt's deadline.
-      vi.spyOn(response.headers, "get").mockImplementation((name) => {
-        if (name.toLowerCase() === "set-cookie" && h.state.kind === "signingIn") {
-          if (ending === "cancel") h.account.cancelSignIn();
-          else vi.advanceTimersByTime(SIGN_IN_TIMEOUT_MS);
-        }
-        return getHeader(name);
-      });
-      answer = () => response;
-      await h.account.submitSignInCode(code);
-
-      expect(h.state).toEqual({ kind: "signedOut" });
-      expect(storage().getItem(keys.cookie)).toBeNull();
-      expect(storage().getItem(keys.identity)).toBeNull();
-      expect(auth.hasAuthSession()).toBe(false);
-      expect(auth.cachedUser()).toBeNull();
-      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-      expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
-      answer = confirmed;
-      expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-      expect(sent.slice(-2).map(({ url, cookie }) => [new URL(url).pathname, cookie])).toEqual([
-        ["/api/auth/sign-out", "better-auth.session_token=late-token"],
-        ["/api/auth/get-session", "better-auth.session_token=late-token"],
-      ]);
-
-      h.account.dispose();
-      const requests = sent.length;
-      const relaunched = snapshotAccount(client("nightly"));
-      await relaunched.account.restore();
-      expect(relaunched.state).toEqual({ kind: "signedOut" });
-      expect(relaunched.states).toEqual([]);
-      expect(sent).toHaveLength(requests);
-      expect(config()).not.toContain(USER.email);
+describe("deletion through the real auth client", () => {
+  test.each(["503", "offline", "invalid success"])(
+    "%s keeps the local credential",
+    async (failure) => {
+      const auth = await signedInClient("kept-token");
+      http.answer = () => {
+        if (failure === "offline") throw new TypeError("fetch failed");
+        return failure === "503" ? json({}, { status: 503 }) : json({ success: false });
+      };
+      const result = await auth.deleteAccount();
+      expect(result.kind).toBe(failure === "offline" ? "offline" : "failed");
+      expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+      expect(auth.cachedUser()).toEqual(USER);
+      http.answer = () => json({ session: { token: "kept-token" }, user: USER });
+      await auth.checkAuthSession(new AbortController().signal);
+      expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=kept-token");
     },
   );
 
-  test("cancel before the API answers persists nothing and has no session to end", async () => {
-    const auth = client("nightly");
-    const h = snapshotAccount(auth);
-    const code = await signInCode(h, auth);
-    const pending = Promise.withResolvers<Response>();
-    answer = () => pending.promise;
-    const submitted = h.account.submitSignInCode(code);
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
-    h.account.cancelSignIn();
-    pending.resolve(signedIn("late-token"));
-    await submitted;
-
-    expect(h.state).toEqual({ kind: "signedOut" });
-    expect(authStored(electron.state.userData, "nightly")).toBe(false);
-    expect(auth.hasAuthSession()).toBe(false);
-    expect(auth.cachedUser()).toBeNull();
-    expect(await auth.endServerSignOuts()).toEqual([]);
-    expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
-  });
-
-  test("an exchange answered after forget writes no identity or cookie and ends its session", async () => {
-    const auth = client("nightly");
-    const { state } = await auth.openBrowser();
-    const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
-    const pending = Promise.withResolvers<Response>();
-    answer = () => pending.promise;
-    const late = auth.redeem(code, new AbortController().signal);
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
-    // What a newer sign-in does to whatever is stored before it opens the browser.
-    auth.forget();
-    pending.resolve(signedIn("late-token"));
-    const result = await late;
-
-    expect(auth.cachedUser()).toBeNull();
-    expect(auth.hasAuthSession()).toBe(false);
-    expect(storage().getItem(keys.identity)).toBeNull();
-    expect(result).toEqual({ kind: "abandoned" });
+  test("only the freshness refusal asks for re-authentication and captures the older credential", async () => {
+    const auth = await signedInClient();
+    const before = http.sent.length;
+    http.answer = (url) => {
+      if (url.endsWith("/delete-user")) return json({ code: "SESSION_EXPIRED" }, { status: 400 });
+      throw new TypeError("get-session is unavailable");
+    };
+    const result = await auth.deleteAccount();
+    expect(result.kind).toBe("reauthRequired");
+    expect(http.sent.slice(before).map(({ url }) => new URL(url).pathname)).toEqual([
+      "/api/auth/delete-user",
+    ]);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+    http.answer = () => signedIn("new-token");
+    await auth.checkAuthSession(new AbortController().signal);
+    http.answer = () => json({}, { status: 503 });
+    await expect(auth.revokeOlderAuthSession()).rejects.toThrow("Auth session revocation failed.");
+    expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=old-token");
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-    answer = confirmed;
-    expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-    expect(sent.at(-2)?.cookie).toBe("better-auth.session_token=late-token");
+    http.answer = (url) =>
+      url.endsWith("/sign-out")
+        ? json(
+            { success: true },
+            { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } },
+          )
+        : json(null);
+    await auth.revokeOlderAuthSession();
+    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
+    expect(http.sent.slice(-2)).toEqual([
+      {
+        url: `${API.nightly}/api/auth/sign-out`,
+        cookie: "better-auth.session_token=old-token",
+        body: "{}",
+      },
+      {
+        url: `${API.nightly}/api/auth/get-session`,
+        cookie: "better-auth.session_token=old-token",
+        body: "",
+      },
+    ]);
+    http.answer = () => json({ session: { token: "new-token" }, user: USER });
+    await auth.checkAuthSession(new AbortController().signal);
+    expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=new-token");
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
   });
-});
 
-describe("a session Voice does not keep", () => {
-  test("an answer with a session cookie but no user is rejected and its session is queued for sign-out", async () => {
-    const auth = client("nightly");
-    const { state } = await auth.openBrowser();
-    const code = Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url");
-    answer = () =>
-      json(
-        { token: "stray-token", session: { token: "stray-token" } },
-        {
-          headers: { "set-cookie": "better-auth.session_token=stray-token; Max-Age=3600; Path=/" },
-        },
+  test.each(["cancel", "quit", "delete"] as const)(
+    "%s after failed revocation drains the encrypted old credential on launch without restoring it",
+    async (action) => {
+      let refuseSignOut = true;
+      const liveSessions = new Set(["better-auth.session_token=old-token"]);
+      const oldCookie = "better-auth.session_token=old-token";
+      const newCookie = "better-auth.session_token=new-token";
+      const auth = await signedInClient();
+      http.answer = (url) => {
+        const cookie = http.sent.at(-1)?.cookie;
+        if (url.endsWith("/electron/token")) {
+          liveSessions.add(newCookie);
+          return signedIn("new-token");
+        }
+        if (url.endsWith("/delete-user")) {
+          if (cookie === oldCookie) return json({ code: "SESSION_EXPIRED" }, { status: 400 });
+          liveSessions.clear();
+          return json({ success: true, message: "User deleted" });
+        }
+        if (url.endsWith("/sign-out")) {
+          if (refuseSignOut) return json({}, { status: 503 });
+          liveSessions.delete(cookie ?? "");
+          return json({ success: true });
+        }
+        if (url.endsWith("/get-session"))
+          return cookie && liveSessions.has(cookie)
+            ? json({
+                session: { token: cookie === oldCookie ? "old-token" : "new-token" },
+                user: USER,
+              })
+            : json(null);
+        throw new Error("Unexpected auth endpoint");
+      };
+      const h = snapshotAccount(auth);
+      await h.account.restore();
+      h.account.requestDeletion();
+      await h.account.confirmDeletion();
+      const code = await signInCode(h, auth);
+      await h.account.submitSignInCode(code);
+      expect(h.state).toMatchObject({
+        kind: "signedIn",
+        ...USER,
+        deletion: { kind: "revocationFailed" },
+      });
+      expect(liveSessions).toEqual(new Set([oldCookie, newCookie]));
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
+      expect(config()).not.toContain("old-token");
+      expect(config()).not.toContain("new-token");
+      if (action !== "quit") {
+        h.account.cancelDeletion();
+        expect(h.state).toEqual({ kind: "signedIn", ...USER });
+        if (action === "delete") {
+          h.account.requestDeletion();
+          await h.account.confirmDeletion();
+          expect(h.state).toEqual({ kind: "signedOut" });
+          expect(liveSessions.size).toBe(0);
+        }
+      }
+      h.account.dispose();
+      refuseSignOut = false;
+      const relaunched = snapshotAccount(client("nightly"));
+      await relaunched.account.restore();
+      await vi.waitFor(() =>
+        expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false),
       );
-    expect(await auth.redeem(code, new AbortController().signal)).toMatchObject({
-      kind: "rejected",
-    });
+      expect(http.sent.filter(({ url }) => url.endsWith("/sign-out"))).toEqual([
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: oldCookie, body: "{}" },
+        { url: `${API.nightly}/api/auth/sign-out`, cookie: oldCookie, body: "{}" },
+      ]);
+      if (action === "delete") {
+        expect(relaunched.state).toEqual({ kind: "signedOut" });
+        expect(relaunched.states).toEqual([]);
+        expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+        expect(liveSessions.size).toBe(0);
+      } else {
+        expect(relaunched.state).toEqual({ kind: "signedIn", ...USER });
+        expect(relaunched.states).toEqual([{ kind: "signedIn", ...USER }]);
+        expect(liveSessions).toEqual(new Set([newCookie]));
+        expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+      }
+    },
+  );
+
+  test.each([true, false])(
+    "a changed account id cancels deletion and keeps the new auth session (old sign-out succeeds: %s)",
+    async (endsOld) => {
+      const auth = await signedInClient();
+      const h = snapshotAccount(auth);
+      await h.account.restore();
+      http.answer = (url) =>
+        url.endsWith("/get-session")
+          ? json({ user: USER, session: { token: "old-token" } })
+          : json({ code: "SESSION_EXPIRED" }, { status: 400 });
+      h.account.requestDeletion();
+      await h.account.confirmDeletion();
+      const code = await signInCode(h, auth);
+      http.answer = (url) => {
+        if (url.endsWith("/electron/token")) return signedIn("grace-token", GRACE);
+        if (url.endsWith("/sign-out"))
+          return endsOld ? json({ success: true }) : json({}, { status: 503 });
+        if (url.endsWith("/get-session")) return json(null);
+        throw new Error("Unexpected deletion after changing accounts");
+      };
+      await h.account.submitSignInCode(code);
+      expect(h.state).toEqual({
+        kind: "signedIn",
+        ...GRACE,
+        notice: `You signed in as ${GRACE.email}, so Voice did not delete ${USER.email}.`,
+      });
+      await h.account.confirmDeletion();
+      await h.account.retryDeletion();
+      expect(http.sent.filter(({ url }) => url.endsWith("/delete-user"))).toHaveLength(1);
+      expect(http.sent.filter(({ url }) => url.endsWith("/sign-out"))).toEqual([
+        {
+          url: `${API.nightly}/api/auth/sign-out`,
+          cookie: "better-auth.session_token=old-token",
+          body: "{}",
+        },
+      ]);
+      expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(!endsOld);
+      expect(auth.cachedUser()).toEqual(GRACE);
+      http.answer = () => json({ user: GRACE, session: { token: "grace-token" } });
+      expect(await auth.checkAuthSession(new AbortController().signal)).toEqual({
+        kind: "active",
+        user: GRACE,
+      });
+      expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=grace-token");
+    },
+  );
+
+  test.each(["delete", "reauth", "signIn"] as const)(
+    "a stalled %s body reaches a retryable error when its deadline aborts",
+    async (phase) => {
+      if (phase !== "signIn") await signedInClient();
+      const stalledPath = phase === "delete" ? "/api/auth/delete-user" : "/api/auth/electron/token";
+      const receivedHeaders = Promise.withResolvers<void>();
+      const server = createServer((request, response) => {
+        request.resume();
+        response.setHeader("content-type", "application/json");
+        if (request.url === stalledPath) {
+          response.writeHead(200);
+          response.write('{"user":');
+        } else if (request.url === "/api/auth/delete-user") {
+          response.writeHead(400);
+          response.end(JSON.stringify({ code: "SESSION_EXPIRED" }));
+        } else {
+          response.end(JSON.stringify({ user: USER, session: { token: "old-token" } }));
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") throw new Error("Missing test server port");
+        vi.unstubAllGlobals();
+        const realFetch = globalThis.fetch;
+        vi.stubGlobal("fetch", async (input: Request | string | URL, init?: RequestInit) => {
+          const response = await realFetch(input, init);
+          if (new URL(response.url).pathname === stalledPath) receivedHeaders.resolve();
+          return response;
+        });
+        const auth = createVoiceAuthClient({
+          apiUrl: `http://127.0.0.1:${address.port}`,
+          installedChannel: "nightly",
+          log,
+        });
+        const h = snapshotAccount(auth);
+        if (phase !== "signIn") await h.account.restore();
+        if (phase === "reauth") {
+          h.account.requestDeletion();
+          await h.account.confirmDeletion();
+        }
+        const deadline = new AbortController();
+        const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+        let done: Promise<void>;
+        if (phase === "delete") {
+          h.account.requestDeletion();
+          done = h.account.confirmDeletion();
+        } else {
+          done = h.account.submitSignInCode(await signInCode(h, auth));
+        }
+        await receivedHeaders.promise;
+        expect(timeout).toHaveBeenLastCalledWith(30_000);
+        expect(h.state).toMatchObject(
+          phase === "delete"
+            ? { kind: "signedIn", deletion: { kind: "deleting" } }
+            : { kind: "signingIn", phase: "finishing" },
+        );
+        deadline.abort(new DOMException("Request timed out", "TimeoutError"));
+        await done;
+        timeout.mockRestore();
+        if (phase === "delete") {
+          expect(h.state).toEqual({
+            kind: "signedIn",
+            ...USER,
+            deletion: { kind: "failed", message: DELETE_ACCOUNT_FAILED_MESSAGE },
+          });
+          await h.account.retryDeletion();
+          expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
+        } else {
+          expect(h.state).toEqual(
+            phase === "reauth"
+              ? {
+                  kind: "signedIn",
+                  ...USER,
+                  deletion: { kind: "reauthFailed", message: SIGN_IN_ERRORS.rejected },
+                }
+              : { kind: "error", message: SIGN_IN_ERRORS.rejected },
+          );
+          await h.account.signIn();
+          expect(h.state).toEqual({
+            kind: "signingIn",
+            purpose: phase === "reauth" ? "deleteAccount" : "signIn",
+            phase: "browser",
+          });
+        }
+        if (phase !== "signIn") {
+          expect(auth.cachedUser()).toEqual(USER);
+          expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
+        }
+        h.account.dispose();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    },
+  );
+
+  test("an unauthorized deletion is a failure, never a deleted account", async () => {
+    http.answer = () => json({ code: "UNAUTHORIZED" }, { status: 401 });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
+  });
+
+  test("a successful deletion is reported only with the server's deletion receipt", async () => {
+    http.answer = () => json({ success: true, message: "User deleted" });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "deleted" });
+    http.answer = () => json({ success: true, message: "Verification email http.sent" });
+    expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
+  });
+
+  test("an auth session revoked before confirmation ends the sign-in instead of trapping the deletion", async () => {
+    const auth = await signedInClient();
+    const h = snapshotAccount(auth);
+    await h.account.restore();
+    expect(h.state).toEqual({ kind: "signedIn", ...USER });
+    http.answer = (url) => {
+      if (url.endsWith("/get-session")) return json({ code: "UNAUTHORIZED" }, { status: 401 });
+      throw new Error(`Unexpected ${new URL(url).pathname} after the auth session ended`);
+    };
+    h.account.requestDeletion();
+    await h.account.confirmDeletion();
+    expect(http.sent.filter(({ url }) => url.endsWith("/delete-user"))).toEqual([]);
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
     expect(auth.cachedUser()).toBeNull();
-    expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-    answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
-    expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
-    expect(sent.at(-2)?.cookie).toBe("better-auth.session_token=stray-token");
+    await h.account.signIn();
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+    h.account.dispose();
+  });
+
+  test("a deletion whose receipt was lost ends the sign-in on retry and never claims the deletion", async () => {
+    const auth = await signedInClient();
+    const h = snapshotAccount(auth);
+    await h.account.restore();
+    let deleted = false;
+    http.answer = (url) => {
+      if (url.endsWith("/get-session")) {
+        return deleted ? json(null) : json({ session: { token: "old-token" }, user: USER });
+      }
+      if (url.endsWith("/delete-user")) {
+        deleted = true;
+        throw new TypeError("fetch failed");
+      }
+      throw new Error(`Unexpected ${new URL(url).pathname}`);
+    };
+    h.account.requestDeletion();
+    await h.account.confirmDeletion();
+    expect(h.state).toEqual({
+      kind: "signedIn",
+      ...USER,
+      deletion: { kind: "failed", message: DELETE_ACCOUNT_OFFLINE_MESSAGE },
+    });
+    await h.account.retryDeletion();
+    await h.account.confirmDeletion();
+    expect(http.sent.filter(({ url }) => url.endsWith("/delete-user"))).toHaveLength(1);
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+    expect(h.states.filter((state) => state.kind === "signedOut")).toEqual([]);
+    expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
+    await h.account.signIn();
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+    h.account.dispose();
   });
 });

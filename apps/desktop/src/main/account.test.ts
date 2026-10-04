@@ -171,7 +171,11 @@ describe("createAccount", () => {
     h.exchanges[0]?.resolve();
     await flush();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
-    expect(h.states).toEqual([{ kind: "signingIn" }, { kind: "signedIn", ...USER }]);
+    expect(h.states).toEqual([
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signingIn", purpose: "signIn", phase: "finishing" },
+      { kind: "signedIn", ...USER },
+    ]);
     expectNoSecrets(h);
   });
 
@@ -206,7 +210,7 @@ describe("createAccount", () => {
     const h = harness();
     await startSignIn(h);
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS - 1);
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     await vi.advanceTimersByTimeAsync(1);
     expect(h.state).toEqual({ kind: "signedOut" });
     expect(h.entries).toContainEqual({ message: "account sign-in timed out", level: "warn" });
@@ -217,12 +221,9 @@ describe("createAccount", () => {
     expectNoSecrets(h);
   });
 
-  test("cancel or timeout while the client is still loading never opens the browser", async () => {
-    const endings = [
-      (h: ReturnType<typeof harness>) => h.account.cancelSignIn(),
-      () => vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS),
-    ];
-    for (const end of endings) {
+  test.each(["cancel", "timeout"] as const)(
+    "%s while the client is still loading never opens the browser",
+    async (ending) => {
       const h = harness();
       h.fake.setStored(true);
       let loaded!: (client: typeof h.fake.client) => void;
@@ -234,8 +235,9 @@ describe("createAccount", () => {
       );
       const signIn = h.account.signIn();
       await flush();
-      expect(h.state).toEqual({ kind: "signingIn" });
-      await end(h);
+      expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
+      if (ending === "cancel") h.account.cancelSignIn();
+      else await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
       expect(h.state).toEqual({ kind: "signedOut" });
       loaded(h.fake.client);
       await flush();
@@ -246,8 +248,8 @@ describe("createAccount", () => {
       await signIn;
       expect(h.state).toEqual({ kind: "signedOut" });
       expectNoSecrets(h);
-    }
-  });
+    },
+  );
 
   test("a callback on a launch with nothing pending says sign-in was interrupted", async () => {
     const h = harness();
@@ -263,7 +265,7 @@ describe("createAccount", () => {
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
     expect(h.exchanges).toEqual([]);
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     h.account.handleCallbackUrl(callbackUrl(SECOND_CODE));
     await flush();
     h.exchanges[0]?.resolve();
@@ -290,7 +292,10 @@ describe("createAccount", () => {
     h.account.cancelSignIn();
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
-    expect(h.states).toEqual([{ kind: "signingIn" }, { kind: "signedOut" }]);
+    expect(h.states).toEqual([
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signedOut" },
+    ]);
     expect(h.logs).toContain("account: callback ignored while signedOut");
   });
 
@@ -310,7 +315,7 @@ describe("createAccount", () => {
     );
     await flush();
     expect(h.exchanges).toEqual([]);
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     expect(h.logs.filter((line) => line === "account: malformed callback URL")).toHaveLength(4);
     expectNoSecrets(h);
   });
@@ -381,7 +386,7 @@ describe("createAccount", () => {
     await expect(h.account.submitSignInCode(CODE)).rejects.toThrow(STALE_CODE_MESSAGE);
     await flush();
     expect(h.exchanges).toEqual([]);
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     expect(
       h.logs.filter((line) => line === "account: code from another sign-in ignored"),
     ).toHaveLength(2);
@@ -403,7 +408,7 @@ describe("createAccount", () => {
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
     expect(h.exchanges).toEqual([]);
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     expectNoSecrets(h);
   });
 
@@ -429,7 +434,7 @@ describe("createAccount", () => {
     await flush();
     expect(h.exchanges).toHaveLength(1);
     await pasted;
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "finishing" });
     h.exchanges[0]?.resolve();
     await flush();
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
@@ -476,13 +481,18 @@ describe("createAccount", () => {
     await startSignIn(h);
     h.exchanges[0]?.resolve();
     await flush();
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
-    h.setUser({ name: "Second", email: "second@example.com" });
+    h.setUser({ id: "second-id", name: "Second", email: "second@example.com" });
     h.exchanges[1]?.resolve();
     await flush();
-    expect(h.state).toEqual({ kind: "signedIn", name: "Second", email: "second@example.com" });
+    expect(h.state).toEqual({
+      kind: "signedIn",
+      id: "second-id",
+      name: "Second",
+      email: "second@example.com",
+    });
     expectNoSecrets(h);
   });
 
@@ -544,7 +554,10 @@ describe("createAccount", () => {
     h.account.dispose();
     h.exchanges[0]?.resolve();
     await vi.advanceTimersByTimeAsync(SIGN_IN_TIMEOUT_MS);
-    expect(h.states).toEqual([{ kind: "signingIn" }]);
+    expect(h.states).toEqual([
+      { kind: "signingIn", purpose: "signIn", phase: "browser" },
+      { kind: "signingIn", purpose: "signIn", phase: "finishing" },
+    ]);
   });
 
   test("reports whether each callback changed the account", async () => {
@@ -671,7 +684,9 @@ describe("createAccount", () => {
       "signingIn",
       "signedOut",
       "signingIn",
+      "signingIn",
       "error",
+      "signingIn",
       "signingIn",
       "signedIn",
     ]);
@@ -721,11 +736,14 @@ describe("restore", () => {
     expect(h.createClient).toHaveBeenCalledWith(API_URL);
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
     expect(h.checks).toHaveLength(1);
-    h.checks[0]?.answer({ kind: "active", user: { name: "Ada King", email: USER.email } });
+    h.checks[0]?.answer({
+      kind: "active",
+      user: { id: USER.id, name: "Ada King", email: USER.email },
+    });
     await restored.done;
     expect(h.states).toEqual([
       { kind: "signedIn", ...USER },
-      { kind: "signedIn", name: "Ada King", email: USER.email },
+      { kind: "signedIn", id: USER.id, name: "Ada King", email: USER.email },
     ]);
     expectNoSecrets(h);
   });
@@ -845,7 +863,7 @@ describe("restore", () => {
     expect(h.checks[0]?.signal.aborted).toBe(true);
     h.checks[0]?.answer({ kind: "active", user: USER });
     await restored.done;
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     expect(h.states.filter((state) => state.kind === "signedIn")).toEqual([]);
   });
 
@@ -862,7 +880,7 @@ describe("restore", () => {
     h.requests[0]?.resolve();
     await signIn;
     expect(h.fake.forgotten).toBe(1);
-    expect(h.states).toEqual([{ kind: "signingIn" }]);
+    expect(h.states).toEqual([{ kind: "signingIn", purpose: "signIn", phase: "browser" }]);
   });
 
   test("quitting aborts a check still in flight", async () => {
@@ -877,7 +895,7 @@ describe("restore", () => {
     const restored = h.account.restore();
     void h.account.signIn();
     await restored;
-    expect(h.state).toEqual({ kind: "signingIn" });
+    expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     expect(h.checks).toEqual([]);
     expect(h.createClient).toHaveBeenCalledOnce();
   });

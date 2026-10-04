@@ -173,10 +173,13 @@ const hubScenes: Record<string, Snapshot> = {
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
   "account-signed-out": { ...ready, account: { kind: "signedOut" } },
-  "account-signing-in": { ...ready, account: { kind: "signingIn" } },
+  "account-signing-in": {
+    ...ready,
+    account: { kind: "signingIn", purpose: "signIn", phase: "browser" },
+  },
   "account-signed-in": {
     ...ready,
-    account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+    account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
   },
   "account-error": {
     ...ready,
@@ -304,7 +307,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       set({ ...snapshot, loginItem: on ? "on" : "off" });
     },
     signIn: async () => {
-      set({ ...snapshot, account: { kind: "signingIn" } });
+      set({ ...snapshot, account: { kind: "signingIn", purpose: "signIn", phase: "browser" } });
     },
     signOut: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
@@ -313,7 +316,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({
         ...snapshot,
-        account: { kind: "signedIn", name: "Ada Lovelace", email: "ada@example.com" },
+        account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
       });
     },
     cancelSignIn: async () => {
@@ -321,6 +324,24 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     },
     dismissAccountError: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    requestAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      set({ ...snapshot, account: { ...snapshot.account, deletion: { kind: "confirming" } } });
+    },
+    confirmAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn" || snapshot.account.deletion?.kind !== "confirming")
+        return;
+      set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    cancelAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      const { name, email } = snapshot.account;
+      set({ ...snapshot, account: { kind: "signedIn", id: "ada-id", name, email } });
+    },
+    retryAccountDeletion: async () => {
+      if (snapshot.account.kind !== "signedIn") return;
+      set({ ...snapshot, account: { ...snapshot.account, deletion: { kind: "confirming" } } });
     },
     startMicrophoneTest: async () => {
       set({ ...snapshot, microphoneTest: { kind: "starting" } });
