@@ -58,7 +58,7 @@ const styles = stylex.create({
   header: { display: "flex", alignItems: "center", gap: 10, padding: space.sm },
   identity: { display: "flex", flexDirection: "column", minWidth: 0 },
   name: { fontWeight: 600 },
-  email: { alignSelf: "flex-start", color: color.mutedForeground, fontSize: 12 },
+  email: { color: color.mutedForeground, fontSize: 12 },
   truncate: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   separator: { height: 1, marginBlock: 4, backgroundColor: color.border },
   item: {
@@ -161,7 +161,9 @@ function SignedInMenu({
               <Avatar identity={account} size={48} />
               <div {...stylex.props(styles.identity)}>
                 <span {...stylex.props(styles.name, styles.truncate)}>{title}</span>
-                <HiddenEmail email={account.email} xstyle={[styles.email, styles.truncate]} />
+                <span {...stylex.props(styles.email)}>
+                  <HiddenEmail email={account.email} />
+                </span>
               </div>
             </div>
             <Menu.Separator {...stylex.props(styles.separator)} />
