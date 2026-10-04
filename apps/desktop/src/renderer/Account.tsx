@@ -2,51 +2,15 @@ import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, initials } from "./accountView.ts";
+import { accountRow } from "./accountView.ts";
+import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
-const spin = stylex.keyframes({ to: { transform: "rotate(360deg)" } });
-
 const styles = stylex.create({
-  avatar: {
-    position: "relative",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    overflow: "hidden",
-    width: 40,
-    height: 40,
-    borderRadius: radius.round,
-    backgroundColor: `color-mix(in srgb, ${color.primary} 14%, transparent)`,
-    color: color.primary,
-    fontSize: 15,
-    fontWeight: 600,
-    letterSpacing: "0.02em",
-  },
-  picture: {
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-  },
-  waiting: {
-    width: 16,
-    height: 16,
-    borderWidth: 2,
-    borderStyle: "solid",
-    borderColor: `color-mix(in srgb, ${color.primary} 25%, transparent)`,
-    borderTopColor: color.primary,
-    borderRadius: radius.round,
-    animationName: { default: spin, "@media (prefers-reduced-motion: reduce)": "none" },
-    animationDuration: "1.2s",
-    animationTimingFunction: "linear",
-    animationIterationCount: "infinite",
-  },
   waitingText: {
     display: "flex",
     flexDirection: "column",
@@ -107,35 +71,6 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
-// The initials stay underneath, so they show while the picture loads.
-function Avatar({
-  name,
-  email,
-  image,
-}: {
-  name: string;
-  email: string;
-  image: string | undefined;
-}) {
-  const [failed, setFailed] = useState<string | null>(null);
-  return (
-    <span aria-hidden="true" {...stylex.props(styles.avatar)}>
-      {initials(name, email)}
-      {image && image !== failed && (
-        <img
-          src={image}
-          alt=""
-          decoding="async"
-          draggable={false}
-          referrerPolicy="no-referrer"
-          onError={() => setFailed(image)}
-          {...stylex.props(styles.picture)}
-        />
-      )}
-    </span>
-  );
-}
-
 function SignedOutRow({ account }: { account: AccountState }) {
   const { pending, error, run } = useAction();
   return (
@@ -170,9 +105,7 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
     <>
       <Card>
         <div {...stylex.props(settings.row)}>
-          <span aria-hidden="true" {...stylex.props(styles.avatar)}>
-            <span {...stylex.props(styles.waiting)} />
-          </span>
+          <AvatarSpinner size={40} />
           <div {...stylex.props(styles.waitingText)}>
             <RowText account={account} />
             {!pasting && (
@@ -228,7 +161,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
     <>
       <Card>
         <div {...stylex.props(settings.row)}>
-          <Avatar name={account.name} email={account.email} image={account.image} />
+          <Avatar identity={account} size={40} />
           <RowText account={account} />
           <div {...stylex.props(settings.actions)}>
             <Button
