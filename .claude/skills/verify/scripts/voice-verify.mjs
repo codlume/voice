@@ -75,6 +75,16 @@ function requireInstance() {
   return state;
 }
 
+async function evaluateMain(state, expression) {
+  const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
+  const main = await Page.open(targets[0].webSocketDebuggerUrl);
+  try {
+    return await main.evaluate(expression);
+  } finally {
+    main.close();
+  }
+}
+
 async function connect(which) {
   const state = requireInstance();
   return Page.connect(state.port, `${which}.html`, { timeoutMs: 5000 });
@@ -368,14 +378,16 @@ const commands = {
     const url = `com.codlume.voice://auth/callback#token=${code}`;
     // The landing page opens this URL. A development build cannot receive it from macOS, so the
     // main-process test hook emits the same open-url event the OS would.
-    const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
-    const main = await Page.open(targets[0].webSocketDebuggerUrl);
-    try {
-      await main.evaluate(`globalThis.voiceTest.openUrl(${show(url)})`);
-    } finally {
-      main.close();
-    }
+    await evaluateMain(state, `globalThis.voiceTest.openUrl(${show(url)})`);
     out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
+  },
+
+  async menu() {
+    const [id] = args;
+    if (!id) fail("usage: menu <menu item id>");
+    // CDP key events never reach the native menu, so this chooses the item the way its shortcut does.
+    await evaluateMain(requireInstance(), `globalThis.voiceTest.clickMenuItem(${show(id)})`);
+    out({ clicked: id });
   },
 
   async reopen() {
@@ -723,6 +735,7 @@ const commands = {
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
   callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
+  menu <id>                      choose an application menu item by id, as its shortcut would
   second-instance <code>         launch a second Voice with that URL as its argument; print its exit
   reopen                         close the Voice window, then open Voice again (second copy hands over)
   record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)

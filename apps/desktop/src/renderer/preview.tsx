@@ -36,6 +36,7 @@ const base: Snapshot = {
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
+    zoomLevel: 0,
   },
   microphones: {
     kind: "ready",
@@ -292,6 +293,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
+          zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
         },
         updates: patch.updateChannel
           ? {
