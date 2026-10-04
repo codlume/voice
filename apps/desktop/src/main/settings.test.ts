@@ -252,18 +252,6 @@ describe("load and save", () => {
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(settings);
   });
-
-  test("a failed save rejects with a message for the user and keeps the file system error", async () => {
-    const blocker = NodePath.join(dir, "blocker");
-    await writeFile(blocker, "");
-    const save = saveSettings(NodePath.join(blocker, "settings.json"), DEFAULT_SETTINGS);
-    await expect(save).rejects.toThrow(
-      expect.objectContaining({
-        message: "Could not save this setting. Try again.",
-        cause: expect.objectContaining({ code: expect.stringMatching(/^E[A-Z]+$/) }),
-      }),
-    );
-  });
 });
 
 describe("microphone settings", () => {

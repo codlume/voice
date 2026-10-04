@@ -364,12 +364,7 @@ async function main() {
       store.state.settings.updateChannel === store.state.updates.channel,
     prepareRestart: async () => {
       lifecycle = "stopping";
-      try {
-        await saving;
-      } catch (error) {
-        lifecycle = "running";
-        throw error;
-      }
+      await saving;
       stopPermissionPolling();
       try {
         await shutdown(true);
@@ -534,22 +529,33 @@ async function main() {
       throw new Error("Voice is restarting.");
   }
 
+  // Patches run one at a time, and each applies only once it is on disk, so a failed save leaves
+  // the app and the hub on the last saved settings.
   async function updateSettings(patch: SettingsPatch) {
     assertNotRestarting();
-    const previous = store.state.settings;
-    const next = applyPatch(previous, patch);
-    store.update((s) => ({ ...s, settings: next }));
-    if (next.hotkey !== previous.hotkey)
-      helper.send({ type: "hotkey.configure", key: next.hotkey });
-    if (next.microphone?.uid !== previous.microphone?.uid)
-      helper.send({ type: "microphone.configure", microphone: next.microphone });
-    if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
-    if (next.showInDock !== previous.showInDock) void syncDock();
-    saving = saving.catch(() => {}).then(() => saveSettings(settingsFile, next));
-    await saving.catch((error: Error) => {
-      log(`settings: save failed (${String(error.cause)})`);
-      throw error;
+    const saved = saving.then(async () => {
+      const previous = store.state.settings;
+      const next = applyPatch(previous, patch);
+      try {
+        await saveSettings(settingsFile, next);
+      } catch (error) {
+        log(`settings: save failed (${String(error)})`);
+        throw new Error("Could not save this setting. Try again.", { cause: error });
+      }
+      store.update((s) => ({ ...s, settings: next }));
+      if (next.hotkey !== previous.hotkey)
+        helper.send({ type: "hotkey.configure", key: next.hotkey });
+      if (next.microphone?.uid !== previous.microphone?.uid)
+        helper.send({ type: "microphone.configure", microphone: next.microphone });
+      if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
+      if (next.showInDock !== previous.showInDock) void syncDock();
+      return next;
     });
+    saving = saved.then(
+      () => {},
+      () => {},
+    );
+    const next = await saved;
     if (next.updateChannel === store.state.settings.updateChannel)
       await updates.setChannel(next.updateChannel);
   }

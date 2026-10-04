@@ -91,14 +91,9 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
   }
 }
 
-// The hub shows this rejection as is, so a file system error stays in `cause` for the log.
 export async function saveSettings(file: string, settings: Settings): Promise<void> {
-  try {
-    await mkdir(NodePath.dirname(file), { recursive: true });
-    const temp = `${file}.${process.pid}.tmp`;
-    await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
-    await rename(temp, file);
-  } catch (cause) {
-    throw new Error("Could not save this setting. Try again.", { cause });
-  }
+  await mkdir(NodePath.dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.tmp`;
+  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
+  await rename(temp, file);
 }
