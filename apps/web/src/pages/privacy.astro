@@ -2,7 +2,7 @@
 import * as stylex from "@stylexjs/stylex";
 
 import Page from "../layouts/Page.astro";
-import { CONTACT_EMAIL, OPERATOR_NAME, POLICY_UPDATED } from "../site.ts";
+import { CONTACT_EMAIL, OPERATOR_NAME, PRIVACY_UPDATED } from "../site.ts";
 import { styles } from "../styles.ts";
 
 export const prerender = true;
@@ -23,7 +23,7 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
   <main {...stylex.attrs(styles.prose)}>
     <h1 {...stylex.attrs(styles.headline)}>Privacy Policy</h1>
     <p {...stylex.attrs(styles.updated)}>
-      Last updated <time datetime={POLICY_UPDATED}>{POLICY_UPDATED}</time>
+      Last updated <time datetime={PRIVACY_UPDATED}>{PRIVACY_UPDATED}</time>
     </p>
 
     <p {...stylex.attrs(styles.lede)}>
@@ -53,8 +53,8 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       </li>
       <li {...li}>
         <strong>Transcripts and files.</strong> Voice keeps the last transcript in memory until you
-        quit Voice. It saves no history. The only file Voice writes for you is its settings file. It
-        holds your microphone, shortcut, and preferences, and none of your text.
+        quit Voice. It saves no history. Its settings file holds your microphone, shortcut, and
+        preferences, and none of your text.
       </li>
       <li {...li}>
         <strong>Typing into apps.</strong> Voice types into the focused app through macOS
@@ -111,25 +111,34 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         Google data. We do not ask Google for offline access.
       </li>
       <li {...li}>
-        <strong>Storage.</strong> We store account records, sessions, and the Google tokens issued
-        at sign-in in a Cloudflare D1 database located in Western Europe. Stored tokens are
-        encrypted. Each session also records the IP address and browser or app details (user
-        agent) it was created from. On your Mac, your session token is kept encrypted in the macOS
-        Keychain.
+        <strong>Storage.</strong> We store your name, email address, Google account identifier, and
+        profile picture URL in a Cloudflare D1 database located in Western Europe. We also store
+        auth sessions and the tokens Google issues at sign-in. The access token is stored
+        encrypted. The ID token, which holds the same profile details, is stored as Google issued
+        it. Each auth session records the IP address and browser or app details (user agent)
+        it was created from. On your Mac, Voice stores your auth session, and your name and email
+        address so it can show who is signed in while offline, encrypted in its data folder. The
+        encryption key is kept in the macOS Keychain. If encryption is unavailable, Voice keeps
+        them only in memory, and you sign in again after restarting.
       </li>
       <li {...li}>
-        <strong>Security records.</strong> To limit abuse, the account service keeps short-lived
-        rate-limit records keyed by IP address.
+        <strong>Security records.</strong> To limit abuse, the account service keeps rate-limit
+        records keyed by IP address.
       </li>
       <li {...li}>
-        <strong>Signing out and deleting your account.</strong> Signing out ends the session on the
-        server and removes it from your Mac. Delete account (in Settings &gt; Account) removes your
-        user record, your sessions, and your linked Google account record. We keep your account
-        until you delete it.
+        <strong>Signing out and deleting your account.</strong> Sign out in Settings &gt; Account
+        ends the auth session on the server and removes it from your Mac. If the server cannot be
+        reached, Voice keeps the old auth session encrypted on your Mac only to end it on the server
+        when Voice next starts. Delete account on the same page removes your user record, your auth
+        sessions, and your linked Google account record, including its stored Google tokens. If you
+        signed in more than 10 minutes earlier, Voice first asks you to sign in again with the same
+        Google account, and then ends the older auth session. We keep your account until you delete
+        it.
       </li>
       <li {...li}>
-        <strong>Nightly and Stable.</strong> Nightly and Stable builds use separate account
-        databases.
+        <strong>Nightly and Stable.</strong> Nightly and Stable builds keep separate accounts in
+        separate databases. Signing in or deleting your account in one channel does not change your
+        account in the other.
       </li>
       <li {...li}>
         <strong>What never reaches the account service.</strong> We never send audio, transcripts,

@@ -23,6 +23,7 @@ jobs:
       stable: ${{ steps.detect.outputs.stable }}
       stable_version: ${{ steps.detect.outputs.stable_version }}
       stable_sha: ${{ steps.detect.outputs.stable_sha }}
+      stable_api_changed: ${{ steps.api.outputs.changed }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -63,9 +64,60 @@ jobs:
           desktop_version="$(git show "${tag}:apps/desktop/package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
           [[ "${version}" == "${desktop_version}" && "${tag}" == "v${version}" ]] || exit 1
           gh release view "${tag}" --json tagName >/dev/null
-          echo "stable=true" >> "${GITHUB_OUTPUT}"
-          echo "stable_version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "stable_sha=${sha}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "stable=true"
+            echo "stable_version=${version}"
+            echo "stable_sha=${sha}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Detect Stable API changes
+        id: api
+        if: steps.detect.outputs.stable == 'true'
+        env:
+          STABLE_SHA: ${{ steps.detect.outputs.stable_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*-*' "${STABLE_SHA}^")"
+          if ! git diff --quiet "${previous}" "${STABLE_SHA}" -- apps/api; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  stable-api-deploy:
+    needs: release-please
+    if: needs.release-please.outputs.stable == 'true' && needs.release-please.outputs.stable_api_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # The environment holds the API token and the reviewer gate. Without it the job would
+    # silently use the repo-level CLOUDFLARE_API_TOKEN that deploys the website.
+    environment: api-stable
+    concurrency:
+      group: deploy-api-stable
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release-please.outputs.stable_sha }}
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Record D1 Time Travel bookmark
+        run: vp exec wrangler d1 time-travel info DB --env stable
+      - name: Apply migrations
+        run: vp exec wrangler d1 migrations apply DB --env stable --remote
+      - name: Deploy
+        run: vp exec wrangler deploy --env stable --strict
+      - name: Check health
+        run: curl --fail --silent --show-error --retry 20 --retry-delay 15 --retry-all-errors https://api.voice.codlume.com/health
 
   nightly-due:
     if: github.ref == 'refs/heads/main' && github.event_name != 'push'

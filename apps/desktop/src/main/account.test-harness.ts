@@ -174,6 +174,7 @@ export function harness(
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
+    otherChannelSignedIn: false,
     last: null,
   });
   const states: AccountState[] = [];
