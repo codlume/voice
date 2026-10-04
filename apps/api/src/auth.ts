@@ -17,6 +17,10 @@ import * as schema from "./auth-schema.ts";
 // user table once per callback; at a much larger user count, move it to a Cron Trigger.
 const userWithoutAccountGraceMs = 60_000;
 
+// encryptOAuthTokens leaves Google's ID token in plain text, and Voice never reads it. Better Auth
+// merges a hook's data over its own, so the token is overwritten with null, not omitted.
+const dropIdToken = async () => ({ data: { idToken: null } });
+
 // Every setting that needs no Worker binding. The schema generator (auth.cli.ts) reads the same
 // object, so a plugin or table added here reaches both the runtime and the migration.
 export const authOptions = {
@@ -35,6 +39,13 @@ export const authOptions = {
     log: (level: string) => console.log(JSON.stringify({ source: "better-auth", level })),
   },
   plugins: [electron()],
+  // No client uses it, and Google's getUserInfo returns null without the ID token, so it could
+  // only fail. A meeting integration that needs a profile lookup should re-enable it with a
+  // getUserInfo that reads the access token.
+  disabledPaths: ["/account-info"],
+  databaseHooks: {
+    account: { create: { before: dropIdToken }, update: { before: dropIdToken } },
+  },
 } satisfies BetterAuthOptions;
 
 export function createAuth(env: Env) {

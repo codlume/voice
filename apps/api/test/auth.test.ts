@@ -127,6 +127,11 @@ async function whileWriteFails<T>(
   }
 }
 
+const storedTokens = (userId: string) =>
+  env.DB.prepare("select access_token, id_token from account where user_id = ?")
+    .bind(userId)
+    .first<{ access_token: string | null; id_token: string | null }>();
+
 describe("Google sign-in", () => {
   it("creates one user and one account, then reuses them on a second sign-in (catches duplicate users or accounts per Google subject, or a sweep that deletes users with an account)", async () => {
     const first = await exchange(await browserSignIn("ada-lovelace"));
@@ -159,15 +164,20 @@ describe("Google sign-in", () => {
     expect(google.searchParams.get("access_type")).toBeNull();
   });
 
-  it("stores Google's tokens encrypted (catches plaintext OAuth tokens in D1)", async () => {
-    const response = await exchange(await browserSignIn("ida-wells"));
-    const { user } = await response.json<SignedIn>();
+  it("stores the access token encrypted and no ID token, on the first and a repeat sign-in (catches plaintext OAuth tokens or a stored ID token in D1)", async () => {
+    const { user } = await (await exchange(await browserSignIn("ida-wells"))).json<SignedIn>();
 
-    const row = await env.DB.prepare("select access_token from account where user_id = ?")
-      .bind(user.id)
-      .first<{ access_token: string }>();
-    expect(row?.access_token).toBeTruthy();
-    expect(row?.access_token).not.toContain("fake-access");
+    const created = await storedTokens(user.id);
+    expect(created?.access_token).toBeTruthy();
+    expect(created?.access_token).not.toContain("fake-access");
+    expect(created?.id_token).toBeNull();
+
+    expect((await exchange(await browserSignIn("ida-wells"))).status).toBe(200);
+    const updated = await storedTokens(user.id);
+    // Encryption uses a random nonce, so new ciphertext proves the repeat sign-in rewrote the row.
+    expect(updated?.access_token).not.toBe(created?.access_token);
+    expect(updated?.access_token).not.toContain("fake-access");
+    expect(updated?.id_token).toBeNull();
   });
 });
 
@@ -305,6 +315,25 @@ describe("a user row with no account", () => {
 
     expect((await exchange(bystander)).status).toBe(200);
     expect(await rowsOf(orphan)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+  });
+});
+
+describe("account-info", () => {
+  it("is not served, even to a signed-in user (catches the route re-enabled while it can only fail without the ID token)", async () => {
+    const signedIn = await exchange(await browserSignIn("account-info"));
+    const cookie = cookieHeader(storeCookies(signedIn));
+    const { user } = await signedIn.json<SignedIn>();
+    const account = await env.DB.prepare("select id from account where user_id = ?")
+      .bind(user.id)
+      .first<{ id: string }>();
+    expect(account?.id).toBeTruthy();
+
+    for (const path of ["/api/auth/account-info", "/api/auth/account-info/"]) {
+      const response = await worker(`${base}${path}?accountId=${account?.id}`, {
+        headers: { cookie },
+      });
+      expect(response.status).toBe(404);
+    }
   });
 });
 
