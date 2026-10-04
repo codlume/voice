@@ -23,6 +23,8 @@ import {
   type Shortcut,
 } from "./shortcuts.ts";
 import { Style } from "./Style.tsx";
+import { titlebar } from "./titlebar.ts";
+import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
@@ -176,21 +178,10 @@ const styles = stylex.create({
     gridColumn: "1 / -1",
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingLeft: 92,
+    paddingRight: 12,
     WebkitAppRegion: "drag",
-  },
-  toggle: {
-    display: "grid",
-    placeItems: "center",
-    width: 28,
-    height: 28,
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: radius.small,
-    backgroundColor: { default: "transparent", ":hover": color.sidebarRowHover },
-    color: color.mutedForeground,
-    cursor: "pointer",
-    WebkitAppRegion: "no-drag",
   },
   sidebar: {
     width: sidebarWidth,
@@ -554,13 +545,17 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           aria-expanded={!collapsed}
           aria-controls={sidebarId}
           onClick={toggleSidebar}
-          {...stylex.props(styles.toggle)}
+          {...stylex.props(titlebar.button)}
         >
           <Icon>
             <rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" />
             <path d="M7.75 3.75v12.5" />
           </Icon>
         </button>
+        <TitlebarAccount
+          account={snapshot.account}
+          onOpenAccount={() => selectSettingsPage("account")}
+        />
       </div>
       <SidebarTooltip collapsed={collapsed}>
         <aside
