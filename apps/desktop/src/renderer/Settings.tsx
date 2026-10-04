@@ -28,6 +28,7 @@ import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
 import { Select } from "./Select.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
+import { useAction } from "./useAction.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -249,8 +250,7 @@ export function GeneralSettings({
   microphonePermission: PermissionState;
   updates: UpdatesSnapshot;
 }) {
-  const [microphoneError, setMicrophoneError] = useState("");
-  const [savingMicrophone, setSavingMicrophone] = useState(false);
+  const microphoneAction = useAction();
   const devices = microphones.kind === "ready" ? microphones.devices : [];
   const selected = settings.microphone;
   const missing = selected !== null && !devices.some((device) => device.uid === selected.uid);
@@ -286,39 +286,28 @@ export function GeneralSettings({
   async function changeMicrophone(uid: string) {
     const microphone = uid === "" ? null : devices.find((device) => device.uid === uid);
     if (microphone === undefined) return;
-    setMicrophoneError("");
-    setSavingMicrophone(true);
-    try {
-      await window.voice.updateSettings({ microphone });
-    } catch (error) {
-      setMicrophoneError(error instanceof Error ? error.message : "Could not save microphone.");
-    } finally {
-      setSavingMicrophone(false);
-    }
+    await microphoneAction.run(
+      () => window.voice.updateSettings({ microphone }),
+      "Could not save microphone.",
+    );
   }
 
-  const [languageError, setLanguageError] = useState("");
+  const languageAction = useAction();
 
   async function changeLanguage(dictationLanguage: DictationLanguage) {
-    setLanguageError("");
-    try {
-      await window.voice.updateSettings({ dictationLanguage });
-    } catch (error) {
-      setLanguageError(
-        error instanceof Error ? error.message : "Could not save dictation language.",
-      );
-    }
+    await languageAction.run(
+      () => window.voice.updateSettings({ dictationLanguage }),
+      "Could not save dictation language.",
+    );
   }
 
-  const [updateError, setUpdateError] = useState("");
+  const channelAction = useAction();
 
   async function changeChannel(channel: UpdateChannel) {
-    setUpdateError("");
-    try {
-      await window.voice.updateSettings({ updateChannel: channel });
-    } catch (error) {
-      setUpdateError(error instanceof Error ? error.message : "Could not change update channel.");
-    }
+    await channelAction.run(
+      () => window.voice.updateSettings({ updateChannel: channel }),
+      "Could not change update channel.",
+    );
   }
 
   return (
@@ -337,15 +326,15 @@ export function GeneralSettings({
               id="setting-microphone"
               value={selected?.uid ?? ""}
               options={microphoneOptions}
-              disabled={savingMicrophone}
+              disabled={microphoneAction.pending}
               grouped
               onChange={(uid) => void changeMicrophone(uid)}
             />
           </MicrophoneRow>
         </div>
-        {microphoneError && (
+        {microphoneAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
-            {microphoneError}
+            {microphoneAction.error}
           </p>
         )}
       </Section>
@@ -364,9 +353,9 @@ export function GeneralSettings({
             />
           </Row>
         </div>
-        {languageError && (
+        {languageAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
-            {languageError}
+            {languageAction.error}
           </p>
         )}
       </Section>
@@ -416,9 +405,9 @@ export function GeneralSettings({
               <p role="status" aria-live="polite" {...stylex.props(styles.rowDetail)}>
                 {updateStatusText(updates.status)}
               </p>
-              {updateError && (
+              {channelAction.error && (
                 <p role="alert" {...stylex.props(styles.error)}>
-                  {updateError}
+                  {channelAction.error}
                 </p>
               )}
             </div>
@@ -554,8 +543,7 @@ function ModelSection({
   cleanupEnabled: boolean;
   dictating: boolean;
 }) {
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
+  const { pending, error, run: runAction } = useAction();
   const [confirmingUninstall, setConfirmingUninstall] = useState(false);
   const view = modelView(model, status, { cleanupEnabled, dictating });
   const canUninstall = view.actions.some(
@@ -564,21 +552,11 @@ function ModelSection({
   // Dictation or a download can withdraw Uninstall while the dialog is open.
   if (confirmingUninstall && !canUninstall) setConfirmingUninstall(false);
 
-  async function run(action: ModelAction) {
-    setError("");
-    setPending(true);
-    try {
-      await modelActions[action](model.id);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : `Could not ${action.toLowerCase()} ${model.name}.`,
-      );
-    } finally {
-      setPending(false);
-    }
-  }
+  const run = (action: ModelAction) =>
+    runAction(
+      () => modelActions[action](model.id),
+      `Could not ${action.toLowerCase()} ${model.name}.`,
+    );
 
   return (
     <Section label={model.purpose}>

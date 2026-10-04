@@ -53,8 +53,8 @@ export type UpdateCard =
   | { kind: "release"; update: PendingUpdate }
   | { kind: "error"; message: string };
 
-export function updateCard(status: UpdateStatus, actionError: string | null): UpdateCard | null {
-  if (actionError !== null) return { kind: "error", message: actionError };
+export function updateCard(status: UpdateStatus, actionError: string): UpdateCard | null {
+  if (actionError) return { kind: "error", message: actionError };
   if (status.kind === "failed") return { kind: "error", message: status.message };
   const update = pendingUpdate(status);
   return update && { kind: "release", update };

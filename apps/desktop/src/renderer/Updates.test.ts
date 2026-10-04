@@ -104,7 +104,7 @@ describe("update controls", () => {
       { kind: "failed", message: "Connection timed out" },
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
-    expect(statuses.map((status) => cardText(updateCard(status, null)))).toEqual([
+    expect(statuses.map((status) => cardText(updateCard(status, "")))).toEqual([
       null,
       null,
       null,
