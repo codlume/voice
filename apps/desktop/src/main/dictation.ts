@@ -109,17 +109,12 @@ export function createDictation(options: DictationOptions): Dictation {
       const phaseChanged = state.phase !== before.phase;
       if (phaseChanged) armWatchdog(state);
     }
-    // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
-    // restoring the previous contents. Copying earlier would race the helper saving them.
-    if (
-      before.phase === "inserting" &&
-      state.phase === "done" &&
-      state.id === before.id &&
-      store.state.settings.copyToClipboard
-    ) {
-      options.copy(before.text);
-    }
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
+      // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
+      // restoring the previous contents. Copying earlier would race the helper saving them.
+      if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
+        options.copy(before.text);
+      }
       finish(state.id, state.outcome);
     }
   }

@@ -172,11 +172,13 @@ function Check({ pasted }: { pasted: boolean }) {
 export function PillCapsule({
   session,
   alwaysShowPill,
+  copyToClipboard,
 }: {
   session: PillState;
   alwaysShowPill: boolean;
+  copyToClipboard: boolean;
 }) {
-  const view = pillView(session);
+  const view = pillView(session, { copyToClipboard });
   return (
     <div {...stylex.props(styles.frame)}>
       <div

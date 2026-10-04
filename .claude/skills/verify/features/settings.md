@@ -1,11 +1,12 @@
 # Settings
 
-Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, and the always-visible Flow Bar. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting.
+Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, and the always-visible Flow Bar. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting.
 
 ## Sub-features
 
 - `settings-microphone`: choose an input device or System default, and run a level test.
 - `settings-language`: the spoken language, or Auto-detect. Cleanup is available only for English.
+- `settings-copy-to-clipboard`: `Copy transcript to clipboard`.
 - `settings-update-channel`: Stable or Nightly.
 - `settings-open-at-login`: unavailable in development builds by design.
 - `settings-mute`: `Mute all audio while dictating`.

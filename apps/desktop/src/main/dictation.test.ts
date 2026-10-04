@@ -128,6 +128,17 @@ async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
 
+async function dictate(h: ReturnType<typeof harness>, text: string) {
+  h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+  const id = h.id();
+  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+  vi.advanceTimersByTime(800);
+  h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+  h.dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
+  await flush();
+  return id;
+}
+
 describe("createDictation", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -645,17 +656,6 @@ describe("createDictation", () => {
   });
 
   describe("copy transcript to clipboard", () => {
-    async function dictate(h: ReturnType<typeof harness>, text: string) {
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-      const id = h.id();
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
-      vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-      h.dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
-      await flush();
-      return id;
-    }
-
     test("copies the cleaned text once, only after insertion reports back", async () => {
       const h = harness({ copyToClipboard: true });
       const id = await dictate(h, "hello world");
@@ -691,6 +691,14 @@ describe("createDictation", () => {
       expect(h.copies).toEqual([]);
       vi.advanceTimersByTime(1);
       expect(h.copies).toEqual(["stuck"]);
+    });
+
+    test("copies the text when the helper exits mid-insert", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false });
+      await dictate(h, "x");
+      h.dictation.dispatch({ type: "helperExited" });
+      expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "failed" } });
+      expect(h.copies).toEqual(["x"]);
     });
 
     test("copies nothing when the setting is off", async () => {

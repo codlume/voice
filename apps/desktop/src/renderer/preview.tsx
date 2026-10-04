@@ -379,7 +379,11 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
 function PillPreview() {
   const snapshot = useSnapshot();
   return snapshot ? (
-    <PillCapsule session={snapshot.session} alwaysShowPill={snapshot.settings.alwaysShowPill} />
+    <PillCapsule
+      session={snapshot.session}
+      alwaysShowPill={snapshot.settings.alwaysShowPill}
+      copyToClipboard={snapshot.settings.copyToClipboard}
+    />
   ) : null;
 }
 
@@ -412,7 +416,7 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule session={session} alwaysShowPill />
+            <PillCapsule session={session} alwaysShowPill copyToClipboard={false} />
           </div>
         </figure>
       ))}
