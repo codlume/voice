@@ -9,6 +9,7 @@ import { checklist, hotkeyLabels, type ChecklistRow, type SetupCommand } from ".
 import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { useAction } from "./useAction.ts";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
@@ -46,6 +47,7 @@ const styles = stylex.create({
   rowText: { flexGrow: 1, minWidth: 0 },
   rowTitle: { display: "block", margin: 0, fontWeight: 500 },
   rowSubtitle: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
   status: {
     display: "flex",
     flexDirection: "column",
@@ -223,6 +225,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
 
 function CrashReportsRow({ on }: { on: boolean }) {
   const id = useId();
+  const diagnosticsAction = useAction();
   return (
     <div {...stylex.props(styles.row)}>
       <span {...stylex.props(styles.mark, styles.markEmpty)} />
@@ -233,12 +236,20 @@ function CrashReportsRow({ on }: { on: boolean }) {
         <p {...stylex.props(styles.rowSubtitle)}>
           Crashes, timings, and app events. Never your words or audio.
         </p>
+        {diagnosticsAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {diagnosticsAction.error}
+          </p>
+        )}
       </div>
       <Switch
         id={id}
         checked={on}
         onChange={(checked) =>
-          void window.voice.updateSettings({ diagnostics: checked ? "on" : "off" })
+          void diagnosticsAction.run(
+            () => window.voice.updateSettings({ diagnostics: checked ? "on" : "off" }),
+            "Could not save settings.",
+          )
         }
       />
     </div>
@@ -300,6 +311,7 @@ function TryIt({ hotkey }: { hotkey: Hotkey }) {
 function LastDictation({ last }: { last: Snapshot["last"] }) {
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState<"text" | "raw" | null>(null);
+  const copyAction = useAction();
 
   useEffect(() => {
     if (!copied) return;
@@ -308,7 +320,10 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
   }, [copied]);
 
   const copy = (which: "text" | "raw") =>
-    void window.voice.copyLast(which).then(() => setCopied(which));
+    void copyAction.run(async () => {
+      await window.voice.copyLast(which);
+      setCopied(which);
+    }, "Could not copy the transcript.");
   const hasRaw = last !== null && last.raw !== last.text;
 
   return (
@@ -352,6 +367,11 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
           </>
         )}
       </div>
+      {copyAction.error && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          {copyAction.error}
+        </p>
+      )}
     </section>
   );
 }

@@ -120,8 +120,10 @@ const updateChannels = [
   { value: "nightly", label: "Nightly" },
 ] as const satisfies readonly { value: UpdateChannel; label: string }[];
 
-function update(patch: SettingsPatch) {
-  void window.voice.updateSettings(patch);
+type Action = ReturnType<typeof useAction>;
+
+function update(action: Action, patch: SettingsPatch) {
+  void action.run(() => window.voice.updateSettings(patch), "Could not save settings.");
 }
 
 export function GlobeHint() {
@@ -217,7 +219,7 @@ const themes = [
   { value: "dark", label: "Dark" },
 ] as const satisfies readonly { value: Theme; label: string }[];
 
-function ThemePicker({ theme }: { theme: Theme }) {
+function ThemePicker({ theme, onChange }: { theme: Theme; onChange: (theme: Theme) => void }) {
   const titleId = useId();
   return (
     <div {...stylex.props(styles.row)}>
@@ -227,12 +229,7 @@ function ThemePicker({ theme }: { theme: Theme }) {
         </span>
         <p {...stylex.props(styles.rowDetail)}>Match your Mac, or pick light or dark.</p>
       </div>
-      <Segmented
-        labelledBy={titleId}
-        options={themes}
-        value={theme}
-        onChange={(next) => update({ theme: next })}
-      />
+      <Segmented labelledBy={titleId} options={themes} value={theme} onChange={onChange} />
     </div>
   );
 }
@@ -301,6 +298,7 @@ export function GeneralSettings({
     );
   }
 
+  const clipboardAction = useAction();
   const channelAction = useAction();
 
   async function changeChannel(channel: UpdateChannel) {
@@ -370,10 +368,15 @@ export function GeneralSettings({
             <Switch
               id="setting-copy-to-clipboard"
               checked={settings.copyToClipboard}
-              onChange={(copyToClipboard) => update({ copyToClipboard })}
+              onChange={(copyToClipboard) => update(clipboardAction, { copyToClipboard })}
             />
           </Row>
         </div>
+        {clipboardAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {clipboardAction.error}
+          </p>
+        )}
       </Section>
 
       <Section label="About">
@@ -433,6 +436,9 @@ export function SystemSettings({
   settings: Settings;
   loginItem: LoginItem;
 }) {
+  const loginAction = useAction();
+  const audioAction = useAction();
+  const appearanceAction = useAction();
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>System</h1>
@@ -449,10 +455,20 @@ export function SystemSettings({
               id="setting-open-at-login"
               checked={loginItem === "on"}
               disabled={loginItem === "unavailable"}
-              onChange={(on) => void window.voice.setOpenAtLogin(on)}
+              onChange={(on) =>
+                void loginAction.run(
+                  () => window.voice.setOpenAtLogin(on),
+                  "Could not change open at login.",
+                )
+              }
             />
           </Row>
         </div>
+        {loginAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {loginAction.error}
+          </p>
+        )}
       </Section>
 
       <Section label="Audio">
@@ -465,15 +481,23 @@ export function SystemSettings({
             <Switch
               id="setting-mute-while-dictating"
               checked={settings.muteWhileDictating}
-              onChange={(muteWhileDictating) => update({ muteWhileDictating })}
+              onChange={(muteWhileDictating) => update(audioAction, { muteWhileDictating })}
             />
           </Row>
         </div>
+        {audioAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {audioAction.error}
+          </p>
+        )}
       </Section>
 
       <Section label="Appearance">
         <div {...stylex.props(styles.card)}>
-          <ThemePicker theme={settings.theme} />
+          <ThemePicker
+            theme={settings.theme}
+            onChange={(theme) => update(appearanceAction, { theme })}
+          />
           <Row
             nativeLabel
             title="Show in Dock"
@@ -482,7 +506,7 @@ export function SystemSettings({
             <Switch
               id="setting-show-in-dock"
               checked={settings.showInDock}
-              onChange={(showInDock) => update({ showInDock })}
+              onChange={(showInDock) => update(appearanceAction, { showInDock })}
             />
           </Row>
           <Row
@@ -493,16 +517,22 @@ export function SystemSettings({
             <Switch
               id="setting-always-show-pill"
               checked={settings.alwaysShowPill}
-              onChange={(alwaysShowPill) => update({ alwaysShowPill })}
+              onChange={(alwaysShowPill) => update(appearanceAction, { alwaysShowPill })}
             />
           </Row>
         </div>
+        {appearanceAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {appearanceAction.error}
+          </p>
+        )}
       </Section>
     </div>
   );
 }
 
 export function DataPrivacySettings({ settings }: { settings: Settings }) {
+  const diagnosticsAction = useAction();
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
@@ -517,10 +547,15 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             <Switch
               id="setting-diagnostics"
               checked={settings.diagnostics === "on"}
-              onChange={(on) => update({ diagnostics: on ? "on" : "off" })}
+              onChange={(on) => update(diagnosticsAction, { diagnostics: on ? "on" : "off" })}
             />
           </Row>
         </div>
+        {diagnosticsAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {diagnosticsAction.error}
+          </p>
+        )}
       </Section>
     </div>
   );
@@ -665,6 +700,7 @@ function ShortcutRow({
 }
 
 export function ShortcutsSettings({ settings }: { settings: Settings }) {
+  const hotkeyAction = useAction();
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
@@ -676,7 +712,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
               id="setting-hotkey"
               value={settings.hotkey}
               options={hotkeyOptions}
-              onChange={(hotkey) => update({ hotkey })}
+              onChange={(hotkey) => update(hotkeyAction, { hotkey })}
             />
           </Row>
           <ShortcutRow
@@ -685,6 +721,11 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
             keys={["Esc"]}
           />
         </div>
+        {hotkeyAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {hotkeyAction.error}
+          </p>
+        )}
         {settings.hotkey === "fn" && <GlobeHint />}
       </Section>
 
