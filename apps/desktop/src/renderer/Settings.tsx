@@ -371,6 +371,22 @@ export function GeneralSettings({
         )}
       </Section>
 
+      <Section label="After dictation">
+        <div {...stylex.props(styles.card)}>
+          <Row
+            nativeLabel
+            title="Copy transcript to clipboard"
+            detail="Keeps each transcript on your clipboard too, replacing what you copied before."
+          >
+            <Switch
+              id="setting-copy-to-clipboard"
+              checked={settings.copyToClipboard}
+              onChange={(copyToClipboard) => update({ copyToClipboard })}
+            />
+          </Row>
+        </div>
+      </Section>
+
       <Section label="About">
         <div {...stylex.props(styles.card)}>
           <Row

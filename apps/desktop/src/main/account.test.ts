@@ -586,6 +586,7 @@ describe("createAccount", () => {
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
+      copy: () => {},
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
@@ -659,6 +660,7 @@ describe("createAccount", () => {
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
+      copy: () => {},
     });
 
     h.account.handleCallbackUrl(callbackUrl(CODE));

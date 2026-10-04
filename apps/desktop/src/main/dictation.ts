@@ -23,6 +23,7 @@ export type DictationOptions = {
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
+  copy: (text: string) => void;
   now?: () => number;
 };
 
@@ -107,6 +108,16 @@ export function createDictation(options: DictationOptions): Dictation {
       store.update((s) => ({ ...s, session: state }));
       const phaseChanged = state.phase !== before.phase;
       if (phaseChanged) armWatchdog(state);
+    }
+    // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
+    // restoring the previous contents. Copying earlier would race the helper saving them.
+    if (
+      before.phase === "inserting" &&
+      state.phase === "done" &&
+      state.id === before.id &&
+      store.state.settings.copyToClipboard
+    ) {
+      options.copy(before.text);
     }
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
       finish(state.id, state.outcome);

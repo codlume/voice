@@ -337,6 +337,7 @@ async function main() {
     },
     log,
     onSessionDone: diagnostics.sessionDone,
+    copy: (text) => clipboard.writeText(text),
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({

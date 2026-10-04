@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   microphone: null,
   hotkey: "fn",
   muteWhileDictating: false,
+  copyToClipboard: false,
   showInDock: true,
   alwaysShowPill: true,
   dictationLanguage: "en",
@@ -48,6 +49,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     muteWhileDictating: flag(r.muteWhileDictating, DEFAULT_SETTINGS.muteWhileDictating),
+    copyToClipboard: flag(r.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
     showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
     alwaysShowPill: flag(r.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill),
     cleanup: {
@@ -66,6 +68,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,
     muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
+    copyToClipboard: patch.copyToClipboard ?? settings.copyToClipboard,
     showInDock: patch.showInDock ?? settings.showInDock,
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
