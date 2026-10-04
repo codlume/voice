@@ -6,11 +6,10 @@ import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/clien
 import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
-import { VOICE_URL_SCHEME, type UpdateChannel } from "../shared/api.ts";
+import { VOICE_URL_SCHEME, type AccountIdentity, type UpdateChannel } from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
-  CachedIdentity,
   Identity,
   RedeemResult,
   ServerSignOut,
@@ -27,7 +26,7 @@ function isGooglePicture(image: string) {
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
 }
 
-function cachedIdentityOf(user: unknown): CachedIdentity | null {
+function cachedIdentityOf(user: unknown): AccountIdentity | null {
   if (
     typeof user !== "object" ||
     user === null ||
@@ -38,7 +37,7 @@ function cachedIdentityOf(user: unknown): CachedIdentity | null {
   ) {
     return null;
   }
-  const identity: CachedIdentity = { name: user.name, email: user.email };
+  const identity: AccountIdentity = { name: user.name, email: user.email };
   if ("id" in user) {
     if (typeof user.id !== "string") return null;
     identity.id = user.id;

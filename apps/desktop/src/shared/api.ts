@@ -55,16 +55,10 @@ export type AccountState =
   | { kind: "unavailable"; reason: string }
   | { kind: "signedOut" }
   | { kind: "signingIn"; purpose: "signIn" | "deleteAccount"; phase: "browser" | "finishing" }
-  | {
-      kind: "signedIn";
-      id?: string;
-      name: string;
-      email: string;
-      image?: string;
-      deletion?: AccountDeletion;
-      notice?: string;
-    }
+  | ({ kind: "signedIn"; deletion?: AccountDeletion; notice?: string } & AccountIdentity)
   | { kind: "error"; message: string };
+
+export type AccountIdentity = { id?: string; name: string; email: string; image?: string };
 
 export type AccountDeletion =
   | { kind: "confirming" }
