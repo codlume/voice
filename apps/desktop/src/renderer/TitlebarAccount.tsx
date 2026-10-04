@@ -161,11 +161,7 @@ function SignedInMenu({
               <Avatar identity={account} size={48} />
               <div {...stylex.props(styles.identity)}>
                 <span {...stylex.props(styles.name, styles.truncate)}>{title}</span>
-                <HiddenEmail
-                  key={account.email}
-                  email={account.email}
-                  xstyle={[styles.email, styles.truncate]}
-                />
+                <HiddenEmail email={account.email} xstyle={[styles.email, styles.truncate]} />
               </div>
             </div>
             <Menu.Separator {...stylex.props(styles.separator)} />

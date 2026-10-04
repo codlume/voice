@@ -26,13 +26,15 @@ const styles = stylex.create({
 });
 
 export function HiddenEmail({ email, xstyle }: { email: string; xstyle?: stylex.StyleXStyles }) {
-  const [revealed, setRevealed] = useState(false);
+  // Remembering which email was revealed hides a different account's email without a remount.
+  const [revealedFor, setRevealedFor] = useState<string | null>(null);
+  const revealed = revealedFor === email;
   return (
     <button
       type="button"
       aria-label={revealed ? undefined : "Show email"}
       title={revealed ? "Click to hide email" : "Click to reveal email"}
-      onClick={() => setRevealed(!revealed)}
+      onClick={() => setRevealedFor(revealed ? null : email)}
       {...stylex.props(styles.button, xstyle)}
     >
       {/* Blurring the button itself would blur its focus outline too. */}

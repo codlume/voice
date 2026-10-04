@@ -166,7 +166,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
           <div {...stylex.props(settings.rowText)}>
             <span {...stylex.props(settings.rowTitle)}>{accountName(account)}</span>
             <p {...stylex.props(settings.rowDetail)}>
-              <HiddenEmail key={account.email} email={account.email} />
+              <HiddenEmail email={account.email} />
             </p>
           </div>
           <div {...stylex.props(settings.actions)}>
