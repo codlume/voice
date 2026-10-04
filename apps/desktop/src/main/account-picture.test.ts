@@ -37,6 +37,8 @@ test.each([
   ["an http picture", "http://lh3.googleusercontent.com/a/ada-picture=s96-c"],
   ["a data URL", "data:image/png;base64,iVBORw0KGgo="],
   ["a relative picture", "lh3.googleusercontent.com/a/ada-picture"],
+  ["a picture on another host", "https://tracker.example/a/ada-picture=s96-c"],
+  ["a host that only ends like Google's", "https://evilgoogleusercontent.com/a/ada-picture"],
 ])("%s signs in without a picture", async (_name, image) => {
   http.answer = () => signedIn("token-1", { ...USER, image });
   expect(await signIn(client("nightly"))).toStrictEqual({ kind: "signedIn", ...USER });

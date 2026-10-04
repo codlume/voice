@@ -20,6 +20,13 @@ import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// Google serves profile pictures from googleusercontent.com. The hub has no CSP, so a picture on
+// any other host would let the API make Voice fetch from wherever it names.
+function isGooglePicture(image: string) {
+  const url = URL.parse(image);
+  return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
+}
+
 function cachedIdentityOf(user: unknown): CachedIdentity | null {
   if (
     typeof user !== "object" ||
@@ -36,11 +43,7 @@ function cachedIdentityOf(user: unknown): CachedIdentity | null {
     if (typeof user.id !== "string") return null;
     identity.id = user.id;
   }
-  if (
-    "image" in user &&
-    typeof user.image === "string" &&
-    URL.parse(user.image)?.protocol === "https:"
-  ) {
+  if ("image" in user && typeof user.image === "string" && isGooglePicture(user.image)) {
     identity.image = user.image;
   }
   return identity;
