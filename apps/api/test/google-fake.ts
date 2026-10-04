@@ -2,7 +2,14 @@
 // code picks the user, so `ada-lovelace` signs in Ada Lovelace, ada-lovelace@example.com.
 // A slash adds a second Google identity with the same email: `ada-lovelace/work` is
 // another subject whose email is still ada-lovelace@example.com.
+// `grace-hopper` has Google's default profile picture, and `alan-turing` a picture URL Google
+// refuses; everyone else has none.
 export const googleTokenUrl = "https://oauth2.googleapis.com/token";
+
+const pictures: Record<string, string> = {
+  "grace-hopper": "https://lh3.googleusercontent.com/a/default-user=s96-c",
+  "alan-turing": "https://lh3.googleusercontent.com/a/missing-picture=s96-c",
+};
 
 const base64Url = (value: unknown) =>
   btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
@@ -23,6 +30,7 @@ export function fakeGoogleToken(body: URLSearchParams) {
       .split("-")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" "),
+    ...(pictures[person] && { picture: pictures[person] }),
   };
   return {
     access_token: "fake-access",
