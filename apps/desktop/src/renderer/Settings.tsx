@@ -552,12 +552,11 @@ function ModelSection({
   // Dictation or a download can withdraw Uninstall while the dialog is open.
   if (confirmingUninstall && !canUninstall) setConfirmingUninstall(false);
 
-  async function run(action: ModelAction) {
-    await runAction(
+  const run = (action: ModelAction) =>
+    runAction(
       () => modelActions[action](model.id),
       `Could not ${action.toLowerCase()} ${model.name}.`,
     );
-  }
 
   return (
     <Section label={model.purpose}>

@@ -1,21 +1,26 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { actionErrorMessage } from "./actionError.ts";
 
-/** One in-flight main-process action at a time, with its error shown until the next attempt. */
+/**
+ * Runs main-process actions. Each run starts a new attempt and clears the last error; only the
+ * newest attempt's outcome sets `pending` and `error`, so a slow earlier attempt cannot overwrite it.
+ */
 export function useAction() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const latest = useRef(0);
 
   async function run(action: () => Promise<void>, fallback: string) {
+    const id = ++latest.current;
     setError("");
     setPending(true);
     try {
       await action();
     } catch (caught) {
-      setError(actionErrorMessage(caught, fallback));
+      if (id === latest.current) setError(actionErrorMessage(caught, fallback));
     } finally {
-      setPending(false);
+      if (id === latest.current) setPending(false);
     }
   }
 

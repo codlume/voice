@@ -1,13 +1,13 @@
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import * as stylex from "@stylexjs/stylex";
-import { useId, useRef, useState } from "react";
+import { useId } from "react";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
-import { actionErrorMessage } from "./actionError.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { useAction } from "./useAction.ts";
 
 const stylings: {
   value: SettingsValue["cleanup"]["styling"];
@@ -136,22 +136,12 @@ const styles = stylex.create({
 export function Style({ settings }: { settings: SettingsValue }) {
   const name = useId();
   const cleanupId = useId();
-  const [saveError, setSaveError] = useState("");
-  const saveVersion = useRef(0);
+  const { error: saveError, run } = useAction();
   const cleanupSupported = supportsCleanup(settings.dictationLanguage);
   const cleanupEnabled = wantsCleanup(settings);
 
-  async function changeCleanup(cleanup: NonNullable<SettingsPatch["cleanup"]>) {
-    const version = ++saveVersion.current;
-    setSaveError("");
-    try {
-      await window.voice.updateSettings({ cleanup });
-    } catch (error) {
-      if (version === saveVersion.current) {
-        setSaveError(actionErrorMessage(error, "Could not save your style settings."));
-      }
-    }
-  }
+  const changeCleanup = (cleanup: NonNullable<SettingsPatch["cleanup"]>) =>
+    run(() => window.voice.updateSettings({ cleanup }), "Could not save your style settings.");
 
   return (
     <div {...stylex.props(styles.page)}>

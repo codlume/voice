@@ -224,7 +224,7 @@ export function SidebarUpdates({
   } | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
-  const card = updateCard(status, actionError || null);
+  const card = updateCard(status, actionError);
 
   // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
   if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
@@ -237,9 +237,8 @@ export function SidebarUpdates({
   });
   useEffect(() => window.voice.onRestartRequest(() => onRestartRequest()), []);
 
-  async function run(task: () => Promise<void>) {
-    await runAction(task, "The update action failed. Try again.");
-  }
+  const run = (task: () => Promise<void>) =>
+    runAction(task, "The update action failed. Try again.");
 
   return (
     <>
