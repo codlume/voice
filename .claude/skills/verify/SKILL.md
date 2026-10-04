@@ -36,7 +36,7 @@ Before driving a feature, read [features/README.md](features/README.md) and the 
    It is ready when it prints a JSON object with `"ready": true`, the CDP port (9355), `userData`, `evidence`, `permissions`, and `models`. A cold run takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
 
    What `launch` sets up:
-   - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData at `$TMPDIR/voice-verify`. It never touches `~/Library/Application Support/Voice` or `Voice Development`.
+   - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData at `$TMPDIR/voice-verify`. It never touches `~/Library/Application Support/Voice`, `Voice Development`, or the login Keychain, because test mode encrypts with a mock Keychain.
    - The models are symlinks to the shared test-model cache.
    - Capture reads `$TMPDIR/voice-verify/capture.wav`, never the microphone. That file exists only while `dictate` runs. A stray real key press makes the session fail; it does not record or insert.
    - It never opens a browser. When the user clicks `Sign in with Google`, test mode writes the sign-in URL to `$TMPDIR/voice-verify/sign-in-url.txt` instead, and `browser` plays the browser's part.

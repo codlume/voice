@@ -68,9 +68,13 @@ const PERMISSION_PANES: Record<PermissionKind, string> = {
 const development = !app.isPackaged;
 const testMode = development && process.env.VOICE_HELPER_TEST === "1";
 
-// Development must never touch the packaged app's storage. This has to run before the single
-// instance lock and before ready, because both live under userData.
+// Development must never touch the packaged app's storage, including the "Voice Safe Storage"
+// Keychain item that safeStorage names after the app. This has to run before the single instance
+// lock and before ready, because both live under userData. Test mode keeps its scratch secrets out
+// of the login Keychain.
 if (development) {
+  app.setName("Voice Dev");
+  if (testMode) app.commandLine.appendSwitch("use-mock-keychain");
   app.setPath("userData", NodePath.join(app.getPath("appData"), "Voice Development"));
   if (testMode && process.env.VOICE_USER_DATA_DIR) {
     app.setPath("userData", process.env.VOICE_USER_DATA_DIR);
