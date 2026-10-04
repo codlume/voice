@@ -12,6 +12,7 @@ import {
 } from "./microphoneTestView.ts";
 import { smoothLevel } from "./pillView.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
+import { useAction } from "./useAction.ts";
 
 const reduceMotion = "@media (prefers-reduced-motion: reduce)";
 
@@ -132,6 +133,7 @@ export function MicrophoneRow({
   const [accessRequested, setAccessRequested] = useState(false);
   const { level, heard, quiet } = useLevel(test.kind === "listening" ? test.episode : null);
   const running = test.kind === "starting" || test.kind === "listening";
+  const { error, run: runAction } = useAction();
 
   useEffect(
     () => () => {
@@ -144,11 +146,23 @@ export function MicrophoneRow({
   const status = microphoneTestStatus(test, permission, { heard, quiet, accessRequested });
 
   function run() {
-    if (action.kind === "stop") void window.voice.stopMicrophoneTest();
-    else if (action.kind === "requestAccess") {
+    if (action.kind === "stop") {
+      void runAction(
+        () => window.voice.stopMicrophoneTest(),
+        "Could not stop the microphone test.",
+      );
+    } else if (action.kind === "requestAccess") {
       setAccessRequested(true);
-      void window.voice.requestPermission("microphone");
-    } else void window.voice.startMicrophoneTest();
+      void runAction(
+        () => window.voice.requestPermission("microphone"),
+        "Could not request microphone access.",
+      );
+    } else {
+      void runAction(
+        () => window.voice.startMicrophoneTest(),
+        "Could not start the microphone test.",
+      );
+    }
   }
 
   return (
@@ -188,7 +202,7 @@ export function MicrophoneRow({
           {children}
         </div>
       </div>
-      <div {...stylex.props(styles.expander, status && styles.open)}>
+      <div {...stylex.props(styles.expander, (status !== null || error !== "") && styles.open)}>
         <div {...stylex.props(styles.clip)}>
           <div {...stylex.props(styles.body)}>
             {running && (
@@ -203,6 +217,11 @@ export function MicrophoneRow({
             >
               {status?.text}
             </p>
+            {error && (
+              <p role="alert" {...stylex.props(styles.detail, styles.error)}>
+                {error}
+              </p>
+            )}
           </div>
         </div>
       </div>
