@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
+import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { Home } from "./Home.tsx";
 import {
@@ -164,7 +165,7 @@ const easing = "cubic-bezier(0.2, 0, 0, 1)";
 const styles = stylex.create({
   shell: {
     display: "grid",
-    gridTemplateRows: "48px 1fr",
+    gridTemplateRows: "auto 1fr",
     gridTemplateColumns: "auto 1fr",
     height: "100vh",
     backgroundColor: color.sidebar,
@@ -179,10 +180,13 @@ const styles = stylex.create({
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingLeft: 92,
     paddingRight: 12,
     WebkitAppRegion: "drag",
   },
+  titlebarGeometry: (zoomLevel: number) => ({
+    height: TITLEBAR_HEIGHT,
+    paddingLeft: trafficLightsInset(zoomLevel),
+  }),
   sidebar: {
     width: sidebarWidth,
     overflow: "hidden",
@@ -537,7 +541,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   return (
     <div {...stylex.props(styles.shell)}>
-      <div {...stylex.props(styles.titlebar)}>
+      <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
         <button
           type="button"
           aria-label={toggleLabel}

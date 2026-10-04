@@ -739,6 +739,9 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
             detail="Jump to an item in the sidebar, top to bottom."
             keys={["⌘", `1–${jumpShortcuts.length}`]}
           />
+          <ShortcutRow title="Zoom in" keys={["⌘", "+"]} />
+          <ShortcutRow title="Zoom out" keys={["⌘", "-"]} />
+          <ShortcutRow title="Actual size" keys={["⌘", "0"]} />
         </div>
       </Section>
     </div>

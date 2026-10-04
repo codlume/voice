@@ -11,6 +11,7 @@ import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { hotkeys } from "../shared/api.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
+import { parseZoomLevel } from "../shared/zoom.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
   microphone: null,
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
   diagnostics: "off",
+  zoomLevel: 0,
 };
 
 const THEMES = ["system", "light", "dark"] as const;
@@ -57,6 +59,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
       styling: pick(STYLINGS, c.styling, d.styling),
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
+    zoomLevel: parseZoomLevel(r.zoomLevel),
   };
 }
 
@@ -73,6 +76,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
+    zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
   });
 }
 

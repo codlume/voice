@@ -79,6 +79,7 @@ describe("parseSettings", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
+      zoomLevel: 0,
     });
   });
 
@@ -149,6 +150,7 @@ describe("applyPatch", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
+      zoomLevel: 0,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
   });
@@ -175,6 +177,13 @@ describe("applyPatch", () => {
     expect(hidden).toEqual({ ...DEFAULT_SETTINGS, alwaysShowPill: false });
     expect(applyPatch(hidden, { theme: "dark" })).toEqual({ ...hidden, theme: "dark" });
     expect(applyPatch(hidden, { alwaysShowPill: true })).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("zooms and resets, and keeps the zoom through other changes", () => {
+    const zoomed = applyPatch(DEFAULT_SETTINGS, { zoomLevel: -1 });
+    expect(zoomed).toEqual({ ...DEFAULT_SETTINGS, zoomLevel: -1 });
+    expect(applyPatch(zoomed, { theme: "dark" })).toEqual({ ...zoomed, theme: "dark" });
+    expect(applyPatch(zoomed, { zoomLevel: 0 })).toEqual(DEFAULT_SETTINGS);
   });
 
   test("changes the hotkey alone", () => {
@@ -233,6 +242,13 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual({ ...older, diagnostics: "off" });
   });
 
+  test("a settings file from before zoom opens at 100%", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { zoomLevel: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, zoomLevel: 0 });
+  });
+
   test("a corrupt file yields defaults", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
@@ -246,6 +262,7 @@ describe("load and save", () => {
       updateChannel: "nightly",
       theme: "dark",
       cleanup: { enabled: false },
+      zoomLevel: 1.5,
     });
     await saveSettings(file, settings);
     expect(loadSettings(file)).toEqual(settings);

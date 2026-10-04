@@ -23,12 +23,15 @@ import {
   sameTranscript,
   type LoginItem,
   type PermissionKind,
+  type Settings,
   type SettingsPatch,
   type Snapshot,
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
+import { trafficLightPosition } from "../shared/titlebar.ts";
+import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored, otherChannelSignedIn } from "./account-storage.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
@@ -43,7 +46,8 @@ import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
-import { hubWindowSize } from "./hub-window.ts";
+import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
@@ -165,7 +169,9 @@ function createPillWindow(webPreferences: WebPreferences) {
     focusable: false,
     skipTaskbar: true,
     show: false,
-    webPreferences,
+    // Chromium shares one zoom level between pages on the same host, as the dev server serves both
+    // windows; "isolated" keeps the pill out of it however the pages load.
+    webPreferences: { ...webPreferences, zoomMode: "isolated" },
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setIgnoreMouseEvents(true);
@@ -181,6 +187,24 @@ function positionPill(pill: BrowserWindow) {
     y: workArea.y + workArea.height - PILL_HEIGHT - PILL_BOTTOM_MARGIN,
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
+  });
+}
+
+function applyZoom(hub: BrowserWindow, zoomLevel: number) {
+  hub.webContents.setZoomLevel(zoomLevel);
+  if (process.platform === "darwin") hub.setWindowButtonPosition(trafficLightPosition(zoomLevel));
+  const minimum = hubMinimumSize(zoomLevel);
+  hub.setMinimumSize(minimum.width, minimum.height);
+  const bounds = hub.getBounds();
+  if (bounds.width >= minimum.width && bounds.height >= minimum.height) return;
+  const { workArea } = screen.getDisplayMatching(bounds);
+  const width = Math.min(Math.max(bounds.width, minimum.width), workArea.width);
+  const height = Math.min(Math.max(bounds.height, minimum.height), workArea.height);
+  hub.setBounds({
+    x: Math.max(workArea.x, Math.min(bounds.x, workArea.x + workArea.width - width)),
+    y: Math.max(workArea.y, Math.min(bounds.y, workArea.y + workArea.height - height)),
+    width,
+    height,
   });
 }
 
@@ -413,15 +437,19 @@ async function main() {
       return hub;
     }
     hub = new BrowserWindow({
-      ...hubWindowSize(screen.getPrimaryDisplay().workArea),
+      ...hubWindowSize(screen.getPrimaryDisplay().workArea, store.state.settings.zoomLevel),
       title: "Voice",
       titleBarStyle: "hidden",
-      trafficLightPosition: { x: 16, y: 18 },
+      trafficLightPosition: trafficLightPosition(store.state.settings.zoomLevel),
       // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
       // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
-      webPreferences,
+      webPreferences: { ...webPreferences, zoomFactor: zoomFactor(store.state.settings.zoomLevel) },
     });
+    // zoomFactor paints the first frame at the saved size. setZoomLevel only takes once a page has
+    // committed, so a zoom pressed before the first load is reapplied here.
+    const contents = hub.webContents;
+    contents.on("did-finish-load", () => contents.setZoomLevel(store.state.settings.zoomLevel));
     // The window came back (shown, unminimized, Cmd-Tab): re-read what may have changed meanwhile.
     hub.on("focus", () => {
       helper.send({ type: "permissions.check" });
@@ -529,11 +557,11 @@ async function main() {
 
   // Patches run one at a time, and each applies only once it is on disk, so a failed save leaves
   // the app and the hub on the last saved settings.
-  async function updateSettings(patch: SettingsPatch) {
+  async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
     assertNotRestarting();
     const saved = saving.then(async () => {
       const previous = store.state.settings;
-      const next = applyPatch(previous, patch);
+      const next = applyPatch(previous, typeof patch === "function" ? patch(previous) : patch);
       try {
         await saveSettings(settingsFile, next);
       } catch (error) {
@@ -547,6 +575,8 @@ async function main() {
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
       if (next.showInDock !== previous.showInDock) void syncDock();
+      if (next.zoomLevel !== previous.zoomLevel && hub && !hub.isDestroyed())
+        applyZoom(hub, next.zoomLevel);
       return next;
     });
     saving = saved.then(
@@ -670,6 +700,13 @@ async function main() {
     else showHub();
   });
   app.on("activate", showHub);
+  Menu.setApplicationMenu(
+    createApplicationMenu((step) => {
+      updateSettings(({ zoomLevel }) => ({ zoomLevel: nextZoomLevel(zoomLevel, step) })).catch(
+        () => {},
+      );
+    }),
+  );
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
 
@@ -725,12 +762,17 @@ async function main() {
   void cleanup.loadIfDownloaded();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
   // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
-  // Electron.app the verify instance runs.
+  // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press.
   if (testMode) {
     Object.assign(globalThis, {
       voiceTest: {
         cleanup,
         openUrl: (url: string) => app.emit("open-url", { preventDefault() {} }, url),
+        clickMenuItem: (id: string) => {
+          const item = Menu.getApplicationMenu()?.getMenuItemById(id);
+          if (!item) throw new Error(`no menu item ${id}`);
+          item.click();
+        },
       },
     });
   }

@@ -118,6 +118,8 @@ export type Settings = {
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
   };
   diagnostics: DiagnosticsConsent;
+  /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
+  zoomLevel: number;
 };
 
 export type SettingsPatch = {
@@ -132,6 +134,7 @@ export type SettingsPatch = {
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
   diagnostics?: DiagnosticsConsent;
+  zoomLevel?: number;
 };
 
 export type Snapshot = {
