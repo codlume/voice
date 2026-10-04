@@ -25,7 +25,7 @@ export function accountRow(state: AccountState): { title: string; detail: string
         detail: "Choose your Google account, then click Open Voice.",
       };
     case "signedIn":
-      return { title: state.name.trim() || state.email, detail: state.email };
+      return { title: state.name.trim() || "Google account", detail: state.email };
     case "error":
       return { title: state.message, detail: "Retry to sign in again." };
     default: {

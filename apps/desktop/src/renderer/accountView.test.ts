@@ -36,7 +36,7 @@ describe("account view", () => {
         detail: "Choose your Google account, then click Open Voice.",
       },
       { title: "Ada Lovelace", detail: "ada@example.com" },
-      { title: "ada@example.com", detail: "ada@example.com" },
+      { title: "Google account", detail: "ada@example.com" },
       { title: "Sign-in was interrupted", detail: "Retry to sign in again." },
     ]);
   });
