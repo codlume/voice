@@ -1,12 +1,25 @@
-import type { AccountState } from "../shared/api.ts";
+import type { AccountIdentity, AccountState } from "../shared/api.ts";
 
-export function initials(name: string, email: string): string {
+const UNNAMED_ACCOUNT = "Google account";
+
+export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
-  const letters = words.length > 0 ? words.slice(0, 2).map((word) => word[0]) : [email.trim()[0]];
-  return letters.join("").toUpperCase();
+  if (words.length === 0) return UNNAMED_ACCOUNT.charAt(0);
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }
 
-export function accountRow(state: AccountState): { title: string; detail: string } {
+export function accountName(identity: AccountIdentity): string {
+  return identity.name.trim() || UNNAMED_ACCOUNT;
+}
+
+export function accountRow(state: Exclude<AccountState, { kind: "signedIn" }>): {
+  title: string;
+  detail: string;
+} {
   switch (state.kind) {
     case "unavailable":
       return { title: "Accounts are unavailable", detail: state.reason };
@@ -24,8 +37,6 @@ export function accountRow(state: AccountState): { title: string; detail: string
             : "Finish signing in in your browser",
         detail: "Choose your Google account, then click Open Voice.",
       };
-    case "signedIn":
-      return { title: state.name.trim() || state.email, detail: state.email };
     case "error":
       return { title: state.message, detail: "Retry to sign in again." };
     default: {
@@ -33,4 +44,12 @@ export function accountRow(state: AccountState): { title: string; detail: string
       return exhaustive;
     }
   }
+}
+
+const DECOY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+export function emailDecoy(email: string): string {
+  return Array.from(email, (char, index) =>
+    "@.-_".includes(char) ? char : DECOY_ALPHABET[(index * 7) % DECOY_ALPHABET.length],
+  ).join("");
 }

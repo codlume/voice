@@ -3,8 +3,9 @@ import * as stylex from "@stylexjs/stylex";
 import { useRef } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow } from "./accountView.ts";
+import { accountName } from "./accountView.ts";
 import { Avatar } from "./Avatar.tsx";
+import { HiddenEmail } from "./HiddenEmail.tsx";
 import { titlebar } from "./titlebar.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -57,7 +58,17 @@ const styles = stylex.create({
   header: { display: "flex", alignItems: "center", gap: 10, padding: space.sm },
   identity: { display: "flex", flexDirection: "column", minWidth: 0 },
   name: { fontWeight: 600 },
-  email: { color: color.mutedForeground, fontSize: 12 },
+  email: {
+    alignSelf: "flex-start",
+    maxWidth: "calc(100% + 8px)",
+    marginInline: -4,
+    paddingInline: 4,
+    borderRadius: radius.small,
+    color: color.mutedForeground,
+    fontSize: 12,
+    cursor: "pointer",
+    outline: "none",
+  },
   truncate: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   separator: { height: 1, marginBlock: 4, backgroundColor: color.border },
   item: {
@@ -113,11 +124,13 @@ function SignedInMenu({
   const { pending, error, run, clearError } = useAction();
   // The menu moves focus while it closes, so Account opens only after it has closed.
   const openAccountOnClose = useRef(false);
-  const { title, detail } = accountRow(account);
+  const title = accountName(account);
   const label = `Account, ${title}`;
   const itemClassName = ({ highlighted, disabled }: Menu.Item.State) =>
     stylex.props(styles.item, highlighted && styles.highlighted, disabled && styles.disabled)
       .className;
+  const emailClassName = ({ highlighted }: Menu.Item.State) =>
+    stylex.props(styles.email, highlighted && styles.highlighted).className;
   return (
     <Menu.Root
       onOpenChange={(open) => {
@@ -160,7 +173,10 @@ function SignedInMenu({
               <Avatar identity={account} size={48} />
               <div {...stylex.props(styles.identity)}>
                 <span {...stylex.props(styles.name, styles.truncate)}>{title}</span>
-                <span {...stylex.props(styles.email, styles.truncate)}>{detail}</span>
+                <HiddenEmail
+                  email={account.email}
+                  render={<Menu.Item closeOnClick={false} className={emailClassName} />}
+                />
               </div>
             </div>
             <Menu.Separator {...stylex.props(styles.separator)} />

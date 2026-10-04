@@ -1,24 +1,22 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow, initials } from "./accountView.ts";
+import { accountName, accountRow, emailDecoy, initials } from "./accountView.ts";
 
 describe("account view", () => {
-  test("initials take the first two words of the name, else the email", () => {
-    expect(initials("Ada Lovelace", "ada@example.com")).toBe("AL");
-    expect(initials("ada king lovelace", "ada@example.com")).toBe("AK");
-    expect(initials("  Grace  ", "grace@example.com")).toBe("G");
-    expect(initials("", "ada@example.com")).toBe("A");
-    expect(initials("   ", "zoe@example.com")).toBe("Z");
+  test("initials take the first two words of the name, else G for Google account", () => {
+    expect(initials("Ada Lovelace")).toBe("AL");
+    expect(initials("ada king lovelace")).toBe("AK");
+    expect(initials("  Grace  ")).toBe("G");
+    expect(initials("")).toBe("G");
+    expect(initials("   ")).toBe("G");
   });
 
   test("each state has its own row text", () => {
-    const states: AccountState[] = [
+    const states: Exclude<AccountState, { kind: "signedIn" }>[] = [
       { kind: "unavailable", reason: "Set VOICE_API_URL to sign in from a development build." },
       { kind: "signedOut" },
       { kind: "signingIn", purpose: "signIn", phase: "browser" },
-      { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
-      { kind: "signedIn", id: "ada-id", name: " ", email: "ada@example.com" },
       { kind: "error", message: "Sign-in was interrupted" },
     ];
     expect(states.map(accountRow)).toEqual([
@@ -35,9 +33,28 @@ describe("account view", () => {
         title: "Finish signing in in your browser",
         detail: "Choose your Google account, then click Open Voice.",
       },
-      { title: "Ada Lovelace", detail: "ada@example.com" },
-      { title: "ada@example.com", detail: "ada@example.com" },
       { title: "Sign-in was interrupted", detail: "Retry to sign in again." },
     ]);
+  });
+
+  test("the account name falls back to Google account when the name is blank", () => {
+    expect(accountName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
+    expect(accountName({ name: "  ", email: "ada@example.com" })).toBe("Google account");
+  });
+
+  test("the email decoy keeps the email's shape but none of its text", () => {
+    const cases: [string, string[]][] = [
+      ["ada.lovelace@example.com", ["ada"]],
+      ["grace-hopper_1@navy.mil", ["grace", "navy"]],
+    ];
+    const separators = (text: string) =>
+      [...text].flatMap((char, index) => ("@.-_".includes(char) ? [`${index}${char}`] : []));
+    for (const [email, parts] of cases) {
+      const decoy = emailDecoy(email);
+      expect(decoy).toHaveLength(email.length);
+      expect(separators(decoy)).toEqual(separators(email));
+      expect(decoy).toBe(emailDecoy(email.replace(/[^@._-]/g, "z")));
+      for (const part of parts) expect(decoy).not.toContain(part);
+    }
   });
 });

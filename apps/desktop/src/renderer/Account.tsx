@@ -2,10 +2,11 @@ import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
 import type { AccountState } from "../shared/api.ts";
-import { accountRow } from "./accountView.ts";
+import { accountName, accountRow } from "./accountView.ts";
 import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { HiddenEmail } from "./HiddenEmail.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -42,7 +43,7 @@ const rowRoles: Partial<Record<AccountState["kind"], RowRole>> = {
   error: "alert",
 };
 
-function RowText({ account }: { account: AccountState }) {
+function RowText({ account }: { account: Exclude<AccountState, { kind: "signedIn" }> }) {
   const role = rowRoles[account.kind];
   const { title, detail } = accountRow(account);
   return (
@@ -71,7 +72,7 @@ function ErrorLine({ text }: { text: string }) {
   );
 }
 
-function SignedOutRow({ account }: { account: AccountState }) {
+function SignedOutRow({ account }: { account: Extract<AccountState, { kind: "signedOut" }> }) {
   const { pending, error, run } = useAction();
   return (
     <>
@@ -162,7 +163,12 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
       <Card>
         <div {...stylex.props(settings.row)}>
           <Avatar identity={account} size={40} />
-          <RowText account={account} />
+          <div {...stylex.props(settings.rowText)}>
+            <span {...stylex.props(settings.rowTitle)}>{accountName(account)}</span>
+            <p {...stylex.props(settings.rowDetail)}>
+              <HiddenEmail email={account.email} />
+            </p>
+          </div>
           <div {...stylex.props(settings.actions)}>
             <Button
               id="setting-sign-out"
@@ -269,7 +275,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
   );
 }
 
-function ErrorRow({ account }: { account: AccountState }) {
+function ErrorRow({ account }: { account: Extract<AccountState, { kind: "error" }> }) {
   const { pending, error, run } = useAction();
   return (
     <>
