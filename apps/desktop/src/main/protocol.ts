@@ -1,6 +1,8 @@
 import * as Effect from "effect/Effect";
+import { clamp } from "effect/Number";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 
 import { MicrophoneSchema } from "../shared/microphone.ts";
 
@@ -30,25 +32,35 @@ export type HelperCommand =
   | { type: "asr.prepare"; download: boolean }
   | { type: "asr.remove" };
 
-const permissionState = Schema.Literal("granted", "denied", "notDetermined");
-const insertFailure = Schema.NullOr(
-  Schema.Literal("focusChanged", "noFocusedField", "secureInput", "failed"),
-).annotations({ decodingFallback: () => Effect.succeed(null) });
-const statusMessage = Schema.NullOr(Schema.String).annotations({
-  decodingFallback: () => Effect.succeed(null),
-});
+const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
+// The default covers a missing key and catchDecoding a malformed value; neither covers both.
+const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
+  Schema.NullOr(schema).pipe(
+    Schema.catchDecoding(() => Effect.succeedSome(null)),
+    Schema.withDecodingDefaultType(Effect.succeed(null)),
+  );
+const insertFailure = nullOnInvalid(
+  Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "failed"]),
+);
+const statusMessage = nullOnInvalid(Schema.String);
+const level = Schema.Finite.pipe(
+  Schema.decode({
+    decode: SchemaGetter.transform(clamp({ minimum: 0, maximum: 1 })),
+    encode: SchemaGetter.passthrough(),
+  }),
+);
 
-const HelperEventSchema = Schema.Union(
+const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("microphones.changed"),
     devices: Schema.Array(MicrophoneSchema),
-    defaultUid: Schema.NullOr(Schema.NonEmptyTrimmedString),
+    defaultUid: Schema.NullOr(MicrophoneSchema.fields.uid),
   }),
   Schema.Struct({ type: Schema.Literal("microphones.unavailable"), message: Schema.String }),
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
   Schema.Struct({
     type: Schema.Literal("hotkey"),
-    action: Schema.Literal("down", "up", "cancel"),
+    action: Schema.Literals(["down", "up", "cancel"]),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.started"),
@@ -58,7 +70,7 @@ const HelperEventSchema = Schema.Union(
   Schema.Struct({
     type: Schema.Literal("capture.level"),
     id: Schema.String,
-    level: Schema.Finite.pipe(Schema.clamp(0, 1)),
+    level,
   }),
   Schema.Struct({
     type: Schema.Literal("capture.failed"),
@@ -70,7 +82,7 @@ const HelperEventSchema = Schema.Union(
   Schema.Struct({
     type: Schema.Literal("microphone.test.level"),
     id: Schema.String,
-    level: Schema.Finite.pipe(Schema.clamp(0, 1)),
+    level,
   }),
   Schema.Struct({ type: Schema.Literal("microphone.test.ended"), id: Schema.String }),
   Schema.Struct({
@@ -93,8 +105,8 @@ const HelperEventSchema = Schema.Union(
   Schema.Struct({
     type: Schema.Literal("insert.result"),
     id: Schema.String,
-    method: Schema.Literal("accessibility", "paste", "none"),
-    reason: Schema.optionalWith(insertFailure, { default: () => null }),
+    method: Schema.Literals(["accessibility", "paste", "none"]),
+    reason: insertFailure,
   }),
   Schema.Struct({
     type: Schema.Literal("permissions"),
@@ -103,19 +115,19 @@ const HelperEventSchema = Schema.Union(
   }),
   Schema.Struct({
     type: Schema.Literal("asr.status"),
-    state: Schema.Literal("missing", "downloading", "loading", "ready", "failed"),
-    message: Schema.optionalWith(statusMessage, { default: () => null }),
+    state: Schema.Literals(["missing", "downloading", "loading", "ready", "failed"]),
+    message: statusMessage,
   }),
   Schema.Struct({
     type: Schema.Literal("log"),
-    level: Schema.Literal("info", "error"),
+    level: Schema.Literals(["info", "error"]),
     message: Schema.String,
   }),
-);
+]);
 
 export type HelperEvent = typeof HelperEventSchema.Type;
 
-const decodeHelperEvent = Schema.decodeUnknownOption(Schema.parseJson(HelperEventSchema));
+const decodeHelperEvent = Schema.decodeUnknownOption(Schema.fromJsonString(HelperEventSchema));
 
 export function parseHelperEvent(line: string): HelperEvent | null {
   return Option.getOrNull(decodeHelperEvent(line));
