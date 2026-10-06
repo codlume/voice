@@ -103,12 +103,12 @@ export function createDictation(options: DictationOptions): Dictation {
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
-    for (const effect of effects) run(effect);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
       const phaseChanged = state.phase !== before.phase;
       if (phaseChanged) armWatchdog(state);
     }
+    for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
       // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
       // restoring the previous contents. Copying earlier would race the helper saving them.
@@ -175,16 +175,17 @@ export function createDictation(options: DictationOptions): Dictation {
               },
             }),
           }).pipe(
-            Effect.timeoutFail({
+            Effect.timeoutOrElse({
               duration: budgetMs,
-              onTimeout: (): CleanupFailure => ({
-                message: `cleanup timed out after ${budgetMs} ms`,
-                entry: {
-                  message: "cleanup timed out",
-                  level: "warn",
-                  attributes: { "cleanup.budget_ms": budgetMs },
-                },
-              }),
+              orElse: () =>
+                Effect.fail<CleanupFailure>({
+                  message: `cleanup timed out after ${budgetMs} ms`,
+                  entry: {
+                    message: "cleanup timed out",
+                    level: "warn",
+                    attributes: { "cleanup.budget_ms": budgetMs },
+                  },
+                }),
             }),
             Effect.match({
               onSuccess: (text) => {

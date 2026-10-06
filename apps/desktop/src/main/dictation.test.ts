@@ -32,7 +32,7 @@ type Options = {
   cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
   styling?: CleanupStyle["styling"];
-  cleanFails?: boolean;
+  cleanFails?: "rejects" | "throws";
   cleanHangs?: boolean;
   copyToClipboard?: boolean;
 };
@@ -84,13 +84,14 @@ function harness(opts: Options = {}) {
     send: (command) => commands.push(command),
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
-      clean: async (raw, style, signal) => {
+      clean: (raw, style, signal) => {
         cleans.push(raw);
         styles.push(style);
         signals.push(signal);
-        if (opts.cleanFails) throw new Error("model crashed");
+        if (opts.cleanFails === "throws") throw new Error("model crashed");
+        if (opts.cleanFails === "rejects") return Promise.reject(new Error("model crashed"));
         if (opts.cleanHangs) return new Promise<string>((resolve) => hung.push(resolve));
-        return `${raw}.`;
+        return Promise.resolve(`${raw}.`);
       },
     },
     onLevel: (level) => levels.push(level),
@@ -545,28 +546,31 @@ describe("createDictation", () => {
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hi." });
   });
 
-  test("a cleanup crash inserts the raw transcript", async () => {
-    const h = harness({ cleanFails: true });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
-    vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({
-      type: "transcript",
-      id,
-      text: "keep me",
-      audioMs: 800,
-      asrMs: 100,
-    });
-    await flush();
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me" });
-    expect(h.store.state.last).toEqual({ raw: "keep me", text: "keep me" });
-    expect(h.logs).toContain("cleanup failed: model crashed");
-    expect(h.entries).toEqual([
-      { message: "cleanup failed", level: "warn", attributes: { "error.type": "Error" } },
-    ]);
-  });
+  test.each(["rejects", "throws"] as const)(
+    "a cleanup that %s inserts the raw transcript",
+    async (cleanFails) => {
+      const h = harness({ cleanFails });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const id = h.id();
+      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+      vi.advanceTimersByTime(800);
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({
+        type: "transcript",
+        id,
+        text: "keep me",
+        audioMs: 800,
+        asrMs: 100,
+      });
+      await flush();
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me" });
+      expect(h.store.state.last).toEqual({ raw: "keep me", text: "keep me" });
+      expect(h.logs).toContain("cleanup failed: model crashed");
+      expect(h.entries).toEqual([
+        { message: "cleanup failed", level: "warn", attributes: { "error.type": "Error" } },
+      ]);
+    },
+  );
 
   test("a cleanup that overruns its budget is aborted, inserts the raw text, and ignores the late result", async () => {
     const h = harness({ cleanHangs: true });
