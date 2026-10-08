@@ -84,7 +84,7 @@ export const landingPage = `<!doctype html>
 </head>
 <body>
 <main id="signed-in" hidden>
-<div class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12.5l4 4 9-9"/></svg></div>
+<div class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
 <h1>You’re signed in to Voice</h1>
 <p>Return to Voice to continue. You can close this tab.</p>
 <a id="open" class="open">Open Voice</a>
@@ -95,7 +95,7 @@ export const landingPage = `<!doctype html>
 </details>
 </main>
 <main id="expired" hidden>
-<div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>
+<div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
 <h1>This sign-in link has expired</h1>
 <p>Go back to Voice and sign in again. You can close this tab.</p>
 </main>

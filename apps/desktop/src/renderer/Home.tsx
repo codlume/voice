@@ -1,6 +1,7 @@
 import { Progress } from "@base-ui/react/progress";
 import { Toggle } from "@base-ui/react/toggle";
 import * as stylex from "@stylexjs/stylex";
+import { CheckIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
@@ -161,21 +162,6 @@ function run(command: SetupCommand): Promise<void> {
   }
 }
 
-function CheckIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-      <path
-        d="M2.5 6.2l2.3 2.3 4.7-5"
-        fill="none"
-        stroke="white"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
   return (
@@ -188,7 +174,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
           status.kind === "busy" && styles.markBusy,
         )}
       >
-        {status.kind === "ready" && <CheckIcon />}
+        {status.kind === "ready" && <CheckIcon size={12} strokeWidth={3} color="white" />}
       </span>
       <div {...stylex.props(styles.rowText)}>
         <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
@@ -262,7 +248,7 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
     return (
       <div {...stylex.props(styles.card, styles.ready)}>
         <span {...stylex.props(styles.mark, styles.markReady)}>
-          <CheckIcon />
+          <CheckIcon size={12} strokeWidth={3} color="white" />
         </span>
         Ready. Hold {hotkeyLabels[snapshot.settings.hotkey]} and speak.
       </div>

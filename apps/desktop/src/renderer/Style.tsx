@@ -1,6 +1,7 @@
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import * as stylex from "@stylexjs/stylex";
+import { CheckIcon } from "lucide-react";
 import { useId } from "react";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
@@ -204,15 +205,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
                       aria-hidden="true"
                       {...stylex.props(styles.mark, selected && styles.markSelected)}
                     >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path
-                          d="m3 6 2 2 4-4"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <CheckIcon size={12} strokeWidth={3} />
                     </span>
                   </span>
                   <span id={descriptionId} {...stylex.props(styles.detail)}>

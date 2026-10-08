@@ -1,5 +1,6 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import * as stylex from "@stylexjs/stylex";
+import { ChevronDownIcon } from "lucide-react";
 
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
@@ -107,19 +108,7 @@ export function Select<T extends string>({
       >
         <SelectPrimitive.Value {...stylex.props(styles.value)} />
         <SelectPrimitive.Icon {...stylex.props(styles.icon)}>
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m5 7.5 5 5 5-5" />
-          </svg>
+          <ChevronDownIcon size={14} />
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
