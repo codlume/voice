@@ -86,7 +86,11 @@ const styles = stylex.create({
     borderColor: color.input,
     borderRadius: radius.round,
   },
-  markReady: { borderColor: color.success, backgroundColor: color.success },
+  markReady: {
+    borderColor: color.success,
+    backgroundColor: color.success,
+    color: color.primaryForeground,
+  },
   markFailed: { borderColor: color.error },
   markBusy: { borderStyle: "dashed", borderColor: color.foreground },
   markEmpty: { borderColor: "transparent" },
@@ -174,7 +178,7 @@ function SetupRow({ row }: { row: ChecklistRow }) {
           status.kind === "busy" && styles.markBusy,
         )}
       >
-        {status.kind === "ready" && <CheckIcon size={12} strokeWidth={3} color="white" />}
+        {status.kind === "ready" && <CheckIcon size={12} strokeWidth={3} />}
       </span>
       <div {...stylex.props(styles.rowText)}>
         <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
@@ -248,7 +252,7 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
     return (
       <div {...stylex.props(styles.card, styles.ready)}>
         <span {...stylex.props(styles.mark, styles.markReady)}>
-          <CheckIcon size={12} strokeWidth={3} color="white" />
+          <CheckIcon size={12} strokeWidth={3} />
         </span>
         Ready. Hold {hotkeyLabels[snapshot.settings.hotkey]} and speak.
       </div>

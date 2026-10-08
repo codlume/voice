@@ -158,6 +158,7 @@ function Check({ pasted }: { pasted: boolean }) {
       <CheckIcon
         size={16}
         strokeWidth={3}
+        role="img"
         aria-label={pasted ? "Pasted" : "Inserted"}
         {...stylex.props(styles.checkStroke)}
       />

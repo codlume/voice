@@ -119,9 +119,6 @@ importers:
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9
-      lucide-react:
-        specifier: 1.52.0
-        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
       node-llama-cpp:
         specifier: 3.21.1
         version: 3.21.1(typescript@7.0.2)
@@ -156,6 +153,9 @@ importers:
       electron-builder:
         specifier: 26.15.6
         version: 26.15.6(electron-builder-squirrel-windows@26.15.6)
+      lucide-react:
+        specifier: 1.52.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
       react:
         specifier: 'catalog:'
         version: 19.3.0

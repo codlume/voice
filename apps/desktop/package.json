@@ -19,7 +19,6 @@
     "conf": "15.1.0",
     "effect": "4.0.1",
     "electron-updater": "6.8.9",
-    "lucide-react": "1.52.0",
     "node-llama-cpp": "3.21.1"
   },
   "devDependencies": {
@@ -33,6 +32,7 @@
     "@voice/cleanup": "workspace:*",
     "electron": "44.4.5",
     "electron-builder": "26.15.6",
+    "lucide-react": "1.52.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "catalog:",

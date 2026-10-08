@@ -477,7 +477,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           onClick={toggleSidebar}
           {...stylex.props(titlebar.button)}
         >
-          <PanelLeftIcon size={navIconSize} {...stylex.props(styles.icon)} />
+          <PanelLeftIcon size={navIconSize} />
         </button>
         <TitlebarAccount
           account={snapshot.account}
@@ -528,7 +528,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                 onClick={() => selectSettingsPage("general")}
                 {...stylex.props(styles.navItem, styles.footerButton)}
               >
-                <SlidersHorizontalIcon size={navIconSize} {...stylex.props(styles.icon)} />
+                <SlidersHorizontalIcon size={navIconSize} />
               </Tooltip.Trigger>
             ) : (
               <NavItem
