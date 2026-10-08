@@ -1,5 +1,18 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
+import {
+  ArrowLeftIcon,
+  BoxIcon,
+  HouseIcon,
+  KeyboardIcon,
+  MonitorIcon,
+  PanelLeftIcon,
+  PenLineIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  UserIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
@@ -29,86 +42,18 @@ import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
-const slidersIcon = (
-  <>
-    <path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7" />
-    <circle cx="12.5" cy="6" r="2" />
-    <circle cx="7.5" cy="14" r="2" />
-  </>
-);
-
 const appPages = [
-  {
-    id: "home",
-    label: "Home",
-    icon: (
-      <path d="M3.5 8.75 10 3.5l6.5 5.25V16a.5.5 0 0 1-.5.5h-3.5V12h-5v4.5H4a.5.5 0 0 1-.5-.5z" />
-    ),
-  },
-  {
-    id: "style",
-    label: "Style",
-    icon: (
-      <>
-        <path d="m4 13.5-.75 3.25L6.5 16l9.75-9.75a1.77 1.77 0 0 0-2.5-2.5zM12 5.5 14.5 8" />
-        <path d="M10 16.75h6.75" />
-      </>
-    ),
-  },
+  { id: "home", label: "Home", icon: HouseIcon },
+  { id: "style", label: "Style", icon: PenLineIcon },
 ] as const;
 
 const settingsPages = [
-  { id: "general", label: "General", icon: slidersIcon },
-  {
-    id: "account",
-    label: "Account",
-    icon: (
-      <>
-        <circle cx="10" cy="7" r="3.25" />
-        <path d="M3.75 16.5c.9-2.9 3.3-4.5 6.25-4.5s5.35 1.6 6.25 4.5" />
-      </>
-    ),
-  },
-  {
-    id: "system",
-    label: "System",
-    icon: (
-      <>
-        <rect x="2.75" y="3.5" width="14.5" height="10" rx="1.5" />
-        <path d="M7 16.5h6M10 13.5v3" />
-      </>
-    ),
-  },
-  {
-    id: "models",
-    label: "Models",
-    icon: (
-      <>
-        <path d="M10 2.75 16.5 6.25v7.5L10 17.25l-6.5-3.5v-7.5z" />
-        <path d="M3.5 6.25 10 9.75l6.5-3.5M10 9.75v7.5" />
-      </>
-    ),
-  },
-  {
-    id: "shortcuts",
-    label: "Shortcuts",
-    icon: (
-      <>
-        <rect x="2.5" y="5" width="15" height="10" rx="2" />
-        <path d="M5.75 8.25h.01M8.6 8.25h.01M11.4 8.25h.01M14.25 8.25h.01M6.75 11.75h6.5" />
-      </>
-    ),
-  },
-  {
-    id: "privacy",
-    label: "Data and Privacy",
-    icon: (
-      <>
-        <path d="M10 2.75 3.75 5.25v4.5c0 3.75 2.6 6.4 6.25 7.5 3.65-1.1 6.25-3.75 6.25-7.5v-4.5z" />
-        <path d="m7.5 10.25 1.75 1.75 3.25-3.5" />
-      </>
-    ),
-  },
+  { id: "general", label: "General", icon: SlidersHorizontalIcon },
+  { id: "account", label: "Account", icon: UserIcon },
+  { id: "system", label: "System", icon: MonitorIcon },
+  { id: "models", label: "Models", icon: BoxIcon },
+  { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon },
+  { id: "privacy", label: "Data and Privacy", icon: ShieldCheckIcon },
 ] as const;
 
 type AppPage = (typeof appPages)[number]["id"];
@@ -336,25 +281,6 @@ const styles = stylex.create({
   column: { maxWidth: 800, marginInline: "auto" },
 });
 
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width={navIconSize}
-      height={navIconSize}
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...stylex.props(styles.icon)}
-    >
-      {children}
-    </svg>
-  );
-}
-
 function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   return (
     <Tooltip.Provider delay={0} closeDelay={100}>
@@ -399,7 +325,7 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
 
 function NavItem({
   label,
-  icon,
+  icon: Icon,
   shortcut,
   current = false,
   collapsed,
@@ -408,7 +334,7 @@ function NavItem({
   style,
 }: {
   label: string;
-  icon: ReactNode;
+  icon: LucideIcon;
   shortcut: Shortcut | undefined;
   current?: boolean;
   collapsed: boolean;
@@ -425,7 +351,7 @@ function NavItem({
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
     >
-      <Icon>{icon}</Icon>
+      <Icon size={navIconSize} {...stylex.props(styles.icon)} />
       <span
         {...stylex.props(
           styles.label,
@@ -451,7 +377,7 @@ function NavItems<Id extends string>({
   showShortcut,
   onSelect,
 }: {
-  items: readonly { id: Id; label: string; icon: ReactNode }[];
+  items: readonly { id: Id; label: string; icon: LucideIcon }[];
   current: Id;
   collapsed: boolean;
   showShortcut: boolean;
@@ -551,10 +477,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
           onClick={toggleSidebar}
           {...stylex.props(titlebar.button)}
         >
-          <Icon>
-            <rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5" />
-            <path d="M7.75 3.75v12.5" />
-          </Icon>
+          <PanelLeftIcon size={navIconSize} />
         </button>
         <TitlebarAccount
           account={snapshot.account}
@@ -605,12 +528,12 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
                 onClick={() => selectSettingsPage("general")}
                 {...stylex.props(styles.navItem, styles.footerButton)}
               >
-                <Icon>{slidersIcon}</Icon>
+                <SlidersHorizontalIcon size={navIconSize} />
               </Tooltip.Trigger>
             ) : (
               <NavItem
                 label="Back"
-                icon={<path d="M16 10H4M8.5 5.5 4 10l4.5 4.5" />}
+                icon={ArrowLeftIcon}
                 shortcut={shortcuts.closeSettings}
                 collapsed={collapsed}
                 showShortcut={showShortcut}

@@ -5,10 +5,14 @@ import { color, radius } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
   button: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     flexShrink: 0,
     paddingBlock: 6,
     paddingInline: 14,
-    borderRadius: radius.round,
+    borderRadius: radius.medium,
     font: "inherit",
     fontSize: 13,
     cursor: { default: "pointer", ":disabled": "default" },

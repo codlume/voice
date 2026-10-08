@@ -7,6 +7,7 @@ import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
+import { GoogleIcon } from "./Icons.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -81,10 +82,12 @@ function SignedOutRow({ account }: { account: Extract<AccountState, { kind: "sig
           <RowText account={account} />
           <Button
             id="setting-sign-in"
+            variant="secondary"
             disabled={pending}
             onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
           >
             Sign in with Google
+            <GoogleIcon width={16} height={16} />
           </Button>
         </div>
       </Card>

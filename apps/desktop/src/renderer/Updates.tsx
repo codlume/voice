@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import { CheckIcon, DownloadIcon, RefreshCwIcon, RotateCwIcon } from "lucide-react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import {
   pendingUpdate,
@@ -95,24 +96,6 @@ const styles = stylex.create({
   },
 });
 
-function Glyph({ size = 16, children }: { size?: number; children: ReactNode }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {children}
-    </svg>
-  );
-}
-
 function RefreshGlyph({ checking }: { checking: boolean }) {
   const [spinning, setSpinning] = useState(checking);
   if (checking && !spinning) setSpinning(true);
@@ -125,23 +108,8 @@ function RefreshGlyph({ checking }: { checking: boolean }) {
       onAnimationIteration={stopAtEndOfTurn}
       {...stylex.props(styles.spinner, spinning && styles.spinning)}
     >
-      <Glyph>
-        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-        <path d="M21 3v5h-5" />
-        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-        <path d="M8 16H3v5" />
-      </Glyph>
+      <RefreshCwIcon size={16} />
     </span>
-  );
-}
-
-function DownloadGlyph() {
-  return (
-    <Glyph>
-      <path d="M12 15V3" />
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="m7 10 5 5 5-5" />
-    </Glyph>
   );
 }
 
@@ -149,7 +117,7 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   if (status.kind === "available") {
     return (
       <>
-        <DownloadGlyph />
+        <DownloadIcon size={16} />
         <span {...stylex.props(styles.badge)} />
       </>
     );
@@ -182,7 +150,7 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
             {...stylex.props(styles.ringProgress)}
           />
         </svg>
-        <DownloadGlyph />
+        <DownloadIcon size={16} />
       </>
     );
   }
@@ -190,14 +158,9 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   if (status.kind === "ready" || status.kind === "installing") {
     return (
       <>
-        <Glyph>
-          <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-          <path d="M21 3v5h-5" />
-        </Glyph>
+        <RotateCwIcon size={16} />
         <span {...stylex.props(styles.badge)}>
-          <Glyph size={8}>
-            <path d="M20 6 9 17l-5-5" strokeWidth="4" />
-          </Glyph>
+          <CheckIcon size={8} strokeWidth={4} />
         </span>
       </>
     );

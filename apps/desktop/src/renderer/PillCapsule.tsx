@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { PillState } from "../shared/api.ts";
@@ -14,7 +15,7 @@ const pulse = stylex.keyframes({
   "0%, 100%": { opacity: 0.35, transform: "scale(0.8)" },
   "50%": { opacity: 1, transform: "scale(1)" },
 });
-const draw = stylex.keyframes({ from: { strokeDashoffset: 18 }, to: { strokeDashoffset: 0 } });
+const draw = stylex.keyframes({ from: { strokeDashoffset: 23 }, to: { strokeDashoffset: 0 } });
 
 const styles = stylex.create({
   frame: {
@@ -93,7 +94,7 @@ const styles = stylex.create({
   },
   checkStroke: {
     stroke: darkPill.glyph,
-    strokeDasharray: 18,
+    strokeDasharray: 23,
     animationName: draw,
     animationDuration: "280ms",
     animationDelay: "60ms",
@@ -154,16 +155,13 @@ function Dots() {
 function Check({ pasted }: { pasted: boolean }) {
   return (
     <div {...stylex.props(styles.content, styles.check, styles.checkFade)}>
-      <svg width="16" height="16" viewBox="0 0 16 16" aria-label={pasted ? "Pasted" : "Inserted"}>
-        <path
-          d="M3.5 8.5l3 3 6-7"
-          fill="none"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          {...stylex.props(styles.checkStroke)}
-        />
-      </svg>
+      <CheckIcon
+        size={16}
+        strokeWidth={3}
+        role="img"
+        aria-label={pasted ? "Pasted" : "Inserted"}
+        {...stylex.props(styles.checkStroke)}
+      />
       {pasted && <span {...stylex.props(styles.text)}>Pasted</span>}
     </div>
   );

@@ -1,5 +1,6 @@
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
+import { MicIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { MicrophoneTest, PermissionState } from "../shared/api.ts";
@@ -182,21 +183,7 @@ export function MicrophoneRow({
             onClick={run}
             {...stylex.props(styles.button)}
           >
-            <svg
-              aria-hidden="true"
-              width="14"
-              height="14"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              {...stylex.props(styles.glyph, running && styles.glyphLive)}
-            >
-              <rect x="7" y="2.5" width="6" height="10" rx="3" />
-              <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" />
-            </svg>
+            <MicIcon size={14} {...stylex.props(styles.glyph, running && styles.glyphLive)} />
             {action.label}
           </button>
           {children}
