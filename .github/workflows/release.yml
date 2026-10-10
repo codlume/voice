@@ -360,6 +360,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # A separate group, because a job waiting in release-publish-nightly would cancel a pending publish.
+    concurrency:
+      group: release-github-nightly
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
