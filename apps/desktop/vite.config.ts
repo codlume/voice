@@ -3,7 +3,7 @@ import * as NodeURL from "node:url";
 import stylex from "@stylexjs/unplugin";
 import react from "@vitejs/plugin-react";
 import "vite-plus/test/config";
-import { defineConfig } from "vite-plus";
+import { defineConfig, type Plugin } from "vite-plus";
 
 const appDir = NodeURL.fileURLToPath(new URL(".", import.meta.url));
 const rendererDir = `${appDir}src/renderer`;
@@ -34,10 +34,49 @@ const electronEntry = (name: "main" | "preload" | "sentry", entry: string) => ({
   },
 });
 
+// Packaged windows load over file://, which carries no response headers, so the policy rides in a
+// meta tag. The dev server injects inline scripts (React Refresh), admitted by a nonce, and the
+// StyleX dev runtime writes un-nonced <style> elements, so dev styles allow inline.
+const DEV_NONCE = "voice-dev";
+
+function contentSecurityPolicy(): Plugin {
+  let dev = false;
+  return {
+    name: "voice:content-security-policy",
+    config(_config, { command }) {
+      dev = command === "serve";
+      return dev ? { html: { cspNonce: DEV_NONCE } } : undefined;
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler: () => [
+        {
+          tag: "meta",
+          attrs: {
+            "http-equiv": "Content-Security-Policy",
+            content: [
+              "default-src 'self'",
+              dev ? `script-src 'self' 'nonce-${DEV_NONCE}'` : "script-src 'self'",
+              dev ? "style-src 'self' 'unsafe-inline'" : "style-src 'self'",
+              // Vite inlines small imported images, such as the app icon, as data: URLs. Google
+              // serves account pictures from googleusercontent.com (see account-client.ts).
+              "img-src 'self' data: https://*.googleusercontent.com",
+              "object-src 'none'",
+              "base-uri 'none'",
+              "form-action 'none'",
+            ].join("; "),
+          },
+          injectTo: "head-prepend",
+        },
+      ],
+    },
+  };
+}
+
 export default defineConfig({
   root: rendererDir,
   base: "./",
-  plugins: [stylex.vite({ useCSSLayers: true }), react()],
+  plugins: [stylex.vite({ useCSSLayers: true }), react(), contentSecurityPolicy()],
   server: { port: 5783, strictPort: true },
   // StyleX's dev transform calls this.load() on each import, so a *.stylex.ts file requested
   // during the first crawl waits on a pre-bundled dependency, which by default waits for the

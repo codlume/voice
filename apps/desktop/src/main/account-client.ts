@@ -19,8 +19,8 @@ import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// Google serves profile pictures from googleusercontent.com. The hub has no CSP, so a picture on
-// any other host would let the API make Voice fetch from wherever it names.
+// Google serves profile pictures from googleusercontent.com. The hub's CSP (vite.config.ts) admits
+// only that host for images, and this check keeps the API from naming another host at all.
 function isGooglePicture(image: string) {
   const url = URL.parse(image);
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
