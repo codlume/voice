@@ -1,6 +1,6 @@
 // The real Worker with Google's token endpoint faked, for wrangler.verify.jsonc only.
 // It lives under test/ so no fake code reaches the deployed bundle.
-import app from "../src/index.ts";
+import worker from "../src/index.ts";
 import { fakeGoogleToken, googleTokenUrl } from "./google-fake.ts";
 
 const realFetch = globalThis.fetch;
@@ -10,4 +10,4 @@ globalThis.fetch = async (input, init) => {
   return Response.json(fakeGoogleToken(new URLSearchParams(await request.text())));
 };
 
-export default app;
+export default worker;

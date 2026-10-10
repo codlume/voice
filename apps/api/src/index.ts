@@ -4,6 +4,7 @@ import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
 import { createAuth } from "./auth.ts";
 import { landingCsp, landingPage } from "./landing.ts";
+import { sweep } from "./sweep.ts";
 
 const everyResponse = {
   strictTransportSecurity: "max-age=63072000; includeSubDomains",
@@ -15,7 +16,7 @@ const securityHeaders = secureHeaders({
 });
 const landingHeaders = secureHeaders({ ...everyResponse, contentSecurityPolicy: landingCsp });
 
-const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>();
+export const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>();
 
 // secureHeaders writes its headers after next(), so the policy is picked per route here.
 app.use((c, next) => (c.req.path === "/" ? landingHeaders : securityHeaders)(c, next));
@@ -58,4 +59,6 @@ app.onError(async (error, c) => {
   return c.res;
 });
 
-export default app;
+const scheduled: ExportedHandlerScheduledHandler<Env> = (_controller, env) => sweep(env);
+
+export default { fetch: app.fetch, scheduled } satisfies ExportedHandler<Env>;
