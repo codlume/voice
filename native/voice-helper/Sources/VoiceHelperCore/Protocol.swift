@@ -5,7 +5,6 @@ public enum HotkeyAction: String, Codable, Sendable { case down, up, cancel }
 public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
-/// Why the helper ended a capture that main did not stop.
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }

@@ -4,7 +4,6 @@ import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
 
-/// Protocol lines the helper writes to a pipe, decoded as they arrive.
 private final class EmittedLines: @unchecked Sendable {
     let pipe = Pipe()
     private let lock = NSLock()
@@ -69,21 +68,20 @@ private func sessionEvents(_ events: [[String: Any]]) -> [[String: Any]] {
 
 @Suite(.serialized)
 struct CaptureStopTests {
-    // Silence skips the transcriber; a tone reaches it and fails because no model is on disk. Both
-    // paths must announce the stop before the terminal event.
-    @Test(arguments: [(silent: true, terminal: "transcript"), (silent: false, terminal: "transcript.failed")])
-    @MainActor func reportsTheDurationCapBeforeTheCaptureEnds(silent: Bool, terminal: String) async throws {
+    @Test(arguments: [(audio: "silence", terminal: "transcript"), (audio: "tone with no model", terminal: "transcript.failed")])
+    @MainActor func reportsTheDurationCapBeforeTheCaptureEnds(audio: String, terminal: String) async throws {
         let lines = EmittedLines()
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let audio = dir.appendingPathComponent("capture.caf")
-        try writeAudio(to: audio, seconds: 1, silent: silent)
+        let file = dir.appendingPathComponent("capture.caf")
+        try writeAudio(to: file, seconds: 1, silent: audio == "silence")
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
-        let capture = Capture(output: output, transcriber: Transcriber(modelsDir: dir, output: output), devices: devices, maxSamples: 4800)
-        capture.testAudioPath = audio.path
+        let noModels = dir.appendingPathComponent("no-models")
+        let capture = Capture(output: output, transcriber: Transcriber(modelsDir: noModels, output: output), devices: devices, maxSamples: 4800)
+        capture.testAudioPath = file.path
 
         capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         let events = sessionEvents(try await lines.wait(for: terminal))
@@ -93,7 +91,6 @@ struct CaptureStopTests {
         #expect(events[1]["reason"] as? String == "maxDuration")
         #expect(!capture.isActive)
 
-        // Main's own stop for the key still held after the cap must not record or transcribe again.
         capture.stop(id: "s1")
         try await Task.sleep(for: .milliseconds(300))
         #expect(sessionEvents(lines.snapshot()).count == events.count)

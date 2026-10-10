@@ -68,7 +68,6 @@ final class Capture {
     private var microphoneAuthorized = false
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
-    /// Samples kept per capture: ten minutes at 16 kHz, unless a test shortens it.
     private let maxSamples: Int
 
     init(output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000) {
@@ -132,8 +131,6 @@ final class Capture {
         transcribe(recording)
     }
 
-    /// Ends a capture main did not stop. The report goes out before the transcript so main
-    /// leaves "listening" the moment the microphone is off.
     private func endRecording(_ recording: Recording, reason: CaptureStopReason) {
         output.emit(.captureStopped(id: recording.session.id, reason: reason))
         transcribe(recording)

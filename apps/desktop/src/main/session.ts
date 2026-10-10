@@ -126,7 +126,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return finish(state.id, { kind: "failed", message: event.message });
     }
     case "captureStopped": {
-      // The helper has already stopped the microphone and is transcribing what it has.
       if (state.phase !== "recording") return same;
       return { state: { phase: "transcribing", id: state.id }, effects: [] };
     }
