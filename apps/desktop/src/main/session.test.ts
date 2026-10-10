@@ -9,6 +9,7 @@ import {
   HELPER_TIMEOUT_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  TRANSCRIBE_TIMEOUT_MESSAGE,
   idle,
   step,
   toPillState,
@@ -417,7 +418,11 @@ describe("idle and stale events", () => {
 
   test("a transcription that outlives the watchdog ends failed without cancelling the helper", () => {
     const { state, effects } = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]);
-    expect(state).toMatchObject({ phase: "done", id: ID, outcome: { kind: "failed" } });
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: TRANSCRIBE_TIMEOUT_MESSAGE },
+    });
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
   });
 

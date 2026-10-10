@@ -46,6 +46,7 @@ export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
 export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
+export const TRANSCRIBE_TIMEOUT_MESSAGE = "Taking too long. Check Voice for the text";
 
 export const idle: Session = { phase: "idle" };
 
@@ -70,6 +71,12 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
   };
 }
 
+/** A transcript that no longer drives a session is still the user's words. */
+function keep(state: Session, text: string): Step {
+  const raw = text.trim();
+  return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
+}
+
 function insert(id: string, raw: string, text: string): Step {
   return {
     state: { phase: "inserting", id, raw, text },
@@ -86,7 +93,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     event.type !== "hotkeyDown" &&
     "id" in event &&
     (state.phase === "idle" || state.id !== event.id);
-  if (stale) return same;
+  if (stale) return event.type === "transcript" ? keep(state, event.text) : same;
 
   switch (event.type) {
     case "hotkeyDown": {
@@ -130,12 +137,10 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return { state: { phase: "transcribing", id: state.id }, effects: [] };
     }
     case "transcript": {
-      const raw = event.text.trim();
-      // A transcript that lands after the session already timed out is still the user's words.
-      if (state.phase === "done") {
-        return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
+      if (state.phase !== "transcribing" && state.phase !== "recording") {
+        return keep(state, event.text);
       }
-      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
+      const raw = event.text.trim();
       if (raw === "") return finish(state.id, { kind: "empty" });
       if (!event.cleanup) return insert(state.id, raw, raw);
       return {
@@ -172,12 +177,16 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return finish(state.id, { kind: "failed", message: HELPER_EXITED_MESSAGE });
     }
     case "timedOut": {
-      if (state.phase === "starting" || state.phase === "transcribing") {
+      if (state.phase === "starting") {
         return finish(
           state.id,
           { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
           { type: "cancelCapture", id: state.id },
         );
+      }
+      // No cancel: the helper would discard the audio with it. The transcript lands as `last`.
+      if (state.phase === "transcribing") {
+        return finish(state.id, { kind: "failed", message: TRANSCRIBE_TIMEOUT_MESSAGE });
       }
       if (state.phase === "inserting") {
         return finish(state.id, { kind: "notInserted", reason: "failed" });

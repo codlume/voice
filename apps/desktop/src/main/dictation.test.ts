@@ -21,6 +21,7 @@ import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  TRANSCRIBE_TIMEOUT_MESSAGE,
   idle,
 } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
@@ -68,6 +69,7 @@ function harness(opts: Options = {}) {
     last: null,
   });
   const commands: HelperCommand[] = [];
+  const cancelled = new Set<string>();
   const cleans: string[] = [];
   const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
@@ -81,7 +83,10 @@ function harness(opts: Options = {}) {
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
-    send: (command) => commands.push(command),
+    send: (command) => {
+      commands.push(command);
+      if (command.type === "capture.cancel") cancelled.add(command.id);
+    },
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
       clean: (raw, style, signal) => {
@@ -107,11 +112,9 @@ function harness(opts: Options = {}) {
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
-  // Mirrors Capture.swift: a capture.cancel while transcribing discards the audio and the result,
-  // so a cancelled session never produces a transcript.
   const helper = {
     transcript(sessionId: string, text: string) {
-      if (commands.some((c) => c.type === "capture.cancel" && c.id === sessionId)) return;
+      if (cancelled.has(sessionId)) return;
       dictation.onHelperEvent({
         type: "transcript",
         id: sessionId,
@@ -756,7 +759,11 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
-    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.store.state.session).toEqual({
+      phase: "done",
+      id,
+      outcome: { kind: "failed", message: TRANSCRIBE_TIMEOUT_MESSAGE },
+    });
     expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
     vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS + 1);
     expect(h.store.state.session).toEqual(idle);
