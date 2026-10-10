@@ -13,6 +13,8 @@ describe("parseHelperEvent", () => {
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },
       { type: "capture.cancelled", id: "a" },
+      { type: "capture.stopped", id: "a", reason: "deviceChanged" },
+      { type: "capture.stopped", id: "a", reason: "maxDuration" },
       { type: "microphone.test.started", id: "t" },
       { type: "microphone.test.level", id: "t", level: 0.3 },
       { type: "microphone.test.ended", id: "t" },

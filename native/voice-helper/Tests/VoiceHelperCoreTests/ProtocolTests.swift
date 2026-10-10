@@ -64,6 +64,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.captureFailed(id: "s2", reason: .busy, message: "busy"),
          ["type": "capture.failed", "id": "s2", "reason": "busy", "message": "busy"]),
         (.captureCancelled(id: "s"), ["type": "capture.cancelled", "id": "s"]),
+        (.captureStopped(id: "s", reason: .deviceChanged), ["type": "capture.stopped", "id": "s", "reason": "deviceChanged"]),
+        (.captureStopped(id: "s", reason: .maxDuration), ["type": "capture.stopped", "id": "s", "reason": "maxDuration"]),
         (.microphoneTestStarted(id: "t"), ["type": "microphone.test.started", "id": "t"]),
         (.microphoneTestLevel(id: "t", level: 0.25), ["type": "microphone.test.level", "id": "t", "level": 0.25]),
         (.microphoneTestLevel(id: "t", level: .nan), ["type": "microphone.test.level", "id": "t", "level": 0]),
