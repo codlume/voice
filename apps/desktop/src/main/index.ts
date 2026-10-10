@@ -21,11 +21,11 @@ import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
   sameTranscript,
+  toPillSnapshot,
   type LoginItem,
   type PermissionKind,
   type Settings,
   type SettingsPatch,
-  type Snapshot,
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
@@ -49,6 +49,7 @@ import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
+import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
@@ -206,12 +207,6 @@ function applyZoom(hub: BrowserWindow, zoomLevel: number) {
     width,
     height,
   });
-}
-
-function publish(snapshot: Snapshot) {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send(Channel.snapshot, snapshot);
-  }
 }
 
 const allGranted = (state: AppState) =>
@@ -537,7 +532,7 @@ async function main() {
   refreshTray(store.state);
 
   store.subscribe((state, previous) => {
-    publish(toSnapshot(state));
+    publish({ hub, pill }, state, previous);
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
@@ -619,7 +614,12 @@ async function main() {
     }
   }
 
-  ipcMain.handle(Channel.getSnapshot, () => toSnapshot(store.state));
+  ipcMain.handle(Channel.getSnapshot, (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== hub)
+      throw new Error("Only the Voice window reads the full snapshot.");
+    return toSnapshot(store.state);
+  });
+  ipcMain.handle(Channel.getPillSnapshot, () => toPillSnapshot(toSnapshot(store.state)));
   ipcMain.handle(Channel.checkForUpdates, () => updates.check());
   ipcMain.handle(Channel.downloadUpdate, () => updates.download());
   ipcMain.handle(Channel.restartForUpdate, (_event, value: unknown) => {

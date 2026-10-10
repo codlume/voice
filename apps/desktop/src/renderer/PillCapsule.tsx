@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { PillState } from "../shared/api.ts";
+import type { PillSnapshot } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
 import { font, darkPill, radius } from "./tokens.stylex.ts";
 
@@ -167,15 +167,7 @@ function Check({ pasted }: { pasted: boolean }) {
   );
 }
 
-export function PillCapsule({
-  session,
-  alwaysShowPill,
-  copyToClipboard,
-}: {
-  session: PillState;
-  alwaysShowPill: boolean;
-  copyToClipboard: boolean;
-}) {
+export function PillCapsule({ session, alwaysShowPill, copyToClipboard }: PillSnapshot) {
   const view = pillView(session, { copyToClipboard });
   return (
     <div {...stylex.props(styles.frame)}>
