@@ -1,5 +1,6 @@
 // Load the Electron mock before the adapter and plugin storage.
 import {
+  API,
   USER,
   electron,
   http,
@@ -10,10 +11,18 @@ import {
   snapshotAccount,
   signInCode,
 } from "./account-client.test-harness.ts";
+import { writeFileSync } from "node:fs";
+import * as NodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
 import { SIGN_IN_TIMEOUT_MS } from "./account.ts";
-import { authStorageKeys, authStored, serverSignOutsStored } from "./account-storage.ts";
+import { harness } from "./account.test-harness.ts";
+import {
+  authSessionStored,
+  authStorageKeys,
+  authStored,
+  serverSignOutsStored,
+} from "./account-storage.ts";
 
 const confirmed = (url: string) =>
   url.endsWith("/sign-out") ? json({ success: true }) : json(null);
@@ -134,5 +143,38 @@ describe("a session Voice does not keep", () => {
     http.answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
     expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(http.sent.at(-2)?.cookie).toBe("better-auth.session_token=stray-token");
+  });
+});
+
+describe("an unreadable config.json", () => {
+  test("launches signed out, then Sign in completes and stores the new auth session", async () => {
+    const { userData } = electron.state;
+    writeFileSync(NodePath.join(userData, "config.json"), '{"voice":{"nightly":{"cookie":"djEw');
+    let opening: Promise<{ state: string }> | undefined;
+    const h = harness({
+      apiUrl: API.nightly,
+      createClient: async () => {
+        const auth = client("nightly");
+        const openBrowser = auth.openBrowser;
+        auth.openBrowser = () => (opening = openBrowser());
+        return auth;
+      },
+      hasStoredAuthSession: () => authSessionStored(userData, "nightly"),
+      hasStoredAuth: () => authStored(userData, "nightly"),
+    });
+    await h.account.restore();
+    expect(h.state).toEqual({ kind: "signedOut" });
+
+    await h.account.signIn();
+    expect(h.state).toMatchObject({ kind: "signingIn", phase: "browser" });
+    if (!opening) throw new Error("Sign-in did not open the browser");
+    const { state } = await opening;
+    http.answer = () => signedIn("fresh-token");
+    await h.account.submitSignInCode(
+      Buffer.from(JSON.stringify({ identifier: "code-1", state })).toString("base64url"),
+    );
+
+    expect(h.state).toMatchObject({ kind: "signedIn", email: USER.email });
+    expect(authSessionStored(userData, "nightly")).toBe(true);
   });
 });

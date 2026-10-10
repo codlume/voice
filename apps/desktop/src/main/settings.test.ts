@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import {
@@ -12,6 +12,29 @@ import {
   parseSettings,
   saveSettings,
 } from "./settings.ts";
+
+const disk = vi.hoisted(() => ({ events: [] as string[] }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  const { basename } = await import("node:path");
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      const handle = await fs.open(...args);
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        await sync();
+        const { size } = await handle.stat();
+        disk.events.push(`sync ${basename(String(args[0]))} ${size > 0 ? "with data" : "empty"}`);
+      };
+      return handle;
+    },
+    rename: async (from: string, to: string) => {
+      await fs.rename(from, to);
+      disk.events.push(`rename ${basename(from)} -> ${basename(to)}`);
+    },
+  };
+});
 
 describe("parseSettings", () => {
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
@@ -253,6 +276,14 @@ describe("load and save", () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
     expect(loadSettings(file)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("a save reaches the disk before it replaces the old file", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    disk.events = [];
+    await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { hotkey: "rightOption" }));
+    const temp = `settings.json.${process.pid}.tmp`;
+    expect(disk.events).toEqual([`sync ${temp} with data`, `rename ${temp} -> settings.json`]);
   });
 
   test("save then load round-trips through a nested directory and leaves no temp file", async () => {
