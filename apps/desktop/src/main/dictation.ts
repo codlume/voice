@@ -311,10 +311,15 @@ export function createDictation(options: DictationOptions): Dictation {
         }));
         return;
       case "permissions":
-        store.update((s) => ({
-          ...s,
-          permissions: { microphone: event.microphone, accessibility: event.accessibility },
-        }));
+        store.update((s) =>
+          s.permissions.microphone === event.microphone &&
+          s.permissions.accessibility === event.accessibility
+            ? s
+            : {
+                ...s,
+                permissions: { microphone: event.microphone, accessibility: event.accessibility },
+              },
+        );
         return;
       case "asr.status":
         store.update((s) => ({

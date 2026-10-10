@@ -114,10 +114,10 @@ async function fetchToFile(
       hash.update(chunk);
       received += chunk.byteLength;
       if (bytes !== undefined && received > bytes) break;
-      const permille = bytes ? Math.floor((received / bytes) * 1000) : 0;
-      if (onProgress && permille > reported) {
-        reported = permille;
-        onProgress(permille / 1000);
+      const percent = bytes ? Math.floor((received / bytes) * 100) : 0;
+      if (onProgress && percent > reported) {
+        reported = percent;
+        onProgress(percent / 100);
       }
     }
     if (bytes !== undefined && received !== bytes) {
