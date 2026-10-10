@@ -36,12 +36,13 @@ class FakeUpdater extends EventEmitter {
 
 function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   const engine = new FakeUpdater();
+  const loadEngine = vi.fn(() => engine);
   const snapshots: UpdatesSnapshot[] = [];
   const canRestart = vi.fn(() => true);
   const prepareRestart = vi.fn(async () => {});
   const onRestartFailure = vi.fn();
   const updates = createUpdates({
-    engine,
+    loadEngine,
     release: {
       channel: options.nightly ? "nightly" : "stable",
       updateUrl: "https://downloads.example.com",
@@ -59,6 +60,7 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   });
   return {
     engine,
+    loadEngine,
     snapshots,
     updates,
     canRestart,
@@ -138,6 +140,44 @@ describe("updates", () => {
     updates.dispose();
   });
 
+  test("loads the updater at the first check, not at launch", async () => {
+    vi.useFakeTimers();
+    const { updates, loadEngine } = setup();
+    updates.start();
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(loadEngine).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await updates.check();
+    expect(loadEngine).toHaveBeenCalledOnce();
+    updates.dispose();
+  });
+
+  test("keeps one error listener across every kind of check and none after dispose", async () => {
+    vi.useFakeTimers();
+    const { updates, engine } = setup();
+    engine.checkForUpdates.mockResolvedValue(result("0.0.1", false));
+    updates.start();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await updates.check();
+    await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+    await updates.setChannel("nightly");
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(4);
+    expect(engine.listenerCount("error")).toBe(1);
+    updates.dispose();
+    expect(engine.listenerCount("error")).toBe(0);
+  });
+
+  test("an updater that fails to load reports a failed check", async () => {
+    const { updates, loadEngine } = setup();
+    loadEngine.mockImplementationOnce(() => {
+      throw new Error("Cannot find module 'electron-updater'");
+    });
+    await updates.check();
+    expect(updates.snapshot.status.kind).toBe("failed");
+    await updates.check();
+    expect(updates.snapshot.status.kind).toBe("available");
+  });
+
   test("an available update waits for the user and download acts only on it", async () => {
     vi.useFakeTimers();
     const { updates, engine } = setup();
@@ -172,13 +212,14 @@ describe("updates", () => {
 
   test("development never contacts a feed, even on manual actions", async () => {
     vi.useFakeTimers();
-    const { updates, engine } = setup({ disabled: true });
+    const { updates, engine, loadEngine } = setup({ disabled: true });
     updates.start();
     await updates.check();
     await updates.download();
     await updates.setChannel("nightly");
     await updates.restart();
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    expect(loadEngine).not.toHaveBeenCalled();
     expect(engine.setFeedURL).not.toHaveBeenCalled();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     expect(engine.downloadUpdate).not.toHaveBeenCalled();

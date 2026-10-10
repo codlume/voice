@@ -16,7 +16,7 @@ import {
   Tray,
   type WebPreferences,
 } from "electron";
-import { autoUpdater } from "electron-updater";
+import type * as ElectronUpdater from "electron-updater";
 
 import {
   Channel,
@@ -375,7 +375,10 @@ async function main() {
   });
 
   const updates = createUpdates({
-    engine: store.state.updates.status.kind === "disabled" ? null : autoUpdater,
+    loadEngine:
+      store.state.updates.status.kind === "disabled"
+        ? null
+        : (): typeof ElectronUpdater.autoUpdater => require("electron-updater").autoUpdater,
     release,
     initial: store.state.updates,
     onChange: (value) => store.update((s) => ({ ...s, updates: value })),
