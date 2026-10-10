@@ -10,19 +10,21 @@ import {
   CLEANUP_PER_WORD_MS,
   INSERT_TIMEOUT_MS,
   START_TIMEOUT_MS,
+  TRANSCRIBE_OVERDUE_MIN_MS,
   TRANSCRIBE_TIMEOUT_MS,
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
   type SessionReport,
 } from "./dictation.ts";
-import type { HelperCommand } from "./protocol.ts";
+import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
-  TRANSCRIBE_TIMEOUT_MESSAGE,
+  TRANSCRIBE_GAVE_UP_MESSAGE,
   idle,
+  type SessionEvent,
 } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
@@ -69,7 +71,9 @@ function harness(opts: Options = {}) {
     last: null,
   });
   const commands: HelperCommand[] = [];
-  const cancelled = new Set<string>();
+  // The helper's one capture slot, as Capture.swift keeps it: a stop starts a transcription that
+  // only its own result or a cancel ends, and a start during one is refused as busy.
+  let transcribing: string | null = null;
   const cleans: string[] = [];
   const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
@@ -85,7 +89,15 @@ function harness(opts: Options = {}) {
     store,
     send: (command) => {
       commands.push(command);
-      if (command.type === "capture.cancel") cancelled.add(command.id);
+      if (command.type === "capture.stop") transcribing = command.id;
+      if (command.type === "capture.cancel" && transcribing === command.id) transcribing = null;
+      if (command.type === "capture.start" && transcribing !== null) {
+        onHelperEvent({
+          type: "capture.failed",
+          id: command.id,
+          message: "capture is busy with another session",
+        });
+      }
     },
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
@@ -112,16 +124,20 @@ function harness(opts: Options = {}) {
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
+  function onHelperEvent(event: HelperEvent) {
+    if (event.type === "transcript" || event.type === "transcript.failed") {
+      if (transcribing === event.id) transcribing = null;
+    }
+    dictation.onHelperEvent(event);
+  }
+  function dispatch(event: SessionEvent) {
+    if (event.type === "helperExited") transcribing = null;
+    dictation.dispatch(event);
+  }
   const helper = {
     transcript(sessionId: string, text: string) {
-      if (cancelled.has(sessionId)) return;
-      dictation.onHelperEvent({
-        type: "transcript",
-        id: sessionId,
-        text,
-        audioMs: 800,
-        asrMs: 100,
-      });
+      if (transcribing !== sessionId) return;
+      onHelperEvent({ type: "transcript", id: sessionId, text, audioMs: 800, asrMs: 100 });
     },
   };
   return {
@@ -138,7 +154,7 @@ function harness(opts: Options = {}) {
     phases,
     reports,
     copies,
-    dictation,
+    dictation: { dispatch, onHelperEvent },
     id,
   };
 }
@@ -155,6 +171,15 @@ async function dictate(h: ReturnType<typeof harness>, text: string) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
   h.dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
   await flush();
+  return id;
+}
+
+function release(h: ReturnType<typeof harness>, holdMs: number) {
+  h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+  const id = h.id();
+  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+  vi.advanceTimersByTime(holdMs);
+  h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
   return id;
 }
 
@@ -751,23 +776,72 @@ describe("createDictation", () => {
     expect(h.store.state.last).toEqual({ raw: "stuck", text: "stuck" });
   });
 
-  test("a transcription that outlives the watchdog ends failed, leaves the helper transcribing, and keeps the transcript when it lands", () => {
+  test("a transcription past the watchdog keeps waiting, says so, and still inserts when it lands", () => {
+    const h = harness({ cleanupEnabled: false });
+    const id = release(h, 800);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS - 1);
+    expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing", overdue: false });
+    vi.advanceTimersByTime(1);
+    expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing", overdue: true });
+    expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
+    vi.advanceTimersByTime(10_000);
+    h.helper.transcript(id, "late words");
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "late words" });
+    expect(h.store.state.last).toEqual({ raw: "late words", text: "late words" });
+  });
+
+  test("a transcription that never finishes is cancelled at the ceiling, and the next press records", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
-    vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
+    const id = release(h, 800);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS + TRANSCRIBE_OVERDUE_MIN_MS - 1);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+    vi.advanceTimersByTime(1);
     expect(h.store.state.session).toEqual({
       phase: "done",
       id,
-      outcome: { kind: "failed", message: TRANSCRIBE_TIMEOUT_MESSAGE },
+      outcome: { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
     });
-    expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
-    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS + 1);
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+    h.helper.transcript(id, "ghost");
+    expect(h.store.state.last).toBeNull();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const next = h.id();
+    expect(next).not.toBe(id);
+    expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", id: next });
+    h.dictation.onHelperEvent({ type: "capture.started", id: next, startMs: 40 });
+    expect(h.store.state.session).toMatchObject({ phase: "recording", id: next });
+  });
+
+  test("the ceiling gives the helper as long again as the recording lasted", () => {
+    const h = harness();
+    const id = release(h, 90_000);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS + TRANSCRIBE_OVERDUE_MIN_MS);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+    vi.advanceTimersByTime(90_000 - TRANSCRIBE_OVERDUE_MIN_MS);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+  });
+
+  test("a press while a transcription is overdue sends nothing, so the busy helper is never asked", () => {
+    const h = harness();
+    const id = release(h, 800);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
+    const sent = h.commands.length;
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    expect(h.commands.length).toBe(sent);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+  });
+
+  test("a transcript that lands after main gave up is remembered but not inserted", () => {
+    const h = harness();
+    const id = release(h, 800);
+    vi.advanceTimersByTime(
+      TRANSCRIBE_TIMEOUT_MS + TRANSCRIBE_OVERDUE_MIN_MS + IDLE_AFTER_OTHER_MS + 1,
+    );
     expect(h.store.state.session).toEqual(idle);
-    h.helper.transcript(id, "late");
+    // The helper's result crossed the cancel in flight.
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "late", audioMs: 800, asrMs: 100 });
     expect(h.store.state.last).toEqual({ raw: "late", text: "late" });
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
     expect(h.store.state.session).toEqual(idle);
@@ -850,9 +924,9 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
-    expect(h.store.state.session).toEqual({ phase: "transcribing", id });
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: false });
     vi.advanceTimersByTime(TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS - TRANSCRIBE_TIMEOUT_MS);
-    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
     expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
   });
 
