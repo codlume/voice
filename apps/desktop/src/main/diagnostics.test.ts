@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
 import * as SentryNode from "@sentry/node";
-import { afterEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
+import { configureIPC } from "../../node_modules/@sentry/electron/esm/main/ipc.js";
 import type { DiagnosticsConsent, Outcome } from "../shared/api.ts";
 import { HELPER_EXIT_MESSAGE } from "./diagnostics-scrub.ts";
 import { sessionSpan, startDiagnostics, type Diagnostics } from "./diagnostics.ts";
@@ -13,8 +14,26 @@ import { idle } from "./session.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore } from "./store.ts";
 
+// The Sentry SDK's main module parses the Electron version at load.
+type IpcHandler = (event: { sender: unknown }, data: unknown) => void;
+const ipc = vi.hoisted(() => {
+  Object.defineProperty(process.versions, "electron", { value: "38.0.0", configurable: true });
+  return { handlers: new Map<string, IpcHandler>() };
+});
+vi.mock("electron", () => ({
+  app: { isReady: () => false, getAppPath: () => "/app", on() {} },
+  protocol: {},
+  ipcMain: {
+    on: (key: string, handler: IpcHandler) => ipc.handlers.set(key, handler),
+    handle() {},
+  },
+  webContents: { getAllWebContents: () => [] },
+  powerMonitor: {},
+}));
+
 const RAW = "hi anna can we move our meeting to thursday at three thirty";
 const CLEANED = "Hi Anna, can we move our meeting to Thursday at 3:30?";
+const TOKEN = "sk-live-SECRETTOKEN123";
 
 const timings = {
   startMs: 40,
@@ -180,12 +199,18 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     return envelopes.flatMap(([, list]) => list.filter(([header]) => header.type === type));
   }
 
+  async function headers() {
+    await SentryNode.flush(2000);
+    return envelopes.map(([header]) => header);
+  }
+
   return {
     diagnostics,
     crashDumpsDir,
     dictate,
     sent,
     items,
+    headers,
     setConsent: (next: DiagnosticsConsent) => {
       consent = next;
     },
@@ -360,6 +385,107 @@ describe("startDiagnostics consent", () => {
     expect((await h.sent()).join()).not.toContain("someone");
   });
 
+  test("an event captured with a type is scrubbed before it is sent", async () => {
+    const h = harness("on");
+    // A renderer envelope reaches captureEvent with whatever payload the renderer wrote.
+    SentryNode.captureEvent({
+      type: "event" as never,
+      message: RAW,
+      extra: { transcript: RAW },
+      user: { email: "anna@example.com" },
+      breadcrumbs: [{ message: CLEANED }],
+    });
+    const sent = await h.sent();
+    expect(sent).toHaveLength(1);
+    for (const text of [RAW, CLEANED, "anna", "extra", "breadcrumbs"]) {
+      expect(sent[0]).not.toContain(text);
+    }
+  });
+
+  test("the envelope header carries no dynamic sampling context", async () => {
+    const h = harness("on");
+    // Main copies a renderer envelope's trace header onto the event it captures, and the SDK
+    // turns it back into the outgoing envelope's trace header.
+    SentryNode.captureEvent({
+      exception: { values: [{ type: "Error", value: RAW }] },
+      sdkProcessingMetadata: {
+        dynamicSamplingContext: { trace_id: "0".repeat(32), transaction: RAW, custom: TOKEN },
+      },
+    } as never);
+    const [header, ...rest] = await h.headers();
+    expect(rest).toEqual([]);
+    expect(header).toEqual({
+      event_id: expect.stringMatching(/^[0-9a-f]{32}$/),
+      sent_at: expect.any(String),
+      sdk: { name: "sentry.javascript.node", version: SentryNode.SDK_VERSION },
+    });
+    for (const text of [RAW, TOKEN]) expect((await h.sent()).join()).not.toContain(text);
+  });
+
+  test("a renderer envelope goes through the SDK's IPC handler and leaves scrubbed", async () => {
+    const h = harness("on");
+    const client = SentryNode.getClient();
+    if (!client) throw new Error("no client");
+    configureIPC(client, {
+      ipcMode: 1,
+      ipcNamespace: "sentry-ipc",
+      release: "voice@0.0.1",
+      environment: "test",
+    } as never);
+    const handler = ipc.handlers.get("sentry-ipc.envelope");
+    if (!handler) throw new Error("no envelope handler");
+    const envelope = [
+      {
+        event_id: "a".repeat(32),
+        sent_at: "2026-10-10T15:00:00.000Z",
+        sdk: { name: RAW, version: TOKEN },
+        trace: { trace_id: "0".repeat(32), transaction: RAW, custom: TOKEN },
+      },
+      { type: "event" },
+      {
+        event_id: "a".repeat(32),
+        message: RAW,
+        extra: { transcript: RAW },
+        user: { email: "anna@example.com" },
+        exception: { values: [{ type: "TypeError", value: RAW }] },
+      },
+    ]
+      .map((line) => JSON.stringify(line))
+      .join("\n");
+    handler({ sender: { id: 1, isDestroyed: () => false, once() {} } }, envelope);
+    const sent = await h.sent();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('"event.process":"renderer"');
+    expect(sent[0]).toContain('"type":"TypeError"');
+    expect((await h.headers())[0]).not.toHaveProperty("trace");
+    for (const text of [RAW, TOKEN, "anna", "extra", "transcript"]) {
+      expect(sent[0]).not.toContain(text);
+    }
+  });
+
+  test("an envelope handed to the client leaves with rebuilt headers", async () => {
+    const h = harness("on");
+    const client = SentryNode.getClient();
+    if (!client) throw new Error("no client");
+    await client.sendEnvelope([
+      { sent_at: RAW, sdk: { name: RAW, version: TOKEN }, trace: { transaction: RAW } },
+      [
+        [
+          { type: "log", item_count: 1, content_type: "text/plain", filename: RAW },
+          { items: [{ timestamp: 1, level: "warn", body: "dock update failed", attributes: {} }] },
+        ],
+      ],
+    ] as never);
+    expect(await h.headers()).toEqual([{}]);
+    expect(await h.items("log")).toEqual([
+      [
+        { type: "log", item_count: 1, content_type: "application/vnd.sentry.items.log+json" },
+        { items: [{ timestamp: 1, level: "warn", body: "dock update failed", attributes: {} }] },
+      ],
+    ]);
+    for (const text of [RAW, TOKEN]) expect((await h.sent()).join()).not.toContain(text);
+  });
+
   test("turning consent off at runtime stops sending at once", async () => {
     const h = harness("on");
     h.setConsent("off");
@@ -368,6 +494,17 @@ describe("startDiagnostics consent", () => {
     h.diagnostics.log({ message: "dock update failed", level: "warn" });
     // Errors from SDK integrations bypass Voice's reporters; the transport gate still holds them.
     SentryNode.captureException(new Error(RAW));
+    expect(await h.sent()).toEqual([]);
+  });
+
+  test("nothing recorded while consent is off is sent once it is back on", async () => {
+    const h = harness("on");
+    h.setConsent("off");
+    await h.dictate();
+    h.diagnostics.helperExited({ spawnError: "ENOENT" });
+    h.diagnostics.log({ message: "dock update failed", level: "warn" });
+    // The SDK buffers logs for seconds before handing them to the transport.
+    h.setConsent("on");
     expect(await h.sent()).toEqual([]);
   });
 });
