@@ -43,12 +43,10 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return run;
   }
 
-  // Checks each chunk as it lands so a rejected first chunk does not wait for the rest.
   async function* generate(
     raw: string,
     style: CleanupStyle,
     signal: AbortSignal | undefined,
-    check: (chunk: string, output: string, truncated: boolean) => void = () => undefined,
   ): AsyncGenerator<Generation> {
     const abort = signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
     abort.throwIfAborted();
@@ -67,10 +65,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           CONTEXT_SIZE - prompt.length,
         ),
       });
-      const output = response.trim();
-      const truncated = metadata.stopReason === "maxTokens";
-      check(chunk, output, truncated);
-      yield { chunk, output, truncated };
+      yield { chunk, output: response.trim(), truncated: metadata.stopReason === "maxTokens" };
     }
   }
 
@@ -81,7 +76,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     clean: (raw, style, signal) =>
       serialize(async () => {
         const outputs: string[] = [];
-        for await (const { output } of generate(raw, style, signal, assertPlausibleCleanup)) {
+        for await (const { chunk, output, truncated } of generate(raw, style, signal)) {
+          assertPlausibleCleanup(chunk, output, truncated);
           if (output) outputs.push(output);
         }
         return outputs.join(" ");

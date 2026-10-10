@@ -33,7 +33,6 @@ const FILLERS = new Set([
   "mhm",
   "like",
   "so",
-  "well",
   "actually",
   "basically",
   "literally",
@@ -76,11 +75,14 @@ const SPOKEN_SYMBOLS = new Set([
   "question mark",
   "exclamation mark",
   "exclamation point",
+  "quote",
+  "unquote",
+  "end quote",
 ]);
 
 // Words that number, time and date formatting absorbs ("a hundred", "three point five",
 // "half past three", "the fourteenth of march"). Dropped everywhere rather than only next to
-// a number, because the adjacency rule would not change any verdict and costs more code.
+// a number, because an adjacency rule changed no verdict on the fixtures and costs more code.
 const ABSORBED = new Set(["a", "an", "the", "and", "of", "to", "point", "half", "quarter", "past"]);
 
 const NUMBER_WORDS = new Set(
@@ -95,50 +97,44 @@ const NUMBER_WORDS = new Set(
 );
 const isNumber = (word: string) => NUMBER_WORDS.has(word) || /^\p{N}+$/u.test(word);
 
-// Spoken forms and their written forms. Apostrophes are stripped before lookup, so "I'll" and
-// the ASR spelling "ill" both expand. The table is applied to both sides, so it knowingly
-// rewrites real words too ("were", "its", "id", "wed", "till", "doctor"): both sides agree.
+// Contractions follow a rule: a pronoun or auxiliary stem plus a suffix. Apostrophes are
+// stripped first, so "it'll", the casual-style "itll" and the formal-style "it will" all
+// compare as "it will". "'s" always becomes "is" and "'d" always "would"; the model may write
+// "has" or "had" instead, which costs one word. Real words that look like stripped
+// contractions ("were", "its", "well", "shed") expand too, on both sides, so both sides agree.
+const PRONOUNS = "i you he she it we they that there here what who where how when";
+const MODALS = "would should could must might";
+const AUXILIARIES = "is are was were has have had do does did need ca wo sha ai";
+const STEM_SPELLINGS: Record<string, string> = { ca: "can", wo: "will", sha: "shall", ai: "is" };
+const CONTRACTIONS: [stems: Set<string>, suffixes: Record<string, string>][] = [
+  [new Set(PRONOUNS.split(" ")), { ll: "will", ve: "have", re: "are", d: "would", s: "is" }],
+  [new Set(MODALS.split(" ")), { nt: "not", ve: "have" }],
+  [new Set(AUXILIARIES.split(" ")), { nt: "not" }],
+];
+const STEMS = new Set(CONTRACTIONS.flatMap(([stems]) => [...stems]));
+
+function expandContraction(word: string): string | undefined {
+  if (word === "im") return "i am";
+  // A stem is a word of its own: "here" is not "he are" and "is" is not "i is".
+  if (STEMS.has(word)) return undefined;
+  for (const [stems, suffixes] of CONTRACTIONS) {
+    for (const [suffix, written] of Object.entries(suffixes)) {
+      const stem = word.slice(0, -suffix.length);
+      if (word.endsWith(suffix) && stems.has(stem))
+        return `${STEM_SPELLINGS[stem] ?? stem} ${written}`;
+    }
+  }
+  return undefined;
+}
+
+// Spoken forms with nothing to expand by rule. Applied to both sides.
 const SPELLINGS: Record<string, string> = {
-  im: "i am",
-  ive: "i have",
-  ill: "i will",
-  id: "i would",
-  youre: "you are",
-  youve: "you have",
-  youll: "you will",
-  youd: "you would",
-  hes: "he is",
-  shes: "she is",
-  its: "it is",
-  were: "we are",
-  weve: "we have",
-  wed: "we would",
-  theyre: "they are",
-  theyve: "they have",
-  theyll: "they will",
-  theyd: "they would",
-  thats: "that is",
-  whats: "what is",
-  theres: "there is",
-  heres: "here is",
-  wheres: "where is",
   lets: "let us",
-  cant: "can not",
   cannot: "can not",
-  wont: "will not",
-  dont: "do not",
-  doesnt: "does not",
-  didnt: "did not",
-  isnt: "is not",
-  arent: "are not",
-  wasnt: "was not",
-  werent: "were not",
-  hasnt: "has not",
-  havent: "have not",
-  hadnt: "had not",
-  couldnt: "could not",
-  shouldnt: "should not",
-  wouldnt: "would not",
+  dunno: "do not know",
+  lemme: "let me",
+  gimme: "give me",
+  yall: "you all",
   gonna: "going to",
   wanna: "want to",
   gotta: "got to",
@@ -159,10 +155,15 @@ const SPELLINGS: Record<string, string> = {
   professor: "prof",
 };
 
-const PHRASE = new RegExp(
-  ` (?:${[...FILLERS, ...SPOKEN_SYMBOLS].filter((entry) => entry.includes(" ")).join("|")})(?= )`,
-  "g",
-);
+// Multi-word spoken forms. Fillers and spoken symbols vanish; the rest become their written word.
+const PHRASES: Record<string, string> = {
+  ...Object.fromEntries(
+    [...FILLERS, ...SPOKEN_SYMBOLS].filter((entry) => entry.includes(" ")).map((p) => [p, ""]),
+  ),
+  "e mail": "email",
+  "et cetera": "etc",
+};
+const PHRASE = new RegExp(` (?:${Object.keys(PHRASES).join("|")})(?= )`, "g");
 
 function normalize(text: string): string {
   return (
@@ -180,21 +181,20 @@ function normalize(text: string): string {
   );
 }
 
-// Letters spelled one by one ("a p i", "w w w") become the word they spell, on both sides.
-// A run of only "i" and "a" is words, not spelling: "i i i think" is a stutter.
+// Letters spelled one by one ("a p i", "w w w", "a i") become the word they spell, on both
+// sides. A repeated "i" or "a" is a stutter, not spelling. Digits break a run so "q three"
+// and "Q3" both count as "q".
 function joinSpelledLetters(tokens: string[]): string[] {
   const joined: string[] = [];
   let run: string[] = [];
   const flush = () => {
-    if (run.length > 1 && run.some((letter) => letter !== "i" && letter !== "a")) {
-      joined.push(run.join(""));
-    } else {
-      joined.push(...run);
-    }
+    const stutter = (run[0] === "i" || run[0] === "a") && run.every((letter) => letter === run[0]);
+    if (run.length > 1 && !stutter) joined.push(run.join(""));
+    else joined.push(...run);
     run = [];
   };
   for (const token of tokens) {
-    if (token.length === 1) run.push(token);
+    if (/^\p{L}$/u.test(token)) run.push(token);
     else {
       flush();
       joined.push(token);
@@ -205,8 +205,13 @@ function joinSpelledLetters(tokens: string[]): string[] {
 }
 
 function spokenWords(text: string): string[] {
-  const tokens = ` ${normalize(text)} `.replaceAll(PHRASE, "").split(" ").filter(Boolean);
-  return joinSpelledLetters(tokens).flatMap((word) => (SPELLINGS[word] ?? word).split(" "));
+  const tokens = ` ${normalize(text)} `
+    .replaceAll(PHRASE, (match) => ` ${PHRASES[match.slice(1)]}`)
+    .split(" ")
+    .filter(Boolean);
+  return joinSpelledLetters(tokens).flatMap((word) =>
+    (SPELLINGS[word] ?? expandContraction(word) ?? word).split(" "),
+  );
 }
 
 function contentWords(text: string): string[] {
