@@ -99,6 +99,15 @@ try {
   await page.evaluate("window.voice.updateSettings({ cleanup: { enabled: true } })");
   await untilModels((m) => m.cleanup.state === "ready", "cleanup on loads again");
   note("cleanup off unloads, on reloads");
+  await page.evaluate('window.voice.updateSettings({ dictationLanguage: "pl" })');
+  await untilModels((m) => m.cleanup.state === "installed", "a non-English language unloads");
+  await untilPage(
+    `${mainText}.includes("Loads when you dictate in English")`,
+    "non-English row text",
+  );
+  await page.evaluate('window.voice.updateSettings({ dictationLanguage: "en" })');
+  await untilModels((m) => m.cleanup.state === "ready", "English loads cleanup again");
+  note("non-English language unloads, English reloads");
 
   const uninstallCleanup = button(`Uninstall ${names.cleanup}`);
   const beforeCancel = snapshots.items.length;

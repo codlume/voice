@@ -39,7 +39,7 @@ import {
   createAccount,
   resolveApiUrl,
 } from "./account.ts";
-import { createCleanup } from "./cleanup.ts";
+import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
@@ -540,11 +540,7 @@ async function main() {
     }
     if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
-    if (!state.settings.cleanup.enabled && previous.settings.cleanup.enabled) {
-      void cleanup.unload();
-    } else if (wantsCleanup(state.settings) && !wantsCleanup(previous.settings)) {
-      void cleanup.loadIfDownloaded();
-    }
+    followSettings(cleanup, state, previous);
   });
 
   function assertNotRestarting() {
