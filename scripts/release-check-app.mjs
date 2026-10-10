@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The policy a release must meet. It is kept apart from electron-builder.yml so a config edit
+// cannot silently move the bar.
 export const REQUIRED_FUSES = {
   RunAsNode: false,
   EnableNodeOptionsEnvironmentVariable: false,
