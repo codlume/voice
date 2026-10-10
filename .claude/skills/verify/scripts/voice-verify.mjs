@@ -625,9 +625,8 @@ const commands = {
       execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
 
     const hub = await connect("hub");
-    const pill = await connect("pill");
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
-    const snapshots = await snapshotStream(pill);
+    const snapshots = await snapshotStream(hub);
     const logOffset = statSync(state.logPath).size;
     const waitForLog = async (pattern, timeoutMs, label) => {
       const deadline = Date.now() + timeoutMs;
@@ -717,7 +716,6 @@ const commands = {
     } finally {
       rmSync(state.fakeMicrophonePath, { force: true });
       hub.close();
-      pill.close();
       await stopChildren();
     }
   },

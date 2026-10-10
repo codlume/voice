@@ -317,7 +317,7 @@ async function main() {
     pages.push(pill, hub);
     const type = activationType(child.pid);
     assert(type === "Foreground", `Voice must stay in the Dock and Cmd-Tab, but is ${type}`);
-    const snapshots = await snapshotStream(pill);
+    const snapshots = await snapshotStream(hub);
 
     const first = await snapshots.waitFor((s) => s.permissions.accessibility !== "notDetermined", {
       timeoutMs: 15_000,

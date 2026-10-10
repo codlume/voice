@@ -1,17 +1,18 @@
 import { createRoot } from "react-dom/client";
 
-import type {
-  ModelStatus,
-  Outcome,
-  PillState,
-  Snapshot,
-  UpdateStatus,
-  VoiceApi,
+import {
+  toPillSnapshot,
+  type ModelStatus,
+  type Outcome,
+  type PillState,
+  type Snapshot,
+  type UpdateStatus,
+  type VoiceApi,
 } from "../shared/api.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
-import { useSnapshot } from "./useSnapshot.ts";
+import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
 
 const base: Snapshot = {
   updates: {
@@ -267,6 +268,12 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    getPillSnapshot: async () => toPillSnapshot(snapshot),
+    onPillSnapshot: (listener) => {
+      const forward = (next: Snapshot) => listener(toPillSnapshot(next));
+      listeners.add(forward);
+      return () => listeners.delete(forward);
+    },
     onLevel: (listener) => {
       const start = performance.now();
       const timer = setInterval(() => {
@@ -379,14 +386,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
 }
 
 function PillPreview() {
-  const snapshot = useSnapshot();
-  return snapshot ? (
-    <PillCapsule
-      session={snapshot.session}
-      alwaysShowPill={snapshot.settings.alwaysShowPill}
-      copyToClipboard={snapshot.settings.copyToClipboard}
-    />
-  ) : null;
+  const snapshot = usePillSnapshot();
+  return snapshot ? <PillCapsule {...snapshot} /> : null;
 }
 
 function HubPreview() {

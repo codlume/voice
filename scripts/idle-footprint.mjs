@@ -71,18 +71,18 @@ function tree(rootPid) {
 }
 
 async function waitForModels() {
-  const pill = await Page.connect(port, "pill.html");
+  const hub = await Page.connect(port, "hub.html");
   try {
     const deadline = Date.now() + 180_000;
     for (;;) {
-      const snapshot = await pill.evaluate("window.voice.getSnapshot()");
+      const snapshot = await hub.evaluate("window.voice.getSnapshot()");
       const { models } = snapshot;
       if (models.asr.state === "ready" && models.cleanup.state === "ready") return snapshot;
       assert(Date.now() < deadline, `models not ready after 180 s: ${JSON.stringify(models)}`);
       await sleep(250);
     }
   } finally {
-    pill.close();
+    hub.close();
   }
 }
 

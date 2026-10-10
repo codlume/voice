@@ -152,6 +152,17 @@ export type Snapshot = {
   last: { raw: string; text: string } | null;
 };
 
+export type PillSnapshot = Pick<Snapshot, "session"> &
+  Pick<Settings, "alwaysShowPill" | "copyToClipboard">;
+
+export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
+  return {
+    session,
+    alwaysShowPill: settings.alwaysShowPill,
+    copyToClipboard: settings.copyToClipboard,
+  };
+}
+
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";
 /** `last` is the transcript the user saw when they chose, so main can refuse if a newer one arrived. */
 export type RestartRequest = { choice: RestartChoice; last: Snapshot["last"] };
@@ -170,6 +181,8 @@ export type VoiceApi = {
   openRelease(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
+  getPillSnapshot(): Promise<PillSnapshot>;
+  onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
   onLevel(listener: (level: number) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
@@ -200,6 +213,8 @@ export const Channel = {
   openRelease: "voice:openRelease",
   getSnapshot: "voice:getSnapshot",
   snapshot: "voice:snapshot",
+  getPillSnapshot: "voice:getPillSnapshot",
+  pillSnapshot: "voice:pillSnapshot",
   level: "voice:level",
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
