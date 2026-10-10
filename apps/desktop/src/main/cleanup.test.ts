@@ -75,6 +75,9 @@ function fakeModule(behavior: Behavior = {}) {
           }
           return raw.toUpperCase();
         },
+        async generate(raw) {
+          return [{ chunk: raw, output: raw.toUpperCase(), truncated: false }];
+        },
         async dispose() {
           await behavior.loadGate;
           calls.disposes += 1;
