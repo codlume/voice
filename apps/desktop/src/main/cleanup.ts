@@ -2,6 +2,7 @@ import type { CleanupStyle, S1Mini } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
@@ -43,14 +44,22 @@ type Model =
 const held = (model: Model): model is Extract<Model, { model: S1Mini }> =>
   model.phase === "loading" || model.phase === "loaded";
 
+// A session in flight keeps the model until it ends, so a language change applies to the next
+// session. The loaded check unloads a model it kept once that session is done.
 export function followSettings(
-  cleanup: Pick<Cleanup, "loadIfDownloaded" | "unload">,
+  cleanup: Pick<Cleanup, "loadIfDownloaded" | "unload" | "loaded">,
   state: AppState,
   previous: AppState,
 ) {
   const wanted = wantsCleanup(state.settings);
-  if (wanted !== wantsCleanup(previous.settings)) {
-    void (wanted ? cleanup.loadIfDownloaded() : cleanup.unload());
+  if (wanted && !wantsCleanup(previous.settings)) {
+    void cleanup.loadIfDownloaded();
+  } else if (
+    !wanted &&
+    !dictating(state.session) &&
+    (wantsCleanup(previous.settings) || cleanup.loaded())
+  ) {
+    void cleanup.unload();
   }
 }
 
