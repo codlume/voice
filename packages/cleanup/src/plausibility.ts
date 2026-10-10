@@ -97,26 +97,20 @@ const NUMBER_WORDS = new Set(
 );
 const isNumber = (word: string) => NUMBER_WORDS.has(word) || /^\p{N}+$/u.test(word);
 
-// Contractions follow a rule: a pronoun or auxiliary stem plus a suffix. Apostrophes are
-// stripped first, so "it'll", the casual-style "itll" and the formal-style "it will" all
-// compare as "it will". "'s" always becomes "is" and "'d" always "would"; the model may write
-// "has" or "had" instead, which costs one word. Real words that look like stripped
-// contractions ("were", "its", "well", "shed") expand too, on both sides, so both sides agree.
 const PRONOUNS = "i you he she it we they that there here what who where how when";
 const MODALS = "would should could must might";
 const AUXILIARIES = "is are was were has have had do does did need ca wo sha ai";
 const STEM_SPELLINGS: Record<string, string> = { ca: "can", wo: "will", sha: "shall", ai: "is" };
 const CONTRACTIONS: [stems: Set<string>, suffixes: Record<string, string>][] = [
-  [new Set(PRONOUNS.split(" ")), { ll: "will", ve: "have", re: "are", d: "would", s: "is" }],
+  [new Set(PRONOUNS.split(" ")), { ll: "will", ve: "have", d: "would" }],
+  [new Set("you we they that there here what who where how when".split(" ")), { re: "are" }],
+  [new Set("he she it that there here what who where how when".split(" ")), { s: "is" }],
   [new Set(MODALS.split(" ")), { nt: "not", ve: "have" }],
   [new Set(AUXILIARIES.split(" ")), { nt: "not" }],
 ];
-const STEMS = new Set(CONTRACTIONS.flatMap(([stems]) => [...stems]));
 
 function expandContraction(word: string): string | undefined {
   if (word === "im") return "i am";
-  // A stem is a word of its own: "here" is not "he are" and "is" is not "i is".
-  if (STEMS.has(word)) return undefined;
   for (const [stems, suffixes] of CONTRACTIONS) {
     for (const [suffix, written] of Object.entries(suffixes)) {
       const stem = word.slice(0, -suffix.length);
@@ -128,32 +122,34 @@ function expandContraction(word: string): string | undefined {
 }
 
 // Spoken forms with nothing to expand by rule. Applied to both sides.
-const SPELLINGS: Record<string, string> = {
-  lets: "let us",
-  cannot: "can not",
-  dunno: "do not know",
-  lemme: "let me",
-  gimme: "give me",
-  yall: "you all",
-  gonna: "going to",
-  wanna: "want to",
-  gotta: "got to",
-  kinda: "kind of",
-  sorta: "sort of",
-  cause: "because",
-  til: "until",
-  till: "until",
-  ok: "okay",
-  k: "okay",
-  yeah: "yes",
-  thanks: "thank you",
-  alright: "all right",
-  versus: "vs",
-  mister: "mr",
-  missus: "mrs",
-  doctor: "dr",
-  professor: "prof",
-};
+const SPELLINGS = new Map(
+  Object.entries({
+    lets: "let us",
+    cannot: "can not",
+    dunno: "do not know",
+    lemme: "let me",
+    gimme: "give me",
+    yall: "you all",
+    gonna: "going to",
+    wanna: "want to",
+    gotta: "got to",
+    kinda: "kind of",
+    sorta: "sort of",
+    cause: "because",
+    til: "until",
+    till: "until",
+    ok: "okay",
+    k: "okay",
+    yeah: "yes",
+    thanks: "thank you",
+    alright: "all right",
+    versus: "vs",
+    mister: "mr",
+    missus: "mrs",
+    doctor: "dr",
+    professor: "prof",
+  }),
+);
 
 // Multi-word spoken forms. Fillers and spoken symbols vanish; the rest become their written word.
 const PHRASES: Record<string, string> = {
@@ -210,7 +206,7 @@ function spokenWords(text: string): string[] {
     .split(" ")
     .filter(Boolean);
   return joinSpelledLetters(tokens).flatMap((word) =>
-    (SPELLINGS[word] ?? expandContraction(word) ?? word).split(" "),
+    (SPELLINGS.get(word) ?? expandContraction(word) ?? word).split(" "),
   );
 }
 
