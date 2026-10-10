@@ -39,7 +39,6 @@ struct CaptureError: Error {
 
 private let sampleRate = 16_000.0
 private let chunkFrames = 1600
-private let maxSamples = 600 * 16_000
 private let silenceFloor = 1e-4 as Float
 
 /// Owned by the main thread. `isActive` is the one reader on another thread: the hotkey tap
@@ -69,9 +68,11 @@ final class Capture {
     private var microphoneAuthorized = false
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
+    private let maxSamples: Int
 
-    init(output: Output, transcriber: Transcriber, devices: AudioInputDevices) {
+    init(output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000) {
         self.devices = devices
+        self.maxSamples = maxSamples
         self.output = output
         self.transcriber = transcriber
         self.outputSilencer = OutputSilencer(output: output)
@@ -123,33 +124,41 @@ final class Capture {
 
     // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.
     func stop(id: String) {
-        switch state {
-        case .recording(let recording) where recording.session.id == id:
-            stopSource()
-            drain(recording.session, closing: true)
-            let session = recording.session
-            let samples = recording.samples
-            state = .transcribing(recording)
-            lastTarget = (session.id, session.frontmostPid)
-            let audioMs = Double(samples.count) / sampleRate * 1000
-            if samples.count < chunkFrames || rms(samples) < silenceFloor {
-                recording.stream?.cancel()
-                finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0))
-                return
-            }
-            recording.transcription = Task { @MainActor in
-                do {
-                    let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
-                    let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs))
-                } catch let error as TranscribeError {
-                    finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
-                } catch {
-                    finish(session, with: .transcriptFailed(id: session.id, reason: .unknown, message: "\(error)"))
-                }
-            }
-        default:
+        guard case .recording(let recording) = state, recording.session.id == id else {
             output.log(.error, "capture.stop \(id) ignored: no such active session")
+            return
+        }
+        transcribe(recording)
+    }
+
+    private func endRecording(_ recording: Recording, reason: CaptureStopReason) {
+        output.emit(.captureStopped(id: recording.session.id, reason: reason))
+        transcribe(recording)
+    }
+
+    private func transcribe(_ recording: Recording) {
+        stopSource()
+        drain(recording.session, closing: true)
+        let session = recording.session
+        let samples = recording.samples
+        state = .transcribing(recording)
+        lastTarget = (session.id, session.frontmostPid)
+        let audioMs = Double(samples.count) / sampleRate * 1000
+        if samples.count < chunkFrames || rms(samples) < silenceFloor {
+            recording.stream?.cancel()
+            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0))
+            return
+        }
+        recording.transcription = Task { @MainActor in
+            do {
+                let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
+                let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs))
+            } catch let error as TranscribeError {
+                finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
+            } catch {
+                finish(session, with: .transcriptFailed(id: session.id, reason: .unknown, message: "\(error)"))
+            }
         }
     }
 
@@ -316,7 +325,7 @@ final class Capture {
         if !closing, case .recording(let recording) = state, recording.session.id == session.id,
             recording.samples.count >= maxSamples
         {
-            stop(id: session.id)
+            endRecording(recording, reason: .maxDuration)
         }
     }
 
@@ -365,7 +374,7 @@ final class Capture {
         case .starting(let session):
             fail(session, reason: .device, message: "audio device configuration changed")
         case .recording(let recording):
-            stop(id: recording.session.id)
+            endRecording(recording, reason: .deviceChanged)
         case .testing(let id, _):
             restartTest(id: id)
         case .idle, .transcribing:

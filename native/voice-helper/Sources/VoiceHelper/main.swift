@@ -105,7 +105,7 @@ guard let modelsDir = modelsDirArgument() else {
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 6))
+output.emit(.ready(version: 7))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)

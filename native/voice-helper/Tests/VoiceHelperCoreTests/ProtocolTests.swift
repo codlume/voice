@@ -55,7 +55,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 6), ["type": "ready", "version": 6]),
+        (.ready(version: 7), ["type": "ready", "version": 7]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -64,6 +64,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.captureFailed(id: "s2", reason: .busy, message: "busy"),
          ["type": "capture.failed", "id": "s2", "reason": "busy", "message": "busy"]),
         (.captureCancelled(id: "s"), ["type": "capture.cancelled", "id": "s"]),
+        (.captureStopped(id: "s", reason: .deviceChanged), ["type": "capture.stopped", "id": "s", "reason": "deviceChanged"]),
+        (.captureStopped(id: "s", reason: .maxDuration), ["type": "capture.stopped", "id": "s", "reason": "maxDuration"]),
         (.microphoneTestStarted(id: "t"), ["type": "microphone.test.started", "id": "t"]),
         (.microphoneTestLevel(id: "t", level: 0.25), ["type": "microphone.test.level", "id": "t", "level": 0.25]),
         (.microphoneTestLevel(id: "t", level: .nan), ["type": "microphone.test.level", "id": "t", "level": 0]),

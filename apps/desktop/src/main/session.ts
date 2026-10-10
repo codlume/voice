@@ -18,6 +18,7 @@ export type SessionEvent =
   | { type: "cancel" }
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
+  | { type: "captureStopped"; id: string }
   | { type: "transcript"; id: string; text: string; cleanup: boolean }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
@@ -124,6 +125,10 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       return finish(state.id, { kind: "failed", message: event.message });
     }
+    case "captureStopped": {
+      if (state.phase !== "recording") return same;
+      return { state: { phase: "transcribing", id: state.id }, effects: [] };
+    }
     case "transcript": {
       const raw = event.text.trim();
       // A transcript that lands after the session already timed out is still the user's words.
@@ -142,7 +147,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       };
     }
     case "transcriptFailed": {
-      if (state.phase !== "transcribing") return same;
+      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       return finish(state.id, { kind: "failed", message: event.message });
     }
     case "cleaned": {

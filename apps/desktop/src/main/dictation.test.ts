@@ -748,6 +748,50 @@ describe("createDictation", () => {
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
   });
 
+  test("a capture the helper stops on its own shows processing, logs why, and gets the transcription watchdog", () => {
+    const h = harness({ cleanupEnabled: false });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
+    expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing" });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+    expect(h.entries).toContainEqual({
+      message: "helper stopped capture",
+      level: "info",
+      attributes: { "capture.stop_reason": "maxDuration" },
+    });
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS - 1);
+    expect(h.store.state.session.phase).toBe("transcribing");
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+  });
+
+  test("after a helper-side stop the held key's release changes nothing and the next press starts a new capture", async () => {
+    const h = harness({ cleanupEnabled: false });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "deviceChanged" });
+    h.dictation.onHelperEvent({ type: "transcript", id, text: "so far", audioMs: 800, asrMs: 100 });
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.store.state.session).toMatchObject({
+      phase: "done",
+      id,
+      outcome: { kind: "inserted" },
+    });
+    expect(h.store.state.last).toEqual({ raw: "so far", text: "so far" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start", "insert"]);
+    await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.store.state.session.phase).toBe("starting");
+    expect(h.id()).not.toBe(id);
+    expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", id: h.id() });
+  });
+
   test("a capture the helper never starts ends failed and cancels it after the watchdog", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });

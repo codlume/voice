@@ -242,6 +242,59 @@ describe("transcript", () => {
       outcome: { kind: "failed", message: "asr down" },
     });
   });
+
+  test("transcription failure while still recording ends failed instead of listening forever", () => {
+    const { state } = run([
+      ...toRecording,
+      [{ type: "transcriptFailed", id: ID, message: "asr down" }, 2000],
+    ]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: "asr down" },
+    });
+  });
+});
+
+describe("capture the helper stops on its own", () => {
+  const stopped = (now: number) =>
+    [{ type: "captureStopped", id: ID }, now] as [SessionEvent, number];
+
+  test("leaves listening at once, commands nothing, and ignores the release of the still-held key", () => {
+    const { state, effects } = run([...toRecording, stopped(600_000)]);
+    expect(state).toEqual({ phase: "transcribing", id: ID });
+    expect(toPillState(state)).toEqual({ kind: "processing" });
+    expect(effects).toEqual([]);
+    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
+  });
+
+  test("the transcript of the capture so far is inserted, and a release after that is still ignored", () => {
+    const { state, effects } = run([
+      ...toRecording,
+      stopped(600_000),
+      transcript("long dictation", false, 600_500),
+    ]);
+    expect(state).toEqual({
+      phase: "inserting",
+      id: ID,
+      raw: "long dictation",
+      text: "long dictation",
+    });
+    expect(effects).toEqual([
+      { type: "remember", raw: "long dictation", text: "long dictation" },
+      { type: "insert", id: ID, text: "long dictation" },
+    ]);
+    expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({ state, effects: [] });
+  });
+
+  test("a stop reported in any other phase changes nothing", () => {
+    for (const from of [run([down(0)]).state, run(toTranscribing).state, run(toCleaning).state]) {
+      expect(step(from, { type: "captureStopped", id: ID }, 5000)).toEqual({
+        state: from,
+        effects: [],
+      });
+    }
+  });
 });
 
 describe("cleanup", () => {

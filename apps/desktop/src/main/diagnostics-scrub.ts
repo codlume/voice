@@ -45,6 +45,7 @@ export const LOGS = {
   "helper ready": ["helper.protocol_version"],
   "helper protocol mismatch": ["helper.protocol_version", "helper.expected_version"],
   "helper exited": HELPER_TAGS,
+  "helper stopped capture": ["capture.stop_reason"],
   "helper event unparseable": [],
   "helper stdin failed": ["error.code"],
   "helper command dropped": ["command.type"],
