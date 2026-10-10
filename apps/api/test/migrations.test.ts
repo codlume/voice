@@ -24,3 +24,15 @@ it("0001 clears ID tokens stored before the account hooks, and changes nothing w
   await env.DB.batch(migration?.queries.map((query) => env.DB.prepare(query)) ?? []);
   expect(await row()).toEqual({ access_token: "ciphertext", id_token: null });
 });
+
+it("0002 lets a Google sign-in find its account by provider and account id through an index (catches a dropped index, where every sign-in scans the whole account table)", async () => {
+  const plan = await env.DB.prepare(
+    "explain query plan select id from account where provider_id = ? and account_id = ?",
+  )
+    .bind("google", "subject")
+    .all<{ detail: string }>();
+
+  expect(plan.results.map(({ detail }) => detail)).toEqual([
+    expect.stringMatching(/^SEARCH account USING INDEX \w+ \(provider_id=\? AND account_id=\?\)$/),
+  ]);
+});

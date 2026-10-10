@@ -1,10 +1,17 @@
 import { electron } from "@better-auth/electron";
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
 import { and, eq, lt, notExists } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./auth-schema.ts";
+
+// check:schema regenerates auth-schema.ts from these options, so an index on a Better Auth table
+// is declared here, and a plugin's schema is the only place that takes one for a core table.
+const accountLookupIndex = {
+  id: "account-lookup-index",
+  schema: { account: { fields: {}, indexes: [{ fields: ["providerId", "accountId"] }] } },
+} satisfies BetterAuthPlugin;
 
 // D1 has no interactive transactions, so a first sign-in writes the user row and then the account
 // row, and a deletion removes the account rows and then the user row. D1 failing in between leaves
@@ -38,7 +45,7 @@ export const authOptions = {
   logger: {
     log: (level: string) => console.log(JSON.stringify({ source: "better-auth", level })),
   },
-  plugins: [electron()],
+  plugins: [electron(), accountLookupIndex],
   // No client uses it, and Google's getUserInfo returns null without the ID token, so it could
   // only fail. A meeting integration that needs a profile lookup should re-enable it with a
   // getUserInfo that reads the access token.
