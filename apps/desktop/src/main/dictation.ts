@@ -42,7 +42,11 @@ export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
+// An overdue transcription gets as long again as the recording lasted before main gives up on it.
+export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
 export const INSERT_TIMEOUT_MS = 5000;
+
+export const overdueBudgetMs = (holdMs: number) => Math.max(TRANSCRIBE_OVERDUE_MIN_MS, holdMs);
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -105,8 +109,9 @@ export function createDictation(options: DictationOptions): Dictation {
     const { state, effects } = step(before, event, now());
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
-      const phaseChanged = state.phase !== before.phase;
-      if (phaseChanged) armWatchdog(state);
+      const overdue =
+        state.phase === "transcribing" && before.phase === "transcribing" && state.overdue;
+      if (state.phase !== before.phase || overdue) armWatchdog(state);
     }
     for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
@@ -127,6 +132,9 @@ export function createDictation(options: DictationOptions): Dictation {
     };
     if (state.phase === "starting") {
       arm(state.id, START_TIMEOUT_MS);
+    } else if (state.phase === "transcribing" && state.overdue) {
+      const hold = started?.id === state.id ? (started.releasedAt ?? now()) - started.pressedAt : 0;
+      arm(state.id, overdueBudgetMs(hold));
     } else if (state.phase === "transcribing") {
       const ready = store.state.models.asr.state === "ready";
       arm(state.id, ready ? TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS);

@@ -4,7 +4,7 @@ export type Session =
   | { phase: "idle" }
   | { phase: "starting"; id: string; pressedAt: number; releasedAt: number | null }
   | { phase: "recording"; id: string; pressedAt: number }
-  | { phase: "transcribing"; id: string }
+  | { phase: "transcribing"; id: string; overdue: boolean }
   | { phase: "cleaning"; id: string; raw: string }
   | { phase: "inserting"; id: string; raw: string; text: string }
   | { phase: "done"; id: string; outcome: Outcome };
@@ -46,7 +46,7 @@ export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
 export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
-export const TRANSCRIBE_TIMEOUT_MESSAGE = "Taking too long. Check Voice for the text";
+export const TRANSCRIBE_GAVE_UP_MESSAGE = "Transcription did not finish";
 
 export const idle: Session = { phase: "idle" };
 
@@ -66,15 +66,9 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
     return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
   }
   return {
-    state: { phase: "transcribing", id },
+    state: { phase: "transcribing", id, overdue: false },
     effects: [{ type: "stopCapture", id, releasedAt }],
   };
-}
-
-/** A transcript that no longer drives a session is still the user's words. */
-function keep(state: Session, text: string): Step {
-  const raw = text.trim();
-  return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
 }
 
 function insert(id: string, raw: string, text: string): Step {
@@ -91,9 +85,10 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
   const same = { state, effects: [] };
   const stale =
     event.type !== "hotkeyDown" &&
+    event.type !== "transcript" &&
     "id" in event &&
     (state.phase === "idle" || state.id !== event.id);
-  if (stale) return event.type === "transcript" ? keep(state, event.text) : same;
+  if (stale) return same;
 
   switch (event.type) {
     case "hotkeyDown": {
@@ -137,10 +132,14 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return { state: { phase: "transcribing", id: state.id }, effects: [] };
     }
     case "transcript": {
-      if (state.phase !== "transcribing" && state.phase !== "recording") {
-        return keep(state, event.text);
-      }
       const raw = event.text.trim();
+      // The helper finishes a transcription main gave up on. Its words are kept, never inserted.
+      if (
+        (state.phase !== "transcribing" && state.phase !== "recording") ||
+        state.id !== event.id
+      ) {
+        return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
+      }
       if (raw === "") return finish(state.id, { kind: "empty" });
       if (!event.cleanup) return insert(state.id, raw, raw);
       return {
@@ -184,9 +183,15 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           { type: "cancelCapture", id: state.id },
         );
       }
-      // No cancel: the helper would discard the audio with it. The transcript lands as `last`.
+      // The helper is the only holder of the audio, and a cancel makes it discard both the audio
+      // and the result. The first deadline only tells the user. The second gives up.
       if (state.phase === "transcribing") {
-        return finish(state.id, { kind: "failed", message: TRANSCRIBE_TIMEOUT_MESSAGE });
+        if (!state.overdue) return { state: { ...state, overdue: true }, effects: [] };
+        return finish(
+          state.id,
+          { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
+          { type: "cancelCapture", id: state.id },
+        );
       }
       if (state.phase === "inserting") {
         return finish(state.id, { kind: "notInserted", reason: "failed" });
@@ -206,9 +211,10 @@ export function toPillState(session: Session): PillState {
     case "recording":
       return { kind: "listening" };
     case "transcribing":
+      return { kind: "processing", overdue: session.overdue };
     case "cleaning":
     case "inserting":
-      return { kind: "processing" };
+      return { kind: "processing", overdue: false };
     case "done":
       return { kind: "done", outcome: session.outcome };
   }
