@@ -312,9 +312,8 @@ async function main() {
       port: ports.voice,
       env: { VOICE_HELPER_TEST_AUDIO: audioPath },
     });
-    const pill = await Page.connect(ports.voice, "pill.html");
     const hub = await Page.connect(ports.voice, "hub.html");
-    pages.push(pill, hub);
+    pages.push(hub);
     const type = activationType(child.pid);
     assert(type === "Foreground", `Voice must stay in the Dock and Cmd-Tab, but is ${type}`);
     const snapshots = await snapshotStream(hub);

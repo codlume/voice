@@ -30,6 +30,7 @@ describe("preload", () => {
     await import("./preload.ts");
     if (!exposed) throw new Error("preload exposed nothing");
     exposed.onSnapshot(() => {});
+    exposed.onPillSnapshot(() => {});
     exposed.onLevel(() => {});
     exposed.onRestartRequest(() => {});
     const channels = new Set(listened);
@@ -37,6 +38,7 @@ describe("preload", () => {
     expect([...channels].filter((channel) => !known.has(channel))).toEqual([]);
     expect([...channels].filter((channel) => channel.startsWith("better-auth"))).toEqual([]);
     expect(channels.has(Channel.snapshot)).toBe(true);
+    expect(channels.has(Channel.pillSnapshot)).toBe(true);
   });
 
   test("account calls invoke their channels with the code as the only payload", async () => {

@@ -3,13 +3,13 @@ import { isDeepStrictEqual } from "node:util";
 import { Channel, toPillSnapshot } from "../shared/api.ts";
 import { toSnapshot, type AppState } from "./store.ts";
 
-type Window = {
+type SnapshotTarget = {
   isDestroyed(): boolean;
   readonly webContents: { send(channel: string, value: unknown): void };
 };
 
 export function publish(
-  { hub, pill }: { hub: Window | undefined; pill: Window },
+  { hub, pill }: { hub: SnapshotTarget | undefined; pill: SnapshotTarget },
   state: AppState,
   previous: AppState,
 ) {
