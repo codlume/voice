@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { appBuilderRequire, checkPackagedApp } from "./release-check-app.mjs";
 import { parseVersion } from "./release-version.mjs";
 import { releaseBaseUrl } from "./release-publish.mjs";
 
@@ -71,14 +71,11 @@ try {
   execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app], {
     stdio: "inherit",
   });
+  await checkPackagedApp(app);
   execFileSync("xcrun", ["stapler", "validate", app], { stdio: "inherit" });
   const dmgs = readdirSync(join(desktop, "release")).filter((name) => name.endsWith(".dmg"));
   if (dmgs.length !== 1) throw new Error("Expected exactly one DMG");
-  const builderRequire = createRequire(
-    realpathSync(join(desktop, "node_modules", "electron-builder", "package.json")),
-  );
-  const asarRequire = createRequire(builderRequire.resolve("app-builder-lib/package.json"));
-  const { extractFile } = asarRequire("@electron/asar");
+  const { extractFile } = appBuilderRequire()("@electron/asar");
   const metadata = JSON.parse(
     extractFile(join(app, "Contents", "Resources", "app.asar"), "package.json").toString(),
   );

@@ -29,6 +29,10 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # electron-builder re-signs every nested binary with entitlementsInherit after afterPack, which
+  # would put Electron's JIT entitlements back on the helper release-sign-nested.mjs just signed.
+  signIgnore:
+    - /Contents/Resources/bin/voice-helper$
   notarize: false
   extendInfo:
     NSMicrophoneUsageDescription: Voice records your speech only while you hold the dictation shortcut.
@@ -45,5 +49,12 @@ dmg:
       y: 190
       type: link
       path: /Applications
+# Development scripts run the stock electron binary, which keeps its default fuses.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 afterPack: ../../scripts/release-sign-nested.mjs
 generateUpdatesFilesForAllChannels: false
