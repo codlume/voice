@@ -98,6 +98,7 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
 export async function saveSettings(file: string, settings: Settings): Promise<void> {
   await mkdir(NodePath.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
+  // Without the flush, a power loss can land the rename before the data and leave an empty file.
+  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`, { flush: true });
   await rename(temp, file);
 }
