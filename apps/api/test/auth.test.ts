@@ -3,7 +3,7 @@ import {
   createScheduledController,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { env, exports } from "cloudflare:workers";
+import { env, exports, waitUntil } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -28,8 +28,13 @@ function worker(input: string | Request, init?: RequestInit, ip: string | null =
 }
 
 const server = setupServer(
-  // init-oauth-proxy calls /sign-in/social on its own base URL. Route that request back into the Worker.
-  http.all(`${base}/*`, ({ request }) => worker(request.url, request)),
+  // A fetch from the Worker to its own origin re-enters through Cloudflare, which stamps every such
+  // request with one Worker-side address instead of the user's IP.
+  http.all(`${base}/*`, ({ request }) => {
+    const reentered = new Request(request.url, request);
+    reentered.headers.set("cf-connecting-ip", "2a06:98c0:3600::103");
+    return exports.default.fetch(reentered);
+  }),
   http.post(googleTokenUrl, async ({ request }) =>
     HttpResponse.json(fakeGoogleToken(new URLSearchParams(await request.text()))),
   ),
@@ -154,6 +159,28 @@ const seedSession = (id: string, userId: string, expiresAt: number) =>
     .bind(id, `${id}-token`, userId, expiresAt)
     .run();
 
+const deleteUser = (cookie: string) =>
+  worker(`${base}/api/auth/delete-user`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: appOrigin, cookie },
+    body: "{}",
+  });
+
+const bucketsOf = (ip: string) =>
+  env.DB.prepare("select key, count from rate_limit where key like ? order by key")
+    .bind(`${ip}|%`)
+    .all<{ key: string; count: number }>()
+    .then(({ results }) => results);
+
+const overridden = <T extends object>(target: T, overrides: Partial<T>): T =>
+  new Proxy(target, {
+    get(object, property) {
+      if (property in overrides) return overrides[property as keyof T];
+      const value = Reflect.get(object, property);
+      return typeof value === "function" ? value.bind(object) : value;
+    },
+  });
+
 const storedTokens = (userId: string) =>
   env.DB.prepare("select access_token, id_token from account where user_id = ?")
     .bind(userId)
@@ -214,7 +241,7 @@ describe("Google sign-in", () => {
 });
 
 describe("disabled sign-in paths", () => {
-  it("reject email and password (catches a re-enabled password sign-in or sign-up)", async () => {
+  it("do not route email and password (catches a re-enabled password sign-in or sign-up)", async () => {
     const credentials = JSON.stringify({
       name: "Mallory",
       email: "mallory@example.com",
@@ -233,16 +260,14 @@ describe("disabled sign-in paths", () => {
       body: credentials,
     });
 
-    expect(signUp.status).toBe(400);
-    expect(await signUp.json()).toMatchObject({ code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" });
-    expect(signIn.status).toBe(400);
-    expect(await signIn.json()).toMatchObject({ code: "EMAIL_PASSWORD_DISABLED" });
+    expect(signUp.status).toBe(404);
+    expect(signIn.status).toBe(404);
     expect(
       await count("select count(*) as n from user where email = ?", "mallory@example.com"),
     ).toBe(0);
   });
 
-  it("reject a Google ID token (catches re-enabled ID-token sign-in)", async () => {
+  it("do not route a direct social sign-in, so a Google ID token has no way in (catches re-enabled ID-token sign-in)", async () => {
     const idToken = fakeGoogleToken(
       new URLSearchParams({ code: "eve-intruder", client_id: env.GOOGLE_CLIENT_ID }),
     ).id_token;
@@ -254,7 +279,6 @@ describe("disabled sign-in paths", () => {
     });
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ code: "ID_TOKEN_NOT_SUPPORTED" });
     expect(response.headers.getSetCookie()).toEqual([]);
     expect(
       await count("select count(*) as n from user where email = ?", "eve-intruder@example.com"),
@@ -291,11 +315,19 @@ describe("a user row with no account", () => {
     await age("junk-callback-orphan");
 
     for (const provider of ["google", "not-a-provider"]) {
-      const response = await worker(`${base}/api/auth/callback/${provider}`, {
-        redirect: "manual",
-      });
-      expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toContain("error=state_not_found");
+      const ip = freshIp();
+      const response = await worker(
+        `${base}/api/auth/callback/${provider}`,
+        { redirect: "manual" },
+        ip,
+      );
+      if (provider === "google") {
+        expect(response.status).toBe(302);
+        expect(response.headers.get("location")).toContain("error=state_not_found");
+      } else {
+        expect(response.status).toBe(404);
+        expect(await bucketsOf(ip)).toEqual([]);
+      }
     }
 
     expect(await rowsOf("junk-callback-orphan")).toEqual({ users: 1, accounts: 0, sessions: 0 });
@@ -439,7 +471,7 @@ describe("origins", () => {
 
   it("trust only the environment origin and the app scheme in production (catches localhost trusted outside local development)", async () => {
     const nightly = "https://api-nightly.voice.codlume.com";
-    const auth = createAuth({ ...env, BETTER_AUTH_URL: nightly });
+    const auth = createAuth({ ...env, BETTER_AUTH_URL: nightly }, waitUntil);
     const from = (origin: string) => exchangeFrom(origin, `${nightly}/api/auth/electron/token`);
 
     expect((await auth.handler(from("http://localhost:8787"))).status).toBe(403);
@@ -489,41 +521,140 @@ describe("electron token exchange", () => {
 });
 
 describe("rate limiting", () => {
-  const signInSocial = (headers: Record<string, string>, ip: string | null = null) =>
-    worker(
-      `${base}/api/auth/sign-in/social`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify({ provider: "google" }),
-      },
-      ip,
-    );
+  const getSessionFrom = (ip: string | null, headers: Record<string, string> = {}) =>
+    worker(`${base}/api/auth/get-session`, { headers }, ip);
+  const limited = [...Array<number>(100).fill(200), 429];
 
   it("is on although NODE_ENV is unset, as on a real Worker (catches Better Auth's NODE_ENV default)", async () => {
     expect(process.env.NODE_ENV).toBeUndefined();
     const implicit = betterAuth({ baseURL: base, secret: env.BETTER_AUTH_SECRET });
     expect((await implicit.$context).rateLimit.enabled).toBe(false);
-    expect((await createAuth(env).$context).rateLimit).toMatchObject({
+    expect((await createAuth(env, waitUntil).$context).rateLimit).toMatchObject({
       enabled: true,
       storage: "database",
     });
 
     const ip = freshIp();
     const statuses = [];
-    for (let attempt = 0; attempt < 4; attempt++) statuses.push(await signInSocial({}, ip));
+    for (let attempt = 0; attempt < limited.length; attempt++)
+      statuses.push(await getSessionFrom(ip));
 
-    expect(statuses.map((response) => response.status)).toEqual([200, 200, 200, 429]);
-    expect(statuses[3]?.headers.get("X-Retry-After")).toMatch(/^\d+$/);
-    expect((await signInSocial({}, freshIp())).status).toBe(200);
+    expect(statuses.map((response) => response.status)).toEqual(limited);
+    expect(statuses.at(-1)?.headers.get("X-Retry-After")).toMatch(/^\d+$/);
+    expect((await getSessionFrom(freshIp())).status).toBe(200);
   });
 
   it("keys only on cf-connecting-ip (catches a spoofable x-forwarded-for key)", async () => {
     const statuses = [];
-    for (let attempt = 0; attempt < 4; attempt++)
-      statuses.push((await signInSocial({ "x-forwarded-for": freshIp() })).status);
+    for (let attempt = 0; attempt < limited.length; attempt++)
+      statuses.push((await getSessionFrom(null, { "x-forwarded-for": freshIp() })).status);
 
-    expect(statuses).toEqual([200, 200, 200, 429]);
+    expect(statuses).toEqual(limited);
+  });
+
+  it("lets one IP start sign-in four times within 10 s (catches Better Auth's 3-per-10 s /sign-in rule turning the fourth init-oauth-proxy into a 500)", async () => {
+    const ip = freshIp();
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const response = await worker(
+        `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${crypto.randomUUID()}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`,
+        { redirect: "manual" },
+        ip,
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toMatch(/^https:\/\/accounts\.google\.com\//);
+    }
+  });
+
+  it("keys sign-in starts on the user, not on one shared bucket (catches the electron plugin fetching the Worker's own /sign-in/social through Cloudflare)", async () => {
+    const start = (ip: string) =>
+      worker(
+        `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${crypto.randomUUID()}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`,
+        { redirect: "manual" },
+        ip,
+      );
+    const crowd = freshIp();
+    const statuses = new Set<number>();
+    for (let attempt = 0; attempt < 100; attempt++) statuses.add((await start(crowd)).status);
+    statuses.add((await start(freshIp())).status);
+
+    expect([...statuses]).toEqual([302]);
+  });
+
+  it("answers a junk path with a 404 that mints no rate_limit row (catches a wildcard auth route in front of a limiter keyed on the raw path)", async () => {
+    const ip = freshIp();
+    const statuses = new Set<number>();
+    for (let i = 0; i < 150; i++)
+      statuses.add(
+        (await worker(`${base}/api/auth/callback/x${i}`, { redirect: "manual" }, ip)).status,
+      );
+    for (let i = 0; i < 50; i++)
+      statuses.add((await worker(`${base}/api/auth/nope-${i}`, { method: "POST" }, ip)).status);
+
+    expect([...statuses]).toEqual([404]);
+    expect(await bucketsOf(ip)).toEqual([]);
+  });
+
+  it("counts every spelling of a real path in its one bucket (catches a limit dodged by a provider id, percent-encoding, case or a trailing slash)", async () => {
+    const ip = freshIp();
+    const google = `${base}/api/auth/callback/google`;
+    const manual = { redirect: "manual" } as const;
+    expect((await worker(google, manual, ip)).status).toBe(302);
+    for (const variant of [
+      `${base}/api/auth/callback/goog%6ce`,
+      `${base}/api/auth/callback/Google`,
+      `${base}/api/auth/callback/google2`,
+      `${base}/api/auth//callback/google`,
+      `${google}/`,
+    ])
+      expect((await worker(variant, manual, ip)).status, variant).toBe(404);
+    expect((await worker(`${google}?state=stale`, manual, ip)).status).toBe(302);
+
+    expect(await bucketsOf(ip)).toEqual([{ key: `${ip}|/callback/google`, count: 2 }]);
+  });
+
+  it("answers before the expired rate_limit rows are pruned, and still prunes them (catches the prune awaited on the request path)", async () => {
+    const prune = Promise.withResolvers<void>();
+    const holdPrune = (statement: D1PreparedStatement): D1PreparedStatement =>
+      overridden(statement, {
+        bind: (...values) => holdPrune(statement.bind(...values)),
+        run: async () => {
+          await prune.promise;
+          return statement.run();
+        },
+      });
+    const db = overridden(env.DB, {
+      prepare: (sql) =>
+        sql.startsWith('delete from "rate_limit"')
+          ? holdPrune(env.DB.prepare(sql))
+          : env.DB.prepare(sql),
+    });
+    const background: Promise<unknown>[] = [];
+    const auth = createAuth({ ...env, DB: db }, (task) => background.push(task));
+    const ip = freshIp();
+    const getSessionDirect = () =>
+      auth.handler(
+        new Request(`${base}/api/auth/get-session`, { headers: { "cf-connecting-ip": ip } }),
+      );
+    const staleRows = () =>
+      count("select count(*) as n from rate_limit where key = ?", `${ip}|/stale`);
+    await env.DB.prepare(
+      "insert into rate_limit (id, key, count, last_request) values (?, ?, 1, ?)",
+    )
+      .bind(crypto.randomUUID(), `${ip}|/stale`, Date.now() - 120_000)
+      .run();
+    await getSessionDirect();
+    // Past the 10 s window, so the next request takes Better Auth's reset-and-prune branch.
+    await env.DB.prepare("update rate_limit set last_request = last_request - ? where key = ?")
+      .bind(20_000, `${ip}|/get-session`)
+      .run();
+    expect(await staleRows()).toBe(1);
+
+    expect((await getSessionDirect()).status).toBe(200);
+    expect(await staleRows()).toBe(1);
+
+    prune.resolve();
+    await Promise.all(background);
+    expect(await staleRows()).toBe(0);
   });
 });
 
@@ -589,12 +720,7 @@ describe("revoked auth session", () => {
     );
     expect((await getSession(revokedCookie))?.user.id).toBe(user.id);
 
-    const revoke = await worker(`${base}/api/auth/revoke-other-sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: appOrigin, cookie: other },
-      body: "{}",
-    });
-    expect(revoke.status).toBe(200);
+    await createAuth(env, waitUntil).api.revokeOtherSessions({ headers: { cookie: other } });
 
     const next = await worker(`${base}/api/auth/get-session`, {
       headers: { cookie: revokedCookie },
@@ -602,10 +728,7 @@ describe("revoked auth session", () => {
     expect(next.status).toBe(200);
     expect(await next.json()).toBeNull();
     expect(next.headers.getSetCookie().join("\n")).toMatch(/better-auth\.session_token=;/);
-    const listed = await worker(`${base}/api/auth/list-sessions`, {
-      headers: { cookie: revokedCookie },
-    });
-    expect(listed.status).toBe(401);
+    expect((await deleteUser(revokedCookie)).status).toBe(401);
     expect((await getSession(other))?.user.id).toBe(user.id);
   });
 });
@@ -626,9 +749,7 @@ describe("sign out", () => {
     expect(await (await signOut()).json()).toEqual({ success: true });
     expect(await count("select count(*) as n from session where token = ?", token)).toBe(0);
     expect(await getSession(cookie)).toBeNull();
-    expect((await worker(`${base}/api/auth/list-sessions`, { headers: { cookie } })).status).toBe(
-      401,
-    );
+    expect((await deleteUser(cookie)).status).toBe(401);
     expect(await (await signOut()).json()).toEqual({ success: true });
     expect(await getSession(cookie)).toBeNull();
   });
