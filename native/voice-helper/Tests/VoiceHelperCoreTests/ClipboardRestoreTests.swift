@@ -48,6 +48,35 @@ import Testing
     #expect(restore.restore(write: 2, changeCount: 2) == nil)
 }
 
+@Test func plainContentsAreSavedForTheRestore() {
+    let saved = SavedClipboard(types: ["public.utf8-plain-text", "public.rtf"]) { ["user"] }
+    #expect(saved == .items(["user"]))
+}
+
+@Test func anEmptyClipboardIsSavedAsNoItems() {
+    #expect(SavedClipboard<String>(types: []) { [] } == .items([]))
+}
+
+@Test func aPasswordManagersConcealedWriteIsNeverReadAndNotRestored() {
+    var reads = 0
+    let saved = SavedClipboard<String>(types: ["public.utf8-plain-text", "org.nspasteboard.ConcealedType"]) {
+        reads += 1
+        return ["hunter2"]
+    }
+    #expect(saved == .concealed)
+    #expect(reads == 0)
+}
+
+@Test func aSecondPasteOverAConcealedClipboardStillClearsIt() {
+    var restore = ClipboardRestore<SavedClipboard<String>>()
+    let concealed = SavedClipboard(types: ["org.nspasteboard.ConcealedType"]) { ["hunter2"] }
+    restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { concealed })
+    let second = restore.contentsToSave(changeCount: 2) { .items(["first transcript"]) }
+    #expect(second == .concealed)
+    restore.wrote(3, saved: second)
+    #expect(restore.restore(write: 3, changeCount: 3) == .concealed)
+}
+
 @Test func flushBacksOffWhenTheClipboardChangedOrNothingIsPending() {
     var restore = ClipboardRestore<String>()
     #expect(restore.flush(changeCount: 1) == nil)

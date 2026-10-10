@@ -7,7 +7,8 @@ import VoiceHelperCore
 final class Insertion {
     private let output: Output
     private let forcePaste: Bool
-    private var clipboard = ClipboardRestore<[[(NSPasteboard.PasteboardType, Data)]]>()
+    private typealias PasteboardItem = [(NSPasteboard.PasteboardType, Data)]
+    private var clipboard = ClipboardRestore<SavedClipboard<PasteboardItem>>()
 
     init(output: Output, forcePaste: Bool) {
         self.output = output
@@ -119,15 +120,19 @@ final class Insertion {
     private func paste(id: String, text: String) {
         let pasteboard = NSPasteboard.general
         let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
-            (pasteboard.pasteboardItems ?? []).map { item in
-                item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+            let items = pasteboard.pasteboardItems ?? []
+            return SavedClipboard(types: items.flatMap { $0.types.map(\.rawValue) }) {
+                items.map { item in
+                    item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+                }
             }
         }
-        pasteboard.clearContents()
+        // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
+        pasteboard.prepareForNewContents(with: .currentHostOnly)
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))
         pasteboard.writeObjects([item])
         let ourChange = pasteboard.changeCount
         clipboard.wrote(ourChange, saved: saved)
@@ -164,8 +169,12 @@ final class Insertion {
         restore(saved, to: pasteboard)
     }
 
-    private func restore(_ saved: [[(NSPasteboard.PasteboardType, Data)]], to pasteboard: NSPasteboard) {
+    private func restore(_ saved: SavedClipboard<PasteboardItem>, to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
+        guard case .items(let saved) = saved else {
+            output.log(.info, "clipboard held concealed contents; cleared instead of restoring")
+            return
+        }
         let items = saved.map { entries in
             let restored = NSPasteboardItem()
             for (type, data) in entries { restored.setData(data, forType: type) }
