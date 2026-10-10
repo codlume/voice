@@ -13,6 +13,11 @@ final class Output: @unchecked Sendable {
         dup2(STDERR_FILENO, STDOUT_FILENO)
     }
 
+    /// Writes the protocol to `fd` and leaves the standard streams alone, for tests.
+    init(fd: Int32) {
+        self.fd = fd
+    }
+
     func emit(_ event: HelperEvent) {
         let bytes = Array((event.encodeLine() + "\n").utf8)
         lock.lock()

@@ -5,6 +5,8 @@ public enum HotkeyAction: String, Codable, Sendable { case down, up, cancel }
 public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
+/// Why the helper ended a capture that main did not stop.
+public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, failed }
@@ -61,6 +63,7 @@ public enum HelperEvent: Equatable, Sendable {
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
     case captureCancelled(id: String)
+    case captureStopped(id: String, reason: CaptureStopReason)
     case microphoneTestStarted(id: String)
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
@@ -176,6 +179,10 @@ extension HelperEvent: Encodable {
         case .captureCancelled(let id):
             try c.encode("capture.cancelled", forKey: .type)
             try c.encode(id, forKey: .id)
+        case .captureStopped(let id, let reason):
+            try c.encode("capture.stopped", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(reason, forKey: .reason)
         case .microphoneTestStarted(let id):
             try c.encode("microphone.test.started", forKey: .type)
             try c.encode(id, forKey: .id)

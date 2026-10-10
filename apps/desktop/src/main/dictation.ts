@@ -258,6 +258,14 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "capture.cancelled":
         return;
+      case "capture.stopped":
+        log(`helper stopped capture: ${event.reason}`, {
+          message: "helper stopped capture",
+          level: "info",
+          attributes: { "capture.stop_reason": event.reason },
+        });
+        dispatch({ type: "captureStopped", id: event.id });
+        return;
       case "transcript": {
         track(event.id, { audioMs: event.audioMs, asrMs: event.asrMs });
         dispatch({

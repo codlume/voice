@@ -10,7 +10,7 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 6;
+export const HELPER_PROTOCOL_VERSION = 7;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
@@ -78,6 +78,11 @@ const HelperEventSchema = Schema.Union([
     message: Schema.String,
   }),
   Schema.Struct({ type: Schema.Literal("capture.cancelled"), id: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("capture.stopped"),
+    id: Schema.String,
+    reason: Schema.Literals(["deviceChanged", "maxDuration"]),
+  }),
   Schema.Struct({ type: Schema.Literal("microphone.test.started"), id: Schema.String }),
   Schema.Struct({
     type: Schema.Literal("microphone.test.level"),
