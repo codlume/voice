@@ -1,8 +1,9 @@
+import { waitUntil } from "cloudflare:workers";
 import { Hono } from "hono";
 import { requestId, type RequestIdVariables } from "hono/request-id";
 import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
-import { createAuth } from "./auth.ts";
+import { authOptions, createAuth } from "./auth.ts";
 import { landingCsp, landingPage } from "./landing.ts";
 import { sweep } from "./sweep.ts";
 
@@ -16,7 +17,10 @@ const securityHeaders = secureHeaders({
 });
 const landingHeaders = secureHeaders({ ...everyResponse, contentSecurityPolicy: landingCsp });
 
-export const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>();
+export const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>({
+  // The raw pathname, not Hono's decoded one, so routes match the string Better Auth keys on.
+  getPath: (request) => new URL(request.url).pathname,
+});
 
 // secureHeaders writes its headers after next(), so the policy is picked per route here.
 app.use((c, next) => (c.req.path === "/" ? landingHeaders : securityHeaders)(c, next));
@@ -31,10 +35,24 @@ app.get("/", (c) => {
   return c.html(landingPage);
 });
 
+// Better Auth keys its rate limiter on the client IP plus the raw request path, before it matches a
+// route. Only the auth paths Voice uses are routed, so a path not listed here, including another
+// spelling of a listed one, is a 404 that touches no database.
+const authPaths = [
+  "/get-session",
+  "/sign-out",
+  "/sign-in/social",
+  "/callback/google",
+  "/error",
+  "/electron/init-oauth-proxy",
+  "/electron/token",
+  "/delete-user",
+].map((path) => authOptions.basePath + path);
+
 let auth: ReturnType<typeof createAuth> | undefined;
-app.on(["GET", "POST"], "/api/auth/*", (c) => {
+app.on(["GET", "POST"], authPaths, (c) => {
   if (!auth) {
-    auth = createAuth(c.env);
+    auth = createAuth(c.env, waitUntil);
     // A lazy instance ties its setup to the first request; keep it alive if that request is aborted (better-auth#10315).
     c.executionCtx.waitUntil(auth.$context);
   }

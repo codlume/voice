@@ -23,8 +23,15 @@ export const authOptions = {
   account: { accountLinking: { enabled: false }, encryptOAuthTokens: true },
   // A tray app runs for weeks, so the 7-day default is too short. freshAge gates account deletion.
   session: { expiresIn: 60 * 60 * 24 * 60, freshAge: 60 * 10 },
-  // The default reads NODE_ENV, which a Worker does not set, so it would stay off.
-  rateLimit: { enabled: true, storage: "database" },
+  // The default reads NODE_ENV, which a Worker does not set, so it would stay off. Better Auth's
+  // 3-per-10 s rule for /sign-in* guards password guessing, which is off here. /sign-in/social only
+  // writes one OAuth state, the same work as /electron/init-oauth-proxy, which calls it for every
+  // desktop sign-in under the default limit, so a fourth sign-in within 10 s turned into a 500.
+  rateLimit: {
+    enabled: true,
+    storage: "database",
+    customRules: { "/sign-in/social": { window: 10, max: 100 } },
+  },
   advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
   user: { deleteUser: { enabled: true } },
   // Better Auth's own messages quote request data (the OAuth state, callback errors). Only the
@@ -42,7 +49,7 @@ export const authOptions = {
   },
 } satisfies BetterAuthOptions;
 
-export function createAuth(env: Env) {
+export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void) {
   const db = drizzle(env.DB, { schema });
   return betterAuth({
     ...authOptions,
@@ -50,6 +57,7 @@ export function createAuth(env: Env) {
     secret: env.BETTER_AUTH_SECRET,
     // D1 rejects interactive transactions.
     database: drizzleAdapter(db, { provider: "sqlite", schema, transaction: false }),
+    advanced: { ...authOptions.advanced, backgroundTasks: { handler: waitUntil } },
     socialProviders: {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
