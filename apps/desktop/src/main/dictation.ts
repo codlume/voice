@@ -42,7 +42,6 @@ export const START_TIMEOUT_MS = 3000;
 export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
-// An overdue transcription gets as long again as the recording lasted before main gives up on it.
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
 export const INSERT_TIMEOUT_MS = 5000;
 

@@ -133,7 +133,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "transcript": {
       const raw = event.text.trim();
-      // The helper finishes a transcription main gave up on. Its words are kept, never inserted.
       if (
         (state.phase !== "transcribing" && state.phase !== "recording") ||
         state.id !== event.id
@@ -183,8 +182,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           { type: "cancelCapture", id: state.id },
         );
       }
-      // The helper is the only holder of the audio, and a cancel makes it discard both the audio
-      // and the result. The first deadline only tells the user. The second gives up.
+      // A cancel makes the helper discard the audio, so the first deadline only tells the user.
       if (state.phase === "transcribing") {
         if (!state.overdue) return { state: { ...state, overdue: true }, effects: [] };
         return finish(

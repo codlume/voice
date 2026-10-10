@@ -71,8 +71,6 @@ function harness(opts: Options = {}) {
     last: null,
   });
   const commands: HelperCommand[] = [];
-  // The helper's one capture slot, as Capture.swift keeps it: a stop starts a transcription that
-  // only its own result or a cancel ends, and a start during one is refused as busy.
   let transcribing: string | null = null;
   const cleans: string[] = [];
   const styles: CleanupStyle[] = [];
@@ -840,7 +838,6 @@ describe("createDictation", () => {
       TRANSCRIBE_TIMEOUT_MS + TRANSCRIBE_OVERDUE_MIN_MS + IDLE_AFTER_OTHER_MS + 1,
     );
     expect(h.store.state.session).toEqual(idle);
-    // The helper's result crossed the cancel in flight.
     h.dictation.onHelperEvent({ type: "transcript", id, text: "late", audioMs: 800, asrMs: 100 });
     expect(h.store.state.last).toEqual({ raw: "late", text: "late" });
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
