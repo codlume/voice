@@ -10,6 +10,13 @@ function walk(root) {
   });
 }
 
+// Entitlements only take effect on a main executable, so libraries get none.
+function entitlementsFor(path) {
+  return path.endsWith("/voice-helper")
+    ? join(process.cwd(), "build/entitlements.helper.plist")
+    : null;
+}
+
 export default async function signNested(context) {
   if (!process.env.CI) return;
   const identity = process.env.APPLE_SIGN_IDENTITY;
@@ -24,6 +31,7 @@ export default async function signNested(context) {
   if (!nested.some((path) => path.endsWith("/voice-helper")))
     throw new Error("Packaged Swift helper is missing");
   for (const path of nested) {
+    const entitlements = entitlementsFor(path);
     execFileSync(
       "codesign",
       [
@@ -33,8 +41,7 @@ export default async function signNested(context) {
         "--options",
         "runtime",
         "--timestamp",
-        "--entitlements",
-        join(process.cwd(), "build/entitlements.mac.plist"),
+        ...(entitlements ? ["--entitlements", entitlements] : []),
         path,
       ],
       { stdio: "inherit" },
