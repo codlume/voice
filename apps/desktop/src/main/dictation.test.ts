@@ -851,7 +851,7 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
-    expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing" });
+    expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing", overdue: false });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
     expect(h.entries).toContainEqual({
       message: "helper stopped capture",
@@ -861,7 +861,13 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS - 1);
     expect(h.store.state.session.phase).toBe("transcribing");
     vi.advanceTimersByTime(1);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+    vi.advanceTimersByTime(TRANSCRIBE_OVERDUE_MIN_MS + 800 - 1);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+    vi.advanceTimersByTime(1);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start", "capture.cancel"]);
   });
 
   test("after a helper-side stop the held key's release changes nothing and the next press starts a new capture", async () => {

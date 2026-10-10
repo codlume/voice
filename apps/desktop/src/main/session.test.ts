@@ -268,8 +268,8 @@ describe("capture the helper stops on its own", () => {
 
   test("leaves listening at once, commands nothing, and ignores the release of the still-held key", () => {
     const { state, effects } = run([...toRecording, stopped(600_000)]);
-    expect(state).toEqual({ phase: "transcribing", id: ID });
-    expect(toPillState(state)).toEqual({ kind: "processing" });
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
+    expect(toPillState(state)).toEqual({ kind: "processing", overdue: false });
     expect(effects).toEqual([]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
   });

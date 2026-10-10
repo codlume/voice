@@ -129,7 +129,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStopped": {
       if (state.phase !== "recording") return same;
-      return { state: { phase: "transcribing", id: state.id }, effects: [] };
+      return { state: { phase: "transcribing", id: state.id, overdue: false }, effects: [] };
     }
     case "transcript": {
       const raw = event.text.trim();
