@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
@@ -58,7 +58,7 @@ jobs:
 
       - name: Restore helper build cache
         id: swift-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: native/voice-helper/.build
           # Checkout gives every source a fresh mtime, so SwiftPM recompiles the helper on any hit.
@@ -73,7 +73,7 @@ jobs:
 
       - name: Save helper build cache
         if: github.event_name == 'push' && steps.swift-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: native/voice-helper/.build
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
