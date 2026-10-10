@@ -62,19 +62,23 @@ final class Capture {
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var mic: MicSource?
     private var file: FileSource?
-    /// TCC answers `authorizationStatus` over XPC at ~21 ms a call, so a press reads this and
-    /// only the idle path asks again. Revoking microphone access quits the app unless the user
-    /// picks "Later", and that case is caught by the refresh after the next session.
+    /// TCC answers `authorizationStatus` over XPC at ~30 ms a call. Revoking microphone access
+    /// quits the app unless the user picks "Later".
     private var microphoneAuthorized = false
+    private let authorizationStatus: () -> AVAuthorizationStatus
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
     private let maxSamples: Int
 
-    init(output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000) {
+    init(
+        output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000,
+        authorizationStatus: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
+    ) {
         self.devices = devices
         self.maxSamples = maxSamples
         self.output = output
         self.transcriber = transcriber
+        self.authorizationStatus = authorizationStatus
         self.outputSilencer = OutputSilencer(output: output)
     }
 
@@ -247,14 +251,19 @@ final class Capture {
     }
 
     func prepareIdleMic() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, case .idle = state, testAudioPath == nil, refreshMicrophoneAuthorization()
-            else { return }
-            do throws(CaptureError) {
-                if mic?.preference?.uid != microphone?.uid { disposeMic() }
-                if let mic { mic.prepare() } else { mic = try makeMic() }
-            } catch {
-                output.log(.error, "microphone warmup failed: \(error.message)")
+        let probe = authorizationStatus
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let authorized = probe() == .authorized
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                microphoneAuthorized = authorized
+                guard authorized, case .idle = state, testAudioPath == nil else { return }
+                do throws(CaptureError) {
+                    if mic?.preference?.uid != microphone?.uid { disposeMic() }
+                    if let mic { mic.prepare() } else { mic = try makeMic() }
+                } catch {
+                    output.log(.error, "microphone warmup failed: \(error.message)")
+                }
             }
         }
     }
@@ -352,7 +361,7 @@ final class Capture {
     }
 
     private func refreshMicrophoneAuthorization() -> Bool {
-        microphoneAuthorized = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        microphoneAuthorized = authorizationStatus() == .authorized
         return microphoneAuthorized
     }
 
