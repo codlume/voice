@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.18.0 (2026-10-10)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(desktop): move update settings to General as About by @hadrysm in https://github.com/codlume/voice/pull/157
+* chore(agents): add a verify skill that drives the desktop app by @hadrysm in https://github.com/codlume/voice/pull/160
+* chore(agents): map Voice features for the verify skill by @hadrysm in https://github.com/codlume/voice/pull/161
+* test(desktop): answer the in-window uninstall dialog in the Models smoke by @hadrysm in https://github.com/codlume/voice/pull/159
+* fix(desktop): stop setting titles from hovering their select by @hadrysm in https://github.com/codlume/voice/pull/165
+* feat(api): serve the health check on Nightly by @hadrysm in https://github.com/codlume/voice/pull/164
+* feat(account): sign in with Google from the desktop by @hadrysm in https://github.com/codlume/voice/pull/166
+* feat(desktop): stay signed in across restarts by @hadrysm in https://github.com/codlume/voice/pull/169
+* feat(desktop): recover from an interrupted or failed sign-in by @hadrysm in https://github.com/codlume/voice/pull/168
+* feat(account): sign out by @hadrysm in https://github.com/codlume/voice/pull/172
+* feat(account): delete account by @hadrysm in https://github.com/codlume/voice/pull/171
+* feat(account): ship accounts on Stable by @hadrysm in https://github.com/codlume/voice/pull/174
+* fix(api): stop storing Google's ID token by @hadrysm in https://github.com/codlume/voice/pull/175
+* feat(account): open Voice from the browser after sign-in, without pasting a code by @hadrysm in https://github.com/codlume/voice/pull/177
+* fix(api): let the Worker reach its own sign-in route on Cloudflare by @hadrysm in https://github.com/codlume/voice/pull/179
+* feat(dictation): copy the transcript to the clipboard after insertion by @hadrysm in https://github.com/codlume/voice/pull/181
+* feat(desktop): show the Google profile picture in Account by @hadrysm in https://github.com/codlume/voice/pull/180
+* feat(desktop): add an account menu to the titlebar by @hadrysm in https://github.com/codlume/voice/pull/182
+* fix(desktop): strip the IPC wrapper from hub error messages by @hadrysm in https://github.com/codlume/voice/pull/184
+* fix(desktop): give development builds their own Keychain item by @hadrysm in https://github.com/codlume/voice/pull/186
+* fix(desktop): show main-process errors from hub settings, copy, and microphone test by @hadrysm in https://github.com/codlume/voice/pull/188
+* feat(desktop): blur the account email until the user clicks it by @hadrysm in https://github.com/codlume/voice/pull/185
+* feat(desktop): open the hub at Wispr Flow's size by @hadrysm in https://github.com/codlume/voice/pull/189
+* feat(desktop): zoom the Voice window with Cmd+= and Cmd+- by @hadrysm in https://github.com/codlume/voice/pull/190
+* chore(desktop): upgrade effect to 4.0.1 by @hadrysm in https://github.com/codlume/voice/pull/191
+* feat(desktop): draw UI icons with lucide-react by @hadrysm in https://github.com/codlume/voice/pull/192
+* fix(desktop): recover from an unreadable config.json and sync settings saves by @hadrysm in https://github.com/codlume/voice/pull/201
+* ci: harden release workflows against compromised actions and dependencies by @hadrysm in https://github.com/codlume/voice/pull/202
+* fix(helper,desktop): report a capture the helper stops on its own by @hadrysm in https://github.com/codlume/voice/pull/211
+* fix(api): move the user and session sweeps to a Cron Trigger by @hadrysm in https://github.com/codlume/voice/pull/216
+* ci: cut install and cache time in CI and deploy jobs by @hadrysm in https://github.com/codlume/voice/pull/214
+* perf(helper): ask TCC for microphone status off the main thread by @hadrysm in https://github.com/codlume/voice/pull/215
+* fix(api): route only Voice's auth paths and prune rate-limit rows off the request by @hadrysm in https://github.com/codlume/voice/pull/217
+* fix(desktop): send the Flow Bar only what it renders by @hadrysm in https://github.com/codlume/voice/pull/203
+* fix(desktop): keep a transcript that outlives the transcription watchdog by @hadrysm in https://github.com/codlume/voice/pull/204
+* fix(helper): keep passwords and transcripts off the clipboard after a paste by @hadrysm in https://github.com/codlume/voice/pull/205
+* perf(desktop): publish snapshots only when something changed by @hadrysm in https://github.com/codlume/voice/pull/206
+* fix(desktop): unload cleanup when the dictation language turns it off by @hadrysm in https://github.com/codlume/voice/pull/207
+* feat(desktop): lock both windows to the app's own pages by @hadrysm in https://github.com/codlume/voice/pull/208
+* fix(cleanup): reject cleanups that drop the words the user said by @hadrysm in https://github.com/codlume/voice/pull/209
+* perf(desktop): load electron-updater at the first update check by @hadrysm in https://github.com/codlume/voice/pull/210
+* feat(desktop): flip Electron fuses and trim voice-helper entitlements by @hadrysm in https://github.com/codlume/voice/pull/212
+* fix(desktop): scrub every Sentry item at the transport and record nothing while sharing is off by @hadrysm in https://github.com/codlume/voice/pull/213
+* chore(deps): bump the github-actions group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/codlume/voice/pull/228
+
+## New Contributors
+* @dependabot[bot] made their first contribution in https://github.com/codlume/voice/pull/228
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.17.0...v0.18.0
+
 ## 0.17.0 (2026-10-02)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
