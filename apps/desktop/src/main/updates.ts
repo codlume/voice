@@ -58,7 +58,7 @@ type Engine = Pick<
 };
 
 export function createUpdates({
-  engine,
+  loadEngine,
   release,
   initial,
   onChange,
@@ -66,7 +66,7 @@ export function createUpdates({
   prepareRestart,
   onRestartFailure,
 }: {
-  engine: Engine | null;
+  loadEngine: (() => Engine) | null;
   release: ReleaseConfig | null;
   initial: UpdatesSnapshot;
   onChange: (snapshot: UpdatesSnapshot) => void;
@@ -75,13 +75,14 @@ export function createUpdates({
   onRestartFailure: () => void;
 }) {
   let snapshot = initial;
+  let engine: Engine | undefined;
   let generation = 0;
   let running: Promise<void> | null = null;
   let restarting = false;
   let disposed = false;
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
-  const enabled = engine !== null && release !== null && initial.status.kind !== "disabled";
+  const enabled = loadEngine !== null && release !== null && initial.status.kind !== "disabled";
   const installing = () => snapshot.status.kind === "installing";
 
   function publish(status: UpdateStatus) {
@@ -102,28 +103,32 @@ export function createUpdates({
       onRestartFailure();
     }
   };
-  if (enabled) {
+  function loadedEngine(load: () => Engine): Engine {
+    if (engine) return engine;
+    engine = load();
     engine.autoDownload = false;
     engine.autoInstallOnAppQuit = false;
     engine.on("error", onError);
+    return engine;
   }
 
   async function performCheck(expectedGeneration: number, channel: UpdateChannel) {
-    if (!engine || !release) return;
+    if (!loadEngine || !release) return;
     const current = () => !disposed && generation === expectedGeneration;
     publish({ kind: "checking" });
-    engine.setFeedURL({
-      provider: "generic",
-      url: `${release.updateUrl}/channels/${channel}/mac-arm64/`,
-      channel: "latest",
-      useMultipleRangeRequest: false,
-    });
-    engine.channel = "latest";
-    engine.allowPrerelease = channel === "nightly";
-    // The library's channel setter enables downgrades, even for ordinary checks.
-    engine.allowDowngrade = channel !== snapshot.installedChannel;
     try {
-      const result = await engine.checkForUpdates();
+      const updater = loadedEngine(loadEngine);
+      updater.setFeedURL({
+        provider: "generic",
+        url: `${release.updateUrl}/channels/${channel}/mac-arm64/`,
+        channel: "latest",
+        useMultipleRangeRequest: false,
+      });
+      updater.channel = "latest";
+      updater.allowPrerelease = channel === "nightly";
+      // The library's channel setter enables downgrades, even for ordinary checks.
+      updater.allowDowngrade = channel !== snapshot.installedChannel;
+      const result = await updater.checkForUpdates();
       if (!current()) return;
       if (!result) throw new Error("Updater did not return a result");
       if (!result.isUpdateAvailable) {
