@@ -110,7 +110,7 @@ export function createVoiceAuthClient({
   signInUrlFile?: string;
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
-  const store = storage();
+  const store = storage({ clearInvalidConfig: true });
   let refusedCookie: string | null = null;
   let generation = 0;
   function makeClient() {
