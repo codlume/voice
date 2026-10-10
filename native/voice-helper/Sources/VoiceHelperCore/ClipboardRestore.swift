@@ -1,3 +1,17 @@
+public enum SavedClipboard<Item> {
+    case items([Item])
+    /// A password manager's write. The manager clears it on a timer, but only while the
+    /// clipboard still holds its own write, so a restore would republish the password past
+    /// that clear.
+    case concealed
+
+    public init(types: [[String]], items: () -> [Item]) {
+        self = types.contains { $0.contains("org.nspasteboard.ConcealedType") } ? .concealed : .items(items())
+    }
+}
+
+extension SavedClipboard: Equatable where Item: Equatable {}
+
 /// Tracks the user's clipboard across paste insertions, keyed by the pasteboard `changeCount`
 /// each paste's own write produced. Only the latest paste can restore: an earlier paste's
 /// restore finds the clipboard changed and backs off.
