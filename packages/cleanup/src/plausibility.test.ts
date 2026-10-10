@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { assertPlausibleCleanup } from "./s1mini.ts";
+import { assertPlausibleCleanup } from "./plausibility.ts";
 
 const meetingLine = (i: number) =>
   `person ${i % 6} will review the pricing page by monday and send a short update before ${(i % 5) + 1} pm`;

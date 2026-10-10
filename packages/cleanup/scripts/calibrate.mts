@@ -9,9 +9,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CleanupStyle } from "../src/prompt.ts";
-import { assertPlausibleCleanup, createS1Mini } from "../src/s1mini.ts";
+import { assertPlausibleCleanup, wordRecall } from "../src/plausibility.ts";
+import { createS1Mini } from "../src/s1mini.ts";
 
-type Fixture = { name: string; text?: string; generate?: "varied" | "repetitive" };
+type Fixture = { name: string } & ({ text: string } | { generate: keyof typeof generated });
 type Recording = { name: string; styling: CleanupStyle["styling"]; input: string; output: string };
 
 const STYLES: CleanupStyle["styling"][] = ["casual", "semi-casual", "semi-formal", "formal"];
@@ -40,7 +41,7 @@ const generated = {
   varied: `${Array.from({ length: 50 }, (_, i) => line(i, tasks[i % 7]!, days[i % 5]!)).join(". ")}. and finally call ada on monday.`,
   repetitive: `${Array.from({ length: 50 }, (_, i) => line(i, tasks[0]!, days[0]!)).join(". ")}.`,
 };
-const inputOf = (f: Fixture) => f.text ?? generated[f.generate!];
+const inputOf = (f: Fixture) => ("text" in f ? f.text : generated[f.generate]);
 
 async function record(): Promise<Recording[]> {
   if (existsSync(recordingPath)) {
@@ -75,5 +76,6 @@ for (const { name, styling, input, output } of rows) {
   } catch (e) {
     verdict = `REJECT ${(e as Error).message}`;
   }
-  console.log(`${name}\t${styling}\t${verdict}\n\t${JSON.stringify(output)}`);
+  const recall = wordRecall(input, output).toFixed(2);
+  console.log(`${recall}\t${name}\t${styling}\t${verdict}\n\t${JSON.stringify(output)}`);
 }
