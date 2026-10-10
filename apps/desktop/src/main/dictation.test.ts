@@ -842,4 +842,17 @@ describe("createDictation", () => {
     expect(h.store.state.permissions).toEqual({ microphone: "denied", accessibility: "granted" });
     expect(h.store.state.models.asr).toEqual({ state: "failed", message: "corrupt" });
   });
+
+  test("a permissions event that repeats the current state notifies no one", () => {
+    const h = harness();
+    const denied = { type: "permissions", microphone: "denied", accessibility: "granted" } as const;
+    h.dictation.onHelperEvent(denied);
+    h.dictation.onHelperEvent(denied);
+    h.dictation.onHelperEvent(denied);
+    expect(h.phases).toHaveLength(1);
+
+    h.dictation.onHelperEvent({ ...denied, microphone: "granted" });
+    expect(h.phases).toHaveLength(2);
+    expect(h.store.state.permissions).toEqual({ microphone: "granted", accessibility: "granted" });
+  });
 });

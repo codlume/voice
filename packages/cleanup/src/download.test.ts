@@ -11,9 +11,10 @@ import { downloadModel, findS1Mini, removeModel, S1_MINI, S1_MINI_FILE } from ".
 const BYTES = 256 * 1024;
 const MODEL = Buffer.from(Array.from({ length: BYTES }, (_, i) => (i * 31 + 7) % 256));
 const SHA256 = createHash("sha256").update(MODEL).digest("hex");
+const TRICKLE_CHUNK = 1024;
 const CORRUPT = Buffer.from(MODEL.map((byte, i) => (i === BYTES / 2 ? byte ^ 1 : byte)));
 
-type Behavior = "complete" | "short" | "stall" | "missing" | "corrupt";
+type Behavior = "complete" | "trickle" | "short" | "stall" | "missing" | "corrupt";
 
 let dir: string;
 let behavior: Behavior;
@@ -32,6 +33,16 @@ beforeEach(async () => {
     if (behavior === "missing") return res.writeHead(404).end();
     if (behavior === "short") return res.end(MODEL.subarray(0, BYTES - 10));
     if (behavior === "corrupt") return res.end(CORRUPT);
+    if (behavior === "trickle") {
+      void (async () => {
+        for (let i = 0; i < BYTES; i += TRICKLE_CHUNK) {
+          res.write(MODEL.subarray(i, i + TRICKLE_CHUNK));
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+        res.end();
+      })();
+      return;
+    }
     if (behavior === "stall") {
       res.writeHead(200, { "content-length": BYTES });
       res.write(MODEL.subarray(0, BYTES / 2));
@@ -65,7 +76,16 @@ test("downloads the model with its LICENSE and NOTICE and reports progress up to
   expect(await readFile(join(dir, "model.gguf.NOTICE"), "utf8")).toBe("/NOTICE text");
   expect(progress.at(-1)).toBe(1);
   expect(progress).toEqual(progress.toSorted((a, b) => a - b));
-  expect(progress.length).toBeLessThanOrEqual(1001);
+});
+
+test("a download in many small chunks reports progress at most once per whole percent", async () => {
+  behavior = "trickle";
+  const progress: number[] = [];
+
+  await download({ onProgress: (fraction) => progress.push(fraction) });
+
+  expect(progress.at(-1)).toBe(1);
+  expect(progress.length).toBeLessThanOrEqual(101);
 });
 
 test("returns an existing complete model without a request", async () => {

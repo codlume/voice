@@ -458,6 +458,8 @@ async function main() {
     });
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
+    hub.on("minimize", syncPermissionPolling);
+    hub.on("restore", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
     hub.on("closed", syncPermissionPolling);
