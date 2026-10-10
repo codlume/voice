@@ -362,8 +362,7 @@ describe("startDiagnostics consent", () => {
 
   test("an event whose type skips beforeSend is scrubbed before it is sent", async () => {
     const h = harness("on");
-    // A renderer envelope reaches captureEvent with whatever payload the renderer wrote. The SDK
-    // runs beforeSend only for events without a type, so this one arrives at the transport raw.
+    // A renderer envelope reaches captureEvent with whatever payload the renderer wrote.
     SentryNode.captureEvent({
       type: "event" as never,
       message: RAW,

@@ -96,19 +96,23 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   };
 }
 
-// The SDK's beforeSendLog sees neither scope attributes nor renderer logs, so logs are scrubbed
-// here.
+type EventItem = [{ type: "event" | "transaction" }, SentryMain.Event];
+const isEventItem = (item: EnvelopeItem): item is EventItem =>
+  item[0].type === "event" || item[0].type === "transaction";
+
+// The SDK's beforeSend hooks skip events whose payload names a type, which a renderer envelope can
+// carry, and beforeSendLog sees neither scope attributes nor renderer logs. Attachments are raw
+// bytes the scrubber cannot read, and a native crash dump holds whole thread stacks, including the
+// process environment (HOME, USER, PATH), so a crash event is sent without its dump.
 function scrubEnvelope([headers, items]: Envelope): Envelope | undefined {
   const kept: EnvelopeItem[] = [];
   for (const item of items) {
-    const type = item[0].type;
-    if (type === "event" || type === "transaction") {
-      kept.push(item);
-      continue;
+    if (isEventItem(item)) {
+      kept.push([item[0], scrubEvent(item[1])]);
+    } else if (item[0].type === "log") {
+      const logs = scrubLogs(item[1]);
+      if (logs.items.length > 0) kept.push([{ ...item[0], item_count: logs.items.length }, logs]);
     }
-    if (type !== "log") continue;
-    const logs = scrubLogs(item[1]);
-    if (logs.items.length > 0) kept.push([{ ...item[0], item_count: logs.items.length }, logs]);
   }
   return kept.length > 0 ? ([headers, kept] as Envelope) : undefined;
 }
@@ -147,14 +151,6 @@ export function startDiagnostics(options: {
     tracePropagationTargets: [],
     tracesSampleRate: options.tracesSampleRate,
     enableLogs: true,
-    beforeSend: (event, hint) => {
-      // Attachments are raw bytes the scrubber cannot read. A native crash dump holds whole
-      // thread stacks, which include the process environment (HOME, USER, PATH), so the crash
-      // event is sent without its dump.
-      hint.attachments = [];
-      return { ...scrubEvent(event), type: undefined };
-    },
-    beforeSendTransaction: (event) => ({ ...scrubEvent(event), type: "transaction" }),
     // Turning consent off stops sending at once, including events the SDK's own integrations capture.
     transport: (transportOptions) => {
       const base = sdk.makeTransport(transportOptions);
@@ -177,10 +173,18 @@ export function startDiagnostics(options: {
     sdk.logger[entry.level](entry.message, attributes);
   }
 
+  // Sharing off records nothing, not just sends nothing. The SDK buffers logs for seconds, and
+  // consent can return before the buffer reaches the transport.
+  const whenOn =
+    <A>(record: (arg: A) => void) =>
+    (arg: A) => {
+      if (on()) record(arg);
+    };
+
   const reportedExits = new Set<string>();
   return {
     active: true,
-    sessionDone(report) {
+    sessionDone: whenOn((report: SessionReport) => {
       const { attributes, measurements, endTime, ...start } = sessionSpan(report);
       const span = sdk.startInactiveSpan({ ...start, attributes, forceTransaction: true });
       for (const [name, value] of Object.entries(measurements)) {
@@ -195,8 +199,8 @@ export function startDiagnostics(options: {
         }),
       );
       span.end(endTime);
-    },
-    helperExited(exit) {
+    }),
+    helperExited: whenOn((exit: HelperExit) => {
       const tags = helperTags(exit);
       log({ message: "helper exited", level: "error", attributes: tags });
       // A helper that keeps failing restarts every few seconds; one report per kind is enough.
@@ -204,8 +208,8 @@ export function startDiagnostics(options: {
       if (reportedExits.has(key)) return;
       reportedExits.add(key);
       sdk.captureMessage(HELPER_EXIT_MESSAGE, { level: "error", tags });
-    },
-    log,
+    }),
+    log: whenOn(log),
     flush: async (timeoutMs) => {
       await sdk.flush(timeoutMs);
     },

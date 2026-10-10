@@ -222,7 +222,7 @@ export function scrubEvent(event: Event): Event {
     event_id: text(event.event_id),
     timestamp: number(event.timestamp),
     start_timestamp: number(event.start_timestamp),
-    type: event.type,
+    type: event.type === "transaction" ? "transaction" : undefined,
     platform: text(event.platform),
     level: event.level,
     release: text(event.release),
