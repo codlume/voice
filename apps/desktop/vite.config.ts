@@ -37,6 +37,7 @@ const electronEntry = (name: "main" | "preload" | "sentry", entry: string) => ({
 // Packaged windows load over file://, which carries no response headers, so the policy rides in a
 // meta tag. The dev server injects inline scripts (React Refresh), admitted by a nonce, and the
 // StyleX dev runtime writes un-nonced <style> elements, so dev styles allow inline.
+// Fixed on purpose: dev pages carry no untrusted content, so the nonce only has to match the tags.
 const DEV_NONCE = "voice-dev";
 
 function contentSecurityPolicy(): Plugin {

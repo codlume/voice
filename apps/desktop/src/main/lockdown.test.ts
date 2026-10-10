@@ -19,14 +19,18 @@ describe("pageUrl", () => {
   });
 });
 
-function lockedWindow(url = "file:///Voice/hub.html") {
+// web-contents-created fires before the first load, so the lock sees an empty URL. The page URL
+// is set afterwards, as in production, so a URL captured at lock time would block every reload.
+function lockedWindow() {
+  const page = { url: "" };
   let onNavigate: ((event: { preventDefault(): void; url: string }) => void) | undefined;
   let onOpen: (() => { action: string }) | undefined;
   lockNavigation({
-    getURL: () => url,
+    getURL: () => page.url,
     on: (_event, listener) => (onNavigate = listener),
     setWindowOpenHandler: (handler) => (onOpen = handler),
   });
+  page.url = "file:///Voice/hub.html";
   return {
     navigate(target: string) {
       let prevented = false;
