@@ -22,31 +22,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      # setup-vp saves its cache on every key miss, including on pull requests, where only
-      # the same PR can restore it. This job restores both caches and saves them only on main.
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
           node-version-file: package.json
-          run-install: false
+          cache: true
+          # A pull request's cache could be restored only by that same PR, so only main saves.
+          cache-save: ${{ github.event_name == 'push' }}
+          run-install: true
 
-      - name: Locate caches
-        id: cache-paths
-        run: |
-          echo "pnpm=$(vp pm cache dir)" >> "${GITHUB_OUTPUT}"
-          echo "swift=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "${GITHUB_OUTPUT}"
-
-      - name: Restore dependency cache
-        id: pnpm-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ steps.cache-paths.outputs.pnpm }}
-          # setup-vp's key, so the release build jobs and this job share one cache.
-          key: vite-plus-${{ runner.os }}-arm64-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: vite-plus-${{ runner.os }}-arm64-pnpm-
-
-      - name: Install
-        run: vp install
+      - name: Locate Swift toolchain
+        id: swift
+        run: echo "version=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "${GITHUB_OUTPUT}"
 
       - name: Format
         run: vp run fmt:check
@@ -75,8 +62,8 @@ jobs:
         with:
           path: native/voice-helper/.build
           # Checkout gives every source a fresh mtime, so SwiftPM recompiles the helper on any hit.
-          # Keying on sources would only add entries; the dependency build is what this saves.
-          key: swiftpm-${{ steps.cache-paths.outputs.swift }}-${{ hashFiles('native/voice-helper/Package.resolved') }}
+          # Keying on sources would only add entries. The dependency build is what this saves.
+          key: swiftpm-${{ steps.swift.outputs.version }}-${{ hashFiles('native/voice-helper/Package.resolved') }}
 
       - name: Build helper
         run: swift build --package-path native/voice-helper
@@ -90,10 +77,3 @@ jobs:
         with:
           path: native/voice-helper/.build
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
-
-      - name: Save dependency cache
-        if: github.event_name == 'push' && steps.pnpm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ steps.cache-paths.outputs.pnpm }}
-          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
