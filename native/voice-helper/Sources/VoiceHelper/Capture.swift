@@ -62,17 +62,18 @@ final class Capture {
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var mic: MicSource?
     private var file: FileSource?
-    /// TCC answers `authorizationStatus` over XPC at ~30 ms a call. Revoking microphone access
-    /// quits the app unless the user picks "Later".
+    /// TCC answers `authorizationStatus` over XPC at ~30 ms a call, so a press reads this and
+    /// the idle warmup refreshes it off main. Revoking microphone access quits the app unless
+    /// the user picks "Later".
     private var microphoneAuthorized = false
-    private let authorizationStatus: () -> AVAuthorizationStatus
+    private let authorizationStatus: @Sendable () -> AVAuthorizationStatus
     private(set) var lastTarget: (id: String, pid: pid_t?)?
     var testAudioPath: String?
     private let maxSamples: Int
 
     init(
         output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000,
-        authorizationStatus: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
+        authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
     ) {
         self.devices = devices
         self.maxSamples = maxSamples
@@ -97,7 +98,7 @@ final class Capture {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
         }
-        configure(microphone: microphone)
+        adopt(microphone)
         let session = CaptureSession(id: id, language: language, frontmostPid: frontmostPid, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
@@ -212,7 +213,7 @@ final class Capture {
             output.emit(.microphoneTestFailed(id: id, message: "Finish dictating, then test again."))
             return
         }
-        configure(microphone: microphone)
+        adopt(microphone)
         beginTest(id: id)
     }
 
@@ -228,16 +229,22 @@ final class Capture {
     }
 
     func configure(microphone: Microphone?) {
-        self.microphone = microphone
         switch state {
         case .idle:
-            if mic?.preference?.uid != microphone?.uid { disposeMic() }
+            adopt(microphone)
             prepareIdleMic()
         case .testing(let id, _):
+            self.microphone = microphone
             if let mic, mic.preference?.uid != microphone?.uid { restartTest(id: id) }
         case .starting, .recording, .transcribing:
-            break
+            self.microphone = microphone
         }
+    }
+
+    /// Only while no engine runs: a warm engine on another device is dropped, not stopped.
+    private func adopt(_ microphone: Microphone?) {
+        self.microphone = microphone
+        if mic?.preference?.uid != microphone?.uid { disposeMic() }
     }
 
     func devicesChanged() {
@@ -251,15 +258,16 @@ final class Capture {
     }
 
     func prepareIdleMic() {
+        guard case .idle = state, testAudioPath == nil else { return }
         let probe = authorizationStatus
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        DispatchQueue.global(qos: .utility).async {
             let authorized = probe() == .authorized
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 microphoneAuthorized = authorized
                 guard authorized, case .idle = state, testAudioPath == nil else { return }
                 do throws(CaptureError) {
-                    if mic?.preference?.uid != microphone?.uid { disposeMic() }
+                    adopt(microphone)
                     if let mic { mic.prepare() } else { mic = try makeMic() }
                 } catch {
                     output.log(.error, "microphone warmup failed: \(error.message)")
