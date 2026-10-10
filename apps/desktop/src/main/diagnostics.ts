@@ -8,8 +8,7 @@ import {
   HELPER_EXIT_MESSAGE,
   SESSION_MEASUREMENTS,
   SESSION_TRANSACTION,
-  scrubEvent,
-  scrubLogs,
+  scrubEnvelope,
   type DiagnosticLog,
   type HelperTag,
   type LogLevel,
@@ -20,8 +19,6 @@ import type { HelperExit } from "./helper.ts";
 
 type NodeOptions = SentryMain.NodeOptions;
 type MakeTransport = NonNullable<NodeOptions["transport"]>;
-type Envelope = Parameters<ReturnType<MakeTransport>["send"]>[0];
-type EnvelopeItem = Envelope[1][number];
 
 // Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
 export type DiagnosticsSdk = Pick<
@@ -96,27 +93,6 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   };
 }
 
-type EventItem = [{ type: "event" | "transaction" }, SentryMain.Event];
-const isEventItem = (item: EnvelopeItem): item is EventItem =>
-  item[0].type === "event" || item[0].type === "transaction";
-
-// The SDK's beforeSend hooks skip events whose payload names a type, which a renderer envelope can
-// carry, and beforeSendLog sees neither scope attributes nor renderer logs. Attachments are raw
-// bytes the scrubber cannot read, and a native crash dump holds whole thread stacks, including the
-// process environment (HOME, USER, PATH), so a crash event is sent without its dump.
-function scrubEnvelope([headers, items]: Envelope): Envelope | undefined {
-  const kept: EnvelopeItem[] = [];
-  for (const item of items) {
-    if (isEventItem(item)) {
-      kept.push([item[0], scrubEvent(item[1])]);
-    } else if (item[0].type === "log") {
-      const logs = scrubLogs(item[1]);
-      if (logs.items.length > 0) kept.push([{ ...item[0], item_count: logs.items.length }, logs]);
-    }
-  }
-  return kept.length > 0 ? ([headers, kept] as Envelope) : undefined;
-}
-
 function helperTags(exit: HelperExit): Partial<Record<HelperTag, string | number>> {
   if ("spawnError" in exit) return { "helper.error": exit.spawnError };
   if (exit.signal) return { "helper.signal": exit.signal };
@@ -151,7 +127,9 @@ export function startDiagnostics(options: {
     tracePropagationTargets: [],
     tracesSampleRate: options.tracesSampleRate,
     enableLogs: true,
-    // Turning consent off stops sending at once, including events the SDK's own integrations capture.
+    // The SDK's beforeSend hooks skip events whose payload names a type, which a renderer envelope
+    // can carry, and beforeSendLog sees neither scope attributes nor renderer logs, so the transport
+    // scrubs instead.
     transport: (transportOptions) => {
       const base = sdk.makeTransport(transportOptions);
       return {
@@ -175,16 +153,11 @@ export function startDiagnostics(options: {
 
   // Sharing off records nothing, not just sends nothing. The SDK buffers logs for seconds, and
   // consent can return before the buffer reaches the transport.
-  const whenOn =
-    <A>(record: (arg: A) => void) =>
-    (arg: A) => {
-      if (on()) record(arg);
-    };
-
   const reportedExits = new Set<string>();
   return {
     active: true,
-    sessionDone: whenOn((report: SessionReport) => {
+    sessionDone(report) {
+      if (!on()) return;
       const { attributes, measurements, endTime, ...start } = sessionSpan(report);
       const span = sdk.startInactiveSpan({ ...start, attributes, forceTransaction: true });
       for (const [name, value] of Object.entries(measurements)) {
@@ -199,8 +172,9 @@ export function startDiagnostics(options: {
         }),
       );
       span.end(endTime);
-    }),
-    helperExited: whenOn((exit: HelperExit) => {
+    },
+    helperExited(exit) {
+      if (!on()) return;
       const tags = helperTags(exit);
       log({ message: "helper exited", level: "error", attributes: tags });
       // A helper that keeps failing restarts every few seconds; one report per kind is enough.
@@ -208,8 +182,11 @@ export function startDiagnostics(options: {
       if (reportedExits.has(key)) return;
       reportedExits.add(key);
       sdk.captureMessage(HELPER_EXIT_MESSAGE, { level: "error", tags });
-    }),
-    log: whenOn(log),
+    },
+    log(entry) {
+      if (!on()) return;
+      log(entry);
+    },
     flush: async (timeoutMs) => {
       await sdk.flush(timeoutMs);
     },

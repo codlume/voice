@@ -1,10 +1,10 @@
-import type { Event, Exception, StackFrame } from "@sentry/electron/main";
+import type { Event, Exception, NodeOptions, StackFrame } from "@sentry/electron/main";
 
 import type { SessionTimings } from "./dictation.ts";
 
-// Every diagnostic leaves the machine through scrubEvent or scrubLogs. They copy only the fields
-// listed here into a new event or log, so anything the SDK or a future integration adds is
-// dropped by default.
+export type Envelope = Parameters<ReturnType<NonNullable<NodeOptions["transport"]>>["send"]>[0];
+type EnvelopeItem = Envelope[1][number];
+type EventItem = [{ type: "event" | "transaction" }, Event];
 
 export const HELPER_EXIT_MESSAGE = "Voice helper exited unexpectedly";
 export const SESSION_TRANSACTION = "dictation.session";
@@ -317,4 +317,49 @@ export function scrubLogs(payload: unknown): { version?: number; items: Scrubbed
     version: number(version),
     items: Array.isArray(items) ? items.flatMap((item) => log(item) ?? []) : [],
   });
+}
+
+const EVENT_ID = /^[0-9a-f]{32}$/;
+const SENT_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const SDK_NAME = /^sentry\.javascript\.[a-z]+$/;
+const SDK_VERSION = /^\d+\.\d+\.\d+$/;
+const LOG_CONTENT_TYPE = "application/vnd.sentry.items.log+json";
+
+const matching = (value: unknown, pattern: RegExp) =>
+  typeof value === "string" && pattern.test(value) ? value : undefined;
+
+// The trace header (the dynamic sampling context) is dropped. Main copies a renderer envelope's
+// trace header onto the event it captures, so it would carry whatever the renderer wrote.
+function envelopeHeaders(value: unknown) {
+  const { event_id, sent_at, sdk } = record(value);
+  const name = matching(record(sdk).name, SDK_NAME);
+  const version = matching(record(sdk).version, SDK_VERSION);
+  return compact<{ event_id?: string; sent_at?: string; sdk?: { name: string; version: string } }>({
+    event_id: matching(event_id, EVENT_ID),
+    sent_at: matching(sent_at, SENT_AT),
+    sdk: name && version ? { name, version } : undefined,
+  });
+}
+
+const isEventItem = (item: EnvelopeItem): item is EventItem =>
+  item[0].type === "event" || item[0].type === "transaction";
+
+// Attachments are raw bytes the scrubber cannot read, and a native crash dump holds whole thread
+// stacks, including the process environment (HOME, USER, PATH), so a crash event is sent without
+// its dump.
+export function scrubEnvelope([headers, items]: Envelope): Envelope | undefined {
+  const kept: EnvelopeItem[] = [];
+  for (const item of items) {
+    if (isEventItem(item)) {
+      kept.push([{ type: item[0].type }, scrubEvent(item[1])]);
+    } else if (item[0].type === "log") {
+      const logs = scrubLogs(item[1]);
+      if (logs.items.length === 0) continue;
+      kept.push([
+        { type: "log", item_count: logs.items.length, content_type: LOG_CONTENT_TYPE },
+        logs,
+      ]);
+    }
+  }
+  return kept.length > 0 ? ([envelopeHeaders(headers), kept] as Envelope) : undefined;
 }
