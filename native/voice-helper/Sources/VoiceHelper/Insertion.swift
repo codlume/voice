@@ -119,19 +119,20 @@ final class Insertion {
 
     private func paste(id: String, text: String) {
         let pasteboard = NSPasteboard.general
-        let items = pasteboard.pasteboardItems ?? []
         let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
-            SavedClipboard(types: items.map { $0.types.map(\.rawValue) }) {
+            let items = pasteboard.pasteboardItems ?? []
+            return SavedClipboard(types: items.flatMap { $0.types.map(\.rawValue) }) {
                 items.map { item in
                     item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
                 }
             }
         }
+        // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
         pasteboard.prepareForNewContents(with: .currentHostOnly)
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))
         pasteboard.writeObjects([item])
         let ourChange = pasteboard.changeCount
         clipboard.wrote(ourChange, saved: saved)

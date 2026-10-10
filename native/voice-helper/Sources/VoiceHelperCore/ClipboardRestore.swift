@@ -1,12 +1,15 @@
+/// The nspasteboard.org marker for passwords and other secrets.
+public let concealedPasteboardType = "org.nspasteboard.ConcealedType"
+
 public enum SavedClipboard<Item> {
     case items([Item])
-    /// A password manager's write. The manager clears it on a timer, but only while the
-    /// clipboard still holds its own write, so a restore would republish the password past
-    /// that clear.
+    /// Any write marked concealed, such as a password manager's. The manager clears it on a
+    /// timer, but only while the clipboard still holds its own write, so a restore would
+    /// republish the password past that clear.
     case concealed
 
-    public init(types: [[String]], items: () -> [Item]) {
-        self = types.contains { $0.contains("org.nspasteboard.ConcealedType") } ? .concealed : .items(items())
+    public init(types: [String], items: () -> [Item]) {
+        self = types.contains(concealedPasteboardType) ? .concealed : .items(items())
     }
 }
 

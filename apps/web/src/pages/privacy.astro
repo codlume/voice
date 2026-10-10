@@ -64,7 +64,9 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         landed. What it reads stays in memory and is never stored or sent. If Voice has to paste, it
         uses the clipboard temporarily. Afterwards it restores your previous clipboard contents,
         unless something else changed the clipboard in the meantime or you turned on Copy transcript
-        to clipboard. Voice never reads the name of the focused app, your screen, or your windows.
+        to clipboard. A password you copied from a password manager is cleared instead of restored,
+        so the manager's own auto-clear is not undone. Voice never reads the name of the focused app,
+        your screen, or your windows.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear
