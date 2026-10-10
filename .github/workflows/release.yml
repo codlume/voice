@@ -8,14 +8,18 @@ on:
     - cron: "17 */6 * * *"
   workflow_dispatch:
 
+# Only jobs that run no dependency code get write access. A write token can push to main,
+# and the next Nightly would sign and ship that commit.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     concurrency:
       group: release-please-main
       cancel-in-progress: false
@@ -25,15 +29,16 @@ jobs:
       stable_sha: ${{ steps.detect.outputs.stable_sha }}
       stable_api_changed: ${{ steps.api.outputs.changed }}
     steps:
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Detect stable release
         id: detect
         env:
@@ -96,25 +101,32 @@ jobs:
       group: deploy-api-stable
       cancel-in-progress: false
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     defaults:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.release-please.outputs.stable_sha }}
-      - uses: voidzero-dev/setup-vp@v1
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--filter", "@voice/api..."]
       - name: Record D1 Time Travel bookmark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler d1 time-travel info DB --env stable
       - name: Apply migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler d1 migrations apply DB --env stable --remote
       - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler deploy --env stable --strict
       - name: Check health
         run: curl --fail --silent --show-error --retry 20 --retry-delay 15 --retry-all-errors https://api.voice.codlume.com/health
@@ -127,9 +139,10 @@ jobs:
       previous: ${{ steps.due.outputs.previous }}
       version: ${{ steps.due.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: due
         env:
           GH_TOKEN: ${{ github.token }}
@@ -139,6 +152,34 @@ jobs:
           bash scripts/release-nightly-due.sh >> "${GITHUB_OUTPUT}"
           version="$(node scripts/release-version.mjs nightly)"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  nightly-notes:
+    needs: nightly-due
+    if: needs.nightly-due.outputs.due == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      # The generate-notes endpoint requires write access.
+      contents: write
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
+          PREVIOUS_NIGHTLY: ${{ needs.nightly-due.outputs.previous }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          since=()
+          if [[ -n "${PREVIOUS_NIGHTLY}" ]]; then since=(-f previous_tag_name="${PREVIOUS_NIGHTLY}"); fi
+          notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="v${RELEASE_VERSION}" \
+            -f target_commitish="${GITHUB_SHA}" \
+            "${since[@]}" \
+            --jq .body)"
+          delimiter="notes_$(openssl rand -hex 16)"
+          printf 'notes<<%s\n%s\n%s\n' "${delimiter}" "${notes}" "${delimiter}" >> "${GITHUB_OUTPUT}"
 
   nightly-build:
     needs: nightly-due
@@ -151,18 +192,14 @@ jobs:
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ORG: ${{ vars.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       VOICE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
@@ -171,17 +208,28 @@ jobs:
         run: brew install awscli
       - name: Check published version
         id: preflight
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: node scripts/release-preflight.mjs
       - name: Import Developer ID certificate
         if: steps.preflight.outputs.skip != 'true'
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/release-keychain.sh
       - name: Build, sign, notarize, and verify
         if: steps.preflight.outputs.skip != 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: node scripts/release-build.mjs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.preflight.outputs.skip != 'true'
         with:
           name: nightly-mac-arm64
@@ -209,20 +257,15 @@ jobs:
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ORG: ${{ vars.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       VOICE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.release-please.outputs.stable_sha }}
-      - uses: voidzero-dev/setup-vp@v1
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
@@ -231,17 +274,28 @@ jobs:
         run: brew install awscli
       - name: Check published version
         id: preflight
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: node scripts/release-preflight.mjs
       - name: Import Developer ID certificate
         if: steps.preflight.outputs.skip != 'true'
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/release-keychain.sh
       - name: Build, sign, notarize, and verify
         if: steps.preflight.outputs.skip != 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: node scripts/release-build.mjs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.preflight.outputs.skip != 'true'
         with:
           name: stable-mac-arm64
@@ -259,7 +313,7 @@ jobs:
       skip: ${{ steps.preflight.outputs.skip }}
 
   nightly-publish:
-    needs: [nightly-due, nightly-build]
+    needs: [nightly-due, nightly-notes, nightly-build]
     if: needs.nightly-build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -271,56 +325,66 @@ jobs:
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    outputs:
+      result: ${{ steps.publish.outputs.result }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--workspace-root"]
       - run: aws --version
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nightly-mac-arm64
           path: apps/desktop/release/
-      - name: Generate release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PREVIOUS_NIGHTLY: ${{ needs.nightly-due.outputs.previous }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          since=()
-          if [[ -n "${PREVIOUS_NIGHTLY}" ]]; then since=(-f previous_tag_name="${PREVIOUS_NIGHTLY}"); fi
-          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="v${RELEASE_VERSION}" \
-            -f target_commitish="${GITHUB_SHA}" \
-            "${since[@]}" \
-            --jq .body > "${RUNNER_TEMP}/release-notes.md"
       - id: publish
         env:
+          RELEASE_NOTES: ${{ needs.nightly-notes.outputs.notes }}
           RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
+          printf '%s\n' "${RELEASE_NOTES}" > "${RELEASE_NOTES_FILE}"
           result="$(node scripts/release-publish.mjs)"
           echo "${result}"
           echo "result=${result}" >> "${GITHUB_OUTPUT}"
+
+  nightly-release:
+    needs: [nightly-due, nightly-notes, nightly-publish]
+    if: needs.nightly-publish.outputs.result != 'skipped-older'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # A separate group, because a job waiting in release-publish-nightly would cancel a pending publish.
+    concurrency:
+      group: release-github-nightly
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nightly-mac-arm64
+          path: release/
       - name: Publish GitHub prerelease
-        if: steps.publish.outputs.result != 'skipped-older'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
+          RELEASE_NOTES: ${{ needs.nightly-notes.outputs.notes }}
         shell: bash
         run: |
           set -euo pipefail
           tag="v${RELEASE_VERSION}"
           if gh release view "${tag}" --json tagName >/dev/null 2>&1; then
-            gh release upload "${tag}" apps/desktop/release/*.dmg --clobber
+            gh release upload "${tag}" release/*.dmg --clobber
           else
             notes="${RUNNER_TEMP}/prerelease-notes.md"
-            printf 'Unstable build of %s. Installed Nightlies update themselves.\n\n' "${GITHUB_SHA}" > "${notes}"
-            cat "${RUNNER_TEMP}/release-notes.md" >> "${notes}"
-            gh release create "${tag}" apps/desktop/release/*.dmg \
+            printf 'Unstable build of %s. Installed Nightlies update themselves.\n\n%s\n' "${GITHUB_SHA}" "${RELEASE_NOTES}" > "${notes}"
+            gh release create "${tag}" release/*.dmg \
               --prerelease \
               --target "${GITHUB_SHA}" \
               --title "Voice Nightly ${RELEASE_VERSION} (${GITHUB_SHA::12})" \
@@ -340,19 +404,19 @@ jobs:
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.release-please.outputs.stable_sha }}
-      - uses: voidzero-dev/setup-vp@v1
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--workspace-root"]
       - run: aws --version
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: stable-mac-arm64
           path: apps/desktop/release/
@@ -362,8 +426,23 @@ jobs:
         run: gh release view "v${RELEASE_VERSION}" --json body --jq .body > "${RUNNER_TEMP}/release-notes.md"
       - env:
           RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: node scripts/release-publish.mjs
+
+  stable-release:
+    needs: [release-please, stable-publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stable-mac-arm64
+          path: release/
       - name: Attach DMG to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "v${RELEASE_VERSION}" apps/desktop/release/*.dmg --clobber
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
+        run: gh release upload "v${RELEASE_VERSION}" release/*.dmg --clobber

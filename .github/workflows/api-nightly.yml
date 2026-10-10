@@ -26,23 +26,31 @@ jobs:
     # the repo-level CLOUDFLARE_API_TOKEN that deploys the website.
     environment: api-nightly
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     defaults:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--filter", "@voice/api..."]
       - name: Record D1 Time Travel bookmark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler d1 time-travel info DB --env nightly
       - name: Apply migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler d1 migrations apply DB --env nightly --remote
       - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: vp exec wrangler deploy --env nightly --strict
       - name: Check health
         run: curl --fail --silent --show-error --retry 20 --retry-delay 15 --retry-all-errors https://api-nightly.voice.codlume.com/health
