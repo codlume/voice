@@ -28,8 +28,13 @@ function worker(input: string | Request, init?: RequestInit, ip: string | null =
 }
 
 const server = setupServer(
-  // init-oauth-proxy calls /sign-in/social on its own base URL. Route that request back into the Worker.
-  http.all(`${base}/*`, ({ request }) => worker(request.url, request)),
+  // A fetch from the Worker to its own origin re-enters through Cloudflare, which stamps every such
+  // request with one Worker-side address instead of the user's IP.
+  http.all(`${base}/*`, ({ request }) => {
+    const reentered = new Request(request.url, request);
+    reentered.headers.set("cf-connecting-ip", "2a06:98c0:3600::103");
+    return exports.default.fetch(reentered);
+  }),
   http.post(googleTokenUrl, async ({ request }) =>
     HttpResponse.json(fakeGoogleToken(new URLSearchParams(await request.text()))),
   ),
@@ -553,6 +558,21 @@ describe("rate limiting", () => {
     }
   });
 
+  it("keys sign-in starts on the user, not on one shared bucket (catches the electron plugin fetching the Worker's own /sign-in/social through Cloudflare)", async () => {
+    const start = (ip: string) =>
+      worker(
+        `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${crypto.randomUUID()}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`,
+        { redirect: "manual" },
+        ip,
+      );
+    const crowd = freshIp();
+    const statuses = new Set<number>();
+    for (let attempt = 0; attempt < 100; attempt++) statuses.add((await start(crowd)).status);
+    statuses.add((await start(freshIp())).status);
+
+    expect([...statuses]).toEqual([302]);
+  });
+
   it("answers a junk path with a 404 that mints no rate_limit row (catches a wildcard auth route in front of a limiter keyed on the raw path)", async () => {
     const ip = freshIp();
     const statuses = new Set<number>();
@@ -623,6 +643,7 @@ describe("rate limiting", () => {
     expect(await staleRows()).toBe(1);
 
     expect((await getSessionDirect()).status).toBe(200);
+    expect(await staleRows()).toBe(1);
 
     prune.resolve();
     await Promise.all(background);
