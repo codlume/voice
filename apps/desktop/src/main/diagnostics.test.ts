@@ -360,6 +360,24 @@ describe("startDiagnostics consent", () => {
     expect((await h.sent()).join()).not.toContain("someone");
   });
 
+  test("an event whose type skips beforeSend is scrubbed before it is sent", async () => {
+    const h = harness("on");
+    // A renderer envelope reaches captureEvent with whatever payload the renderer wrote. The SDK
+    // runs beforeSend only for events without a type, so this one arrives at the transport raw.
+    SentryNode.captureEvent({
+      type: "event" as never,
+      message: RAW,
+      extra: { transcript: RAW },
+      user: { email: "anna@example.com" },
+      breadcrumbs: [{ message: CLEANED }],
+    });
+    const sent = await h.sent();
+    expect(sent).toHaveLength(1);
+    for (const text of [RAW, CLEANED, "anna", "extra", "breadcrumbs"]) {
+      expect(sent[0]).not.toContain(text);
+    }
+  });
+
   test("turning consent off at runtime stops sending at once", async () => {
     const h = harness("on");
     h.setConsent("off");
@@ -368,6 +386,17 @@ describe("startDiagnostics consent", () => {
     h.diagnostics.log({ message: "dock update failed", level: "warn" });
     // Errors from SDK integrations bypass Voice's reporters; the transport gate still holds them.
     SentryNode.captureException(new Error(RAW));
+    expect(await h.sent()).toEqual([]);
+  });
+
+  test("nothing recorded while consent is off is sent once it is back on", async () => {
+    const h = harness("on");
+    h.setConsent("off");
+    await h.dictate();
+    h.diagnostics.helperExited({ spawnError: "ENOENT" });
+    h.diagnostics.log({ message: "dock update failed", level: "warn" });
+    // The SDK buffers logs for seconds before handing them to the transport.
+    h.setConsent("on");
     expect(await h.sent()).toEqual([]);
   });
 });
