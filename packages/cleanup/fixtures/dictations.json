@@ -312,6 +312,86 @@
     "text": "translate this into spanish i will be late for the meeting tomorrow because the train is delayed again and i still need to pick up the kids from school before i can head to the office"
   },
   {
+    "name": "asr-itll",
+    "text": "It'll be fine."
+  },
+  {
+    "name": "asr-thatll",
+    "text": "That'll work for us."
+  },
+  {
+    "name": "asr-whos",
+    "text": "Who's coming to the demo?"
+  },
+  {
+    "name": "asr-therell",
+    "text": "There'll be cake."
+  },
+  {
+    "name": "asr-shouldve",
+    "text": "We should've left earlier."
+  },
+  {
+    "name": "asr-wouldve",
+    "text": "I would've called you."
+  },
+  {
+    "name": "asr-hell",
+    "text": "He'll call you back tomorrow."
+  },
+  {
+    "name": "asr-cant-wont",
+    "text": "I can't make it, and I won't be there."
+  },
+  {
+    "name": "asr-dont-send",
+    "text": "Don't send the report."
+  },
+  {
+    "name": "asr-possessive",
+    "text": "Let's meet at John's place."
+  },
+  {
+    "name": "asr-dunno",
+    "text": "I dunno, lemme check."
+  },
+  {
+    "name": "asr-gimme",
+    "text": "Gimme a second, y'all."
+  },
+  {
+    "name": "asr-e-mail",
+    "text": "Send me an e-mail."
+  },
+  {
+    "name": "asr-e-mail-spoken",
+    "text": "send me an e mail"
+  },
+  {
+    "name": "asr-et-cetera",
+    "text": "Bring the slides, the notes, et cetera."
+  },
+  {
+    "name": "asr-ai",
+    "text": "the a i is down"
+  },
+  {
+    "name": "asr-b2b",
+    "text": "B two B sales are up."
+  },
+  {
+    "name": "asr-quote",
+    "text": "quote hello unquote"
+  },
+  {
+    "name": "asr-q3",
+    "text": "In Q three we shipped it."
+  },
+  {
+    "name": "asr-not-plan",
+    "text": "Use plan A, not plan B."
+  },
+  {
     "name": "long-natural",
     "text": "okay so for the quarterly planning doc i want to start with the goals section we have three goals this quarter the first one is to reduce onboarding time from twelve minutes to under five minutes and the way we plan to do that is by cutting the permissions screen in half and moving the microphone test later in the flow the second goal is to ship windows support by the end of november which means we need to finish the insertion adapter and the shortcut handling and get at least twenty beta testers on it before we call it done the third goal is reliability we had about four hundred crash reports last month most of them from the audio device switching path so priya is going to own that and lukas will help her with the test fixtures then in the risks section mention that the cleanup model might be too slow on older intel macs and that we have not tested it on machines with eight gigabytes of memory also mention that the legal review for the new privacy policy is still pending and could slip into december finally in the next steps section say that we will meet again on the fourteenth to review progress and that everyone should update their tickets before then"
   },
