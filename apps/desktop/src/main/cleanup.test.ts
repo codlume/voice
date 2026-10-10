@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import type { ModelStatus, Settings } from "../shared/api.ts";
 import { wantsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
-import { createCleanup, type CleanupModule } from "./cleanup.ts";
+import { createCleanup, followSettings, type CleanupModule } from "./cleanup.ts";
+import { createDictation } from "./dictation.ts";
+import type { HelperCommand } from "./protocol.ts";
+import { idle } from "./session.ts";
+import { createStore } from "./store.ts";
 
 const style: CleanupStyle = { styling: "formal" };
 const signal = new AbortController().signal;
@@ -373,4 +377,86 @@ describe("createCleanup", () => {
       expect(statuses.at(-1)).toEqual({ state: "missing" });
     });
   });
+});
+
+describe("followSettings", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(NodePath.join(tmpdir(), "voice-cleanup-"));
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+  });
+  afterEach(() => rm(dir, { recursive: true, force: true }));
+
+  function app() {
+    const store = createStore({
+      updates: {
+        version: "0.0.1",
+        installedChannel: "stable",
+        channel: "stable",
+        status: { kind: "disabled", reason: "Test" },
+      },
+      session: idle,
+      permissions: { microphone: "granted", accessibility: "granted" },
+      loginItem: "off",
+      models: { asr: { state: "ready" }, cleanup: { state: "missing" } },
+      settings: { ...DEFAULT_SETTINGS, dictationLanguage: "en" },
+      microphones: { kind: "loading" },
+      microphoneTest: { kind: "off" },
+      account: { kind: "signedOut" },
+      otherChannelSignedIn: false,
+      last: null,
+    });
+    const cleanup = createCleanup({
+      modelsDir: dir,
+      shouldLoad: () => wantsCleanup(store.state.settings),
+      onStatus: (status) =>
+        store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
+      ...fakeModule(),
+    });
+    store.subscribe((state, previous) => followSettings(cleanup, state, previous));
+    const commands: HelperCommand[] = [];
+    let clock = 0;
+    const dictation = createDictation({
+      store,
+      send: (command) => commands.push(command),
+      cleanup,
+      onLevel: () => {},
+      log: () => {},
+      onSessionDone: () => {},
+      copy: () => {},
+      now: () => clock,
+    });
+    const setLanguage = (dictationLanguage: DictationLanguage) =>
+      store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage } }));
+    const record = () => {
+      dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const session = store.state.session;
+      if (session.phase === "idle") throw new Error("no session");
+      dictation.onHelperEvent({ type: "capture.started", id: session.id, startMs: 40 });
+      return session.id;
+    };
+    const finish = (id: string, text: string) => {
+      clock += 800;
+      dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
+    };
+    return { store, cleanup, commands, dictation, setLanguage, record, finish };
+  }
+
+  test.each(["pl", "auto"] satisfies DictationLanguage[])(
+    "switching English to %s mid-session cleans that session, then unloads the model",
+    async (language) => {
+      const a = app();
+      await a.cleanup.loadIfDownloaded();
+      const id = a.record();
+      a.setLanguage(language);
+      a.finish(id, "first");
+
+      await expect.poll(() => a.commands.at(-1)).toEqual({ type: "insert", id, text: "FIRST" });
+      expect(a.store.state.models.cleanup.state).toBe("ready");
+      a.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      await expect.poll(() => a.store.state.models.cleanup.state).toBe("installed");
+      expect(a.cleanup.loaded()).toBe(false);
+    },
+  );
 });

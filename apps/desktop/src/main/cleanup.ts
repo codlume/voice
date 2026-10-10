@@ -1,6 +1,8 @@
 import type { CleanupStyle, S1Mini } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
+import { wantsCleanup } from "../shared/dictation-language.ts";
+import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
@@ -40,6 +42,17 @@ type Model =
 
 const held = (model: Model): model is Extract<Model, { model: S1Mini }> =>
   model.phase === "loading" || model.phase === "loaded";
+
+export function followSettings(
+  cleanup: Pick<Cleanup, "loadIfDownloaded" | "unload">,
+  state: AppState,
+  previous: AppState,
+) {
+  const wanted = wantsCleanup(state.settings);
+  if (wanted !== wantsCleanup(previous.settings)) {
+    void (wanted ? cleanup.loadIfDownloaded() : cleanup.unload());
+  }
+}
 
 export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
