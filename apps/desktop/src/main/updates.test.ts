@@ -152,6 +152,21 @@ describe("updates", () => {
     updates.dispose();
   });
 
+  test("keeps one error listener across every kind of check and none after dispose", async () => {
+    vi.useFakeTimers();
+    const { updates, engine } = setup();
+    engine.checkForUpdates.mockResolvedValue(result("0.0.1", false));
+    updates.start();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await updates.check();
+    await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+    await updates.setChannel("nightly");
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(4);
+    expect(engine.listenerCount("error")).toBe(1);
+    updates.dispose();
+    expect(engine.listenerCount("error")).toBe(0);
+  });
+
   test("an updater that fails to load reports a failed check", async () => {
     const { updates, loadEngine } = setup();
     loadEngine.mockImplementationOnce(() => {
