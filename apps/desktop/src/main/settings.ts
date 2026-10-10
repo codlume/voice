@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, open, rename } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as Option from "effect/Option";
@@ -98,13 +98,7 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
 export async function saveSettings(file: string, settings: Settings): Promise<void> {
   await mkdir(NodePath.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
-  const handle = await open(temp, "w");
-  try {
-    await handle.writeFile(`${JSON.stringify(settings, null, 2)}\n`);
-    // Without the sync, a power loss can land the rename before the data and leave an empty file.
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+  // Without the flush, a power loss can land the rename before the data and leave an empty file.
+  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`, { flush: true });
   await rename(temp, file);
 }

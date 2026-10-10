@@ -17,18 +17,18 @@ const disk = vi.hoisted(() => ({ events: [] as string[] }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs/promises")>();
   const { basename } = await import("node:path");
+  // Every FileHandle shares this prototype, including the ones fs.writeFile opens internally.
+  const probe = await fs.open(process.execPath);
+  const handles = Object.getPrototypeOf(probe) as typeof probe;
+  await probe.close();
+  const sync = handles.sync;
+  handles.sync = async function (this: typeof probe) {
+    await sync.call(this);
+    const { size } = await this.stat();
+    disk.events.push(`sync ${size > 0 ? "with data" : "empty"}`);
+  };
   return {
     ...fs,
-    open: async (...args: Parameters<typeof fs.open>) => {
-      const handle = await fs.open(...args);
-      const sync = handle.sync.bind(handle);
-      handle.sync = async () => {
-        await sync();
-        const { size } = await handle.stat();
-        disk.events.push(`sync ${basename(String(args[0]))} ${size > 0 ? "with data" : "empty"}`);
-      };
-      return handle;
-    },
     rename: async (from: string, to: string) => {
       await fs.rename(from, to);
       disk.events.push(`rename ${basename(from)} -> ${basename(to)}`);
@@ -282,8 +282,10 @@ describe("load and save", () => {
     const file = NodePath.join(dir, "settings.json");
     disk.events = [];
     await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { hotkey: "rightOption" }));
-    const temp = `settings.json.${process.pid}.tmp`;
-    expect(disk.events).toEqual([`sync ${temp} with data`, `rename ${temp} -> settings.json`]);
+    expect(disk.events).toEqual([
+      "sync with data",
+      expect.stringMatching(/^rename settings\.json\..+ -> settings\.json$/),
+    ]);
   });
 
   test("save then load round-trips through a nested directory and leaves no temp file", async () => {

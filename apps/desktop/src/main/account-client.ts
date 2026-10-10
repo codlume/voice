@@ -110,6 +110,7 @@ export function createVoiceAuthClient({
   signInUrlFile?: string;
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
+  // Conf drops an unparseable config.json whole on its next write, both channels included.
   const store = storage({ clearInvalidConfig: true });
   let refusedCookie: string | null = null;
   let generation = 0;
