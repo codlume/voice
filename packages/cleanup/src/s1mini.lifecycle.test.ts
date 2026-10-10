@@ -137,6 +137,16 @@ test("long input is cleaned in sentence chunks and rejoined", async () => {
   expect(cleaned).toBe(raw.toUpperCase());
 });
 
+test("generate returns what the model said even when the guard rejects it", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  native.reply = () => ({ response: "" });
+
+  await expect(s1.clean("test test", style)).rejects.toThrow("empty");
+  await expect(s1.generate("test test", style)).resolves.toEqual([
+    { chunk: "test test", output: "", truncated: false },
+  ]);
+});
+
 test("a chunk that comes back empty fails the clean instead of silently dropping its text", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   const sentence = "we should ship the beta on october twelfth and the stable release after that.";

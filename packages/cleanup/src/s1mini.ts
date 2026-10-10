@@ -8,10 +8,14 @@ const CONTEXT_SIZE = 4096;
 const CHUNK_TOKENS = 1000;
 const OUTPUT_TOKEN_SLACK = 32;
 
+export type Generation = { chunk: string; output: string; truncated: boolean };
+
 export type S1Mini = {
   load(): Promise<void>;
   // Aborting the signal stops generation within a token and rejects with the signal's reason.
   clean(raw: string, style: CleanupStyle, signal?: AbortSignal): Promise<string>;
+  // What the model returned for each chunk, before the plausibility guard. For calibration.
+  generate(raw: string, style: CleanupStyle, signal?: AbortSignal): Promise<Generation[]>;
   // Aborts any queued or running clean, then frees the model.
   dispose(): Promise<void>;
 };
@@ -39,36 +43,51 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return run;
   }
 
+  // Checks each chunk as it lands so a rejected first chunk does not wait for the rest.
+  async function* generate(
+    raw: string,
+    style: CleanupStyle,
+    signal: AbortSignal | undefined,
+    check: (chunk: string, output: string, truncated: boolean) => void = () => undefined,
+  ): AsyncGenerator<Generation> {
+    const abort = signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
+    abort.throwIfAborted();
+    const { model, completion } = await load();
+    const countTokens = (text: string) => model.tokenize(text).length;
+    for (const chunk of chunkTranscript(raw, CHUNK_TOKENS, countTokens)) {
+      abort.throwIfAborted();
+      // Special-token parsing makes <|im_start|> and friends the trained control tokens, not literal text.
+      const prompt = model.tokenize(buildS1MiniPrompt(chunk, style), true);
+      const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
+        signal: abort,
+        temperature: 0,
+        customStopTriggers: ["<|im_end|>"],
+        maxTokens: Math.min(
+          MAX_OUTPUT_RATIO * countTokens(chunk) + OUTPUT_TOKEN_SLACK,
+          CONTEXT_SIZE - prompt.length,
+        ),
+      });
+      const output = response.trim();
+      const truncated = metadata.stopReason === "maxTokens";
+      check(chunk, output, truncated);
+      yield { chunk, output, truncated };
+    }
+  }
+
   return {
     load: async () => {
       await load();
     },
     clean: (raw, style, signal) =>
       serialize(async () => {
-        const abort = signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
-        abort.throwIfAborted();
-        const { model, completion } = await load();
-        const countTokens = (text: string) => model.tokenize(text).length;
         const outputs: string[] = [];
-        for (const chunk of chunkTranscript(raw, CHUNK_TOKENS, countTokens)) {
-          abort.throwIfAborted();
-          // Special-token parsing makes <|im_start|> and friends the trained control tokens, not literal text.
-          const prompt = model.tokenize(buildS1MiniPrompt(chunk, style), true);
-          const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
-            signal: abort,
-            temperature: 0,
-            customStopTriggers: ["<|im_end|>"],
-            maxTokens: Math.min(
-              MAX_OUTPUT_RATIO * countTokens(chunk) + OUTPUT_TOKEN_SLACK,
-              CONTEXT_SIZE - prompt.length,
-            ),
-          });
-          const output = response.trim();
-          assertPlausibleCleanup(chunk, output, metadata.stopReason === "maxTokens");
+        for await (const { output } of generate(raw, style, signal, assertPlausibleCleanup)) {
           if (output) outputs.push(output);
         }
         return outputs.join(" ");
       }),
+    generate: (raw, style, signal) =>
+      serialize(() => Array.fromAsync(generate(raw, style, signal))),
     dispose: () => {
       disposal.abort(new Error("Cleanup model disposed"));
       return serialize(async () => {

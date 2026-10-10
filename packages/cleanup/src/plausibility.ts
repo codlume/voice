@@ -1,15 +1,18 @@
 export const MAX_OUTPUT_RATIO = 3;
 const MIN_WORD_RECALL = 0.8;
+// A dropped instruction at either end of a long dictation barely moves the overall recall, so
+// the first and last few content words are held to the same bar on their own.
+const EDGE_WORDS = 8;
 
-const CHAT_OPENER_SPELLINGS = [
-  ["sorry"],
-  ["im sorry", "i am sorry"],
-  ["i cannot", "i cant"],
-  ["as an ai"],
-  ["sure"],
-  ["certainly"],
-  ["of course"],
-  ["here is", "heres"],
+const CHAT_OPENERS = [
+  "sorry",
+  "i am sorry",
+  "i can not",
+  "as an ai",
+  "sure",
+  "certainly",
+  "of course",
+  "here is",
 ];
 
 // Sounds and discourse phrases that cleanup is meant to drop. Real one-word replies such as
@@ -23,6 +26,7 @@ const FILLERS = new Set([
   "erm",
   "ah",
   "eh",
+  "oh",
   "hmm",
   "hm",
   "mm",
@@ -56,7 +60,15 @@ const SPOKEN_SYMBOLS = new Set([
   "dollars",
   "euro",
   "euros",
+  "pound",
+  "pounds",
+  "cent",
+  "cents",
+  "degree",
+  "degrees",
+  "hashtag",
   "oclock",
+  "o clock",
   "am",
   "pm",
   "new line",
@@ -66,11 +78,27 @@ const SPOKEN_SYMBOLS = new Set([
   "exclamation point",
 ]);
 
-const NUMBER_WORD =
-  /^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(thir|four|fif|six|seven|eigh|nine)teen|(twen|thir|for|fif|six|seven|eigh|nine)ty|hundred|thousand|million|billion|first|second|third|(four|fif|six|seven|eigh|nin|ten|eleven|twelf|(thir|four|fif|six|seven|eigh|nine)teen|(twen|thir|for|fif|six|seven|eigh|nine)tie|hundred|thousand|million|billion)th|\p{N}+)$/u;
+// Words that number, time and date formatting absorbs ("a hundred", "three point five",
+// "half past three", "the fourteenth of march"). Dropped everywhere rather than only next to
+// a number, because the adjacency rule would not change any verdict and costs more code.
+const ABSORBED = new Set(["a", "an", "the", "and", "of", "to", "point", "half", "quarter", "past"]);
 
-// Apostrophes are stripped before lookup, so "I'll" and the ASR spelling "ill" both expand.
-const CONTRACTIONS: Record<string, string> = {
+const NUMBER_WORDS = new Set(
+  (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen " +
+    "fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty " +
+    "ninety hundred thousand million billion first second third fourth fifth sixth seventh " +
+    "eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth sixteenth seventeenth " +
+    "eighteenth nineteenth twentieth thirtieth fortieth fiftieth sixtieth seventieth eightieth " +
+    "ninetieth hundredth thousandth millionth billionth"
+  ).split(" "),
+);
+const isNumber = (word: string) => NUMBER_WORDS.has(word) || /^\p{N}+$/u.test(word);
+
+// Spoken forms and their written forms. Apostrophes are stripped before lookup, so "I'll" and
+// the ASR spelling "ill" both expand. The table is applied to both sides, so it knowingly
+// rewrites real words too ("were", "its", "id", "wed", "till", "doctor"): both sides agree.
+const SPELLINGS: Record<string, string> = {
   im: "i am",
   ive: "i have",
   ill: "i will",
@@ -120,6 +148,15 @@ const CONTRACTIONS: Record<string, string> = {
   til: "until",
   till: "until",
   ok: "okay",
+  k: "okay",
+  yeah: "yes",
+  thanks: "thank you",
+  alright: "all right",
+  versus: "vs",
+  mister: "mr",
+  missus: "mrs",
+  doctor: "dr",
+  professor: "prof",
 };
 
 const PHRASE = new RegExp(
@@ -137,21 +174,46 @@ function normalize(text: string): string {
       // "p.m." and "U.S." read as one word, while "example.com" stays two.
       .replaceAll(/(?<!\p{L})(\p{L})\.(?=\p{L}(?!\p{L}))/gu, "$1")
       .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+      // "3:30pm" and "10am" count their unit as its own word, like "three thirty pm" does.
+      .replaceAll(/(?<=\p{N})(?=\p{L})|(?<=\p{L})(?=\p{N})/gu, " ")
       .trim()
   );
 }
 
-const words = (text: string): string[] => normalize(text).split(" ").filter(Boolean);
+// Letters spelled one by one ("a p i", "w w w") become the word they spell, on both sides.
+// A run of only "i" and "a" is words, not spelling: "i i i think" is a stutter.
+function joinSpelledLetters(tokens: string[]): string[] {
+  const joined: string[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length > 1 && run.some((letter) => letter !== "i" && letter !== "a")) {
+      joined.push(run.join(""));
+    } else {
+      joined.push(...run);
+    }
+    run = [];
+  };
+  for (const token of tokens) {
+    if (token.length === 1) run.push(token);
+    else {
+      flush();
+      joined.push(token);
+    }
+  }
+  flush();
+  return joined;
+}
+
+function spokenWords(text: string): string[] {
+  const tokens = ` ${normalize(text)} `.replaceAll(PHRASE, "").split(" ").filter(Boolean);
+  return joinSpelledLetters(tokens).flatMap((word) => (SPELLINGS[word] ?? word).split(" "));
+}
 
 function contentWords(text: string): string[] {
-  return ` ${normalize(text)} `
-    .replaceAll(PHRASE, "")
-    .split(" ")
-    .flatMap((word) => (CONTRACTIONS[word] ?? word).split(" "))
-    .filter(
-      (word) =>
-        word !== "" && !FILLERS.has(word) && !SPOKEN_SYMBOLS.has(word) && !NUMBER_WORD.test(word),
-    );
+  return spokenWords(text).filter(
+    (word) =>
+      !FILLERS.has(word) && !SPOKEN_SYMBOLS.has(word) && !ABSORBED.has(word) && !isNumber(word),
+  );
 }
 
 // A false start repeats a word or a short phrase back to back; cleanup keeps one copy.
@@ -174,22 +236,33 @@ function withoutFalseStarts(tokens: string[]): string[] {
   return kept;
 }
 
-// The share of the input's content words that the output still contains, counted with
-// multiplicity so a dictation that repeats itself cannot pass on its vocabulary alone.
-export function wordRecall(input: string, output: string): number {
+export type WordSurvival = {
+  // The share of the input's content words the output still contains, counted with
+  // multiplicity so a dictation that repeats itself cannot pass on its vocabulary alone.
+  recall: number;
+  // The same share over the first and last EDGE_WORDS content words of the input.
+  head: number;
+  tail: number;
+};
+
+const share = (flags: boolean[]) => flags.filter(Boolean).length / flags.length;
+
+export function wordSurvival(input: string, output: string): WordSurvival {
   const said = withoutFalseStarts(contentWords(input));
-  if (said.length === 0) return 1;
+  if (said.length === 0) return { recall: 1, head: 1, tail: 1 };
   const remaining = new Map<string, number>();
   for (const word of contentWords(output)) remaining.set(word, (remaining.get(word) ?? 0) + 1);
-  let kept = 0;
-  for (const word of said) {
+  const kept = said.map((word) => {
     const count = remaining.get(word) ?? 0;
-    if (count > 0) {
-      kept++;
-      remaining.set(word, count - 1);
-    }
-  }
-  return kept / said.length;
+    if (count === 0) return false;
+    remaining.set(word, count - 1);
+    return true;
+  });
+  return {
+    recall: share(kept),
+    head: share(kept.slice(0, EDGE_WORDS)),
+    tail: share(kept.slice(-EDGE_WORDS)),
+  };
 }
 
 export function assertPlausibleCleanup(input: string, output: string, truncated: boolean): void {
@@ -198,14 +271,12 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
     throw new Error(`Cleanup output is over ${MAX_OUTPUT_RATIO}x the input length`);
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
-  const said = ` ${words(input).join(" ")} `;
-  const cleaned = ` ${words(output).join(" ")} `;
-  const opener = CHAT_OPENER_SPELLINGS.find((group) =>
-    group.some((phrase) => cleaned.startsWith(` ${phrase} `)),
-  );
-  if (opener && !opener.some((phrase) => said.includes(` ${phrase} `)))
+  const said = ` ${spokenWords(input).join(" ")} `;
+  const cleaned = ` ${spokenWords(output).join(" ")} `;
+  const opener = CHAT_OPENERS.find((phrase) => cleaned.startsWith(` ${phrase} `));
+  if (opener && !said.includes(` ${opener} `))
     throw new Error("Cleanup output reads like a chat reply");
-  const recall = wordRecall(input, output);
+  const { recall, head, tail } = wordSurvival(input, output);
   if (recall < MIN_WORD_RECALL) {
     throw new Error(
       output.trim()
@@ -213,4 +284,8 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
         : "Cleanup output is empty for speech that is not filler",
     );
   }
+  if (head < MIN_WORD_RECALL)
+    throw new Error(`Cleanup kept only ${Math.round(head * 100)}% of the opening words`);
+  if (tail < MIN_WORD_RECALL)
+    throw new Error(`Cleanup kept only ${Math.round(tail * 100)}% of the closing words`);
 }
