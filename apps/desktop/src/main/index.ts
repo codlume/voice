@@ -543,10 +543,9 @@ async function main() {
     }
     if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
-    if (!state.settings.cleanup.enabled && previous.settings.cleanup.enabled) {
-      void cleanup.unload();
-    } else if (wantsCleanup(state.settings) && !wantsCleanup(previous.settings)) {
-      void cleanup.loadIfDownloaded();
+    const wanted = wantsCleanup(state.settings);
+    if (wanted !== wantsCleanup(previous.settings)) {
+      void (wanted ? cleanup.loadIfDownloaded() : cleanup.unload());
     }
   });
 
