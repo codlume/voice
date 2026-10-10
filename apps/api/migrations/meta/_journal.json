@@ -15,6 +15,13 @@
       "when": 1791047511942,
       "tag": "0001_clear_id_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791645452277,
+      "tag": "0002_account_lookup_index",
+      "breakpoints": true
     }
   ]
 }

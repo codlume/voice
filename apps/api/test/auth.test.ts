@@ -1,9 +1,15 @@
+import {
+  createExecutionContext,
+  createScheduledController,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { createAuth } from "../src/auth.ts";
+import entry from "../src/index.ts";
 import { cookieHeader, playBrowser, storeCookies } from "./browser-play.ts";
 import { fakeGoogleToken, googleTokenUrl } from "./google-fake.ts";
 
@@ -129,6 +135,24 @@ async function whileWriteFails<T>(
     await env.DB.prepare("drop trigger fail_write").run();
   }
 }
+
+async function runSweep() {
+  const ctx = createExecutionContext();
+  await entry.scheduled(createScheduledController(), env, ctx);
+  await waitOnExecutionContext(ctx);
+}
+
+const seedUserWithoutAccount = (id: string) =>
+  env.DB.prepare("insert into user (id, name, email, updated_at) values (?, ?, ?, 0)")
+    .bind(id, id, `${id}@example.com`)
+    .run();
+
+const seedSession = (id: string, userId: string, expiresAt: number) =>
+  env.DB.prepare(
+    "insert into session (id, token, user_id, expires_at, updated_at, ip_address, user_agent) values (?, ?, ?, ?, 0, '203.0.113.9', 'synthetic-agent')",
+  )
+    .bind(id, `${id}-token`, userId, expiresAt)
+    .run();
 
 const storedTokens = (userId: string) =>
   env.DB.prepare("select access_token, id_token from account where user_id = ?")
@@ -262,26 +286,44 @@ describe("a user row with no account", () => {
     return id ?? "";
   }
 
-  it("is swept by a later Google callback, so a first sign-in that D1 cut off after the user row can start over (catches the lockout, and a sweep that takes a sign-in in flight)", async () => {
+  it("survives a callback request with no state and no cookie (catches the sweep back on the request path, where any client can make it scan the user table)", async () => {
+    await seedUserWithoutAccount("junk-callback-orphan");
+    await age("junk-callback-orphan");
+
+    for (const provider of ["google", "not-a-provider"]) {
+      const response = await worker(`${base}/api/auth/callback/${provider}`, {
+        redirect: "manual",
+      });
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toContain("error=state_not_found");
+    }
+
+    expect(await rowsOf("junk-callback-orphan")).toEqual({ users: 1, accounts: 0, sessions: 0 });
+  });
+
+  it("is swept by the scheduled sweep, so a first sign-in that D1 cut off after the user row can start over (catches the lockout, and a sweep that takes a sign-in in flight)", async () => {
     const cutOff = await whileWriteFails("insert on account", () => playSignIn("cut-off-create"));
     expect(cutOff.callback.headers.get("location")).toContain("error=unable_to_create_user");
     expect(cutOff.electronCookie).toBeNull();
     const orphan = await orphanOf("cut-off-create@example.com");
 
-    const atOnce = await playSignIn("cut-off-create");
-    expect(atOnce.electronCookie).toBeNull();
+    await runSweep();
     expect(await rowsOf(orphan)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+    const atOnce = await playSignIn("cut-off-create");
+    expect(atOnce.callback.headers.get("location")).toContain("error=account_not_linked");
+    expect(atOnce.electronCookie).toBeNull();
 
     // Google may have reported the email unverified the first time; the row must not stay for that.
     await env.DB.prepare("update user set email_verified = 0 where id = ?").bind(orphan).run();
     await age(orphan);
+    await runSweep();
+    expect(await rowsOf(orphan)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     const retry = await exchange(await browserSignIn("cut-off-create", { signOut: true }));
 
     expect(retry.status).toBe(200);
     const { user } = await retry.json<SignedIn>();
     expect(user.email).toBe("cut-off-create@example.com");
     expect(user.id).not.toBe(orphan);
-    expect(await rowsOf(orphan)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
   });
@@ -302,27 +344,59 @@ describe("a user row with no account", () => {
 
     // The row is as old as the sign-up, which here was a moment ago.
     await age(user.id);
+    await runSweep();
+    expect(await rowsOf(user.id)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     const retry = await exchange(await browserSignIn("cut-off-delete", { signOut: true }));
 
     expect(retry.status).toBe(200);
     const fresh = (await retry.json<SignedIn>()).user;
     expect(fresh.id).not.toBe(user.id);
-    expect(await rowsOf(user.id)).toEqual({ users: 0, accounts: 0, sessions: 0 });
     expect(await count("select count(*) as n from user where email = ?", user.email)).toBe(1);
     expect(await rowsOf(fresh.id)).toEqual({ users: 1, accounts: 1, sessions: 1 });
   });
+});
 
-  it("does not stop a sign-in when the sweep itself fails (catches a sweep error ending the callback)", async () => {
-    await whileWriteFails("insert on account", () => playSignIn("sweep-fails"));
-    const orphan = await orphanOf("sweep-fails@example.com");
-    await age(orphan);
+describe("the scheduled sweep", () => {
+  it("deletes expired sessions and keeps live ones, users with accounts and a sign-in in flight, and a second run changes nothing (catches a sweep that takes live rows, and expired sessions kept with their IP and user agent)", async () => {
+    const signedIn = await exchange(await browserSignIn("sweep-live", { signOut: true }));
+    const { user, token } = await signedIn.json<SignedIn>();
+    await age(user.id);
+    await seedSession("sweep-expired", user.id, Date.now() - 1000);
+    await seedSession("sweep-live-later", user.id, Date.now() + 60_000);
+    await seedUserWithoutAccount("sweep-in-flight");
+    const sessionIds = () =>
+      env.DB.prepare("select id from session where user_id = ?")
+        .bind(user.id)
+        .all<{ id: string }>()
+        .then(({ results }) => results.map(({ id }) => id));
+    expect(await sessionIds()).toHaveLength(3);
 
-    const bystander = await whileWriteFails("delete on user", () =>
-      browserSignIn("sweep-bystander", { signOut: true }),
-    );
+    for (let run = 0; run < 2; run++) {
+      await runSweep();
+      expect(await sessionIds()).not.toContain("sweep-expired");
+      expect(await sessionIds()).toContain("sweep-live-later");
+      expect(await count("select count(*) as n from session where token = ?", token)).toBe(1);
+      expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 1, sessions: 2 });
+      expect(await rowsOf("sweep-in-flight")).toEqual({ users: 1, accounts: 0, sessions: 0 });
+    }
+    expect((await getSession(cookieHeader(storeCookies(signedIn))))?.user.id).toBe(user.id);
+  });
 
-    expect((await exchange(bystander)).status).toBe(200);
-    expect(await rowsOf(orphan)).toEqual({ users: 1, accounts: 0, sessions: 0 });
+  it("finishes the other rule when one fails, and the next run completes the work (catches one failed delete ending the run or leaving the lockout for good)", async () => {
+    await seedUserWithoutAccount("sweep-rule-fails");
+    await age("sweep-rule-fails");
+    await seedSession("sweep-rule-fails-expired", "sweep-rule-fails", Date.now() - 1000);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await whileWriteFails("delete on user", runSweep);
+    } finally {
+      consoleError.mockRestore();
+    }
+
+    expect(await rowsOf("sweep-rule-fails")).toEqual({ users: 1, accounts: 0, sessions: 0 });
+
+    await runSweep();
+    expect(await rowsOf("sweep-rule-fails")).toEqual({ users: 0, accounts: 0, sessions: 0 });
   });
 });
 

@@ -1,7 +1,7 @@
 import { createExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import app from "../src/index.ts";
+import { app } from "../src/index.ts";
 
 // Registered before any request so the router includes it.
 app.get("/boom/:id", () => {

@@ -14,6 +14,8 @@
     "logs": { "enabled": true, "invocation_logs": false },
   },
   "vars": { "BETTER_AUTH_URL": "http://localhost:8787" },
+  // Unlike bindings, triggers are inherited by every environment.
+  "triggers": { "crons": ["0 * * * *"] },
   // The placeholder id stops Wrangler from auto-provisioning a database, even for a
   // deploy given an entry point. Local D1 keys its storage on it.
   "d1_databases": [
