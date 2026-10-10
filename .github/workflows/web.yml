@@ -30,7 +30,8 @@ jobs:
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--filter", "@voice/web..."]
       - name: Build and deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

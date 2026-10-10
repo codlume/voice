@@ -38,7 +38,8 @@ jobs:
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: |
+            args: ["--filter", "@voice/api..."]
       - name: Record D1 Time Travel bookmark
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
