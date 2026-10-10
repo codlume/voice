@@ -41,7 +41,6 @@ app.get("/", (c) => {
 const authPaths = [
   "/get-session",
   "/sign-out",
-  "/sign-in/social",
   "/callback/google",
   "/error",
   "/electron/init-oauth-proxy",
@@ -54,7 +53,7 @@ app.on(["GET", "POST"], authPaths, (c) => {
   if (!auth) {
     auth = createAuth(c.env, waitUntil);
     // A lazy instance ties its setup to the first request; keep it alive if that request is aborted (better-auth#10315).
-    c.executionCtx.waitUntil(auth.$context);
+    waitUntil(auth.$context);
   }
   return auth.handler(c.req.raw);
 });

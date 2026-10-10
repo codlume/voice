@@ -267,7 +267,7 @@ describe("disabled sign-in paths", () => {
     ).toBe(0);
   });
 
-  it("reject a Google ID token (catches re-enabled ID-token sign-in)", async () => {
+  it("do not route a direct social sign-in, so a Google ID token has no way in (catches re-enabled ID-token sign-in)", async () => {
     const idToken = fakeGoogleToken(
       new URLSearchParams({ code: "eve-intruder", client_id: env.GOOGLE_CLIENT_ID }),
     ).id_token;
@@ -279,7 +279,6 @@ describe("disabled sign-in paths", () => {
     });
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ code: "ID_TOKEN_NOT_SUPPORTED" });
     expect(response.headers.getSetCookie()).toEqual([]);
     expect(
       await count("select count(*) as n from user where email = ?", "eve-intruder@example.com"),
@@ -316,11 +315,19 @@ describe("a user row with no account", () => {
     await age("junk-callback-orphan");
 
     for (const provider of ["google", "not-a-provider"]) {
-      const response = await worker(`${base}/api/auth/callback/${provider}`, {
-        redirect: "manual",
-      });
-      expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toContain("error=state_not_found");
+      const ip = freshIp();
+      const response = await worker(
+        `${base}/api/auth/callback/${provider}`,
+        { redirect: "manual" },
+        ip,
+      );
+      if (provider === "google") {
+        expect(response.status).toBe(302);
+        expect(response.headers.get("location")).toContain("error=state_not_found");
+      } else {
+        expect(response.status).toBe(404);
+        expect(await bucketsOf(ip)).toEqual([]);
+      }
     }
 
     expect(await rowsOf("junk-callback-orphan")).toEqual({ users: 1, accounts: 0, sessions: 0 });

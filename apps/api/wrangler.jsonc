@@ -3,10 +3,7 @@
   // The top level is local development only. It has no name, entry point or routes, so
   // a deploy without --env fails. Local tools pass the entry point themselves.
   "compatibility_date": "2026-10-01",
-  // The Electron plugin starts a browser sign-in by fetching the Worker's own /sign-in/social.
-  // Without global_fetch_strictly_public, a fetch to the Worker's own zone goes to the zone's
-  // origin, which a custom domain does not have, and every desktop sign-in fails with a 500.
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
   // Invocation logs record full URLs, and the OAuth callback URL carries the code and state.
