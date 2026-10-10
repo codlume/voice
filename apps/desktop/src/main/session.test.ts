@@ -9,6 +9,7 @@ import {
   HELPER_TIMEOUT_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  TRANSCRIBE_GAVE_UP_MESSAGE,
   idle,
   step,
   toPillState,
@@ -40,6 +41,11 @@ const transcript = (text: string, cleanup: boolean, now = 2000) =>
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
 const toTranscribing: [SessionEvent, number][] = [...toRecording, up(1000)];
+const toOverdue: [SessionEvent, number][] = [
+  ...toTranscribing,
+  [{ type: "timedOut", id: ID }, 31_000],
+];
+const toGaveUp: [SessionEvent, number][] = [...toOverdue, [{ type: "timedOut", id: ID }, 61_000]];
 const toCleaning: [SessionEvent, number][] = [
   ...toTranscribing,
   transcript("hello um world", true),
@@ -116,7 +122,7 @@ describe("hold and release", () => {
     expect(afterUp.state).toEqual({ phase: "starting", id: ID, pressedAt: 0, releasedAt: 300 });
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
-    expect(state).toEqual({ phase: "transcribing", id: ID });
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 300 }]);
   });
 
@@ -154,7 +160,7 @@ describe("hold and release", () => {
 
   test("a hold of 250 ms or more stops capture and transcribes", () => {
     const { state, effects } = run([down(0), started(50), up(250)]);
-    expect(state).toEqual({ phase: "transcribing", id: ID });
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 250 }]);
   });
 
@@ -172,7 +178,7 @@ describe("hold and release", () => {
 
   test("Escape while processing is ignored", () => {
     const { state, effects } = run([...toTranscribing, [{ type: "cancel" }, 1100]]);
-    expect(state).toEqual({ phase: "transcribing", id: ID });
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([]);
   });
 
@@ -262,8 +268,8 @@ describe("capture the helper stops on its own", () => {
 
   test("leaves listening at once, commands nothing, and ignores the release of the still-held key", () => {
     const { state, effects } = run([...toRecording, stopped(600_000)]);
-    expect(state).toEqual({ phase: "transcribing", id: ID });
-    expect(toPillState(state)).toEqual({ kind: "processing" });
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
+    expect(toPillState(state)).toEqual({ kind: "processing", overdue: false });
     expect(effects).toEqual([]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
   });
@@ -383,7 +389,6 @@ describe("idle and stale events", () => {
     const stale: SessionEvent[] = [
       { type: "captureStarted", id: "old" },
       { type: "captureFailed", id: "old", message: "x" },
-      { type: "transcript", id: "old", text: "late words", cleanup: false },
       { type: "insertResult", id: "old", method: "paste", reason: null },
     ];
     for (const event of stale) {
@@ -391,7 +396,16 @@ describe("idle and stale events", () => {
       expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
       expect(effects).toEqual([]);
     }
-    expect(step(idle, { type: "transcript", id: "old", text: "late", cleanup: false }, 0)).toEqual({
+  });
+
+  test("a transcript for a session that is no longer current is remembered, never inserted", () => {
+    const late: SessionEvent = { type: "transcript", id: "old", text: "late words", cleanup: true };
+    const remember: Effect = { type: "remember", raw: "late words", text: "late words" };
+    expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });
+    const { state, effects } = run([...toRecording, [late, 900]]);
+    expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+    expect(effects).toEqual([remember]);
+    expect(step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false }, 0)).toEqual({
       state: idle,
       effects: [],
     });
@@ -407,12 +421,19 @@ describe("idle and stale events", () => {
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
   });
 
-  test("a transcription that never answers times out as failed and cancels the helper", () => {
-    const { state, effects } = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]);
+  test("a transcription past the watchdog becomes overdue and keeps waiting", () => {
+    const { state, effects } = run(toOverdue);
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: true });
+    expect(effects).toEqual([]);
+    expect(toPillState(state)).toEqual({ kind: "processing", overdue: true });
+  });
+
+  test("an overdue transcription that times out again ends failed and cancels the helper", () => {
+    const { state, effects } = run(toGaveUp);
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
+      outcome: { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
     });
     expect(effects).toEqual([
       { type: "cancelCapture", id: ID },
@@ -420,15 +441,44 @@ describe("idle and stale events", () => {
     ]);
   });
 
-  test("a transcript that lands after the timeout is remembered but not inserted", () => {
-    const timedOut = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]).state;
+  test("an overdue transcription still inserts, fails, or ends with the helper as usual", () => {
+    expect(run([...toOverdue, transcript("late words", false, 50_000)]).state).toEqual({
+      phase: "inserting",
+      id: ID,
+      raw: "late words",
+      text: "late words",
+    });
+    expect(
+      run([...toOverdue, [{ type: "transcriptFailed", id: ID, message: "asr broke" }, 50_000]])
+        .state,
+    ).toEqual({ phase: "done", id: ID, outcome: { kind: "failed", message: "asr broke" } });
+    expect(run([...toOverdue, [{ type: "helperExited" }, 50_000]]).state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "failed", message: HELPER_EXITED_MESSAGE },
+    });
+  });
+
+  test("the hotkey and Escape while overdue change nothing, so the busy helper is never asked", () => {
+    const overdue = run(toOverdue).state;
+    for (const event of [
+      { type: "hotkeyDown", id: "s2", asr: "ready" },
+      { type: "hotkeyUp" },
+      { type: "cancel" },
+    ] satisfies SessionEvent[]) {
+      expect(step(overdue, event, 50_000)).toEqual({ state: overdue, effects: [] });
+    }
+  });
+
+  test("a transcript that lands after main gave up is remembered but not inserted", () => {
+    const timedOut = run(toGaveUp).state;
     const { state, effects } = run([transcript("late words", true, 41_000)], timedOut);
     expect(state).toBe(timedOut);
     expect(effects).toEqual([{ type: "remember", raw: "late words", text: "late words" }]);
     expect(run([transcript("   ", true, 41_000)], timedOut).effects).toEqual([]);
     expect(
       step(timedOut, { type: "transcript", id: "s2", text: "x", cleanup: false }, 41_000),
-    ).toEqual({ state: timedOut, effects: [] });
+    ).toEqual({ state: timedOut, effects: [{ type: "remember", raw: "x", text: "x" }] });
   });
 
   test("an insert that never answers times out as notInserted with the text remembered", () => {
@@ -450,6 +500,7 @@ describe("idle and stale events", () => {
     expect(run([...toTranscribing, [{ type: "timedOut", id: "old" }, 500]]).state).toEqual({
       phase: "transcribing",
       id: ID,
+      overdue: false,
     });
   });
 
@@ -465,9 +516,9 @@ describe("pill projection", () => {
     expect(toPillState(idle)).toEqual({ kind: "idle" });
     expect(toPillState(run([down(0)]).state)).toEqual({ kind: "idle" });
     expect(toPillState(run(toRecording).state)).toEqual({ kind: "listening" });
-    expect(toPillState(run(toTranscribing).state)).toEqual({ kind: "processing" });
-    expect(toPillState(run(toCleaning).state)).toEqual({ kind: "processing" });
-    expect(toPillState(run(toInserting).state)).toEqual({ kind: "processing" });
+    expect(toPillState(run(toTranscribing).state)).toEqual({ kind: "processing", overdue: false });
+    expect(toPillState(run(toCleaning).state)).toEqual({ kind: "processing", overdue: false });
+    expect(toPillState(run(toInserting).state)).toEqual({ kind: "processing", overdue: false });
     expect(toPillState(run([down(0, "missing")]).state)).toEqual({
       kind: "done",
       outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },

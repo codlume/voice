@@ -4,7 +4,7 @@ export type Session =
   | { phase: "idle" }
   | { phase: "starting"; id: string; pressedAt: number; releasedAt: number | null }
   | { phase: "recording"; id: string; pressedAt: number }
-  | { phase: "transcribing"; id: string }
+  | { phase: "transcribing"; id: string; overdue: boolean }
   | { phase: "cleaning"; id: string; raw: string }
   | { phase: "inserting"; id: string; raw: string; text: string }
   | { phase: "done"; id: string; outcome: Outcome };
@@ -46,6 +46,7 @@ export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
 export const HELPER_TIMEOUT_MESSAGE = "Voice helper did not respond";
+export const TRANSCRIBE_GAVE_UP_MESSAGE = "Transcription did not finish";
 
 export const idle: Session = { phase: "idle" };
 
@@ -65,7 +66,7 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
     return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
   }
   return {
-    state: { phase: "transcribing", id },
+    state: { phase: "transcribing", id, overdue: false },
     effects: [{ type: "stopCapture", id, releasedAt }],
   };
 }
@@ -84,6 +85,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
   const same = { state, effects: [] };
   const stale =
     event.type !== "hotkeyDown" &&
+    event.type !== "transcript" &&
     "id" in event &&
     (state.phase === "idle" || state.id !== event.id);
   if (stale) return same;
@@ -127,15 +129,16 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStopped": {
       if (state.phase !== "recording") return same;
-      return { state: { phase: "transcribing", id: state.id }, effects: [] };
+      return { state: { phase: "transcribing", id: state.id, overdue: false }, effects: [] };
     }
     case "transcript": {
       const raw = event.text.trim();
-      // A transcript that lands after the session already timed out is still the user's words.
-      if (state.phase === "done") {
+      if (
+        (state.phase !== "transcribing" && state.phase !== "recording") ||
+        state.id !== event.id
+      ) {
         return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
       }
-      if (state.phase !== "transcribing" && state.phase !== "recording") return same;
       if (raw === "") return finish(state.id, { kind: "empty" });
       if (!event.cleanup) return insert(state.id, raw, raw);
       return {
@@ -172,10 +175,19 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return finish(state.id, { kind: "failed", message: HELPER_EXITED_MESSAGE });
     }
     case "timedOut": {
-      if (state.phase === "starting" || state.phase === "transcribing") {
+      if (state.phase === "starting") {
         return finish(
           state.id,
           { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
+          { type: "cancelCapture", id: state.id },
+        );
+      }
+      // A cancel makes the helper discard the audio, so the first deadline only tells the user.
+      if (state.phase === "transcribing") {
+        if (!state.overdue) return { state: { ...state, overdue: true }, effects: [] };
+        return finish(
+          state.id,
+          { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
           { type: "cancelCapture", id: state.id },
         );
       }
@@ -197,9 +209,10 @@ export function toPillState(session: Session): PillState {
     case "recording":
       return { kind: "listening" };
     case "transcribing":
+      return { kind: "processing", overdue: session.overdue };
     case "cleaning":
     case "inserting":
-      return { kind: "processing" };
+      return { kind: "processing", overdue: false };
     case "done":
       return { kind: "done", outcome: session.outcome };
   }

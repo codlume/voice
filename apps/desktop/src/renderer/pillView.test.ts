@@ -10,7 +10,11 @@ describe("pillView", () => {
   test("shows listening only for the listening phase", () => {
     const off = { copyToClipboard: false };
     expect(pillView({ kind: "listening" }, off)).toEqual({ kind: "listening" });
-    expect(pillView({ kind: "processing" }, off)).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "processing", overdue: false }, off)).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "processing", overdue: true }, off)).toEqual({
+      kind: "message",
+      text: "Still transcribing",
+    });
     expect(pillView({ kind: "idle" }, off)).toEqual({ kind: "idle" });
   });
 

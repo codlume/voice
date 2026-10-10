@@ -78,7 +78,7 @@ export type Outcome =
 export type PillState =
   | { kind: "idle" }
   | { kind: "listening" }
-  | { kind: "processing" }
+  | { kind: "processing"; overdue: boolean }
   | { kind: "done"; outcome: Outcome };
 
 export type ModelStatus =

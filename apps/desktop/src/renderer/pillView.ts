@@ -50,7 +50,13 @@ export function pillView(
   session: PillState,
   { copyToClipboard }: { copyToClipboard: boolean },
 ): PillView {
-  return session.kind === "done" ? outcomeView(session.outcome, copyToClipboard) : session;
+  if (session.kind === "done") return outcomeView(session.outcome, copyToClipboard);
+  if (session.kind === "processing") {
+    return session.overdue
+      ? { kind: "message", text: "Still transcribing" }
+      : { kind: "processing" };
+  }
+  return session;
 }
 
 export const BAR_COUNT = 11;

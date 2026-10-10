@@ -68,7 +68,7 @@ const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
 const pillScenes: Record<string, PillState> = {
   idle: { kind: "idle" },
   listening: { kind: "listening" },
-  processing: { kind: "processing" },
+  processing: { kind: "processing", overdue: false },
   inserted: done({ kind: "inserted", method: "accessibility" }),
   pasted: done({ kind: "inserted", method: "paste" }),
   empty: done({ kind: "empty" }),
@@ -202,11 +202,11 @@ const hubScenes: Record<string, Snapshot> = {
 const cycle: [PillState, number][] = [
   [{ kind: "idle" }, 1200],
   [{ kind: "listening" }, 2600],
-  [{ kind: "processing" }, 900],
+  [{ kind: "processing", overdue: false }, 900],
   [done({ kind: "inserted", method: "accessibility" }), 1300],
   [{ kind: "idle" }, 1500],
   [{ kind: "listening" }, 1800],
-  [{ kind: "processing" }, 700],
+  [{ kind: "processing", overdue: false }, 700],
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 

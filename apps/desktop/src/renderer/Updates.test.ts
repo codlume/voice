@@ -30,7 +30,7 @@ describe("update controls", () => {
     const sessions: PillState[] = [
       idle,
       { kind: "listening" },
-      { kind: "processing" },
+      { kind: "processing", overdue: false },
       { kind: "done", outcome: { kind: "inserted", method: "accessibility" } },
     ];
     expect(sessions.map((session) => updateButton(ready, session))).toEqual([
