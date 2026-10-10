@@ -58,8 +58,7 @@ function contentSecurityPolicy(): Plugin {
               "default-src 'self'",
               dev ? `script-src 'self' 'nonce-${DEV_NONCE}'` : "script-src 'self'",
               dev ? "style-src 'self' 'unsafe-inline'" : "style-src 'self'",
-              // Vite inlines small imported images, such as the app icon, as data: URLs. Google
-              // serves account pictures from googleusercontent.com (see account-client.ts).
+              // Vite inlines small imported images, such as the app icon, as data: URLs.
               "img-src 'self' data: https://*.googleusercontent.com",
               "object-src 'none'",
               "base-uri 'none'",
