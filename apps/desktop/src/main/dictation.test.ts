@@ -107,8 +107,23 @@ function harness(opts: Options = {}) {
     if (session.phase === "idle") throw new Error("no session");
     return session.id;
   };
+  // Mirrors Capture.swift: a capture.cancel while transcribing discards the audio and the result,
+  // so a cancelled session never produces a transcript.
+  const helper = {
+    transcript(sessionId: string, text: string) {
+      if (commands.some((c) => c.type === "capture.cancel" && c.id === sessionId)) return;
+      dictation.onHelperEvent({
+        type: "transcript",
+        id: sessionId,
+        text,
+        audioMs: 800,
+        asrMs: 100,
+      });
+    },
+  };
   return {
     store,
+    helper,
     commands,
     cleans,
     styles,
@@ -733,7 +748,7 @@ describe("createDictation", () => {
     expect(h.store.state.last).toEqual({ raw: "stuck", text: "stuck" });
   });
 
-  test("a transcription the helper never answers ends failed, cancels the capture, and still keeps a late transcript", () => {
+  test("a transcription that outlives the watchdog ends failed, leaves the helper transcribing, and keeps the transcript when it lands", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
@@ -742,10 +757,13 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
-    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "late", audioMs: 800, asrMs: 100 });
+    expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
+    vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS + 1);
+    expect(h.store.state.session).toEqual(idle);
+    h.helper.transcript(id, "late");
     expect(h.store.state.last).toEqual({ raw: "late", text: "late" });
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
+    expect(h.store.state.session).toEqual(idle);
   });
 
   test("a capture the helper stops on its own shows processing, logs why, and gets the transcription watchdog", () => {
@@ -828,7 +846,7 @@ describe("createDictation", () => {
     expect(h.store.state.session).toEqual({ phase: "transcribing", id });
     vi.advanceTimersByTime(TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS - TRANSCRIBE_TIMEOUT_MS);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
-    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+    expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
   });
 
   test("hotkey down while the speech model downloads sends nothing and names the download", () => {

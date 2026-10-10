@@ -383,7 +383,6 @@ describe("idle and stale events", () => {
     const stale: SessionEvent[] = [
       { type: "captureStarted", id: "old" },
       { type: "captureFailed", id: "old", message: "x" },
-      { type: "transcript", id: "old", text: "late words", cleanup: false },
       { type: "insertResult", id: "old", method: "paste", reason: null },
     ];
     for (const event of stale) {
@@ -391,7 +390,16 @@ describe("idle and stale events", () => {
       expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
       expect(effects).toEqual([]);
     }
-    expect(step(idle, { type: "transcript", id: "old", text: "late", cleanup: false }, 0)).toEqual({
+  });
+
+  test("a transcript for a session that is no longer current is remembered, never inserted", () => {
+    const late: SessionEvent = { type: "transcript", id: "old", text: "late words", cleanup: true };
+    const remember: Effect = { type: "remember", raw: "late words", text: "late words" };
+    expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });
+    const { state, effects } = run([...toRecording, [late, 900]]);
+    expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+    expect(effects).toEqual([remember]);
+    expect(step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false }, 0)).toEqual({
       state: idle,
       effects: [],
     });
@@ -407,17 +415,10 @@ describe("idle and stale events", () => {
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
   });
 
-  test("a transcription that never answers times out as failed and cancels the helper", () => {
+  test("a transcription that outlives the watchdog ends failed without cancelling the helper", () => {
     const { state, effects } = run([...toTranscribing, [{ type: "timedOut", id: ID }, 40_000]]);
-    expect(state).toEqual({
-      phase: "done",
-      id: ID,
-      outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
-    });
-    expect(effects).toEqual([
-      { type: "cancelCapture", id: ID },
-      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
-    ]);
+    expect(state).toMatchObject({ phase: "done", id: ID, outcome: { kind: "failed" } });
+    expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
   });
 
   test("a transcript that lands after the timeout is remembered but not inserted", () => {
@@ -428,7 +429,7 @@ describe("idle and stale events", () => {
     expect(run([transcript("   ", true, 41_000)], timedOut).effects).toEqual([]);
     expect(
       step(timedOut, { type: "transcript", id: "s2", text: "x", cleanup: false }, 41_000),
-    ).toEqual({ state: timedOut, effects: [] });
+    ).toEqual({ state: timedOut, effects: [{ type: "remember", raw: "x", text: "x" }] });
   });
 
   test("an insert that never answers times out as notInserted with the text remembered", () => {
