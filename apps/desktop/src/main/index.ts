@@ -11,6 +11,7 @@ import {
   Menu,
   nativeTheme,
   screen,
+  session,
   shell,
   Tray,
   type WebPreferences,
@@ -47,6 +48,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { publish } from "./publish.ts";
@@ -142,13 +144,10 @@ function receivesCallbackUrls(): boolean {
   }
 }
 
-function loadPage(window: BrowserWindow, page: "hub" | "pill") {
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    void window.loadURL(new URL(`${page}.html`, devServerUrl).toString());
-  } else {
-    void window.loadFile(NodePath.join(__dirname, "../dist/renderer", `${page}.html`));
-  }
+const rendererDir = NodePath.join(__dirname, "../dist/renderer");
+
+function loadPage(window: BrowserWindow, page: Page) {
+  void window.loadURL(pageUrl(page, { development, env: process.env, rendererDir }));
 }
 
 function createPillWindow(webPreferences: WebPreferences) {
@@ -305,7 +304,9 @@ async function main() {
     store.update((s) => (s.loginItem === loginItem ? s : { ...s, loginItem }));
   }
 
+  app.on("web-contents-created", (_event, contents) => lockNavigation(contents));
   await app.whenReady();
+  denyPermissions(session.defaultSession);
   nativeTheme.themeSource = settings.theme;
   refreshLoginItem();
   if (!settings.showInDock) app.dock?.hide();
