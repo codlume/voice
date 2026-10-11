@@ -240,9 +240,9 @@ const commands = {
       instance: instance
         ? { ...instance, cdpPages: cdp }
         : state
-          ? alive(state.ownerPid)
+          ? sameProcess(state.ownerPid, state.ownerIdentity)
             ? `launching: ${show(state)}`
-            : `stale state file for dead pid ${state.electronPid}; run voice-verify.mjs stop`
+            : "stale instance record; run voice-verify.mjs stop"
           : "none",
       otherVoiceProcesses: otherVoiceProcesses(instance?.userData),
     };
