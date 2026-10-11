@@ -226,12 +226,22 @@ test("chunk seams keep ordinary abbreviations with the following word", () => {
   );
 });
 
-test("removing a filler chunk keeps the next paragraph capitalized", () => {
-  const continuation = "then " + "review the release notes carefully ".repeat(11) + "on friday";
-  const raw = "call ada\n\num " + continuation;
-  const chunks = chunkTranscript(raw, 400, chars);
-  const outputs = chunks.map(({ text }) =>
-    text === "um" ? "" : text[0]!.toUpperCase() + text.slice(1),
-  );
-  expect(stitch(raw, chunks, outputs)).toBe("Call ada\n\nThen " + continuation.slice(5));
+test.each([" ", "   ", "\t\t\t\t"])(
+  "removing filler with %j keeps the next paragraph capitalized",
+  (gap) => {
+    const continuation = "then " + "review the release notes carefully ".repeat(11) + "on friday";
+    const raw = "call ada\n\num" + gap + continuation;
+    const chunks = chunkTranscript(raw, 400, chars);
+    const outputs = chunks.map(({ text }) =>
+      text === "um" ? "" : text[0]!.toUpperCase() + text.slice(1),
+    );
+    expect(stitch(raw, chunks, outputs)).toBe("Call ada\n\nThen " + continuation.slice(5));
+  },
+);
+
+test("punctuation inside a split URL does not capitalize its query", () => {
+  const raw = "go to example.com/path?foo=bar and continue";
+  const chunks = chunkTranscript(raw, 20, chars);
+  const outputs = chunks.map(({ text }) => text[0]!.toUpperCase() + text.slice(1));
+  expect(stitch(raw, chunks, outputs)).toBe("Go to example.com/path?foo=bar and continue");
 });
