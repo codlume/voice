@@ -10,14 +10,15 @@ import { runningVoiceProcesses } from "./helper.mjs";
 const dir = mkdtempSync(join(tmpdir(), "voice-processes-"));
 const children = [];
 after(() => {
-  for (const child of children) process.kill(-child.pid, "SIGKILL");
+  for (const child of children) child.stdin.end();
   rmSync(dir, { recursive: true, force: true });
 });
 
-const idle = "setTimeout(() => {}, 60_000)";
+// Stand-ins exit when stdin closes, so none outlives this test even if it is killed.
+const idle = 'process.stdin.on("end", () => process.exit()).resume()';
 
 function run(command, args, options = {}) {
-  const child = spawn(command, args, { stdio: "ignore", detached: true, ...options });
+  const child = spawn(command, args, { stdio: ["pipe", "ignore", "ignore"], ...options });
   children.push(child);
   return new Promise((resolve, reject) => {
     child.once("spawn", () => resolve(String(child.pid)));
@@ -35,16 +36,18 @@ test("a running Voice is found by its executable, not by a path in another comma
   }
   mkdirSync(join(dir, "scripts"));
   writeFileSync(join(dir, "scripts/dev.mjs"), idle);
+  writeFileSync(join(dir, "scripts/dev-bundle.test.mjs"), idle);
 
   const pids = {
     helper: await run(helper, ["-e", idle]),
     devSession: await run(process.execPath, [join(dir, "scripts/dev.mjs")]),
+    otherScript: await run(process.execPath, [join(dir, "scripts/dev-bundle.test.mjs")]),
     packagingJob: await run(process.execPath, ["-e", idle, helper]),
     swiftBuild: await run("/bin/sh", [
       "-c",
-      `sleep 60; : --package-path ${join(dir, "native/voice-helper")}`,
+      `read _; : --package-path ${join(dir, "native/voice-helper")}`,
     ]),
-    devScriptMention: await run("/bin/sh", ["-c", "sleep 60; : scripts/dev.mjs"]),
+    devScriptMention: await run("/bin/sh", ["-c", "read _; : scripts/dev.mjs"]),
     renamedNode: await run(process.execPath, ["-e", idle], { argv0: "voice-helper" }),
   };
 
@@ -54,6 +57,7 @@ test("a running Voice is found by its executable, not by a path in another comma
     {
       helper: true,
       devSession: true,
+      otherScript: false,
       packagingJob: false,
       swiftBuild: false,
       devScriptMention: false,
