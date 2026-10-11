@@ -86,7 +86,7 @@ describe("parseDictionary", () => {
         { id: "1", phrase: "other", replacement: null },
         { id: "4", phrase: "missing replacement" },
         { id: "5", phrase: "", replacement: null },
-        { id: "6", phrase: "idk", replacement: "" },
+        { id: "6", phrase: "idk", replacement: 42 },
         { id: 7, phrase: "numeric id", replacement: null },
         "Wispr Flow",
         null,
@@ -94,6 +94,18 @@ describe("parseDictionary", () => {
     ).toEqual([
       { id: "1", phrase: "Wispr Flow", replacement: null },
       { id: "2", phrase: "btw", replacement: "by the way" },
+    ]);
+  });
+
+  test("an empty or blank replacement loads as a word, as the dialog saves one", () => {
+    expect(
+      parseDictionary([
+        { id: "1", phrase: "btw", replacement: "" },
+        { id: "2", phrase: "idk", replacement: "  " },
+      ]),
+    ).toEqual([
+      { id: "1", phrase: "btw", replacement: null },
+      { id: "2", phrase: "idk", replacement: null },
     ]);
   });
 

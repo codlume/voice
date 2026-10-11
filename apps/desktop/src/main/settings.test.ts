@@ -267,7 +267,7 @@ describe("applyPatch", () => {
   test.each([
     ["a duplicate phrase", [WORD, { ...REPLACEMENT, phrase: "WISPR  flow" }]],
     ["a record missing its replacement", [WORD, { id: "2", phrase: "btw" }]],
-    ["a blank replacement", [WORD, { ...REPLACEMENT, replacement: " " }]],
+    ["a replacement that is not text", [WORD, { ...REPLACEMENT, replacement: 42 }]],
     ["a list that is not an array", { 0: WORD }],
   ])("refuses to save a dictionary with %s instead of dropping any", (_, dictionary) => {
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET], dictionary: [WORD] });

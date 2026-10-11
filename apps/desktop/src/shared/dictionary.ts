@@ -49,7 +49,9 @@ export function parseDictionary(raw: unknown): DictionaryEntry[] {
     const { id, phrase, replacement } = item as Record<string, unknown>;
     if (typeof id !== "string" || typeof phrase !== "string") continue;
     if (replacement !== null && typeof replacement !== "string") continue;
-    const entry = { id, phrase: phrase.trim(), replacement: replacement?.trim() ?? null };
+    // An empty "Replace with" is a word, as in the dialog.
+    const text = replacement?.trim() ?? "";
+    const entry = { id, phrase: phrase.trim(), replacement: text === "" ? null : text };
     if (kept.some((other) => other.id === id) || dictionaryProblem(entry, kept, [])) continue;
     kept.push(entry);
   }
