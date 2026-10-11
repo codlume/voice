@@ -44,7 +44,6 @@ it("0003 splits each existing name into first and last name at the first space, 
   const backfill = migration?.queries.filter((query) => query.includes("UPDATE")) ?? [];
   expect(backfill).toHaveLength(2);
   const run = () => env.DB.batch(backfill.map((query) => env.DB.prepare(query)));
-  // As the Worker wrote users before 0003, with no first or last name.
   await env.DB.batch(
     [
       ["two-words", "Mateusz Hadryś"],

@@ -17,7 +17,6 @@ import { expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
 import { authSessionStored, authStorageKeys } from "./account-storage.ts";
 
-// What builds before account ids and first and last names cached, and the identity read from it.
 const legacyCache = { name: USER.name, email: USER.email };
 const legacyUser = { ...legacyCache, firstName: "Ada", lastName: "Lovelace" };
 const keys = authStorageKeys("nightly");

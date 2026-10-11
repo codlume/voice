@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import {
+  fullName,
   toPillSnapshot,
   type ModelStatus,
   type Outcome,
@@ -375,8 +376,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
       if (snapshot.account.kind !== "signedIn") return;
       const name = { firstName: firstName.trim(), lastName: lastName.trim() };
       if (!name.firstName) throw new Error("Enter a first name.");
-      const fullName = [name.firstName, name.lastName].filter(Boolean).join(" ");
-      set({ ...snapshot, account: { ...snapshot.account, ...name, name: fullName } });
+      set({ ...snapshot, account: { ...snapshot.account, ...name, name: fullName(name) } });
     },
     requestAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;

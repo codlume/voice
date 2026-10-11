@@ -1,6 +1,7 @@
 import {
   ACCOUNT_NAME_MAX_LENGTH,
   VOICE_URL_SCHEME,
+  fullName,
   type AccountDeletion,
   type AccountIdentity,
   type AccountName,
@@ -34,6 +35,7 @@ export const DELETE_ACCOUNT_OFFLINE_MESSAGE =
 export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your account.";
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
+export const NAME_SHAPE_MESSAGE = "The name was not in the expected format.";
 export const FIRST_NAME_REQUIRED_MESSAGE = "Enter a first name.";
 export const NAME_TOO_LONG_MESSAGE = `A name can be at most ${ACCOUNT_NAME_MAX_LENGTH} characters.`;
 export const UPDATE_NAME_SIGNED_OUT_MESSAGE = "Sign in to change your name.";
@@ -55,7 +57,7 @@ export type RedeemResult =
 
 export type DeleteAccountResult = { kind: "deleted" | "reauthRequired" | "failed" | "offline" };
 
-export type UpdateNameResult = { kind: "updated"; user: Identity } | { kind: "offline" | "failed" };
+export type UpdateNameResult = { kind: "updated" | "offline" | "failed" };
 
 /** What confirming a deletion came to: the API's answer, or a cookie that is another account's. */
 type DeletionOutcome = DeleteAccountResult | { kind: "otherAccount"; user: Identity };
@@ -85,8 +87,8 @@ export type AuthClient = {
   endServerSignOuts(): Promise<ServerSignOut[]>;
   deleteAccount(): Promise<DeleteAccountResult>;
   revokeOlderAuthSession(): Promise<void>;
-  /** Saves the name, then reads the identity back from `get-session` and caches it. */
-  updateName(name: AccountName): Promise<UpdateNameResult>;
+  /** Saves the identity's first and last name, then caches the identity. */
+  updateName(user: AccountIdentity): Promise<UpdateNameResult>;
 };
 
 /**
@@ -207,7 +209,6 @@ export function parseCallbackUrl(url: string): SignInCode | null {
   return parseSignInCode(parsed.hash.slice("#token=".length));
 }
 
-/** A name from the renderer, trimmed. Throws the message the Account page shows. */
 export function parseAccountName(value: unknown): AccountName {
   if (
     typeof value !== "object" ||
@@ -215,7 +216,7 @@ export function parseAccountName(value: unknown): AccountName {
     !("firstName" in value && typeof value.firstName === "string") ||
     !("lastName" in value && typeof value.lastName === "string")
   ) {
-    throw new Error(FIRST_NAME_REQUIRED_MESSAGE);
+    throw new Error(NAME_SHAPE_MESSAGE);
   }
   const name = { firstName: value.firstName.trim(), lastName: value.lastName.trim() };
   if (!name.firstName) throw new Error(FIRST_NAME_REQUIRED_MESSAGE);
@@ -633,35 +634,21 @@ export function createAccount({
         throw new Error(UPDATE_NAME_SIGNED_OUT_MESSAGE);
       }
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
-      // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
-      const result = await loadedClient.updateName(name);
-      switch (result.kind) {
-        case "updated":
-          // A deletion started meanwhile owns the state, so the name shows at the next check.
-          if (
-            state.kind === "signedIn" &&
-            !state.deletion &&
-            sameAccount(identityOf(state), result.user)
-          ) {
-            publish({ kind: "signedIn", ...result.user });
-          }
-          return;
-        case "offline":
-        case "failed":
-          log("account name update failed", {
-            message: "account name update failed",
-            level: "warn",
-            attributes: { "account.failure": result.kind },
-          });
-          throw new Error(
-            result.kind === "offline" ? UPDATE_NAME_OFFLINE_MESSAGE : UPDATE_NAME_FAILED_MESSAGE,
-          );
-        default: {
-          const exhaustive: never = result;
-          return exhaustive;
-        }
+      const renamed = { ...identityOf(state), ...name, name: fullName(name) };
+      const { kind } = await loadedClient.updateName(renamed);
+      if (kind === "updated") {
+        if (state.kind === "signedIn" && !state.deletion) publish({ kind: "signedIn", ...renamed });
+        return;
       }
+      log("account name update failed", {
+        message: "account name update failed",
+        level: "warn",
+        attributes: { "account.failure": kind },
+      });
+      throw new Error(
+        kind === "offline" ? UPDATE_NAME_OFFLINE_MESSAGE : UPDATE_NAME_FAILED_MESSAGE,
+      );
     },
     requestDeletion,
     cancelDeletion() {

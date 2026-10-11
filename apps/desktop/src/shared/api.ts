@@ -59,7 +59,6 @@ export type AccountState =
   | ({ kind: "signedIn"; deletion?: AccountDeletion; notice?: string } & AccountIdentity)
   | { kind: "error"; message: string };
 
-/** `name` is the full name the API derives from the first and last name. */
 export type AccountIdentity = {
   id?: string;
   name: string;
@@ -71,7 +70,9 @@ export type AccountIdentity = {
 
 export type AccountName = Pick<AccountIdentity, "firstName" | "lastName">;
 
-/** The API refuses a longer first or last name. */
+export const fullName = ({ firstName, lastName }: AccountName) =>
+  [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+
 export const ACCOUNT_NAME_MAX_LENGTH = 100;
 
 export type AccountDeletion =

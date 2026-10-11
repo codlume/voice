@@ -953,21 +953,14 @@ describe("deletion through the real auth client", () => {
 describe("name update through the real auth client", () => {
   const renamed = { ...USER, name: "Augusta King", firstName: "Augusta", lastName: "King" };
 
-  test("sends only the two names, then returns and caches the identity get-session reads back", async () => {
+  test("sends only the two names in one request, then caches the identity it was given", async () => {
     const auth = await signedInClient("name-token");
     http.sent = [];
-    http.answer = (url) =>
-      url.endsWith("/update-user")
-        ? json({ status: true })
-        : json({ session: { token: "name-token" }, user: renamed });
+    http.answer = () => json({ status: true });
 
-    expect(await auth.updateName({ firstName: "Augusta", lastName: "King" })).toEqual({
-      kind: "updated",
-      user: renamed,
-    });
+    expect(await auth.updateName(renamed)).toEqual({ kind: "updated" });
     expect(http.sent.map(({ url, cookie }) => [new URL(url).pathname, cookie])).toEqual([
       ["/api/auth/update-user", "better-auth.session_token=name-token"],
-      ["/api/auth/get-session", "better-auth.session_token=name-token"],
     ]);
     expect(JSON.parse(http.sent[0]?.body ?? "")).toEqual({
       firstName: "Augusta",
@@ -980,27 +973,18 @@ describe("name update through the real auth client", () => {
   test.each([
     ["a refused update", "failed", () => json({ code: "BAD_REQUEST" }, { status: 400 })],
     ["no connection", "offline", () => Promise.reject(new TypeError("fetch failed"))],
-    [
-      "a failed read-back",
-      "failed",
-      (url: string) =>
-        url.endsWith("/update-user") ? json({ status: true }) : json({}, { status: 503 }),
-    ],
   ] as const)("%s is %s and keeps the cached identity", async (_case, kind, answer) => {
     const auth = await signedInClient("name-token");
     http.answer = answer;
-    expect(await auth.updateName({ firstName: "Augusta", lastName: "King" })).toEqual({ kind });
+    expect(await auth.updateName(renamed)).toEqual({ kind });
     expect(auth.cachedUser()).toEqual(USER);
   });
 
   test("a sign-out while the update is in flight leaves no identity behind", async () => {
     const auth = await signedInClient("name-token");
     const pending = Promise.withResolvers<Response>();
-    http.answer = (url) =>
-      url.endsWith("/update-user")
-        ? pending.promise
-        : json({ session: { token: "name-token" }, user: renamed });
-    const saving = auth.updateName({ firstName: "Augusta", lastName: "King" });
+    http.answer = () => pending.promise;
+    const saving = auth.updateName(renamed);
     await vi.waitFor(() => expect(http.sent.at(-1)?.url).toMatch(/update-user$/));
     auth.forget();
     pending.resolve(json({ status: true }));

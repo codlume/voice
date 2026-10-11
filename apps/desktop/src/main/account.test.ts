@@ -10,6 +10,7 @@ import {
   AUTH_SESSION_CHECK_INTERVAL_MS,
   AUTH_SESSION_ENDED_MESSAGE,
   FIRST_NAME_REQUIRED_MESSAGE,
+  NAME_SHAPE_MESSAGE,
   NAME_TOO_LONG_MESSAGE,
   PASTE_CODE_MESSAGE,
   SIGN_IN_ERRORS,
@@ -942,7 +943,7 @@ describe("parseAccountName", () => {
 
   test("refuses anything but two strings with a first name, at most 100 characters each", () => {
     for (const value of [null, "Ada", { firstName: "Ada" }, { firstName: 1, lastName: "" }]) {
-      expect(() => parseAccountName(value)).toThrow(FIRST_NAME_REQUIRED_MESSAGE);
+      expect(() => parseAccountName(value)).toThrow(NAME_SHAPE_MESSAGE);
     }
     expect(() => parseAccountName({ firstName: " ", lastName: "Lovelace" })).toThrow(
       FIRST_NAME_REQUIRED_MESSAGE,
@@ -962,18 +963,36 @@ describe("updateName", () => {
 
   const renamed = { ...USER, name: "Augusta King", firstName: "Augusta", lastName: "King" };
 
-  test("publishes the identity the API reads back, and caches it", async () => {
+  test("publishes and caches the signed-in identity with the saved names", async () => {
     const h = await signedIn();
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
     await flush();
-    expect(h.fake.nameUpdates.map(({ name }) => name)).toEqual([
-      { firstName: "Augusta", lastName: "King" },
-    ]);
+    expect(h.fake.nameUpdates.map(({ user }) => user)).toEqual([renamed]);
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
-    h.fake.nameUpdates[0]?.answer({ kind: "updated", user: renamed });
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
     await saving;
     expect(h.state).toEqual({ kind: "signedIn", ...renamed });
     expect(h.fake.client.cachedUser()).toEqual(renamed);
+  });
+
+  test("a last name cleared to empty leaves the first name as the full name", async () => {
+    const h = await signedIn();
+    const saving = h.account.updateName({ firstName: "Ada", lastName: "" });
+    await flush();
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
+    await saving;
+    expect(h.state).toEqual({ kind: "signedIn", ...USER, name: "Ada", lastName: "" });
+  });
+
+  test("a sign-out while the update is in flight stays signed out and caches nothing", async () => {
+    const h = await signedIn();
+    const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
+    await flush();
+    void h.account.signOut();
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
+    await saving;
+    expect(h.state).toEqual({ kind: "signedOut" });
+    expect(h.fake.client.cachedUser()).toBeNull();
   });
 
   test.each([
@@ -1020,7 +1039,7 @@ describe("updateName", () => {
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
     await flush();
     h.account.requestDeletion();
-    h.fake.nameUpdates[0]?.answer({ kind: "updated", user: renamed });
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
     await saving;
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
   });
@@ -1033,7 +1052,7 @@ describe("updateName", () => {
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
     await flush();
     expect(h.checks[0]?.signal.aborted).toBe(true);
-    h.fake.nameUpdates[0]?.answer({ kind: "updated", user: renamed });
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
     await saving;
     h.checks[0]?.answer({ kind: "active", user: USER });
     await refreshed;

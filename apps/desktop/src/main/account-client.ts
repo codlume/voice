@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
+import { inferAdditionalFields } from "better-auth/client/plugins";
 import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
@@ -30,8 +31,7 @@ function isGooglePicture(image: string) {
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
 }
 
-/** The first word is the first name and the rest the last name, as the API split existing names. */
-function splitName(name: string): AccountName {
+function splitLegacyName(name: string): AccountName {
   const trimmed = name.trim();
   const space = trimmed.indexOf(" ");
   return space === -1
@@ -50,8 +50,6 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   ) {
     return null;
   }
-  // Identities cached before first and last names have only `name`. The API never stores an empty
-  // first name, except for a sign-up served while its migration ran ahead of the Worker.
   const { firstName, lastName } =
     "firstName" in user &&
     typeof user.firstName === "string" &&
@@ -59,7 +57,7 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
     "lastName" in user &&
     typeof user.lastName === "string"
       ? { firstName: user.firstName, lastName: user.lastName }
-      : splitName(user.name);
+      : splitLegacyName(user.name);
   const identity: AccountIdentity = { name: user.name, firstName, lastName, email: user.email };
   if ("id" in user) {
     if (typeof user.id !== "string") return null;
@@ -154,12 +152,20 @@ export function createVoiceAuthClient({
       disableCache: true,
       userImageProxy: { enabled: false },
     }) as ElectronPlugin;
-    return createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
+    return createAuthClient({
+      baseURL: apiUrl,
+      plugins: [
+        plugin,
+        inferAdditionalFields({
+          user: { firstName: { type: "string" }, lastName: { type: "string" } },
+        }),
+      ],
+    });
   }
   let client = makeClient();
   // Encrypted like the plugin's own items. Without encryption nothing is written, so the
   // identity, like the auth session, lasts only until quit.
-  const saveIdentity = (user: Identity) => {
+  const saveIdentity = (user: AccountIdentity) => {
     if (!safeStorage.isEncryptionAvailable()) return;
     store.setItem(
       keys.identity,
@@ -420,18 +426,17 @@ export function createVoiceAuthClient({
         return { kind: error instanceof TypeError ? "offline" : "failed" };
       }
     },
-    updateName: async (name): Promise<UpdateNameResult> => {
+    updateName: async (user): Promise<UpdateNameResult> => {
       const started = generation;
-      const fetchOptions = { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
       try {
-        const updated = await client.updateUser({ ...name, fetchOptions });
-        if (updated.error) return { kind: "failed" };
-        const { data, error } = await client.getSession({ fetchOptions });
-        const user = error ? null : userOf(data);
-        if (user === null) return { kind: "failed" };
-        // A sign-out while the request was in flight must not leave the identity behind.
+        const { error } = await client.updateUser({
+          firstName: user.firstName,
+          lastName: user.lastName,
+          fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+        });
+        if (error) return { kind: "failed" };
         if (started === generation) saveIdentity(user);
-        return { kind: "updated", user };
+        return { kind: "updated" };
       } catch (error) {
         return { kind: error instanceof TypeError ? "offline" : "failed" };
       }

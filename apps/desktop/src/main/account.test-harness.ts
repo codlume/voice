@@ -1,6 +1,6 @@
 import { expect, vi } from "vite-plus/test";
 
-import { VOICE_URL_SCHEME, type AccountName, type AccountState } from "../shared/api.ts";
+import { VOICE_URL_SCHEME, type AccountIdentity, type AccountState } from "../shared/api.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   createAccount,
@@ -43,13 +43,13 @@ export function fakeClient() {
   const exchanges: (Call & { code: string })[] = [];
   const checks: Check[] = [];
   const deletions: { answer: (value: DeleteAccountResult) => void }[] = [];
-  const nameUpdates: { name: AccountName; answer: (value: UpdateNameResult) => void }[] = [];
+  const nameUpdates: { user: AccountIdentity; answer: (value: UpdateNameResult) => void }[] = [];
   const revocations = vi.fn(async () => {});
   const signOuts: { answer: (value: ServerSignOut) => void }[] = [];
   let serverSignOuts = 0;
   let stored = false;
   let user: Identity = USER;
-  let cached: Identity | null = USER;
+  let cached: AccountIdentity | null = USER;
   let forgotten = 0;
   const client: AuthClient = {
     openBrowser: () =>
@@ -76,13 +76,13 @@ export function fakeClient() {
         });
       }),
     deleteAccount: () => new Promise((resolve) => deletions.push({ answer: resolve })),
-    // As the real adapter: an update the API accepted is cached from its get-session answer.
-    updateName: (name) =>
+    updateName: (sent) =>
       new Promise((resolve) => {
+        const started = forgotten;
         nameUpdates.push({
-          name,
+          user: sent,
           answer: (value) => {
-            if (value.kind === "updated") cached = value.user;
+            if (value.kind === "updated" && started === forgotten) cached = sent;
             resolve(value);
           },
         });

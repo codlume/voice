@@ -4,8 +4,6 @@
 // another subject whose email is still ada-lovelace@example.com.
 export const googleTokenUrl = "https://oauth2.googleapis.com/token";
 
-// Google sends the given and family name apart from the full name. They are the full name's first
-// word and the rest, except for these people; Google leaves both out for mary-ann-evans.
 const nameParts: Record<string, { given_name?: string; family_name?: string }> = {
   "jean-paul-sartre": { given_name: "Jean Paul", family_name: "Sartre" },
   "mary-ann-evans": {},

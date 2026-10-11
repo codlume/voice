@@ -13,6 +13,8 @@ import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
+const rowHeight = 32;
+
 const styles = stylex.create({
   waitingText: {
     display: "flex",
@@ -38,12 +40,11 @@ const styles = stylex.create({
     fontSize: 12.5,
   },
   fieldLabel: { flexGrow: 1, minWidth: 0, fontWeight: 500 },
-  // As tall as the inputs and the avatar, so the four rows match.
   email: {
     display: "flex",
     alignItems: "center",
     minWidth: 0,
-    minHeight: 32,
+    minHeight: rowHeight,
     color: color.mutedForeground,
   },
   nameInput: {
@@ -224,7 +225,6 @@ function NameField({
 function SignedInRow({ account }: { account: Extract<AccountState, { kind: "signedIn" }> }) {
   const { pending, error, run, clearError } = useAction();
   const deletion = account.deletion;
-  // Null until the user types, so a name the API sends meanwhile still shows.
   const [draft, setDraft] = useState<AccountName | null>(null);
   const shown = draft ?? account;
   const name = { firstName: shown.firstName.trim(), lastName: shown.lastName.trim() };
@@ -270,7 +270,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
         </div>
         <div {...stylex.props(settings.row)}>
           <span {...stylex.props(styles.fieldLabel)}>Profile picture</span>
-          <Avatar identity={account} size={32} />
+          <Avatar identity={account} size={rowHeight} />
         </div>
         {account.notice && (
           <p role="status" {...stylex.props(settings.row, settings.rowDetail)}>
@@ -424,7 +424,7 @@ function AccountRow({ account }: { account: AccountState }) {
     case "signingIn":
       return <SigningInRow account={account} />;
     case "signedIn":
-      return <SignedInRow account={account} />;
+      return <SignedInRow key={account.id ?? account.email} account={account} />;
     case "error":
       return <ErrorRow account={account} />;
     default: {

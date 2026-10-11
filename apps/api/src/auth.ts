@@ -21,7 +21,6 @@ const NAME_MAX_LENGTH = 100;
 
 type PersonName = { firstName: string; lastName: string };
 
-/** The first word is the first name and the rest the last name, as migration 0003 split `name`. */
 function splitName(name: string): PersonName {
   const trimmed = name.trim();
   const space = trimmed.indexOf(" ");
@@ -35,7 +34,6 @@ function splitName(name: string): PersonName {
 const fullName = ({ firstName, lastName }: PersonName) =>
   [firstName, lastName].filter(Boolean).join(" ");
 
-/** The body of an update-user request: both names, trimmed, plus the `name` derived from them. */
 function nameUpdate(body: unknown) {
   if (typeof body !== "object" || body === null || Array.isArray(body))
     throw new APIError("BAD_REQUEST", { message: "The body must be an object" });

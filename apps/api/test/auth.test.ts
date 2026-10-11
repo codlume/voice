@@ -17,7 +17,10 @@ const base = "http://localhost:8787";
 const appOrigin = "com.codlume.voice:/";
 
 let nextIp = 1;
-const freshIp = () => `198.51.100.${nextIp++}`;
+const freshIp = () => {
+  const n = nextIp++;
+  return `198.18.${n >> 8}.${n & 255}`;
+};
 
 /** Sends a request into the Worker from one client IP; `ip: null` sends none, as a proxyless client would. */
 function worker(input: string | Request, init?: RequestInit, ip: string | null = freshIp()) {
@@ -953,11 +956,8 @@ describe("account deletion", () => {
 
 describe("names", () => {
   type Named = { name: string; firstName: string; lastName: string };
-  // freshIp runs past 198.51.100.255 by this block, and Better Auth puts every request without a
-  // valid address in one shared bucket per path. One fixed address keeps these requests out of it.
-  const ip = "192.0.2.10";
   const namesOf = async (cookie: string) => {
-    const response = await worker(`${base}/api/auth/get-session`, { headers: { cookie } }, ip);
+    const response = await worker(`${base}/api/auth/get-session`, { headers: { cookie } });
     expect(response.status).toBe(200);
     const { user } = await response.json<{ user: Named }>();
     return { name: user.name, firstName: user.firstName, lastName: user.lastName };
@@ -965,19 +965,15 @@ describe("names", () => {
   const signInCookie = async (googleCode: string) =>
     cookieHeader(storeCookies(await exchange(await browserSignIn(googleCode, { signOut: true }))));
   const updateUser = (cookie: string | null, body: unknown) =>
-    worker(
-      `${base}/api/auth/update-user`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: appOrigin,
-          ...(cookie && { cookie }),
-        },
-        body: JSON.stringify(body),
+    worker(`${base}/api/auth/update-user`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: appOrigin,
+        ...(cookie && { cookie }),
       },
-      ip,
-    );
+      body: JSON.stringify(body),
+    });
 
   it.each([
     ["jean-paul-sartre", { name: "Jean Paul Sartre", firstName: "Jean Paul", lastName: "Sartre" }],
