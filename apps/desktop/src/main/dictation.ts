@@ -299,6 +299,7 @@ export function createDictation(options: DictationOptions): Dictation {
             supportsCleanup(started.language) &&
             store.state.settings.cleanup.enabled &&
             cleanup.loaded(),
+          dictionary: store.state.settings.dictionary,
           snippets: store.state.settings.snippets,
         });
         return;
