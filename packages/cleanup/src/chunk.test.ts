@@ -299,6 +299,27 @@ test("removed sentence punctuation does not duplicate a cleaned sentence end", (
   );
 });
 
+test.each([",", ";", ":"])("source sentence punctuation replaces cleaned %s", (separator) => {
+  const raw = "call ada. then email bob";
+  const chunks = chunkTranscript(raw, 15, chars);
+  expect(stitch(raw, chunks, [`Call Ada${separator}`, "Then email Bob."])).toBe(
+    "Call Ada. Then email Bob.",
+  );
+});
+
+test.each([
+  ['"', '"'],
+  ["(", ")"],
+  ["[", "]"],
+])("source punctuation remains inside %s closers", (open, close) => {
+  const first = `${open}call ada.${close}`;
+  const raw = `${first} then email bob`;
+  const chunks = spans(raw, [first, "then email bob"]);
+  expect(stitch(raw, chunks, [`${open}Call Ada,${close}`, "Then email Bob."])).toBe(
+    `${open}Call Ada.${close} Then email Bob.`,
+  );
+});
+
 test("removed filler does not add sentence punctuation across paragraphs", () => {
   const raw = "call ada um.\n\nthen email bob";
   const chunks = spans(raw, ["call ada", "um.", "then email bob"]);
