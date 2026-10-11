@@ -12,14 +12,19 @@ final class OutputSilencer {
     private var listener: AudioObjectPropertyListenerBlock?
     private var generation = 0
 
-    init(output: Output) {
+    init(output: Output, stateDir: URL) {
         self.output = output
-        suppression = OutputSuppression(controls: CoreAudioOutputControls(onError: { output.log(.error, $0) })) { output.log(.error, $0) }
+        let store = OutputRestoreFile(url: stateDir.appendingPathComponent("output-restore.json")) { output.log(.error, $0) }
+        suppression = OutputSuppression(controls: CoreAudioOutputControls(onError: { output.log(.error, $0) }), store: store) { output.log(.error, $0) }
     }
 
     func begin() {
         installListener()
         suppression.begin()
+    }
+
+    func recover() {
+        end()
     }
 
     func end() {
@@ -52,6 +57,40 @@ final class OutputSilencer {
         var address = deviceListAddress
         AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
         self.listener = nil
+    }
+}
+
+struct OutputRestoreFile: OutputOriginalsStore {
+    let url: URL
+    private let onError: (String) -> Void
+
+    init(url: URL, onError: @escaping (String) -> Void) {
+        self.url = url
+        self.onError = onError
+    }
+
+    func load() throws -> [String: [OutputControl]] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile {
+            return [:]
+        }
+        do {
+            return try JSONDecoder().decode([String: [OutputControl]].self, from: data)
+        } catch let error as DecodingError {
+            onError("discarding unreadable \(url.lastPathComponent): \(error)")
+            try FileManager.default.removeItem(at: url)
+            return [:]
+        }
+    }
+
+    func save(_ originals: [String: [OutputControl]]) throws {
+        if originals.isEmpty {
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            return
+        }
+        try JSONEncoder().encode(originals).write(to: url, options: .atomic)
     }
 }
 

@@ -22,6 +22,12 @@ export function modelsDir() {
   return dir;
 }
 
+export function stateDir() {
+  const dir = join(homedir(), "Library/Caches/Voice Development/test-state");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function fixture(name) {
   const path = join(fixturesDir, name);
   if (!existsSync(path)) throw new Error(`missing fixture ${path}; run node scripts/fixtures.mjs`);
@@ -85,10 +91,14 @@ export class Helper {
   #waiters = [];
 
   constructor({ env = {}, args = [] } = {}) {
-    this.child = spawn(helperBinary(), ["--models-dir", modelsDir(), ...args], {
-      env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
-      stdio: ["pipe", "pipe", "inherit"],
-    });
+    this.child = spawn(
+      helperBinary(),
+      ["--models-dir", modelsDir(), "--state-dir", stateDir(), ...args],
+      {
+        env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
+        stdio: ["pipe", "pipe", "inherit"],
+      },
+    );
     this.exited = new Promise((resolve) =>
       this.child.on("exit", (code, signal) => resolve({ code, signal })),
     );

@@ -72,7 +72,8 @@ final class Capture {
     private let maxSamples: Int
 
     init(
-        output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000,
+        output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputSilencer: OutputSilencer,
+        maxSamples: Int = 600 * 16_000,
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
     ) {
         self.devices = devices
@@ -80,7 +81,7 @@ final class Capture {
         self.output = output
         self.transcriber = transcriber
         self.authorizationStatus = authorizationStatus
-        self.outputSilencer = OutputSilencer(output: output)
+        self.outputSilencer = outputSilencer
     }
 
     var isActive: Bool { activeFlag.withLock { $0 } }

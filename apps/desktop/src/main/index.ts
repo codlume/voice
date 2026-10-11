@@ -327,6 +327,7 @@ async function main() {
   const helper: Helper = startHelper({
     binary: helperBinary(),
     modelsDir,
+    stateDir: userData,
     env: helperEnv(),
     onEvent: (event) => {
       if (lifecycle !== "running") return;
