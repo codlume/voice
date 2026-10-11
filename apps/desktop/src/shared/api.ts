@@ -174,8 +174,17 @@ export function sameTranscript(a: Snapshot["last"], b: Snapshot["last"]): boolea
   return a?.raw === b?.raw && a?.text === b?.text;
 }
 
-export type VoiceApi = {
+type WindowApi = {
   diagnosticsStartedAtLaunch: boolean;
+  onLevel(listener: (level: number) => void): () => void;
+};
+
+export type PillApi = WindowApi & {
+  getPillSnapshot(): Promise<PillSnapshot>;
+  onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
+};
+
+export type HubApi = WindowApi & {
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   restartForUpdate(request: RestartRequest): Promise<void>;
@@ -184,9 +193,6 @@ export type VoiceApi = {
   openRelease(): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
-  getPillSnapshot(): Promise<PillSnapshot>;
-  onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
-  onLevel(listener: (level: number) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
@@ -207,6 +213,8 @@ export type VoiceApi = {
   cancelAccountDeletion(): Promise<void>;
   retryAccountDeletion(): Promise<void>;
 };
+
+export type VoiceApi = PillApi | HubApi;
 
 export const Channel = {
   checkForUpdates: "voice:checkForUpdates",

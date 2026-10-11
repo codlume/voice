@@ -16,6 +16,7 @@ import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
@@ -82,7 +83,7 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
     setModal((current) => current && { ...current, kind: "deleted" });
     void deleteAction.run(
       () =>
-        window.voice.updateSettings({
+        hubApi().updateSettings({
           snippets: snippets.filter((other) => other.id !== snippet.id),
         }),
       "Could not delete this snippet. Try again.",
@@ -231,7 +232,7 @@ function SnippetDialog({
         ? [...snippets, snippet]
         : snippets.map((other) => (other.id === snippet.id ? snippet : other));
     void run(async () => {
-      await window.voice.updateSettings({ snippets: next });
+      await hubApi().updateSettings({ snippets: next });
       onOpenChange(false);
     }, "Could not save this snippet. Try again.");
   }

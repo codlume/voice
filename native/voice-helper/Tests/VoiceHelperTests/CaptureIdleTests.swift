@@ -9,35 +9,44 @@ import os
 @Suite(.serialized)
 struct CaptureIdleTests {
     @Test @MainActor func idleWarmupKeepsMainFreeWhileThePermissionProbeRuns() async {
+        let probing = XCTestExpectation(description: "the permission probe started")
+        probing.assertForOverFulfill = false
         let probed = XCTestExpectation(description: "the permission probe ran")
         probed.assertForOverFulfill = false
+        let releaseProbe = DispatchSemaphore(value: 0)
+        defer { releaseProbe.signal() }
         let events = OSAllocatedUnfairLock<[String]>(initialState: [])
         let onMain = OSAllocatedUnfairLock(initialState: false)
         let output = Output()
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
-            devices: AudioInputDevices(output: output)
+            devices: AudioInputDevices(output: output),
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
-            Thread.sleep(forTimeInterval: 0.05)
+            probing.fulfill()
+            if !Thread.isMainThread {
+                #expect(releaseProbe.wait(timeout: .now() + 5) == .success)
+            }
             events.withLock { $0.append("probe done") }
             probed.fulfill()
             return .denied
         }
 
         capture.prepareIdleMic()
-        let queuedAt = DispatchTime.now()
-        let mainWaitMs = await withCheckedContinuation { continuation in
+        #expect(await XCTWaiter.fulfillment(of: [probing], timeout: 5) == .completed)
+        await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 events.withLock { $0.append("main block") }
-                continuation.resume(returning: queuedAt.millisecondsToNow())
+                releaseProbe.signal()
+                continuation.resume()
             }
         }
-        #expect(await XCTWaiter.fulfillment(of: [probed], timeout: 2) == .completed)
-        #expect(events.withLock { $0 } == ["main block", "probe done"], "main waited \(mainWaitMs) ms behind the idle warmup")
+        #expect(await XCTWaiter.fulfillment(of: [probed], timeout: 5) == .completed)
+        #expect(events.withLock { $0 } == ["main block", "probe done"])
         #expect(!onMain.withLock { $0 })
 
-        capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         #expect(!capture.isActive, "a press never starts capture while the cache says not granted")
     }
 
@@ -46,14 +55,15 @@ struct CaptureIdleTests {
         let output = Output()
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
-            devices: AudioInputDevices(output: output)
+            devices: AudioInputDevices(output: output),
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         ) {
             probes.withLock { $0 += 1 }
             return .denied
         }
         capture.testAudioPath = try silentFixture()
 
-        capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         #expect(capture.isActive)
         capture.cancel(id: "s1")
         capture.configure(microphone: nil)

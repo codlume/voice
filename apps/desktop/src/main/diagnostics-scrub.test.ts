@@ -318,6 +318,17 @@ const logPayload = {
       body: "hotkey tap installed",
       attributes: { "helper.protocol_version": { value: 4242, type: "integer" } },
     },
+    {
+      timestamp: 1_790_000_003.5,
+      level: "info",
+      body: "cleanup partial",
+      attributes: {
+        "cleanup.chunks": { value: 3, type: "integer" },
+        "cleanup.cleaned": { value: 1, type: "integer" },
+        "cleanup.budget_ms": { value: 8000, type: "integer" },
+        "cleanup.text": { value: DICTATION, type: "string" },
+      },
+    },
     { timestamp: 1_790_000_004, level: "info", body: DICTATION, attributes: sdkAttributes },
     { timestamp: 1_790_000_004, level: "info", body: "toString" },
     { timestamp: 1_790_000_004, level: "verbose", body: "helper ready" },
@@ -359,6 +370,16 @@ describe("scrubLogs", () => {
           },
         },
         { timestamp: 1_790_000_003, level: "info", body: "hotkey tap installed", attributes: {} },
+        {
+          timestamp: 1_790_000_003.5,
+          level: "info",
+          body: "cleanup partial",
+          attributes: {
+            "cleanup.chunks": { value: 3, type: "integer" },
+            "cleanup.cleaned": { value: 1, type: "integer" },
+            "cleanup.budget_ms": { value: 8000, type: "integer" },
+          },
+        },
       ],
     });
   });

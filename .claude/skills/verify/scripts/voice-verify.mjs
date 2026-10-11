@@ -1,24 +1,32 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import {
   appendFileSync,
   copyFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { modelsDir } from "../../../../native/voice-helper/scripts/helper.mjs";
 import {
+  modelsDir,
+  runningVoiceProcesses,
+} from "../../../../native/voice-helper/scripts/helper.mjs";
+import {
+  announcedPorts,
   electronPath,
+  landedText,
   modelFiles,
   Page,
   prepareUserData,
@@ -31,9 +39,11 @@ const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
-const statePath = join(tmpdir(), "voice-verify.json");
-const evidenceRoot = join(tmpdir(), "voice-verify-evidence");
-const ports = { voice: 9355, target: 9356, inspect: 9357 };
+const worktree = resolve(repoDir);
+const worktreeId = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
+const scratchName = `voice-verify-${worktreeId}`;
+const statePath = join(tmpdir(), `${scratchName}.json`);
+const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
 
 const [command = "help", ...args] = process.argv.slice(2);
 const show = (value) => JSON.stringify(value);
@@ -47,8 +57,9 @@ const fail = (message) => {
 function readState() {
   try {
     return JSON.parse(readFileSync(statePath, "utf8"));
-  } catch {
-    return null;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
   }
 }
 
@@ -61,6 +72,37 @@ function alive(pid) {
   }
 }
 
+function processIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const result = spawnSync(
+    "ps",
+    ["-p", String(pid), "-o", "stat=", "-o", "lstart=", "-o", "ucomm="],
+    {
+      encoding: "utf8",
+    },
+  );
+  if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`cannot inspect process ${pid}: ${result.stderr}`);
+  const match = /^(\S+)\s+(.+)$/.exec(result.stdout.trim());
+  return match && !match[1].startsWith("Z") ? match[2].trim() : null;
+}
+
+function sameProcess(pid, identity) {
+  return Boolean(identity) && processIdentity(pid) === identity;
+}
+
+function publishState(state, claim = false) {
+  const temporary = `${statePath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(state, null, 2), { flag: "wx" });
+    if (claim) linkSync(temporary, statePath);
+    else renameSync(temporary, statePath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 function signalGroup(pid, signal) {
   try {
     process.kill(-pid, signal);
@@ -69,8 +111,8 @@ function signalGroup(pid, signal) {
 
 function requireInstance() {
   const state = readState();
-  if (!state || !alive(state.electronPid)) {
-    fail("no running verify instance; start one with `voice-verify.mjs launch`");
+  if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
+    fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
 }
@@ -97,14 +139,7 @@ function evidenceDir() {
 }
 
 function otherVoiceProcesses(ownUserData) {
-  const pgrep = spawnSync("pgrep", ["-lf", "(^|/)voice-helper( |$)|scripts/dev\\.mjs( |$)"], {
-    encoding: "utf8",
-  });
-  if (pgrep.status === 1) return [];
-  return pgrep.stdout
-    .trim()
-    .split("\n")
-    .filter((line) => !ownUserData || !line.includes(ownUserData));
+  return runningVoiceProcesses().filter((line) => !ownUserData || !line.includes(ownUserData));
 }
 
 const ACCESSIBLE_NAME = `(el) => {
@@ -164,7 +199,7 @@ function openSecondCopy(state, ...extraArgs) {
 const commands = {
   async doctor() {
     const state = readState();
-    const instance = state && alive(state.electronPid) ? state : null;
+    const instance = state && sameProcess(state.electronPid, state.electronIdentity) ? state : null;
     let cdp = null;
     if (instance) {
       try {
@@ -207,7 +242,9 @@ const commands = {
       instance: instance
         ? { ...instance, cdpPages: cdp }
         : state
-          ? `stale state file for dead pid ${state.electronPid}; run voice-verify.mjs stop`
+          ? sameProcess(state.ownerPid, state.ownerIdentity)
+            ? `launching: ${show(state)}`
+            : "stale instance record; run voice-verify.mjs stop"
           : "none",
       otherVoiceProcesses: otherVoiceProcesses(instance?.userData),
     };
@@ -222,124 +259,173 @@ const commands = {
 
   async launch() {
     const existing = readState();
-    if (existing && alive(existing.electronPid))
-      fail(`instance already running: ${show(existing)}`);
-    try {
-      await fetch(`http://127.0.0.1:${ports.voice}/json/version`);
-      fail(`port ${ports.voice} is already answering; something else owns it`);
-    } catch {}
+    if (
+      existing &&
+      (sameProcess(existing.ownerPid, existing.ownerIdentity) ||
+        sameProcess(existing.electronPid, existing.electronIdentity))
+    )
+      fail(`this worktree's instance is already running: ${show(existing)}`);
     if (!existsSync(join(desktopDir, "dist-electron/main.cjs")))
       fail("app not built: run pnpm build");
 
     // --keep-user-data relaunches on the folder a `stop --keep-user-data` left, to test a restart.
-    const keptUserData = join(tmpdir(), "voice-verify");
+    const keptUserData = join(tmpdir(), scratchName);
     const keep = args.includes("--keep-user-data");
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
-    const userData = keep ? keptUserData : await prepareUserData("voice-verify");
-    const fakeMicrophonePath = join(userData, "capture.wav");
-    const logPath = join(userData, "main.log");
-    const env = {
-      ...process.env,
-      VOICE_HELPER_TEST: "1",
-      VOICE_USER_DATA_DIR: userData,
-      VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
-    };
-    delete env.ELECTRON_RUN_AS_NODE;
-    // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
-    // after earlier unclean exits.
-    const child = start(
-      electronPath,
-      [
-        ".",
-        `--remote-debugging-port=${ports.voice}`,
-        `--inspect=${ports.inspect}`,
-        "-ApplePersistenceIgnoreState",
-        "YES",
-      ],
-      { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
-    child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
 
-    const runId = new Date().toISOString().replace(/[:.]/g, "-");
     const state = {
       ownerPid: process.pid,
-      electronPid: child.pid,
-      port: ports.voice,
-      inspectPort: ports.inspect,
-      userData,
-      fakeMicrophonePath,
-      logPath,
-      runId,
-      evidence: join(evidenceRoot, runId),
+      ownerIdentity: processIdentity(process.pid),
+      worktree,
+      userData: keptUserData,
     };
-    writeFileSync(statePath, JSON.stringify(state, null, 2));
-
+    const save = () => publishState(state);
+    try {
+      publishState(state, true);
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      fail("this worktree has an instance record; run stop before relaunching");
+    }
     let stopping = false;
     const shutdown = async (code) => {
       if (stopping) return;
       stopping = true;
       await stopChildren();
-      // `stop` deletes the scratch userData unless told to keep it; a plain launch wipes it anyway.
-      rmSync(statePath, { force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
     process.on("SIGTERM", () => void shutdown(0));
-    child.on("exit", (code, signal) => {
-      if (stopping) return;
-      console.error(`voice-verify: Voice exited (code ${code}, signal ${signal}); see ${logPath}`);
-      void shutdown(1);
-    });
 
-    const hub = await Page.connect(ports.voice, "hub.html");
-    await Page.connect(ports.voice, "pill.html").then((pill) => pill.close());
-    const snapshots = await snapshotStream(hub);
-    const permissions = await snapshots.waitFor(
-      (s) => s.permissions.accessibility !== "notDetermined",
-      {
-        timeoutMs: 15_000,
-        label: "permission report",
-      },
-    );
-    let models;
     try {
-      models = (
-        await snapshots.waitFor(
-          (s) =>
-            ["ready", "failed"].includes(s.models.asr.state) &&
-            ["ready", "failed"].includes(s.models.cleanup.state),
-          { timeoutMs: 180_000, label: "models settled" },
-        )
-      ).models;
-    } catch {
-      models = snapshots.items.at(-1).models;
+      const userData = keep ? keptUserData : await prepareUserData(scratchName);
+      if (stopping) return;
+      const fakeMicrophonePath = join(userData, "capture.wav");
+      const logPath = join(userData, "main.log");
+      const env = {
+        ...process.env,
+        VOICE_HELPER_TEST: "1",
+        VOICE_USER_DATA_DIR: userData,
+        VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
+      };
+      delete env.ELECTRON_RUN_AS_NODE;
+      // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
+      // after earlier unclean exits.
+      const child = start(
+        electronPath,
+        [".", "--remote-debugging-port=0", "--inspect=0", "-ApplePersistenceIgnoreState", "YES"],
+        { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
+      child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
+      child.on("exit", (code, signal) => {
+        if (stopping) return;
+        console.error(
+          `voice-verify: Voice exited (code ${code}, signal ${signal}); see ${logPath}`,
+        );
+        void shutdown(1);
+      });
+      Object.assign(state, {
+        electronPid: child.pid,
+        electronIdentity: processIdentity(child.pid),
+        userData,
+        fakeMicrophonePath,
+        logPath,
+      });
+      save();
+
+      const ports = await announcedPorts(child, ["DevTools", "Debugger"]);
+      const runId = new Date().toISOString().replace(/[:.]/g, "-");
+      Object.assign(state, {
+        port: ports.DevTools,
+        inspectPort: ports.Debugger,
+        runId,
+        evidence: join(evidenceRoot, runId),
+      });
+      save();
+      const hub = await Page.connect(state.port, "hub.html");
+      await Page.connect(state.port, "pill.html").then((pill) => pill.close());
+      const snapshots = await snapshotStream(hub);
+      const permissions = await snapshots.waitFor(
+        (s) => s.permissions.accessibility !== "notDetermined",
+        {
+          timeoutMs: 15_000,
+          label: "permission report",
+        },
+      );
+      let models;
+      try {
+        models = (
+          await snapshots.waitFor(
+            (s) =>
+              ["ready", "failed"].includes(s.models.asr.state) &&
+              ["ready", "failed"].includes(s.models.cleanup.state),
+            { timeoutMs: 180_000, label: "models settled" },
+          )
+        ).models;
+      } catch {
+        models = snapshots.items.at(-1).models;
+      }
+      hub.close();
+      out({ ready: true, ...state, permissions: permissions.permissions, models });
+    } catch (error) {
+      console.error(
+        `voice-verify: launch failed: ${error.message}; see main.log and stderr.log in ${state.userData}`,
+      );
+      await shutdown(1);
     }
-    hub.close();
-    out({ ready: true, ...state, permissions: permissions.permissions, models });
   },
 
-  async stop() {
+  stop() {
+    const result = spawnSync(
+      "/usr/bin/lockf",
+      [
+        "-k",
+        "-t",
+        "0",
+        `${statePath}.stop-lock`,
+        process.execPath,
+        fileURLToPath(import.meta.url),
+        "_stop",
+        ...args,
+      ],
+      { stdio: "inherit" },
+    );
+    if (result.error) throw result.error;
+    if (result.status === 75) fail("stop already in progress; retry after it finishes");
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  },
+
+  async _stop() {
     const state = readState();
     if (!state) return out("no verify instance recorded");
     const keep = args.includes("--keep-user-data");
-    if (alive(state.ownerPid)) {
+    if (sameProcess(state.ownerPid, state.ownerIdentity)) {
       process.kill(state.ownerPid, "SIGTERM");
-      for (let i = 0; i < 100 && alive(state.ownerPid); i += 1) {
+      for (let i = 0; i < 100 && sameProcess(state.ownerPid, state.ownerIdentity); i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    if (alive(state.electronPid)) {
+    if (sameProcess(state.ownerPid, state.ownerIdentity))
+      throw new Error("verify owner did not stop; instance record and userData retained");
+    if (sameProcess(state.electronPid, state.electronIdentity)) {
       signalGroup(state.electronPid, "SIGTERM");
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      signalGroup(state.electronPid, "SIGKILL");
+      if (sameProcess(state.electronPid, state.electronIdentity))
+        signalGroup(state.electronPid, "SIGKILL");
+      for (let i = 0; i < 100 && sameProcess(state.electronPid, state.electronIdentity); i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      if (sameProcess(state.electronPid, state.electronIdentity))
+        throw new Error("verify Electron did not stop; instance record and userData retained");
     }
-    rmSync(statePath, { force: true });
-    if (!keep) rmSync(state.userData, { recursive: true, force: true });
+    if (readState()?.ownerPid === state.ownerPid) {
+      if (!keep && state.userData)
+        rmSync(join(tmpdir(), scratchName), { recursive: true, force: true });
+      rmSync(statePath, { force: true });
+    }
     out({
-      stopped: state.runId,
-      evidence: existsSync(state.evidence) ? state.evidence : "none captured",
+      stopped: state.runId ?? "launching",
+      evidence: state.evidence && existsSync(state.evidence) ? state.evidence : "none captured",
       ...(keep && { keptUserData: state.userData }),
     });
   },
@@ -616,7 +702,7 @@ const commands = {
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0) {
       fail(
-        `refusing: another Voice is running and would record the real microphone on the synthetic key press. Ask the user to quit it.\n${others.join("\n")}`,
+        `refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.\n${others.join("\n")}`,
       );
     }
     const fixture = join(fixturesDir, wav);
@@ -628,18 +714,22 @@ const commands = {
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
     const snapshots = await snapshotStream(hub);
     const logOffset = statSync(state.logPath).size;
-    const waitForLog = async (pattern, timeoutMs, label) => {
+    const logLine = (pattern) =>
+      readFileSync(state.logPath, "utf8")
+        .slice(logOffset)
+        .split("\n")
+        .find((l) => pattern.test(l));
+    const poll = async (check, timeoutMs, label) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const line = readFileSync(state.logPath, "utf8")
-          .slice(logOffset)
-          .split("\n")
-          .find((l) => pattern.test(l));
-        if (line) return line;
+        const result = check();
+        if (result !== undefined) return result;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
     };
+    const waitForLog = (pattern, timeoutMs, label) =>
+      poll(() => logLine(pattern), timeoutMs, label);
 
     const targetEnv = {
       ...process.env,
@@ -648,12 +738,13 @@ const commands = {
     delete targetEnv.ELECTRON_RUN_AS_NODE;
     const target = start(
       electronPath,
-      [join(repoDir, "scripts/e2e-target/main.cjs"), `--remote-debugging-port=${ports.target}`],
-      { env: targetEnv, stdio: "ignore" },
+      [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
+      { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );
     try {
       const field = 'document.getElementById("field")';
-      const targetPage = await Page.connect(ports.target, "index.html");
+      const { DevTools: targetPort } = await announcedPorts(target, ["DevTools"]);
+      const targetPage = await Page.connect(targetPort, "index.html");
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
       );
@@ -667,12 +758,26 @@ const commands = {
 
       fnpost(settings.hotkey, "down");
       const pressedAt = performance.now();
-      await snapshots.waitFor((s) => s.session.kind === "listening", {
+      const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {
         timeoutMs: 5000,
         label: "listening",
       });
-      if (end === "audio")
-        await waitForLog(/helper info: test\.audioFile ended$/, 60_000, "fixture to finish");
+      const after = snapshots.items.indexOf(listening) + 1;
+      const earlyEnd =
+        end === "audio"
+          ? await poll(
+              () =>
+                logLine(/helper info: test\.audioFile ended$/)
+                  ? null
+                  : snapshots.items.slice(after).find((s) => s.session.kind !== "listening"),
+              60_000,
+              "fixture to finish",
+            )
+          : null;
+      const captureEndedEarly = earlyEnd && {
+        afterMs: Math.round(performance.now() - pressedAt),
+        session: earlyEnd.session.kind,
+      };
       if (end === "escape") fnpost("escape");
       else fnpost(settings.hotkey, "up");
       const heldMs = Math.round(performance.now() - pressedAt);
@@ -684,25 +789,32 @@ const commands = {
         });
         fnpost(settings.hotkey, "up");
       } else {
-        finalState = await snapshots.waitFor((s) => s.session.kind === "done", {
+        finalState = await snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
           timeoutMs: 90_000,
           label: "done",
         });
       }
-      const timing =
+      const read = () => targetPage.evaluate(`${field}.value`);
+      const landing =
+        finalState.session.outcome?.kind === "inserted"
+          ? landedText(read, finalState.last.text)
+          : Promise.resolve({ text: await read(), landedMs: null });
+      const [{ text: inserted, landedMs }, timing] = await Promise.all([
+        landing,
         end === "escape"
           ? null
-          : await waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(
-              () => null,
-            );
+          : waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(() => null),
+      ]);
       const result = {
         fixture: wav,
         end,
         hotkey: settings.hotkey,
         cleanup: settings.cleanup,
         heldMs,
+        ...(captureEndedEarly && { captureEndedEarly }),
         outcome: finalState.session.outcome ?? finalState.session.kind,
-        inserted: await targetPage.evaluate(`${field}.value`),
+        inserted,
+        landedMs,
         last: finalState.last,
         timing: timing?.replace(/^.*\[voice\] /, "") ?? null,
       };
@@ -713,6 +825,11 @@ const commands = {
       );
       writeFileSync(path, JSON.stringify(result, null, 2));
       out({ ...result, evidence: path });
+      if (captureEndedEarly) {
+        throw new Error(
+          `capture ended by ${captureEndedEarly.afterMs} ms after the press, before ${wav} finished, while dictate still held the hotkey`,
+        );
+      }
     } finally {
       rmSync(state.fakeMicrophonePath, { force: true });
       hub.close();
@@ -723,9 +840,9 @@ const commands = {
   help() {
     out(`usage: node .claude/skills/verify/scripts/voice-verify.mjs <command>
   doctor                         read-only health report
-  launch [--keep-user-data]      start the disposable instance (foreground; run in background);
+  launch [--keep-user-data]      start this worktree's disposable instance (foreground; run in background);
                                  the flag reuses the userData a stop --keep-user-data left
-  stop [--keep-user-data]        tear down the instance this skill started; evidence survives,
+  stop [--keep-user-data]        tear down this worktree's instance; evidence survives,
                                  and with the flag so does the scratch userData
   snapshot                       full app snapshot JSON
   text                           current sidebar nav and visible page text

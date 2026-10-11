@@ -9,6 +9,7 @@ import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const stylings: {
   value: SettingsValue["cleanup"]["styling"];
@@ -142,7 +143,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
   const cleanupEnabled = wantsCleanup(settings);
 
   const changeCleanup = (cleanup: NonNullable<SettingsPatch["cleanup"]>) =>
-    run(() => window.voice.updateSettings({ cleanup }), "Could not save your style settings.");
+    run(() => hubApi().updateSettings({ cleanup }), "Could not save your style settings.");
 
   return (
     <div {...stylex.props(styles.page)}>

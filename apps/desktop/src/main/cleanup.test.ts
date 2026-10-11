@@ -2,8 +2,14 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { findS1Mini, removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import {
+  findS1Mini,
+  removeS1Mini,
+  S1_MINI_FILE,
+  type CleanRequest,
+  type CleanupStyle,
+} from "@voice/cleanup";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
 import { wantsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
@@ -15,13 +21,16 @@ import { idle } from "./session.ts";
 import { createStore } from "./store.ts";
 
 const style: CleanupStyle = { styling: "formal" };
-const signal = new AbortController().signal;
+const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
+const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
 
 type Behavior = {
   loadError?: string;
+  createError?: string;
   downloadError?: string;
   removeError?: string;
   warmUpError?: string;
+  moduleGate?: Promise<void>;
   downloadGate?: Promise<void>;
   loadGate?: Promise<void>;
   warmUpGate?: Promise<void>;
@@ -35,8 +44,9 @@ function fakeModule(behavior: Behavior = {}) {
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
-    signals: [] as (AbortSignal | undefined)[],
+    requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
+    lost: [] as ((message: string) => void)[],
   };
   const module: CleanupModule = {
     findS1Mini,
@@ -44,6 +54,7 @@ function fakeModule(behavior: Behavior = {}) {
       calls.downloads += 1;
       calls.downloadSignals.push(abort);
       if (behavior.downloadError) throw new Error(behavior.downloadError);
+      if (abort?.aborted) throw abort.reason;
       onProgress?.(0.5);
       await Promise.race([
         behavior.downloadGate,
@@ -57,26 +68,25 @@ function fakeModule(behavior: Behavior = {}) {
       if (behavior.removeError) throw new Error(behavior.removeError);
       await removeS1Mini(options);
     },
-    createS1Mini({ modelPath }) {
+    createS1Mini({ modelPath, onLost }) {
       calls.creates += 1;
+      if (behavior.createError) throw new Error(behavior.createError);
       calls.modelPaths.push(modelPath);
+      calls.lost.push(onLost);
       return {
         async load() {
           calls.loads += 1;
           await behavior.loadGate;
           if (behavior.loadError) throw new Error(behavior.loadError);
         },
-        async clean(raw, s, abort) {
+        async clean(raw, s, cleanRequest) {
           calls.cleans.push([raw, s]);
-          calls.signals.push(abort);
+          calls.requests.push(cleanRequest);
           if (calls.cleans.length === 1) {
             await behavior.warmUpGate;
             if (behavior.warmUpError) throw new Error(behavior.warmUpError);
           }
-          return raw.toUpperCase();
-        },
-        async generate(raw) {
-          return [{ chunk: raw, output: raw.toUpperCase(), truncated: false }];
+          return whole(raw.toUpperCase());
         },
         async dispose() {
           await behavior.loadGate;
@@ -85,7 +95,11 @@ function fakeModule(behavior: Behavior = {}) {
       };
     },
   };
-  return { calls, loadModule: async () => module };
+  const loadModule = async () => {
+    await behavior.moduleGate;
+    return module;
+  };
+  return { calls, loadModule };
 }
 
 describe("createCleanup", () => {
@@ -100,7 +114,13 @@ describe("createCleanup", () => {
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
   const start = (fake = fakeModule(), shouldLoad = () => enabled) =>
-    createCleanup({ modelsDir: dir, shouldLoad, onStatus: (s) => statuses.push(s), ...fake });
+    createCleanup({
+      modelsDir: dir,
+      shouldLoad,
+      onStatus: (s) => statuses.push(s),
+      log: () => {},
+      ...fake,
+    });
 
   test("loadIfDownloaded without a model file reports missing and never loads a model", async () => {
     const fake = fakeModule();
@@ -109,7 +129,7 @@ describe("createCleanup", () => {
     expect(statuses).toEqual([{ state: "missing" }]);
     expect(fake.calls.loads).toBe(0);
     expect(cleanup.loaded()).toBe(false);
-    await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
+    await expect(cleanup.clean("hi", style, request)).rejects.toThrow("not ready");
   });
 
   test("loadIfDownloaded with a model file goes loading then ready and cleans with the style", async () => {
@@ -119,20 +139,21 @@ describe("createCleanup", () => {
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
-    await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.at(-1)).toEqual(["hello", style]);
   });
 
-  test("clean hands the caller's abort signal to the model, so a budget stops the generation", async () => {
+  test("clean hands the budget and the caller's abort signal to the model", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
     const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     const controller = new AbortController();
 
-    await cleanup.clean("hello", style, controller.signal);
+    await cleanup.clean("hello", style, { budgetMs: 4200, signal: controller.signal });
 
-    expect(fake.calls.signals.at(-1)).toBe(controller.signal);
+    expect(fake.calls.requests.at(-1)?.budgetMs).toBe(4200);
+    expect(fake.calls.requests.at(-1)?.signal).toBe(controller.signal);
   });
 
   test("reports ready only after a warm-up clean, and a clean during warm-up is not refused", async () => {
@@ -144,13 +165,14 @@ describe("createCleanup", () => {
     await expect.poll(() => fake.calls.cleans.length).toBe(1);
     expect(statuses).toEqual([{ state: "loading" }]);
     expect(cleanup.loaded()).toBe(true);
-    const session = cleanup.clean("hello", style, signal);
+    const session = cleanup.clean("hello", style, request);
 
     finishWarmUp();
     await loading;
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
-    await expect(session).resolves.toBe("HELLO");
+    await expect(session).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
+    expect(fake.calls.requests).toEqual([undefined, request]);
   });
 
   test("dispose during load frees the model once it loads and never reports ready", async () => {
@@ -171,13 +193,66 @@ describe("createCleanup", () => {
     expect(cleanup.loaded()).toBe(false);
   });
 
+  test("an engine lost while loaded reports failed, and Retry loads a fresh engine", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const fake = fakeModule();
+    const cleanup = start(fake);
+    await cleanup.loadIfDownloaded();
+    statuses = [];
+
+    fake.calls.lost[0]!("The cleanup model stopped unexpectedly.");
+
+    expect(statuses).toEqual([
+      { state: "failed", message: "The cleanup model stopped unexpectedly." },
+    ]);
+    expect(cleanup.loaded()).toBe(false);
+    await expect(cleanup.clean("hello", style, request)).rejects.toThrow("not ready");
+
+    statuses = [];
+    await cleanup.install();
+
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+    expect(fake.calls.creates).toBe(2);
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
+    fake.calls.lost[0]!("late exit of the first engine");
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+    expect(cleanup.loaded()).toBe(true);
+  });
+
+  test("losing the engine during warm-up cannot restore ready", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishWarmUp!: () => void;
+    const fake = fakeModule({ warmUpGate: new Promise<void>((r) => (finishWarmUp = r)) });
+    const cleanup = start(fake);
+    const loading = cleanup.loadIfDownloaded();
+    await vi.waitFor(() => expect(fake.calls.cleans).toHaveLength(1));
+    fake.calls.lost[0]!("engine stopped");
+    finishWarmUp();
+    await loading;
+    expect(statuses.at(-1)).toEqual({ state: "failed", message: "engine stopped" });
+    expect(cleanup.loaded()).toBe(false);
+  });
+
   test("a failed warm-up still reports ready with the model loaded", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule({ warmUpError: "implausible output" });
     const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
-    await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
+  });
+
+  test("a failure to start the process reports failed and allows Retry", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const behavior: Behavior = { createError: "cannot fork" };
+    const fake = fakeModule(behavior);
+    const cleanup = start(fake);
+    await cleanup.loadIfDownloaded();
+    expect(statuses.at(-1)).toEqual({ state: "failed", message: "cannot fork" });
+    delete behavior.createError;
+    await cleanup.install();
+    expect(cleanup.loaded()).toBe(true);
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
   });
 
   test("a load failure reports failed with the error message", async () => {
@@ -187,7 +262,8 @@ describe("createCleanup", () => {
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "failed", message: "bad gguf" }]);
     expect(fake.calls.cleans).toEqual([]);
-    await expect(cleanup.clean("hi", style, signal)).rejects.toThrow();
+    expect(fake.calls.disposes).toBe(1);
+    await expect(cleanup.clean("hi", style, request)).rejects.toThrow();
   });
 
   test.each(["auto", "pl"] satisfies DictationLanguage[])(
@@ -206,8 +282,8 @@ describe("createCleanup", () => {
       expect(fake.calls).toMatchObject({ downloads: 0, loads: 1 });
       settings = { ...settings, dictationLanguage };
       await cleanup.loadIfDownloaded();
-      await expect(cleanup.clean("finish the English session", style, signal)).resolves.toBe(
-        "FINISH THE ENGLISH SESSION",
+      await expect(cleanup.clean("finish the English session", style, request)).resolves.toEqual(
+        whole("FINISH THE ENGLISH SESSION"),
       );
       expect(fake.calls).toMatchObject({ downloads: 0, loads: 1, disposes: 0 });
       await cleanup.dispose();
@@ -336,6 +412,101 @@ describe("createCleanup", () => {
     expect(cleanup.loaded()).toBe(false);
   });
 
+  test("uninstall during a download cancels it, ends missing without failed, and a later install downloads again", async () => {
+    const behavior: Behavior = { downloadGate: new Promise(() => {}) };
+    const fake = fakeModule(behavior);
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const uninstalling = cleanup.uninstall();
+
+    expect(fake.calls.downloadSignals[0]?.aborted).toBe(true);
+    await Promise.all([installing, uninstalling]);
+    expect(statuses.map((status) => status.state)).toEqual([
+      "downloading",
+      "downloading",
+      "missing",
+    ]);
+    expect(fake.calls.loads).toBe(0);
+    expect(await readdir(dir)).toEqual([]);
+
+    delete behavior.downloadGate;
+    await cleanup.install();
+    expect(fake.calls.downloads).toBe(2);
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+  });
+
+  test("a cancel that lands while the row shows Downloading but the module is still loading is honored", async () => {
+    let finishModule!: () => void;
+    const fake = fakeModule({ moduleGate: new Promise((resolve) => (finishModule = resolve)) });
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => statuses).toEqual([{ state: "downloading", progress: 0 }]);
+
+    const uninstalling = cleanup.uninstall();
+    finishModule();
+    await Promise.all([installing, uninstalling]);
+
+    expect(fake.calls.downloads).toBe(0);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
+  });
+
+  test("uninstall with a second install queued cancels both, ends missing, and downloads once", async () => {
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const first = cleanup.install();
+    const second = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const uninstalling = cleanup.uninstall();
+    finishDownload();
+    await Promise.all([first, second, uninstalling]);
+
+    expect(fake.calls.downloads).toBe(1);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("dispose with a second install queued starts no second download", async () => {
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const first = cleanup.install();
+    const second = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const disposing = cleanup.dispose();
+    finishDownload();
+    await Promise.all([first, second, disposing]);
+
+    expect(fake.calls.downloads).toBe(1);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+  });
+
+  test("a cancel that lands as the download finishes never flashes installed", async () => {
+    enabled = false;
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    finishDownload();
+    const uninstalling = cleanup.uninstall();
+    await Promise.all([installing, uninstalling]);
+
+    expect(statuses.map((status) => status.state)).not.toContain("installed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
+    expect(await readdir(dir)).toEqual([]);
+  });
+
   test("a download failure reports failed and does not try to load", async () => {
     const fake = fakeModule({ downloadError: "offline" });
     const cleanup = start(fake);
@@ -376,7 +547,7 @@ describe("createCleanup", () => {
 
       expect(fake.calls.disposes).toBe(1);
       expect(cleanup.loaded()).toBe(false);
-      await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
+      await expect(cleanup.clean("hi", style, request)).rejects.toThrow("not ready");
       expect(statuses.at(-1)).toEqual({ state: "missing" });
     });
   });
@@ -414,6 +585,7 @@ describe("followSettings", () => {
       shouldLoad: () => wantsCleanup(store.state.settings),
       onStatus: (status) =>
         store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
+      log: () => {},
       ...fakeModule(),
     });
     store.subscribe((state, previous) => followSettings(cleanup, state, previous));

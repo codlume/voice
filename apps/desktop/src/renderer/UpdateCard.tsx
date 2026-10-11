@@ -6,6 +6,7 @@ import { useRef, useState, type ReactNode } from "react";
 import type { PendingUpdate } from "../shared/api.ts";
 import { releaseCardTitle, type UpdateCard } from "./updateStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { hubApi } from "./voice.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
@@ -197,7 +198,7 @@ function ReleaseCard({ update }: { update: PendingUpdate }) {
       )}
       <button
         type="button"
-        onClick={() => void window.voice.openRelease()}
+        onClick={() => void hubApi().openRelease()}
         {...stylex.props(styles.releaseLink)}
       >
         View release on GitHub

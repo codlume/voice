@@ -1,14 +1,20 @@
-import type { CleanupStyle, S1Mini } from "@voice/cleanup";
+import * as NodePath from "node:path";
+import { createInterface } from "node:readline";
+
+import type { CleanRequest, CleanResult, CleanupStyle } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { createS1MiniProcess, type CleanupEngine, type ForkEngine } from "./cleanup-engine.ts";
 import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
-  "createS1Mini" | "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
->;
+  "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
+> & {
+  createS1Mini(options: { modelPath: string; onLost: (message: string) => void }): CleanupEngine;
+};
 
 export type Cleanup = {
   loadIfDownloaded(): Promise<void>;
@@ -16,18 +22,46 @@ export type Cleanup = {
   uninstall(): Promise<void>;
   unload(): Promise<void>;
   loaded(): boolean;
-  clean(raw: string, style: CleanupStyle, signal: AbortSignal): Promise<string>;
+  clean(raw: string, style: CleanupStyle, request: Required<CleanRequest>): Promise<CleanResult>;
   dispose(): Promise<void>;
 };
 
 export type CleanupOptions = {
   modelsDir: string;
+  baseUrl?: string | undefined;
   shouldLoad: () => boolean;
   onStatus: (status: ModelStatus) => void;
+  log: (message: string) => void;
   loadModule?: () => Promise<CleanupModule>;
 };
 
-const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
+async function importModule(log: (message: string) => void): Promise<CleanupModule> {
+  const [{ downloadS1Mini, findS1Mini, removeS1Mini }, { utilityProcess }] = await Promise.all([
+    import("@voice/cleanup/download"),
+    import("electron"),
+  ]);
+  const fork: ForkEngine = (events) => {
+    const child = utilityProcess.fork(NodePath.join(__dirname, "cleanup-engine-worker.cjs"), [], {
+      serviceName: "Voice cleanup",
+      stdio: "pipe",
+      execArgv: [],
+    });
+    child.on("message", events.message).on("exit", (code) => {
+      log(`cleanup: exited (${code})`);
+      events.exit();
+    });
+    for (const output of [child.stdout, child.stderr]) {
+      if (output) createInterface({ input: output }).on("line", (line) => log(`cleanup: ${line}`));
+    }
+    return child;
+  };
+  return {
+    downloadS1Mini,
+    findS1Mini,
+    removeS1Mini,
+    createS1Mini: (options) => createS1MiniProcess({ ...options, fork }),
+  };
+}
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
 const WARM_UP_STYLE: CleanupStyle = { styling: "semi-formal" };
@@ -36,12 +70,12 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 type Model =
   | { phase: "none" }
-  | { phase: "loading"; model: S1Mini }
-  | { phase: "loaded"; model: S1Mini }
+  | { phase: "loading"; model: CleanupEngine }
+  | { phase: "loaded"; model: CleanupEngine }
   // Left behind by dispose so a load or download still in flight does not bring the model back.
   | { phase: "disposed" };
 
-const held = (model: Model): model is Extract<Model, { model: S1Mini }> =>
+const held = (model: Model): model is Extract<Model, { model: CleanupEngine }> =>
   model.phase === "loading" || model.phase === "loaded";
 
 // A session in flight keeps the model until it ends, so a language change applies to the next
@@ -64,12 +98,16 @@ export function followSettings(
 }
 
 export function createCleanup(options: CleanupOptions): Cleanup {
-  const loadModule = options.loadModule ?? importModule;
+  const loadModule = options.loadModule ?? (() => importModule(options.log));
   let model: Model = { phase: "none" };
   let chain: Promise<void> = Promise.resolve();
-  let download: AbortController | undefined;
+  const installs = new Set<AbortController>();
 
-  const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
+  const owns = (candidate: CleanupEngine) => held(model) && model.model === candidate;
+
+  function cancelInstalls(reason: string) {
+    for (const controller of installs) controller.abort(new Error(reason));
+  }
 
   function serialize(work: () => Promise<void>) {
     const run = chain.then(work);
@@ -99,12 +137,25 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     }
     if (model.phase !== "none") return;
     options.onStatus({ state: "loading" });
-    const created = module.createS1Mini({ modelPath });
-    model = { phase: "loading", model: created };
+    let created: CleanupEngine | undefined;
     try {
+      const candidate = module.createS1Mini({
+        modelPath,
+        onLost: (lostMessage) => {
+          if (!owns(candidate)) return;
+          model = { phase: "none" };
+          options.onStatus({ state: "failed", message: lostMessage });
+        },
+      });
+      created = candidate;
+      model = { phase: "loading", model: created };
       await created.load();
     } catch (error) {
-      if (owns(created)) model = { phase: "none" };
+      if (created) {
+        if (!owns(created)) return;
+        model = { phase: "none" };
+        await created.dispose();
+      }
       options.onStatus({ state: "failed", message: message(error) });
       return;
     }
@@ -127,27 +178,39 @@ export function createCleanup(options: CleanupOptions): Cleanup {
 
   return {
     loadIfDownloaded: () => serialize(loadIfOnDisk),
-    install: () =>
-      serialize(async () => {
-        if (!claimIdle()) return;
-        options.onStatus({ state: "downloading", progress: 0 });
-        const module = await loadModule();
-        download = new AbortController();
-        let modelPath: string;
+    install: () => {
+      const controller = new AbortController();
+      installs.add(controller);
+      return serialize(async () => {
         try {
-          modelPath = await module.downloadS1Mini({
-            dir: options.modelsDir,
-            onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
-            signal: download.signal,
-          });
-        } catch (error) {
-          options.onStatus({ state: "failed", message: message(error) });
-          return;
+          if (controller.signal.aborted || !claimIdle()) return;
+          options.onStatus({ state: "downloading", progress: 0 });
+          const module = await loadModule();
+          if (controller.signal.aborted) return;
+          let modelPath: string;
+          try {
+            modelPath = await module.downloadS1Mini({
+              dir: options.modelsDir,
+              baseUrl: options.baseUrl,
+              onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
+              signal: controller.signal,
+            });
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              options.onStatus({ state: "failed", message: message(error) });
+            }
+            return;
+          }
+          if (controller.signal.aborted) return;
+          await loadModel(module, modelPath);
+        } finally {
+          installs.delete(controller);
         }
-        await loadModel(module, modelPath);
-      }),
-    uninstall: () =>
-      disposeThen(async () => {
+      });
+    },
+    uninstall: () => {
+      cancelInstalls("Download cancelled");
+      return disposeThen(async () => {
         const module = await loadModule();
         try {
           await module.removeS1Mini({ dir: options.modelsDir });
@@ -156,16 +219,17 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           return;
         }
         options.onStatus({ state: "missing" });
-      }),
+      });
+    },
     // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
-    clean(raw, style, signal) {
+    clean(raw, style, request) {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
-      return model.model.clean(raw, style, signal);
+      return model.model.clean(raw, style, request);
     },
     dispose: () => {
-      download?.abort(new Error("Voice is closing"));
+      cancelInstalls("Voice is closing");
       return disposeThen();
     },
   };

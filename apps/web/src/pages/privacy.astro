@@ -65,8 +65,10 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         uses the clipboard temporarily. Afterwards it restores your previous clipboard contents,
         unless something else changed the clipboard in the meantime or you turned on Copy transcript
         to clipboard. A password you copied from a password manager is cleared instead of restored,
-        so the manager's own auto-clear is not undone. Voice never reads the name of the focused app,
-        your screen, or your windows.
+        so the manager's own auto-clear is not undone. Voice compares the focused field, window, and
+        window title with the target captured when dictation starts. These details stay in memory
+        only for the session and are never stored or sent. Voice never captures your screen or reads
+        other windows or the name of the focused app.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear

@@ -193,6 +193,60 @@ export async function prepareUserData(name) {
   return userData;
 }
 
+// Chromium and Node bind port 0 to a free port and print the one they got, so instances started
+// this way never share a port.
+export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
+  const ports = {};
+  return new Promise((resolvePorts, reject) => {
+    const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
+    const timer = setTimeout(
+      () => reject(new Error(`no ${missing()} port announced after ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+    const lines = createInterface({ input: child.stderr });
+    lines.on("line", (line) => {
+      const [, server, port] = /^(\w+) listening on ws:\/\/\S+?:(\d+)\//.exec(line) ?? [];
+      if (!servers.includes(server)) return;
+      ports[server] = Number(port);
+      if (servers.every((name) => name in ports)) {
+        clearTimeout(timer);
+        resolvePorts(ports);
+      }
+    });
+    lines.on("close", () => {
+      clearTimeout(timer);
+      reject(new Error(`exited before announcing its ${missing()} port`));
+    });
+  });
+}
+
+export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
+  const started = performance.now();
+  const deadline = started + timeoutMs;
+  const missing = { text: "", landedMs: null };
+  const poll = async () => {
+    while (performance.now() < deadline) {
+      const text = await read();
+      const now = performance.now();
+      if (now >= deadline) break;
+      if (text === expected) return { text: expected, landedMs: Math.round(now - started) };
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return missing;
+  };
+  let timer;
+  try {
+    return await Promise.race([
+      poll(),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(missing), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function launchVoice(userData, { port, env: extraEnv = {} }) {
   const env = {
     ...process.env,

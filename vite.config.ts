@@ -41,5 +41,23 @@ export default defineConfig({
     options: {
       reportUnusedDisableDirectives: "error",
     },
+    overrides: [
+      {
+        files: ["apps/desktop/src/**"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: ["electron", "electron/main"].map((name) => ({
+                name,
+                importNames: ["ipcMain", "default"],
+                message:
+                  "Register IPC handlers on the owning window's webContents.ipc, so no other window can invoke them.",
+              })),
+            },
+          ],
+        },
+      },
+    ],
   },
 });
