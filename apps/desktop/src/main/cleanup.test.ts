@@ -2,7 +2,13 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { findS1Mini, removeS1Mini, S1_MINI_FILE, type CleanupStyle } from "@voice/cleanup";
+import {
+  findS1Mini,
+  removeS1Mini,
+  S1_MINI_FILE,
+  type CleanRequest,
+  type CleanupStyle,
+} from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
@@ -15,7 +21,8 @@ import { idle } from "./session.ts";
 import { createStore } from "./store.ts";
 
 const style: CleanupStyle = { styling: "formal" };
-const signal = new AbortController().signal;
+const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
+const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
 
 type Behavior = {
   loadError?: string;
@@ -36,7 +43,7 @@ function fakeModule(behavior: Behavior = {}) {
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
-    signals: [] as (AbortSignal | undefined)[],
+    requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
   };
   const module: CleanupModule = {
@@ -68,14 +75,14 @@ function fakeModule(behavior: Behavior = {}) {
           await behavior.loadGate;
           if (behavior.loadError) throw new Error(behavior.loadError);
         },
-        async clean(raw, s, abort) {
+        async clean(raw, s, cleanRequest) {
           calls.cleans.push([raw, s]);
-          calls.signals.push(abort);
+          calls.requests.push(cleanRequest);
           if (calls.cleans.length === 1) {
             await behavior.warmUpGate;
             if (behavior.warmUpError) throw new Error(behavior.warmUpError);
           }
-          return raw.toUpperCase();
+          return whole(raw.toUpperCase());
         },
         async generate(raw) {
           return [{ chunk: raw, output: raw.toUpperCase(), truncated: false }];
@@ -115,7 +122,7 @@ describe("createCleanup", () => {
     expect(statuses).toEqual([{ state: "missing" }]);
     expect(fake.calls.loads).toBe(0);
     expect(cleanup.loaded()).toBe(false);
-    await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
+    await expect(cleanup.clean("hi", style, request)).rejects.toThrow("not ready");
   });
 
   test("loadIfDownloaded with a model file goes loading then ready and cleans with the style", async () => {
@@ -125,20 +132,21 @@ describe("createCleanup", () => {
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     expect(fake.calls.modelPaths).toEqual([NodePath.join(dir, S1_MINI_FILE)]);
-    await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.at(-1)).toEqual(["hello", style]);
   });
 
-  test("clean hands the caller's abort signal to the model, so a budget stops the generation", async () => {
+  test("clean hands the budget and the caller's abort signal to the model", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
     const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     const controller = new AbortController();
 
-    await cleanup.clean("hello", style, controller.signal);
+    await cleanup.clean("hello", style, { budgetMs: 4200, signal: controller.signal });
 
-    expect(fake.calls.signals.at(-1)).toBe(controller.signal);
+    expect(fake.calls.requests.at(-1)?.budgetMs).toBe(4200);
+    expect(fake.calls.requests.at(-1)?.signal).toBe(controller.signal);
   });
 
   test("reports ready only after a warm-up clean, and a clean during warm-up is not refused", async () => {
@@ -150,13 +158,14 @@ describe("createCleanup", () => {
     await expect.poll(() => fake.calls.cleans.length).toBe(1);
     expect(statuses).toEqual([{ state: "loading" }]);
     expect(cleanup.loaded()).toBe(true);
-    const session = cleanup.clean("hello", style, signal);
+    const session = cleanup.clean("hello", style, request);
 
     finishWarmUp();
     await loading;
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
-    await expect(session).resolves.toBe("HELLO");
+    await expect(session).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
+    expect(fake.calls.requests).toEqual([undefined, request]);
   });
 
   test("dispose during load frees the model once it loads and never reports ready", async () => {
@@ -183,7 +192,7 @@ describe("createCleanup", () => {
     const cleanup = start(fake);
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
-    await expect(cleanup.clean("hello", style, signal)).resolves.toBe("HELLO");
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
   });
 
   test("a load failure reports failed with the error message", async () => {
@@ -193,7 +202,7 @@ describe("createCleanup", () => {
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "failed", message: "bad gguf" }]);
     expect(fake.calls.cleans).toEqual([]);
-    await expect(cleanup.clean("hi", style, signal)).rejects.toThrow();
+    await expect(cleanup.clean("hi", style, request)).rejects.toThrow();
   });
 
   test.each(["auto", "pl"] satisfies DictationLanguage[])(
@@ -212,8 +221,8 @@ describe("createCleanup", () => {
       expect(fake.calls).toMatchObject({ downloads: 0, loads: 1 });
       settings = { ...settings, dictationLanguage };
       await cleanup.loadIfDownloaded();
-      await expect(cleanup.clean("finish the English session", style, signal)).resolves.toBe(
-        "FINISH THE ENGLISH SESSION",
+      await expect(cleanup.clean("finish the English session", style, request)).resolves.toEqual(
+        whole("FINISH THE ENGLISH SESSION"),
       );
       expect(fake.calls).toMatchObject({ downloads: 0, loads: 1, disposes: 0 });
       await cleanup.dispose();
@@ -477,7 +486,7 @@ describe("createCleanup", () => {
 
       expect(fake.calls.disposes).toBe(1);
       expect(cleanup.loaded()).toBe(false);
-      await expect(cleanup.clean("hi", style, signal)).rejects.toThrow("not ready");
+      await expect(cleanup.clean("hi", style, request)).rejects.toThrow("not ready");
       expect(statuses.at(-1)).toEqual({ state: "missing" });
     });
   });
