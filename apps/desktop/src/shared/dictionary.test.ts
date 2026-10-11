@@ -105,6 +105,7 @@ describe("parseDictionary", () => {
     ).toEqual([
       { id: "1", phrase: "Wispr Flow", replacement: null },
       { id: "2", phrase: "btw", replacement: "by the way" },
+      { id: "4", phrase: "missing replacement", replacement: null },
     ]);
   });
 

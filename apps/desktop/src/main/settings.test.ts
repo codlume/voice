@@ -266,13 +266,19 @@ describe("applyPatch", () => {
 
   test.each([
     ["a duplicate id", [WORD, { ...REPLACEMENT, id: WORD.id }]],
-    ["a record missing its replacement", [WORD, { id: "2", phrase: "btw" }]],
     ["a replacement that is not text", [WORD, { ...REPLACEMENT, replacement: 42 }]],
     ["a list that is not an array", { 0: WORD }],
   ])("refuses to save a dictionary with %s instead of dropping any", (_, dictionary) => {
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET], dictionary: [WORD] });
     const patch = { dictionary } as unknown as SettingsPatch;
     expect(() => applyPatch(saved, patch)).toThrow("Could not save this dictionary.");
+  });
+
+  test("saves a hand-written word that leaves out its replacement", () => {
+    const patch = { dictionary: [{ id: "2", phrase: "Hadryś" }] } as unknown as SettingsPatch;
+    expect(applyPatch(DEFAULT_SETTINGS, patch).dictionary).toEqual([
+      { id: "2", phrase: "Hadryś", replacement: null },
+    ]);
   });
 
   test("a phrase that is also a snippet trigger never blocks a save of either list", () => {

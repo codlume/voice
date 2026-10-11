@@ -53,8 +53,9 @@ export function parseDictionary(raw: unknown): DictionaryEntry[] {
     if (typeof item !== "object" || item === null) continue;
     const { id, phrase, replacement } = item as Record<string, unknown>;
     if (typeof id !== "string" || typeof phrase !== "string") continue;
-    if (replacement !== null && typeof replacement !== "string") continue;
-    const entry = dictionaryEntry({ id, phrase, replacement });
+    // A hand-written word may leave out `replacement`.
+    if (replacement != null && typeof replacement !== "string") continue;
+    const entry = dictionaryEntry({ id, phrase, replacement: replacement ?? null });
     if (kept.some((other) => other.id === id) || dictionaryProblem(entry, [], [])) continue;
     kept.push(entry);
   }
