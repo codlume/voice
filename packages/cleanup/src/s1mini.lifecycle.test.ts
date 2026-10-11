@@ -137,6 +137,22 @@ test("long input is cleaned in sentence chunks and rejoined", async () => {
   expect(cleaned).toBe(raw.toUpperCase());
 });
 
+test("chunk seams inside a sentence leave no stray capital and paragraph breaks survive", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  const clause = (i: number) =>
+    `person ${i} will review the page and send a short update to the team`;
+  const paragraph = (from: number) =>
+    `${Array.from({ length: 25 }, (_, i) => clause(from + i)).join(" and ")}.`;
+  const raw = `${paragraph(0)}\n\n${paragraph(25)}`;
+  const capitalized = (text: string) => text[0]!.toUpperCase() + text.slice(1);
+  native.reply = (chunk) => ({ response: capitalized(chunk) });
+
+  const cleaned = await s1.clean(raw, style);
+
+  expect(native.events.filter((e) => e.startsWith("generate")).length).toBeGreaterThan(2);
+  expect(cleaned).toBe(`${capitalized(paragraph(0))}\n\n${capitalized(paragraph(25))}`);
+});
+
 test("generate returns what the model said even when the guard rejects it", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   native.reply = () => ({ response: "" });

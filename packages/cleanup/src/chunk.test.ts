@@ -1,13 +1,26 @@
 import { expect, test } from "vite-plus/test";
 
-import { chunkTranscript } from "./chunk.ts";
+import { type Chunk, chunkTranscript, stitch } from "./chunk.ts";
 
 const chars = (text: string) => text.length;
 const words = (text: string) => text.split(/\s+/).filter(Boolean);
+const texts = (chunks: Chunk[]) => chunks.map((chunk) => chunk.text);
+
+// Chunks for hand-written pieces of a transcript, located by their first occurrence in order.
+function spans(raw: string, pieces: string[]): Chunk[] {
+  let from = 0;
+  return pieces.map((text) => {
+    const start = raw.indexOf(text, from);
+    if (start < 0) throw new Error(`${JSON.stringify(text)} is not in the transcript`);
+    from = start + text.length;
+    return { start, end: from, text };
+  });
+}
 
 test("keeps a short transcript as one trimmed chunk", () => {
-  expect(chunkTranscript("  Call Ada at 3 PM. Then email Bob.\n", 1000, chars)).toEqual([
-    "Call Ada at 3 PM. Then email Bob.",
+  const raw = "  Call Ada at 3 PM. Then email Bob.\n";
+  expect(chunkTranscript(raw, 1000, chars)).toEqual([
+    { start: 2, end: 35, text: "Call Ada at 3 PM. Then email Bob." },
   ]);
 });
 
@@ -27,32 +40,124 @@ test("splits long input only between sentences", () => {
 
   expect(chunks.length).toBeGreaterThan(1);
   for (const chunk of chunks) {
-    expect(chunk.length).toBeLessThanOrEqual(200);
-    expect(chunk).toMatch(/^Sentence number \d+ .*\?$/);
+    expect(chunk.text.length).toBeLessThanOrEqual(200);
+    expect(chunk.text).toMatch(/^Sentence number \d+ .*\?$/);
+    expect(chunk.text).toBe(text.slice(chunk.start, chunk.end));
   }
-  expect(chunks.join(" ")).toBe(text);
+  expect(texts(chunks).join(" ")).toBe(text);
+});
+
+test("splits a lowercase run at sentence ends that UAX #29 does not break", () => {
+  const sentence = "we ship the beta on monday and the stable release after that";
+  const text = Array.from({ length: 6 }, () => sentence).join(". ") + ".";
+
+  const chunks = chunkTranscript(text, sentence.length * 2 + 3, chars);
+
+  expect(chunks.length).toBeGreaterThan(1);
+  for (const chunk of chunks) expect(chunk.text).toMatch(/^we ship .*\.$/);
+  expect(stitch(text, chunks, [])).toBe(text);
 });
 
 test("keeps a sentence that exactly fits the limit whole", () => {
   const sentence = `${"a".repeat(9)}.`;
-  expect(chunkTranscript(`${sentence} ${sentence}`, 10, chars)).toEqual([sentence, sentence]);
+  expect(texts(chunkTranscript(`${sentence} ${sentence}`, 10, chars))).toEqual([
+    sentence,
+    sentence,
+  ]);
 });
 
-test("splits an oversized unpunctuated sentence at word boundaries", () => {
+test("splits an oversized unpunctuated run at clause seams rather than mid-clause", () => {
+  const text =
+    "maria will review the pricing page and send a short update to tom before three, " +
+    "then tom will fix the login bug and call the design agency, " +
+    "which priya already booked because the budget closes on friday";
+
+  const chunks = chunkTranscript(text, 60, chars);
+
+  expect(chunks.length).toBeGreaterThan(2);
+  for (const chunk of chunks.slice(1)) {
+    const seam = /^(and|then|which|because)\b/.test(chunk.text) || text[chunk.start - 2] === ",";
+    expect(seam, `cut mid-clause at ${JSON.stringify(chunk.text)}`).toBe(true);
+  }
+  expect(stitch(text, chunks, [])).toBe(text);
+});
+
+test("splits an oversized clause at word boundaries", () => {
   const text = Array.from({ length: 200 }, (_, i) => `word${i}`).join(" ");
 
   const chunks = chunkTranscript(text, 50, chars);
 
   expect(chunks.length).toBeGreaterThan(1);
-  for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(50);
-  expect(chunks.flatMap(words)).toEqual(words(text));
+  for (const chunk of chunks) expect(chunk.text.length).toBeLessThanOrEqual(50);
+  expect(texts(chunks).flatMap(words)).toEqual(words(text));
 });
 
-test("hard-splits a single word longer than the limit", () => {
+test("hard-splits a single word longer than the limit and stitches it back with nothing", () => {
   const url = `https://example.com/${"x".repeat(400)}`;
 
   const chunks = chunkTranscript(url, 20, chars);
 
-  for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(20);
-  expect(chunks.join("")).toBe(url);
+  for (const chunk of chunks) expect(chunk.text.length).toBeLessThanOrEqual(20);
+  expect(stitch(url, chunks, [])).toBe(url);
+});
+
+test("stitch keeps the whitespace between chunks verbatim", () => {
+  const raw = "a.\n\nb";
+  const chunks = chunkTranscript(raw, 2, chars);
+
+  expect(texts(chunks)).toEqual(["a.", "b"]);
+  expect(stitch(raw, chunks, [])).toBe(raw);
+  expect(stitch(raw, chunks, ["A.", "B."])).toBe("A.\n\nB.");
+});
+
+test("stitch keeps the raw text of a chunk without an output", () => {
+  const raw = "call ada and i'll send the notes";
+  const chunks = spans(raw, ["call ada and", "i'll send the notes"]);
+
+  expect(stitch(raw, chunks, ["Call Ada and", undefined])).toBe("Call Ada and i'll send the notes");
+});
+
+test("stitch lowercases a capital the model put after an unterminated part", () => {
+  const raw = "priya will draft the release notes by friday";
+  const chunks = spans(raw, ["priya will", "draft the release notes by friday"]);
+
+  expect(stitch(raw, chunks, ["Priya will", "Draft the release notes by Friday."])).toBe(
+    "Priya will draft the release notes by Friday.",
+  );
+});
+
+test("stitch keeps I and its contractions capitalized", () => {
+  const raw = "call ada and i'll send the notes";
+  const chunks = spans(raw, ["call ada and", "i'll send the notes"]);
+
+  expect(stitch(raw, chunks, ["Call Ada and", "I'll send the notes."])).toBe(
+    "Call Ada and I'll send the notes.",
+  );
+});
+
+test("stitch keeps a capital after a sentence end", () => {
+  const raw = "review the page. then email bob";
+  const chunks = spans(raw, ["review the page.", "then email bob"]);
+
+  expect(stitch(raw, chunks, ["Review the page.", "Then email Bob."])).toBe(
+    "Review the page. Then email Bob.",
+  );
+});
+
+test("stitch keeps a capital the user dictated", () => {
+  const raw = "call ada and Sofia will review it";
+  const chunks = spans(raw, ["call ada and", "Sofia will review it"]);
+
+  expect(stitch(raw, chunks, ["Call Ada and", "Sofia will review it."])).toBe(
+    "Call Ada and Sofia will review it.",
+  );
+});
+
+test("stitch drops a chunk cleaned to nothing and folds its gap into the next one", () => {
+  const raw = "um uh\n\ncall ada um then email bob";
+  const chunks = spans(raw, ["um uh", "call ada", "um", "then email bob"]);
+
+  expect(stitch(raw, chunks, ["", "Call Ada", "", "then email Bob."])).toBe(
+    "Call Ada then email Bob.",
+  );
 });
