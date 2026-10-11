@@ -160,11 +160,11 @@ test("stitch keeps a capital after a sentence end", () => {
   );
 });
 
-test("stitch keeps a sentence capital when cleanup drops the preceding period", () => {
+test("stitch restores the source period when cleanup drops it at a sentence seam", () => {
   const raw = "call ada. then email bob";
   const chunks = chunkTranscript(raw, 15, chars);
 
-  expect(stitch(raw, chunks, ["Call Ada", "Then email Bob."])).toBe("Call Ada Then email Bob.");
+  expect(stitch(raw, chunks, ["Call Ada", "Then email Bob."])).toBe("Call Ada. Then email Bob.");
 });
 
 test("stitch keeps a capital the user dictated", () => {
@@ -255,7 +255,7 @@ test("removing filler preserves the preceding raw sentence boundary", () => {
     text === "um" ? "" : text[0]!.toUpperCase() + text.slice(1).replace(/\.$/, ""),
   );
   expect(texts(chunks)).toEqual([first, "um", next]);
-  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + " " + outputs[2]);
+  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + ". " + outputs[2]);
 });
 
 test.each(["um.", "um. uh"])("removed %j still carries a raw sentence boundary", (filler) => {
@@ -267,7 +267,7 @@ test.each(["um.", "um. uh"])("removed %j still carries a raw sentence boundary",
     text === filler ? "" : text[0]!.toUpperCase() + text.slice(1),
   );
   expect(texts(chunks)).toEqual([first, filler, next]);
-  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + " " + outputs[2]);
+  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + ". " + outputs[2]);
 });
 
 test.each([
@@ -278,4 +278,43 @@ test.each([
   const chunks = chunkTranscript(raw, 12, chars);
   const outputs = chunks.map(({ text }) => text.replace(`${open}especially`, `${open}Especially`));
   expect(stitch(raw, chunks, outputs)).toBe(raw);
+});
+
+test.each([".", "?", "!", "…"])(
+  "removing filler preserves its %s sentence punctuation without its wording",
+  (terminal) => {
+    const raw = `call ada um${terminal} then email bob`;
+    const chunks = spans(raw, ["call ada", `um${terminal}`, "then email bob"]);
+    expect(stitch(raw, chunks, ["Call Ada", "", "Then email Bob."])).toBe(
+      `Call Ada${terminal} Then email Bob.`,
+    );
+  },
+);
+
+test("removed sentence punctuation does not duplicate a cleaned sentence end", () => {
+  const raw = "call ada um. then email bob";
+  const chunks = spans(raw, ["call ada", "um.", "then email bob"]);
+  expect(stitch(raw, chunks, ["Call Ada!", "", "Then email Bob."])).toBe(
+    "Call Ada! Then email Bob.",
+  );
+});
+
+test("removed filler does not add sentence punctuation across paragraphs", () => {
+  const raw = "call ada um.\n\nthen email bob";
+  const chunks = spans(raw, ["call ada", "um.", "then email bob"]);
+  expect(stitch(raw, chunks, ["Call Ada", "", "Then email Bob."])).toBe(
+    "Call Ada\n\nThen email Bob.",
+  );
+});
+
+test.each([
+  ["ßeta", "SSeta"],
+  ["éclair", "Éclair"],
+  ["ordinary", "Ordinary"],
+])("stitch restores the complete %s word after first-letter capitalization", (rawWord, cleaned) => {
+  const raw = `check (${rawWord} carefully)`;
+  const chunks = spans(raw, ["check", `(${rawWord} carefully)`]);
+  expect(stitch(raw, chunks, ["Check", `(${cleaned} carefully).`])).toBe(
+    `Check (${rawWord} carefully).`,
+  );
 });
