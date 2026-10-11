@@ -713,17 +713,32 @@ const commands = {
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
     const snapshots = await snapshotStream(hub);
     const logOffset = statSync(state.logPath).size;
+    const logLine = (pattern) =>
+      readFileSync(state.logPath, "utf8")
+        .slice(logOffset)
+        .split("\n")
+        .find((l) => pattern.test(l));
     const waitForLog = async (pattern, timeoutMs, label) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const line = readFileSync(state.logPath, "utf8")
-          .slice(logOffset)
-          .split("\n")
-          .find((l) => pattern.test(l));
+        const line = logLine(pattern);
         if (line) return line;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
+    };
+    // Null once the helper has streamed the whole fixture; otherwise the first snapshot showing
+    // the session ended first, which stops the fixture before its end marker is written.
+    const fixtureEnd = async () => {
+      const listened = snapshots.items.length;
+      const deadline = Date.now() + 60_000;
+      while (Date.now() < deadline) {
+        if (logLine(/helper info: test\.audioFile ended$/)) return null;
+        const ended = snapshots.items.slice(listened).find((s) => s.session.kind !== "listening");
+        if (ended) return ended;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error("timed out after 60000 ms waiting for fixture to finish");
     };
 
     const targetEnv = {
@@ -736,6 +751,7 @@ const commands = {
       [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
       { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );
+    let failure;
     try {
       const field = 'document.getElementById("field")';
       const { DevTools: targetPort } = await announcedPorts(target, ["DevTools"]);
@@ -757,8 +773,8 @@ const commands = {
         timeoutMs: 5000,
         label: "listening",
       });
-      if (end === "audio")
-        await waitForLog(/helper info: test\.audioFile ended$/, 60_000, "fixture to finish");
+      const endedEarly = end === "audio" ? await fixtureEnd() : null;
+      const earlyMs = endedEarly && Math.round(performance.now() - pressedAt);
       if (end === "escape") fnpost("escape");
       else fnpost(settings.hotkey, "up");
       const heldMs = Math.round(performance.now() - pressedAt);
@@ -787,6 +803,9 @@ const commands = {
         hotkey: settings.hotkey,
         cleanup: settings.cleanup,
         heldMs,
+        ...(endedEarly && {
+          captureEndedEarly: { afterMs: earlyMs, session: endedEarly.session.kind },
+        }),
         outcome: finalState.session.outcome ?? finalState.session.kind,
         inserted: await targetPage.evaluate(`${field}.value`),
         last: finalState.last,
@@ -799,11 +818,15 @@ const commands = {
       );
       writeFileSync(path, JSON.stringify(result, null, 2));
       out({ ...result, evidence: path });
+      if (endedEarly) {
+        failure = `capture ended ${earlyMs} ms after the press, before ${wav} finished, while dictate still held the hotkey`;
+      }
     } finally {
       rmSync(state.fakeMicrophonePath, { force: true });
       hub.close();
       await stopChildren();
     }
+    if (failure) fail(failure);
   },
 
   help() {
