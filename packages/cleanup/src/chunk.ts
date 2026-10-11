@@ -4,6 +4,8 @@ export type Chunk = { start: number; end: number; text: string };
 
 const CLOSERS = `["'”’)\\]]*`;
 const TERMINAL_END = new RegExp(`[.!?…]${CLOSERS}\\s*$`, "u");
+const ABBREVIATION_END = new RegExp(`(?:\\p{L}\\.){2,}${CLOSERS}\\s*$`, "u");
+const endsSentence = (text: string) => TERMINAL_END.test(text) && !ABBREVIATION_END.test(text);
 // UAX #29 does not end a sentence before a lowercase letter, so a lowercase dictation with
 // periods still reads as one sentence to Intl.Segmenter.
 const SENTENCE_END = new RegExp(`(?<=[.!?…]${CLOSERS}\\s+)(?!\\s)`, "u");
@@ -17,7 +19,16 @@ const segmenter = (granularity: "sentence" | "word" | "grapheme") => {
 const sentences = segmenter("sentence");
 
 const LEVELS: ((text: string) => string[])[] = [
-  (text) => sentences(text).flatMap((sentence) => sentence.split(SENTENCE_END)),
+  (text) =>
+    sentences(text).flatMap((sentence) => {
+      const parts: string[] = [];
+      for (const part of sentence.split(SENTENCE_END)) {
+        const previous = parts.at(-1);
+        if (previous !== undefined && !endsSentence(previous)) parts[parts.length - 1] += part;
+        else parts.push(part);
+      }
+      return parts;
+    }),
   (text) => text.split(CLAUSE_SEAM),
   segmenter("word"),
   segmenter("grapheme"),
@@ -107,12 +118,7 @@ function lowercaseContinuation(
   rawChunk: string,
   output: string,
 ): string {
-  if (
-    !before ||
-    TERMINAL_END.test(before) ||
-    TERMINAL_END.test(rawBefore) ||
-    /[\r\n]\s*$/u.test(rawBefore)
-  )
+  if (!before || endsSentence(before) || endsSentence(rawBefore) || /[\r\n]\s*$/u.test(rawBefore))
     return output;
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
   const word = firstWord(rawChunk);
