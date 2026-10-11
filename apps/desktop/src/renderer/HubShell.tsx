@@ -68,7 +68,9 @@ type SettingsPage = (typeof settingsPages)[number]["id"];
 const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNode> = {
   home: (snapshot) => <Home snapshot={snapshot} />,
   style: (snapshot) => <Style settings={snapshot.settings} />,
-  snippets: (snapshot) => <Snippets snippets={snapshot.settings.snippets} />,
+  snippets: (snapshot) => (
+    <Snippets snippets={snapshot.settings.snippets} dictionary={snapshot.settings.dictionary} />
+  ),
   dictionary: (snapshot) => (
     <Dictionary dictionary={snapshot.settings.dictionary} snippets={snapshot.settings.snippets} />
   ),

@@ -276,6 +276,14 @@ describe("applyPatch", () => {
     expect(() => applyPatch(saved, patch)).toThrow("Could not save this dictionary.");
   });
 
+  test("refuses a snippet whose trigger is already a dictionary phrase", () => {
+    const saved = applyPatch(DEFAULT_SETTINGS, { dictionary: [{ ...WORD, phrase: "My E-mail" }] });
+    expect(() => applyPatch(saved, { snippets: [VALID_SNIPPET] })).toThrow(
+      "Could not save these snippets.",
+    );
+    expect(saved.snippets).toEqual([]);
+  });
+
   test("refuses a dictionary phrase that a snippet in the same patch uses as its trigger", () => {
     const patch = { snippets: [VALID_SNIPPET], dictionary: [{ ...WORD, phrase: "my email" }] };
     expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save this dictionary.");

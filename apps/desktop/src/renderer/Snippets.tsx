@@ -4,6 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
+import { isSnippetTrigger, type DictionaryEntry } from "../shared/dictionary.ts";
 import {
   EXPANSION_MAX_LENGTH,
   snippetProblem,
@@ -70,7 +71,13 @@ const editorText: Record<Mode, { title: string; save: string }> = {
   edit: { title: "Edit snippet", save: "Save changes" },
 };
 
-export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
+export function Snippets({
+  snippets,
+  dictionary,
+}: {
+  snippets: readonly Snippet[];
+  dictionary: readonly DictionaryEntry[];
+}) {
   const [modal, setModal] = useState<Modal | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
   const rowAction = useAction();
@@ -198,6 +205,7 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
           mode={modal.kind}
           initial={modal.snippet}
           snippets={snippets}
+          dictionary={dictionary}
         />
       )}
       {(modal?.kind === "delete" || modal?.kind === "deleted") && (
@@ -222,6 +230,7 @@ function SnippetDialog({
   mode,
   initial,
   snippets,
+  dictionary,
   open,
   onOpenChange,
   onOpenChangeComplete,
@@ -229,6 +238,7 @@ function SnippetDialog({
   mode: Mode;
   initial: Snippet;
   snippets: readonly Snippet[];
+  dictionary: readonly DictionaryEntry[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
@@ -240,10 +250,11 @@ function SnippetDialog({
   const { pending, error, run, clearError } = useAction();
   const text = editorText[mode];
   const snippet = { ...draft, trigger: draft.trigger.trim() };
-  const problem = snippetProblem(
-    snippet,
-    snippets.filter((other) => other.id !== snippet.id),
-  );
+  const problem =
+    snippetProblem(
+      snippet,
+      snippets.filter((other) => other.id !== snippet.id),
+    ) ?? dictionaryConflict(snippet, dictionary);
   const shown = saveAttempted ? problem : null;
 
   const edit = (patch: Partial<Snippet>) => {
@@ -335,6 +346,15 @@ function SnippetDialog({
     </Dialog.Root>
   );
 }
+
+// A trigger that is also a dictionary phrase would be rewritten before it could expand.
+const dictionaryConflict = (
+  snippet: Snippet,
+  dictionary: readonly DictionaryEntry[],
+): SnippetProblem | null =>
+  dictionary.some((entry) => isSnippetTrigger(entry.phrase, [snippet]))
+    ? { field: "trigger", message: "This trigger is already in your dictionary." }
+    : null;
 
 const messageFor = (field: SnippetProblem["field"], problem: SnippetProblem | null) =>
   problem?.field === field ? problem.message : undefined;
