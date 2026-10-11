@@ -2,6 +2,7 @@ import Testing
 @testable import VoiceHelperCore
 
 private enum DeviceError: Error { case unavailable }
+private enum StoreError: Error { case full, unreadable }
 
 private final class FakeOutputs: OutputControls {
     var values: [String: [OutputControl]] = [:]
@@ -9,16 +10,26 @@ private final class FakeOutputs: OutputControls {
     var writes: [(String, OutputControl)] = []
     var discoveries = 0
     var failure: ((String, OutputControl) -> Bool)?
+    var beforeWrite: ((String, OutputControl) -> Void)?
+
+    init(values: [String: [OutputControl]] = [:], connected: [String]? = nil) {
+        self.values = values
+        self.connected = connected ?? Array(values.keys)
+    }
 
     func devices() throws -> [String] {
         discoveries += 1
         return connected
     }
 
-    func snapshot(uid: String) throws -> [OutputControl] { values[uid] ?? [] }
+    func snapshot(uid: String) throws -> [OutputControl] {
+        guard connected.contains(uid) else { throw DeviceError.unavailable }
+        return values[uid] ?? []
+    }
 
     func write(uid: String, control: OutputControl) throws {
         guard connected.contains(uid) else { throw DeviceError.unavailable }
+        beforeWrite?(uid, control)
         writes.append((uid, control))
         guard let index = values[uid]?.firstIndex(where: { $0.silenced == control.silenced }) else {
             throw DeviceError.unavailable
@@ -28,24 +39,93 @@ private final class FakeOutputs: OutputControls {
     }
 }
 
+private final class MemoryOriginalsStore: OutputOriginalsStore {
+    var saved: [String: [OutputControl]]
+    var saves = 0
+    var failing = false
+    var loadFailing = false
+
+    init(_ saved: [String: [OutputControl]] = [:]) { self.saved = saved }
+
+    func load() throws -> [String: [OutputControl]] {
+        if loadFailing { throw StoreError.unreadable }
+        return saved
+    }
+
+    func save(_ originals: [String: [OutputControl]]) throws {
+        saves += 1
+        if failing { throw StoreError.full }
+        saved = originals
+    }
+}
+
 private let unmuted = OutputControl.mute(element: 0, value: 0)
 private let muted = OutputControl.mute(element: 0, value: 1)
+private let left = OutputControl.volume(element: 1, value: 0.3)
+private let right = OutputControl.volume(element: 2, value: 0.7)
+
+private enum RecoveryRetry: CaseIterable {
+    case begin, end, deviceAfterBegin, deviceAfterEnd
+}
+
+@Test(arguments: RecoveryRetry.allCases)
+private func unreadCrashRecordBlocksWritesUntilRecoveryCanRetry(retry: RecoveryRetry) {
+    let originals = ["crashed": [unmuted]]
+    let store = MemoryOriginalsStore(originals)
+    store.loadFailing = true
+    let outputs = FakeOutputs(values: ["crashed": [muted]])
+    var errors: [String] = []
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { errors.append($0) })
+    #expect(suppression.needsDeviceListener)
+    suppression.begin()
+    outputs.connected.append("new")
+    outputs.values["new"] = [left, right]
+    suppression.begin()
+    suppression.reconcile()
+    if retry == .end || retry == .deviceAfterEnd { suppression.end() }
+
+    #expect(outputs.writes.isEmpty)
+    #expect(outputs.values == ["crashed": [muted], "new": [left, right]])
+    #expect(store.saves == 0)
+    #expect(store.saved == originals)
+    #expect(suppression.needsDeviceListener)
+    #expect(!errors.isEmpty)
+
+    store.loadFailing = false
+    switch retry {
+    case .begin: suppression.begin()
+    case .end: suppression.end()
+    case .deviceAfterBegin, .deviceAfterEnd: suppression.reconcile()
+    }
+    #expect(outputs.writes.first?.0 == "crashed")
+    #expect(outputs.writes.first?.1 == unmuted)
+    if retry == .begin || retry == .deviceAfterBegin {
+        #expect(outputs.values == ["crashed": [muted], "new": [left.silenced, right.silenced]])
+        #expect(store.saved == ["crashed": [unmuted], "new": [left, right]])
+        suppression.end()
+    } else {
+        #expect(outputs.writes.count == 1)
+    }
+    #expect(outputs.values == ["crashed": [unmuted], "new": [left, right]])
+    #expect(store.saved.isEmpty)
+    #expect(!suppression.needsDeviceListener)
+}
 
 @Test func disabledOutputSuppressionDoesNotReadOrWriteDevices() {
     let outputs = FakeOutputs()
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let store = MemoryOriginalsStore()
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
     suppression.end()
     #expect(outputs.discoveries == 0)
     #expect(outputs.writes.isEmpty)
+    #expect(store.saves == 0)
     #expect(!suppression.needsDeviceListener)
 }
 
 @Test func outputSuppressionRestoresMultipleDevicesAndIndependentChannelVolumes() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["speakers", "headphones", "muted"]
-    outputs.values = ["speakers": [unmuted], "headphones": [.volume(element: 1, value: 0.3), .volume(element: 2, value: 0.7)], "muted": [muted]]
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right], "muted": [muted]])
     let original = outputs.values
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     #expect(outputs.values["speakers"] == [muted])
     #expect(outputs.values["headphones"] == [.volume(element: 1, value: 0), .volume(element: 2, value: 0)])
@@ -63,25 +143,23 @@ private let muted = OutputControl.mute(element: 0, value: 1)
 }
 
 @Test func partialMuteFailureRollsBackEvenWhenTheDriverAppliedTheFailedWrite() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["stereo"]
-    outputs.values = ["stereo": [.volume(element: 1, value: 0.2), .volume(element: 2, value: 0.8)]]
+    let outputs = FakeOutputs(values: ["stereo": [.volume(element: 1, value: 0.2), .volume(element: 2, value: 0.8)]])
     let original = outputs.values
     outputs.failure = { _, control in control == .volume(element: 2, value: 0) }
     var errors: [String] = []
-    let suppression = OutputSuppression(controls: outputs, onError: { errors.append($0) })
+    let store = MemoryOriginalsStore()
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { errors.append($0) })
     suppression.begin()
     #expect(outputs.values == original)
     #expect(errors.count == 1)
     suppression.end()
     #expect(!suppression.needsDeviceListener)
+    #expect(store.saved.isEmpty)
 }
 
 @Test func restorationFailureRetainsOriginalsAndDoesNotRepeatSuccessfulWrites() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["a", "b"]
-    outputs.values = ["a": [unmuted], "b": [unmuted]]
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let outputs = FakeOutputs(values: ["a": [unmuted], "b": [unmuted]])
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     outputs.failure = { uid, control in uid == "a" && control == unmuted }
     suppression.end()
@@ -95,11 +173,9 @@ private let muted = OutputControl.mute(element: 0, value: 1)
 }
 
 @Test func transientMuteFailureRetriesOnTheNextDeviceChange() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["speakers"]
-    outputs.values = ["speakers": [unmuted]]
+    let outputs = FakeOutputs(values: ["speakers": [unmuted]])
     outputs.failure = { _, control in control == muted }
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     #expect(outputs.values["speakers"] == [unmuted])
     outputs.failure = nil
@@ -110,26 +186,24 @@ private let muted = OutputControl.mute(element: 0, value: 1)
 }
 
 @Test func newAndReconnectedOutputsAreSilencedWithoutReplacingTheirOriginalState() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["a"]
-    outputs.values = ["a": [unmuted]]
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let outputs = FakeOutputs(values: ["a": [unmuted], "c": [.volume(element: 0, value: 0.45)]])
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     outputs.connected = ["b"]
     outputs.values["b"] = [.volume(element: 0, value: 0.45)]
     suppression.reconcile()
     #expect(outputs.values["b"] == [.volume(element: 0, value: 0)])
-    outputs.connected = ["a", "b"]
+    outputs.values["c"] = [.volume(element: 0, value: 0.9)]
+    outputs.connected = ["a", "b", "c"]
     suppression.reconcile()
+    #expect(outputs.values["c"] == [.volume(element: 0, value: 0)])
     suppression.end()
-    #expect(outputs.values == ["a": [unmuted], "b": [.volume(element: 0, value: 0.45)]])
+    #expect(outputs.values == ["a": [unmuted], "b": [.volume(element: 0, value: 0.45)], "c": [.volume(element: 0, value: 0.9)]])
 }
 
 @Test func disconnectedOutputRestoresWhenItReturnsAfterCaptureEnds() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["original"]
-    outputs.values = ["original": [unmuted]]
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let outputs = FakeOutputs(values: ["original": [unmuted]])
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     outputs.connected = ["replacement"]
     outputs.values["replacement"] = [muted]
@@ -144,10 +218,8 @@ private let muted = OutputControl.mute(element: 0, value: 1)
 }
 
 @Test func queuedReconciliationAfterEndCannotMuteNewDevices() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["a"]
-    outputs.values = ["a": [unmuted]]
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let outputs = FakeOutputs(values: ["a": [unmuted]])
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     suppression.end()
     outputs.connected.append("b")
@@ -158,12 +230,10 @@ private let muted = OutputControl.mute(element: 0, value: 1)
 }
 
 @Test func nextCaptureSilencesAllChannelsWhilePreservingAFailedRestoration() {
-    let outputs = FakeOutputs()
-    outputs.connected = ["stereo"]
     let left = OutputControl.volume(element: 1, value: 0.2)
     let right = OutputControl.volume(element: 2, value: 0.8)
-    outputs.values = ["stereo": [left, right]]
-    let suppression = OutputSuppression(controls: outputs, onError: { _ in })
+    let outputs = FakeOutputs(values: ["stereo": [left, right]])
+    let suppression = OutputSuppression(controls: outputs, store: MemoryOriginalsStore(), onError: { _ in })
     suppression.begin()
     outputs.failure = { _, control in control == right }
     suppression.end()
@@ -172,4 +242,175 @@ private let muted = OutputControl.mute(element: 0, value: 1)
     outputs.failure = nil
     suppression.end()
     #expect(outputs.values["stereo"] == [left, right])
+}
+
+@Test func replacementInstanceRestoresWhatADroppedInstanceSilenced() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right]])
+    let original = outputs.values
+    let store = MemoryOriginalsStore()
+    let crashed = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    crashed.begin()
+    #expect(outputs.values["speakers"] == [muted])
+    #expect(store.saved == original)
+    let replacement = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    replacement.end()
+    #expect(outputs.values == original)
+    #expect(store.saved.isEmpty)
+    #expect(!replacement.needsDeviceListener)
+}
+
+@Test func recoveryFromAKillAtEveryWriteInstantRestoresTheOriginals() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right]])
+    let original = outputs.values
+    let store = MemoryOriginalsStore()
+    var instants: [(values: [String: [OutputControl]], record: [String: [OutputControl]])] = []
+    outputs.beforeWrite = { _, _ in instants.append((outputs.values, store.saved)) }
+    let crashed = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    crashed.begin()
+    crashed.end()
+    instants.append((outputs.values, store.saved))
+    #expect(instants.count == 7)
+    #expect(instants[0].record == original, "the record is complete before the first write")
+
+    for (index, instant) in instants.enumerated() {
+        let world = FakeOutputs(values: instant.values)
+        let record = MemoryOriginalsStore(instant.record)
+        var errors: [String] = []
+        let replacement = OutputSuppression(controls: world, store: record, onError: { errors.append($0) })
+        replacement.end()
+        #expect(world.values == original, "instant \(index)")
+        #expect(record.saved.isEmpty, "instant \(index)")
+        #expect(errors.isEmpty, "instant \(index)")
+        #expect(!replacement.needsDeviceListener, "instant \(index)")
+        let writes = world.writes.count
+        OutputSuppression(controls: world, store: record, onError: { _ in }).end()
+        #expect(world.writes.count == writes, "instant \(index): a second replacement writes nothing")
+    }
+}
+
+@Test func recordIsSavedBeforeTheFirstWriteToEachDevice() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right]])
+    let store = MemoryOriginalsStore()
+    outputs.beforeWrite = { uid, control in
+        #expect(store.saved[uid]?.contains { $0.silenced == control.silenced } == true, "\(uid) \(control)")
+    }
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.begin()
+    #expect(outputs.writes.count == 3)
+    #expect(store.saves == 1, "one write-ahead save per reconcile, not per device")
+}
+
+@Test func restoreAfterCrashIsIdempotent() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right]])
+    let original = outputs.values
+    let store = MemoryOriginalsStore()
+    OutputSuppression(controls: outputs, store: store, onError: { _ in }).begin()
+    let replacement = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    replacement.end()
+    #expect(outputs.values == original)
+    let writes = outputs.writes.count
+    replacement.end()
+    #expect(outputs.writes.count == writes)
+    OutputSuppression(controls: outputs, store: store, onError: { _ in }).end()
+    #expect(outputs.writes.count == writes)
+
+    let clean = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    clean.begin()
+    clean.end()
+    let afterClean = outputs.writes.count
+    OutputSuppression(controls: outputs, store: store, onError: { _ in }).end()
+    #expect(outputs.writes.count == afterClean)
+    #expect(outputs.values == original)
+    #expect(store.saved.isEmpty)
+}
+
+@Test func restoreAfterCrashLeavesAValueTheUserChanged() {
+    let store = MemoryOriginalsStore(["speakers": [unmuted], "stereo": [.volume(element: 1, value: 0.2), .volume(element: 2, value: 0.8)]])
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "stereo": [.volume(element: 1, value: 0.5), .volume(element: 2, value: 0)]])
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.end()
+    #expect(outputs.values == ["speakers": [unmuted], "stereo": [.volume(element: 1, value: 0.5), .volume(element: 2, value: 0.8)]])
+    #expect(outputs.writes.map { $0.0 } == ["stereo"])
+    #expect(store.saved.isEmpty)
+    #expect(!suppression.needsDeviceListener)
+}
+
+@Test func crashAfterPartialWritesRestoresOnlyWhatWasSilenced() {
+    let store = MemoryOriginalsStore(["stereo": [left, right]])
+    let outputs = FakeOutputs(values: ["stereo": [left.silenced, right]])
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.end()
+    #expect(outputs.values == ["stereo": [left, right]])
+    #expect(outputs.writes.count == 1)
+    #expect(store.saved.isEmpty)
+}
+
+@Test func recoveryOfAnUnreachableDeviceWaitsForItAndStillComparesFirst() {
+    for userUnmutedWhileUnplugged in [false, true] {
+        let store = MemoryOriginalsStore(["dock": [unmuted]])
+        let outputs = FakeOutputs(values: ["dock": [muted]], connected: [])
+        let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+        suppression.end()
+        #expect(outputs.writes.isEmpty)
+        #expect(store.saved == ["dock": [unmuted]])
+        #expect(suppression.needsDeviceListener)
+
+        if userUnmutedWhileUnplugged { outputs.values["dock"] = [unmuted] }
+        outputs.connected = ["dock"]
+        suppression.reconcile()
+        #expect(outputs.values["dock"] == [unmuted])
+        #expect(outputs.writes.count == (userUnmutedWhileUnplugged ? 0 : 1))
+        #expect(store.saved.isEmpty)
+        #expect(!suppression.needsDeviceListener)
+    }
+}
+
+@Test func outputsStayAudibleWhenTheRecordCannotBeSaved() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted], "headphones": [left, right]])
+    let original = outputs.values
+    let store = MemoryOriginalsStore()
+    store.failing = true
+    var errors: [String] = []
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { errors.append($0) })
+    suppression.begin()
+    #expect(outputs.writes.isEmpty)
+    #expect(outputs.values == original)
+    #expect(errors.count == 1)
+    #expect(store.saved.isEmpty)
+    store.failing = false
+    suppression.reconcile()
+    #expect(outputs.values["speakers"] == [muted], "the next device change retries")
+    suppression.end()
+    #expect(outputs.values == original)
+    #expect(!suppression.needsDeviceListener)
+}
+
+@Test func aVolumeReadBackJustAboveZeroStillCountsAsSilenced() {
+    let store = MemoryOriginalsStore(["speakers": [.volume(element: 0, value: 0.6)], "headphones": [.volume(element: 0, value: 0.6)]])
+    let oneStep: Float = 1 / 64
+    let outputs = FakeOutputs(values: ["speakers": [.volume(element: 0, value: 1e-6)], "headphones": [.volume(element: 0, value: oneStep)]])
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.end()
+    #expect(outputs.values["speakers"] == [.volume(element: 0, value: 0.6)])
+    #expect(outputs.values["headphones"] == [.volume(element: 0, value: oneStep)])
+    #expect(store.saved.isEmpty)
+}
+
+@Test func anOriginalWhoseControlIsMissingFromTheSnapshotWaitsForIt() {
+    let outputs = FakeOutputs(values: ["speakers": [unmuted]])
+    let store = MemoryOriginalsStore()
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.begin()
+    outputs.values["speakers"] = [.volume(element: 0, value: 0.5)]
+    suppression.end()
+    #expect(store.saved == ["speakers": [unmuted]], "a mute group that is not settable right now keeps its original")
+    #expect(suppression.needsDeviceListener)
+    suppression.begin()
+    suppression.end()
+    #expect(store.saved["speakers"]?.contains(unmuted) == true, "a session on the volume group keeps the held mute original")
+    outputs.values["speakers"] = [muted]
+    suppression.reconcile()
+    #expect(outputs.values["speakers"] == [unmuted])
+    #expect(store.saved.isEmpty)
+    #expect(!suppression.needsDeviceListener)
 }

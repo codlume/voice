@@ -16,7 +16,8 @@ struct CaptureIdleTests {
         let output = Output()
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
-            devices: AudioInputDevices(output: output)
+            devices: AudioInputDevices(output: output),
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
             Thread.sleep(forTimeInterval: 0.05)
@@ -46,7 +47,8 @@ struct CaptureIdleTests {
         let output = Output()
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
-            devices: AudioInputDevices(output: output)
+            devices: AudioInputDevices(output: output),
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         ) {
             probes.withLock { $0 += 1 }
             return .denied

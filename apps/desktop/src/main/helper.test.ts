@@ -23,6 +23,7 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
   const helper = startHelper({
     binary,
     modelsDir: "/tmp/voice-models",
+    stateDir: "/tmp/voice-state",
     env: process.env,
     configure: () => [
       { type: "hotkey.configure", key: "fn" },

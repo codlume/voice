@@ -21,6 +21,7 @@ export type HelperExit =
 export type HelperOptions = {
   binary: string;
   modelsDir: string;
+  stateDir: string;
   env: NodeJS.ProcessEnv;
   onEvent: (event: HelperEvent) => void;
   onExit: (exit: HelperExit) => void;
@@ -41,7 +42,11 @@ export function startHelper(options: HelperOptions): Helper {
 
   function launch() {
     const startedAt = Date.now();
-    const proc = spawn(options.binary, ["--models-dir", options.modelsDir], { env: options.env });
+    const proc = spawn(
+      options.binary,
+      ["--models-dir", options.modelsDir, "--state-dir", options.stateDir],
+      { env: options.env },
+    );
     child = proc;
     let ended = false;
 
