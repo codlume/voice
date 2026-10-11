@@ -316,6 +316,7 @@ async function main() {
     baseUrl: testMode ? process.env.VOICE_CLEANUP_MODEL_URL : undefined,
     shouldLoad: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
+    log,
   });
 
   let hub: BrowserWindow | undefined;
@@ -722,9 +723,9 @@ async function main() {
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
 
-  // node-llama-cpp frees the model on a native worker. If Electron tears Node down while that
-  // worker is in flight, its completion callback throws into a dying environment and the
-  // process aborts. So the first quit only starts the shutdown; the quit that follows it passes.
+  // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
+  // settings save, the helper, and the cleanup process get to finish, and their logs get sent.
+  // The quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {

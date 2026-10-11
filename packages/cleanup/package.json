@@ -6,6 +6,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./download": {
+      "types": "./src/download.ts",
+      "import": "./src/download.ts"
     }
   },
   "scripts": {
