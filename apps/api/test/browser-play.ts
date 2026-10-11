@@ -19,6 +19,8 @@ export function storeCookies(response: Response, jar: Jar = new Map()): Jar {
 export const cookieHeader = (jar: Jar) =>
   [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
 
+const fetchMetadata = (site: string | null) => (site === null ? {} : { "sec-fetch-site": site });
+
 export async function playBrowser(
   fetch: FetchLike,
   {
@@ -26,12 +28,14 @@ export async function playBrowser(
     initUrl,
     googleCode,
     signOut,
+    secFetchSite = { init: "none", callback: "cross-site" },
   }: {
     base: string;
     initUrl: string;
     googleCode: string;
     /** Also load the landing page and end the browser's own auth session, as the page does. */
     signOut: boolean;
+    secFetchSite?: { init: string | null; callback: string | null };
   },
 ) {
   const jar: Jar = new Map();
@@ -45,10 +49,11 @@ export async function playBrowser(
     return response;
   };
 
-  const init = await browse(initUrl);
+  const init = await browse(initUrl, { headers: fetchMetadata(secFetchSite.init) });
   const google = new URL(init.headers.get("location") ?? "about:blank");
   const callback = await browse(
     `${base}/api/auth/callback/google?code=${encodeURIComponent(googleCode)}&state=${google.searchParams.get("state")}`,
+    { headers: fetchMetadata(secFetchSite.callback) },
   );
   const electronCookie = jar.get("better-auth.electron") ?? null;
   if (!signOut) return { jar, init, google, callback, electronCookie };

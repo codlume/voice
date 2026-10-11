@@ -12,6 +12,7 @@ This directory is the maintained list of what a user can do in Voice and how to 
 ## Driving conventions
 
 - In this map, `vv` is shorthand for `node .claude/skills/verify/scripts/voice-verify.mjs`. Type the full command in a shell.
+- `<userData>` is the instance's scratch folder, printed as `userData` by `launch` and `doctor`.
 - Click by accessible name (`vv click "Show in Dock"`). Use `css:#setting-…` only for selects and unlabeled controls.
 - After each click, wait on an observable change (`vv wait hub '…'`). Don't sleep.
 - A recipe that changes settings leaves the instance changed. Revert the setting, or `stop` and relaunch before the next recipe.
@@ -19,7 +20,7 @@ This directory is the maintained list of what a user can do in Voice and how to 
 ## Proof and skip reporting
 
 - Proof is the action plus the resulting state: `shot` before and after, plus `text`, `snapshot`, or the `dictate` JSON.
-- Mutations also need a second view of the stored value: `$TMPDIR/voice-verify/settings.json`, files under `$TMPDIR/voice-verify/models`, or the target textarea.
+- Mutations also need a second view of the stored value: `<userData>/settings.json`, files under `<userData>/models`, or the target textarea.
 - Record the feature ID and the entry point with every artifact (`vv note <feature> …`).
 - If an entry point is unreachable, report the command you tried and the unmet precondition, for example "dictate refused: Voice.app running". Don't count it as verified through another path.
 
