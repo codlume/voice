@@ -1,5 +1,5 @@
 import type { DictionaryEntry } from "./dictionary.ts";
-import { matchKey, phraseKey, withoutAccents } from "./phrase.ts";
+import { matchKey, withoutAccents } from "./phrase.ts";
 import type { Snippet } from "./snippets.ts";
 
 /** Everything the user saved that rewrites dictated text. */
@@ -10,12 +10,10 @@ export type Rewritten = { text: string; snippets: number; entireDictation: boole
 
 type Rule = { kind: "entry"; entry: DictionaryEntry } | { kind: "snippet"; snippet: Snippet };
 
-type Matcher = {
-  // Enabled snippets by trigger key, for a dictation that is only a trigger.
-  entire: ReadonlyMap<string, Snippet>;
-  rules: ReadonlyMap<string, Rule>;
-  regex: RegExp | null;
-};
+type Matcher = { rules: ReadonlyMap<string, Rule>; regex: RegExp | null };
+
+// A rule's match in the original text.
+type Found = { rule: Rule; start: number; end: number };
 
 const WORD = "[\\p{L}\\p{M}\\p{N}_]";
 // A match sits between non-word characters or text edges, whatever the phrase starts or ends with,
@@ -32,21 +30,18 @@ const pattern = (key: string) =>
 function compile({ dictionary, snippets }: Rewrites): Matcher {
   const rules = new Map<string, Rule>();
   for (const entry of dictionary) rules.set(matchKey(entry.phrase), { kind: "entry", entry });
-  const entire = new Map<string, Snippet>();
   for (const snippet of snippets) {
-    if (!snippet.enabled) continue;
     // The pages refuse a trigger that is also a dictionary phrase; in an edited file the snippet wins.
-    rules.set(matchKey(snippet.trigger), { kind: "snippet", snippet });
-    entire.set(phraseKey(snippet.trigger), snippet);
+    if (snippet.enabled) rules.set(matchKey(snippet.trigger), { kind: "snippet", snippet });
   }
-  if (rules.size === 0) return { entire, rules, regex: null };
+  if (rules.size === 0) return { rules, regex: null };
   // Longest first, so the regex takes the longest phrase at any position. One boundary check
   // around the whole alternation compiles in milliseconds; one per phrase took seconds at 1,000.
   const alternation = [...rules.keys()]
     .toSorted((a, b) => b.length - a.length)
     .map(pattern)
     .join("|");
-  return { entire, rules, regex: new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu") };
+  return { rules, regex: new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu") };
 }
 
 // Settings hand every session the same two arrays until the user edits a list, so one compiled
@@ -86,14 +81,10 @@ function foldAccents(text: string) {
  * sets off a snippet, and text outside a match is kept as is.
  */
 export function rewrite(text: string, rewrites: Rewrites): Rewritten {
-  const { entire, rules, regex } = matcher(rewrites);
-  const whole = entire.get(phraseKey(text));
-  if (whole) return { text: whole.expansion, snippets: 1, entireDictation: true };
+  const { rules, regex } = matcher(rewrites);
   if (regex === null) return { text, snippets: 0, entireDictation: false };
   const { folded, source } = foldAccents(text);
-  let result = "";
-  let copied = 0;
-  let count = 0;
+  const found: Found[] = [];
   for (const match of folded.matchAll(regex)) {
     // The regex folds case more widely than toLowerCase (ſ matches s); leave such a match alone.
     const rule = rules.get(matchKey(match[0]));
@@ -101,11 +92,28 @@ export function rewrite(text: string, rewrites: Rewrites): Rewritten {
     // `source` has an entry for every folded offset and for the end, so both lookups hit.
     const start = source[match.index]!;
     const end = source[match.index + match[0].length]!;
+    found.push({ rule, start, end });
+  }
+  const whole = alone(text, found);
+  if (whole) return { text: whole.expansion, snippets: 1, entireDictation: true };
+  let result = "";
+  let copied = 0;
+  let count = 0;
+  for (const { rule, start, end } of found) {
     result += text.slice(copied, start) + write(rule, text.slice(start, end));
     copied = end;
     if (rule.kind === "snippet") count += 1;
   }
   return { text: result + text.slice(copied), snippets: count, entireDictation: false };
+}
+
+// The snippet when the dictation is only its trigger, give or take the punctuation the speech
+// model puts around a phrase said on its own.
+function alone(text: string, found: readonly Found[]): Snippet | null {
+  const [only] = found;
+  if (only === undefined || found.length > 1 || only.rule.kind !== "snippet") return null;
+  const around = text.slice(0, only.start) + text.slice(only.end);
+  return /^[\p{P}\p{S}\s]*$/u.test(around) ? only.rule.snippet : null;
 }
 
 function write(rule: Rule, matched: string): string {

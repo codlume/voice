@@ -37,9 +37,31 @@ const expand = (text: string, snippets: readonly Snippet[]) =>
 
 describe("rewrite with snippets", () => {
   test("a dictation that is only the trigger becomes the expansion alone", () => {
-    for (const text of ["My email.", "my email", "  MY, Email!  ", "my-email?"]) {
+    for (const text of [
+      "My email.",
+      "my email",
+      "  MY   Email!  ",
+      "“my email”...",
+      "(my email)",
+    ]) {
       expect(expand(text, [email])).toEqual(only(EMAIL));
     }
+    expect(expand("Résumé.", [snippet("resume", "CV")])).toEqual(only("CV"));
+    expect(expand("E.g.", [snippet("e.g.", "for example")])).toEqual(only("for example"));
+  });
+
+  test("punctuation inside a dictation tells it apart from a trigger, as in a sentence", () => {
+    for (const text of ["my-email?", "MY, Email!"]) {
+      expect(expand(text, [email])).toEqual(none(text));
+    }
+    expect(expand("C.", [snippet("c++", "CPLUSPLUS")])).toEqual(none("C."));
+    expect(expand("Am.", [snippet("a.m.", "ante meridiem")])).toEqual(none("Am."));
+    expect(expand("us", [snippet("U.S.", "United States")])).toEqual(none("us"));
+  });
+
+  test("a dictation that is only a trigger twice, or a word beside it, is not the trigger alone", () => {
+    expect(expand("my email my email", [email])).toEqual(inside(`${EMAIL} ${EMAIL}`, 2));
+    expect(expand("my email now", [email])).toEqual(inside(`${EMAIL} now`, 1));
   });
 
   test("a whole expansion keeps its own trailing newline", () => {
@@ -227,6 +249,12 @@ describe("rewrite with the dictionary", () => {
   test("no entries leaves the text untouched", () => {
     expect(fix("hello world", [])).toBe("hello world");
   });
+
+  test("a dictation that is only a word keeps its punctuation and still goes through cleanup", () => {
+    expect(rewrite("Hadrys.", { dictionary: [word("Hadryś")], snippets: [] })).toEqual(
+      none("Hadryś."),
+    );
+  });
 });
 
 describe("rewrite with both lists", () => {
@@ -266,6 +294,15 @@ describe("rewrite with both lists", () => {
       snippets: [snippet("My Link", "yes")],
     };
     expect(rewrite("send my link now", shadowed)).toEqual(inside("send yes now", 1));
+  });
+
+  test("a trigger and a phrase that differ in punctuation each take their own dictation", () => {
+    const pair: Rewrites = {
+      dictionary: [replace("email", "D")],
+      snippets: [snippet("e-mail", "S")],
+    };
+    expect(rewrite("Email.", pair)).toEqual(none("D."));
+    expect(rewrite("E-mail.", pair)).toEqual(only("S"));
   });
 
   test("a switched-off snippet leaves the dictionary in charge of its words", () => {

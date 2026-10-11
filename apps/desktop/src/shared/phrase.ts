@@ -1,7 +1,7 @@
 // Spoken phrases that Voice finds inside dictated text: snippet triggers and dictionary entries.
 
 // A trigger's identity among snippets: case, punctuation, symbols, and spacing never tell two
-// triggers apart. Also how a dictation that is only a trigger is recognised.
+// triggers apart.
 export const phraseKey = (text: string) => text.toLowerCase().replace(/[\p{P}\p{S}\p{Z}\s]/gu, "");
 
 // Letters that do not decompose, such as Ł, keep their shape.
