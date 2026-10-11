@@ -31,6 +31,7 @@ Each file has an H1, one paragraph on user-visible behavior, then exactly these 
 
 - [Dictation](./dictation.md): hold the hotkey, speak, release, and the text lands in the focused app. Covers cleanup on and off, Escape, too short, silence, and the Flow Bar states.
 - [Style](./style.md): turn cleanup on or off and choose the writing style. Proven end to end on 2026-10-03, when this skill was generated.
+- [Snippets](./snippets.md): save a spoken trigger and the exact text Voice types in its place, then add, edit, validate, and delete snippets from the Snippets page. Layout and dialog flow are checked in the renderer preview; not yet proven end to end with `voice-verify`.
 - [Last dictation](./last-dictation.md): view and copy the last transcript, raw or cleaned, from Home or the tray.
 - [Models](./models.md): see, install, and uninstall the speech and cleanup models from Settings > Models and the Home checklist.
 - [Settings](./settings.md): General, System, Shortcuts, and Data and Privacy controls.

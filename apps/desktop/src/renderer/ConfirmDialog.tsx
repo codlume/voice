@@ -8,7 +8,7 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const dark = "@media (prefers-color-scheme: dark)";
 const centered = "translate(-50%, -50%)";
 
-const styles = stylex.create({
+export const styles = stylex.create({
   backdrop: {
     position: "fixed",
     inset: 0,
