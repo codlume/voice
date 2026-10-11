@@ -566,6 +566,7 @@ const modelActions = {
   Install: (id) => hubApi().installModel(id),
   Retry: (id) => hubApi().installModel(id),
   Uninstall: (id) => hubApi().uninstallModel(id),
+  Cancel: (id) => hubApi().uninstallModel(id),
 } satisfies Record<ModelAction, (id: ModelId) => Promise<void>>;
 
 function ModelSection({
@@ -616,7 +617,7 @@ function ModelSection({
               {view.actions.map(({ label, disabled }) => (
                 <Button
                   key={label}
-                  variant={label === "Uninstall" ? "secondary" : "primary"}
+                  variant={label === "Install" || label === "Retry" ? "primary" : "secondary"}
                   aria-label={`${label} ${model.name}`}
                   disabled={pending || disabled}
                   onClick={() =>

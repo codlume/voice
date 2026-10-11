@@ -14,7 +14,7 @@ const SHA256 = createHash("sha256").update(MODEL).digest("hex");
 const TRICKLE_CHUNK = 1024;
 const CORRUPT = Buffer.from(MODEL.map((byte, i) => (i === BYTES / 2 ? byte ^ 1 : byte)));
 
-type Behavior = "complete" | "trickle" | "short" | "stall" | "missing" | "corrupt";
+type Behavior = "complete" | "trickle" | "short" | "stall" | "silent" | "missing" | "corrupt";
 
 let dir: string;
 let behavior: Behavior;
@@ -49,6 +49,10 @@ beforeEach(async () => {
       stalled.push(res);
       return;
     }
+    if (behavior === "silent") {
+      stalled.push(res);
+      return;
+    }
     res.end(MODEL);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -62,7 +66,11 @@ afterEach(async () => {
 });
 
 const download = (
-  options: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
+  options: {
+    onProgress?: (fraction: number) => void;
+    signal?: AbortSignal;
+    stallTimeoutMs?: number;
+  } = {},
 ) => downloadModel({ dir, baseUrl, file: "model.gguf", bytes: BYTES, sha256: SHA256, ...options });
 
 test("downloads the model with its LICENSE and NOTICE and reports progress up to 1", async () => {
@@ -111,6 +119,46 @@ test("an aborted run leaves no model and the next run completes it", async () =>
   behavior = "complete";
   const path = await download();
   expect((await readFile(path)).equals(MODEL)).toBe(true);
+});
+
+test("a download that stops sending bytes rejects as stalled, leaves no .part, and the next run completes", async () => {
+  behavior = "stall";
+
+  await expect(download({ stallTimeoutMs: 100 })).rejects.toThrow(/stalled/);
+  expect(await readdir(dir)).not.toContain("model.gguf");
+  expect(await readdir(dir)).not.toContain("model.gguf.part");
+
+  behavior = "complete";
+  const path = await download();
+  expect((await readFile(path)).equals(MODEL)).toBe(true);
+}, 2_000);
+
+test("the stall timeout is idle time, not total time: a trickle that outlasts it still completes", async () => {
+  behavior = "trickle";
+  const started = performance.now();
+
+  const path = await download({ stallTimeoutMs: 150 });
+
+  expect(performance.now() - started).toBeGreaterThan(150);
+  expect((await readFile(path)).equals(MODEL)).toBe(true);
+}, 5_000);
+
+test("a server that never answers with headers rejects as stalled", async () => {
+  behavior = "silent";
+
+  await expect(download({ stallTimeoutMs: 100 })).rejects.toThrow(/stalled/);
+  expect(await readdir(dir)).not.toContain("model.gguf.part");
+}, 2_000);
+
+test("a run cancelled before the check of an existing model rejects, requests nothing, and leaves the model on disk", async () => {
+  await download();
+  modelRequests = 0;
+  const controller = new AbortController();
+  controller.abort();
+
+  await expect(download({ signal: controller.signal })).rejects.toThrow(/abort/i);
+  expect(modelRequests).toBe(0);
+  expect(await readdir(dir)).toContain("model.gguf");
 });
 
 test("a full-size .part left by a crash is never treated as complete", async () => {

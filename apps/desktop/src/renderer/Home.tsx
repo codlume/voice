@@ -162,6 +162,8 @@ function run(command: SetupCommand): Promise<void> {
   switch (command.type) {
     case "installModel":
       return hubApi().installModel(command.id);
+    case "uninstallModel":
+      return hubApi().uninstallModel(command.id);
     case "requestPermission":
       return hubApi().requestPermission(command.kind);
   }

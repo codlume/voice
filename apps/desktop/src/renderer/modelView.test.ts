@@ -9,6 +9,7 @@ const idle = { cleanupEnabled: true, dictating: false };
 const install = { label: "Install", disabled: false };
 const retry = { label: "Retry", disabled: false };
 const uninstall = { label: "Uninstall", disabled: false };
+const cancel = { label: "Cancel", disabled: false };
 
 describe("modelView", () => {
   test("a missing model offers only Install", () => {
@@ -18,16 +19,27 @@ describe("modelView", () => {
     });
   });
 
-  test("a download or load in flight offers nothing to click", () => {
-    expect(modelView(asr, { state: "downloading" }, idle)).toEqual({
+  test("a cleanup download offers Cancel, a speech model download nothing", () => {
+    expect(modelView(cleanup, { state: "downloading" }, idle)).toEqual({
       text: "Downloading",
-      actions: [],
+      actions: [cancel],
+    });
+    expect(modelView(cleanup, { state: "downloading", progress: 0.426 }, idle)).toEqual({
+      text: "Downloading 43%",
+      actions: [cancel],
     });
     expect(modelView(asr, { state: "downloading", progress: 0.426 }, idle)).toEqual({
       text: "Downloading 43%",
       actions: [],
     });
+  });
+
+  test("a load in flight offers nothing to click", () => {
     expect(modelView(asr, { state: "loading" }, idle)).toEqual({ text: "Loading", actions: [] });
+    expect(modelView(cleanup, { state: "loading" }, idle)).toEqual({
+      text: "Loading",
+      actions: [],
+    });
   });
 
   test("a model on disk can be uninstalled whether or not it is loaded", () => {

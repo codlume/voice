@@ -20,7 +20,7 @@ Preconditions: baseline. Cleanup is on and styling is `semi-formal`.
 - **Open Style.** `vv click Style`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Style"'`. Then `vv shot style-before`.
 - **Pick a style.** `vv click Formal`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.cleanup.styling === "formal")'`. The Formal card shows the check mark.
 - **Turn cleanup off.** `vv click "Clean up text"`, then `vv wait hub 'window.voice.getSnapshot().then(s => !s.settings.cleanup.enabled && s.models.cleanup.state === "installed")' 15000`, then `vv wait hub 'document.querySelector("fieldset").disabled'`. Then `vv shot style-cleanup-off`. The page reads "Turn on cleanup to apply a style. Your transcript is currently inserted as recognized."
-- **Stored value.** `cat "$TMPDIR/voice-verify/settings.json"` shows `"cleanup": { "enabled": false, "styling": "formal" }`.
+- **Stored value.** `cat "<userData>/settings.json"` shows `"cleanup": { "enabled": false, "styling": "formal" }`.
 - **Turn cleanup on.** `vv click "Clean up text"`, then wait for `s.models.cleanup.state === "ready"` with a 60000 ms timeout.
 - **Effect on dictation.** When `dictate` is available, run `vv dictate short.wav` once with cleanup off. Check that `last.raw === last.text`, that `inserted` equals the raw text, and that the timing line has no `cleanupMs`.
 
