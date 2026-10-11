@@ -761,10 +761,8 @@ const commands = {
         timeoutMs: 5000,
         label: "listening",
       });
-      // Null once the helper has streamed the whole fixture; otherwise the first snapshot showing
-      // the session ended first, which stops the fixture before its end marker is written.
       const after = snapshots.items.indexOf(listening) + 1;
-      const ended =
+      const earlyEnd =
         end === "audio"
           ? await poll(
               () =>
@@ -775,9 +773,9 @@ const commands = {
               "fixture to finish",
             )
           : null;
-      const captureEndedEarly = ended && {
+      const captureEndedEarly = earlyEnd && {
         afterMs: Math.round(performance.now() - pressedAt),
-        session: ended.session.kind,
+        session: earlyEnd.session.kind,
       };
       if (end === "escape") fnpost("escape");
       else fnpost(settings.hotkey, "up");
@@ -790,7 +788,6 @@ const commands = {
         });
         fnpost(settings.hotkey, "up");
       } else {
-        // A session cancelled while held ends in idle, not done.
         finalState = await snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
           timeoutMs: 90_000,
           label: "done",
