@@ -4,7 +4,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. The Flow Bar 
 
 ## Sub-features
 
-- `dictate-insert`: speech becomes text in the focused field. Outcome `inserted` with method `accessibility`, or `paste` as the fallback.
+- `dictate-insert`: speech becomes text in the focused field. Outcome `inserted` with method `accessibility`. If direct insertion cannot be verified, Voice keeps the transcript for manual recovery and leaves the clipboard unchanged unless `Copy to clipboard` is enabled.
 - `dictate-cleanup`: with cleanup on, the inserted text is the cleaned version, and the raw transcript is kept in `last.raw`.
 - `dictate-raw`: with cleanup off, the inserted text equals the raw transcript.
 - `dictate-cancel`: Escape during listening returns to idle and inserts nothing.
@@ -36,6 +36,6 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 
 - `dictate` refuses while any other Voice helper runs, because that app's tap would hear the synthetic key and record the real microphone. Ask the user to quit Voice.app. Never kill it.
 - The fixture replaces only the microphone. Microphone selection, device changes, and output muting need a real device and a human.
-- `VOICE_HELPER_FORCE_PASTE=1` exercises the paste fallback, but `launch` doesn't set it. The paste fallback writes the real clipboard.
+- `VOICE_HELPER_FORCE_RECOVERY=1` exercises failed direct insertion; `launch` does not set it. Run `node native/voice-helper/scripts/insert-smoke.mjs recovery` to verify an unchanged target and clipboard, or `node native/voice-helper/scripts/slow-paste-smoke.mjs 1500` for an unverified target. Enable `Copy to clipboard` only when testing the explicit copy behavior with synthetic text.
 - `dictate` fails with "capture ended … before <fixture> finished" when the session stops before the whole fixture has streamed, and the JSON records `captureEndedEarly`. Such a run proves nothing about the fixture. Scripted hotkey presses can lose the key's flag state and end the session this way, so rerun it.
 - The first dictation after launch may be slower while the models warm up. Don't treat its timings as representative.

@@ -86,8 +86,21 @@ const cases = [
     settings: { cleanup: { enabled: true } },
     end: "audio",
     target: "electron",
-    outcome: "inserted",
-    check: ({ text }) => assert(hasSpeech(text), `textarea lacks Anna/Thursday: ${show(text)}`),
+    outcome: ["inserted", "notInserted"],
+    check: ({ text, snapshot }) => {
+      assert(
+        snapshot.last && hasSpeech(snapshot.last.text),
+        "transcript was not preserved in Voice",
+      );
+      const outcome = snapshot.session.outcome;
+      if (outcome.kind === "inserted") {
+        assert(outcome.method === "accessibility", `unexpected insertion method ${outcome.method}`);
+        assert(text === snapshot.last.text, "textarea does not match the preserved transcript");
+      } else {
+        assert(outcome.reason === "failed", `unexpected recovery reason ${outcome.reason}`);
+        assert(text === "", "textarea changed despite manual recovery");
+      }
+    },
   },
 ];
 
@@ -291,8 +304,9 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
   const text = await target.read();
   const outcome = snapshot.session.outcome ?? null;
   try {
+    const expectedOutcomes = Array.isArray(c.outcome) ? c.outcome : [c.outcome];
     assert(
-      (outcome?.kind ?? null) === c.outcome,
+      expectedOutcomes.includes(outcome?.kind ?? null),
       `outcome ${show(outcome)} != ${c.outcome} (held ${heldMs} ms, document ${show(text)})`,
     );
     c.check({ text, before, snapshot, timing });

@@ -6,13 +6,11 @@ import VoiceHelperCore
 
 final class Insertion {
     private let output: Output
-    private let forcePaste: Bool
-    private typealias PasteboardItem = [(NSPasteboard.PasteboardType, Data)]
-    private var clipboard = ClipboardRestore<SavedClipboard<PasteboardItem>>()
+    private let forceRecovery: Bool
 
-    init(output: Output, forcePaste: Bool) {
+    init(output: Output, forceRecovery: Bool) {
         self.output = output
-        self.forcePaste = forcePaste
+        self.forceRecovery = forceRecovery
     }
 
     func insert(id: String, text: String, target: (id: String, pid: pid_t?)?) {
@@ -29,13 +27,12 @@ final class Insertion {
             output.emit(.insertResult(id: id, method: .none, reason: .secureInput))
             return
         }
-        // Without accessibility neither the AX write nor the Cmd+V keystroke can reach the app.
         guard let pid = target.pid, AXIsProcessTrusted() else {
             output.emit(.insertResult(id: id, method: .none, reason: .failed))
             return
         }
-        if forcePaste {
-            paste(id: id, text: text)
+        if forceRecovery {
+            output.emit(.insertResult(id: id, method: .none, reason: .failed))
             return
         }
         switch insertViaAccessibility(pid: pid, text: text) {
@@ -44,15 +41,15 @@ final class Insertion {
         case .notEditable:
             output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
         case .unverified:
-            paste(id: id, text: text)
+            output.emit(.insertResult(id: id, method: .none, reason: .failed))
         case .unchanged(let focused, let before):
-            // Some apps apply the write after returning. One re-read separates a slow app from
-            // Chromium's silent no-op before the paste fallback risks a second copy.
+            // Some apps apply the write after returning. Re-read once before directing the
+            // user to recover the transcript manually.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
                     output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
                 } else {
-                    paste(id: id, text: text)
+                    output.emit(.insertResult(id: id, method: .none, reason: .failed))
                 }
             }
         }
@@ -66,12 +63,10 @@ final class Insertion {
     private func insertViaAccessibility(pid: pid_t, text: String) -> AccessibilityOutcome {
         var focusedRef: CFTypeRef?
         let app = AXUIElementCreateApplication(pid)
-        // Every AX call is synchronous IPC with the target. The default 6 s timeout would hold
-        // the transcript hostage to an unresponsive app; paste is the better answer by then.
+        // Bound synchronous AX calls so an unresponsive target cannot delay manual recovery.
         AXUIElementSetMessagingTimeout(app, axMessagingTimeout)
-        // No focused element is not proof that nothing is focused: Chromium and Electron answer
-        // that way without an accessibility client opt-in, and apps without a tree cannot
-        // answer at all. A paste keystroke reaches both.
+        // Missing AX focus does not prove there is no editable field. Keep the transcript for
+        // manual recovery because a blind paste cannot acknowledge completion safely.
         guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
             let focusedRef
         else {
@@ -79,8 +74,7 @@ final class Insertion {
         }
         let focused = focusedRef as! AXUIElement
         AXUIElementSetMessagingTimeout(focused, axMessagingTimeout)
-        // The app describes the focused element, and it takes no text (a button, a list, a
-        // window): pasting there inserts nothing and may trigger the app's own paste action.
+
         guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
             return .notEditable
         }
@@ -116,79 +110,6 @@ final class Insertion {
         }
         return AXTextState(value: text, selection: selection)
     }
-
-    private func paste(id: String, text: String) {
-        let pasteboard = NSPasteboard.general
-        let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
-            let items = pasteboard.pasteboardItems ?? []
-            return SavedClipboard(types: items.flatMap { $0.types.map(\.rawValue) }) {
-                items.map { item in
-                    item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
-                }
-            }
-        }
-        // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
-        pasteboard.prepareForNewContents(with: .currentHostOnly)
-        let item = NSPasteboardItem()
-        item.setString(text, forType: .string)
-        item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))
-        pasteboard.writeObjects([item])
-        let ourChange = pasteboard.changeCount
-        clipboard.wrote(ourChange, saved: saved)
-
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let key = currentLayoutData().flatMap { PasteKey.keycode(typing: "v", in: $0) } ?? PasteKey.ansiV
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
-            event.flags = .maskCommand
-            event.post(tap: .cghidEventTap)
-        }
-
-        // The target handles Cmd+V asynchronously. The result gives it a moment to land but
-        // does not wait for the restore, which only protects the user's clipboard. A slow
-        // target (Electron under load, a remote desktop) can read the pasteboard well after the
-        // keystroke, so the restore waits a full second.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
-            output.emit(.insertResult(id: id, method: .paste, reason: nil))
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
-            guard let saved = clipboard.restore(write: ourChange, changeCount: pasteboard.changeCount) else {
-                output.log(.info, "clipboard changed during paste; not restoring previous contents")
-                return
-            }
-            restore(saved, to: pasteboard)
-        }
-    }
-
-    /// Runs a restore still waiting on its timer, so an exit inside the window does not leave
-    /// the transcript on the user's clipboard.
-    func shutdown() {
-        let pasteboard = NSPasteboard.general
-        guard let saved = clipboard.flush(changeCount: pasteboard.changeCount) else { return }
-        restore(saved, to: pasteboard)
-    }
-
-    private func restore(_ saved: SavedClipboard<PasteboardItem>, to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
-        guard case .items(let saved) = saved else {
-            output.log(.info, "clipboard held concealed contents; cleared instead of restoring")
-            return
-        }
-        let items = saved.map { entries in
-            let restored = NSPasteboardItem()
-            for (type, data) in entries { restored.setData(data, forType: type) }
-            return restored
-        }
-        if !items.isEmpty { pasteboard.writeObjects(items) }
-    }
 }
 
 private let axMessagingTimeout: Float = 0.3
-
-private func currentLayoutData() -> Data? {
-    guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-        let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
-    else { return nil }
-    return Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
-}

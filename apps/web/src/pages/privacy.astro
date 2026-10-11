@@ -61,12 +61,11 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       <li {...li}>
         <strong>Typing into apps.</strong> Voice types into the focused app through macOS
         Accessibility. It reads the contents of the focused field only to confirm that the text
-        landed. What it reads stays in memory and is never stored or sent. If Voice has to paste, it
-        uses the clipboard temporarily. Afterwards it restores your previous clipboard contents,
-        unless something else changed the clipboard in the meantime or you turned on Copy transcript
-        to clipboard. A password you copied from a password manager is cleared instead of restored,
-        so the manager's own auto-clear is not undone. Voice never reads the name of the focused app,
-        your screen, or your windows.
+        landed. What it reads stays in memory and is never stored or sent. If Voice cannot insert,
+        it keeps the transcript for you to copy and paste manually. It does not send an automatic
+        paste shortcut or change your clipboard for insertion. Copy transcript to clipboard changes
+        your clipboard only when you enable that setting. Voice never reads the name of the focused
+        app, your screen, or your windows.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear
