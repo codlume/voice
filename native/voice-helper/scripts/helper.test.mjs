@@ -14,7 +14,6 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// Stand-ins exit when stdin closes, so none outlives this test even if it is killed.
 const idle = 'process.stdin.on("end", () => process.exit()).resume()';
 
 function run(command, args, options = {}) {
