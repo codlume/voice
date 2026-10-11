@@ -50,6 +50,7 @@ export const LOGS = {
   "helper command dropped": ["command.type"],
   "cleanup failed": ["error.type"],
   "cleanup timed out": ["cleanup.budget_ms"],
+  "cleanup partial": ["cleanup.chunks", "cleanup.cleaned", "cleanup.budget_ms"],
   "shutdown overran": ["shutdown.timeout_ms"],
   "dock update failed": [],
   "account sign-in failed": ["error.type", "account.failure"],

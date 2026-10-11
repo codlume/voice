@@ -6,4 +6,4 @@ export {
   type DownloadOptions,
 } from "./download.ts";
 export { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
-export { createS1Mini, type S1Mini } from "./s1mini.ts";
+export { createS1Mini, type CleanRequest, type CleanResult, type S1Mini } from "./s1mini.ts";

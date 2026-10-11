@@ -15,6 +15,13 @@ type Config = {
   version?: number;
 };
 
+for (const flag of ["--models-dir", "--state-dir"]) {
+  if (process.argv.indexOf(flag) === -1 || process.argv.indexOf(flag) === process.argv.length - 1) {
+    process.stderr.write("usage: voice-helper --models-dir <dir> --state-dir <dir>\n");
+    process.exit(64);
+  }
+}
+
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;

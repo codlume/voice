@@ -1,4 +1,4 @@
-import type { CleanupStyle, S1Mini } from "@voice/cleanup";
+import type { CleanRequest, CleanResult, CleanupStyle, S1Mini } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
@@ -16,7 +16,7 @@ export type Cleanup = {
   uninstall(): Promise<void>;
   unload(): Promise<void>;
   loaded(): boolean;
-  clean(raw: string, style: CleanupStyle, signal: AbortSignal): Promise<string>;
+  clean(raw: string, style: CleanupStyle, request: Required<CleanRequest>): Promise<CleanResult>;
   dispose(): Promise<void>;
 };
 
@@ -178,9 +178,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
-    clean(raw, style, signal) {
+    clean(raw, style, request) {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));
-      return model.model.clean(raw, style, signal);
+      return model.model.clean(raw, style, request);
     },
     dispose: () => {
       cancelInstalls("Voice is closing");

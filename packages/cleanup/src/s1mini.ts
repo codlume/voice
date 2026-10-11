@@ -6,16 +6,23 @@ import { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
 
 const CONTEXT_SIZE = 4096;
 // Longer chunks make S1-mini skip or loop over lines, so the guard rejects them and the user gets raw text.
-const CHUNK_TOKENS = 400;
+export const CHUNK_TOKENS = 400;
 const OUTPUT_TOKEN_SLACK = 32;
+const MIN_TOKENS_FOR_RATE_ESTIMATE = 128;
 
 export type Generation = { chunk: string; output: string; truncated: boolean };
-type Cleaned = Omit<Generation, "chunk"> & { chunk: Chunk };
+type Output = Omit<Generation, "chunk">;
+
+export type CleanRequest = { budgetMs?: number; signal?: AbortSignal };
+export type CleanResult = { text: string; chunks: number; cleaned: number };
 
 export type S1Mini = {
   load(): Promise<void>;
-  // Aborting the signal stops generation within a token and rejects with the signal's reason.
-  clean(raw: string, style: CleanupStyle, signal?: AbortSignal): Promise<string>;
+  // Aborting the signal or disposing withdraws the clean: generation stops within a token and the
+  // promise rejects with the reason. Running out of budget is not an error: the chunk in flight
+  // stops and every chunk not cleaned comes back as the user's exact words. The budget counts
+  // from the call, so time queued behind another clean is inside it.
+  clean(raw: string, style: CleanupStyle, request?: CleanRequest): Promise<CleanResult>;
   // What the model returned for each chunk, before the plausibility guard. For calibration.
   generate(raw: string, style: CleanupStyle, signal?: AbortSignal): Promise<Generation[]>;
   // Aborts any queued or running clean, then frees the model.
@@ -28,6 +35,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
   let engine: Promise<Engine> | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   let disposal = new AbortController();
+  let msPerToken: number | undefined;
 
   function load(): Promise<Engine> {
     if (engine) return engine;
@@ -45,21 +53,19 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return run;
   }
 
-  async function* generate(
-    raw: string,
-    style: CleanupStyle,
-    signal: AbortSignal | undefined,
-  ): AsyncGenerator<Cleaned> {
-    const abort = signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
+  const withdrawal = (signal: AbortSignal | undefined) =>
+    signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
+
+  async function prepare(raw: string, style: CleanupStyle, abort: AbortSignal) {
     abort.throwIfAborted();
     const { model, completion } = await load();
     const countTokens = (text: string) => model.tokenize(text).length;
-    for (const chunk of chunkTranscript(raw, CHUNK_TOKENS, countTokens)) {
-      abort.throwIfAborted();
+    const chunks = chunkTranscript(raw, CHUNK_TOKENS, countTokens);
+    const run = async (chunk: Chunk, signal: AbortSignal): Promise<Output> => {
       // Special-token parsing makes <|im_start|> and friends the trained control tokens, not literal text.
       const prompt = model.tokenize(buildS1MiniPrompt(chunk.text, style), true);
       const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
-        signal: abort,
+        signal,
         temperature: 0,
         customStopTriggers: ["<|im_end|>"],
         maxTokens: Math.min(
@@ -67,32 +73,60 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           CONTEXT_SIZE - prompt.length,
         ),
       });
-      yield { chunk, output: response.trim(), truncated: metadata.stopReason === "maxTokens" };
-    }
+      return { output: response.trim(), truncated: metadata.stopReason === "maxTokens" };
+    };
+    return { chunks, countTokens, run };
   }
 
   return {
     load: async () => {
       await load();
     },
-    clean: (raw, style, signal) =>
-      serialize(async () => {
-        const chunks: Chunk[] = [];
-        const outputs: string[] = [];
-        for await (const { chunk, output, truncated } of generate(raw, style, signal)) {
-          assertPlausibleCleanup(chunk.text, output, truncated);
-          chunks.push(chunk);
-          outputs.push(output);
+    clean: (raw, style, { budgetMs, signal } = {}) => {
+      const deadline = new AbortController();
+      const deadlineAt = budgetMs === undefined ? Infinity : Date.now() + budgetMs;
+      const timer =
+        budgetMs === undefined ? undefined : setTimeout(() => deadline.abort(), budgetMs);
+      return serialize(async () => {
+        const withdraw = withdrawal(signal);
+        const { chunks, countTokens, run } = await prepare(raw, style, withdraw);
+        const stop = AbortSignal.any([withdraw, deadline.signal]);
+        const outputs: (string | undefined)[] = [];
+        for (const chunk of chunks) {
+          withdraw.throwIfAborted();
+          const tokens = countTokens(chunk.text);
+          const predictedMs = msPerToken === undefined ? 0 : msPerToken * tokens;
+          if (deadline.signal.aborted || predictedMs > deadlineAt - Date.now()) break;
+          const startedAt = Date.now();
+          let generation: Output;
+          try {
+            generation = await run(chunk, stop);
+          } catch (error) {
+            if (deadline.signal.aborted && !withdraw.aborted) break;
+            throw error;
+          }
+          if (tokens >= MIN_TOKENS_FOR_RATE_ESTIMATE)
+            msPerToken = (Date.now() - startedAt) / tokens;
+          outputs.push(guarded(chunk.text, generation));
         }
-        return stitch(raw, chunks, outputs);
-      }),
+        return {
+          text: stitch(raw, chunks, outputs),
+          chunks: chunks.length,
+          cleaned: outputs.filter((output) => output !== undefined).length,
+        };
+      }).finally(() => clearTimeout(timer));
+    },
     generate: (raw, style, signal) =>
-      serialize(() =>
-        Array.fromAsync(generate(raw, style, signal), ({ chunk, ...rest }) => ({
-          chunk: chunk.text,
-          ...rest,
-        })),
-      ),
+      serialize(async () => {
+        const abort = withdrawal(signal);
+        const { chunks, run } = await prepare(raw, style, abort);
+        const generations: Generation[] = [];
+        for (const chunk of chunks) {
+          abort.throwIfAborted();
+          generations.push({ chunk: chunk.text, ...(await run(chunk, abort)) });
+        }
+        return generations;
+      }),
     dispose: () => {
       disposal.abort(new Error("Cleanup model disposed"));
       return serialize(async () => {
@@ -105,6 +139,15 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
       });
     },
   };
+}
+
+function guarded(input: string, { output, truncated }: Output): string | undefined {
+  try {
+    assertPlausibleCleanup(input, output, truncated);
+    return output;
+  } catch {
+    return undefined;
+  }
 }
 
 async function openEngine(modelPath: string): Promise<Engine> {
