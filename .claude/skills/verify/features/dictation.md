@@ -37,4 +37,5 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - `dictate` refuses while any other Voice helper runs, because that app's tap would hear the synthetic key and record the real microphone. Ask the user to quit Voice.app. Never kill it.
 - The fixture replaces only the microphone. Microphone selection, device changes, and output muting need a real device and a human.
 - `VOICE_HELPER_FORCE_PASTE=1` exercises the paste fallback, but `launch` doesn't set it. The paste fallback writes the real clipboard.
+- `dictate` fails with "capture ended … before <fixture> finished" when the session stops before the whole fixture has streamed, and the JSON records `captureEndedEarly`. Such a run proves nothing about the fixture. Scripted hotkey presses can lose the key's flag state and end the session this way, so rerun it.
 - The first dictation after launch may be slower while the models warm up. Don't treat its timings as representative.
