@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   appendFileSync,
   copyFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -51,8 +53,9 @@ const fail = (message) => {
 function readState() {
   try {
     return JSON.parse(readFileSync(statePath, "utf8"));
-  } catch {
-    return null;
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
   }
 }
 
@@ -65,6 +68,32 @@ function alive(pid) {
   }
 }
 
+function processIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart=", "-o", "ucomm="], {
+    encoding: "utf8",
+  });
+  if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`cannot inspect process ${pid}: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+function sameProcess(pid, identity) {
+  return Boolean(identity) && processIdentity(pid) === identity;
+}
+
+function publishState(state, claim = false) {
+  const temporary = `${statePath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(state, null, 2), { flag: "wx" });
+    if (claim) linkSync(temporary, statePath);
+    else renameSync(temporary, statePath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 function signalGroup(pid, signal) {
   try {
     process.kill(-pid, signal);
@@ -73,7 +102,7 @@ function signalGroup(pid, signal) {
 
 function requireInstance() {
   const state = readState();
-  if (!state?.port || !alive(state.electronPid)) {
+  if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
     fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
@@ -168,7 +197,7 @@ function openSecondCopy(state, ...extraArgs) {
 const commands = {
   async doctor() {
     const state = readState();
-    const instance = state && alive(state.electronPid) ? state : null;
+    const instance = state && sameProcess(state.electronPid, state.electronIdentity) ? state : null;
     let cdp = null;
     if (instance) {
       try {
@@ -228,7 +257,11 @@ const commands = {
 
   async launch() {
     const existing = readState();
-    if (existing && (alive(existing.ownerPid) || alive(existing.electronPid)))
+    if (
+      existing &&
+      (sameProcess(existing.ownerPid, existing.ownerIdentity) ||
+        sameProcess(existing.electronPid, existing.electronIdentity))
+    )
       fail(`this worktree's instance is already running: ${show(existing)}`);
     if (!existsSync(join(desktopDir, "dist-electron/main.cjs")))
       fail("app not built: run pnpm build");
@@ -239,28 +272,32 @@ const commands = {
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
 
-    const state = { ownerPid: process.pid, worktree };
-    const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
+    const state = {
+      ownerPid: process.pid,
+      ownerIdentity: processIdentity(process.pid),
+      worktree,
+      userData: keptUserData,
+    };
+    const save = () => publishState(state);
     try {
-      writeFileSync(statePath, JSON.stringify(state, null, 2), { flag: "wx" });
+      publishState(state, true);
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
       fail("this worktree has an instance record; run stop before relaunching");
     }
     let stopping = false;
-    const shutdown = async (code, removeState = true) => {
+    const shutdown = async (code) => {
       if (stopping) return;
       stopping = true;
       await stopChildren();
-      if (removeState && readState()?.ownerPid === state.ownerPid)
-        rmSync(statePath, { force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
-    process.on("SIGTERM", () => void shutdown(0, false));
+    process.on("SIGTERM", () => void shutdown(0));
 
     try {
       const userData = keep ? keptUserData : await prepareUserData(scratchName);
+      if (stopping) return;
       const fakeMicrophonePath = join(userData, "capture.wav");
       const logPath = join(userData, "main.log");
       const env = {
@@ -286,7 +323,13 @@ const commands = {
         );
         void shutdown(1);
       });
-      Object.assign(state, { electronPid: child.pid, userData, fakeMicrophonePath, logPath });
+      Object.assign(state, {
+        electronPid: child.pid,
+        electronIdentity: processIdentity(child.pid),
+        userData,
+        fakeMicrophonePath,
+        logPath,
+      });
       save();
 
       const ports = await announcedPorts(child, ["DevTools", "Debugger"]);
@@ -331,23 +374,51 @@ const commands = {
     }
   },
 
-  async stop() {
+  stop() {
+    const result = spawnSync(
+      "/usr/bin/lockf",
+      [
+        "-k",
+        "-t",
+        "0",
+        `${statePath}.stop-lock`,
+        process.execPath,
+        fileURLToPath(import.meta.url),
+        "_stop",
+        ...args,
+      ],
+      { stdio: "inherit" },
+    );
+    if (result.error) throw result.error;
+    if (result.status === 75) fail("stop already in progress; retry after it finishes");
+    if (result.status !== 0) process.exit(result.status ?? 1);
+  },
+
+  async _stop() {
     const state = readState();
     if (!state) return out("no verify instance recorded");
     const keep = args.includes("--keep-user-data");
-    if (alive(state.ownerPid)) {
+    if (sameProcess(state.ownerPid, state.ownerIdentity)) {
       process.kill(state.ownerPid, "SIGTERM");
-      for (let i = 0; i < 100 && alive(state.ownerPid); i += 1) {
+      for (let i = 0; i < 100 && sameProcess(state.ownerPid, state.ownerIdentity); i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    if (alive(state.electronPid)) {
+    if (sameProcess(state.ownerPid, state.ownerIdentity))
+      throw new Error("verify owner did not stop; instance record and userData retained");
+    if (sameProcess(state.electronPid, state.electronIdentity)) {
       signalGroup(state.electronPid, "SIGTERM");
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      signalGroup(state.electronPid, "SIGKILL");
+      if (sameProcess(state.electronPid, state.electronIdentity))
+        signalGroup(state.electronPid, "SIGKILL");
+      for (let i = 0; i < 100 && sameProcess(state.electronPid, state.electronIdentity); i += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      if (sameProcess(state.electronPid, state.electronIdentity))
+        throw new Error("verify Electron did not stop; instance record and userData retained");
     }
     if (readState()?.ownerPid === state.ownerPid) {
-      if (!keep && state.userData) rmSync(state.userData, { recursive: true, force: true });
+      if (!keep && state.userData)
+        rmSync(join(tmpdir(), scratchName), { recursive: true, force: true });
       rmSync(statePath, { force: true });
     }
     out({

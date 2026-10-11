@@ -111,7 +111,7 @@ Proof standards:
 node .claude/skills/verify/scripts/voice-verify.mjs stop
 ```
 
-`stop` signals the owner process that `launch` started, which stops the Electron process group it spawned. If the owner is dead, `stop` signals the recorded Electron process group directly. It never kills anything by name. It then deletes the scratch userData and the state file, and prints the evidence dir, which it keeps. Run `stop` after every attempt, including failed ones. After `stop`, `doctor` should report `"instance": "none"`.
+`stop` signals the owner process that `launch` started, which stops the Electron process group it spawned. If the owner is dead, `stop` signals the recorded Electron process group directly. It checks the recorded process start and executable before each signal, so a recycled PID is not treated as the old instance. Concurrent stops use an OS lock. It then deletes the scratch userData and the state file, and prints the evidence dir, which it keeps. Run `stop` after every attempt, including failed ones or Ctrl+C. Launch leaves its record for `stop` to clean up. After `stop`, `doctor` should report `"instance": "none"`.
 
 ## Repo checks that drive the same app
 
