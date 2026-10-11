@@ -19,7 +19,10 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { modelsDir } from "../../../../native/voice-helper/scripts/helper.mjs";
+import {
+  modelsDir,
+  runningVoiceProcesses,
+} from "../../../../native/voice-helper/scripts/helper.mjs";
 import {
   announcedPorts,
   electronPath,
@@ -135,14 +138,7 @@ function evidenceDir() {
 }
 
 function otherVoiceProcesses(ownUserData) {
-  const pgrep = spawnSync("pgrep", ["-lf", "(^|/)voice-helper( |$)|scripts/dev\\.mjs( |$)"], {
-    encoding: "utf8",
-  });
-  if (pgrep.status === 1) return [];
-  return pgrep.stdout
-    .trim()
-    .split("\n")
-    .filter((line) => !ownUserData || !line.includes(ownUserData));
+  return runningVoiceProcesses().filter((line) => !ownUserData || !line.includes(ownUserData));
 }
 
 const ACCESSIBLE_NAME = `(el) => {
