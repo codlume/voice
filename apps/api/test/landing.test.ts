@@ -37,6 +37,9 @@ describe("landing page", () => {
 
     expect(html).toContain('<main id="start-in-voice" hidden>');
     expect(html).toContain("Open Voice and click Sign in with Google.");
+    expect(html).toContain(
+      "Voice runs on your Mac or Windows PC. Open Voice there and click Sign in with Google.",
+    );
     const disclosure = html.match(/<details>([\s\S]*?)<\/details>/)?.[1] ?? "";
     expect(disclosure).toContain('<code id="code">');
     expect(disclosure).toContain(

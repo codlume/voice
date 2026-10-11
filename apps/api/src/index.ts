@@ -1,5 +1,5 @@
 import { waitUntil } from "cloudflare:workers";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { requestId, type RequestIdVariables } from "hono/request-id";
 import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
@@ -17,7 +17,9 @@ const securityHeaders = secureHeaders({
 });
 const landingHeaders = secureHeaders({ ...everyResponse, contentSecurityPolicy: landingCsp });
 
-export const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>({
+type AppEnv = { Bindings: Env; Variables: RequestIdVariables };
+
+export const app = new Hono<AppEnv>({
   // The raw pathname, not Hono's decoded one, so routes match the string Better Auth keys on.
   getPath: (request) => new URL(request.url).pathname,
 });
@@ -47,6 +49,23 @@ const authPaths = [
   "/electron/token",
   "/delete-user",
 ].map((path) => authOptions.basePath + path);
+
+const initPath = `${authOptions.basePath}/electron/init-oauth-proxy`;
+
+// Whoever builds a start link holds the PKCE verifier for the code it ends in. Browsers mark a
+// start that Voice opens from outside the browser `none`; a link on a web page arrives
+// `cross-site`.
+const startedOutsideTheBrowser: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const secFetchSite = c.req.header("sec-fetch-site") ?? "none";
+  if (secFetchSite !== "none") {
+    console.log(
+      JSON.stringify({ route: initPath, status: 302, refused: "sec-fetch-site", secFetchSite }),
+    );
+    return c.redirect("/#start-in-voice");
+  }
+  await next();
+};
+app.get(initPath, startedOutsideTheBrowser);
 
 let auth: ReturnType<typeof createAuth> | undefined;
 app.on(["GET", "POST"], authPaths, (c) => {

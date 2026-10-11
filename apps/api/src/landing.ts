@@ -51,10 +51,18 @@ code { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border)
 button { flex-shrink: 0; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--foreground); font: inherit; cursor: pointer; }
 `;
 
+// iPadOS Safari reports a Mac platform, with touch points.
 const script = `
 const name = "better-auth.electron=";
 const code = document.cookie.split("; ").find((cookie) => cookie.startsWith(name))?.slice(name.length);
-if (code) {
+const platform = navigator.userAgentData?.platform ?? navigator.platform;
+const desktop = /^Win/i.test(platform) || (/^Mac/i.test(platform) && !(navigator.maxTouchPoints > 1));
+const state = location.hash === "#start-in-voice" ? "start-in-voice" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
+document.getElementById(state).hidden = false;
+if (state === "signed-in" || state === "not-desktop") {
+  fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
+}
+if (state === "signed-in") {
   const url = "com.codlume.voice://auth/callback#token=" + code;
   const codeBox = document.getElementById("code");
   const copy = document.getElementById("copy");
@@ -66,11 +74,7 @@ if (code) {
       () => getSelection().selectAllChildren(codeBox),
     );
   });
-  document.getElementById("signed-in").hidden = false;
-  fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
   location.replace(url);
-} else {
-  document.getElementById("expired").hidden = false;
 }
 `;
 
@@ -83,6 +87,11 @@ export const landingPage = `<!doctype html>
 <style>${style}</style>
 </head>
 <body>
+<main id="start-in-voice" hidden>
+<div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+<h1>Start sign-in from Voice</h1>
+<p>Open Voice and click Sign in with Google. You can close this tab.</p>
+</main>
 <main id="signed-in" hidden>
 <div class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
 <h1>You’re signed in to Voice</h1>
@@ -90,9 +99,14 @@ export const landingPage = `<!doctype html>
 <a id="open" class="open">Open Voice</a>
 <details>
 <summary>Voice didn’t open?</summary>
-<p>Copy this code and paste it in Voice under Settings &gt; Account.</p>
+<p>Paste this code only into Voice, under Settings &gt; Account. Anyone who has it can sign in to your Voice account. Voice will never ask you to send it to anyone. If you did not just click Sign in with Google in Voice, close this page.</p>
 <div class="code"><code id="code"></code><button id="copy" type="button">Copy</button></div>
 </details>
+</main>
+<main id="not-desktop" hidden>
+<div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+<h1>Finish on your computer</h1>
+<p>Voice runs on your Mac or Windows PC. Open Voice there and click Sign in with Google. You can close this tab.</p>
 </main>
 <main id="expired" hidden>
 <div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
