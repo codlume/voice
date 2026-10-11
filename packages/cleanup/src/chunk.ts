@@ -100,11 +100,18 @@ export function stitch(
   );
   let text = "";
   kept.forEach(({ index, chunk, output }, k) => {
-    if (k > 0) text += separator(raw, chunks, kept[k - 1]!.index, index);
+    const previous = kept[k - 1];
+    const gap = previous ? separator(raw, chunks, previous.index, index) : "";
+    text += gap;
     text +=
       output === undefined
         ? chunk.text
-        : lowercaseContinuation(raw.slice(0, chunk.start), text, chunk.text, output);
+        : lowercaseContinuation(
+            previous ? previous.chunk.text + gap : "",
+            text,
+            chunk.text,
+            output,
+          );
   });
   return text;
 }
