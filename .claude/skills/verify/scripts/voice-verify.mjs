@@ -799,6 +799,12 @@ const commands = {
           : await waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(
               () => null,
             );
+      // The helper reports a paste as soon as it posts Cmd+V, before a slow target handles it.
+      if (finalState.session.outcome?.kind === "inserted") {
+        await waitOn(targetPage, `${field}.value === ${show(finalState.last.text)}`, 2000).catch(
+          () => {},
+        );
+      }
       const result = {
         fixture: wav,
         end,
