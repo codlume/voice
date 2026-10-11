@@ -31,7 +31,6 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
-import { parseSnippets } from "../shared/snippets.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored, otherChannelSignedIn } from "./account-storage.ts";
@@ -642,16 +641,7 @@ async function main() {
     const url = updates.releaseUrl();
     if (url) void shell.openExternal(url);
   });
-  ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => {
-    const { snippets } = patch;
-    // Saving parses settings, which would silently drop a snippet the renderer sent malformed.
-    if (
-      snippets !== undefined &&
-      (!Array.isArray(snippets) || parseSnippets(snippets).length !== snippets.length)
-    )
-      throw new Error("Could not save this snippet. Try again.");
-    return updateSettings(patch);
-  });
+  ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
   ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
     if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
   });

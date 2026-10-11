@@ -1,18 +1,19 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import {
   EXPANSION_MAX_LENGTH,
   snippetProblem,
   TRIGGER_MAX_LENGTH,
   type Snippet,
+  type SnippetProblem,
 } from "../shared/snippets.ts";
 import { Button } from "./Button.tsx";
-import { ConfirmDialog, styles as dialog } from "./ConfirmDialog.tsx";
+import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { styles as settings } from "./Settings.tsx";
-import { titlebar } from "./titlebar.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
@@ -56,8 +57,10 @@ const styles = stylex.create({
 });
 
 type Mode = "add" | "edit";
-type Editing = { open: boolean; mode: Mode; snippet: Snippet };
-type Deleting = { open: boolean; snippet: Snippet };
+// Only one dialog can be open. The record outlives `open` so the dialog keeps its content through
+// the exit animation, then clears so the next add or edit starts from a fresh draft. "deleted" is
+// the delete dialog after its confirm, when the row it would return focus to is going away.
+type Modal = { kind: Mode | "delete" | "deleted"; snippet: Snippet; open: boolean };
 
 const editorText: Record<Mode, { title: string; save: string }> = {
   add: { title: "Add snippet", save: "Add snippet" },
@@ -65,11 +68,18 @@ const editorText: Record<Mode, { title: string; save: string }> = {
 };
 
 export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
-  const [editing, setEditing] = useState<Editing | null>(null);
-  const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const [modal, setModal] = useState<Modal | null>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
   const deleteAction = useAction();
 
-  const remove = (snippet: Snippet) =>
+  const show = (kind: Modal["kind"], snippet: Snippet) => setModal({ kind, snippet, open: true });
+  const setOpen = (open: boolean) => setModal((current) => current && { ...current, open });
+  const clearOnClose = (open: boolean) => {
+    if (!open) setModal(null);
+  };
+
+  const remove = (snippet: Snippet) => {
+    setModal((current) => current && { ...current, kind: "deleted" });
     void deleteAction.run(
       () =>
         window.voice.updateSettings({
@@ -77,6 +87,7 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
         }),
       "Could not delete this snippet. Try again.",
     );
+  };
 
   return (
     <div {...stylex.props(styles.page)}>
@@ -88,13 +99,8 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
           </p>
         </div>
         <Button
-          onClick={() =>
-            setEditing({
-              open: true,
-              mode: "add",
-              snippet: { id: crypto.randomUUID(), trigger: "", expansion: "" },
-            })
-          }
+          ref={addRef}
+          onClick={() => show("add", { id: crypto.randomUUID(), trigger: "", expansion: "" })}
         >
           Add new
         </Button>
@@ -120,24 +126,22 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
                   </p>
                 </div>
                 <div {...stylex.props(styles.rowActions)}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="icon"
                     aria-label={`Edit ${snippet.trigger}`}
                     title="Edit"
-                    onClick={() => setEditing({ open: true, mode: "edit", snippet })}
-                    {...stylex.props(titlebar.button)}
+                    onClick={() => show("edit", snippet)}
                   >
                     <PencilIcon size={16} />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="icon"
                     aria-label={`Delete ${snippet.trigger}`}
                     title="Delete"
-                    onClick={() => setDeleting({ open: true, snippet })}
-                    {...stylex.props(titlebar.button)}
+                    onClick={() => show("delete", snippet)}
                   >
                     <Trash2Icon size={16} />
-                  </button>
+                  </Button>
                 </div>
               </li>
             ))}
@@ -154,22 +158,27 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
         </p>
       )}
 
-      {editing && (
+      {(modal?.kind === "add" || modal?.kind === "edit") && (
         <SnippetDialog
-          editing={editing}
+          open={modal.open}
+          onOpenChange={setOpen}
+          onOpenChangeComplete={clearOnClose}
+          mode={modal.kind}
+          initial={modal.snippet}
           snippets={snippets}
-          onOpenChange={(open) => setEditing((current) => current && { ...current, open })}
-          onClosed={() => setEditing(null)}
         />
       )}
-      {deleting && (
+      {(modal?.kind === "delete" || modal?.kind === "deleted") && (
         <ConfirmDialog
-          open={deleting.open}
-          onOpenChange={(open) => setDeleting({ ...deleting, open })}
+          open={modal.open}
+          onOpenChange={setOpen}
+          onOpenChangeComplete={clearOnClose}
+          // The deleted row's trash button leaves the DOM, so focus would otherwise fall to <body>.
+          finalFocus={modal.kind === "deleted" ? addRef : undefined}
           title="Delete snippet?"
-          description={`‘${deleting.snippet.trigger}’ will be deleted permanently.`}
+          description={`‘${modal.snippet.trigger}’ will be deleted permanently.`}
           actions={[
-            { label: "Delete", variant: "destructive", onClick: () => remove(deleting.snippet) },
+            { label: "Delete", variant: "destructive", onClick: () => remove(modal.snippet) },
           ]}
         />
       )}
@@ -178,29 +187,32 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
 }
 
 function SnippetDialog({
-  editing,
+  mode,
+  initial,
   snippets,
+  open,
   onOpenChange,
-  onClosed,
+  onOpenChangeComplete,
 }: {
-  editing: Editing;
+  mode: Mode;
+  initial: Snippet;
   snippets: readonly Snippet[];
+  open: boolean;
   onOpenChange: (open: boolean) => void;
-  onClosed: () => void;
+  onOpenChangeComplete: (open: boolean) => void;
 }) {
-  const id = useId();
   const triggerRef = useRef<HTMLInputElement>(null);
   const expansionRef = useRef<HTMLTextAreaElement>(null);
-  const [draft, setDraft] = useState(editing.snippet);
+  const [draft, setDraft] = useState(initial);
   const [saveAttempted, setSaveAttempted] = useState(false);
   const { pending, error, run, clearError } = useAction();
-  const text = editorText[editing.mode];
+  const text = editorText[mode];
   const snippet = { ...draft, trigger: draft.trigger.trim() };
-  const problem = saveAttempted ? snippetProblem(snippet, snippets) : null;
-  const triggerProblem = problem?.field === "trigger" ? problem.message : "";
-  const expansionProblem = problem?.field === "expansion" ? problem.message : "";
-  const triggerId = `${id}-trigger`;
-  const expansionId = `${id}-expansion`;
+  const problem = snippetProblem(
+    snippet,
+    snippets.filter((other) => other.id !== snippet.id),
+  );
+  const shown = saveAttempted ? problem : null;
 
   const edit = (patch: Partial<Snippet>) => {
     clearError();
@@ -209,14 +221,13 @@ function SnippetDialog({
 
   function save() {
     if (pending) return;
-    const found = snippetProblem(snippet, snippets);
-    if (found) {
+    if (problem) {
       setSaveAttempted(true);
-      (found.field === "trigger" ? triggerRef : expansionRef).current?.focus();
+      (problem.field === "trigger" ? triggerRef : expansionRef).current?.focus();
       return;
     }
     const next =
-      editing.mode === "add"
+      mode === "add"
         ? [...snippets, snippet]
         : snippets.map((other) => (other.id === snippet.id ? snippet : other));
     void run(async () => {
@@ -227,134 +238,102 @@ function SnippetDialog({
 
   return (
     <Dialog.Root
-      open={editing.open}
+      open={open}
       onOpenChange={onOpenChange}
-      onOpenChangeComplete={(open) => !open && onClosed()}
+      onOpenChangeComplete={onOpenChangeComplete}
       disablePointerDismissal
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop
-          className={({ transitionStatus }) =>
-            stylex.props(
-              dialog.backdrop,
-              (transitionStatus === "starting" || transitionStatus === "ending") &&
-                dialog.backdropHidden,
-            ).className
-          }
-        />
-        <Dialog.Popup
-          className={({ transitionStatus }) =>
-            stylex.props(
-              dialog.popup,
-              (transitionStatus === "starting" || transitionStatus === "ending") &&
-                dialog.popupHidden,
-            ).className
-          }
-        >
-          <Dialog.Title {...stylex.props(dialog.title)}>{text.title}</Dialog.Title>
-          <div {...stylex.props(styles.fields)}>
-            <Field
-              id={triggerId}
-              label="Trigger"
-              length={draft.trigger.length}
-              max={TRIGGER_MAX_LENGTH}
-              problem={triggerProblem}
-            >
-              <input
-                ref={triggerRef}
-                id={triggerId}
-                value={draft.trigger}
-                maxLength={TRIGGER_MAX_LENGTH}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="my email"
-                {...fieldAria(triggerId, triggerProblem)}
-                onChange={(event) => edit({ trigger: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.nativeEvent.isComposing) save();
-                }}
-                {...stylex.props(styles.input, triggerProblem !== "" && styles.invalid)}
-              />
-            </Field>
-            <Field
-              id={expansionId}
-              label="Expansion"
-              length={draft.expansion.length}
-              max={EXPANSION_MAX_LENGTH}
-              problem={expansionProblem}
-            >
-              <textarea
-                ref={expansionRef}
-                id={expansionId}
-                value={draft.expansion}
-                maxLength={EXPANSION_MAX_LENGTH}
-                spellCheck={false}
-                placeholder="name@example.com"
-                {...fieldAria(expansionId, expansionProblem)}
-                onChange={(event) => edit({ expansion: event.target.value })}
-                {...stylex.props(
-                  styles.input,
-                  styles.textarea,
-                  expansionProblem !== "" && styles.invalid,
-                )}
-              />
-            </Field>
-          </div>
-          {error && (
-            <p role="alert" {...stylex.props(settings.error, styles.saveError)}>
-              {error}
-            </p>
-          )}
-          <div {...stylex.props(dialog.actions)}>
-            <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
-            <Button disabled={pending} onClick={save}>
-              {text.save}
-            </Button>
-          </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
+      <DialogFrame
+        title={text.title}
+        actions={
+          <Button disabled={pending} onClick={save}>
+            {text.save}
+          </Button>
+        }
+      >
+        <div {...stylex.props(styles.fields)}>
+          <SnippetField
+            label="Trigger"
+            length={draft.trigger.length}
+            max={TRIGGER_MAX_LENGTH}
+            problem={messageFor("trigger", shown)}
+          >
+            <Field.Control
+              ref={triggerRef}
+              value={draft.trigger}
+              maxLength={TRIGGER_MAX_LENGTH}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="my email"
+              onValueChange={(trigger) => edit({ trigger })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) save();
+              }}
+              {...stylex.props(styles.input, shown?.field === "trigger" && styles.invalid)}
+            />
+          </SnippetField>
+          <SnippetField
+            label="Expansion"
+            length={draft.expansion.length}
+            max={EXPANSION_MAX_LENGTH}
+            problem={messageFor("expansion", shown)}
+          >
+            <Field.Control
+              ref={expansionRef}
+              render={<textarea />}
+              value={draft.expansion}
+              maxLength={EXPANSION_MAX_LENGTH}
+              spellCheck={false}
+              placeholder="name@example.com"
+              onValueChange={(expansion) => edit({ expansion })}
+              {...stylex.props(
+                styles.input,
+                styles.textarea,
+                shown?.field === "expansion" && styles.invalid,
+              )}
+            />
+          </SnippetField>
+        </div>
+        {error && (
+          <p role="alert" {...stylex.props(settings.error, styles.saveError)}>
+            {error}
+          </p>
+        )}
+      </DialogFrame>
     </Dialog.Root>
   );
 }
 
-function fieldAria(id: string, problem: string) {
-  return {
-    "aria-invalid": problem !== "",
-    "aria-describedby": problem ? `${id}-count ${id}-error` : `${id}-count`,
-  };
-}
+const messageFor = (field: SnippetProblem["field"], problem: SnippetProblem | null) =>
+  problem?.field === field ? problem.message : undefined;
 
-function Field({
-  id,
+function SnippetField({
   label,
   length,
   max,
   problem,
   children,
 }: {
-  id: string;
   label: string;
   length: number;
   max: number;
-  problem: string;
+  problem: string | undefined;
   children: ReactNode;
 }) {
   return (
-    <div {...stylex.props(styles.field)}>
+    <Field.Root invalid={problem !== undefined} {...stylex.props(styles.field)}>
       <div {...stylex.props(styles.fieldHead)}>
-        <label htmlFor={id} {...stylex.props(settings.sectionLabel)}>
-          {label}
-        </label>
-        <span id={`${id}-count`} {...stylex.props(settings.hint, styles.counter)}>
+        <Field.Label {...stylex.props(settings.sectionLabel)}>{label}</Field.Label>
+        <Field.Description {...stylex.props(settings.hint, styles.counter)}>
           {length}/{max}
-        </span>
+        </Field.Description>
       </div>
       {children}
-      {problem && (
-        <p id={`${id}-error`} {...stylex.props(settings.error)}>
+      {problem !== undefined && (
+        <Field.Error match {...stylex.props(settings.error)}>
           {problem}
-        </p>
+        </Field.Error>
       )}
-    </div>
+    </Field.Root>
   );
 }

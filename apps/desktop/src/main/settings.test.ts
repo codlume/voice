@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import type { SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import {
   applyPatch,
@@ -220,6 +221,22 @@ describe("applyPatch", () => {
       ...DEFAULT_SETTINGS,
       theme: "light",
     });
+  });
+
+  const VALID_SNIPPET = { id: "1", trigger: "my email", expansion: "name@example.com\n" };
+
+  test("saves a snippet list and keeps it through other changes", () => {
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET] });
+    expect(applyPatch(saved, { theme: "dark" }).snippets).toEqual([VALID_SNIPPET]);
+  });
+
+  test.each([
+    ["a duplicate trigger", [VALID_SNIPPET, { ...VALID_SNIPPET, id: "2", trigger: "My Email!" }]],
+    ["a record missing its expansion", [VALID_SNIPPET, { id: "2", trigger: "address" }]],
+    ["a list that is not an array", { 0: VALID_SNIPPET }],
+  ])("refuses to save snippets with %s instead of dropping any", (_, snippets) => {
+    const patch = { snippets } as unknown as SettingsPatch;
+    expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save these snippets.");
   });
 });
 

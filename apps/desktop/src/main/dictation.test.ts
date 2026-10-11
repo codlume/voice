@@ -725,6 +725,14 @@ describe("createDictation", () => {
       expect(h.copies).toEqual(["hello world."]);
     });
 
+    test("copies the text with its snippets expanded", async () => {
+      const snippets = [{ id: "1", trigger: "my email", expansion: "name@example.com" }];
+      const h = harness({ copyToClipboard: true, snippets });
+      const id = await dictate(h, "send it to my email");
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.copies).toEqual(["send it to name@example.com."]);
+    });
+
     test("copies the text when insertion fails", async () => {
       const h = harness({ copyToClipboard: true, cleanupEnabled: false });
       const id = await dictate(h, "keep me");

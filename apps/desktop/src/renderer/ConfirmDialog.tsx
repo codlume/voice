@@ -1,5 +1,7 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import * as stylex from "@stylexjs/stylex";
+import type { ReactNode, RefObject } from "react";
 
 import { Button } from "./Button.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -8,7 +10,7 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const dark = "@media (prefers-color-scheme: dark)";
 const centered = "translate(-50%, -50%)";
 
-export const styles = stylex.create({
+const styles = stylex.create({
   backdrop: {
     position: "fixed",
     inset: 0,
@@ -59,6 +61,45 @@ export const styles = stylex.create({
   },
 });
 
+const hidden = (status: string | undefined) => status === "starting" || status === "ending";
+
+/** Scrim, popup, title, and a Cancel-first action row. Renders under Dialog.Root or AlertDialog.Root. */
+export function DialogFrame({
+  title,
+  actions,
+  finalFocus,
+  children,
+}: {
+  title: string;
+  actions: ReactNode;
+  finalFocus?: RefObject<HTMLElement | null> | undefined;
+  children?: ReactNode;
+}) {
+  return (
+    <Dialog.Portal>
+      <Dialog.Backdrop
+        className={({ transitionStatus }) =>
+          stylex.props(styles.backdrop, hidden(transitionStatus) && styles.backdropHidden).className
+        }
+      />
+      <Dialog.Popup
+        finalFocus={finalFocus}
+        className={({ transitionStatus }) =>
+          stylex.props(styles.popup, hidden(transitionStatus) && styles.popupHidden).className
+        }
+      >
+        <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
+        {children}
+        <div {...stylex.props(styles.actions)}>
+          {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
+          <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
+          {actions}
+        </div>
+      </Dialog.Popup>
+    </Dialog.Portal>
+  );
+}
+
 type ConfirmAction = {
   label: string;
   variant: "primary" | "destructive";
@@ -68,56 +109,39 @@ type ConfirmAction = {
 export function ConfirmDialog({
   open,
   onOpenChange,
+  onOpenChangeComplete,
+  finalFocus,
   title,
   description,
   actions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenChangeComplete?: (open: boolean) => void;
+  finalFocus?: RefObject<HTMLElement | null> | undefined;
   title: string;
   description: string;
   actions: readonly ConfirmAction[];
 }) {
   return (
-    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
-      <AlertDialog.Portal>
-        <AlertDialog.Backdrop
-          className={({ transitionStatus }) =>
-            stylex.props(
-              styles.backdrop,
-              (transitionStatus === "starting" || transitionStatus === "ending") &&
-                styles.backdropHidden,
-            ).className
-          }
-        />
-        <AlertDialog.Popup
-          className={({ transitionStatus }) =>
-            stylex.props(
-              styles.popup,
-              (transitionStatus === "starting" || transitionStatus === "ending") &&
-                styles.popupHidden,
-            ).className
-          }
-        >
-          <AlertDialog.Title {...stylex.props(styles.title)}>{title}</AlertDialog.Title>
-          <AlertDialog.Description {...stylex.props(styles.description)}>
-            {description}
-          </AlertDialog.Description>
-          <div {...stylex.props(styles.actions)}>
-            {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
-            <AlertDialog.Close render={<Button variant="secondary" />}>Cancel</AlertDialog.Close>
-            {actions.map(({ label, variant, onClick }) => (
-              <AlertDialog.Close
-                key={label}
-                render={<Button variant={variant} />}
-                onClick={onClick}
-              >
-                {label}
-              </AlertDialog.Close>
-            ))}
-          </div>
-        </AlertDialog.Popup>
-      </AlertDialog.Portal>
+    <AlertDialog.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+    >
+      <DialogFrame
+        title={title}
+        finalFocus={finalFocus}
+        actions={actions.map(({ label, variant, onClick }) => (
+          <AlertDialog.Close key={label} render={<Button variant={variant} />} onClick={onClick}>
+            {label}
+          </AlertDialog.Close>
+        ))}
+      >
+        <AlertDialog.Description {...stylex.props(styles.description)}>
+          {description}
+        </AlertDialog.Description>
+      </DialogFrame>
     </AlertDialog.Root>
   );
 }

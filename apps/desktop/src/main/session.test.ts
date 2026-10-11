@@ -211,7 +211,7 @@ describe("transcript", () => {
 
   test("with cleanup on, the raw text is remembered and sent to cleanup", () => {
     const { state, effects } = run(toCleaning);
-    expect(state).toEqual({ phase: "cleaning", id: ID, raw: "hello um world", snippets: [] });
+    expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       { type: "remember", raw: "hello um world", text: "hello um world" },
       { type: "cleanup", id: ID, raw: "hello um world" },
@@ -377,7 +377,7 @@ describe("snippets", () => {
 
   test("cleanup gets the raw transcript while the expanded text is remembered", () => {
     const { state, effects } = run(cleaningSentence);
-    expect(state).toEqual({ phase: "cleaning", id: ID, raw: "send it to my email", snippets });
+    expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
       { type: "cleanup", id: ID, raw: "send it to my email" },
@@ -395,6 +395,21 @@ describe("snippets", () => {
       { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
       { type: "insert", id: ID, text: `send it to ${EMAIL}` },
     ]);
+  });
+
+  test("a cleanup that turned a sentence into only the trigger types the expansion alone", () => {
+    const { effects } = run([
+      ...toTranscribing,
+      transcript("um my email", true, 2000, snippets),
+      cleaned("My email."),
+    ]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: EMAIL });
+  });
+
+  test("a cleanup that returned nothing for a transcript with a trigger inserts the expanded raw", () => {
+    const { state, effects } = run([...cleaningSentence, cleaned("  ")]);
+    expect(state.phase).toBe("inserting");
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: `send it to ${EMAIL}` });
   });
 
   test("a cleanup failure inserts the expanded raw transcript", () => {

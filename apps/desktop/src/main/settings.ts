@@ -67,6 +67,14 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
 }
 
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
+  const { snippets } = patch;
+  // Parsing drops invalid snippets; refuse the save rather than lose text the user just typed.
+  if (
+    snippets !== undefined &&
+    (!Array.isArray(snippets) || parseSnippets(snippets).length !== snippets.length)
+  ) {
+    throw new Error("Could not save these snippets.");
+  }
   return parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
     hotkey: patch.hotkey ?? settings.hotkey,
@@ -79,7 +87,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
-    snippets: patch.snippets ?? settings.snippets,
+    snippets: snippets ?? settings.snippets,
     zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
   });
 }
