@@ -169,6 +169,19 @@ test("stitch keeps a capital the user dictated", () => {
   );
 });
 
+test("stitch keeps acronym and mixed-case corrections at a mid-sentence seam", () => {
+  for (const [rawWord, cleanedWord] of [
+    ["api", "API"],
+    ["github", "GitHub"],
+  ]) {
+    const raw = `check the ${rawWord} before release`;
+    const chunks = spans(raw, ["check the", `${rawWord} before release`]);
+    expect(stitch(raw, chunks, ["Check the", `${cleanedWord} before release.`])).toBe(
+      `Check the ${cleanedWord} before release.`,
+    );
+  }
+});
+
 test("stitch drops a chunk cleaned to nothing and folds its gap into the next one", () => {
   const raw = "um uh\n\ncall ada um then email bob";
   const chunks = spans(raw, ["um uh", "call ada", "um", "then email bob"]);
