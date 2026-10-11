@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import {
   assert,
@@ -17,6 +18,8 @@ import {
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
@@ -167,7 +170,14 @@ function textEditTarget(userData) {
       const pid = osascript('tell application "System Events" to unix id of process "TextEdit"');
       await activate(Number(pid), "TextEdit");
     },
-    read: () => osascript(`tell application "TextEdit" to get text of ${current()}`),
+    async read() {
+      const { stdout } = await execFileAsync(
+        "osascript",
+        ["-e", `tell application "TextEdit" to get text of ${current()}`],
+        { encoding: "utf8", timeout: 1000, killSignal: "SIGKILL" },
+      );
+      return stdout.trim();
+    },
     close() {
       for (const name of documents.splice(0)) {
         osascript(`tell application "TextEdit" to close document ${show(name)} saving no`);
