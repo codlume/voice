@@ -4,8 +4,10 @@ export type Chunk = { start: number; end: number; text: string };
 
 const CLOSERS = `["'”’)\\]]*`;
 const TERMINAL_END = new RegExp(`[.!?…]${CLOSERS}\\s*$`, "u");
-const ABBREVIATION_END = new RegExp(`(?:\\p{L}\\.){2,}${CLOSERS}\\s*$`, "u");
-const endsSentence = (text: string) => TERMINAL_END.test(text) && !ABBREVIATION_END.test(text);
+const ABBREVIATION_END = new RegExp(
+  `(?:\\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc)\\.|(?:\\p{L}\\.){2,})${CLOSERS}\\s*$`,
+  "iu",
+);
 // UAX #29 does not end a sentence before a lowercase letter, so a lowercase dictation with
 // periods still reads as one sentence to Intl.Segmenter.
 const SENTENCE_END = new RegExp(`(?<=[.!?…]${CLOSERS}\\s+)(?!\\s)`, "u");
@@ -19,20 +21,22 @@ const segmenter = (granularity: "sentence" | "word" | "grapheme") => {
 const sentences = segmenter("sentence");
 
 const LEVELS: ((text: string) => string[])[] = [
-  (text) =>
-    sentences(text).flatMap((sentence) => {
-      const parts: string[] = [];
-      for (const part of sentence.split(SENTENCE_END)) {
-        const previous = parts.at(-1);
-        if (previous !== undefined && !endsSentence(previous)) parts[parts.length - 1] += part;
-        else parts.push(part);
-      }
-      return parts;
-    }),
-  (text) => text.split(CLAUSE_SEAM),
+  (text) => sentences(text).flatMap((sentence) => joinAbbreviations(sentence.split(SENTENCE_END))),
+  (text) => joinAbbreviations(text.split(CLAUSE_SEAM)),
   segmenter("word"),
   segmenter("grapheme"),
 ];
+
+function joinAbbreviations(parts: string[]): string[] {
+  const joined: string[] = [];
+  for (const part of parts) {
+    const previous = joined.at(-1);
+    if (previous !== undefined && ABBREVIATION_END.test(previous))
+      joined[joined.length - 1] += part;
+    else joined.push(part);
+  }
+  return joined;
+}
 
 function pieces(text: string, maxTokens: number, countTokens: CountTokens, level = 0): string[] {
   return LEVELS[level]!(text).flatMap((piece) =>
@@ -79,6 +83,10 @@ function fittingEnd(
     if (fits(mid)) lo = mid;
     else hi = mid - 1;
   }
+  const abbreviation = ABBREVIATION_END.exec(parts.slice(start, lo).join(""));
+  if (abbreviation && lo < parts.length) {
+    while (lo > start + 1 && parts.slice(start, lo).join("").length > abbreviation.index) lo--;
+  }
   return lo;
 }
 
@@ -118,7 +126,12 @@ function lowercaseContinuation(
   rawChunk: string,
   output: string,
 ): string {
-  if (!before || endsSentence(before) || endsSentence(rawBefore) || /[\r\n]\s*$/u.test(rawBefore))
+  if (
+    !before ||
+    TERMINAL_END.test(before) ||
+    TERMINAL_END.test(rawBefore) ||
+    /[\r\n]\s*$/u.test(rawBefore)
+  )
     return output;
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
   const word = firstWord(rawChunk);

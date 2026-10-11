@@ -220,7 +220,7 @@ test("chunk seams keep ordinary abbreviations with the following word", () => {
   const raw = "we need paper pens etc. and some envelopes before monday";
   const chunks = chunkTranscript(raw, 23, chars);
   const outputs = chunks.map((chunk) => chunk.text[0]!.toUpperCase() + chunk.text.slice(1));
-  expect(chunks.some((chunk) => /etc\.$/.test(chunk.text))).toBe(false);
+  expect(chunks.some((chunk) => chunk.text.endsWith("etc."))).toBe(false);
   expect(stitch(raw, chunks, outputs)).toBe(
     "We need paper pens etc. and some envelopes before monday",
   );
