@@ -1,11 +1,13 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
+import { expandSnippets, type Expansion, type Snippet } from "../shared/snippets.ts";
+
 export type Session =
   | { phase: "idle" }
   | { phase: "starting"; id: string; pressedAt: number; releasedAt: number | null }
   | { phase: "recording"; id: string; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
-  | { phase: "cleaning"; id: string; raw: string }
+  | { phase: "cleaning"; id: string; raw: string; snippets: readonly Snippet[] }
   | { phase: "inserting"; id: string; raw: string; text: string }
   | { phase: "done"; id: string; outcome: Outcome };
 
@@ -19,7 +21,13 @@ export type SessionEvent =
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
-  | { type: "transcript"; id: string; text: string; cleanup: boolean }
+  | {
+      type: "transcript";
+      id: string;
+      text: string;
+      cleanup: boolean;
+      snippets: readonly Snippet[];
+    }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
   | { type: "cleanupFailed"; id: string }
@@ -81,6 +89,20 @@ function insert(id: string, raw: string, text: string): Step {
   };
 }
 
+const textOf = (expansion: Expansion, fallback: string) =>
+  expansion.kind === "none" ? fallback : expansion.text;
+
+function matches(expansion: Expansion): number {
+  switch (expansion.kind) {
+    case "none":
+      return 0;
+    case "entireDictation":
+      return 1;
+    case "inline":
+      return expansion.count;
+  }
+}
+
 export function step(state: Session, event: SessionEvent, now: number): Step {
   const same = { state, effects: [] };
   const stale =
@@ -140,11 +162,13 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
       }
       if (raw === "") return finish(state.id, { kind: "empty" });
-      if (!event.cleanup) return insert(state.id, raw, raw);
+      const fromRaw = expandSnippets(raw, event.snippets);
+      if (fromRaw.kind === "entireDictation") return insert(state.id, raw, fromRaw.text);
+      if (!event.cleanup) return insert(state.id, raw, textOf(fromRaw, raw));
       return {
-        state: { phase: "cleaning", id: state.id, raw },
+        state: { phase: "cleaning", id: state.id, raw, snippets: event.snippets },
         effects: [
-          { type: "remember", raw, text: raw },
+          { type: "remember", raw, text: textOf(fromRaw, raw) },
           { type: "cleanup", id: state.id, raw },
         ],
       };
@@ -157,11 +181,21 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (state.phase !== "cleaning") return same;
       const text = event.text.trim();
       if (text === "") return finish(state.id, { kind: "empty" });
-      return insert(state.id, state.raw, text);
+      const fromCleaned = expandSnippets(text, state.snippets);
+      const fromRaw = expandSnippets(state.raw, state.snippets);
+      // The local cleanup model cannot be told to keep triggers, so a cleanup that lost one loses to raw.
+      if (matches(fromCleaned) < matches(fromRaw)) {
+        return insert(state.id, state.raw, textOf(fromRaw, state.raw));
+      }
+      return insert(state.id, state.raw, textOf(fromCleaned, text));
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
-      return insert(state.id, state.raw, state.raw);
+      return insert(
+        state.id,
+        state.raw,
+        textOf(expandSnippets(state.raw, state.snippets), state.raw),
+      );
     }
     case "insertResult": {
       if (state.phase !== "inserting") return same;
