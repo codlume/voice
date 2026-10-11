@@ -37,7 +37,7 @@ struct CaptureIdleTests {
         #expect(events.withLock { $0 } == ["main block", "probe done"], "main waited \(mainWaitMs) ms behind the idle warmup")
         #expect(!onMain.withLock { $0 })
 
-        capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         #expect(!capture.isActive, "a press never starts capture while the cache says not granted")
     }
 
@@ -53,7 +53,7 @@ struct CaptureIdleTests {
         }
         capture.testAudioPath = try silentFixture()
 
-        capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         #expect(capture.isActive)
         capture.cancel(id: "s1")
         capture.configure(microphone: nil)

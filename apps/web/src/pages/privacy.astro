@@ -64,8 +64,10 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         landed. What it reads stays in memory and is never stored or sent. If Voice cannot insert,
         it keeps the transcript for you to copy and paste manually. It does not send an automatic
         paste shortcut or change your clipboard for insertion. Copy transcript to clipboard changes
-        your clipboard only when you enable that setting. Voice never reads the name of the focused
-        app, your screen, or your windows.
+        your clipboard only when you enable that setting. Voice compares the focused field, window,
+        and window title with the target captured when dictation starts. These details stay in memory
+        only for the session and are never stored or sent. Voice never captures your screen or reads
+        other windows or the name of the focused app.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear

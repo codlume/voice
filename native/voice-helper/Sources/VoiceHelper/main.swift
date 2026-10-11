@@ -54,8 +54,8 @@ final class Helper {
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let muteWhileDictating, let microphone):
-            let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            capture.start(id: id, language: language, frontmostPid: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
+            let target = insertion.recordTarget(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)
+            capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
@@ -65,7 +65,7 @@ final class Helper {
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
         case .insert(let id, let text):
-            insertion.insert(id: id, text: text, target: capture.lastTarget)
+            insertion.insert(id: id, text: text, target: capture.takeLastTarget(id: id))
         case .permissionsCheck:
             permissions.check()
         case .permissionsRequest(let kind):
