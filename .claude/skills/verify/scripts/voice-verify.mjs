@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   appendFileSync,
   copyFileSync,
@@ -12,6 +14,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,9 +34,10 @@ const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
-const statePath = join(tmpdir(), "voice-verify.json");
-const evidenceRoot = join(tmpdir(), "voice-verify-evidence");
-const ports = { voice: 9355, target: 9356, inspect: 9357 };
+const worktreeId = createHash("sha256").update(repoDir).digest("hex").slice(0, 8);
+const scratchName = `voice-verify-${worktreeId}`;
+const statePath = join(tmpdir(), `${scratchName}.json`);
+const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
 
 const [command = "help", ...args] = process.argv.slice(2);
 const show = (value) => JSON.stringify(value);
@@ -65,6 +69,14 @@ function signalGroup(pid, signal) {
   try {
     process.kill(-pid, signal);
   } catch {}
+}
+
+async function freePorts(count) {
+  const servers = Array.from({ length: count }, () => createServer().listen(0, "127.0.0.1"));
+  await Promise.all(servers.map((server) => once(server, "listening")));
+  const ports = servers.map((server) => server.address().port);
+  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+  return ports;
 }
 
 function requireInstance() {
@@ -223,20 +235,16 @@ const commands = {
   async launch() {
     const existing = readState();
     if (existing && alive(existing.electronPid))
-      fail(`instance already running: ${show(existing)}`);
-    try {
-      await fetch(`http://127.0.0.1:${ports.voice}/json/version`);
-      fail(`port ${ports.voice} is already answering; something else owns it`);
-    } catch {}
+      fail(`this worktree's instance is already running: ${show(existing)}`);
     if (!existsSync(join(desktopDir, "dist-electron/main.cjs")))
       fail("app not built: run pnpm build");
 
     // --keep-user-data relaunches on the folder a `stop --keep-user-data` left, to test a restart.
-    const keptUserData = join(tmpdir(), "voice-verify");
+    const keptUserData = join(tmpdir(), scratchName);
     const keep = args.includes("--keep-user-data");
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
-    const userData = keep ? keptUserData : await prepareUserData("voice-verify");
+    const userData = keep ? keptUserData : await prepareUserData(scratchName);
     const fakeMicrophonePath = join(userData, "capture.wav");
     const logPath = join(userData, "main.log");
     const env = {
@@ -246,14 +254,15 @@ const commands = {
       VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
     };
     delete env.ELECTRON_RUN_AS_NODE;
+    const [port, inspectPort] = await freePorts(2);
     // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
     // after earlier unclean exits.
     const child = start(
       electronPath,
       [
         ".",
-        `--remote-debugging-port=${ports.voice}`,
-        `--inspect=${ports.inspect}`,
+        `--remote-debugging-port=${port}`,
+        `--inspect=${inspectPort}`,
         "-ApplePersistenceIgnoreState",
         "YES",
       ],
@@ -266,8 +275,9 @@ const commands = {
     const state = {
       ownerPid: process.pid,
       electronPid: child.pid,
-      port: ports.voice,
-      inspectPort: ports.inspect,
+      app: desktopDir,
+      port,
+      inspectPort,
       userData,
       fakeMicrophonePath,
       logPath,
@@ -293,8 +303,8 @@ const commands = {
       void shutdown(1);
     });
 
-    const hub = await Page.connect(ports.voice, "hub.html");
-    await Page.connect(ports.voice, "pill.html").then((pill) => pill.close());
+    const hub = await Page.connect(port, "hub.html");
+    await Page.connect(port, "pill.html").then((pill) => pill.close());
     const snapshots = await snapshotStream(hub);
     const permissions = await snapshots.waitFor(
       (s) => s.permissions.accessibility !== "notDetermined",
@@ -646,14 +656,15 @@ const commands = {
       VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
     };
     delete targetEnv.ELECTRON_RUN_AS_NODE;
+    const [targetPort] = await freePorts(1);
     const target = start(
       electronPath,
-      [join(repoDir, "scripts/e2e-target/main.cjs"), `--remote-debugging-port=${ports.target}`],
+      [join(repoDir, "scripts/e2e-target/main.cjs"), `--remote-debugging-port=${targetPort}`],
       { env: targetEnv, stdio: "ignore" },
     );
     try {
       const field = 'document.getElementById("field")';
-      const targetPage = await Page.connect(ports.target, "index.html");
+      const targetPage = await Page.connect(targetPort, "index.html");
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
       );
@@ -723,9 +734,9 @@ const commands = {
   help() {
     out(`usage: node .claude/skills/verify/scripts/voice-verify.mjs <command>
   doctor                         read-only health report
-  launch [--keep-user-data]      start the disposable instance (foreground; run in background);
+  launch [--keep-user-data]      start this worktree's disposable instance (foreground; run in background);
                                  the flag reuses the userData a stop --keep-user-data left
-  stop [--keep-user-data]        tear down the instance this skill started; evidence survives,
+  stop [--keep-user-data]        tear down this worktree's instance; evidence survives,
                                  and with the flag so does the scratch userData
   snapshot                       full app snapshot JSON
   text                           current sidebar nav and visible page text
