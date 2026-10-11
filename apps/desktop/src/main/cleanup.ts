@@ -22,6 +22,7 @@ export type Cleanup = {
 
 export type CleanupOptions = {
   modelsDir: string;
+  baseUrl?: string | undefined;
   shouldLoad: () => boolean;
   onStatus: (status: ModelStatus) => void;
   loadModule?: () => Promise<CleanupModule>;
@@ -67,9 +68,13 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
   let model: Model = { phase: "none" };
   let chain: Promise<void> = Promise.resolve();
-  let download: AbortController | undefined;
+  const installs = new Set<AbortController>();
 
   const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
+
+  function cancelInstalls(reason: string) {
+    for (const controller of installs) controller.abort(new Error(reason));
+  }
 
   function serialize(work: () => Promise<void>) {
     const run = chain.then(work);
@@ -127,27 +132,39 @@ export function createCleanup(options: CleanupOptions): Cleanup {
 
   return {
     loadIfDownloaded: () => serialize(loadIfOnDisk),
-    install: () =>
-      serialize(async () => {
-        if (!claimIdle()) return;
-        options.onStatus({ state: "downloading", progress: 0 });
-        const module = await loadModule();
-        download = new AbortController();
-        let modelPath: string;
+    install: () => {
+      const controller = new AbortController();
+      installs.add(controller);
+      return serialize(async () => {
         try {
-          modelPath = await module.downloadS1Mini({
-            dir: options.modelsDir,
-            onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
-            signal: download.signal,
-          });
-        } catch (error) {
-          options.onStatus({ state: "failed", message: message(error) });
-          return;
+          if (controller.signal.aborted || !claimIdle()) return;
+          options.onStatus({ state: "downloading", progress: 0 });
+          const module = await loadModule();
+          if (controller.signal.aborted) return;
+          let modelPath: string;
+          try {
+            modelPath = await module.downloadS1Mini({
+              dir: options.modelsDir,
+              baseUrl: options.baseUrl,
+              onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
+              signal: controller.signal,
+            });
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              options.onStatus({ state: "failed", message: message(error) });
+            }
+            return;
+          }
+          if (controller.signal.aborted) return;
+          await loadModel(module, modelPath);
+        } finally {
+          installs.delete(controller);
         }
-        await loadModel(module, modelPath);
-      }),
-    uninstall: () =>
-      disposeThen(async () => {
+      });
+    },
+    uninstall: () => {
+      cancelInstalls("Download cancelled");
+      return disposeThen(async () => {
         const module = await loadModule();
         try {
           await module.removeS1Mini({ dir: options.modelsDir });
@@ -156,7 +173,8 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           return;
         }
         options.onStatus({ state: "missing" });
-      }),
+      });
+    },
     // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
@@ -165,7 +183,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       return model.model.clean(raw, style, signal);
     },
     dispose: () => {
-      download?.abort(new Error("Voice is closing"));
+      cancelInstalls("Voice is closing");
       return disposeThen();
     },
   };

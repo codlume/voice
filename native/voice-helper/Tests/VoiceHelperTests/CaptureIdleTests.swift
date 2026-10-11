@@ -9,8 +9,12 @@ import os
 @Suite(.serialized)
 struct CaptureIdleTests {
     @Test @MainActor func idleWarmupKeepsMainFreeWhileThePermissionProbeRuns() async {
+        let probing = XCTestExpectation(description: "the permission probe started")
+        probing.assertForOverFulfill = false
         let probed = XCTestExpectation(description: "the permission probe ran")
         probed.assertForOverFulfill = false
+        let releaseProbe = DispatchSemaphore(value: 0)
+        defer { releaseProbe.signal() }
         let events = OSAllocatedUnfairLock<[String]>(initialState: [])
         let onMain = OSAllocatedUnfairLock(initialState: false)
         let output = Output()
@@ -19,22 +23,26 @@ struct CaptureIdleTests {
             devices: AudioInputDevices(output: output)
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
-            Thread.sleep(forTimeInterval: 0.05)
+            probing.fulfill()
+            if !Thread.isMainThread {
+                #expect(releaseProbe.wait(timeout: .now() + 5) == .success)
+            }
             events.withLock { $0.append("probe done") }
             probed.fulfill()
             return .denied
         }
 
         capture.prepareIdleMic()
-        let queuedAt = DispatchTime.now()
-        let mainWaitMs = await withCheckedContinuation { continuation in
+        #expect(await XCTWaiter.fulfillment(of: [probing], timeout: 5) == .completed)
+        await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 events.withLock { $0.append("main block") }
-                continuation.resume(returning: queuedAt.millisecondsToNow())
+                releaseProbe.signal()
+                continuation.resume()
             }
         }
-        #expect(await XCTWaiter.fulfillment(of: [probed], timeout: 2) == .completed)
-        #expect(events.withLock { $0 } == ["main block", "probe done"], "main waited \(mainWaitMs) ms behind the idle warmup")
+        #expect(await XCTWaiter.fulfillment(of: [probed], timeout: 5) == .completed)
+        #expect(events.withLock { $0 } == ["main block", "probe done"])
         #expect(!onMain.withLock { $0 })
 
         capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)

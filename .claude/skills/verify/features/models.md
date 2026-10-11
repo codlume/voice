@@ -24,6 +24,7 @@ Preconditions: baseline, both models `ready`.
 - **Uninstall.** `vv click "Uninstall S1-mini"`, then `vv click Uninstall`. Wait for `s.models.cleanup.state === "missing"`. The symlink is gone from `<userData>/models`, and the shared cache in `~/Library/Caches/Voice Development/test-models` still has the file.
 - **Reinstall without downloading.** First restore the link: `ln -s "$HOME/Library/Caches/Voice Development/test-models/s1-mini-q4_k_m.gguf" "<userData>/models/"`. Then `vv click "Install S1-mini"`. The state reaches `ready`, never `downloading` with a progress above 0.
 - **Home checklist.** While a model is missing, `vv click Back`, `vv click Home`, then `vv text`. The output shows "Not downloaded".
+- **Stalled download and Cancel.** Start `node .claude/skills/verify/scripts/stalled-model-server.mjs 9461` in the background and record its PID. Remove the S1-mini symlink, then `launch` with `VOICE_CLEANUP_MODEL_URL=http://127.0.0.1:9461`. `Install S1-mini` sits at "Downloading 1%". `Cancel S1-mini` in Settings ends `missing` with no `.part` file. Repeat from Home and use `Cancel Cleanup model` for the same result. Leave a third attempt alone; it ends `failed` with "Download stalled" after 30 s. Stop the verify instance and the recorded server PID afterward.
 - **Full scripted pass.** `stop` the instance and run `node scripts/models-smoke.mjs`.
 
 ## Gotchas
