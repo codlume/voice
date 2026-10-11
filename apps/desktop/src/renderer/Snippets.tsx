@@ -61,9 +61,10 @@ const styles = stylex.create({
 
 type Mode = "add" | "edit";
 // Only one dialog can be open. The record outlives `open` so the dialog keeps its content through
-// the exit animation, then clears so the next add or edit starts from a fresh draft. "deleted" is
-// the delete dialog after its confirm, when the row it would return focus to is going away.
-type Modal = { kind: Mode | "delete" | "deleted"; snippet: Snippet; open: boolean };
+// the exit animation. `key` is new on every open, so the next add or edit, even of the same
+// snippet, starts from a fresh draft instead of the closing dialog's. "deleted" is the delete
+// dialog after its confirm, when the row it would return focus to is going away.
+type Modal = { kind: Mode | "delete" | "deleted"; snippet: Snippet; open: boolean; key: string };
 
 const editorText: Record<Mode, { title: string; save: string }> = {
   add: { title: "Add snippet", save: "Add snippet" },
@@ -75,7 +76,8 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
   const addRef = useRef<HTMLButtonElement>(null);
   const rowAction = useAction();
 
-  const show = (kind: Modal["kind"], snippet: Snippet) => setModal({ kind, snippet, open: true });
+  const show = (kind: Modal["kind"], snippet: Snippet) =>
+    setModal({ kind, snippet, open: true, key: crypto.randomUUID() });
   const setOpen = (open: boolean) => setModal((current) => current && { ...current, open });
   const clearOnClose = (open: boolean) => {
     if (!open) setModal(null);
@@ -192,8 +194,7 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
 
       {(modal?.kind === "add" || modal?.kind === "edit") && (
         <SnippetDialog
-          // A new record remounts the dialog, even while the last one is still closing.
-          key={modal.snippet.id}
+          key={modal.key}
           open={modal.open}
           onOpenChange={setOpen}
           onOpenChangeComplete={clearOnClose}
