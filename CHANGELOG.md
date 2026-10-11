@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.19.0 (2026-10-11)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(account): point Stable builds at the Stable API by @hadrysm in https://github.com/codlume/voice/pull/258
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.18.0...v0.19.0
+
 ## 0.18.0 (2026-10-11)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
