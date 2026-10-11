@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -32,36 +32,43 @@ export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
-// Call before posting key events or installing a hotkey tap. A dev session or Voice.app runs its
-// own helper with real microphone permission, and its tap hears synthetic presses too, so it
-// records the room into the test documents. Processes match on their executable, because a build,
-// test, or packaging job can name the helper in its arguments without running it.
 export function runningVoiceProcesses() {
   const helpers = new Set();
   const nodes = [];
-  for (const [pid, executable] of listProcesses(["-ax", "-o", "pid=,comm="])) {
-    if (basename(executable) === "voice-helper") helpers.add(pid);
-    else if (basename(executable) === "node") nodes.push(pid);
+  for (const [pid, executable] of listProcesses("ucomm")) {
+    if (executable === "voice-helper") helpers.add(pid);
+    else if (executable === "node") nodes.push(pid);
   }
   const candidates = [...helpers, ...nodes];
   if (candidates.length === 0) return [];
-  return listProcesses(["-o", "pid=,args=", "-p", candidates.join(",")])
-    .filter(([pid, args]) => helpers.has(pid) || /(^|\s)\S*scripts\/dev\.mjs(\s|$)/.test(args))
+  return listProcesses("args", candidates)
+    .filter(([pid, args]) => helpers.has(pid) || /(^|[\s/])scripts\/dev\.mjs(\s|$)/.test(args))
     .map(([pid, args]) => `${pid} ${args}`);
 }
 
-// One `pid=` column followed by one free-text column, which may contain spaces.
-function listProcesses(args) {
-  const ps = spawnSync("ps", ["-ww", ...args], { encoding: "utf8" });
-  // With -p, ps exits 1 when every listed process has already exited.
-  if (ps.status === 1 && ps.stdout === "") return [];
+function listProcesses(column, pids) {
+  const ps = spawnSync(
+    "ps",
+    ["-ww", "-o", `pid=,${column}=`, ...(pids ? ["-p", pids.join(",")] : ["-ax"])],
+    { encoding: "utf8" },
+  );
+  if (ps.error) throw ps.error;
+  // With -p, ps exits 1 without output when every listed process has already exited.
+  if (pids && ps.status === 1 && ps.stdout === "" && ps.stderr === "") return [];
   if (ps.status !== 0) throw new Error(`ps exited ${ps.status}: ${ps.stderr}`);
   return ps.stdout
     .split("\n")
     .filter(Boolean)
-    .map((line) => /^\s*(\d+) (.*)$/.exec(line).slice(1));
+    .map((line) => {
+      const row = /^\s*(\d+) (.*?)\s*$/.exec(line);
+      if (!row) throw new Error(`unexpected ps line: ${line}`);
+      return [row[1], row[2]];
+    });
 }
 
+// Call before posting key events or installing a hotkey tap. A dev session or Voice.app runs its
+// own helper with real microphone permission, and its tap hears synthetic presses too, so it
+// records the room into the test documents.
 export function refuseIfVoiceIsRunning() {
   const running = runningVoiceProcesses();
   if (running.length === 0) return;
