@@ -192,6 +192,8 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
 
       {(modal?.kind === "add" || modal?.kind === "edit") && (
         <SnippetDialog
+          // A new record remounts the dialog, even while the last one is still closing.
+          key={modal.snippet.id}
           open={modal.open}
           onOpenChange={setOpen}
           onOpenChangeComplete={clearOnClose}
