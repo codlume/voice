@@ -110,12 +110,17 @@ export function stitch(
 }
 
 function separator(raw: string, chunks: readonly Chunk[], from: number, to: number): string {
-  let widest = "";
+  let selected = "";
+  let lineBreaks = 0;
   for (let i = from + 1; i <= to; i++) {
     const gap = raw.slice(chunks[i - 1]!.end, chunks[i]!.start);
-    if (gap.length > widest.length) widest = gap;
+    const breaks = (gap.match(/\r\n|[\r\n]/gu) ?? []).length;
+    if (breaks > lineBreaks || (breaks === lineBreaks && gap.length > selected.length)) {
+      selected = gap;
+      lineBreaks = breaks;
+    }
   }
-  return widest || (to - from > 1 ? " " : "");
+  return selected || (to - from > 1 ? " " : "");
 }
 
 const firstWord = (text: string) => /^[\p{L}\p{N}'’]+/u.exec(text)?.[0];
@@ -126,10 +131,10 @@ function lowercaseContinuation(
   rawChunk: string,
   output: string,
 ): string {
+  const hasGap = /\s$/u.test(rawBefore);
   if (
     !before ||
-    TERMINAL_END.test(before) ||
-    TERMINAL_END.test(rawBefore) ||
+    (hasGap && (TERMINAL_END.test(before) || TERMINAL_END.test(rawBefore))) ||
     /[\r\n]\s*$/u.test(rawBefore) ||
     /[\r\n]\s*$/u.test(before)
   )
