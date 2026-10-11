@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
@@ -23,8 +23,18 @@ export function appBuilderRequire() {
   return createRequire(builderRequire.resolve("app-builder-lib/package.json"));
 }
 
-export function packagedAppProblems({ fuses, helperEntitlements }) {
+export function packagedAppProblems({ fuses, helperEntitlements, signatures }) {
+  const { app, helper } = signatures;
   return [
+    ...(app.team ? [] : ["Voice.app has no team identifier"]),
+    ...(helper.team === app.team
+      ? []
+      : [
+          helper.team
+            ? `voice-helper is signed by team ${helper.team}, Voice.app by ${app.team}`
+            : "voice-helper is ad hoc or unsigned",
+        ]),
+    ...(helper.runtime ? [] : ["voice-helper lacks the hardened runtime"]),
     ...Object.entries(REQUIRED_FUSES)
       .filter(([name, expected]) => fuses[name] !== expected)
       .map(
@@ -52,8 +62,18 @@ async function readFuses(app) {
   );
 }
 
+const helperPath = (app) => join(app, "Contents", "Resources", "bin", "voice-helper");
+
+function readSignature(path) {
+  const { stderr } = spawnSync("codesign", ["-dv", path], { encoding: "utf8" });
+  return {
+    team: /^TeamIdentifier=(\w+)$/m.exec(stderr)?.[1] ?? null,
+    runtime: /^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*\bruntime\b/m.test(stderr),
+  };
+}
+
 function readHelperEntitlements(app) {
-  const helper = join(app, "Contents", "Resources", "bin", "voice-helper");
+  const helper = helperPath(app);
   const xml = execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", helper], {
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -65,7 +85,11 @@ function readHelperEntitlements(app) {
 }
 
 export async function checkPackagedApp(app) {
-  const observed = { fuses: await readFuses(app), helperEntitlements: readHelperEntitlements(app) };
+  const observed = {
+    fuses: await readFuses(app),
+    helperEntitlements: readHelperEntitlements(app),
+    signatures: { app: readSignature(app), helper: readSignature(helperPath(app)) },
+  };
   const problems = packagedAppProblems(observed);
   if (problems.length > 0) {
     throw new Error(`Packaged app ${app} failed checks:\n${problems.join("\n")}`);

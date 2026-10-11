@@ -161,6 +161,8 @@ function run(command: SetupCommand): Promise<void> {
   switch (command.type) {
     case "installModel":
       return window.voice.installModel(command.id);
+    case "uninstallModel":
+      return window.voice.uninstallModel(command.id);
     case "requestPermission":
       return window.voice.requestPermission(command.kind);
   }

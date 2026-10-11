@@ -193,6 +193,33 @@ export async function prepareUserData(name) {
   return userData;
 }
 
+// Chromium and Node bind port 0 to a free port and print the one they got, so instances started
+// this way never share a port.
+export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
+  const ports = {};
+  return new Promise((resolvePorts, reject) => {
+    const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
+    const timer = setTimeout(
+      () => reject(new Error(`no ${missing()} port announced after ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+    const lines = createInterface({ input: child.stderr });
+    lines.on("line", (line) => {
+      const [, server, port] = /^(\w+) listening on ws:\/\/\S+?:(\d+)\//.exec(line) ?? [];
+      if (!servers.includes(server)) return;
+      ports[server] = Number(port);
+      if (servers.every((name) => name in ports)) {
+        clearTimeout(timer);
+        resolvePorts(ports);
+      }
+    });
+    lines.on("close", () => {
+      clearTimeout(timer);
+      reject(new Error(`exited before announcing its ${missing()} port`));
+    });
+  });
+}
+
 export function launchVoice(userData, { port, env: extraEnv = {} }) {
   const env = {
     ...process.env,

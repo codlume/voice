@@ -313,6 +313,7 @@ async function main() {
 
   const cleanup = createCleanup({
     modelsDir,
+    baseUrl: testMode ? process.env.VOICE_CLEANUP_MODEL_URL : undefined,
     shouldLoad: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
   });
@@ -609,7 +610,7 @@ async function main() {
   function assertCanUninstall(model: Model) {
     if (lifecycle !== "running") throw new Error("Voice is closing.");
     const { state } = store.state.models[model.id];
-    if (state === "downloading" || state === "loading") {
+    if (state === "loading" || (state === "downloading" && !model.cancelableDownload)) {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
     if (model.neededWhileDictating && dictating(store.state.session)) {

@@ -24,8 +24,14 @@ export type DownloadOptions = {
   signal?: AbortSignal | undefined;
 };
 
-export function downloadS1Mini(options: DownloadOptions): Promise<string> {
-  return downloadModel({ ...options, ...S1_MINI });
+const STALL_TIMEOUT_MS = 30_000;
+type StallOptions = { stallTimeoutMs?: number | undefined };
+
+export function downloadS1Mini({
+  baseUrl = S1_MINI.baseUrl,
+  ...options
+}: DownloadOptions & { baseUrl?: string | undefined }): Promise<string> {
+  return downloadModel({ ...options, ...S1_MINI, baseUrl });
 }
 
 // The Apache 2.0 naming clause requires shipping S1-mini's LICENSE and NOTICE with the weights.
@@ -39,15 +45,25 @@ export async function downloadModel({
   sha256,
   onProgress,
   signal,
-}: DownloadOptions & ModelSource): Promise<string> {
+  stallTimeoutMs,
+}: DownloadOptions & ModelSource & StallOptions): Promise<string> {
   const path = join(dir, file);
-  if (await matches(path, bytes, sha256)) return path;
+  if (await matches(path, bytes, sha256, signal)) return path;
 
   await mkdir(dir, { recursive: true });
   for (const name of LEGAL_FILES) {
-    await fetchToFile(`${baseUrl}/${name}`, join(dir, `${file}.${name}`), { signal });
+    await fetchToFile(`${baseUrl}/${name}`, join(dir, `${file}.${name}`), {
+      signal,
+      stallTimeoutMs,
+    });
   }
-  await fetchToFile(`${baseUrl}/${file}`, path, { bytes, sha256, onProgress, signal });
+  await fetchToFile(`${baseUrl}/${file}`, path, {
+    bytes,
+    sha256,
+    onProgress,
+    signal,
+    stallTimeoutMs,
+  });
   return path;
 }
 
@@ -78,14 +94,19 @@ export async function removeModel({ dir, file }: { dir: string; file: string }):
 }
 
 // Size first, because hashing half a gigabyte is the expensive half of the check.
-async function matches(path: string, bytes: number, sha256: string): Promise<boolean> {
+async function matches(
+  path: string,
+  bytes: number,
+  sha256: string,
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
   try {
     if ((await stat(path)).size !== bytes) return false;
   } catch {
     return false;
   }
   const hash = createHash("sha256");
-  await pipeline(createReadStream(path), hash);
+  await pipeline(createReadStream(path), hash, { signal });
   return hash.digest("hex") === sha256;
 }
 
@@ -97,41 +118,56 @@ async function fetchToFile(
     sha256,
     onProgress,
     signal,
-  }: Omit<DownloadOptions, "dir"> & Partial<Pick<ModelSource, "bytes" | "sha256">>,
+    stallTimeoutMs = STALL_TIMEOUT_MS,
+  }: Omit<DownloadOptions, "dir"> & Partial<Pick<ModelSource, "bytes" | "sha256">> & StallOptions,
 ): Promise<void> {
-  const response = await fetch(url, { signal: signal ?? null });
-  if (!response.ok || !response.body)
-    throw new Error(`Download of ${url} failed with HTTP ${response.status}`);
-
-  const part = `${path}.part`;
-  const handle = await open(part, "w");
+  const stall = new AbortController();
+  const timer = setTimeout(
+    () => stall.abort(new Error("Download stalled. Check your connection and try again.")),
+    stallTimeoutMs,
+  );
   try {
-    const hash = createHash("sha256");
-    let received = 0;
-    let reported = -1;
-    for await (const chunk of response.body) {
-      await handle.write(chunk);
-      hash.update(chunk);
-      received += chunk.byteLength;
-      if (bytes !== undefined && received > bytes) break;
-      const percent = bytes ? Math.floor((received / bytes) * 100) : 0;
-      if (onProgress && percent > reported) {
-        reported = percent;
-        onProgress(percent / 100);
+    const response = await fetch(url, {
+      signal: signal ? AbortSignal.any([signal, stall.signal]) : stall.signal,
+    });
+    timer.refresh();
+    if (!response.ok || !response.body)
+      throw new Error(`Download of ${url} failed with HTTP ${response.status}`);
+
+    const part = `${path}.part`;
+    const handle = await open(part, "w");
+    try {
+      const hash = createHash("sha256");
+      let received = 0;
+      let reported = -1;
+      for await (const chunk of response.body) {
+        timer.refresh();
+        await handle.write(chunk);
+        hash.update(chunk);
+        received += chunk.byteLength;
+        if (bytes !== undefined && received > bytes) break;
+        const percent = bytes ? Math.floor((received / bytes) * 100) : 0;
+        if (onProgress && percent > reported) {
+          reported = percent;
+          onProgress(percent / 100);
+        }
       }
+      clearTimeout(timer);
+      if (bytes !== undefined && received !== bytes) {
+        throw new Error(`Download of ${url} returned ${received} bytes, expected ${bytes}`);
+      }
+      if (sha256 !== undefined && hash.digest("hex") !== sha256) {
+        throw new Error(`Download of ${url} does not match the expected SHA-256`);
+      }
+      await handle.sync();
+      await handle.close();
+      await rename(part, path);
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await rm(part, { force: true });
+      throw error;
     }
-    if (bytes !== undefined && received !== bytes) {
-      throw new Error(`Download of ${url} returned ${received} bytes, expected ${bytes}`);
-    }
-    if (sha256 !== undefined && hash.digest("hex") !== sha256) {
-      throw new Error(`Download of ${url} does not match the expected SHA-256`);
-    }
-    await handle.sync();
-    await handle.close();
-    await rename(part, path);
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(part, { force: true });
-    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
