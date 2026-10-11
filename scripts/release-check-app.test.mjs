@@ -9,6 +9,10 @@ const compliant = {
     GrantFileProtocolExtraPrivileges: true,
   },
   helperEntitlements: [...HELPER_ENTITLEMENTS],
+  signatures: {
+    app: { team: "TEAM123456", runtime: true },
+    helper: { team: "TEAM123456", runtime: true },
+  },
 };
 
 test("a packaged app with the required fuses and helper entitlements passes", () => {
@@ -45,4 +49,22 @@ test("a helper without the audio input entitlement is a problem", () => {
   assert.deepEqual(packagedAppProblems({ ...compliant, helperEntitlements: [] }), [
     "voice-helper lacks entitlement com.apple.security.device.audio-input",
   ]);
+});
+
+test("an ad hoc helper inside a Developer ID app is a problem", () => {
+  assert.deepEqual(
+    packagedAppProblems({
+      ...compliant,
+      signatures: { ...compliant.signatures, helper: { team: null, runtime: false } },
+    }),
+    ["voice-helper is ad hoc or unsigned", "voice-helper lacks the hardened runtime"],
+  );
+});
+
+test("an app without a Developer ID team is a problem", () => {
+  const unsigned = { team: null, runtime: false };
+  assert.deepEqual(
+    packagedAppProblems({ ...compliant, signatures: { app: unsigned, helper: unsigned } }),
+    ["Voice.app has no team identifier", "voice-helper lacks the hardened runtime"],
+  );
 });
