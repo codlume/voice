@@ -256,6 +256,23 @@ describe("rewrite with the dictionary", () => {
     expect(fix("hello world", [])).toBe("hello world");
   });
 
+  test("a list too large for one regex leaves the text as it is instead of throwing", () => {
+    // About 20,000 ten-word phrases, well past where V8 refuses to compile the alternation.
+    const letters = "abcdefghijklmnopqrstuvwxyz";
+    const spell = (n: number) => {
+      let text = "";
+      do {
+        text += letters[n % 26];
+        n = Math.floor(n / 26);
+      } while (n > 0);
+      return text;
+    };
+    const phrase = (i: number) =>
+      Array.from({ length: 10 }, (_, k) => spell(i * 7 + k * 131 + 3)).join(" ");
+    const entries = Array.from({ length: 20_000 }, (_, i) => word(phrase(i)));
+    expect(fix("hello world", entries)).toBe("hello world");
+  });
+
   test("a dictation that is only a word keeps its punctuation and still goes through cleanup", () => {
     expect(rewrite("Hadrys.", { dictionary: [word("Hadryś")], snippets: [] })).toEqual(
       none("Hadryś."),

@@ -42,7 +42,15 @@ function compile({ dictionary, snippets }: Rewrites): Matcher {
     .toSorted((a, b) => b.length - a.length)
     .map(pattern)
     .join("|");
-  return { rules, regex: new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu") };
+  const regex = new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu");
+  // V8 compiles a regex on its first use and refuses one past about 20,000 long phrases. A
+  // hand-edited list that large then rewrites nothing, rather than failing every dictation.
+  try {
+    regex.test("");
+  } catch {
+    return { rules, regex: null };
+  }
+  return { rules, regex };
 }
 
 // Settings hand every session the same two arrays until the user edits a list, so one compiled
