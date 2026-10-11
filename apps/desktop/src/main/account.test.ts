@@ -72,7 +72,7 @@ describe("resolveApiUrl", () => {
     expect(API_URLS.nightly).toBe(API_URL);
     expect(
       resolveApiUrl({ development: false, release: { ...release, channel: "stable" }, env }),
-    ).toBeNull();
+    ).toBe("https://api.voice.codlume.com");
     expect(resolveApiUrl({ development: false, release: null, env })).toBeNull();
   });
 
