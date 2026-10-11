@@ -40,6 +40,7 @@ const base: Snapshot = {
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
     snippets: [],
+    dictionary: [],
     zoomLevel: 0,
   },
   microphones: {
@@ -327,6 +328,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
           snippets: patch.snippets ?? snapshot.settings.snippets,
+          dictionary: patch.dictionary ?? snapshot.settings.dictionary,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
         },
         updates: patch.updateChannel
