@@ -1,4 +1,4 @@
-import { phraseKey } from "./phrase.ts";
+import { phraseKey, samePhrase } from "./phrase.ts";
 
 export type Snippet = { id: string; trigger: string; expansion: string; enabled: boolean };
 
@@ -11,6 +11,7 @@ export type SnippetProblem = { field: "trigger" | "expansion"; message: string }
 export function snippetProblem(
   snippet: Snippet,
   others: readonly Snippet[],
+  dictionary: readonly { phrase: string }[],
 ): SnippetProblem | null {
   const { trigger, expansion } = snippet;
   if (trigger === "") return { field: "trigger", message: "Enter a trigger phrase." };
@@ -23,6 +24,9 @@ export function snippetProblem(
   const key = phraseKey(trigger);
   if (others.some((other) => phraseKey(other.trigger) === key)) {
     return { field: "trigger", message: "This trigger is already used by another snippet." };
+  }
+  if (dictionary.some((entry) => samePhrase(entry.phrase, trigger))) {
+    return { field: "trigger", message: "This trigger is already in your dictionary." };
   }
   if (expansion.trim() === "") {
     return { field: "expansion", message: "Enter the text Voice should type." };
@@ -47,7 +51,8 @@ export function parseSnippets(raw: unknown): Snippet[] {
     }
     // Snippets saved before the on/off switch existed have no `enabled` and stay on.
     const snippet = { id, trigger: trigger.trim(), expansion, enabled: enabled !== false };
-    if (kept.some((other) => other.id === id) || snippetProblem(snippet, kept)) continue;
+    // Loading keeps a trigger that is also a dictionary phrase; only the pages refuse new ones.
+    if (kept.some((other) => other.id === id) || snippetProblem(snippet, kept, [])) continue;
     kept.push(snippet);
   }
   return kept;

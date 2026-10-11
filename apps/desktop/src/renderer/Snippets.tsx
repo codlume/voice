@@ -4,7 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
-import { isSnippetTrigger, type DictionaryEntry } from "../shared/dictionary.ts";
+import type { DictionaryEntry } from "../shared/dictionary.ts";
 import {
   EXPANSION_MAX_LENGTH,
   snippetProblem,
@@ -250,11 +250,11 @@ function SnippetDialog({
   const { pending, error, run, clearError } = useAction();
   const text = editorText[mode];
   const snippet = { ...draft, trigger: draft.trigger.trim() };
-  const problem =
-    snippetProblem(
-      snippet,
-      snippets.filter((other) => other.id !== snippet.id),
-    ) ?? dictionaryConflict(snippet, dictionary);
+  const problem = snippetProblem(
+    snippet,
+    snippets.filter((other) => other.id !== snippet.id),
+    dictionary,
+  );
   const shown = saveAttempted ? problem : null;
 
   const edit = (patch: Partial<Snippet>) => {
@@ -346,15 +346,6 @@ function SnippetDialog({
     </Dialog.Root>
   );
 }
-
-// A trigger that is also a dictionary phrase would be rewritten before it could expand.
-const dictionaryConflict = (
-  snippet: Snippet,
-  dictionary: readonly DictionaryEntry[],
-): SnippetProblem | null =>
-  dictionary.some((entry) => isSnippetTrigger(entry.phrase, [snippet]))
-    ? { field: "trigger", message: "This trigger is already in your dictionary." }
-    : null;
 
 const messageFor = (field: SnippetProblem["field"], problem: SnippetProblem | null) =>
   problem?.field === field ? problem.message : undefined;

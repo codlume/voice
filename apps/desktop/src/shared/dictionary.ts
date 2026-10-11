@@ -1,4 +1,4 @@
-import { matchKey } from "./phrase.ts";
+import { samePhrase } from "./phrase.ts";
 import type { Snippet } from "./snippets.ts";
 
 // replacement null is a word: Voice rewrites the phrase with its saved spelling.
@@ -24,11 +24,10 @@ export function dictionaryProblem(
     return { field: "phrase", message: `Use ${PHRASE_MAX_LENGTH} characters or fewer.` };
   }
   // Two phrases the rewrite pass could not tell apart are one entry.
-  const key = matchKey(phrase);
-  if (others.some((other) => matchKey(other.phrase) === key)) {
+  if (others.some((other) => samePhrase(other.phrase, phrase))) {
     return { field: "phrase", message: "This phrase is already in your dictionary." };
   }
-  if (isSnippetTrigger(phrase, snippets)) {
+  if (snippets.some((snippet) => samePhrase(snippet.trigger, phrase))) {
     return { field: "phrase", message: "This phrase is already a snippet trigger." };
   }
   if (replacement === null) return null;
@@ -41,18 +40,8 @@ export function dictionaryProblem(
   return null;
 }
 
-// A dictionary phrase that is also a snippet trigger would shadow it, or be shadowed by it.
-export function isSnippetTrigger(phrase: string, snippets: readonly Snippet[]): boolean {
-  const key = matchKey(phrase);
-  return snippets.some((snippet) => matchKey(snippet.trigger) === key);
-}
-
-// Snippets default to none, so loading a settings file never drops an entry that a snippet saved
-// later collides with; saves check that through `snippets`.
-export function parseDictionary(
-  raw: unknown,
-  snippets: readonly Snippet[] = [],
-): DictionaryEntry[] {
+// Loading keeps an entry that is also a snippet trigger; only the pages refuse new ones.
+export function parseDictionary(raw: unknown): DictionaryEntry[] {
   if (!Array.isArray(raw)) return [];
   const kept: DictionaryEntry[] = [];
   for (const item of raw) {
@@ -61,9 +50,7 @@ export function parseDictionary(
     if (typeof id !== "string" || typeof phrase !== "string") continue;
     if (replacement !== null && typeof replacement !== "string") continue;
     const entry = { id, phrase: phrase.trim(), replacement: replacement?.trim() ?? null };
-    if (kept.some((other) => other.id === id) || dictionaryProblem(entry, kept, snippets)) {
-      continue;
-    }
+    if (kept.some((other) => other.id === id) || dictionaryProblem(entry, kept, [])) continue;
     kept.push(entry);
   }
   return kept;

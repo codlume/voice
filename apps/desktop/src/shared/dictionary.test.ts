@@ -101,13 +101,4 @@ describe("parseDictionary", () => {
     expect(parseDictionary({ 0: { id: "1", phrase: "x", replacement: null } })).toEqual([]);
     expect(parseDictionary(undefined)).toEqual([]);
   });
-
-  test("drops snippet triggers only when snippets are given", () => {
-    const raw = [{ id: "1", phrase: "my email", replacement: null }];
-    const snippets: Snippet[] = [
-      { id: "s", trigger: "My email", expansion: "a@example.com", enabled: true },
-    ];
-    expect(parseDictionary(raw)).toHaveLength(1);
-    expect(parseDictionary(raw, snippets)).toEqual([]);
-  });
 });

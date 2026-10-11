@@ -268,7 +268,6 @@ describe("applyPatch", () => {
     ["a duplicate phrase", [WORD, { ...REPLACEMENT, phrase: "WISPR  flow" }]],
     ["a record missing its replacement", [WORD, { id: "2", phrase: "btw" }]],
     ["a blank replacement", [WORD, { ...REPLACEMENT, replacement: " " }]],
-    ["a phrase that is a snippet trigger", [WORD, { ...REPLACEMENT, phrase: "My Email" }]],
     ["a list that is not an array", { 0: WORD }],
   ])("refuses to save a dictionary with %s instead of dropping any", (_, dictionary) => {
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET], dictionary: [WORD] });
@@ -276,17 +275,22 @@ describe("applyPatch", () => {
     expect(() => applyPatch(saved, patch)).toThrow("Could not save this dictionary.");
   });
 
-  test("refuses a snippet whose trigger is already a dictionary phrase", () => {
-    const saved = applyPatch(DEFAULT_SETTINGS, { dictionary: [{ ...WORD, phrase: "My Email" }] });
-    expect(() => applyPatch(saved, { snippets: [VALID_SNIPPET] })).toThrow(
-      "Could not save these snippets.",
-    );
-    expect(saved.snippets).toEqual([]);
-  });
-
-  test("refuses a dictionary phrase that a snippet in the same patch uses as its trigger", () => {
-    const patch = { snippets: [VALID_SNIPPET], dictionary: [{ ...WORD, phrase: "my email" }] };
-    expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save this dictionary.");
+  test("a phrase that is also a snippet trigger never blocks a save of either list", () => {
+    const shadow = { ...WORD, phrase: "My Email" };
+    const other = { id: "2", trigger: "sig", expansion: "Best, A", enabled: true };
+    const saved = applyPatch(DEFAULT_SETTINGS, {
+      snippets: [VALID_SNIPPET, other],
+      dictionary: [shadow],
+    });
+    expect(saved.dictionary).toEqual([shadow]);
+    expect(applyPatch(saved, { snippets: [VALID_SNIPPET] }).snippets).toEqual([VALID_SNIPPET]);
+    expect(
+      applyPatch(saved, { snippets: [VALID_SNIPPET, { ...other, enabled: false }] }).snippets[1],
+    ).toEqual({ ...other, enabled: false });
+    expect(applyPatch(saved, { dictionary: [shadow, REPLACEMENT] }).dictionary).toEqual([
+      shadow,
+      REPLACEMENT,
+    ]);
   });
 });
 

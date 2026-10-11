@@ -8,7 +8,10 @@ export const phraseKey = (text: string) => text.toLowerCase().replace(/[\p{P}\p{
 export const withoutAccents = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "");
 
 // What the rewrite pass treats as one phrase: case, accents, and runs of whitespace never tell two
-// phrases apart, punctuation does, so "e-mail" and "email" are different phrases. A dictionary
-// phrase and a snippet trigger with the same key would shadow each other, so the pages refuse one.
+// phrases apart, punctuation does, so "e-mail" and "email" are different phrases.
 export const matchKey = (text: string) =>
   withoutAccents(text).toLowerCase().trim().split(/\s+/u).join(" ");
+
+// A dictionary phrase and a snippet trigger that are the same phrase would shadow each other, so
+// both pages refuse the second one. Loading a settings file keeps such a pair.
+export const samePhrase = (a: string, b: string) => matchKey(a) === matchKey(b);

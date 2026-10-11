@@ -10,7 +10,7 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { hotkeys } from "../shared/api.ts";
-import { isSnippetTrigger, parseDictionary } from "../shared/dictionary.ts";
+import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
@@ -79,16 +79,8 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     throw new Error("Could not save these snippets.");
   }
   if (
-    snippets !== undefined &&
-    dictionary === undefined &&
-    settings.dictionary.some((entry) => isSnippetTrigger(entry.phrase, snippets))
-  ) {
-    throw new Error("Could not save these snippets.");
-  }
-  if (
     dictionary !== undefined &&
-    (!Array.isArray(dictionary) ||
-      parseDictionary(dictionary, snippets ?? settings.snippets).length !== dictionary.length)
+    (!Array.isArray(dictionary) || parseDictionary(dictionary).length !== dictionary.length)
   ) {
     throw new Error("Could not save this dictionary.");
   }

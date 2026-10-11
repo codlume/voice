@@ -19,8 +19,8 @@ const email = snippet("1", "my email", EMAIL);
 
 describe("snippetProblem", () => {
   test("a valid snippet has no problem beside other triggers", () => {
-    expect(snippetProblem(email, [])).toBeNull();
-    expect(snippetProblem(email, [snippet("2", "my address", "1 Main St")])).toBeNull();
+    expect(snippetProblem(email, [], [])).toBeNull();
+    expect(snippetProblem(email, [snippet("2", "my address", "1 Main St")], [])).toBeNull();
   });
 
   test.each([
@@ -31,18 +31,18 @@ describe("snippetProblem", () => {
     ["\u0007", "trigger"],
     ["x".repeat(TRIGGER_MAX_LENGTH + 1), "trigger"],
   ] as const)("trigger %j is rejected", (trigger, field) => {
-    expect(snippetProblem({ ...email, trigger }, [])?.field).toBe(field);
+    expect(snippetProblem({ ...email, trigger }, [], [])?.field).toBe(field);
   });
 
   test.each(["", " \n\t ", "x".repeat(EXPANSION_MAX_LENGTH + 1)])(
     "expansion of length %# is rejected",
     (expansion) => {
-      expect(snippetProblem({ ...email, expansion }, [])?.field).toBe("expansion");
+      expect(snippetProblem({ ...email, expansion }, [], [])?.field).toBe("expansion");
     },
   );
 
   test("a trigger another snippet already uses, up to case and punctuation, is rejected", () => {
-    const problem = snippetProblem(snippet("2", "My-Email!", "other"), [email]);
+    const problem = snippetProblem(snippet("2", "My-Email!", "other"), [email], []);
     expect(problem).toEqual({
       field: "trigger",
       message: "This trigger is already used by another snippet.",
@@ -51,14 +51,28 @@ describe("snippetProblem", () => {
 
   test("a switched-off snippet still holds its trigger", () => {
     const off = { ...email, enabled: false };
-    expect(snippetProblem(snippet("2", "My Email", "other"), [off])?.message).toBe(
+    expect(snippetProblem(snippet("2", "My Email", "other"), [off], [])?.message).toBe(
       "This trigger is already used by another snippet.",
     );
   });
 
+  test("a trigger that is a dictionary phrase is rejected, whatever its case, accents, or spacing", () => {
+    const dictionary = [{ phrase: "Hadryś  signature" }];
+    expect(snippetProblem(snippet("2", "hadrys SIGNATURE", ""), [], dictionary)).toEqual({
+      field: "trigger",
+      message: "This trigger is already in your dictionary.",
+    });
+  });
+
+  test("a trigger that differs from a dictionary phrase only in punctuation is accepted", () => {
+    expect(snippetProblem(snippet("2", "e-mail", "x"), [], [{ phrase: "email" }])).toBeNull();
+  });
+
   test("a message never repeats the expansion", () => {
     const secret = "s3cret-token ".repeat(400);
-    expect(snippetProblem({ ...email, expansion: secret }, [])?.message).not.toContain("s3cret");
+    expect(snippetProblem({ ...email, expansion: secret }, [], [])?.message).not.toContain(
+      "s3cret",
+    );
   });
 });
 
