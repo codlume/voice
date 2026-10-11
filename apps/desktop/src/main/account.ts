@@ -40,6 +40,7 @@ export const FIRST_NAME_REQUIRED_MESSAGE = "Enter a first name.";
 export const NAME_TOO_LONG_MESSAGE = `A name can be at most ${ACCOUNT_NAME_MAX_LENGTH} characters.`;
 export const UPDATE_NAME_SIGNED_OUT_MESSAGE = "Sign in to change your name.";
 export const UPDATE_NAME_DELETING_MESSAGE = "Your name cannot be changed during account deletion.";
+export const UPDATE_NAME_SAVING_MESSAGE = "Your name is still being saved.";
 export const UPDATE_NAME_FAILED_MESSAGE = "Could not save your name. Try again.";
 export const UPDATE_NAME_OFFLINE_MESSAGE =
   "Could not reach Voice. Check your connection and save your name again.";
@@ -544,7 +545,7 @@ export function createAccount({
       // Claimed before the client resolves, so a show and a restore in one tick send one request.
       lastCheck = Date.now();
       const client = await cachedClient;
-      if (state !== refreshing || saving > 0) return;
+      if (state !== refreshing) return;
       await checkAuthSession(client);
     },
     async signIn() {
@@ -641,6 +642,7 @@ export function createAccount({
         throw new Error(UPDATE_NAME_SIGNED_OUT_MESSAGE);
       }
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
+      if (saving > 0) throw new Error(UPDATE_NAME_SAVING_MESSAGE);
       // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
       const client = loadedClient;

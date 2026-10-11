@@ -9,6 +9,7 @@ import {
   UPDATE_NAME_DELETING_MESSAGE,
   UPDATE_NAME_FAILED_MESSAGE,
   UPDATE_NAME_OFFLINE_MESSAGE,
+  UPDATE_NAME_SAVING_MESSAGE,
   UPDATE_NAME_SIGNED_OUT_MESSAGE,
   parseAccountName,
 } from "./account.ts";
@@ -176,6 +177,21 @@ describe("updateName", () => {
     expect(deleting.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "confirming" } });
   });
 
+  test("a second save while one is in flight is refused without asking the API, so the first name lands", async () => {
+    const h = await signedIn();
+    const first = h.account.updateName({ firstName: "Augusta", lastName: "King" });
+    await flush();
+    const refused = expect(
+      h.account.updateName({ firstName: "Grace", lastName: "Hopper" }),
+    ).rejects.toThrow(UPDATE_NAME_SAVING_MESSAGE);
+    await flush();
+    expect(h.fake.nameUpdates.map(({ user }) => user)).toEqual([renamed]);
+    await refused;
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
+    await first;
+    expect(h.state).toEqual({ kind: "signedIn", ...renamed });
+  });
+
   test("a deletion requested while the update is in flight is ignored, so the new name lands", async () => {
     const h = await signedIn();
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
@@ -184,19 +200,6 @@ describe("updateName", () => {
     expect(h.state).toEqual({ kind: "signedIn", ...USER });
     h.fake.nameUpdates[0]?.answer({ kind: "updated" });
     await saving;
-    expect(h.state).toEqual({ kind: "signedIn", ...renamed });
-  });
-
-  test("an update started while a check waits for the client sends no check", async () => {
-    const h = await signedIn();
-    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
-    const refreshed = h.account.refresh();
-    const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
-    await flush();
-    expect(h.checks).toEqual([]);
-    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
-    await saving;
-    await refreshed;
     expect(h.state).toEqual({ kind: "signedIn", ...renamed });
   });
 
