@@ -257,3 +257,25 @@ test("removing filler preserves the preceding raw sentence boundary", () => {
   expect(texts(chunks)).toEqual([first, "um", next]);
   expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + " " + outputs[2]);
 });
+
+test.each(["um.", "um. uh"])("removed %j still carries a raw sentence boundary", (filler) => {
+  const first = "call ada about " + "the release notes ".repeat(21) + "today";
+  const next = "then " + "review the release notes carefully ".repeat(11) + "on friday";
+  const raw = first + " " + filler + " " + next;
+  const chunks = chunkTranscript(raw, 400, chars);
+  const outputs = chunks.map(({ text }) =>
+    text === filler ? "" : text[0]!.toUpperCase() + text.slice(1),
+  );
+  expect(texts(chunks)).toEqual([first, filler, next]);
+  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + " " + outputs[2]);
+});
+
+test.each([
+  ["(", ")"],
+  ["[", "]"],
+])("opening %s keeps mid-sentence word casing", (open, close) => {
+  const raw = `please check ${open}especially the footer${close} before publishing`;
+  const chunks = chunkTranscript(raw, 12, chars);
+  const outputs = chunks.map(({ text }) => text.replace(`${open}especially`, `${open}Especially`));
+  expect(stitch(raw, chunks, outputs)).toBe(raw);
+});
