@@ -82,7 +82,10 @@ export function stitch(
   let text = "";
   kept.forEach(({ index, chunk, output }, k) => {
     if (k > 0) text += separator(raw, chunks, kept[k - 1]!.index, index);
-    text += output === undefined ? chunk.text : lowercaseContinuation(text, chunk.text, output);
+    text +=
+      output === undefined
+        ? chunk.text
+        : lowercaseContinuation(raw.slice(0, chunk.start), text, chunk.text, output);
   });
   return text;
 }
@@ -98,8 +101,19 @@ function separator(raw: string, chunks: readonly Chunk[], from: number, to: numb
 
 const firstWord = (text: string) => /^[\p{L}\p{N}'’]+/u.exec(text)?.[0];
 
-function lowercaseContinuation(before: string, rawChunk: string, output: string): string {
-  if (!before || TERMINAL_END.test(before) || /[\r\n]\s*$/u.test(before)) return output;
+function lowercaseContinuation(
+  rawBefore: string,
+  before: string,
+  rawChunk: string,
+  output: string,
+): string {
+  if (
+    !before ||
+    TERMINAL_END.test(before) ||
+    TERMINAL_END.test(rawBefore) ||
+    /[\r\n]\s*$/u.test(rawBefore)
+  )
+    return output;
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
   const word = firstWord(rawChunk);
   if (!word || word === "i" || /^i['’]/.test(word)) return output;
