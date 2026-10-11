@@ -10,6 +10,7 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { hotkeys } from "../shared/api.ts";
+import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cleanup: { enabled: true, styling: "semi-formal" },
   diagnostics: "off",
   snippets: [],
+  dictionary: [],
   zoomLevel: 0,
 };
 
@@ -62,18 +64,25 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
     snippets: parseSnippets(r.snippets),
+    dictionary: parseDictionary(r.dictionary),
     zoomLevel: parseZoomLevel(r.zoomLevel),
   };
 }
 
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
-  const { snippets } = patch;
-  // Parsing drops invalid snippets; refuse the save rather than lose text the user just typed.
+  const { snippets, dictionary } = patch;
+  // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
   if (
     snippets !== undefined &&
     (!Array.isArray(snippets) || parseSnippets(snippets).length !== snippets.length)
   ) {
     throw new Error("Could not save these snippets.");
+  }
+  if (
+    dictionary !== undefined &&
+    (!Array.isArray(dictionary) || parseDictionary(dictionary).length !== dictionary.length)
+  ) {
+    throw new Error("Could not save this dictionary.");
   }
   return parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
@@ -88,6 +97,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
     snippets: snippets ?? settings.snippets,
+    dictionary: dictionary ?? settings.dictionary,
     zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
   });
 }

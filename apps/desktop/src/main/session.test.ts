@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
+import type { DictionaryEntry } from "../shared/dictionary.ts";
+import type { Rewrites } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
 
 import {
@@ -37,12 +39,9 @@ const down = (now: number, asr: ModelStatus["state"] = "ready") =>
 const up = (now: number) => [{ type: "hotkeyUp" }, now] as [SessionEvent, number];
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
-const transcript = (
-  text: string,
-  cleanup: boolean,
-  now = 2000,
-  snippets: readonly Snippet[] = [],
-) => [{ type: "transcript", id: ID, text, cleanup, snippets }, now] as [SessionEvent, number];
+const NONE: Rewrites = { dictionary: [], snippets: [] };
+const transcript = (text: string, cleanup: boolean, now = 2000, rewrites = NONE) =>
+  [{ type: "transcript", id: ID, text, cleanup, rewrites }, now] as [SessionEvent, number];
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
 const toTranscribing: [SessionEvent, number][] = [...toRecording, up(1000)];
@@ -356,13 +355,13 @@ describe("snippets", () => {
     [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
   const cleaningSentence = [
     ...toTranscribing,
-    transcript("send it to my email", true, 2000, snippets),
+    transcript("send it to my email", true, 2000, { ...NONE, snippets }),
   ];
 
   test("a dictation that is only a trigger types the expansion and skips cleanup", () => {
     const { state, effects } = run([
       ...toTranscribing,
-      transcript("My email.", true, 2000, snippets),
+      transcript("My email.", true, 2000, { ...NONE, snippets }),
     ]);
     expect(state).toEqual({ phase: "inserting", id: ID, raw: "My email.", text: EMAIL });
     expect(effects).toEqual([
@@ -374,7 +373,7 @@ describe("snippets", () => {
   test("without cleanup a trigger inside the sentence is expanded", () => {
     const { effects } = run([
       ...toTranscribing,
-      transcript("send it to my email", false, 2000, snippets),
+      transcript("send it to my email", false, 2000, { ...NONE, snippets }),
     ]);
     expect(effects).toContainEqual({ type: "insert", id: ID, text: `send it to ${EMAIL}` });
   });
@@ -404,7 +403,7 @@ describe("snippets", () => {
   test("a cleanup that turned a sentence into only the trigger types the expansion alone", () => {
     const { effects } = run([
       ...toTranscribing,
-      transcript("um my email", true, 2000, snippets),
+      transcript("um my email", true, 2000, { ...NONE, snippets }),
       cleaned("My email."),
     ]);
     expect(effects).toContainEqual({ type: "insert", id: ID, text: EMAIL });
@@ -425,8 +424,93 @@ describe("snippets", () => {
     const signature: Snippet[] = [
       { id: "1", trigger: "sign off", expansion: "Best,\nAlex\n", enabled: true },
     ];
-    const { effects } = run([...toTranscribing, transcript("Sign off.", false, 2000, signature)]);
+    const { effects } = run([
+      ...toTranscribing,
+      transcript("Sign off.", false, 2000, { ...NONE, snippets: signature }),
+    ]);
     expect(effects).toContainEqual({ type: "insert", id: ID, text: "Best,\nAlex\n" });
+  });
+});
+
+describe("dictionary", () => {
+  const dictionary: DictionaryEntry[] = [
+    { id: "1", phrase: "Wispr Flow", replacement: null },
+    { id: "2", phrase: "Hadryś", replacement: null },
+    { id: "3", phrase: "btw", replacement: "by the way" },
+    { id: "4", phrase: "idk", replacement: "see my signature" },
+  ];
+  const snippets: Snippet[] = [
+    { id: "s", trigger: "my signature", expansion: "wispr flow, btw, hadrys", enabled: true },
+  ];
+  const RAW = "btw ask hadrys about wispr flow";
+  const FIXED = "by the way ask Hadryś about Wispr Flow";
+  const cleaned = (text: string) =>
+    [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
+  const said = (text: string, cleanup: boolean) =>
+    transcript(text, cleanup, 2000, { dictionary, snippets });
+  const cleaning = [...toTranscribing, said(RAW, true)];
+
+  test("without cleanup the transcript is fixed while the raw text is remembered untouched", () => {
+    const { effects } = run([...toTranscribing, said(RAW, false)]);
+    expect(effects).toEqual([
+      { type: "remember", raw: RAW, text: FIXED },
+      { type: "insert", id: ID, text: FIXED },
+    ]);
+  });
+
+  test("cleanup gets the raw transcript and its result is fixed", () => {
+    const { effects: sent } = run(cleaning);
+    expect(sent).toEqual([
+      { type: "remember", raw: RAW, text: FIXED },
+      { type: "cleanup", id: ID, raw: RAW },
+    ]);
+    const { effects } = run([...cleaning, cleaned("BTW, ask hadrys about wispr  flow.")]);
+    expect(effects).toEqual([
+      { type: "remember", raw: RAW, text: "by the way, ask Hadryś about Wispr Flow." },
+      { type: "insert", id: ID, text: "by the way, ask Hadryś about Wispr Flow." },
+    ]);
+  });
+
+  test("a cleanup failure inserts the fixed raw transcript", () => {
+    const { effects } = run([...cleaning, [{ type: "cleanupFailed", id: ID }, 2300]]);
+    expect(effects).toEqual([
+      { type: "remember", raw: RAW, text: FIXED },
+      { type: "insert", id: ID, text: FIXED },
+    ]);
+  });
+
+  test("a cleanup that dropped a trigger falls back to the fixed, expanded raw transcript", () => {
+    const { effects } = run([
+      ...toTranscribing,
+      said("hadrys wants my signature", true),
+      cleaned("Hadrys wants it."),
+    ]);
+    expect(effects).toContainEqual({
+      type: "insert",
+      id: ID,
+      text: "Hadryś wants wispr flow, btw, hadrys",
+    });
+  });
+
+  test("a dictation that is only a trigger types the expansion untouched", () => {
+    const { effects } = run([...toTranscribing, said("My signature.", true)]);
+    expect(effects).toEqual([
+      { type: "remember", raw: "My signature.", text: "wispr flow, btw, hadrys" },
+      { type: "insert", id: ID, text: "wispr flow, btw, hadrys" },
+    ]);
+  });
+
+  test("a replacement whose text contains a trigger is typed as saved on every path", () => {
+    const inserts = (events: [SessionEvent, number][]) =>
+      run(events).all.filter((effect) => effect.type === "insert");
+    const typed = [{ type: "insert", id: ID, text: "see my signature" }];
+    expect(inserts([...toTranscribing, said("idk", false)])).toEqual(typed);
+    expect(inserts([...toTranscribing, said("idk", true), cleaned("Idk.")])).toEqual([
+      { type: "insert", id: ID, text: "see my signature." },
+    ]);
+    expect(
+      inserts([...toTranscribing, said("idk", true), [{ type: "cleanupFailed", id: ID }, 2300]]),
+    ).toEqual(typed);
   });
 });
 
@@ -494,7 +578,10 @@ describe("idle and stale events", () => {
       id: "old",
       text: "late words",
       cleanup: true,
-      snippets: [{ id: "1", trigger: "late words", expansion: "never typed", enabled: true }],
+      rewrites: {
+        dictionary: [{ id: "1", phrase: "late", replacement: "never typed" }],
+        snippets: [{ id: "1", trigger: "late words", expansion: "never typed", enabled: true }],
+      },
     };
     const remember: Effect = { type: "remember", raw: "late words", text: "late words" };
     expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });
@@ -502,7 +589,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
     expect(effects).toEqual([remember]);
     expect(
-      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false, snippets: [] }, 0),
+      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false, rewrites: NONE }, 0),
     ).toEqual({
       state: idle,
       effects: [],
@@ -577,7 +664,7 @@ describe("idle and stale events", () => {
     expect(
       step(
         timedOut,
-        { type: "transcript", id: "s2", text: "x", cleanup: false, snippets: [] },
+        { type: "transcript", id: "s2", text: "x", cleanup: false, rewrites: NONE },
         41_000,
       ),
     ).toEqual({ state: timedOut, effects: [{ type: "remember", raw: "x", text: "x" }] });

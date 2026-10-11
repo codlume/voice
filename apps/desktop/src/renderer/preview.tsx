@@ -49,6 +49,7 @@ const base: Snapshot = {
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
     snippets: [],
+    dictionary: [],
     zoomLevel: 0,
   },
   microphones: {
@@ -204,6 +205,24 @@ const hubScenes: Record<string, Snapshot> = {
       ],
     },
   },
+  dictionary: {
+    ...ready,
+    settings: {
+      ...ready.settings,
+      snippets: [{ id: "email", trigger: "my email", expansion: "ada@example.com", enabled: true }],
+      dictionary: [
+        { id: "flow", phrase: "Wispr Flow", replacement: null },
+        { id: "name", phrase: "Hadryś", replacement: null },
+        { id: "btw", phrase: "btw", replacement: "by the way" },
+        {
+          id: "office",
+          phrase: "office hours",
+          replacement:
+            "Tuesdays and Thursdays from 14:00 to 16:00 in room 4.12, or by appointment over email if neither slot works for you",
+        },
+      ],
+    },
+  },
   nightly: {
     ...ready,
     settings: { ...ready.settings, updateChannel: "nightly" },
@@ -334,6 +353,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
           snippets: patch.snippets ?? snapshot.settings.snippets,
+          dictionary: patch.dictionary ?? snapshot.settings.dictionary,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
         },
         updates: patch.updateChannel

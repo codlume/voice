@@ -104,6 +104,7 @@ describe("parseSettings", () => {
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
       snippets: [],
+      dictionary: [],
       zoomLevel: 0,
     });
   });
@@ -176,6 +177,7 @@ describe("applyPatch", () => {
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
       snippets: [],
+      dictionary: [],
       zoomLevel: 0,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
@@ -242,12 +244,71 @@ describe("applyPatch", () => {
   });
 
   test.each([
-    ["a duplicate trigger", [VALID_SNIPPET, { ...VALID_SNIPPET, id: "2", trigger: "My Email!" }]],
+    ["a duplicate id", [VALID_SNIPPET, { ...VALID_SNIPPET, trigger: "address" }]],
     ["a record missing its expansion", [VALID_SNIPPET, { id: "2", trigger: "address" }]],
     ["a list that is not an array", { 0: VALID_SNIPPET }],
   ])("refuses to save snippets with %s instead of dropping any", (_, snippets) => {
     const patch = { snippets } as unknown as SettingsPatch;
     expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save these snippets.");
+  });
+
+  const WORD = { id: "1", phrase: "Wispr Flow", replacement: null };
+  const REPLACEMENT = { id: "2", phrase: "btw", replacement: "by the way" };
+
+  test("saves a dictionary and keeps it through other changes", () => {
+    const saved = applyPatch(DEFAULT_SETTINGS, { dictionary: [WORD, REPLACEMENT] });
+    expect(applyPatch(saved, { theme: "dark" }).dictionary).toEqual([WORD, REPLACEMENT]);
+    expect(applyPatch(saved, { snippets: [VALID_SNIPPET] }).dictionary).toEqual([
+      WORD,
+      REPLACEMENT,
+    ]);
+  });
+
+  test.each([
+    ["a duplicate id", [WORD, { ...REPLACEMENT, id: WORD.id }]],
+    ["a replacement that is not text", [WORD, { ...REPLACEMENT, replacement: 42 }]],
+    ["a list that is not an array", { 0: WORD }],
+  ])("refuses to save a dictionary with %s instead of dropping any", (_, dictionary) => {
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET], dictionary: [WORD] });
+    const patch = { dictionary } as unknown as SettingsPatch;
+    expect(() => applyPatch(saved, patch)).toThrow("Could not save this dictionary.");
+  });
+
+  test("saves a hand-written word that leaves out its replacement", () => {
+    const patch = { dictionary: [{ id: "2", phrase: "Hadryś" }] } as unknown as SettingsPatch;
+    expect(applyPatch(DEFAULT_SETTINGS, patch).dictionary).toEqual([
+      { id: "2", phrase: "Hadryś", replacement: null },
+    ]);
+  });
+
+  test("a phrase that is also a snippet trigger never blocks a save of either list", () => {
+    const shadow = { ...WORD, phrase: "My Email" };
+    const other = { id: "2", trigger: "sig", expansion: "Best, A", enabled: true };
+    const saved = applyPatch(DEFAULT_SETTINGS, {
+      snippets: [VALID_SNIPPET, other],
+      dictionary: [shadow],
+    });
+    expect(saved.dictionary).toEqual([shadow]);
+    expect(applyPatch(saved, { snippets: [VALID_SNIPPET] }).snippets).toEqual([VALID_SNIPPET]);
+    expect(
+      applyPatch(saved, { snippets: [VALID_SNIPPET, { ...other, enabled: false }] }).snippets[1],
+    ).toEqual({ ...other, enabled: false });
+    expect(applyPatch(saved, { dictionary: [shadow, REPLACEMENT] }).dictionary).toEqual([
+      shadow,
+      REPLACEMENT,
+    ]);
+  });
+
+  test("two loaded triggers the page would refuse as one never block a later save", () => {
+    const twins = [
+      { id: "a", trigger: "café", expansion: "Café Nero", enabled: true },
+      { id: "b", trigger: "cafe", expansion: "coffee", enabled: true },
+      VALID_SNIPPET,
+    ];
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: twins });
+    expect(saved.snippets).toEqual(twins);
+    const toggled = [twins[0]!, twins[1]!, { ...VALID_SNIPPET, enabled: false }];
+    expect(applyPatch(saved, { snippets: toggled }).snippets).toEqual(toggled);
   });
 });
 
@@ -315,10 +376,44 @@ describe("load and save", () => {
     await writeFile(
       file,
       JSON.stringify({
-        snippets: [valid, { id: "2", trigger: "My Email!", expansion: "x" }, { id: "3" }],
+        snippets: [valid, { id: "2", trigger: "   ", expansion: "x" }, { id: "3" }],
       }),
     );
     expect(loadSettings(file).snippets).toEqual([{ ...valid, enabled: true }]);
+  });
+
+  test("a settings file from before the dictionary loads with an empty one", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { dictionary: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, dictionary: [] });
+  });
+
+  test("a damaged dictionary entry is dropped while the others load", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const word = { id: "1", phrase: "Wispr Flow", replacement: null };
+    const replacement = { id: "2", phrase: "btw", replacement: "by the way" };
+    await writeFile(
+      file,
+      JSON.stringify({
+        dictionary: [
+          word,
+          { id: "3", phrase: "?!", replacement: null },
+          { id: "4", phrase: "idk", replacement: 42 },
+          { id: "5" },
+          replacement,
+        ],
+      }),
+    );
+    expect(loadSettings(file).dictionary).toEqual([word, replacement]);
+  });
+
+  test("a dictionary phrase that matches a snippet trigger still loads", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const snippets = [{ id: "s", trigger: "my email", expansion: "name@example.com" }];
+    const dictionary = [{ id: "1", phrase: "My Email", replacement: null }];
+    await writeFile(file, JSON.stringify({ snippets, dictionary }));
+    expect(loadSettings(file).dictionary).toEqual(dictionary);
   });
 
   test("a corrupt file yields defaults", async () => {
@@ -345,6 +440,10 @@ describe("load and save", () => {
       theme: "dark",
       cleanup: { enabled: false },
       snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n", enabled: false }],
+      dictionary: [
+        { id: "1", phrase: "Hadryś", replacement: null },
+        { id: "2", phrase: "btw", replacement: "by the way" },
+      ],
       zoomLevel: 1.5,
     });
     await saveSettings(file, settings);

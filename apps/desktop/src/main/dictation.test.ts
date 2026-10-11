@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import type { ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
@@ -42,6 +43,7 @@ type Options = {
   cleanPartial?: boolean;
   copyToClipboard?: boolean;
   snippets?: readonly Snippet[];
+  dictionary?: readonly DictionaryEntry[];
 };
 
 function harness(opts: Options = {}) {
@@ -64,6 +66,7 @@ function harness(opts: Options = {}) {
       dictationLanguage: opts.dictationLanguage ?? DEFAULT_SETTINGS.dictationLanguage,
       copyToClipboard: opts.copyToClipboard ?? DEFAULT_SETTINGS.copyToClipboard,
       snippets: opts.snippets ?? DEFAULT_SETTINGS.snippets,
+      dictionary: opts.dictionary ?? DEFAULT_SETTINGS.dictionary,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
         styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
@@ -471,6 +474,14 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion });
     expect(h.store.state.last).toEqual({ raw: "Sign off.", text: expansion });
+  });
+
+  test("the saved dictionary fixes the cleaned text while cleanup and history get the raw words", async () => {
+    const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
+    const id = await dictate(h, "ask hadrys");
+    expect(h.cleans).toEqual(["ask hadrys"]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "ask Hadryś." });
+    expect(h.store.state.last).toEqual({ raw: "ask hadrys", text: "ask Hadryś." });
   });
 
   test.each([

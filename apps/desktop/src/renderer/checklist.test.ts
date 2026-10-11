@@ -28,6 +28,7 @@ const fresh: Snapshot = {
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
     snippets: [],
+    dictionary: [],
     zoomLevel: 0,
   },
   microphones: {
