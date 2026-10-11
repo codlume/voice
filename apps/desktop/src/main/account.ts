@@ -8,10 +8,8 @@ import {
 import { errorType, type Log } from "./diagnostics-scrub.ts";
 import type { ReleaseConfig } from "./updates.ts";
 
-// The API base URL per release channel. Stable stays empty until the Stable API answers its
-// health check, and an empty entry shows accounts as unavailable.
-export const API_URLS: Record<UpdateChannel, string | null> = {
-  stable: null,
+export const API_URLS: Record<UpdateChannel, string> = {
+  stable: "https://api.voice.codlume.com",
   nightly: "https://api-nightly.voice.codlume.com",
 };
 
