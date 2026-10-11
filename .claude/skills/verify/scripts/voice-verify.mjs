@@ -26,6 +26,7 @@ import {
 import {
   announcedPorts,
   electronPath,
+  landedText,
   modelFiles,
   Page,
   prepareUserData,
@@ -793,12 +794,17 @@ const commands = {
           label: "done",
         });
       }
-      const timing =
+      const read = () => targetPage.evaluate(`${field}.value`);
+      const landing =
+        finalState.session.outcome?.kind === "inserted"
+          ? landedText(read, finalState.last.text)
+          : Promise.resolve({ text: await read(), landedMs: null });
+      const [{ text: inserted, landedMs }, timing] = await Promise.all([
+        landing,
         end === "escape"
           ? null
-          : await waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(
-              () => null,
-            );
+          : waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(() => null),
+      ]);
       const result = {
         fixture: wav,
         end,
@@ -807,7 +813,8 @@ const commands = {
         heldMs,
         ...(captureEndedEarly && { captureEndedEarly }),
         outcome: finalState.session.outcome ?? finalState.session.kind,
-        inserted: await targetPage.evaluate(`${field}.value`),
+        inserted,
+        landedMs,
         last: finalState.last,
         timing: timing?.replace(/^.*\[voice\] /, "") ?? null,
       };

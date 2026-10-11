@@ -220,6 +220,33 @@ export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
   });
 }
 
+export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
+  const started = performance.now();
+  const deadline = started + timeoutMs;
+  const missing = { text: "", landedMs: null };
+  const poll = async () => {
+    while (performance.now() < deadline) {
+      const text = await read();
+      const now = performance.now();
+      if (now >= deadline) break;
+      if (text === expected) return { text: expected, landedMs: Math.round(now - started) };
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return missing;
+  };
+  let timer;
+  try {
+    return await Promise.race([
+      poll(),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(missing), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function launchVoice(userData, { port, env: extraEnv = {} }) {
   const env = {
     ...process.env,
