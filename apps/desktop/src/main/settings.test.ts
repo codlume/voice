@@ -244,7 +244,7 @@ describe("applyPatch", () => {
   });
 
   test.each([
-    ["a duplicate trigger", [VALID_SNIPPET, { ...VALID_SNIPPET, id: "2", trigger: "My Email!" }]],
+    ["a duplicate id", [VALID_SNIPPET, { ...VALID_SNIPPET, trigger: "address" }]],
     ["a record missing its expansion", [VALID_SNIPPET, { id: "2", trigger: "address" }]],
     ["a list that is not an array", { 0: VALID_SNIPPET }],
   ])("refuses to save snippets with %s instead of dropping any", (_, snippets) => {
@@ -265,7 +265,7 @@ describe("applyPatch", () => {
   });
 
   test.each([
-    ["a duplicate phrase", [WORD, { ...REPLACEMENT, phrase: "WISPR  flow" }]],
+    ["a duplicate id", [WORD, { ...REPLACEMENT, id: WORD.id }]],
     ["a record missing its replacement", [WORD, { id: "2", phrase: "btw" }]],
     ["a replacement that is not text", [WORD, { ...REPLACEMENT, replacement: 42 }]],
     ["a list that is not an array", { 0: WORD }],
@@ -291,6 +291,18 @@ describe("applyPatch", () => {
       shadow,
       REPLACEMENT,
     ]);
+  });
+
+  test("two loaded triggers the page would refuse as one never block a later save", () => {
+    const twins = [
+      { id: "a", trigger: "café", expansion: "Café Nero", enabled: true },
+      { id: "b", trigger: "cafe", expansion: "coffee", enabled: true },
+      VALID_SNIPPET,
+    ];
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: twins });
+    expect(saved.snippets).toEqual(twins);
+    const toggled = [twins[0]!, twins[1]!, { ...VALID_SNIPPET, enabled: false }];
+    expect(applyPatch(saved, { snippets: toggled }).snippets).toEqual(toggled);
   });
 });
 
@@ -358,7 +370,7 @@ describe("load and save", () => {
     await writeFile(
       file,
       JSON.stringify({
-        snippets: [valid, { id: "2", trigger: "My Email!", expansion: "x" }, { id: "3" }],
+        snippets: [valid, { id: "2", trigger: "   ", expansion: "x" }, { id: "3" }],
       }),
     );
     expect(loadSettings(file).snippets).toEqual([{ ...valid, enabled: true }]);
@@ -380,7 +392,7 @@ describe("load and save", () => {
       JSON.stringify({
         dictionary: [
           word,
-          { id: "3", phrase: "WISPR FLOW", replacement: null },
+          { id: "3", phrase: "?!", replacement: null },
           { id: "4", phrase: "idk", replacement: 42 },
           { id: "5" },
           replacement,

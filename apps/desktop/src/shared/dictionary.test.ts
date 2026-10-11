@@ -82,7 +82,6 @@ describe("parseDictionary", () => {
       parseDictionary([
         { id: "1", phrase: "  Wispr Flow ", replacement: null },
         { id: "2", phrase: "btw", replacement: " by the way " },
-        { id: "3", phrase: "WISPR flow", replacement: null },
         { id: "1", phrase: "other", replacement: null },
         { id: "4", phrase: "missing replacement" },
         { id: "5", phrase: "", replacement: null },
@@ -107,6 +106,16 @@ describe("parseDictionary", () => {
       { id: "1", phrase: "btw", replacement: null },
       { id: "2", phrase: "idk", replacement: null },
     ]);
+  });
+
+  test("two saved phrases the page would refuse as one both load", () => {
+    const raw = [
+      { id: "1", phrase: "Wispr Flow", replacement: null },
+      { id: "2", phrase: "WISPR flow", replacement: null },
+      { id: "3", phrase: "café", replacement: null },
+      { id: "4", phrase: "cafe", replacement: "coffee" },
+    ];
+    expect(parseDictionary(raw).map((entry) => entry.id)).toEqual(["1", "2", "3", "4"]);
   });
 
   test("returns nothing for a value that is not a list", () => {

@@ -40,7 +40,8 @@ export function dictionaryProblem(
   return null;
 }
 
-// Loading keeps an entry that is also a snippet trigger; only the pages refuse new ones.
+// Loading keeps a phrase that another entry or a snippet already has; only the pages refuse new
+// ones, and the rewrite pass lets the later one win.
 export function parseDictionary(raw: unknown): DictionaryEntry[] {
   if (!Array.isArray(raw)) return [];
   const kept: DictionaryEntry[] = [];
@@ -52,7 +53,7 @@ export function parseDictionary(raw: unknown): DictionaryEntry[] {
     // An empty "Replace with" is a word, as in the dialog.
     const text = replacement?.trim() ?? "";
     const entry = { id, phrase: phrase.trim(), replacement: text === "" ? null : text };
-    if (kept.some((other) => other.id === id) || dictionaryProblem(entry, kept, [])) continue;
+    if (kept.some((other) => other.id === id) || dictionaryProblem(entry, [], [])) continue;
     kept.push(entry);
   }
   return kept;

@@ -1,4 +1,4 @@
-import { phraseKey, samePhrase } from "./phrase.ts";
+import { samePhrase } from "./phrase.ts";
 
 export type Snippet = { id: string; trigger: string; expansion: string; enabled: boolean };
 
@@ -21,8 +21,7 @@ export function snippetProblem(
   if (trigger.length > TRIGGER_MAX_LENGTH) {
     return { field: "trigger", message: `Use ${TRIGGER_MAX_LENGTH} characters or fewer.` };
   }
-  const key = phraseKey(trigger);
-  if (others.some((other) => phraseKey(other.trigger) === key)) {
+  if (others.some((other) => samePhrase(other.trigger, trigger))) {
     return { field: "trigger", message: "This trigger is already used by another snippet." };
   }
   if (dictionary.some((entry) => samePhrase(entry.phrase, trigger))) {
@@ -51,8 +50,9 @@ export function parseSnippets(raw: unknown): Snippet[] {
     }
     // Snippets saved before the on/off switch existed have no `enabled` and stay on.
     const snippet = { id, trigger: trigger.trim(), expansion, enabled: enabled !== false };
-    // Loading keeps a trigger that is also a dictionary phrase; only the pages refuse new ones.
-    if (kept.some((other) => other.id === id) || snippetProblem(snippet, kept, [])) continue;
+    // Loading keeps a trigger that another snippet or a dictionary entry already has; only the
+    // pages refuse new ones, and the rewrite pass lets the later one win.
+    if (kept.some((other) => other.id === id) || snippetProblem(snippet, [], [])) continue;
     kept.push(snippet);
   }
   return kept;

@@ -41,12 +41,17 @@ describe("snippetProblem", () => {
     },
   );
 
-  test("a trigger another snippet already uses, up to case and punctuation, is rejected", () => {
-    const problem = snippetProblem(snippet("2", "My-Email!", "other"), [email], []);
-    expect(problem).toEqual({
-      field: "trigger",
-      message: "This trigger is already used by another snippet.",
-    });
+  test("a trigger another snippet already uses, up to case, accents, and spacing, is rejected", () => {
+    const taken = { field: "trigger", message: "This trigger is already used by another snippet." };
+    expect(snippetProblem(snippet("2", "MY   Email", "other"), [email], [])).toEqual(taken);
+    const cafe = snippet("3", "café", "Café Nero");
+    expect(snippetProblem(snippet("4", "cafe", "other"), [cafe], [])).toEqual(taken);
+    expect(snippetProblem(snippet("4", "CAFÉ", "other"), [cafe], [])).toEqual(taken);
+  });
+
+  test("a trigger that differs from another only in punctuation is accepted, as the pass tells them apart", () => {
+    expect(snippetProblem(snippet("2", "my-email", "other"), [email], [])).toBeNull();
+    expect(snippetProblem(snippet("2", "my email!", "other"), [email], [])).toBeNull();
   });
 
   test("a switched-off snippet still holds its trigger", () => {
@@ -90,7 +95,6 @@ describe("parseSnippets", () => {
       { id: "2", trigger: 5, expansion: "x" },
       { id: "3", trigger: "", expansion: "x" },
       { id: "4", trigger: "blank", expansion: "   " },
-      { id: "5", trigger: "My Email.", expansion: "duplicate trigger" },
       { id: "1", trigger: "address", expansion: "duplicate id" },
       { id: "6", trigger: "address", expansion: "1 Main St" },
     ];
@@ -98,6 +102,16 @@ describe("parseSnippets", () => {
       { id: "1", trigger: "my email", expansion: " name@example.com\n", enabled: true },
       { id: "6", trigger: "address", expansion: "1 Main St", enabled: true },
     ]);
+  });
+
+  test("two saved triggers the page would refuse as one both load", () => {
+    const raw = [
+      { id: "1", trigger: "café", expansion: "Café Nero" },
+      { id: "2", trigger: "cafe", expansion: "coffee" },
+      { id: "3", trigger: "My Email.", expansion: "a@example.com" },
+      { id: "4", trigger: "my email", expansion: "b@example.com" },
+    ];
+    expect(parseSnippets(raw).map(({ id }) => id)).toEqual(["1", "2", "3", "4"]);
   });
 
   test("a snippet saved before the switch reads as on, and a switched-off one stays off", () => {

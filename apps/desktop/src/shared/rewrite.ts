@@ -29,9 +29,10 @@ const pattern = (key: string) =>
 
 function compile({ dictionary, snippets }: Rewrites): Matcher {
   const rules = new Map<string, Rule>();
+  // The pages refuse two phrases with one key; a loaded file may still hold such a pair, and the
+  // later one wins, a snippet over an entry.
   for (const entry of dictionary) rules.set(matchKey(entry.phrase), { kind: "entry", entry });
   for (const snippet of snippets) {
-    // The pages refuse a trigger that is also a dictionary phrase; in an edited file the snippet wins.
     if (snippet.enabled) rules.set(matchKey(snippet.trigger), { kind: "snippet", snippet });
   }
   if (rules.size === 0) return { rules, regex: null };
