@@ -5,7 +5,8 @@ import { assertPlausibleCleanup, MAX_OUTPUT_RATIO } from "./plausibility.ts";
 import { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
 
 const CONTEXT_SIZE = 4096;
-const CHUNK_TOKENS = 1000;
+// Longer chunks make S1-mini skip or loop over lines, so the guard rejects them and the user gets raw text.
+const CHUNK_TOKENS = 400;
 const OUTPUT_TOKEN_SLACK = 32;
 
 export type Generation = { chunk: string; output: string; truncated: boolean };
