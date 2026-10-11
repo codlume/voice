@@ -6,6 +6,7 @@ import {
   expandSnippets,
   parseSnippets,
   snippetProblem,
+  snippetText,
   type Snippet,
 } from "./snippets.ts";
 
@@ -14,6 +15,7 @@ const snippet = (id: string, trigger: string, expansion: string): Snippet => ({
   id,
   trigger,
   expansion,
+  enabled: true,
 });
 const email = snippet("1", "my email", EMAIL);
 const none = (text: string) => ({ text, count: 0, entireDictation: false });
@@ -140,6 +142,23 @@ describe("expandSnippets", () => {
       none("please aſk now"),
     );
   });
+
+  test("a switched-off snippet never expands while a switched-on one beside it does", () => {
+    const address = { ...snippet("2", "my address", "1 Main St"), enabled: false };
+    expect(expandSnippets("my address", [email, address])).toEqual(none("my address"));
+    expect(expandSnippets("Send my address to my email", [email, address])).toEqual({
+      text: `Send my address to ${EMAIL}`,
+      count: 1,
+      entireDictation: false,
+    });
+  });
+});
+
+describe("snippetText", () => {
+  test("a switched-off snippet is ignored in both the raw and the cleaned text", () => {
+    const off = { ...email, enabled: false };
+    expect(snippetText("my email", "My email.", [off])).toBe("My email.");
+  });
 });
 
 describe("snippetProblem", () => {
@@ -174,6 +193,13 @@ describe("snippetProblem", () => {
     });
   });
 
+  test("a switched-off snippet still holds its trigger", () => {
+    const off = { ...email, enabled: false };
+    expect(snippetProblem(snippet("2", "My Email", "other"), [off])?.message).toBe(
+      "This trigger is already used by another snippet.",
+    );
+  });
+
   test("a message never repeats the expansion", () => {
     const secret = "s3cret-token ".repeat(400);
     expect(snippetProblem({ ...email, expansion: secret }, [])?.message).not.toContain("s3cret");
@@ -199,8 +225,17 @@ describe("parseSnippets", () => {
       { id: "6", trigger: "address", expansion: "1 Main St" },
     ];
     expect(parseSnippets(raw)).toEqual([
-      { id: "1", trigger: "my email", expansion: " name@example.com\n" },
-      { id: "6", trigger: "address", expansion: "1 Main St" },
+      { id: "1", trigger: "my email", expansion: " name@example.com\n", enabled: true },
+      { id: "6", trigger: "address", expansion: "1 Main St", enabled: true },
     ]);
+  });
+
+  test("a snippet saved before the switch reads as on, and a switched-off one stays off", () => {
+    const raw = [
+      { id: "1", trigger: "my email", expansion: EMAIL },
+      { id: "2", trigger: "address", expansion: "1 Main St", enabled: false },
+      { id: "3", trigger: "phone", expansion: "555", enabled: "no" },
+    ];
+    expect(parseSnippets(raw).map((s) => s.enabled)).toEqual([true, false, true]);
   });
 });

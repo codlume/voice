@@ -8,6 +8,7 @@ Snippets let a user save a spoken trigger, such as "my email", and the exact tex
 - `snippets-validate`: saving an empty, too long, or duplicate trigger, or an empty expansion, keeps the dialog open and shows the problem under the field. Duplicates ignore case, spaces, and punctuation.
 - `snippets-edit`: the pencil button on a row opens `Edit snippet`, and `Save changes` replaces that snippet in place.
 - `snippets-delete`: the trash button asks "Delete snippet?" with "‘<trigger>’ will be deleted permanently." (curly quotes) before it deletes.
+- `snippets-toggle`: the switch on a row, named `Enable <trigger>`, turns the snippet off or on. A switched-off snippet stays saved and editable, its text is faded, and dictation never expands it. Its trigger still counts as taken.
 - `snippets-save-failed`: a rejected save keeps the dialog open with the draft and shows "Could not save this snippet. Try again."
 - `snippets-dictation`: a dictation that contains a trigger inserts the expansion.
 
@@ -26,11 +27,12 @@ Preconditions: baseline. No snippets are saved.
 - **Duplicate.** `vv click "Add new"`, then type `thursday.` into the trigger and anything into the expansion, then `vv click "Add snippet"`. The dialog stays open and reads "This trigger is already used by another snippet." The stored list does not change. Click `Cancel`.
 - **Effect on dictation.** When `dictate` is available, run `vv dictate short.wav`. `inserted` contains "next Friday" in place of "Thursday", and still contains "Anna".
 - **Edit.** `vv click "Edit Thursday"`. `type` inserts at the caret like a paste, so select the old text first with `vv eval hub 'document.querySelector("[role=dialog] textarea").select(), true'`, then `vv type 'css:[role="dialog"] textarea' "<new expansion>"`. `vv click "Save changes"`, then wait for the new expansion in `s.settings.snippets`. The `id` stays the same.
+- **Toggle.** `vv click "Enable Thursday"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.snippets[0].enabled === false)'`. The row text fades. Click it again to switch it back on.
 - **Delete.** `vv click "Delete Thursday"`, then `vv click Delete`, then wait for `s.settings.snippets.length === 0`. The page shows the example row again.
 
 ## Gotchas
 
-- The row buttons are named `Edit <trigger>` and `Delete <trigger>`. The dialog's confirm button is `Add snippet` or `Save changes`, not `Add new`.
+- The row controls are named `Enable <trigger>`, `Edit <trigger>`, and `Delete <trigger>`. The dialog's confirm button is `Add snippet` or `Save changes`, not `Add new`.
 - Problems show only after a save attempt, then update as you type. An empty dialog with no error is expected.
 - Clicking outside the dialog does not close it. Escape and `Cancel` do, and both discard the draft.
-- The renderer preview harness has a `snippets` scene (`preview.html?hub=snippets`) with three saved snippets. It runs on a fake `window.voice`, so it proves layout and dialog flow, not storage or dictation.
+- The renderer preview harness has a `snippets` scene (`preview.html?hub=snippets`) with three saved snippets, the second switched off. It runs on a fake `window.voice`, so it proves layout and dialog flow, not storage or dictation.
