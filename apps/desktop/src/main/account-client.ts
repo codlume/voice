@@ -50,6 +50,8 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   ) {
     return null;
   }
+  // Identities cached before first and last names have only `name`. Deploys apply migrations
+  // before the Worker, so in that window the old Worker can create users with an empty first name.
   const { firstName, lastName } =
     "firstName" in user &&
     typeof user.firstName === "string" &&

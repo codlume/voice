@@ -424,7 +424,7 @@ function AccountRow({ account }: { account: AccountState }) {
     case "signingIn":
       return <SigningInRow account={account} />;
     case "signedIn":
-      return <SignedInRow key={account.id ?? account.email} account={account} />;
+      return <SignedInRow key={account.email} account={account} />;
     case "error":
       return <ErrorRow account={account} />;
     default: {

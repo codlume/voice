@@ -634,11 +634,13 @@ export function createAccount({
         throw new Error(UPDATE_NAME_SIGNED_OUT_MESSAGE);
       }
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
+      // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
-      const renamed = { ...identityOf(state), ...name, name: fullName(name) };
+      const started = state;
+      const renamed = { ...identityOf(started), ...name, name: fullName(name) };
       const { kind } = await loadedClient.updateName(renamed);
       if (kind === "updated") {
-        if (state.kind === "signedIn" && !state.deletion) publish({ kind: "signedIn", ...renamed });
+        if (state === started) publish({ kind: "signedIn", ...renamed });
         return;
       }
       log("account name update failed", {
