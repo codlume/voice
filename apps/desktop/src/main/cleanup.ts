@@ -1,14 +1,20 @@
-import type { CleanRequest, CleanResult, CleanupStyle, S1Mini } from "@voice/cleanup";
+import * as NodePath from "node:path";
+import { createInterface } from "node:readline";
+
+import type { CleanRequest, CleanResult, CleanupStyle } from "@voice/cleanup";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { createS1MiniProcess, type CleanupEngine, type ForkEngine } from "./cleanup-engine.ts";
 import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup"),
-  "createS1Mini" | "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
->;
+  "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
+> & {
+  createS1Mini(options: { modelPath: string; onLost: (message: string) => void }): CleanupEngine;
+};
 
 export type Cleanup = {
   loadIfDownloaded(): Promise<void>;
@@ -25,10 +31,38 @@ export type CleanupOptions = {
   baseUrl?: string | undefined;
   shouldLoad: () => boolean;
   onStatus: (status: ModelStatus) => void;
+  log: (message: string) => void;
   loadModule?: () => Promise<CleanupModule>;
 };
 
-const importModule = (): Promise<CleanupModule> => import("@voice/cleanup");
+// The model runs in a utility process so loading it never stalls main, where the hotkey lands.
+async function importModule(log: (message: string) => void): Promise<CleanupModule> {
+  const [{ downloadS1Mini, findS1Mini, removeS1Mini }, { utilityProcess }] = await Promise.all([
+    import("@voice/cleanup/download"),
+    import("electron"),
+  ]);
+  const fork: ForkEngine = (events) => {
+    const child = utilityProcess.fork(NodePath.join(__dirname, "cleanup-engine-worker.cjs"), [], {
+      serviceName: "Voice cleanup",
+      stdio: "pipe",
+      execArgv: [],
+    });
+    child.on("message", events.message).on("exit", (code) => {
+      log(`cleanup: exited (${code})`);
+      events.exit();
+    });
+    for (const output of [child.stdout, child.stderr]) {
+      if (output) createInterface({ input: output }).on("line", (line) => log(`cleanup: ${line}`));
+    }
+    return child;
+  };
+  return {
+    downloadS1Mini,
+    findS1Mini,
+    removeS1Mini,
+    createS1Mini: (options) => createS1MiniProcess({ ...options, fork }),
+  };
+}
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
 const WARM_UP_STYLE: CleanupStyle = { styling: "semi-formal" };
@@ -37,12 +71,12 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 type Model =
   | { phase: "none" }
-  | { phase: "loading"; model: S1Mini }
-  | { phase: "loaded"; model: S1Mini }
+  | { phase: "loading"; model: CleanupEngine }
+  | { phase: "loaded"; model: CleanupEngine }
   // Left behind by dispose so a load or download still in flight does not bring the model back.
   | { phase: "disposed" };
 
-const held = (model: Model): model is Extract<Model, { model: S1Mini }> =>
+const held = (model: Model): model is Extract<Model, { model: CleanupEngine }> =>
   model.phase === "loading" || model.phase === "loaded";
 
 // A session in flight keeps the model until it ends, so a language change applies to the next
@@ -65,12 +99,12 @@ export function followSettings(
 }
 
 export function createCleanup(options: CleanupOptions): Cleanup {
-  const loadModule = options.loadModule ?? importModule;
+  const loadModule = options.loadModule ?? (() => importModule(options.log));
   let model: Model = { phase: "none" };
   let chain: Promise<void> = Promise.resolve();
   const installs = new Set<AbortController>();
 
-  const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
+  const owns = (candidate: CleanupEngine) => held(model) && model.model === candidate;
 
   function cancelInstalls(reason: string) {
     for (const controller of installs) controller.abort(new Error(reason));
@@ -104,12 +138,26 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     }
     if (model.phase !== "none") return;
     options.onStatus({ state: "loading" });
-    const created = module.createS1Mini({ modelPath });
-    model = { phase: "loading", model: created };
+    let created: CleanupEngine | undefined;
     try {
+      const candidate = module.createS1Mini({
+        modelPath,
+        // Retry finds the file already on disk and starts a fresh engine.
+        onLost: (lostMessage) => {
+          if (!owns(candidate)) return;
+          model = { phase: "none" };
+          options.onStatus({ state: "failed", message: lostMessage });
+        },
+      });
+      created = candidate;
+      model = { phase: "loading", model: created };
       await created.load();
     } catch (error) {
-      if (owns(created)) model = { phase: "none" };
+      if (created) {
+        if (!owns(created)) return;
+        model = { phase: "none" };
+        await created.dispose();
+      }
       options.onStatus({ state: "failed", message: message(error) });
       return;
     }

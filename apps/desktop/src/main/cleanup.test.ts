@@ -9,7 +9,7 @@ import {
   type CleanRequest,
   type CleanupStyle,
 } from "@voice/cleanup";
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus, Settings } from "../shared/api.ts";
 import { wantsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
@@ -26,6 +26,7 @@ const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
 
 type Behavior = {
   loadError?: string;
+  createError?: string;
   downloadError?: string;
   removeError?: string;
   warmUpError?: string;
@@ -69,6 +70,7 @@ function fakeModule(behavior: Behavior = {}) {
     },
     createS1Mini({ modelPath, onLost }) {
       calls.creates += 1;
+      if (behavior.createError) throw new Error(behavior.createError);
       calls.modelPaths.push(modelPath);
       calls.lost.push(onLost);
       return {
@@ -217,6 +219,20 @@ describe("createCleanup", () => {
     expect(cleanup.loaded()).toBe(true);
   });
 
+  test("losing the engine during warm-up cannot restore ready", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishWarmUp!: () => void;
+    const fake = fakeModule({ warmUpGate: new Promise<void>((r) => (finishWarmUp = r)) });
+    const cleanup = start(fake);
+    const loading = cleanup.loadIfDownloaded();
+    await vi.waitFor(() => expect(fake.calls.cleans).toHaveLength(1));
+    fake.calls.lost[0]!("engine stopped");
+    finishWarmUp();
+    await loading;
+    expect(statuses.at(-1)).toEqual({ state: "failed", message: "engine stopped" });
+    expect(cleanup.loaded()).toBe(false);
+  });
+
   test("a failed warm-up still reports ready with the model loaded", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule({ warmUpError: "implausible output" });
@@ -226,6 +242,19 @@ describe("createCleanup", () => {
     await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
   });
 
+  test("a failure to start the process reports failed and allows Retry", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const behavior: Behavior = { createError: "cannot fork" };
+    const fake = fakeModule(behavior);
+    const cleanup = start(fake);
+    await cleanup.loadIfDownloaded();
+    expect(statuses.at(-1)).toEqual({ state: "failed", message: "cannot fork" });
+    delete behavior.createError;
+    await cleanup.install();
+    expect(cleanup.loaded()).toBe(true);
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+  });
+
   test("a load failure reports failed with the error message", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule({ loadError: "bad gguf" });
@@ -233,6 +262,7 @@ describe("createCleanup", () => {
     await cleanup.loadIfDownloaded();
     expect(statuses).toEqual([{ state: "loading" }, { state: "failed", message: "bad gguf" }]);
     expect(fake.calls.cleans).toEqual([]);
+    expect(fake.calls.disposes).toBe(1);
     await expect(cleanup.clean("hi", style, request)).rejects.toThrow();
   });
 

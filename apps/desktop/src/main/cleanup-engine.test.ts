@@ -9,6 +9,7 @@ import {
   DISPOSE_GRACE_MS,
   serve,
   type CleanupEngine,
+  type ForkEngine,
 } from "./cleanup-engine.ts";
 
 const style: CleanupStyle = { styling: "formal" };
@@ -97,7 +98,7 @@ function connect(engine = fakeEngine()) {
     modelPath,
     fork: (events) => {
       port1.on("message", events.message);
-      port1.on("close", () => events.exit(kills > 0 ? 15 : 1));
+      port1.on("close", events.exit);
       return {
         postMessage: (message) => port1.postMessage(message),
         kill: () => {
@@ -120,7 +121,6 @@ function connect(engine = fakeEngine()) {
     exited: exited.promise,
     kills: () => kills,
     crash: () => port2.close(),
-    childPort: port2,
   };
 }
 
@@ -263,19 +263,123 @@ describe("cleanup engine process", () => {
     expect(lost).toEqual([]);
   });
 
+  test("dispose aborts a clean, refuses new calls, and is idempotent", async () => {
+    const { proxy, engine, lost } = connect();
+    await proxy.load();
+    const cleaning = proxy.clean("hello", style);
+    const rejected = expect(cleaning).rejects.toBeInstanceOf(Error);
+    const clean = await engine.cleanStarted;
+
+    const disposing = proxy.dispose();
+    expect(proxy.dispose()).toBe(disposing);
+    await expect(proxy.load()).rejects.toThrow("disposing");
+    await expect(proxy.clean("later", style)).rejects.toThrow("disposing");
+    await clean.aborted;
+    await rejected;
+    await disposing;
+    expect(engine.calls.disposes).toBe(1);
+    expect(lost).toEqual([]);
+  });
+
+  test("abort before the clean arrives still reaches the child", async () => {
+    const { proxy, engine, lost } = connect();
+    await proxy.load();
+    const controller = new AbortController();
+    const cleaning = proxy.clean("hello", style, { signal: controller.signal });
+    controller.abort(new Error("withdrawn"));
+
+    await expect(cleaning).rejects.toThrow("withdrawn");
+    const clean = await engine.cleanStarted;
+    await clean.aborted;
+    await proxy.load();
+    expect(lost).toEqual([]);
+  });
+
+  test("a synchronous engine factory failure returns an error", async () => {
+    const engine = fakeEngine();
+    const { proxy } = connect({
+      ...engine,
+      create: () => {
+        throw new Error("cannot allocate");
+      },
+    });
+    await expect(proxy.load()).rejects.toThrow("cannot allocate");
+    await proxy.dispose();
+  });
+
+  test("a broken transport rejects all calls without waiting for an exit event", async () => {
+    const lost = vi.fn();
+    const kill = vi.fn();
+    let broken = false;
+    const proxy = createS1MiniProcess({
+      modelPath,
+      onLost: lost,
+      fork: () => ({
+        kill,
+        postMessage: () => {
+          if (broken) throw new Error("port closed");
+        },
+      }),
+    });
+    const loading = proxy.load();
+    const rejected = expect(loading).rejects.toThrow("stopped");
+    broken = true;
+    await expect(proxy.clean("hello", style)).rejects.toThrow("stopped");
+    await rejected;
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+
+  test("dispose rejects pending requests even when the killed child never emits exit", async () => {
+    vi.useFakeTimers();
+    const kill = vi.fn();
+    const lost = vi.fn();
+    const proxy = createS1MiniProcess({
+      modelPath,
+      onLost: lost,
+      fork: () => ({ postMessage: () => {}, kill }),
+    });
+    const loading = proxy.load();
+    const rejected = expect(loading).rejects.toThrow("stopped");
+    const disposing = proxy.dispose();
+    await vi.advanceTimersByTimeAsync(DISPOSE_GRACE_MS);
+    await disposing;
+    await rejected;
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  test("duplicate exit notifications only report the loss once", async () => {
+    const lost = vi.fn();
+    let events: Parameters<ForkEngine>[0] | undefined;
+    const proxy = createS1MiniProcess({
+      modelPath,
+      onLost: lost,
+      fork: (listeners) => {
+        events = listeners;
+        return { postMessage: () => {}, kill: () => {} };
+      },
+    });
+    const loading = proxy.load();
+    events?.exit();
+    events?.exit();
+    await expect(loading).rejects.toThrow("stopped");
+    expect(lost).toHaveBeenCalledTimes(1);
+  });
+
   test("malformed messages are ignored at both ends", async () => {
-    const { proxy, engine, received, childPort } = connect();
+    const { proxy, engine, received } = connect();
+    const [port1, port2]: (MessagePort | undefined)[] = ports;
     await proxy.load();
     const cleaning = proxy.clean("hello", style);
     const clean = await engine.cleanStarted;
     const sent = received.at(-1) as { id: unknown };
 
-    childPort.postMessage({ type: "cleaned", id: sent.id, result: { text: 42 } });
-    childPort.postMessage("cleaned");
+    port2?.postMessage({ type: "cleaned", id: sent.id, result: { text: 42 } });
+    port2?.postMessage("cleaned");
     received.length = 0;
-    const port = ports[0]!;
-    port.postMessage({ type: "clean", id: "x", raw: "boom", style });
-    port.postMessage({ type: "load", id: 99 });
+    port1?.postMessage({ type: "clean", id: "x", raw: "boom", style });
+    port1?.postMessage({ type: "load", id: 99 });
     clean.finish({ text: "Hello.", chunks: 1, cleaned: 1 });
 
     await expect(cleaning).resolves.toEqual({ text: "Hello.", chunks: 1, cleaned: 1 });

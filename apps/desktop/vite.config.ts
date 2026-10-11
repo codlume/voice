@@ -17,7 +17,10 @@ const isExternal = (id: string) =>
   id === "node-llama-cpp" ||
   id === "electron-updater";
 
-const electronEntry = (name: "main" | "preload" | "sentry", entry: string) => ({
+const electronEntry = (
+  name: "main" | "preload" | "sentry" | "cleanup-engine-worker",
+  entry: string,
+) => ({
   entry: { [name]: entry },
   format: "cjs" as const,
   platform: "node" as const,
@@ -103,6 +106,7 @@ export default defineConfig({
     },
     electronEntry("preload", "src/preload.ts"),
     electronEntry("sentry", "src/main/sentry.ts"),
+    electronEntry("cleanup-engine-worker", "src/main/cleanup-engine-worker.ts"),
   ],
   test: {
     root: appDir,
