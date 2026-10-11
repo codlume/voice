@@ -18,14 +18,15 @@ export const S1_MINI = {
 
 export type ModelSource = { baseUrl: string; file: string; bytes: number; sha256: string };
 
-export const STALL_TIMEOUT_MS = 30_000;
-
 export type DownloadOptions = {
   dir: string;
   onProgress?: ((fraction: number) => void) | undefined;
   signal?: AbortSignal | undefined;
-  stallTimeoutMs?: number | undefined;
 };
+
+// Idle time, not total time: a slow link that keeps delivering bytes is never a stall.
+const STALL_TIMEOUT_MS = 30_000;
+type StallOptions = { stallTimeoutMs?: number | undefined };
 
 export function downloadS1Mini({
   baseUrl = S1_MINI.baseUrl,
@@ -46,7 +47,7 @@ export async function downloadModel({
   onProgress,
   signal,
   stallTimeoutMs,
-}: DownloadOptions & ModelSource): Promise<string> {
+}: DownloadOptions & ModelSource & StallOptions): Promise<string> {
   const path = join(dir, file);
   if (await matches(path, bytes, sha256, signal)) return path;
 
@@ -119,22 +120,18 @@ async function fetchToFile(
     onProgress,
     signal,
     stallTimeoutMs = STALL_TIMEOUT_MS,
-  }: Omit<DownloadOptions, "dir"> & Partial<Pick<ModelSource, "bytes" | "sha256">>,
+  }: Omit<DownloadOptions, "dir"> & Partial<Pick<ModelSource, "bytes" | "sha256">> & StallOptions,
 ): Promise<void> {
   const stall = new AbortController();
-  let timer: NodeJS.Timeout | undefined;
-  const arm = () => {
-    clearTimeout(timer);
-    timer = setTimeout(
-      () => stall.abort(new Error("Download stalled. Check your connection and try again.")),
-      stallTimeoutMs,
-    );
-  };
-  arm();
+  const timer = setTimeout(
+    () => stall.abort(new Error("Download stalled. Check your connection and try again.")),
+    stallTimeoutMs,
+  );
   try {
     const response = await fetch(url, {
       signal: signal ? AbortSignal.any([signal, stall.signal]) : stall.signal,
     });
+    timer.refresh();
     if (!response.ok || !response.body)
       throw new Error(`Download of ${url} failed with HTTP ${response.status}`);
 
@@ -145,7 +142,7 @@ async function fetchToFile(
       let received = 0;
       let reported = -1;
       for await (const chunk of response.body) {
-        arm();
+        timer.refresh();
         await handle.write(chunk);
         hash.update(chunk);
         received += chunk.byteLength;
@@ -156,6 +153,7 @@ async function fetchToFile(
           onProgress(percent / 100);
         }
       }
+      clearTimeout(timer);
       if (bytes !== undefined && received !== bytes) {
         throw new Error(`Download of ${url} returned ${received} bytes, expected ${bytes}`);
       }

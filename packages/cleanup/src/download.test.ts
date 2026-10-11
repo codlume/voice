@@ -133,6 +133,16 @@ test("a download that stops sending bytes rejects as stalled, leaves no .part, a
   expect((await readFile(path)).equals(MODEL)).toBe(true);
 }, 2_000);
 
+test("the stall timeout is idle time, not total time: a trickle that outlasts it still completes", async () => {
+  behavior = "trickle";
+  const started = performance.now();
+
+  const path = await download({ stallTimeoutMs: 150 });
+
+  expect(performance.now() - started).toBeGreaterThan(150);
+  expect((await readFile(path)).equals(MODEL)).toBe(true);
+}, 5_000);
+
 test("a server that never answers with headers rejects as stalled", async () => {
   behavior = "silent";
 
@@ -140,7 +150,7 @@ test("a server that never answers with headers rejects as stalled", async () => 
   expect(await readdir(dir)).not.toContain("model.gguf.part");
 }, 2_000);
 
-test("a cancel during the check of an existing model is honored and keeps the model", async () => {
+test("a run cancelled before the check of an existing model rejects, requests nothing, and leaves the model on disk", async () => {
   await download();
   modelRequests = 0;
   const controller = new AbortController();

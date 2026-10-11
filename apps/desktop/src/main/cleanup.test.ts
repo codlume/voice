@@ -378,10 +378,63 @@ describe("createCleanup", () => {
     finishModule();
     await Promise.all([installing, uninstalling]);
 
-    expect(fake.calls.downloadSignals[0]?.aborted).toBe(true);
+    expect(fake.calls.downloads).toBe(0);
     expect(fake.calls.loads).toBe(0);
     expect(statuses.map((status) => status.state)).not.toContain("failed");
     expect(statuses.at(-1)).toEqual({ state: "missing" });
+  });
+
+  test("uninstall with a second install queued cancels both, ends missing, and downloads once", async () => {
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const first = cleanup.install();
+    const second = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const uninstalling = cleanup.uninstall();
+    finishDownload();
+    await Promise.all([first, second, uninstalling]);
+
+    expect(fake.calls.downloads).toBe(1);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("dispose with a second install queued starts no second download", async () => {
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const first = cleanup.install();
+    const second = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const disposing = cleanup.dispose();
+    finishDownload();
+    await Promise.all([first, second, disposing]);
+
+    expect(fake.calls.downloads).toBe(1);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+  });
+
+  test("a cancel that lands as the download finishes never flashes installed", async () => {
+    enabled = false;
+    let finishDownload!: () => void;
+    const fake = fakeModule({ downloadGate: new Promise((resolve) => (finishDownload = resolve)) });
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    finishDownload();
+    const uninstalling = cleanup.uninstall();
+    await Promise.all([installing, uninstalling]);
+
+    expect(statuses.map((status) => status.state)).not.toContain("installed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
+    expect(await readdir(dir)).toEqual([]);
   });
 
   test("a download failure reports failed and does not try to load", async () => {
