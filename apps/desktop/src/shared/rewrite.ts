@@ -53,7 +53,7 @@ function compile({ dictionary, snippets }: Rewrites): Matcher {
   return { rules, regex };
 }
 
-// Settings hand every session the same two arrays until the user edits a list, so one compiled
+// Settings hand every session the same two arrays until any setting changes, so one compiled
 // matcher serves all the dictations in between.
 let cached: { rewrites: Rewrites; matcher: Matcher } | null = null;
 
