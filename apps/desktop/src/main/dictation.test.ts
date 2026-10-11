@@ -467,7 +467,7 @@ describe("createDictation", () => {
 
   test("a dictation of only a trigger inserts the saved expansion without running cleanup", async () => {
     const expansion = "Best,\nAlex";
-    const h = harness({ snippets: [{ id: "1", trigger: "sign off", expansion }] });
+    const h = harness({ snippets: [{ id: "1", trigger: "sign off", expansion, enabled: true }] });
     const id = await dictate(h, "Sign off.");
     expect(h.cleans).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion });
@@ -752,7 +752,9 @@ describe("createDictation", () => {
     });
 
     test("copies the text with its snippets expanded", async () => {
-      const snippets = [{ id: "1", trigger: "my email", expansion: "name@example.com" }];
+      const snippets = [
+        { id: "1", trigger: "my email", expansion: "name@example.com", enabled: true },
+      ];
       const h = harness({ copyToClipboard: true, snippets });
       const id = await dictate(h, "send it to my email");
       h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });

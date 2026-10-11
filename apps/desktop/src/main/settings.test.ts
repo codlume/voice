@@ -223,11 +223,22 @@ describe("applyPatch", () => {
     });
   });
 
-  const VALID_SNIPPET = { id: "1", trigger: "my email", expansion: "name@example.com\n" };
+  const VALID_SNIPPET = {
+    id: "1",
+    trigger: "my email",
+    expansion: "name@example.com\n",
+    enabled: true,
+  };
 
   test("saves a snippet list and keeps it through other changes", () => {
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET] });
     expect(applyPatch(saved, { theme: "dark" }).snippets).toEqual([VALID_SNIPPET]);
+  });
+
+  test("saves a switched-off snippet as switched off", () => {
+    const off = { id: "2", trigger: "address", expansion: "1 Main St", enabled: false };
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET, off] });
+    expect(saved.snippets).toEqual([VALID_SNIPPET, off]);
   });
 
   test.each([
@@ -307,7 +318,7 @@ describe("load and save", () => {
         snippets: [valid, { id: "2", trigger: "My Email!", expansion: "x" }, { id: "3" }],
       }),
     );
-    expect(loadSettings(file).snippets).toEqual([valid]);
+    expect(loadSettings(file).snippets).toEqual([{ ...valid, enabled: true }]);
   });
 
   test("a corrupt file yields defaults", async () => {
@@ -333,7 +344,7 @@ describe("load and save", () => {
       updateChannel: "nightly",
       theme: "dark",
       cleanup: { enabled: false },
-      snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n" }],
+      snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n", enabled: false }],
       zoomLevel: 1.5,
     });
     await saveSettings(file, settings);

@@ -1,4 +1,4 @@
-export type Snippet = { id: string; trigger: string; expansion: string };
+export type Snippet = { id: string; trigger: string; expansion: string; enabled: boolean };
 
 export const TRIGGER_MAX_LENGTH = 60;
 export const EXPANSION_MAX_LENGTH = 4000;
@@ -28,7 +28,7 @@ function triggerPattern(trigger: string): string {
 }
 
 export function expandSnippets(text: string, snippets: readonly Snippet[]): Expansion {
-  const byKey = new Map(snippets.map((s) => [triggerKey(s.trigger), s]));
+  const byKey = new Map(snippets.filter((s) => s.enabled).map((s) => [triggerKey(s.trigger), s]));
   const entire = byKey.get(triggerKey(text));
   if (entire) return { text: entire.expansion, count: 1, entireDictation: true };
   if (byKey.size === 0) return { text, count: 0, entireDictation: false };
@@ -92,11 +92,12 @@ export function parseSnippets(raw: unknown): Snippet[] {
   const kept: Snippet[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { id, trigger, expansion } = item as Record<string, unknown>;
+    const { id, trigger, expansion, enabled } = item as Record<string, unknown>;
     if (typeof id !== "string" || typeof trigger !== "string" || typeof expansion !== "string") {
       continue;
     }
-    const snippet = { id, trigger: trigger.trim(), expansion };
+    // Snippets saved before the on/off switch existed have no `enabled` and stay on.
+    const snippet = { id, trigger: trigger.trim(), expansion, enabled: enabled !== false };
     if (kept.some((other) => other.id === id) || snippetProblem(snippet, kept)) continue;
     kept.push(snippet);
   }

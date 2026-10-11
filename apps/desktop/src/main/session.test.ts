@@ -351,7 +351,7 @@ describe("cleanup", () => {
 
 describe("snippets", () => {
   const EMAIL = "name@example.com";
-  const snippets: Snippet[] = [{ id: "1", trigger: "my email", expansion: EMAIL }];
+  const snippets: Snippet[] = [{ id: "1", trigger: "my email", expansion: EMAIL, enabled: true }];
   const cleaned = (text: string) =>
     [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
   const cleaningSentence = [
@@ -422,7 +422,9 @@ describe("snippets", () => {
   });
 
   test("an expansion is inserted untrimmed", () => {
-    const signature: Snippet[] = [{ id: "1", trigger: "sign off", expansion: "Best,\nAlex\n" }];
+    const signature: Snippet[] = [
+      { id: "1", trigger: "sign off", expansion: "Best,\nAlex\n", enabled: true },
+    ];
     const { effects } = run([...toTranscribing, transcript("Sign off.", false, 2000, signature)]);
     expect(effects).toContainEqual({ type: "insert", id: ID, text: "Best,\nAlex\n" });
   });
@@ -492,7 +494,7 @@ describe("idle and stale events", () => {
       id: "old",
       text: "late words",
       cleanup: true,
-      snippets: [{ id: "1", trigger: "late words", expansion: "never typed" }],
+      snippets: [{ id: "1", trigger: "late words", expansion: "never typed", enabled: true }],
     };
     const remember: Effect = { type: "remember", raw: "late words", text: "late words" };
     expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });

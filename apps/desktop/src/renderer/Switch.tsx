@@ -39,15 +39,18 @@ export function Switch({
   disabled = false,
   onChange,
   id,
+  label,
 }: {
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
   id: string;
+  label?: string;
 }) {
   return (
     <SwitchPrimitive.Root
       id={id}
+      aria-label={label}
       nativeButton
       render={<button />}
       checked={checked}

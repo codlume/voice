@@ -14,6 +14,7 @@ import {
 import { Button } from "./Button.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { styles as settings } from "./Settings.tsx";
+import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
@@ -34,7 +35,8 @@ const styles = stylex.create({
     WebkitLineClamp: 2,
   },
   example: { color: color.mutedForeground },
-  rowActions: { display: "flex", flexShrink: 0, gap: 4 },
+  off: { opacity: 0.6 },
+  rowActions: { display: "flex", flexShrink: 0, alignItems: "center", gap: 4 },
   fields: { display: "flex", flexDirection: "column", gap: space.md, marginTop: space.lg },
   field: { display: "flex", flexDirection: "column", gap: 6 },
   fieldHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
@@ -71,7 +73,7 @@ const editorText: Record<Mode, { title: string; save: string }> = {
 export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
   const [modal, setModal] = useState<Modal | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
-  const deleteAction = useAction();
+  const rowAction = useAction();
 
   const show = (kind: Modal["kind"], snippet: Snippet) => setModal({ kind, snippet, open: true });
   const setOpen = (open: boolean) => setModal((current) => current && { ...current, open });
@@ -81,12 +83,27 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
 
   const remove = (snippet: Snippet) => {
     setModal((current) => current && { ...current, kind: "deleted" });
-    void deleteAction.run(
+    void rowAction.run(
       () =>
         hubApi().updateSettings({
           snippets: snippets.filter((other) => other.id !== snippet.id),
         }),
       "Could not delete this snippet. Try again.",
+    );
+  };
+
+  const setEnabled = (snippet: Snippet, enabled: boolean) => {
+    // Each save replaces the whole list, so a toggle built on the list before the previous save
+    // landed would undo that save.
+    if (rowAction.pending) return;
+    void rowAction.run(
+      () =>
+        hubApi().updateSettings({
+          snippets: snippets.map((other) =>
+            other.id === snippet.id ? { ...other, enabled } : other,
+          ),
+        }),
+      "Could not change this snippet. Try again.",
     );
   };
 
@@ -101,7 +118,9 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
         </div>
         <Button
           ref={addRef}
-          onClick={() => show("add", { id: crypto.randomUUID(), trigger: "", expansion: "" })}
+          onClick={() =>
+            show("add", { id: crypto.randomUUID(), trigger: "", expansion: "", enabled: true })
+          }
         >
           Add new
         </Button>
@@ -120,13 +139,25 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
           <ul {...stylex.props(styles.list)}>
             {snippets.map((snippet) => (
               <li key={snippet.id} {...stylex.props(settings.row)}>
-                <div {...stylex.props(settings.rowText, styles.rowText)}>
+                <div
+                  {...stylex.props(
+                    settings.rowText,
+                    styles.rowText,
+                    !snippet.enabled && styles.off,
+                  )}
+                >
                   <span {...stylex.props(settings.rowTitle, styles.wrap)}>{snippet.trigger}</span>
                   <p {...stylex.props(settings.rowDetail, styles.wrap, styles.expansion)}>
                     {snippet.expansion}
                   </p>
                 </div>
                 <div {...stylex.props(styles.rowActions)}>
+                  <Switch
+                    id={`snippet-enabled-${snippet.id}`}
+                    label={`Enable ${snippet.trigger}`}
+                    checked={snippet.enabled}
+                    onChange={(enabled) => setEnabled(snippet, enabled)}
+                  />
                   <Button
                     variant="icon"
                     aria-label={`Edit ${snippet.trigger}`}
@@ -153,9 +184,9 @@ export function Snippets({ snippets }: { snippets: readonly Snippet[] }) {
       <p {...stylex.props(settings.hint)}>
         Snippets type exactly what you saved. Cleanup never changes them.
       </p>
-      {deleteAction.error && (
+      {rowAction.error && (
         <p role="alert" {...stylex.props(settings.error)}>
-          {deleteAction.error}
+          {rowAction.error}
         </p>
       )}
 

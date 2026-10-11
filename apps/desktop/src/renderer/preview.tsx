@@ -179,17 +179,19 @@ const hubScenes: Record<string, Snapshot> = {
     settings: {
       ...ready.settings,
       snippets: [
-        { id: "email", trigger: "my email", expansion: "ada@example.com" },
+        { id: "email", trigger: "my email", expansion: "ada@example.com", enabled: true },
         {
           id: "address",
           trigger: "office address",
           expansion: "Analytical Engines Ltd.\n12 Marylebone Road\nLondon NW1 5LR",
+          enabled: false,
         },
         {
           id: "signoff",
           trigger: "standard sign-off",
           expansion:
             "Thanks for the quick turnaround on this. I will review the draft tomorrow morning and send notes before the 11:00 sync. If anything changes on your side, reply here and I will adjust the plan.",
+          enabled: true,
         },
       ],
     },
