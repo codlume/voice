@@ -245,3 +245,15 @@ test("punctuation inside a split URL does not capitalize its query", () => {
   const outputs = chunks.map(({ text }) => text[0]!.toUpperCase() + text.slice(1));
   expect(stitch(raw, chunks, outputs)).toBe("Go to example.com/path?foo=bar and continue");
 });
+
+test("removing filler preserves the preceding raw sentence boundary", () => {
+  const first = "call ada about " + "the release notes ".repeat(21) + "today.";
+  const next = "then " + "review the release notes carefully ".repeat(11) + "on friday";
+  const raw = first + " um " + next;
+  const chunks = chunkTranscript(raw, 400, chars);
+  const outputs = chunks.map(({ text }) =>
+    text === "um" ? "" : text[0]!.toUpperCase() + text.slice(1).replace(/\.$/, ""),
+  );
+  expect(texts(chunks)).toEqual([first, "um", next]);
+  expect(stitch(raw, chunks, outputs)).toBe(outputs[0] + " " + outputs[2]);
+});
