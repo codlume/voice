@@ -11,6 +11,7 @@ import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
@@ -160,9 +161,9 @@ function greeting(hour: number): string {
 function run(command: SetupCommand): Promise<void> {
   switch (command.type) {
     case "installModel":
-      return window.voice.installModel(command.id);
+      return hubApi().installModel(command.id);
     case "requestPermission":
-      return window.voice.requestPermission(command.kind);
+      return hubApi().requestPermission(command.kind);
   }
 }
 
@@ -237,7 +238,7 @@ function CrashReportsRow({ on }: { on: boolean }) {
         checked={on}
         onChange={(checked) =>
           void diagnosticsAction.run(
-            () => window.voice.updateSettings({ diagnostics: checked ? "on" : "off" }),
+            () => hubApi().updateSettings({ diagnostics: checked ? "on" : "off" }),
             "Could not save settings.",
           )
         }
@@ -311,7 +312,7 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
 
   const copy = (which: "text" | "raw") =>
     void copyAction.run(async () => {
-      await window.voice.copyLast(which);
+      await hubApi().copyLast(which);
       setCopied(which);
     }, "Could not copy the transcript.");
   const hasRaw = last !== null && last.raw !== last.text;

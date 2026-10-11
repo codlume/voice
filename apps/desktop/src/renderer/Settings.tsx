@@ -32,6 +32,7 @@ import { useAction } from "./useAction.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
+import { hubApi } from "./voice.ts";
 
 export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
@@ -123,7 +124,7 @@ const updateChannels = [
 type Action = ReturnType<typeof useAction>;
 
 function update(action: Action, patch: SettingsPatch) {
-  void action.run(() => window.voice.updateSettings(patch), "Could not save settings.");
+  void action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
 }
 
 export function GlobeHint() {
@@ -284,7 +285,7 @@ export function GeneralSettings({
     const microphone = uid === "" ? null : devices.find((device) => device.uid === uid);
     if (microphone === undefined) return;
     await microphoneAction.run(
-      () => window.voice.updateSettings({ microphone }),
+      () => hubApi().updateSettings({ microphone }),
       "Could not save microphone.",
     );
   }
@@ -293,7 +294,7 @@ export function GeneralSettings({
 
   async function changeLanguage(dictationLanguage: DictationLanguage) {
     await languageAction.run(
-      () => window.voice.updateSettings({ dictationLanguage }),
+      () => hubApi().updateSettings({ dictationLanguage }),
       "Could not save dictation language.",
     );
   }
@@ -303,7 +304,7 @@ export function GeneralSettings({
 
   async function changeChannel(channel: UpdateChannel) {
     await channelAction.run(
-      () => window.voice.updateSettings({ updateChannel: channel }),
+      () => hubApi().updateSettings({ updateChannel: channel }),
       "Could not change update channel.",
     );
   }
@@ -457,7 +458,7 @@ export function SystemSettings({
               disabled={loginItem === "unavailable"}
               onChange={(on) =>
                 void loginAction.run(
-                  () => window.voice.setOpenAtLogin(on),
+                  () => hubApi().setOpenAtLogin(on),
                   "Could not change open at login.",
                 )
               }
@@ -562,9 +563,9 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
 }
 
 const modelActions = {
-  Install: (id) => window.voice.installModel(id),
-  Retry: (id) => window.voice.installModel(id),
-  Uninstall: (id) => window.voice.uninstallModel(id),
+  Install: (id) => hubApi().installModel(id),
+  Retry: (id) => hubApi().installModel(id),
+  Uninstall: (id) => hubApi().uninstallModel(id),
 } satisfies Record<ModelAction, (id: ModelId) => Promise<void>>;
 
 function ModelSection({

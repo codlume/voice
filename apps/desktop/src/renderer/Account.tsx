@@ -11,6 +11,7 @@ import { GoogleIcon } from "./Icons.tsx";
 import { Section, styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
   waitingText: {
@@ -84,7 +85,7 @@ function SignedOutRow({ account }: { account: Extract<AccountState, { kind: "sig
             id="setting-sign-in"
             variant="secondary"
             disabled={pending}
-            onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+            onClick={() => void run(() => hubApi().signIn(), "Could not start signing in.")}
           >
             Sign in with Google
             <GoogleIcon width={16} height={16} />
@@ -103,7 +104,7 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
   const pastedCode = code.trim();
   const submitCode = () => {
     if (!pastedCode || pending) return;
-    void run(() => window.voice.submitSignInCode(pastedCode), "Could not check the code.");
+    void run(() => hubApi().submitSignInCode(pastedCode), "Could not check the code.");
   };
   return (
     <>
@@ -121,9 +122,7 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
           <Button
             variant="secondary"
             disabled={account.purpose === "deleteAccount" && account.phase === "finishing"}
-            onClick={() =>
-              void run(() => window.voice.cancelSignIn(), "Could not cancel signing in.")
-            }
+            onClick={() => void run(() => hubApi().cancelSignIn(), "Could not cancel signing in.")}
           >
             Cancel sign-in
           </Button>
@@ -177,7 +176,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
               id="setting-sign-out"
               variant="secondary"
               disabled={pending || deletion !== undefined}
-              onClick={() => void run(() => window.voice.signOut(), "Could not sign out.")}
+              onClick={() => void run(() => hubApi().signOut(), "Could not sign out.")}
             >
               Sign out
             </Button>
@@ -187,7 +186,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
               disabled={pending || deletion !== undefined}
               onClick={() =>
                 void run(
-                  () => window.voice.requestAccountDeletion(),
+                  () => hubApi().requestAccountDeletion(),
                   "Could not start deleting your account.",
                 )
               }
@@ -209,7 +208,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             <div {...stylex.props(settings.actions)}>
               <Button
                 disabled={pending}
-                onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+                onClick={() => void run(() => hubApi().signIn(), "Could not start signing in.")}
               >
                 {deletion.kind === "reauthFailed" ? "Retry" : "Sign in again"}
               </Button>
@@ -217,7 +216,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
                 variant="secondary"
                 disabled={pending}
                 onClick={() =>
-                  void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.")
+                  void run(() => hubApi().cancelAccountDeletion(), "Could not cancel deletion.")
                 }
               >
                 Cancel deletion
@@ -236,7 +235,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             <Button
               disabled={pending}
               onClick={() =>
-                void run(() => window.voice.retryAccountDeletion(), "Could not retry deletion.")
+                void run(() => hubApi().retryAccountDeletion(), "Could not retry deletion.")
               }
             >
               Retry
@@ -245,7 +244,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
               variant="secondary"
               disabled={pending}
               onClick={() =>
-                void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.")
+                void run(() => hubApi().cancelAccountDeletion(), "Could not cancel deletion.")
               }
             >
               Cancel deletion
@@ -257,8 +256,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
       <ConfirmDialog
         open={deletion?.kind === "confirming"}
         onOpenChange={(open) => {
-          if (!open)
-            void run(() => window.voice.cancelAccountDeletion(), "Could not cancel deletion.");
+          if (!open) void run(() => hubApi().cancelAccountDeletion(), "Could not cancel deletion.");
         }}
         title="Delete your Voice account?"
         description={`This permanently deletes the Voice account for ${account.email} and signs you out. You can create a new, empty account by signing in again.`}
@@ -267,10 +265,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
             label: "Delete account",
             variant: "destructive",
             onClick: () =>
-              void run(
-                () => window.voice.confirmAccountDeletion(),
-                "Could not delete your account.",
-              ),
+              void run(() => hubApi().confirmAccountDeletion(), "Could not delete your account."),
           },
         ]}
       />
@@ -288,7 +283,7 @@ function ErrorRow({ account }: { account: Extract<AccountState, { kind: "error" 
           <div {...stylex.props(settings.actions)}>
             <Button
               disabled={pending}
-              onClick={() => void run(() => window.voice.signIn(), "Could not start signing in.")}
+              onClick={() => void run(() => hubApi().signIn(), "Could not start signing in.")}
             >
               Retry
             </Button>
@@ -296,7 +291,7 @@ function ErrorRow({ account }: { account: Extract<AccountState, { kind: "error" 
               variant="secondary"
               disabled={pending}
               onClick={() =>
-                void run(() => window.voice.dismissAccountError(), "Could not dismiss the error.")
+                void run(() => hubApi().dismissAccountError(), "Could not dismiss the error.")
               }
             >
               Dismiss

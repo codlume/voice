@@ -6,8 +6,9 @@ import {
   type Outcome,
   type PillState,
   type Snapshot,
+  type HubApi,
+  type PillApi,
   type UpdateStatus,
-  type VoiceApi,
 } from "../shared/api.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
@@ -210,7 +211,7 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
-function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
+function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
   let snapshot = initial;
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const set = (next: Snapshot) => {
