@@ -2,8 +2,6 @@
 
 Voice is a macOS dictation app. Hold a shortcut, speak, and release. Voice transcribes your speech on your Mac and types the text into the app you were using.
 
-If Voice cannot insert through macOS accessibility, it keeps the transcript in Voice for you to copy and paste manually. The **Copy transcript to clipboard** setting copies it automatically when enabled. Check the target before pasting again if an insertion attempt failed, since an unresponsive app may apply it late. Voice does not send an automatic paste shortcut or replace your clipboard as an insertion fallback.
-
 Sharing crash reports, dictation timings, and app events such as a failed cleanup is opt-in. They never include your words, audio, clipboard, or the app you dictate into.
 
 ## Requirements
