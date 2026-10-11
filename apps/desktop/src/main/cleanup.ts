@@ -131,25 +131,29 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     install: () =>
       serialize(async () => {
         if (!claimIdle()) return;
+        const controller = new AbortController();
+        download = controller;
         options.onStatus({ state: "downloading", progress: 0 });
         const module = await loadModule();
-        download = new AbortController();
         let modelPath: string;
         try {
           modelPath = await module.downloadS1Mini({
             dir: options.modelsDir,
             baseUrl: options.baseUrl,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
-            signal: download.signal,
+            signal: controller.signal,
           });
         } catch (error) {
-          options.onStatus({ state: "failed", message: message(error) });
+          if (!controller.signal.aborted) {
+            options.onStatus({ state: "failed", message: message(error) });
+          }
           return;
         }
         await loadModel(module, modelPath);
       }),
-    uninstall: () =>
-      disposeThen(async () => {
+    uninstall: () => {
+      download?.abort(new Error("Download cancelled"));
+      return disposeThen(async () => {
         const module = await loadModule();
         try {
           await module.removeS1Mini({ dir: options.modelsDir });
@@ -158,7 +162,8 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           return;
         }
         options.onStatus({ state: "missing" });
-      }),
+      });
+    },
     // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
