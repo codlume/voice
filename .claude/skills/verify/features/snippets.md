@@ -1,11 +1,11 @@
 # Snippets
 
-Snippets let a user save a spoken trigger, such as "my email", and the exact text Voice types in its place. Saying only the trigger types only the saved text. Saying it inside a sentence replaces just the trigger. Cleanup never rewrites the saved text. With no snippets saved, the page shows one example row.
+Snippets let a user save a spoken trigger, such as "my email", and the exact text Voice types in its place. Saying only the trigger types only the saved text. Saying it inside a sentence replaces just the trigger. A trigger matches whatever its case or accents in speech, and only between word breaks or punctuation on both sides. Snippets and dictionary entries are applied together in one pass, longest phrase first, so a dictionary entry never rewrites a trigger or an expansion. Cleanup never rewrites the saved text. With no snippets saved, the page shows one example row.
 
 ## Sub-features
 
 - `snippets-add`: `Add new` opens the `Add snippet` dialog with `Trigger` and `Expansion` fields and an n/max counter on each. Enter in `Trigger` saves.
-- `snippets-validate`: saving an empty, too long, or duplicate trigger, or an empty expansion, keeps the dialog open and shows the problem under the field. Duplicates ignore case, spaces, and punctuation.
+- `snippets-validate`: saving an empty, too long, or duplicate trigger, or an empty expansion, keeps the dialog open and shows the problem under the field. Duplicates ignore case, spaces, and punctuation. A trigger that is already a dictionary phrase, up to case, accents, and spacing, shows "This trigger is already in your dictionary."
 - `snippets-edit`: the pencil button on a row opens `Edit snippet`, and `Save changes` replaces that snippet in place.
 - `snippets-delete`: the trash button asks "Delete snippet?" with "‘<trigger>’ will be deleted permanently." (curly quotes) before it deletes.
 - `snippets-toggle`: the switch on a row, named `Enable <trigger>`, turns the snippet off or on. A switched-off snippet stays saved and editable, its text is faded, and dictation never expands it. Its trigger still counts as taken.
