@@ -718,28 +718,17 @@ const commands = {
         .slice(logOffset)
         .split("\n")
         .find((l) => pattern.test(l));
-    const waitForLog = async (pattern, timeoutMs, label) => {
+    const poll = async (check, timeoutMs, label) => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const line = logLine(pattern);
-        if (line) return line;
+        const result = check();
+        if (result !== undefined) return result;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
     };
-    // Null once the helper has streamed the whole fixture; otherwise the first snapshot showing
-    // the session ended first, which stops the fixture before its end marker is written.
-    const fixtureEnd = async () => {
-      const listened = snapshots.items.length;
-      const deadline = Date.now() + 60_000;
-      while (Date.now() < deadline) {
-        if (logLine(/helper info: test\.audioFile ended$/)) return null;
-        const ended = snapshots.items.slice(listened).find((s) => s.session.kind !== "listening");
-        if (ended) return ended;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      throw new Error("timed out after 60000 ms waiting for fixture to finish");
-    };
+    const waitForLog = (pattern, timeoutMs, label) =>
+      poll(() => logLine(pattern), timeoutMs, label);
 
     const targetEnv = {
       ...process.env,
@@ -751,7 +740,6 @@ const commands = {
       [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
       { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );
-    let failure;
     try {
       const field = 'document.getElementById("field")';
       const { DevTools: targetPort } = await announcedPorts(target, ["DevTools"]);
@@ -769,12 +757,28 @@ const commands = {
 
       fnpost(settings.hotkey, "down");
       const pressedAt = performance.now();
-      await snapshots.waitFor((s) => s.session.kind === "listening", {
+      const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {
         timeoutMs: 5000,
         label: "listening",
       });
-      const endedEarly = end === "audio" ? await fixtureEnd() : null;
-      const earlyMs = endedEarly && Math.round(performance.now() - pressedAt);
+      // Null once the helper has streamed the whole fixture; otherwise the first snapshot showing
+      // the session ended first, which stops the fixture before its end marker is written.
+      const after = snapshots.items.indexOf(listening) + 1;
+      const ended =
+        end === "audio"
+          ? await poll(
+              () =>
+                logLine(/helper info: test\.audioFile ended$/)
+                  ? null
+                  : snapshots.items.slice(after).find((s) => s.session.kind !== "listening"),
+              60_000,
+              "fixture to finish",
+            )
+          : null;
+      const captureEndedEarly = ended && {
+        afterMs: Math.round(performance.now() - pressedAt),
+        session: ended.session.kind,
+      };
       if (end === "escape") fnpost("escape");
       else fnpost(settings.hotkey, "up");
       const heldMs = Math.round(performance.now() - pressedAt);
@@ -786,7 +790,8 @@ const commands = {
         });
         fnpost(settings.hotkey, "up");
       } else {
-        finalState = await snapshots.waitFor((s) => s.session.kind === "done", {
+        // A session cancelled while held ends in idle, not done.
+        finalState = await snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
           timeoutMs: 90_000,
           label: "done",
         });
@@ -803,9 +808,7 @@ const commands = {
         hotkey: settings.hotkey,
         cleanup: settings.cleanup,
         heldMs,
-        ...(endedEarly && {
-          captureEndedEarly: { afterMs: earlyMs, session: endedEarly.session.kind },
-        }),
+        ...(captureEndedEarly && { captureEndedEarly }),
         outcome: finalState.session.outcome ?? finalState.session.kind,
         inserted: await targetPage.evaluate(`${field}.value`),
         last: finalState.last,
@@ -818,15 +821,16 @@ const commands = {
       );
       writeFileSync(path, JSON.stringify(result, null, 2));
       out({ ...result, evidence: path });
-      if (endedEarly) {
-        failure = `capture ended ${earlyMs} ms after the press, before ${wav} finished, while dictate still held the hotkey`;
+      if (captureEndedEarly) {
+        throw new Error(
+          `capture ended by ${captureEndedEarly.afterMs} ms after the press, before ${wav} finished, while dictate still held the hotkey`,
+        );
       }
     } finally {
       rmSync(state.fakeMicrophonePath, { force: true });
       hub.close();
       await stopChildren();
     }
-    if (failure) fail(failure);
   },
 
   help() {
