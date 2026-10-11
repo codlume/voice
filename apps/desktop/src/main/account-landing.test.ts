@@ -28,7 +28,9 @@ describe("sign-in code across the landing page and the account module", () => {
 
       const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
       const elements = {
+        "start-in-voice": { hidden: true },
         "signed-in": { hidden: true },
+        "not-desktop": { hidden: true },
         expired: { hidden: true },
         open: { href: "" },
         code: { textContent: "" },
@@ -40,8 +42,10 @@ describe("sign-in code across the landing page and the account module", () => {
           cookie: `better-auth.state=s; better-auth.electron=${cookieValue}`,
           getElementById: (id: keyof typeof elements) => elements[id],
         },
+        navigator: { platform: "MacIntel", maxTouchPoints: 0 },
         fetch: () => Promise.resolve(new Response()),
         location: {
+          hash: "",
           replace: (url: string) => {
             opened = url;
           },

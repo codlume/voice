@@ -683,6 +683,7 @@ describe("a sign-in start that a web page opened", () => {
         const printed = log.mock.calls.map((call) => call.join(" "));
         expect(printed).toHaveLength(1);
         expect(JSON.parse(printed[0] ?? "")).toEqual({
+          requestId: expect.any(String),
           route: "/api/auth/electron/init-oauth-proxy",
           status: 302,
           refused: "sec-fetch-site",
@@ -707,6 +708,28 @@ describe("a sign-in start that a web page opened", () => {
     expect(own.status).toBe(302);
     expect(own.headers.get("location")).toMatch(/^https:\/\/accounts\.google\.com\//);
     expect(await bucketsOf(ip)).toEqual([{ key: `${ip}|/electron/init-oauth-proxy`, count: 1 }]);
+  });
+
+  it("is not routed as a POST, so a page's cross-site form or no-cors fetch takes no step in the IP's bucket (catches a gate that covers only GET while the auth route still accepts POST)", async () => {
+    const ip = freshIp();
+    const response = await worker(
+      startUrl(),
+      { method: "POST", redirect: "manual", headers: { "sec-fetch-site": "cross-site" } },
+      ip,
+    );
+
+    expect(response.status).toBe(404);
+    expect(await bucketsOf(ip)).toEqual([]);
+  });
+
+  it("logs an unexpected header value as other, so the log stays one of four values (catches a client-chosen string written to the log)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await worker(startUrl(), fromPage("x".repeat(500)));
+      expect(JSON.parse(String(log.mock.calls[0]?.[0])).secFetchSite).toBe("other");
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("does not block Google's redirect, which reaches the callback cross-site (catches a gate widened past the start)", async () => {

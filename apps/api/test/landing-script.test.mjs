@@ -104,13 +104,13 @@ test("says the link expired when the electron cookie is gone", () => {
   assert.deepEqual(calls, []);
 });
 
-test("tells a refused start to begin from Voice, and touches nothing else even with a code cookie", () => {
+test("tells a refused start to begin from Voice, and neither shows a leftover code nor opens Voice with it", () => {
   const { elements, calls } = open(cookie, { hash: "#start-in-voice" });
 
   assert.deepEqual(shown(elements), ["start-in-voice"]);
   assert.equal(elements.code.textContent, "");
   assert.equal(elements.open.href, "");
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [signOut]);
 });
 
 test("keeps the code off a phone or tablet, and still signs the browser out", () => {
@@ -135,6 +135,9 @@ test("opens Voice on Windows and on macOS, whichever platform API the browser of
     { platform: "Win32" },
     { platform: "Win32", userAgentData: { platform: "Windows" } },
     { platform: "MacIntel", userAgentData: { platform: "macOS" } },
+    // A browser may withhold the platform from userAgentData as an empty string.
+    { platform: "MacIntel", userAgentData: { platform: "" } },
+    { platform: "Win32", maxTouchPoints: 10 },
   ]) {
     const { elements, calls } = open(cookie, device);
     const label = JSON.stringify(device);

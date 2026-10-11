@@ -55,14 +55,14 @@ button { flex-shrink: 0; padding: 6px 14px; border: 1px solid var(--border); bor
 const script = `
 const name = "better-auth.electron=";
 const code = document.cookie.split("; ").find((cookie) => cookie.startsWith(name))?.slice(name.length);
-const platform = navigator.userAgentData?.platform ?? navigator.platform;
+const platform = navigator.userAgentData?.platform || navigator.platform;
 const desktop = /^Win/i.test(platform) || (/^Mac/i.test(platform) && !(navigator.maxTouchPoints > 1));
-const state = location.hash === "#start-in-voice" ? "start-in-voice" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
-document.getElementById(state).hidden = false;
-if (state === "signed-in" || state === "not-desktop") {
+const view = location.hash === "#start-in-voice" ? "start-in-voice" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
+document.getElementById(view).hidden = false;
+if (code) {
   fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
 }
-if (state === "signed-in") {
+if (view === "signed-in") {
   const url = "com.codlume.voice://auth/callback#token=" + code;
   const codeBox = document.getElementById("code");
   const copy = document.getElementById("copy");
