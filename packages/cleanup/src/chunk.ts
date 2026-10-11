@@ -130,7 +130,8 @@ function lowercaseContinuation(
     !before ||
     TERMINAL_END.test(before) ||
     TERMINAL_END.test(rawBefore) ||
-    /[\r\n]\s*$/u.test(rawBefore)
+    /[\r\n]\s*$/u.test(rawBefore) ||
+    /[\r\n]\s*$/u.test(before)
   )
     return output;
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
