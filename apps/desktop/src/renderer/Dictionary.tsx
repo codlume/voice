@@ -2,6 +2,7 @@ import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 
 import {
+  dictionaryEntry,
   dictionaryProblem,
   PHRASE_MAX_LENGTH,
   REPLACEMENT_MAX_LENGTH,
@@ -45,15 +46,7 @@ export function Dictionary({
       name={(entry) => entry.phrase}
       example={{ title: "Wispr Flow" }}
       row={(entry) => ({ title: label(entry) })}
-      // An empty "Replace with" makes a word entry.
-      normalize={(draft) => {
-        const replacement = draft.replacement?.trim() ?? "";
-        return {
-          id: draft.id,
-          phrase: draft.phrase.trim(),
-          replacement: replacement === "" ? null : replacement,
-        };
-      }}
+      normalize={dictionaryEntry}
       problem={(entry, others) => dictionaryProblem(entry, others, snippets)}
       renderFields={({ draft, edit, shown, message, saveOnEnter }) => (
         <>

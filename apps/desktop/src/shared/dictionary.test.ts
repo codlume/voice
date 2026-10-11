@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   PHRASE_MAX_LENGTH,
   REPLACEMENT_MAX_LENGTH,
+  dictionaryEntry,
   dictionaryProblem,
   parseDictionary,
   type DictionaryEntry,
@@ -19,6 +20,21 @@ const replace = (phrase: string, replacement: string): DictionaryEntry => ({
   id: String((ids += 1)),
   phrase,
   replacement,
+});
+
+describe("dictionaryEntry", () => {
+  test("trims the phrase and reads a blank replacement as a word", () => {
+    expect(dictionaryEntry({ id: "1", phrase: "  Wispr Flow ", replacement: " \n " })).toEqual({
+      id: "1",
+      phrase: "Wispr Flow",
+      replacement: null,
+    });
+    expect(dictionaryEntry({ id: "2", phrase: "btw", replacement: " by the way " })).toEqual({
+      id: "2",
+      phrase: "btw",
+      replacement: "by the way",
+    });
+  });
 });
 
 describe("dictionaryProblem", () => {
@@ -51,15 +67,11 @@ describe("dictionaryProblem", () => {
     expect(problem(entry)).toEqual({ field: "phrase", message });
   });
 
-  test.each([
-    ["a blank replacement", replace("idk", "  "), "Enter the text Voice should type."],
-    [
-      "a replacement that is too long",
-      replace("idk", "a".repeat(REPLACEMENT_MAX_LENGTH + 1)),
-      `Use ${REPLACEMENT_MAX_LENGTH} characters or fewer.`,
-    ],
-  ])("rejects %s", (_, entry, message) => {
-    expect(problem(entry)).toEqual({ field: "replacement", message });
+  test("rejects a replacement that is too long", () => {
+    expect(problem(replace("idk", "a".repeat(REPLACEMENT_MAX_LENGTH + 1)))).toEqual({
+      field: "replacement",
+      message: `Use ${REPLACEMENT_MAX_LENGTH} characters or fewer.`,
+    });
   });
 
   test("accepts a word, a replacement, and the longest allowed phrase", () => {

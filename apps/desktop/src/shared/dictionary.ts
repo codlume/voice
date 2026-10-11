@@ -9,7 +9,15 @@ export const REPLACEMENT_MAX_LENGTH = 500;
 
 export type DictionaryProblem = { field: "phrase" | "replacement"; message: string };
 
-// `others` never contains the entry being checked; callers filter it out.
+// What the dialog and the settings file both mean: a trimmed phrase, and a word when "Replace
+// with" is left blank.
+export function dictionaryEntry({ id, phrase, replacement }: DictionaryEntry): DictionaryEntry {
+  const text = replacement?.trim() ?? "";
+  return { id, phrase: phrase.trim(), replacement: text === "" ? null : text };
+}
+
+// `entry` comes from `dictionaryEntry`, so its replacement is never blank. `others` never contains
+// the entry being checked; callers filter it out.
 export function dictionaryProblem(
   entry: DictionaryEntry,
   others: readonly DictionaryEntry[],
@@ -30,11 +38,7 @@ export function dictionaryProblem(
   if (snippets.some((snippet) => samePhrase(snippet.trigger, phrase))) {
     return { field: "phrase", message: "This phrase is already a snippet trigger." };
   }
-  if (replacement === null) return null;
-  if (replacement.trim() === "") {
-    return { field: "replacement", message: "Enter the text Voice should type." };
-  }
-  if (replacement.length > REPLACEMENT_MAX_LENGTH) {
+  if (replacement !== null && replacement.length > REPLACEMENT_MAX_LENGTH) {
     return { field: "replacement", message: `Use ${REPLACEMENT_MAX_LENGTH} characters or fewer.` };
   }
   return null;
@@ -50,9 +54,7 @@ export function parseDictionary(raw: unknown): DictionaryEntry[] {
     const { id, phrase, replacement } = item as Record<string, unknown>;
     if (typeof id !== "string" || typeof phrase !== "string") continue;
     if (replacement !== null && typeof replacement !== "string") continue;
-    // An empty "Replace with" is a word, as in the dialog.
-    const text = replacement?.trim() ?? "";
-    const entry = { id, phrase: phrase.trim(), replacement: text === "" ? null : text };
+    const entry = dictionaryEntry({ id, phrase, replacement });
     if (kept.some((other) => other.id === id) || dictionaryProblem(entry, [], [])) continue;
     kept.push(entry);
   }
