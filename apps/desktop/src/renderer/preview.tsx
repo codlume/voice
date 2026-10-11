@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import {
+  fullName,
   toPillSnapshot,
   type ModelStatus,
   type Outcome,
@@ -15,6 +16,14 @@ import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
 import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
+
+const ada = {
+  id: "ada-id",
+  name: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  email: "ada@example.com",
+};
 
 const base: Snapshot = {
   updates: {
@@ -53,7 +62,6 @@ const base: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  otherChannelSignedIn: false,
   last: null,
 };
 
@@ -221,14 +229,13 @@ const hubScenes: Record<string, Snapshot> = {
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
   "account-signed-out": { ...ready, account: { kind: "signedOut" } },
-  "account-other-channel": { ...ready, account: { kind: "signedOut" }, otherChannelSignedIn: true },
   "account-signing-in": {
     ...ready,
     account: { kind: "signingIn", purpose: "signIn", phase: "browser" },
   },
   "account-signed-in": {
     ...ready,
-    account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
+    account: { kind: "signedIn", ...ada },
   },
   "account-error": {
     ...ready,
@@ -376,7 +383,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
       if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({
         ...snapshot,
-        account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
+        account: { kind: "signedIn", ...ada },
       });
     },
     cancelSignIn: async () => {
@@ -384,6 +391,12 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
     },
     dismissAccountError: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    updateAccountName: async ({ firstName, lastName }) => {
+      if (snapshot.account.kind !== "signedIn") return;
+      const name = { firstName: firstName.trim(), lastName: lastName.trim() };
+      if (!name.firstName) throw new Error("Enter a first name.");
+      set({ ...snapshot, account: { ...snapshot.account, ...name, name: fullName(name) } });
     },
     requestAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;
@@ -396,8 +409,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
     },
     cancelAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;
-      const { name, email } = snapshot.account;
-      set({ ...snapshot, account: { kind: "signedIn", id: "ada-id", name, email } });
+      const { deletion: _deletion, ...identity } = snapshot.account;
+      set({ ...snapshot, account: identity });
     },
     retryAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;

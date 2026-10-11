@@ -182,7 +182,13 @@ describe("sign out", () => {
     expect(fake.stored).toBe(false);
     expect(fake.serverSignOuts).toBe(1);
     fake.signOuts[0]?.answer({ kind: "unreachable", error: new TypeError("offline") });
-    const nextUser = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
+    const nextUser = {
+      id: "grace-id",
+      name: "Grace Hopper",
+      firstName: "Grace",
+      lastName: "Hopper",
+      email: "grace@example.com",
+    };
     fake.setUser(nextUser);
     const submitted = h.account.submitSignInCode(CODE);
     await flush();

@@ -60,6 +60,7 @@ describe("hub preload", () => {
       "stopMicrophoneTest",
       "submitSignInCode",
       "uninstallModel",
+      "updateAccountName",
       "updateSettings",
     ]);
   });
@@ -79,18 +80,20 @@ describe("hub preload", () => {
     expect(channels.has(Channel.pillSnapshot)).toBe(false);
   });
 
-  test("account calls invoke their channels with the code as the only payload", async () => {
+  test("account calls invoke their channels with the code or name as the only payload", async () => {
     const { api } = await load();
     invoked.length = 0;
     await api.signIn();
     await api.submitSignInCode("abc");
     await api.cancelSignIn();
     await api.dismissAccountError();
+    await api.updateAccountName({ firstName: "Ada", lastName: "Lovelace" });
     expect(invoked).toEqual([
       [Channel.signIn],
       [Channel.submitSignInCode, "abc"],
       [Channel.cancelSignIn],
       [Channel.dismissAccountError],
+      [Channel.updateAccountName, { firstName: "Ada", lastName: "Lovelace" }],
     ]);
   });
 });

@@ -17,12 +17,13 @@ import { expect, test, vi } from "vite-plus/test";
 import { storage } from "@better-auth/electron/storage";
 import { authSessionStored, authStorageKeys } from "./account-storage.ts";
 
-const legacyUser = { name: USER.name, email: USER.email };
+const legacyCache = { name: USER.name, email: USER.email };
+const legacyUser = { ...legacyCache, firstName: "Ada", lastName: "Lovelace" };
 const keys = authStorageKeys("nightly");
 
 async function legacyAccount() {
   await signedInClient();
-  writeCachedIdentity(legacyUser);
+  writeCachedIdentity(legacyCache);
   const cookie = storage().getItem(keys.cookie);
   http.answer = () => {
     throw new TypeError("offline");
@@ -222,4 +223,28 @@ test("a legacy id lookup deadline keeps auth and allows Retry and Cancel", async
 test("a cached identity with a non-string id is not read back", () => {
   writeCachedIdentity({ ...USER, id: 42 });
   expect(client("nightly").cachedUser()).toBeNull();
+});
+
+test.each([
+  ["Mateusz Hadryś", "Mateusz", "Hadryś"],
+  ["Plato", "Plato", ""],
+  [" Ada King Lovelace ", "Ada", "King Lovelace"],
+])(
+  "an identity cached before first and last names splits %j at its first space, as the API did",
+  (name, firstName, lastName) => {
+    writeCachedIdentity({ id: USER.id, name, email: USER.email });
+    expect(client("nightly").cachedUser()).toEqual({
+      id: USER.id,
+      name,
+      firstName,
+      lastName,
+      email: USER.email,
+    });
+  },
+);
+
+test("a cached first and last name are read as they are, not split again", () => {
+  const sartre = { ...USER, name: "Jean Paul Sartre", firstName: "Jean Paul", lastName: "Sartre" };
+  writeCachedIdentity(sartre);
+  expect(client("nightly").cachedUser()).toEqual(sartre);
 });

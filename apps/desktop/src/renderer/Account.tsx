@@ -1,17 +1,19 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState, type ReactNode } from "react";
 
-import type { AccountState } from "../shared/api.ts";
-import { accountName, accountRow } from "./accountView.ts";
+import { ACCOUNT_NAME_MAX_LENGTH, type AccountName, type AccountState } from "../shared/api.ts";
+import { accountRow } from "./accountView.ts";
 import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { GoogleIcon } from "./Icons.tsx";
-import { Section, styles as settings } from "./Settings.tsx";
+import { styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
+
+const rowHeight = 32;
 
 const styles = stylex.create({
   waitingText: {
@@ -37,6 +39,29 @@ const styles = stylex.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: 12.5,
   },
+  fieldLabel: { flexGrow: 1, minWidth: 0, fontWeight: 500 },
+  email: {
+    display: "flex",
+    alignItems: "center",
+    minWidth: 0,
+    minHeight: rowHeight,
+    color: color.mutedForeground,
+  },
+  nameInput: {
+    width: 240,
+    paddingBlock: 6,
+    paddingInline: 10,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: { default: color.border, ":focus": color.input },
+    borderRadius: radius.medium,
+    backgroundColor: color.card,
+    color: color.foreground,
+    font: "inherit",
+    fontSize: 13,
+  },
+  formActions: { display: "flex", alignItems: "center", gap: space.sm },
+  save: { marginInlineStart: "auto" },
 });
 
 type RowRole = "status" | "alert";
@@ -157,43 +182,95 @@ function SigningInRow({ account }: { account: Extract<AccountState, { kind: "sig
   );
 }
 
+function NameField({
+  id,
+  label,
+  value,
+  disabled,
+  readOnly,
+  onChange,
+  onEnter,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  disabled: boolean;
+  readOnly: boolean;
+  onChange: (value: string) => void;
+  onEnter: () => void;
+}) {
+  return (
+    <div {...stylex.props(settings.row, disabled && settings.disabled)}>
+      <label htmlFor={id} {...stylex.props(styles.fieldLabel)}>
+        {label}
+      </label>
+      <input
+        id={id}
+        value={value}
+        maxLength={ACCOUNT_NAME_MAX_LENGTH}
+        autoComplete="off"
+        spellCheck={false}
+        disabled={disabled}
+        readOnly={readOnly}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) onEnter();
+        }}
+        {...stylex.props(styles.nameInput)}
+      />
+    </div>
+  );
+}
+
 function SignedInRow({ account }: { account: Extract<AccountState, { kind: "signedIn" }> }) {
-  const { pending, error, run } = useAction();
+  const { pending, error, run, clearError } = useAction();
   const deletion = account.deletion;
+  const [draft, setDraft] = useState<AccountName | null>(null);
+  const shown = draft ?? account;
+  const name = { firstName: shown.firstName.trim(), lastName: shown.lastName.trim() };
+  const changed = name.firstName !== account.firstName || name.lastName !== account.lastName;
+  const canSave = !pending && deletion === undefined && changed && name.firstName !== "";
+  const edit = (patch: Partial<AccountName>) => {
+    setDraft({ firstName: shown.firstName, lastName: shown.lastName, ...patch });
+    clearError();
+  };
+  const save = () => {
+    if (!canSave) return;
+    void run(async () => {
+      await hubApi().updateAccountName(name);
+      setDraft(null);
+    }, "Could not save your name.");
+  };
   return (
     <>
       <Card>
+        <NameField
+          id="setting-first-name"
+          label="First name"
+          value={shown.firstName}
+          disabled={deletion !== undefined}
+          readOnly={pending}
+          onChange={(firstName) => edit({ firstName })}
+          onEnter={save}
+        />
+        <NameField
+          id="setting-last-name"
+          label="Last name"
+          value={shown.lastName}
+          disabled={deletion !== undefined}
+          readOnly={pending}
+          onChange={(lastName) => edit({ lastName })}
+          onEnter={save}
+        />
         <div {...stylex.props(settings.row)}>
-          <Avatar identity={account} size={40} />
-          <div {...stylex.props(settings.rowText)}>
-            <span {...stylex.props(settings.rowTitle)}>{accountName(account)}</span>
-            <p {...stylex.props(settings.rowDetail)}>
-              <HiddenEmail email={account.email} />
-            </p>
-          </div>
-          <div {...stylex.props(settings.actions)}>
-            <Button
-              id="setting-sign-out"
-              variant="secondary"
-              disabled={pending || deletion !== undefined}
-              onClick={() => void run(() => hubApi().signOut(), "Could not sign out.")}
-            >
-              Sign out
-            </Button>
-            <Button
-              id="setting-delete-account"
-              variant="destructive"
-              disabled={pending || deletion !== undefined}
-              onClick={() =>
-                void run(
-                  () => hubApi().requestAccountDeletion(),
-                  "Could not start deleting your account.",
-                )
-              }
-            >
-              {deletion?.kind === "deleting" ? "Deleting…" : "Delete account"}
-            </Button>
-          </div>
+          <span {...stylex.props(styles.fieldLabel)}>Email</span>
+          <span {...stylex.props(styles.email)}>
+            <HiddenEmail email={account.email} />
+          </span>
+        </div>
+        <div {...stylex.props(settings.row)}>
+          <span {...stylex.props(styles.fieldLabel)}>Profile picture</span>
+          <Avatar identity={account} size={rowHeight} />
         </div>
         {account.notice && (
           <p role="status" {...stylex.props(settings.row, settings.rowDetail)}>
@@ -252,6 +329,34 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
           </div>
         )}
       </Card>
+      <div {...stylex.props(styles.formActions)}>
+        <Button
+          id="setting-sign-out"
+          variant="secondary"
+          disabled={pending || deletion !== undefined}
+          onClick={() => void run(() => hubApi().signOut(), "Could not sign out.")}
+        >
+          Sign out
+        </Button>
+        <Button
+          id="setting-delete-account"
+          variant="destructive"
+          disabled={pending || deletion !== undefined}
+          onClick={() =>
+            void run(
+              () => hubApi().requestAccountDeletion(),
+              "Could not start deleting your account.",
+            )
+          }
+        >
+          {deletion?.kind === "deleting" ? "Deleting…" : "Delete account"}
+        </Button>
+        <div {...stylex.props(styles.save)}>
+          <Button id="setting-save-name" disabled={!canSave} onClick={save}>
+            Save
+          </Button>
+        </div>
+      </div>
       <ErrorLine text={error} />
       <ConfirmDialog
         open={deletion?.kind === "confirming"}
@@ -319,7 +424,7 @@ function AccountRow({ account }: { account: AccountState }) {
     case "signingIn":
       return <SigningInRow account={account} />;
     case "signedIn":
-      return <SignedInRow account={account} />;
+      return <SignedInRow key={account.email} account={account} />;
     case "error":
       return <ErrorRow account={account} />;
     default: {
@@ -329,25 +434,11 @@ function AccountRow({ account }: { account: AccountState }) {
   }
 }
 
-export function AccountSettings({
-  account,
-  otherChannelSignedIn,
-}: {
-  account: AccountState;
-  otherChannelSignedIn: boolean;
-}) {
+export function AccountSettings({ account }: { account: AccountState }) {
   return (
     <div {...stylex.props(settings.page)}>
       <h1 {...stylex.props(settings.headline)}>Account</h1>
-      <Section label="Google sign-in">
-        <AccountRow account={account} />
-        {otherChannelSignedIn && (
-          <p {...stylex.props(settings.hint)}>
-            Stable and Nightly use separate accounts, so a sign-in from the other channel does not
-            apply here.
-          </p>
-        )}
-      </Section>
+      <AccountRow account={account} />
     </div>
   );
 }

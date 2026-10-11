@@ -49,6 +49,7 @@ const authPaths = [
   "/error",
   "/electron/token",
   "/delete-user",
+  "/update-user",
 ].map((path) => authOptions.basePath + path);
 
 let auth: ReturnType<typeof createAuth> | undefined;

@@ -17,7 +17,10 @@ const base = "http://localhost:8787";
 const appOrigin = "com.codlume.voice:/";
 
 let nextIp = 1;
-const freshIp = () => `198.51.100.${nextIp++}`;
+const freshIp = () => {
+  const n = nextIp++;
+  return `198.18.${n >> 8}.${n & 255}`;
+};
 
 /** Sends a request into the Worker from one client IP; `ip: null` sends none, as a proxyless client would. */
 function worker(input: string | Request, init?: RequestInit, ip: string | null = freshIp()) {
@@ -948,5 +951,81 @@ describe("account deletion", () => {
     expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(0);
     expect(await getSession(currentCookie)).not.toBeNull();
     expect(await count("select count(*) as n from user where id = ?", user.id)).toBe(1);
+  });
+});
+
+describe("names", () => {
+  type Named = { name: string; firstName: string; lastName: string };
+  const namesOf = async (cookie: string) => {
+    const response = await worker(`${base}/api/auth/get-session`, { headers: { cookie } });
+    expect(response.status).toBe(200);
+    const { user } = await response.json<{ user: Named }>();
+    return { name: user.name, firstName: user.firstName, lastName: user.lastName };
+  };
+  const signInCookie = async (googleCode: string) =>
+    cookieHeader(storeCookies(await exchange(await browserSignIn(googleCode, { signOut: true }))));
+  const updateUser = (cookie: string | null, body: unknown) =>
+    worker(`${base}/api/auth/update-user`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: appOrigin,
+        ...(cookie && { cookie }),
+      },
+      body: JSON.stringify(body),
+    });
+
+  it.each([
+    ["jean-paul-sartre", { name: "Jean Paul Sartre", firstName: "Jean Paul", lastName: "Sartre" }],
+    ["mary-ann-evans", { name: "Mary Ann Evans", firstName: "Mary", lastName: "Ann Evans" }],
+  ])(
+    "takes a new %s's first and last name from Google, splitting the full name when Google sends no parts (catches a sign-up with empty names)",
+    async (googleCode, names) => {
+      expect(await namesOf(await signInCookie(googleCode))).toEqual(names);
+    },
+  );
+
+  it("renames the user, derives the full name, and keeps the edit through the next sign-in (catches a rename the server drops, or Google overwriting it)", async () => {
+    const cookie = await signInCookie("rename-me");
+    const updated = await updateUser(cookie, { firstName: "  Ada ", lastName: " King Lovelace " });
+    expect(updated.status).toBe(200);
+    const renamed = { name: "Ada King Lovelace", firstName: "Ada", lastName: "King Lovelace" };
+    expect(await namesOf(cookie)).toEqual(renamed);
+
+    expect(await namesOf(await signInCookie("rename-me"))).toEqual(renamed);
+  });
+
+  it("accepts an empty last name, so a mononym has no trailing space (catches a required last name)", async () => {
+    const cookie = await signInCookie("mononym");
+    expect((await updateUser(cookie, { firstName: "Plato", lastName: "" })).status).toBe(200);
+    expect(await namesOf(cookie)).toEqual({ name: "Plato", firstName: "Plato", lastName: "" });
+  });
+
+  it("refuses an empty first name, a missing or overlong name, and any other field, leaving the user unchanged (catches update-user writing any field the client sends)", async () => {
+    const cookie = await signInCookie("refused-rename");
+    const before = await namesOf(cookie);
+    const refusals = [
+      { firstName: "   ", lastName: "Lovelace" },
+      { firstName: "Ada" },
+      { firstName: 1, lastName: "Lovelace" },
+      { firstName: "A".repeat(101), lastName: "Lovelace" },
+      { firstName: "Ada", lastName: "L".repeat(101) },
+      { firstName: "Ada", lastName: "Lovelace", image: "https://example.com/a.png" },
+      { firstName: "Ada", lastName: "Lovelace", name: "Someone Else" },
+      { firstName: "Ada", lastName: "Lovelace", email: "other@example.com" },
+    ];
+    for (const body of refusals) {
+      expect((await updateUser(cookie, body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(await namesOf(cookie)).toEqual(before);
+    const stored = await env.DB.prepare("select image, email from user where email = ?")
+      .bind("refused-rename@example.com")
+      .first();
+    expect(stored).toEqual({ image: null, email: "refused-rename@example.com" });
+  });
+
+  it("refuses an update without an auth session (catches update-user open to anyone)", async () => {
+    const refused = await updateUser(null, { firstName: "Ada", lastName: "Lovelace" });
+    expect(refused.status).toBe(401);
   });
 });

@@ -36,8 +36,20 @@ export const API = {
   stable: "https://api.example.com",
   nightly: "https://api-nightly.example.com",
 };
-export const USER = { id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" };
-export const GRACE = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
+export const USER = {
+  id: "ada-id",
+  name: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  email: "ada@example.com",
+};
+export const GRACE = {
+  id: "grace-id",
+  name: "Grace Hopper",
+  firstName: "Grace",
+  lastName: "Hopper",
+  email: "grace@example.com",
+};
 export const PICTURED = { ...USER, image: "https://lh3.googleusercontent.com/a/ada-picture=s96-c" };
 
 type Sent = { url: string; cookie: string | null; body: string };

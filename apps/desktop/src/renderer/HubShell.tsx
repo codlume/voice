@@ -83,12 +83,7 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
       updates={snapshot.updates}
     />
   ),
-  account: (snapshot) => (
-    <AccountSettings
-      account={snapshot.account}
-      otherChannelSignedIn={snapshot.otherChannelSignedIn}
-    />
-  ),
+  account: (snapshot) => <AccountSettings account={snapshot.account} />,
   system: (snapshot) => (
     <SystemSettings settings={snapshot.settings} loginItem={snapshot.loginItem} />
   ),

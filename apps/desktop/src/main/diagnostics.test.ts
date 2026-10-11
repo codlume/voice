@@ -157,7 +157,6 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: { kind: "signedOut" },
-    otherChannelSignedIn: false,
     last: null,
   });
   let clock = Date.now();

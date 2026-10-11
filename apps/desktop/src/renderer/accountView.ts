@@ -1,15 +1,10 @@
-import type { AccountIdentity, AccountState } from "../shared/api.ts";
+import type { AccountIdentity, AccountName, AccountState } from "../shared/api.ts";
 
 const UNNAMED_ACCOUNT = "Google account";
 
-export function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return UNNAMED_ACCOUNT.charAt(0);
-  return words
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
+export function initials({ firstName, lastName }: AccountName): string {
+  const letters = [firstName, lastName].map((part) => [...part.trim()][0] ?? "").join("");
+  return (letters || UNNAMED_ACCOUNT.charAt(0)).toUpperCase();
 }
 
 export function accountName(identity: AccountIdentity): string {
