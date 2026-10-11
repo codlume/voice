@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -34,15 +34,38 @@ export function assert(condition, message) {
 
 // Call before posting key events or installing a hotkey tap. A dev session or Voice.app runs its
 // own helper with real microphone permission, and its tap hears synthetic presses too, so it
-// records the room into the test documents. The pattern matches a helper binary but not script
-// paths under native/voice-helper/.
+// records the room into the test documents. Processes match on their executable, because a build,
+// test, or packaging job can name the helper in its arguments without running it.
+export function runningVoiceProcesses() {
+  const helpers = new Set();
+  const nodes = [];
+  for (const [pid, executable] of listProcesses(["-ax", "-o", "pid=,comm="])) {
+    if (basename(executable) === "voice-helper") helpers.add(pid);
+    else if (basename(executable) === "node") nodes.push(pid);
+  }
+  const candidates = [...helpers, ...nodes];
+  if (candidates.length === 0) return [];
+  return listProcesses(["-o", "pid=,args=", "-p", candidates.join(",")])
+    .filter(([pid, args]) => helpers.has(pid) || /(^|\s)\S*scripts\/dev\.mjs(\s|$)/.test(args))
+    .map(([pid, args]) => `${pid} ${args}`);
+}
+
+// One `pid=` column followed by one free-text column, which may contain spaces.
+function listProcesses(args) {
+  const ps = spawnSync("ps", ["-ww", ...args], { encoding: "utf8" });
+  // With -p, ps exits 1 when every listed process has already exited.
+  if (ps.status === 1 && ps.stdout === "") return [];
+  if (ps.status !== 0) throw new Error(`ps exited ${ps.status}: ${ps.stderr}`);
+  return ps.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => /^\s*(\d+) (.*)$/.exec(line).slice(1));
+}
+
 export function refuseIfVoiceIsRunning() {
-  const pgrep = spawnSync("pgrep", ["-lf", "(^|/)voice-helper( |$)|scripts/dev\\.mjs( |$)"], {
-    encoding: "utf8",
-  });
-  if (pgrep.status === 1) return;
-  if (pgrep.status !== 0) throw new Error(`pgrep exited ${pgrep.status}: ${pgrep.stderr}`);
-  console.error(pgrep.stdout.trimEnd());
+  const running = runningVoiceProcesses();
+  if (running.length === 0) return;
+  console.error(running.join("\n"));
   console.error(
     "refusing to run: another Voice helper is running and would record from the real microphone",
   );
