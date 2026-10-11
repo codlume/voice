@@ -7,14 +7,15 @@ import type {
 } from "../shared/api.ts";
 
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { models, type ModelId } from "../shared/models.ts";
+import { models, type Model, type ModelId } from "../shared/models.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
-  | { type: "installModel"; id: ModelId };
+  | { type: "installModel"; id: ModelId }
+  | { type: "uninstallModel"; id: ModelId };
 
 type Action = {
-  label: "Grant" | "Open" | "Download" | "Retry";
+  label: "Grant" | "Open" | "Download" | "Retry" | "Cancel";
   command: SetupCommand;
 };
 
@@ -58,9 +59,9 @@ function permissionState(kind: PermissionKind, state: PermissionState): RowState
   }
 }
 
-function modelState(id: ModelId, model: ModelStatus): RowState {
-  const command: SetupCommand = { type: "installModel", id };
-  switch (model.state) {
+function modelState(model: Model, status: ModelStatus): RowState {
+  const command: SetupCommand = { type: "installModel", id: model.id };
+  switch (status.state) {
     case "ready":
       return { status: { kind: "ready", text: "Ready" }, actions: [] };
     case "installed":
@@ -70,22 +71,26 @@ function modelState(id: ModelId, model: ModelStatus): RowState {
         status: { kind: "needed", text: "Not downloaded" },
         actions: [{ label: "Download", command }],
       };
-    case "downloading":
-      return model.progress === undefined
-        ? { status: { kind: "busy", text: "Downloading" }, actions: [] }
+    case "downloading": {
+      const actions: Action[] = model.cancelableDownload
+        ? [{ label: "Cancel", command: { type: "uninstallModel", id: model.id } }]
+        : [];
+      return status.progress === undefined
+        ? { status: { kind: "busy", text: "Downloading" }, actions }
         : {
             status: {
               kind: "busy",
-              text: `Downloading ${Math.round(model.progress * 100)}%`,
-              progress: model.progress,
+              text: `Downloading ${Math.round(status.progress * 100)}%`,
+              progress: status.progress,
             },
-            actions: [],
+            actions,
           };
+    }
     case "loading":
       return { status: { kind: "busy", text: "Loading" }, actions: [] };
     case "failed":
       return {
-        status: { kind: "failed", text: model.message },
+        status: { kind: "failed", text: status.message },
         actions: [{ label: "Retry", command }],
       };
   }
@@ -112,7 +117,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
       id: model.id,
       title: model.kind,
       subtitle: `${model.name} by ${model.vendor}`,
-      ...modelState(model.id, statuses[model.id]),
+      ...modelState(model, statuses[model.id]),
     });
   }
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };

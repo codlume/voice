@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -163,10 +164,27 @@ function textEditTarget(userData) {
   return {
     name: "TextEdit",
     async open(caseName) {
-      const file = join(dir, `${caseName}.txt`);
+      const name = `${caseName}-${randomUUID()}.txt`;
+      const file = join(dir, name);
       writeFileSync(file, "");
-      osascript(`tell application "TextEdit" to open POSIX file ${show(file)}`);
-      documents.push(`${caseName}.txt`);
+      execFileSync("open", ["-a", "TextEdit", file]);
+      documents.push(name);
+      const exists = () => {
+        try {
+          const script = `tell application "TextEdit" to exists document ${show(name)}`;
+          return execFileSync("osascript", ["-e", script], {
+            encoding: "utf8",
+            stdio: "pipe",
+          }).trim();
+        } catch (error) {
+          return error.message;
+        }
+      };
+      const deadline = Date.now() + 10_000;
+      for (let reply = exists(); reply !== "true"; reply = exists()) {
+        assert(Date.now() < deadline, `TextEdit did not open ${file}: ${reply}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
       const pid = osascript('tell application "System Events" to unix id of process "TextEdit"');
       await activate(Number(pid), "TextEdit");
     },
@@ -180,7 +198,9 @@ function textEditTarget(userData) {
     },
     close() {
       for (const name of documents.splice(0)) {
-        osascript(`tell application "TextEdit" to close document ${show(name)} saving no`);
+        osascript(
+          `tell application "TextEdit" to if exists document ${show(name)} then close document ${show(name)} saving no`,
+        );
       }
       const remaining = Number(osascript('tell application "TextEdit" to count documents'));
       if (!wasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');

@@ -1,20 +1,9 @@
 // Gives the renderer SDK its IPC channel to main. It stays inert unless main started Sentry.
 import "@sentry/electron/preload";
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
-import {
-  Channel,
-  DIAGNOSTICS_ARGUMENT,
-  type PillSnapshot,
-  type Snapshot,
-  type VoiceApi,
-} from "./shared/api.ts";
-
-function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
-  const handler = (_event: IpcRendererEvent, value: T) => listener(value);
-  ipcRenderer.on(channel, handler);
-  return () => ipcRenderer.off(channel, handler);
-}
+import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
+import { subscribe } from "./subscribe.ts";
 
 // The tray can ask before React has mounted, for example right after it creates the hub.
 let restartRequested = false;
@@ -24,7 +13,7 @@ ipcRenderer.on(Channel.requestRestart, () => {
   for (const listener of restartListeners) listener();
 });
 
-const voice: VoiceApi = {
+const voice: HubApi = {
   diagnosticsStartedAtLaunch: process.argv.includes(DIAGNOSTICS_ARGUMENT),
   checkForUpdates: () => ipcRenderer.invoke(Channel.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(Channel.downloadUpdate),
@@ -40,8 +29,6 @@ const voice: VoiceApi = {
   openRelease: () => ipcRenderer.invoke(Channel.openRelease),
   getSnapshot: () => ipcRenderer.invoke(Channel.getSnapshot),
   onSnapshot: (listener) => subscribe<Snapshot>(Channel.snapshot, listener),
-  getPillSnapshot: () => ipcRenderer.invoke(Channel.getPillSnapshot),
-  onPillSnapshot: (listener) => subscribe<PillSnapshot>(Channel.pillSnapshot, listener),
   onLevel: (listener) => subscribe<number>(Channel.level, listener),
   updateSettings: (patch) => ipcRenderer.invoke(Channel.updateSettings, patch),
   requestPermission: (kind) => ipcRenderer.invoke(Channel.requestPermission, kind),

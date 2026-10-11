@@ -37,7 +37,7 @@ struct CaptureError: Error {
     let message: String
 }
 
-private let sampleRate = 16_000.0
+let asrSampleRate = 16_000.0
 private let chunkFrames = 1600
 private let silenceFloor = 1e-4 as Float
 
@@ -72,7 +72,8 @@ final class Capture {
     private let maxSamples: Int
 
     init(
-        output: Output, transcriber: Transcriber, devices: AudioInputDevices, maxSamples: Int = 600 * 16_000,
+        output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputSilencer: OutputSilencer,
+        maxSamples: Int = 600 * 16_000,
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
     ) {
         self.devices = devices
@@ -80,7 +81,7 @@ final class Capture {
         self.output = output
         self.transcriber = transcriber
         self.authorizationStatus = authorizationStatus
-        self.outputSilencer = OutputSilencer(output: output)
+        self.outputSilencer = outputSilencer
     }
 
     var isActive: Bool { activeFlag.withLock { $0 } }
@@ -108,7 +109,7 @@ final class Capture {
                 }
                 state = .starting(session)
                 self.file = file
-                if muteWhileDictating { outputSilencer.begin() }
+                setOutputSilenced(muteWhileDictating)
                 file.start()
                 return
             }
@@ -118,7 +119,7 @@ final class Capture {
             let mic = try self.mic ?? makeMic()
             self.mic = mic
             state = .starting(session)
-            if muteWhileDictating { outputSilencer.begin() }
+            setOutputSilenced(muteWhileDictating)
             try mic.start(sink: sink)
         } catch let error as CaptureError {
             fail(session, reason: error.reason, message: error.message)
@@ -142,13 +143,19 @@ final class Capture {
     }
 
     private func transcribe(_ recording: Recording) {
-        stopSource()
+        file?.stop()
+        file = nil
+        mic?.finish()
+        if let dropped = mic?.droppedFrames, dropped > 0 {
+            output.log(.error, "capture dropped \(dropped) frames while the main thread was stalled")
+        }
         drain(recording.session, closing: true)
         let session = recording.session
         let samples = recording.samples
         state = .transcribing(recording)
         lastTarget = (session.id, session.frontmostPid)
-        let audioMs = Double(samples.count) / sampleRate * 1000
+        defer { stopSourceAfterTranscriptionStarts() }
+        let audioMs = Double(samples.count) / asrSampleRate * 1000
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
             finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0))
@@ -277,8 +284,7 @@ final class Capture {
     }
 
     private func beginTest(id: String) {
-        // Chunks hop to main so one that was already in flight at a stop is dropped rather than
-        // reported after `ended`.
+        setOutputSilenced(false)
         let sink: ([Float]) -> Void = { [weak self] chunk in
             let level = perceptualLevel(rms: rms(chunk))
             DispatchQueue.main.async { self?.meter(level, for: id) }
@@ -386,15 +392,16 @@ final class Capture {
     // far are still the user's words, so the change ends the session like a key release.
     private func micInvalidated(_ changed: MicSource) {
         guard changed === mic else { return }
-        disposeMic()
         switch state {
         case .starting(let session):
             fail(session, reason: .device, message: "audio device configuration changed")
         case .recording(let recording):
             endRecording(recording, reason: .deviceChanged)
+            disposeMic()
         case .testing(let id, _):
             restartTest(id: id)
         case .idle, .transcribing:
+            disposeMic()
             prepareIdleMic()
         }
     }
@@ -415,6 +422,20 @@ final class Capture {
         prepareIdleMic()
     }
 
+    private func setOutputSilenced(_ silenced: Bool) {
+        if silenced { outputSilencer.begin() } else { outputSilencer.end() }
+    }
+
+    private func stopSourceAfterTranscriptionStarts() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch state {
+            case .idle, .transcribing: stopSource()
+            case .starting, .recording, .testing: break
+            }
+        }
+    }
+
     private func stopSource() {
         file?.stop()
         file = nil
@@ -423,13 +444,12 @@ final class Capture {
     }
 }
 
-private let targetFormat = AVAudioFormat(
-    commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
-
 final class MicSource {
     private let engine: AVAudioEngine
-    private let converter: AVAudioConverter
-    private let sink = OSAllocatedUnfairLock<(([Float]) -> Void)?>(uncheckedState: nil)
+    private let pipeline: MicPipeline
+    private let sinkNode: AVAudioSinkNode
+    private var sink: (([Float]) -> Void)?
+    private var pump: DispatchSourceTimer?
     private var observer: NSObjectProtocol?
     let device: AudioInputDevices.Device
     let preference: Microphone?
@@ -449,20 +469,14 @@ final class MicSource {
             throw CaptureError(reason: .device, message: "Could not use \(device.microphone.name). Choose another microphone in Settings.")
         }
         try Self.checkRoute(audioUnit, expected: device.id)
-        let hardware = input.outputFormat(forBus: 0)
-        guard hardware.sampleRate > 0, hardware.channelCount > 0, let targetFormat,
-            let converter = AVAudioConverter(from: hardware, to: targetFormat)
-        else {
-            throw CaptureError(reason: .device, message: "no usable audio input device")
+        let pipeline = try MicPipeline(hardware: input.outputFormat(forBus: 0))
+        self.pipeline = pipeline
+        sinkNode = AVAudioSinkNode { _, frames, list in
+            pipeline.receive(list, frames: Int(frames))
+            return noErr
         }
-        self.converter = converter
-        let sink = sink
-        input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(chunkFrames), format: hardware) { buffer, _ in
-            guard let deliver = sink.withLockUnchecked({ $0 }) else { return }
-            if let chunk = resample(buffer, with: converter, to: targetFormat, endOfStream: false) {
-                deliver(chunk)
-            }
-        }
+        engine.attach(sinkNode)
+        engine.connect(input, to: sinkNode, format: pipeline.hardware)
         observer = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
@@ -477,14 +491,14 @@ final class MicSource {
     private func configurationIsUsable() -> Bool {
         let input = engine.inputNode
         guard let audioUnit = input.audioUnit,
-            input.outputFormat(forBus: 0).isEqual(converter.inputFormat)
+            input.outputFormat(forBus: 0).isEqual(pipeline.hardware)
         else { return false }
         do {
             try Self.checkRoute(audioUnit, expected: device.id)
         } catch {
             return false
         }
-        return sink.withLockUnchecked { $0 == nil } || engine.isRunning
+        return sink == nil || engine.isRunning
     }
 
     private static func checkRoute(_ audioUnit: AudioUnit, expected: AudioDeviceID) throws(CaptureError) {
@@ -505,32 +519,61 @@ final class MicSource {
             throw CaptureError(reason: .device, message: "The selected microphone is unavailable. Choose another in Settings.")
         }
         try Self.checkRoute(audioUnit, expected: device.id)
-        // A running engine is a microphone test handing over to dictation. Resetting the converter
-        // would race the tap on the audio thread, and the stream is continuous anyway.
-        if engine.isRunning {
-            sink.withLockUnchecked { $0 = deliver }
-            return
-        }
-        converter.reset()
-        sink.withLockUnchecked { $0 = deliver }
+        pipeline.start()
+        sink = deliver
+        startPump()
+        if engine.isRunning { return }
         do {
             try engine.start()
         } catch {
+            stopPump()
+            sink = nil
+            pipeline.discard()
             throw CaptureError(reason: .unknown, message: "audio engine failed to start: \(error.localizedDescription)")
         }
     }
 
+    var droppedFrames: Int { pipeline.droppedFrames }
+
+    func finish() {
+        stopPump()
+        let tail = pipeline.finish()
+        let deliver = sink
+        sink = nil
+        if !tail.isEmpty { deliver?(tail) }
+    }
+
     func stop() {
-        sink.withLockUnchecked { $0 = nil }
+        stopPump()
+        sink = nil
+        pipeline.discard()
         engine.stop()
     }
 
     func dispose() {
-        sink.withLockUnchecked { $0 = nil }
+        stop()
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        engine.detach(sinkNode)
+    }
+
+    private func startPump() {
+        stopPump()
+        let pump = DispatchSource.makeTimerSource(queue: .main)
+        pump.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
+        pump.setEventHandler { [weak self] in self?.tick() }
+        self.pump = pump
+        pump.resume()
+    }
+
+    private func stopPump() {
+        pump?.cancel()
+        pump = nil
+    }
+
+    private func tick() {
+        let chunk = pipeline.pull()
+        if !chunk.isEmpty { sink?(chunk) }
     }
 }
 
@@ -585,25 +628,4 @@ private func readAudioFile(at path: String) throws -> [Float] {
     }
     try file.read(into: buffer)
     return resample(buffer, with: converter, to: targetFormat, endOfStream: true) ?? []
-}
-
-private func resample(
-    _ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter, to format: AVAudioFormat, endOfStream: Bool
-) -> [Float]? {
-    let ratio = format.sampleRate / buffer.format.sampleRate
-    let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
-    guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
-    var consumed = false
-    var error: NSError?
-    converter.convert(to: out, error: &error) { _, status in
-        if consumed {
-            status.pointee = endOfStream ? .endOfStream : .noDataNow
-            return nil
-        }
-        consumed = true
-        status.pointee = .haveData
-        return buffer
-    }
-    guard error == nil, let channel = out.floatChannelData?[0] else { return nil }
-    return Array(UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
 }

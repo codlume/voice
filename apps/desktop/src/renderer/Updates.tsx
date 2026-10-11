@@ -21,6 +21,7 @@ import {
 } from "./updateStatus.ts";
 import { useAction } from "./useAction.ts";
 import { color, radius } from "./tokens.stylex.ts";
+import { hubApi } from "./voice.ts";
 
 const spin = stylex.keyframes({
   from: { transform: "rotate(0deg)" },
@@ -198,7 +199,7 @@ export function SidebarUpdates({
   const onRestartRequest = useEffectEvent(() => {
     if (action === "restart") confirmRestart();
   });
-  useEffect(() => window.voice.onRestartRequest(() => onRestartRequest()), []);
+  useEffect(() => hubApi().onRestartRequest(() => onRestartRequest()), []);
 
   const run = (task: () => Promise<void>) =>
     runAction(task, "The update action failed. Try again.");
@@ -214,8 +215,8 @@ export function SidebarUpdates({
         disabled={action === null}
         onClick={() => {
           if (action === "restart") confirmRestart();
-          else if (action === "download") void run(() => window.voice.downloadUpdate());
-          else void run(() => window.voice.checkForUpdates());
+          else if (action === "download") void run(() => hubApi().downloadUpdate());
+          else void run(() => hubApi().checkForUpdates());
         }}
         style={[
           styles.button,
@@ -238,7 +239,7 @@ export function SidebarUpdates({
             variant: "primary",
             onClick: () =>
               void run(() =>
-                window.voice.restartForUpdate({ choice: option.choice, last: confirm.last }),
+                hubApi().restartForUpdate({ choice: option.choice, last: confirm.last }),
               ),
           }))}
         />

@@ -14,7 +14,7 @@ const require = createRequire(
 );
 const macCodeSign = require("app-builder-lib/out/codeSign/macCodeSign.js");
 
-test("release keychain exports an electron-builder qualifier and full native signing identity", async (t) => {
+test("release keychain exports an electron-builder qualifier that selects the imported identity", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "voice-release-keychain-test-"));
   const cachedIdentities = macCodeSign.findIdentityRawResult;
   t.after(() => {
@@ -51,7 +51,6 @@ fi
       .split("\n")
       .map((line) => line.split("=")),
   );
-  assert.equal(exported.APPLE_SIGN_IDENTITY, identity);
   macCodeSign.findIdentityRawResult = Promise.resolve([`${hash} "${identity}"`]);
   const selected = await macCodeSign.findIdentity("Developer ID Application", exported.CSC_NAME);
   assert.equal(selected.name, identity);

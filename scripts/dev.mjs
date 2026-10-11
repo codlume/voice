@@ -9,6 +9,7 @@ import { devElectronPath } from "./dev-bundle.mjs";
 const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const distDir = join(desktopDir, "dist-electron");
+const bundles = ["main.cjs", "hub-preload.cjs", "pill-preload.cjs"];
 const devServerUrl = "http://localhost:5783/";
 const electronArgs = process.argv.slice(2).filter((arg) => arg !== "--");
 
@@ -109,7 +110,7 @@ let relaunch = Promise.resolve();
 watch(distDir, () => {
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => {
-    if (!existsSync(join(distDir, "main.cjs")) || !existsSync(join(distDir, "preload.cjs"))) return;
+    if (!bundles.every((file) => existsSync(join(distDir, file)))) return;
     relaunch = relaunch.then(() => devServerReady).then(restartElectron);
   }, 300);
 });

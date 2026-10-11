@@ -1,7 +1,7 @@
 import type { ModelStatus } from "../shared/api.ts";
 import type { Model } from "../shared/models.ts";
 
-export type ModelAction = "Install" | "Retry" | "Uninstall";
+export type ModelAction = "Install" | "Retry" | "Uninstall" | "Cancel";
 
 type ModelView = {
   text: string;
@@ -15,6 +15,7 @@ export function modelView(
 ): ModelView {
   const install = { label: "Install", disabled: false } as const;
   const retry = { label: "Retry", disabled: false } as const;
+  const cancel = { label: "Cancel", disabled: false } as const;
   const uninstall = {
     label: "Uninstall",
     disabled: model.neededWhileDictating && dictating,
@@ -28,7 +29,7 @@ export function modelView(
           status.progress === undefined
             ? "Downloading"
             : `Downloading ${Math.round(status.progress * 100)}%`,
-        actions: [],
+        actions: model.cancelableDownload ? [cancel] : [],
       };
     case "loading":
       return { text: "Loading", actions: [] };

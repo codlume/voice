@@ -582,7 +582,7 @@ describe("createAccount", () => {
     const dictation = createDictation({
       store: h.store,
       send: (command) => commands.push(command),
-      cleanup: { loaded: () => true, clean: async (raw) => raw },
+      cleanup: { loaded: () => true, clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }) },
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
@@ -656,7 +656,7 @@ describe("createAccount", () => {
     createDictation({
       store: h.store,
       send: (command) => commands.push(command),
-      cleanup: { loaded: () => true, clean: async (raw) => raw },
+      cleanup: { loaded: () => true, clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }) },
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
