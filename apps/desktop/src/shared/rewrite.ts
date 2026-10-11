@@ -43,8 +43,9 @@ function compile({ dictionary, snippets }: Rewrites): Matcher {
     .map(pattern)
     .join("|");
   const regex = new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu");
-  // V8 compiles a regex on its first use and refuses one past about 20,000 long phrases. A
-  // hand-edited list that large then rewrites nothing, rather than failing every dictation.
+  // V8 compiles a regex on its first use and refuses a pattern past a few hundred kilobytes,
+  // around 7,000 ten-word phrases. A hand-edited list that large then rewrites nothing, rather
+  // than failing every dictation.
   try {
     regex.test("");
   } catch {
