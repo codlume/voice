@@ -24,7 +24,7 @@ Preconditions: baseline. Producing a transcript needs `dictate`, so the [Dictati
 - **Produce a transcript.** `vv dictate long.wav`. With cleanup on, `last.raw` differs from `last.text`.
 - **Show it.** `vv text`. The output shows `last.text` under "Last dictation". Then `vv shot last-dictation`.
 - **Show raw.** `vv click "Show raw transcript"`. Then `vv text` shows `last.raw`.
-- **Copy.** Save the clipboard first: `pbpaste > "<userData>/clip"`. Then `vv click Copy`, `vv wait hub '[...document.querySelectorAll("button")].some(b => b.textContent === "Copied")'`, and compare `pbpaste` with `last.text` from `vv snapshot`. Restore with `pbcopy < "<userData>/clip" && rm "<userData>/clip"`.
+- **Copy.** Save the clipboard first: `pbpaste > "$TMPDIR/vv-clip"`. Then `vv click Copy`, `vv wait hub '[...document.querySelectorAll("button")].some(b => b.textContent === "Copied")'`, and compare `pbpaste` with `last.text` from `vv snapshot`. Restore with `pbcopy < "$TMPDIR/vv-clip" && rm "$TMPDIR/vv-clip"`.
 - **Memory only.** `vv stop`, `vv launch`, `vv click Home`, then `vv text`. The empty state is back.
 
 ## Gotchas

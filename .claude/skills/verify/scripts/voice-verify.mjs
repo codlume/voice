@@ -15,11 +15,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir } from "../../../../native/voice-helper/scripts/helper.mjs";
 import {
+  announcedPorts,
   electronPath,
   modelFiles,
   Page,
@@ -71,23 +71,10 @@ function signalGroup(pid, signal) {
   } catch {}
 }
 
-// Electron binds port 0 to a free port and prints the one it got, so no two instances share one.
-function announcedPort(child, server) {
-  const pattern = new RegExp(`^${server} listening on ws://127\\.0\\.0\\.1:(\\d+)/`);
-  return new Promise((resolve, reject) => {
-    createInterface({ input: child.stderr })
-      .on("line", (line) => {
-        const port = pattern.exec(line)?.[1];
-        if (port) resolve(Number(port));
-      })
-      .on("close", () => reject(new Error(`${server} never started listening`)));
-  });
-}
-
 function requireInstance() {
   const state = readState();
-  if (!state || !alive(state.electronPid)) {
-    fail("no running verify instance; start one with `voice-verify.mjs launch`");
+  if (!state?.port || !alive(state.electronPid)) {
+    fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
 }
@@ -224,7 +211,9 @@ const commands = {
       instance: instance
         ? { ...instance, cdpPages: cdp }
         : state
-          ? `stale state file for dead pid ${state.electronPid}; run voice-verify.mjs stop`
+          ? alive(state.ownerPid)
+            ? `launching: ${show(state)}`
+            : `stale state file for dead pid ${state.electronPid}; run voice-verify.mjs stop`
           : "none",
       otherVoiceProcesses: otherVoiceProcesses(instance?.userData),
     };
@@ -239,7 +228,7 @@ const commands = {
 
   async launch() {
     const existing = readState();
-    if (existing && alive(existing.electronPid))
+    if (existing && (alive(existing.ownerPid) || alive(existing.electronPid)))
       fail(`this worktree's instance is already running: ${show(existing)}`);
     if (!existsSync(join(desktopDir, "dist-electron/main.cjs")))
       fail("app not built: run pnpm build");
@@ -249,64 +238,69 @@ const commands = {
     const keep = args.includes("--keep-user-data");
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
-    const userData = keep ? keptUserData : await prepareUserData(scratchName);
-    const fakeMicrophonePath = join(userData, "capture.wav");
-    const logPath = join(userData, "main.log");
-    const env = {
-      ...process.env,
-      VOICE_HELPER_TEST: "1",
-      VOICE_USER_DATA_DIR: userData,
-      VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
-    };
-    delete env.ELECTRON_RUN_AS_NODE;
-    // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
-    // after earlier unclean exits.
-    const child = start(
-      electronPath,
-      [".", "--remote-debugging-port=0", "--inspect=0", "-ApplePersistenceIgnoreState", "YES"],
-      { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
-    child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
 
+    // Claim the instance before the slow work, so a second launch in this worktree fails instead
+    // of wiping this one's userData and starting a second app on it.
+    const state = { ownerPid: process.pid, worktree };
+    const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
+    try {
+      writeFileSync(statePath, JSON.stringify(state, null, 2), { flag: existing ? "w" : "wx" });
+    } catch {
+      fail(`another launch in this worktree started first: ${readFileSync(statePath, "utf8")}`);
+    }
     let stopping = false;
     const shutdown = async (code) => {
       if (stopping) return;
       stopping = true;
       await stopChildren();
       // `stop` deletes the scratch userData unless told to keep it; a plain launch wipes it anyway.
-      if (readState()?.ownerPid === process.pid) rmSync(statePath, { force: true });
+      rmSync(statePath, { force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
     process.on("SIGTERM", () => void shutdown(0));
-    child.on("exit", (code, signal) => {
-      if (stopping) return;
-      console.error(`voice-verify: Voice exited (code ${code}, signal ${signal}); see ${logPath}`);
-      void shutdown(1);
-    });
 
     try {
-      const [port, inspectPort] = await Promise.all([
-        announcedPort(child, "DevTools"),
-        announcedPort(child, "Debugger"),
-      ]);
+      const userData = keep ? keptUserData : await prepareUserData(scratchName);
+      const fakeMicrophonePath = join(userData, "capture.wav");
+      const logPath = join(userData, "main.log");
+      const env = {
+        ...process.env,
+        VOICE_HELPER_TEST: "1",
+        VOICE_USER_DATA_DIR: userData,
+        VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
+      };
+      delete env.ELECTRON_RUN_AS_NODE;
+      // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
+      // after earlier unclean exits.
+      const child = start(
+        electronPath,
+        [".", "--remote-debugging-port=0", "--inspect=0", "-ApplePersistenceIgnoreState", "YES"],
+        { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
+      child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
+      child.on("exit", (code, signal) => {
+        if (stopping) return;
+        console.error(
+          `voice-verify: Voice exited (code ${code}, signal ${signal}); see ${logPath}`,
+        );
+        void shutdown(1);
+      });
+      Object.assign(state, { electronPid: child.pid, userData, fakeMicrophonePath, logPath });
+      save();
+
+      const ports = await announcedPorts(child, ["DevTools", "Debugger"]);
       const runId = new Date().toISOString().replace(/[:.]/g, "-");
-      const state = {
-        ownerPid: process.pid,
-        electronPid: child.pid,
-        worktree,
-        port,
-        inspectPort,
-        userData,
-        fakeMicrophonePath,
-        logPath,
+      Object.assign(state, {
+        port: ports.DevTools,
+        inspectPort: ports.Debugger,
         runId,
         evidence: join(evidenceRoot, runId),
-      };
-      writeFileSync(statePath, JSON.stringify(state, null, 2));
-      const hub = await Page.connect(port, "hub.html");
-      await Page.connect(port, "pill.html").then((pill) => pill.close());
+      });
+      save();
+      const hub = await Page.connect(state.port, "hub.html");
+      await Page.connect(state.port, "pill.html").then((pill) => pill.close());
       const snapshots = await snapshotStream(hub);
       const permissions = await snapshots.waitFor(
         (s) => s.permissions.accessibility !== "notDetermined",
@@ -331,7 +325,9 @@ const commands = {
       hub.close();
       out({ ready: true, ...state, permissions: permissions.permissions, models });
     } catch (error) {
-      console.error(`voice-verify: launch failed: ${error.message}; see ${logPath}`);
+      console.error(
+        `voice-verify: launch failed: ${error.message}; see main.log and stderr.log in ${state.userData}`,
+      );
       await shutdown(1);
     }
   },
@@ -352,7 +348,7 @@ const commands = {
       signalGroup(state.electronPid, "SIGKILL");
     }
     rmSync(statePath, { force: true });
-    if (!keep) rmSync(state.userData, { recursive: true, force: true });
+    if (!keep && state.userData) rmSync(state.userData, { recursive: true, force: true });
     out({
       stopped: state.runId,
       evidence: existsSync(state.evidence) ? state.evidence : "none captured",
@@ -632,7 +628,7 @@ const commands = {
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0) {
       fail(
-        `refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. A helper under a voice-verify-* folder belongs to another worktree's verify session; wait for it to stop. Any other is the user's Voice, which would record the real microphone; ask the user to quit it.\n${others.join("\n")}`,
+        `refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.\n${others.join("\n")}`,
       );
     }
     const fixture = join(fixturesDir, wav);
@@ -669,7 +665,8 @@ const commands = {
     );
     try {
       const field = 'document.getElementById("field")';
-      const targetPage = await Page.connect(await announcedPort(target, "DevTools"), "index.html");
+      const { DevTools: targetPort } = await announcedPorts(target, ["DevTools"]);
+      const targetPage = await Page.connect(targetPort, "index.html");
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
       );

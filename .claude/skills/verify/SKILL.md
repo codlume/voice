@@ -58,7 +58,7 @@ This check is read-only. Run it first, and again whenever something looks off. A
 - `instance.cdpPages` lists both `pill.html` and `hub.html`.
 - `snapshot.models.asr.state` and `snapshot.models.cleanup.state` are `ready`.
 - `snapshot.permissions.accessibility` is `granted`. Accessibility belongs to whatever launched the script (terminal, IDE, or agent host). Without it, the hotkey tap and insertion cannot work, and only a human can grant it in System Settings.
-- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` and a `pnpm dev` session both show up here.
+- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` and a `pnpm dev` session both show up here, and so do other sessions' verify instances, model downloads, e2e runs, and smoke runs.
 
 `snapshot.permissions.microphone` stays `notDetermined` in the scratch instance. That is expected, so don't press Grant.
 
@@ -95,7 +95,7 @@ Stable handles:
 
 ## Evidence
 
-Artifacts go to `$TMPDIR/voice-verify-evidence/<worktree id>/<runId>/`. `launch` and `stop` print the path. `dictate` writes one JSON file per session there automatically. The repo's `.gitignore` does not cover this directory, which is why evidence lives outside the repo. Never commit evidence.
+Artifacts go to the `evidence` directory that `launch` and `stop` print, under `$TMPDIR/voice-verify-evidence/`. `dictate` writes one JSON file per session there automatically. The repo's `.gitignore` does not cover this directory, which is why evidence lives outside the repo. Never commit evidence.
 
 Proof standards:
 
@@ -115,7 +115,7 @@ node .claude/skills/verify/scripts/voice-verify.mjs stop
 
 ## Repo checks that drive the same app
 
-These are scripts the repo already has. Run them when the change is in their area. Each launches its own instance, so `stop` the verify instance first.
+These are scripts the repo already has. Run them when the change is in their area. Each launches its own instance and refuses while any other Voice helper runs, so `stop` the verify instance first and wait for other worktrees' sessions to finish.
 
 - `pnpm e2e` runs six hotkey cases into TextEdit and an Electron textarea: cleanup on and off, silence, Escape, too short.
 - `node scripts/models-smoke.mjs` covers model uninstall and reinstall from the Models page.
