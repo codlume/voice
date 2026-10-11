@@ -22,6 +22,7 @@ export type Cleanup = {
 
 export type CleanupOptions = {
   modelsDir: string;
+  baseUrl?: string | undefined;
   shouldLoad: () => boolean;
   onStatus: (status: ModelStatus) => void;
   loadModule?: () => Promise<CleanupModule>;
@@ -137,6 +138,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
         try {
           modelPath = await module.downloadS1Mini({
             dir: options.modelsDir,
+            baseUrl: options.baseUrl,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
             signal: download.signal,
           });

@@ -24,8 +24,11 @@ export type DownloadOptions = {
   signal?: AbortSignal | undefined;
 };
 
-export function downloadS1Mini(options: DownloadOptions): Promise<string> {
-  return downloadModel({ ...options, ...S1_MINI });
+export function downloadS1Mini({
+  baseUrl = S1_MINI.baseUrl,
+  ...options
+}: DownloadOptions & { baseUrl?: string | undefined }): Promise<string> {
+  return downloadModel({ ...options, ...S1_MINI, baseUrl });
 }
 
 // The Apache 2.0 naming clause requires shipping S1-mini's LICENSE and NOTICE with the weights.

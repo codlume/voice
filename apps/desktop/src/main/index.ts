@@ -313,6 +313,7 @@ async function main() {
 
   const cleanup = createCleanup({
     modelsDir,
+    baseUrl: testMode ? process.env.VOICE_CLEANUP_MODEL_URL : undefined,
     shouldLoad: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
   });
