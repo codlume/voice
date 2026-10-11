@@ -19,7 +19,7 @@ import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const styles = stylex.create({
+export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
   header: { display: "flex", alignItems: "flex-start", gap: space.lg },
   headerText: { display: "flex", flexDirection: "column", gap: space.sm, flexGrow: 1 },
@@ -284,7 +284,7 @@ function SnippetDialog({
         }
       >
         <div {...stylex.props(styles.fields)}>
-          <SnippetField
+          <CountedField
             label="Trigger"
             length={draft.trigger.length}
             max={TRIGGER_MAX_LENGTH}
@@ -303,8 +303,8 @@ function SnippetDialog({
               }}
               {...stylex.props(styles.input, shown?.field === "trigger" && styles.invalid)}
             />
-          </SnippetField>
-          <SnippetField
+          </CountedField>
+          <CountedField
             label="Expansion"
             length={draft.expansion.length}
             max={EXPANSION_MAX_LENGTH}
@@ -324,7 +324,7 @@ function SnippetDialog({
                 shown?.field === "expansion" && styles.invalid,
               )}
             />
-          </SnippetField>
+          </CountedField>
         </div>
         {error && (
           <p role="alert" {...stylex.props(settings.error, styles.saveError)}>
@@ -339,7 +339,7 @@ function SnippetDialog({
 const messageFor = (field: SnippetProblem["field"], problem: SnippetProblem | null) =>
   problem?.field === field ? problem.message : undefined;
 
-function SnippetField({
+export function CountedField({
   label,
   length,
   max,

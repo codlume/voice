@@ -2,6 +2,7 @@ import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import {
   ArrowLeftIcon,
+  BookAIcon,
   BoxIcon,
   HouseIcon,
   KeyboardIcon,
@@ -20,6 +21,7 @@ import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
+import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
 import {
   DataPrivacySettings,
@@ -48,6 +50,7 @@ const appPages = [
   { id: "home", label: "Home", icon: HouseIcon },
   { id: "style", label: "Style", icon: PenLineIcon },
   { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
+  { id: "dictionary", label: "Dictionary", icon: BookAIcon },
 ] as const;
 
 const settingsPages = [
@@ -66,6 +69,9 @@ const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNod
   home: (snapshot) => <Home snapshot={snapshot} />,
   style: (snapshot) => <Style settings={snapshot.settings} />,
   snippets: (snapshot) => <Snippets snippets={snapshot.settings.snippets} />,
+  dictionary: (snapshot) => (
+    <Dictionary dictionary={snapshot.settings.dictionary} snippets={snapshot.settings.snippets} />
+  ),
   general: (snapshot) => (
     <GeneralSettings
       settings={snapshot.settings}
