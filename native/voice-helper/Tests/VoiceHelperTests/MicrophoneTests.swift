@@ -113,7 +113,33 @@ struct MicrophoneHardwareTests {
         try source.start { _ in secondAudio.fulfill() }
         #expect(engine.isRunning)
         #expect(await XCTWaiter.fulfillment(of: [secondAudio], timeout: 1) == .completed)
-        #expect(lateChunks.withLock { $0 } <= 1)
+        #expect(lateChunks.withLock { $0 } == 0)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["VOICE_MICROPHONE_CAPTURE_SMOKE"] == "1"))
+    @MainActor func finishKeepsTheEngineRunningUntilStop() async throws {
+        try #require(AVCaptureDevice.authorizationStatus(for: .audio) == .authorized)
+        let device = try defaultMicrophone()
+        let engine = AVAudioEngine()
+        let source = try MicSource(device: device, preference: device.microphone, engine: engine) { _ in }
+        defer { source.dispose() }
+        let firstChunk = XCTestExpectation(description: "the sink node delivers audio")
+        firstChunk.assertForOverFulfill = false
+        var finished = false
+        var tail = 0
+        try source.start { chunk in
+            if finished { tail += chunk.count }
+            if !chunk.isEmpty { firstChunk.fulfill() }
+        }
+        #expect(await XCTWaiter.fulfillment(of: [firstChunk], timeout: 3) == .completed)
+        try await Task.sleep(for: .milliseconds(50))
+
+        finished = true
+        source.finish()
+        #expect(tail > 0, "finish() hands over the audio captured since the last pump tick")
+        #expect(engine.isRunning)
+        source.stop()
+        #expect(!engine.isRunning)
     }
 
     private func defaultMicrophone() throws -> AudioInputDevices.Device {
