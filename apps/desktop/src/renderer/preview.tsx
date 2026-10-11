@@ -52,7 +52,6 @@ const base: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  otherChannelSignedIn: false,
   last: null,
 };
 
@@ -202,7 +201,6 @@ const hubScenes: Record<string, Snapshot> = {
     updates: { ...ready.updates, channel: "nightly", status: { kind: "current" } },
   },
   "account-signed-out": { ...ready, account: { kind: "signedOut" } },
-  "account-other-channel": { ...ready, account: { kind: "signedOut" }, otherChannelSignedIn: true },
   "account-signing-in": {
     ...ready,
     account: { kind: "signingIn", purpose: "signIn", phase: "browser" },

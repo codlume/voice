@@ -40,7 +40,6 @@ const fresh: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  otherChannelSignedIn: false,
   last: null,
 };
 

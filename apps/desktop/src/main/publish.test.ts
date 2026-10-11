@@ -33,7 +33,6 @@ function harness() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: { kind: "signedIn", ...identity },
-    otherChannelSignedIn: false,
     last: null,
   });
   const hub = fakeWindow();

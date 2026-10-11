@@ -577,7 +577,6 @@ describe("followSettings", () => {
       microphones: { kind: "loading" },
       microphoneTest: { kind: "off" },
       account: { kind: "signedOut" },
-      otherChannelSignedIn: false,
       last: null,
     });
     const cleanup = createCleanup({
