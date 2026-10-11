@@ -103,6 +103,6 @@ function lowercaseContinuation(before: string, rawChunk: string, output: string)
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
   const word = firstWord(rawChunk);
   if (!word || word === "i" || /^i['’]/.test(word)) return output;
-  if (firstWord(output)?.toLowerCase() !== word.toLowerCase()) return output;
+  if (firstWord(output) !== word[0]!.toUpperCase() + word.slice(1)) return output;
   return output[0]!.toLowerCase() + output.slice(1);
 }
