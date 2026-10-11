@@ -64,7 +64,8 @@ try {
     await prepareAsr(helper);
     await activateTarget();
     const id = `slow-paste-${busyMs}`;
-    await dictateFixture(helper, "silence.wav", id);
+    const capture = await dictateFixture(helper, "short.wav", id);
+    assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
     await activateTarget();
     tell(`busy ${busyMs}`);
     assert(await waitTarget("busyStart"), "target never reported busyStart");

@@ -333,10 +333,14 @@ describe("cleanup", () => {
   });
 
   test("cleanup returning empty for filler input ends empty and keeps the raw transcript", () => {
-    const { state, all } = run([...toCleaning, [{ type: "cleaned", id: ID, text: "" }, 2300]]);
+    const { state, effects, all } = run([
+      ...toCleaning,
+      [{ type: "cleaned", id: ID, text: "" }, 2300],
+    ]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "empty" } });
     expect(types(all)).not.toContain("insert");
     expect(all).toContainEqual({ type: "remember", raw: "hello um world", text: "hello um world" });
+    expect(effects).toContainEqual({ type: "cancelCapture", id: ID });
   });
 });
 

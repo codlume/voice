@@ -7,7 +7,7 @@ import os
 struct CaptureSession {
     let id: String
     let language: DictationLanguage
-    let frontmostPid: pid_t?
+    let target: InsertTarget
     let commandedAt: DispatchTime
     let input = CaptureInput()
 }
@@ -67,7 +67,7 @@ final class Capture {
     /// the user picks "Later".
     private var microphoneAuthorized = false
     private let authorizationStatus: @Sendable () -> AVAuthorizationStatus
-    private(set) var lastTarget: (id: String, pid: pid_t?)?
+    private(set) var lastTarget: (id: String, target: InsertTarget)?
     var testAudioPath: String?
     private let maxSamples: Int
 
@@ -86,7 +86,7 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, language: DictationLanguage, frontmostPid: pid_t?, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
+    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
         // Dictation preempts a test. The mic keeps running so dictation gets audio without an
         // engine restart.
         if case .testing(let testId, _) = state {
@@ -99,8 +99,9 @@ final class Capture {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return
         }
+        lastTarget = nil
         adopt(microphone)
-        let session = CaptureSession(id: id, language: language, frontmostPid: frontmostPid, commandedAt: receivedAt)
+        let session = CaptureSession(id: id, language: language, target: target, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
             if let testAudioPath {
@@ -153,7 +154,6 @@ final class Capture {
         let session = recording.session
         let samples = recording.samples
         state = .transcribing(recording)
-        lastTarget = (session.id, session.frontmostPid)
         defer { stopSourceAfterTranscriptionStarts() }
         let audioMs = Double(samples.count) / asrSampleRate * 1000
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
@@ -175,6 +175,10 @@ final class Capture {
     }
 
     func cancel(id: String) {
+        if lastTarget?.id == id {
+            lastTarget = nil
+            return
+        }
         switch state {
         case .starting(let session) where session.id == id:
             _ = session.input.drain(closing: true)
@@ -199,6 +203,7 @@ final class Capture {
     }
 
     func shutdown() {
+        lastTarget = nil
         stopSource()
         disposeMic()
         switch state {
@@ -212,6 +217,12 @@ final class Capture {
             break
         }
         state = .idle
+    }
+
+    func takeLastTarget(id: String) -> (id: String, target: InsertTarget)? {
+        guard lastTarget?.id == id else { return nil }
+        defer { lastTarget = nil }
+        return lastTarget
     }
 
     func startTest(id: String, microphone: Microphone?) {
@@ -417,6 +428,11 @@ final class Capture {
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
+        if case .transcript(_, let text, _, _) = event, !text.isEmpty {
+            lastTarget = (session.id, session.target)
+        } else {
+            lastTarget = nil
+        }
         output.emit(event)
         state = .idle
         prepareIdleMic()

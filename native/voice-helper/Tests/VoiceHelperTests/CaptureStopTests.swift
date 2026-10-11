@@ -85,13 +85,17 @@ struct CaptureStopTests {
             outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800)
         capture.testAudioPath = file.path
 
-        capture.start(id: "s1", language: .en, frontmostPid: nil, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        let target = InsertTarget(pid: nil)
+        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         let events = sessionEvents(try await lines.wait(for: terminal))
 
         #expect(events.map { $0["type"] as? String } == ["capture.started", "capture.stopped", terminal])
         #expect(events[1]["id"] as? String == "s1")
         #expect(events[1]["reason"] as? String == "maxDuration")
         #expect(!capture.isActive)
+        #expect(capture.takeLastTarget(id: "another-session") == nil)
+        #expect(capture.takeLastTarget(id: "s1") == nil)
+        #expect(capture.lastTarget == nil)
 
         capture.stop(id: "s1")
         try await Task.sleep(for: .milliseconds(300))

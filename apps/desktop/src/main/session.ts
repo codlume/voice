@@ -156,7 +156,9 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "cleaned": {
       if (state.phase !== "cleaning") return same;
       const text = event.text.trim();
-      if (text === "") return finish(state.id, { kind: "empty" });
+      if (text === "") {
+        return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
+      }
       return insert(state.id, state.raw, text);
     }
     case "cleanupFailed": {
