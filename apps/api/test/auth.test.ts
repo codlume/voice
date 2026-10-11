@@ -49,8 +49,13 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 
+const startUrl = (state = crypto.randomUUID()) =>
+  `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`;
+
+type PlayOptions = Partial<Pick<Parameters<typeof playBrowser>[1], "signOut" | "secFetchSite">>;
+
 /** Starts a sign-in as Voice would (PKCE), then plays the browser through /callback/google. */
-async function playSignIn(googleCode: string, options = { signOut: false }) {
+async function playSignIn(googleCode: string, options: PlayOptions = {}) {
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
@@ -61,13 +66,14 @@ async function playSignIn(googleCode: string, options = { signOut: false }) {
     base,
     initUrl: `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${state}&code_challenge=${challenge}&client_id=electron`,
     googleCode,
+    signOut: false,
     ...options,
   });
   return { ...flow, ip, state, verifier };
 }
 
 /** A sign-in that must reach the landing page with an Electron code. */
-async function browserSignIn(googleCode: string, options = { signOut: false }) {
+async function browserSignIn(googleCode: string, options: PlayOptions = {}) {
   const flow = await playSignIn(googleCode, options);
   expect(flow.init.status).toBe(302);
   expect(flow.callback.status).toBe(302);
@@ -555,23 +561,14 @@ describe("rate limiting", () => {
   it("lets one IP start sign-in four times within 10 s (catches Better Auth's 3-per-10 s /sign-in rule turning the fourth init-oauth-proxy into a 500)", async () => {
     const ip = freshIp();
     for (let attempt = 0; attempt < 4; attempt++) {
-      const response = await worker(
-        `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${crypto.randomUUID()}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`,
-        { redirect: "manual" },
-        ip,
-      );
+      const response = await worker(startUrl(), { redirect: "manual" }, ip);
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toMatch(/^https:\/\/accounts\.google\.com\//);
     }
   });
 
   it("keys sign-in starts on the user, not on one shared bucket (catches the electron plugin fetching the Worker's own /sign-in/social through Cloudflare)", async () => {
-    const start = (ip: string) =>
-      worker(
-        `${base}/api/auth/electron/init-oauth-proxy?provider=google&state=${crypto.randomUUID()}&code_challenge=${base64Url(crypto.getRandomValues(new Uint8Array(32)))}&client_id=electron`,
-        { redirect: "manual" },
-        ip,
-      );
+    const start = (ip: string) => worker(startUrl(), { redirect: "manual" }, ip);
     const crowd = freshIp();
     const statuses = new Set<number>();
     for (let attempt = 0; attempt < 100; attempt++) statuses.add((await start(crowd)).status);
@@ -655,6 +652,86 @@ describe("rate limiting", () => {
     prune.resolve();
     await Promise.all(background);
     expect(await staleRows()).toBe(0);
+  });
+});
+
+const fromPage = (secFetchSite: string) =>
+  ({ redirect: "manual", headers: { "sec-fetch-site": secFetchSite } }) as const;
+
+const cookieNames = (response: Response) =>
+  response.headers.getSetCookie().map((line) => line.split("=")[0]);
+
+describe("a sign-in start that a web page opened", () => {
+  const codesMinted = () =>
+    count("select count(*) as n from verification where identifier like 'electron:%'");
+
+  it("is sent to the landing page's start-in-voice state before Better Auth sees it, with one log line that names the header and not the state (catches a missing gate, one behind the limiter, or a log that quotes the query)", async () => {
+    const rows = () => count("select count(*) as n from verification");
+    const before = await rows();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      for (const secFetchSite of ["cross-site", "same-site", "same-origin"]) {
+        const ip = freshIp();
+        const state = crypto.randomUUID();
+        log.mockClear();
+        const response = await worker(startUrl(state), fromPage(secFetchSite), ip);
+
+        expect(response.status, secFetchSite).toBe(302);
+        expect(response.headers.get("location")).toBe("/#start-in-voice");
+        expect(response.headers.getSetCookie()).toEqual([]);
+        expect(await bucketsOf(ip)).toEqual([]);
+        const printed = log.mock.calls.map((call) => call.join(" "));
+        expect(printed).toHaveLength(1);
+        expect(JSON.parse(printed[0] ?? "")).toEqual({
+          route: "/api/auth/electron/init-oauth-proxy",
+          status: 302,
+          refused: "sec-fetch-site",
+          secFetchSite,
+        });
+        expect(printed[0]).not.toContain(state);
+      }
+    } finally {
+      log.mockRestore();
+    }
+    expect(await rows()).toBe(before);
+  });
+
+  it("does not consume the IP's own sign-in bucket (catches a gate that answers after the limiter counted the request)", async () => {
+    const ip = freshIp();
+    for (let attempt = 0; attempt < 100; attempt++)
+      expect((await worker(startUrl(), fromPage("cross-site"), ip)).headers.get("location")).toBe(
+        "/#start-in-voice",
+      );
+    const own = await worker(startUrl(), fromPage("none"), ip);
+
+    expect(own.status).toBe(302);
+    expect(own.headers.get("location")).toMatch(/^https:\/\/accounts\.google\.com\//);
+    expect(await bucketsOf(ip)).toEqual([{ key: `${ip}|/electron/init-oauth-proxy`, count: 1 }]);
+  });
+
+  it("does not block Google's redirect, which reaches the callback cross-site (catches a gate widened past the start)", async () => {
+    const flow = await browserSignIn("google-redirect", {
+      secFetchSite: { init: "none", callback: "cross-site" },
+    });
+
+    expect((await exchange(flow)).status).toBe(200);
+  });
+
+  it("cannot be finished by another browser: a start made elsewhere leaves the victim's callback with no code (pins the state cookie binding a callback to the browser that started the sign-in)", async () => {
+    const before = await codesMinted();
+    const attacker = await worker(startUrl(), { redirect: "manual" });
+    expect(attacker.status).toBe(302);
+    const google = new URL(attacker.headers.get("location") ?? "about:blank");
+
+    const victim = await worker(
+      `${base}/api/auth/callback/google?code=victim-google-account&state=${google.searchParams.get("state")}`,
+      fromPage("cross-site"),
+    );
+
+    expect(victim.status).toBe(302);
+    expect(victim.headers.get("location")).toContain(`${base}/api/auth/error?error=`);
+    expect(cookieNames(victim)).not.toContain("better-auth.electron");
+    expect(await codesMinted()).toBe(before);
   });
 });
 
