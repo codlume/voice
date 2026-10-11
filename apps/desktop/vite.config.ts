@@ -18,7 +18,7 @@ const isExternal = (id: string) =>
   id === "electron-updater";
 
 const electronEntry = (
-  name: "main" | "preload" | "sentry" | "cleanup-engine-worker",
+  name: "main" | "hub-preload" | "pill-preload" | "sentry" | "cleanup-engine-worker",
   entry: string,
 ) => ({
   entry: { [name]: entry },
@@ -104,7 +104,8 @@ export default defineConfig({
       // (the default) builds an app that cannot send diagnostics at all.
       env: { VOICE_SENTRY_DSN: process.env.VOICE_SENTRY_DSN ?? "" },
     },
-    electronEntry("preload", "src/preload.ts"),
+    electronEntry("hub-preload", "src/preload/hub.ts"),
+    electronEntry("pill-preload", "src/preload/pill.ts"),
     electronEntry("sentry", "src/main/sentry.ts"),
     electronEntry("cleanup-engine-worker", "src/main/cleanup-engine-worker.ts"),
   ],

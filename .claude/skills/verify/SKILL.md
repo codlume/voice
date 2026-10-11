@@ -13,7 +13,7 @@ Every command below goes through one helper, run from the repo root. Spell the p
 node .claude/skills/verify/scripts/voice-verify.mjs <command>
 ```
 
-It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Only one verify instance exists at a time. Its state lives in `$TMPDIR/voice-verify.json`.
+It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Each worktree has its own instance, with its own state file, userData, evidence directory, and CDP ports. Every command acts on the instance of the worktree that contains the script you run, so sessions in different worktrees never drive or stop each other's app. `launch` and `doctor` print the instance's `worktree`, which names the checkout whose build a proof ran against. The hotkey, focus, and clipboard stay shared, so `dictate` and the clipboard recipes still need the desktop to themselves.
 
 Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists every entry point. A proof that covers only one of several entry points is incomplete.
 
@@ -33,13 +33,13 @@ Before driving a feature, read [features/README.md](features/README.md) and the 
    node .claude/skills/verify/scripts/voice-verify.mjs launch     # run_in_background
    ```
 
-   It is ready when it prints a JSON object with `"ready": true`, the CDP port (9355), `userData`, `evidence`, `permissions`, and `models`. A cold run takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
+   It is ready when it prints a JSON object with `"ready": true`, the CDP `port`, `worktree`, `userData`, `evidence`, `permissions`, and `models`. A cold run, which includes the first launch in each worktree, takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
 
    What `launch` sets up:
-   - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData at `$TMPDIR/voice-verify`. It never touches `~/Library/Application Support/Voice`, `Voice Development`, or the login Keychain, because test mode encrypts with a mock Keychain.
+   - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData in `$TMPDIR`, one per worktree. `launch` and `doctor` print its path as `userData`. It never touches `~/Library/Application Support/Voice`, `Voice Development`, or the login Keychain, because test mode encrypts with a mock Keychain.
    - The models are symlinks to the shared test-model cache.
-   - Capture reads `$TMPDIR/voice-verify/capture.wav`, never the microphone. That file exists only while `dictate` runs. A stray real key press makes the session fail; it does not record or insert.
-   - It never opens a browser. When the user clicks `Sign in with Google`, test mode writes the sign-in URL to `$TMPDIR/voice-verify/sign-in-url.txt` instead, and `browser` plays the browser's part.
+   - Capture reads `capture.wav` in the userData, never the microphone. That file exists only while `dictate` runs. A stray real key press makes the session fail; it does not record or insert.
+   - It never opens a browser. When the user clicks `Sign in with Google`, test mode writes the sign-in URL to `sign-in-url.txt` in the userData instead, and `browser` plays the browser's part.
    - `launch` passes its environment through. Start it with `VOICE_API_URL=http://localhost:8787` to point the instance at a local API Worker. Without it, the Account page reports accounts as unavailable.
 
 3. Teardown: `node .claude/skills/verify/scripts/voice-verify.mjs stop`. See [Cleanup](#cleanup).
@@ -58,7 +58,7 @@ This check is read-only. Run it first, and again whenever something looks off. A
 - `instance.cdpPages` lists both `pill.html` and `hub.html`.
 - `snapshot.models.asr.state` and `snapshot.models.cleanup.state` are `ready`.
 - `snapshot.permissions.accessibility` is `granted`. Accessibility belongs to whatever launched the script (terminal, IDE, or agent host). Without it, the hotkey tap and insertion cannot work, and only a human can grant it in System Settings.
-- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` and a `pnpm dev` session both show up here.
+- `otherVoiceProcesses` is empty if you plan to `dictate`. The user's own `Voice.app` and a `pnpm dev` session both show up here, and so do other sessions' verify instances, model downloads, e2e runs, and smoke runs.
 
 `snapshot.permissions.microphone` stays `notDetermined` in the scratch instance. That is expected, so don't press Grant.
 
@@ -91,17 +91,17 @@ Stable handles:
 - **Selects:** open with `click css:#setting-<name>`, then `click "<option label>"`.
 - **Page headline:** `document.querySelector("main h1").textContent`.
 
-`dictate` posts a real synthetic key event. It refuses to run while any other Voice helper or `pnpm dev` is running, because that app's hotkey tap would hear the press and record the room with the real microphone. If it refuses, ask the user to quit Voice.app. Never kill it yourself. It also briefly brings the scratch target window to the front.
+`dictate` posts a real synthetic key event. It refuses to run while any other Voice helper or `pnpm dev` is running, because that app's hotkey tap would hear the press and record the room with the real microphone. Another worktree's verify instance counts too, because the hotkey is global. If it refuses, ask the user to quit Voice.app, or wait for the other session to `stop`. Never kill it yourself. It also briefly brings the scratch target window to the front.
 
 ## Evidence
 
-Artifacts go to `$TMPDIR/voice-verify-evidence/<runId>/`. `launch` and `stop` print the path. `dictate` writes one JSON file per session there automatically. The repo's `.gitignore` does not cover this directory, which is why evidence lives outside the repo. Never commit evidence.
+Artifacts go to the `evidence` directory that `launch` and `stop` print, under `$TMPDIR/voice-verify-evidence/`. `dictate` writes one JSON file per session there automatically. The repo's `.gitignore` does not cover this directory, which is why evidence lives outside the repo. Never commit evidence.
 
 Proof standards:
 
 - Drive the real user path: a click in the hub, or the hotkey through `dictate`. `window.voice.updateSettings` is a setup shortcut, not proof that a control works.
 - Capture the action and the resulting state: a `shot` before and after, plus `text` or `snapshot` output, not only the final screen.
-- Check side effects alongside the UI. Settings persist in `$TMPDIR/voice-verify/settings.json`, so `cat` it before `stop` deletes it. Model installs are files in `$TMPDIR/voice-verify/models`. Insertion is the target textarea's value (`inserted`) and `last` in the snapshot. Main-process logs are in `$TMPDIR/voice-verify/main.log`.
+- Check side effects alongside the UI. Settings persist in `<userData>/settings.json`, so `cat` it before `stop` deletes it. Model installs are files in `<userData>/models`. Insertion is the target textarea's value (`inserted`) and `last` in the snapshot. Main-process logs are in `<userData>/main.log`.
 - Test mode replaces only the microphone with a fixture WAV. The hotkey tap, ASR, cleanup, and insertion are the production code paths. Don't describe a fixture-driven run as proof of capture-device behavior.
 - Use only the synthetic fixtures (`test-fixtures/audio/*.wav`: `short`, `long`, `silence`, `url`, `language-trigger`). Never use real recordings.
 
@@ -111,11 +111,11 @@ Proof standards:
 node .claude/skills/verify/scripts/voice-verify.mjs stop
 ```
 
-`stop` signals the owner process that `launch` started, which stops the Electron process group it spawned. If the owner is dead, `stop` signals the recorded Electron process group directly. It never kills anything by name. It then deletes the scratch userData and the state file, and prints the evidence dir, which it keeps. Run `stop` after every attempt, including failed ones. After `stop`, `doctor` should report `"instance": "none"`.
+`stop` signals the owner process that `launch` started, which stops the Electron process group it spawned. If the owner is dead, `stop` signals the recorded Electron process group directly. It checks the recorded process start and executable before each signal, so a recycled PID is not treated as the old instance. Concurrent stops use an OS lock. It then deletes the scratch userData and the state file, and prints the evidence dir, which it keeps. Run `stop` after every attempt, including failed ones or Ctrl+C. Launch leaves its record for `stop` to clean up. After `stop`, `doctor` should report `"instance": "none"`.
 
 ## Repo checks that drive the same app
 
-These are scripts the repo already has. Run them when the change is in their area. Each launches its own instance, so `stop` the verify instance first.
+These are scripts the repo already has. Run them when the change is in their area. Each launches its own instance and refuses while any other Voice helper runs, so `stop` the verify instance first and wait for other worktrees' sessions to finish.
 
 - `pnpm e2e` runs six hotkey cases into TextEdit and an Electron textarea: cleanup on and off, silence, Escape, too short.
 - `node scripts/models-smoke.mjs` covers model uninstall and reinstall from the Models page.

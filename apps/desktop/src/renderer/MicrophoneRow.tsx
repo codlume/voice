@@ -14,6 +14,7 @@ import {
 import { smoothLevel } from "./pillView.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const reduceMotion = "@media (prefers-reduced-motion: reduce)";
 
@@ -138,7 +139,7 @@ export function MicrophoneRow({
 
   useEffect(
     () => () => {
-      void window.voice.stopMicrophoneTest();
+      void hubApi().stopMicrophoneTest();
     },
     [],
   );
@@ -148,21 +149,15 @@ export function MicrophoneRow({
 
   function run() {
     if (action.kind === "stop") {
-      void runAction(
-        () => window.voice.stopMicrophoneTest(),
-        "Could not stop the microphone test.",
-      );
+      void runAction(() => hubApi().stopMicrophoneTest(), "Could not stop the microphone test.");
     } else if (action.kind === "requestAccess") {
       setAccessRequested(true);
       void runAction(
-        () => window.voice.requestPermission("microphone"),
+        () => hubApi().requestPermission("microphone"),
         "Could not request microphone access.",
       );
     } else {
-      void runAction(
-        () => window.voice.startMicrophoneTest(),
-        "Could not start the microphone test.",
-      );
+      void runAction(() => hubApi().startMicrophoneTest(), "Could not start the microphone test.");
     }
   }
 

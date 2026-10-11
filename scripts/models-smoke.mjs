@@ -73,14 +73,14 @@ try {
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
     writeFileSync(`${shots}-${name}.png`, Buffer.from(data, "base64"));
   };
+  // A closed dialog stays mounted until its exit transition ends, and a window hidden behind
+  // other apps runs no transitions, so only an open dialog counts.
+  const openDialog = '[role="alertdialog"][data-open]';
   const dialogButton = (text) =>
-    `[...document.querySelectorAll('[role="alertdialog"] button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+    `[...document.querySelectorAll('${openDialog} button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
   const answerDialog = async (choice) => {
     await click(dialogButton(choice), `confirmation dialog offers ${choice}`);
-    await untilPage(
-      `!document.querySelector('[role="alertdialog"]')`,
-      "confirmation dialog closes",
-    );
+    await untilPage(`!document.querySelector('${openDialog}')`, "confirmation dialog closes");
   };
 
   await untilModels(

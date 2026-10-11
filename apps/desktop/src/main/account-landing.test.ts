@@ -1,8 +1,6 @@
-import { runInNewContext } from "node:vm";
-
 import { describe, expect, test } from "vite-plus/test";
 
-import { landingPage } from "../../../api/src/landing.ts";
+import { openLanding } from "../../../api/test/landing-harness.ts";
 import { parseCallbackUrl, parseSignInCode } from "./account.ts";
 
 // The only test that reads across the two apps. It pins the landing page's URL literal to the
@@ -26,31 +24,15 @@ describe("sign-in code across the landing page and the account module", () => {
       );
       expect(cookieValue.endsWith("%3D")).toBe(padded);
 
-      const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
-      const elements = {
-        "signed-in": { hidden: true },
-        expired: { hidden: true },
-        open: { href: "" },
-        code: { textContent: "" },
-        copy: { addEventListener() {} },
-      };
-      let opened = "";
-      runInNewContext(script, {
-        document: {
-          cookie: `better-auth.state=s; better-auth.electron=${cookieValue}`,
-          getElementById: (id: keyof typeof elements) => elements[id],
-        },
-        fetch: () => Promise.resolve(new Response()),
-        location: {
-          replace: (url: string) => {
-            opened = url;
-          },
-        },
-      });
+      const { elements, calls } = openLanding(
+        `better-auth.state=s; better-auth.electron=${cookieValue}`,
+      );
+      const opened = calls.flatMap((call) => ("replace" in call ? [call.replace] : []));
+      expect(opened).toHaveLength(1);
 
       expect(elements.code.textContent).toBe(cookieValue);
       expect(parseSignInCode(elements.code.textContent)).toEqual({ code: cookieValue, state });
-      expect(parseCallbackUrl(opened)).toEqual({ code: cookieValue, state });
+      expect(parseCallbackUrl(opened[0] ?? "")).toEqual({ code: cookieValue, state });
       expect(parseCallbackUrl(elements.open.href)).toEqual({ code: cookieValue, state });
       expect(
         JSON.parse(Buffer.from(decodeURIComponent(cookieValue), "base64url").toString("utf8")),
