@@ -45,6 +45,7 @@ function fakeModule(behavior: Behavior = {}) {
     cleans: [] as [string, CleanupStyle][],
     requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
+    lost: [] as ((message: string) => void)[],
   };
   const module: CleanupModule = {
     findS1Mini,
@@ -66,9 +67,10 @@ function fakeModule(behavior: Behavior = {}) {
       if (behavior.removeError) throw new Error(behavior.removeError);
       await removeS1Mini(options);
     },
-    createS1Mini({ modelPath }) {
+    createS1Mini({ modelPath, onLost }) {
       calls.creates += 1;
       calls.modelPaths.push(modelPath);
+      calls.lost.push(onLost);
       return {
         async load() {
           calls.loads += 1;
@@ -83,9 +85,6 @@ function fakeModule(behavior: Behavior = {}) {
             if (behavior.warmUpError) throw new Error(behavior.warmUpError);
           }
           return whole(raw.toUpperCase());
-        },
-        async generate(raw) {
-          return [{ chunk: raw, output: raw.toUpperCase(), truncated: false }];
         },
         async dispose() {
           await behavior.loadGate;
@@ -113,7 +112,13 @@ describe("createCleanup", () => {
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
   const start = (fake = fakeModule(), shouldLoad = () => enabled) =>
-    createCleanup({ modelsDir: dir, shouldLoad, onStatus: (s) => statuses.push(s), ...fake });
+    createCleanup({
+      modelsDir: dir,
+      shouldLoad,
+      onStatus: (s) => statuses.push(s),
+      log: () => {},
+      ...fake,
+    });
 
   test("loadIfDownloaded without a model file reports missing and never loads a model", async () => {
     const fake = fakeModule();
@@ -184,6 +189,32 @@ describe("createCleanup", () => {
     expect(fake.calls.cleans).toEqual([]);
     expect(statuses).toEqual([{ state: "loading" }]);
     expect(cleanup.loaded()).toBe(false);
+  });
+
+  test("an engine lost while loaded reports failed, and Retry loads a fresh engine", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const fake = fakeModule();
+    const cleanup = start(fake);
+    await cleanup.loadIfDownloaded();
+    statuses = [];
+
+    fake.calls.lost[0]!("The cleanup model stopped unexpectedly.");
+
+    expect(statuses).toEqual([
+      { state: "failed", message: "The cleanup model stopped unexpectedly." },
+    ]);
+    expect(cleanup.loaded()).toBe(false);
+    await expect(cleanup.clean("hello", style, request)).rejects.toThrow("not ready");
+
+    statuses = [];
+    await cleanup.install();
+
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+    expect(fake.calls.creates).toBe(2);
+    await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
+    fake.calls.lost[0]!("late exit of the first engine");
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+    expect(cleanup.loaded()).toBe(true);
   });
 
   test("a failed warm-up still reports ready with the model loaded", async () => {
@@ -524,6 +555,7 @@ describe("followSettings", () => {
       shouldLoad: () => wantsCleanup(store.state.settings),
       onStatus: (status) =>
         store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
+      log: () => {},
       ...fakeModule(),
     });
     store.subscribe((state, previous) => followSettings(cleanup, state, previous));
