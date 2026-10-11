@@ -36,18 +36,20 @@ export function chunkTranscript(
   maxTokens: number,
   countTokens: CountTokens,
 ): Chunk[] {
-  const parts = pieces(text, maxTokens, countTokens);
   const chunks: Chunk[] = [];
-  let first = 0;
-  let offset = 0;
-  while (first < parts.length) {
-    const last = fittingEnd(parts, first, maxTokens, countTokens);
-    const joined = parts.slice(first, last).join("");
-    const start = offset + joined.length - joined.trimStart().length;
-    const end = offset + joined.trimEnd().length;
-    if (start < end) chunks.push({ start, end, text: text.slice(start, end) });
-    offset += joined.length;
-    first = last;
+  for (const line of text.matchAll(/[^\r\n]+/gu)) {
+    const parts = pieces(line[0], maxTokens, countTokens);
+    let first = 0;
+    let offset = line.index;
+    while (first < parts.length) {
+      const last = fittingEnd(parts, first, maxTokens, countTokens);
+      const joined = parts.slice(first, last).join("");
+      const start = offset + joined.length - joined.trimStart().length;
+      const end = offset + joined.trimEnd().length;
+      if (start < end) chunks.push({ start, end, text: text.slice(start, end) });
+      offset += joined.length;
+      first = last;
+    }
   }
   return chunks;
 }
@@ -97,7 +99,7 @@ function separator(raw: string, chunks: readonly Chunk[], from: number, to: numb
 const firstWord = (text: string) => /^[\p{L}\p{N}'’]+/u.exec(text)?.[0];
 
 function lowercaseContinuation(before: string, rawChunk: string, output: string): string {
-  if (!before || TERMINAL_END.test(before)) return output;
+  if (!before || TERMINAL_END.test(before) || /[\r\n]\s*$/u.test(before)) return output;
   if (!/^\p{Ll}/u.test(rawChunk)) return output;
   const word = firstWord(rawChunk);
   if (!word || word === "i" || /^i['’]/.test(word)) return output;
