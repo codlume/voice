@@ -145,10 +145,12 @@ describe("cleanup engine process", () => {
     const { proxy, engine } = connect();
     await proxy.load();
 
-    void proxy.clean("warm up", style);
+    const cleaning = proxy.clean("warm up", style);
     const clean = await engine.cleanStarted;
+    clean.finish({ text: "Warm up.", chunks: 1, cleaned: 1 });
 
-    expect(clean.request?.budgetMs).toBeUndefined();
+    await expect(cleaning).resolves.toEqual({ text: "Warm up.", chunks: 1, cleaned: 1 });
+    expect(clean.request).not.toHaveProperty("budgetMs");
   });
 
   test("an engine error comes back with its name and message", async () => {
