@@ -51,12 +51,12 @@ code { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border)
 button { flex-shrink: 0; padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--foreground); font: inherit; cursor: pointer; }
 `;
 
-// iPadOS Safari reports a Mac platform, with touch points.
 const script = `
 const name = "better-auth.electron=";
 const code = document.cookie.split("; ").find((cookie) => cookie.startsWith(name))?.slice(name.length);
-const platform = navigator.userAgentData?.platform || navigator.platform;
-const desktop = /^Win/i.test(platform) || (/^Mac/i.test(platform) && !(navigator.maxTouchPoints > 1));
+const platforms = [navigator.userAgentData?.platform, navigator.platform].filter(Boolean);
+// iPadOS Safari reports a Mac platform, with touch points.
+const desktop = platforms.some((p) => /^Win/i.test(p)) || (platforms.some((p) => /^Mac/i.test(p)) && !(navigator.maxTouchPoints > 1));
 const view = location.hash === "#start-in-voice" ? "start-in-voice" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
 document.getElementById(view).hidden = false;
 if (code) {

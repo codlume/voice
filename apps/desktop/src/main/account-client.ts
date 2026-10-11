@@ -262,6 +262,8 @@ export function createVoiceAuthClient({
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
   // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
   // code belongs to; in test mode the same hook writes the URL for the script that plays the browser.
+  // The start must stay an external open: the API refuses one whose Sec-Fetch-Site is not `none`,
+  // which a navigation or fetch from a page would carry.
   const opened: URL[] = [];
   const openExternal = shell.openExternal.bind(shell);
   shell.openExternal = (url, options) => {

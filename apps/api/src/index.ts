@@ -38,8 +38,9 @@ app.get("/", (c) => {
 });
 
 // Better Auth keys its rate limiter on the client IP plus the raw request path, before it matches a
-// route. Only the auth paths Voice uses are routed, so a path not listed here, including another
-// spelling of a listed one, is a 404 that touches no database.
+// route. Only the auth paths Voice uses are routed (the sign-in start, GET only and gated below,
+// and these), so any other path, including another spelling of a routed one, is a 404 that
+// touches no database.
 const initPath = `${authOptions.basePath}/electron/init-oauth-proxy`;
 const authPaths = [
   "/get-session",
@@ -64,7 +65,7 @@ const fetchSites = new Set(["same-origin", "same-site", "cross-site"]);
 
 // Whoever builds a start link holds the PKCE verifier for the code it ends in. Browsers mark a
 // start that Voice opens from outside the browser `none`; a link on a web page arrives
-// `cross-site`. Browsers without Fetch Metadata, and Voice's test flows, send no header and pass.
+// `cross-site`. Browsers without Fetch Metadata and header-less clients send nothing and pass.
 const refuseStartsFromWebPages: MiddlewareHandler<AppEnv> = async (c, next) => {
   const secFetchSite = c.req.header("sec-fetch-site") ?? "none";
   if (secFetchSite === "none") return next();

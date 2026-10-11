@@ -1,59 +1,6 @@
-// Runs the landing page's inline script against a stub DOM. The workerd tests
-// cannot execute it, because Workers forbid eval.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runInNewContext } from "node:vm";
-import { landingPage } from "../src/landing.ts";
-
-const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
-
-function open(
-  cookie,
-  {
-    clipboard = () => Promise.resolve(),
-    hash = "",
-    platform = "MacIntel",
-    userAgentData,
-    maxTouchPoints = 0,
-  } = {},
-) {
-  const listeners = {};
-  const elements = {
-    "start-in-voice": { hidden: true },
-    "signed-in": { hidden: true },
-    "not-desktop": { hidden: true },
-    expired: { hidden: true },
-    open: { href: "" },
-    code: { textContent: "" },
-    copy: {
-      textContent: "Copy",
-      addEventListener: (type, listener) => (listeners[type] = listener),
-    },
-  };
-  const calls = [];
-  const selected = [];
-  runInNewContext(script, {
-    document: { cookie, getElementById: (id) => elements[id] },
-    navigator: {
-      clipboard: { writeText: (text) => (calls.push({ copy: text }), clipboard()) },
-      platform,
-      userAgentData,
-      maxTouchPoints,
-    },
-    getSelection: () => ({ selectAllChildren: (node) => selected.push(node) }),
-    fetch: (url, init) => {
-      // The init object comes from the page's realm, so copy it before comparing.
-      calls.push({ fetch: url, init: structuredClone(init) });
-      return Promise.resolve(new Response());
-    },
-    location: { hash, replace: (url) => calls.push({ replace: url }) },
-  });
-  const clickCopy = async () => {
-    listeners.click();
-    await new Promise((resolve) => setImmediate(resolve));
-  };
-  return { elements, calls, selected, clickCopy };
-}
+import { openLanding as open } from "./landing-harness.ts";
 
 const code = "eyJpZGVudGlmaWVyIjoiYSIsInN0YXRlIjoiYiJ9%3D";
 const cookie = `better-auth.state=s; better-auth.electron=${code}; other=1`;
@@ -135,8 +82,8 @@ test("opens Voice on Windows and on macOS, whichever platform API the browser of
     { platform: "Win32" },
     { platform: "Win32", userAgentData: { platform: "Windows" } },
     { platform: "MacIntel", userAgentData: { platform: "macOS" } },
-    // A browser may withhold the platform from userAgentData as an empty string.
     { platform: "MacIntel", userAgentData: { platform: "" } },
+    { platform: "MacIntel", userAgentData: { platform: "Unknown" } },
     { platform: "Win32", maxTouchPoints: 10 },
   ]) {
     const { elements, calls } = open(cookie, device);

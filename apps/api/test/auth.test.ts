@@ -732,9 +732,9 @@ describe("a sign-in start that a web page opened", () => {
     }
   });
 
-  it("does not block Google's redirect, which reaches the callback cross-site (catches a gate widened past the start)", async () => {
-    const flow = await browserSignIn("google-redirect", {
-      secFetchSite: { init: "none", callback: "cross-site" },
+  it("completes a sign-in whose browser sends no Fetch Metadata, as older browsers and header-less clients do (catches a gate that refuses a missing header)", async () => {
+    const flow = await browserSignIn("no-fetch-metadata", {
+      secFetchSite: { init: null, callback: null },
     });
 
     expect((await exchange(flow)).status).toBe(200);
