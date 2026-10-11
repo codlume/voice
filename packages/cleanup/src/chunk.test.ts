@@ -160,6 +160,13 @@ test("stitch keeps a capital after a sentence end", () => {
   );
 });
 
+test("stitch keeps a sentence capital when cleanup drops the preceding period", () => {
+  const raw = "call ada. then email bob";
+  const chunks = chunkTranscript(raw, 15, chars);
+
+  expect(stitch(raw, chunks, ["Call Ada", "Then email Bob."])).toBe("Call Ada Then email Bob.");
+});
+
 test("stitch keeps a capital the user dictated", () => {
   const raw = "call ada and Sofia will review it";
   const chunks = spans(raw, ["call ada and", "Sofia will review it"]);
