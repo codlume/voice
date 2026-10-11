@@ -3,7 +3,8 @@ type CountTokens = (text: string) => number;
 export type Chunk = { start: number; end: number; text: string };
 
 const CLOSERS = `["'”’)\\]]*`;
-const TERMINAL_END = new RegExp(`[.!?…]${CLOSERS}\\s*$`, "u");
+const TERMINAL_END = new RegExp(`([.!?…]+)${CLOSERS}\\s*$`, "u");
+const OMITTED_SENTENCE_END = new RegExp(`([.!?…]+)${CLOSERS}(?=\\s|$)`, "u");
 const ABBREVIATION_END = new RegExp(
   `(?:\\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc)\\.|(?:\\p{L}\\.){2,})${CLOSERS}\\s*$`,
   "iu",
@@ -102,17 +103,14 @@ export function stitch(
   kept.forEach(({ index, chunk, output }, k) => {
     const previous = kept[k - 1];
     const gap = previous ? separator(raw, chunks, previous.index, index) : "";
-    text += gap;
     const omitted = previous ? raw.slice(previous.chunk.end, chunk.start) : "";
-    const rawSentenceEnd =
-      previous !== undefined &&
-      (TERMINAL_END.test(previous.chunk.text) ||
-        TERMINAL_END.test(omitted) ||
-        SENTENCE_END.test(omitted));
+    const rawTerminal = previous
+      ? (TERMINAL_END.exec(previous.chunk.text)?.[1] ?? OMITTED_SENTENCE_END.exec(omitted)?.[1])
+      : undefined;
+    if (gap && !/[\r\n]/u.test(gap) && rawTerminal && !TERMINAL_END.test(text)) text += rawTerminal;
+    text += gap;
     const continuation =
-      previous !== undefined &&
-      !/[\r\n]\s*$/u.test(text) &&
-      !(gap && (TERMINAL_END.test(text) || rawSentenceEnd));
+      previous !== undefined && !/[\r\n]\s*$/u.test(text) && !(gap && TERMINAL_END.test(text));
     text +=
       output === undefined
         ? chunk.text
@@ -146,5 +144,5 @@ function lowercaseContinuation(rawChunk: string, output: string): string {
   const cleaned = initialWord(output);
   if (cleaned?.[1] !== rawWord[0]!.toUpperCase() + rawWord.slice(1)) return output;
   const offset = cleaned[0].length - cleaned[1].length;
-  return output.slice(0, offset) + output[offset]!.toLowerCase() + output.slice(offset + 1);
+  return output.slice(0, offset) + rawWord + output.slice(offset + cleaned[1].length);
 }
