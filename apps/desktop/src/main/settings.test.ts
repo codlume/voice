@@ -102,6 +102,7 @@ describe("parseSettings", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
+      snippets: [],
       zoomLevel: 0,
     });
   });
@@ -173,6 +174,7 @@ describe("applyPatch", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
+      snippets: [],
       zoomLevel: 0,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
@@ -272,6 +274,25 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual({ ...older, zoomLevel: 0 });
   });
 
+  test("a settings file from before snippets loads with none", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { snippets: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, snippets: [] });
+  });
+
+  test("a damaged snippet is dropped while the others load", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const valid = { id: "1", trigger: "my email", expansion: "name@example.com" };
+    await writeFile(
+      file,
+      JSON.stringify({
+        snippets: [valid, { id: "2", trigger: "My Email!", expansion: "x" }, { id: "3" }],
+      }),
+    );
+    expect(loadSettings(file).snippets).toEqual([valid]);
+  });
+
   test("a corrupt file yields defaults", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
@@ -295,6 +316,7 @@ describe("load and save", () => {
       updateChannel: "nightly",
       theme: "dark",
       cleanup: { enabled: false },
+      snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n" }],
       zoomLevel: 1.5,
     });
     await saveSettings(file, settings);

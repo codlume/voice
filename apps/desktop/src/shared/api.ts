@@ -1,6 +1,7 @@
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
+import type { Snippet } from "./snippets.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
@@ -118,6 +119,7 @@ export type Settings = {
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
   };
   diagnostics: DiagnosticsConsent;
+  snippets: readonly Snippet[];
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
   zoomLevel: number;
 };
@@ -134,6 +136,7 @@ export type SettingsPatch = {
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
   diagnostics?: DiagnosticsConsent;
+  snippets?: readonly Snippet[];
   zoomLevel?: number;
 };
 
