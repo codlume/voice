@@ -6,8 +6,9 @@ import {
   type Outcome,
   type PillState,
   type Snapshot,
+  type HubApi,
+  type PillApi,
   type UpdateStatus,
-  type VoiceApi,
 } from "../shared/api.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
@@ -211,7 +212,7 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
-function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
+function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
   let snapshot = initial;
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();

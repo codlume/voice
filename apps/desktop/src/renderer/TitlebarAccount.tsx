@@ -10,6 +10,7 @@ import { HiddenEmail } from "./HiddenEmail.tsx";
 import { titlebar } from "./titlebar.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { hubApi } from "./voice.ts";
 
 const buttonLabels: Record<Exclude<AccountState["kind"], "unavailable" | "signedIn">, string> = {
   signedOut: "Account, signed out",
@@ -175,7 +176,7 @@ function SignedInMenu({
               disabled={pending || account.deletion !== undefined}
               onClick={() => {
                 onSignOut();
-                void run(() => window.voice.signOut(), "Could not sign out.");
+                void run(() => hubApi().signOut(), "Could not sign out.");
               }}
               className={itemClassName}
             >

@@ -7,7 +7,6 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
-  ipcMain,
   Menu,
   nativeTheme,
   screen,
@@ -23,8 +22,10 @@ import {
   DIAGNOSTICS_ARGUMENT,
   sameTranscript,
   toPillSnapshot,
+  type HubApi,
   type LoginItem,
   type PermissionKind,
+  type PillApi,
   type Settings,
   type SettingsPatch,
   VOICE_URL_SCHEME,
@@ -48,6 +49,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
@@ -120,8 +122,6 @@ function readLoginItem(): LoginItem {
   return "off";
 }
 
-const preload = NodePath.join(__dirname, "preload.cjs");
-
 // macOS delivers a launch by URL only to a listener that exists before ready. main() points this
 // at the account module synchronously, before any event can arrive, and once the hub exists, at
 // a handler that also brings the hub forward.
@@ -150,7 +150,7 @@ function loadPage(window: BrowserWindow, page: Page) {
   void window.loadURL(pageUrl(page, { development, env: process.env, rendererDir }));
 }
 
-function createPillWindow(webPreferences: WebPreferences) {
+function createPillWindow(webPreferencesFor: (page: Page) => WebPreferences) {
   const pill = new BrowserWindow({
     width: PILL_WIDTH,
     height: PILL_HEIGHT,
@@ -171,7 +171,7 @@ function createPillWindow(webPreferences: WebPreferences) {
     show: false,
     // Chromium shares one zoom level between pages on the same host, as the dev server serves both
     // windows; "isolated" keeps the pill out of it however the pages load.
-    webPreferences: { ...webPreferences, zoomMode: "isolated" },
+    webPreferences: { ...webPreferencesFor("pill"), zoomMode: "isolated" },
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setIgnoreMouseEvents(true);
@@ -293,10 +293,10 @@ async function main() {
     console.log(`[voice] ${message}`);
     if (entry) diagnostics.log(entry);
   };
-  const webPreferences: WebPreferences = {
-    preload,
+  const webPreferencesFor = (page: Page): WebPreferences => ({
+    preload: NodePath.join(__dirname, `${page}-preload.cjs`),
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
-  };
+  });
 
   // The user can change Login Items in System Settings, so macOS owns this state.
   function refreshLoginItem() {
@@ -319,7 +319,7 @@ async function main() {
   });
 
   let hub: BrowserWindow | undefined;
-  const pill = createPillWindow(webPreferences);
+  const pill = createPillWindow(webPreferencesFor);
   positionPill(pill);
 
   let dictation: Dictation;
@@ -444,7 +444,10 @@ async function main() {
       // StyleX tokens cannot be imported here, so this repeats color.sidebar as hex
       // (BrowserWindow rejects oklch). It keeps a dark first frame from flashing white.
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111111" : "#fafafa",
-      webPreferences: { ...webPreferences, zoomFactor: zoomFactor(store.state.settings.zoomLevel) },
+      webPreferences: {
+        ...webPreferencesFor("hub"),
+        zoomFactor: zoomFactor(store.state.settings.zoomLevel),
+      },
     });
     // zoomFactor paints the first frame at the saved size. setZoomLevel only takes once a page has
     // committed, so a zoom pressed before the first load is reapplied here.
@@ -469,6 +472,7 @@ async function main() {
     // Restore loads Better Auth and reads the Keychain, so it waits until the window has loaded.
     // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
     hub.webContents.once("did-finish-load", () => void account.restore());
+    handleHubCommands(hub.webContents.ipc);
     loadPage(hub, "hub");
     return hub;
   }
@@ -617,77 +621,81 @@ async function main() {
     }
   }
 
-  ipcMain.handle(Channel.getSnapshot, (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== hub)
-      throw new Error("Only the Voice window reads the full snapshot.");
-    return toSnapshot(store.state);
-  });
-  ipcMain.handle(Channel.getPillSnapshot, () => toPillSnapshot(toSnapshot(store.state)));
-  ipcMain.handle(Channel.checkForUpdates, () => updates.check());
-  ipcMain.handle(Channel.downloadUpdate, () => updates.download());
-  ipcMain.handle(Channel.restartForUpdate, (_event, value: unknown) => {
-    const request = parseRestartRequest(value);
-    if (!request) return;
-    const last = store.state.last;
-    if (!sameTranscript(request.last, last)) {
-      throw new Error("A new transcript arrived. Check it, then restart.");
-    }
-    return updates.restart(
-      request.choice === "copyTranscriptAndRestart" && last
-        ? () => clipboard.writeText(last.text || last.raw)
-        : undefined,
+  // Each window's handlers live on its own webContents.ipc, which Electron consults only for that
+  // window's invokes. The Flow Bar cannot reach a hub command, and a recreated hub gets a new set.
+  const pillCommands: Commands<PillApi> = pill.webContents.ipc;
+  pillCommands.handle(Channel.getPillSnapshot, () => toPillSnapshot(toSnapshot(store.state)));
+
+  function handleHubCommands(hubCommands: Commands<HubApi>) {
+    hubCommands.handle(Channel.getSnapshot, () => toSnapshot(store.state));
+    hubCommands.handle(Channel.checkForUpdates, () => updates.check());
+    hubCommands.handle(Channel.downloadUpdate, () => updates.download());
+    hubCommands.handle(Channel.restartForUpdate, (_event, value: unknown) => {
+      const request = parseRestartRequest(value);
+      if (!request) return;
+      const last = store.state.last;
+      if (!sameTranscript(request.last, last)) {
+        throw new Error("A new transcript arrived. Check it, then restart.");
+      }
+      return updates.restart(
+        request.choice === "copyTranscriptAndRestart" && last
+          ? () => clipboard.writeText(last.text || last.raw)
+          : undefined,
+      );
+    });
+    hubCommands.handle(Channel.openRelease, () => {
+      const url = updates.releaseUrl();
+      if (url) void shell.openExternal(url);
+    });
+    hubCommands.handle(Channel.updateSettings, (_event, patch: SettingsPatch) =>
+      updateSettings(patch),
     );
-  });
-  ipcMain.handle(Channel.openRelease, () => {
-    const url = updates.releaseUrl();
-    if (url) void shell.openExternal(url);
-  });
-  ipcMain.handle(Channel.updateSettings, (_event, patch: SettingsPatch) => updateSettings(patch));
-  ipcMain.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
-    if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
-  });
-  ipcMain.handle(Channel.setOpenAtLogin, (_event, on: boolean) => {
-    if (development) return;
-    const openAtLogin = on === true;
-    // Registering again does not approve the item. Only the user can, in Login Items.
-    if (openAtLogin && store.state.loginItem === "needsApproval") {
-      void shell.openExternal(LOGIN_ITEMS_PANE);
-      return;
-    }
-    app.setLoginItemSettings({ openAtLogin });
-    refreshLoginItem();
-  });
-  ipcMain.handle(Channel.startMicrophoneTest, () => {
-    if (lifecycle === "running") microphoneTest.start();
-  });
-  ipcMain.handle(Channel.stopMicrophoneTest, () => microphoneTest.stop());
-  ipcMain.handle(Channel.installModel, (_event, id: unknown) => {
-    const model = models.find((candidate) => candidate.id === id);
-    if (model && lifecycle === "running") modelControls[model.id].install();
-  });
-  ipcMain.handle(Channel.uninstallModel, (_event, id: unknown) => {
-    const model = models.find((candidate) => candidate.id === id);
-    if (!model) return;
-    assertCanUninstall(model);
-    return modelControls[model.id].uninstall();
-  });
-  ipcMain.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
-    copyLast(which === "raw" ? "raw" : "text");
-  });
-  ipcMain.handle(Channel.signIn, () => {
-    assertNotRestarting();
-    return account.signIn();
-  });
-  ipcMain.handle(Channel.submitSignInCode, (_event, code: unknown) =>
-    account.submitSignInCode(typeof code === "string" ? code : ""),
-  );
-  ipcMain.handle(Channel.cancelSignIn, () => account.cancelSignIn());
-  ipcMain.handle(Channel.signOut, () => account.signOut());
-  ipcMain.handle(Channel.dismissAccountError, () => account.dismissError());
-  ipcMain.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
-  ipcMain.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
-  ipcMain.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
-  ipcMain.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
+    hubCommands.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
+      if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
+    });
+    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: boolean) => {
+      if (development) return;
+      const openAtLogin = on === true;
+      // Registering again does not approve the item. Only the user can, in Login Items.
+      if (openAtLogin && store.state.loginItem === "needsApproval") {
+        void shell.openExternal(LOGIN_ITEMS_PANE);
+        return;
+      }
+      app.setLoginItemSettings({ openAtLogin });
+      refreshLoginItem();
+    });
+    hubCommands.handle(Channel.startMicrophoneTest, () => {
+      if (lifecycle === "running") microphoneTest.start();
+    });
+    hubCommands.handle(Channel.stopMicrophoneTest, () => microphoneTest.stop());
+    hubCommands.handle(Channel.installModel, (_event, id: unknown) => {
+      const model = models.find((candidate) => candidate.id === id);
+      if (model && lifecycle === "running") modelControls[model.id].install();
+    });
+    hubCommands.handle(Channel.uninstallModel, (_event, id: unknown) => {
+      const model = models.find((candidate) => candidate.id === id);
+      if (!model) return;
+      assertCanUninstall(model);
+      return modelControls[model.id].uninstall();
+    });
+    hubCommands.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
+      copyLast(which === "raw" ? "raw" : "text");
+    });
+    hubCommands.handle(Channel.signIn, () => {
+      assertNotRestarting();
+      return account.signIn();
+    });
+    hubCommands.handle(Channel.submitSignInCode, (_event, code: unknown) =>
+      account.submitSignInCode(typeof code === "string" ? code : ""),
+    );
+    hubCommands.handle(Channel.cancelSignIn, () => account.cancelSignIn());
+    hubCommands.handle(Channel.signOut, () => account.signOut());
+    hubCommands.handle(Channel.dismissAccountError, () => account.dismissError());
+    hubCommands.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
+    hubCommands.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
+    hubCommands.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
+    hubCommands.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
+  }
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
   // target app must keep focus until insertion. A launch by URL shows the hub anyway.
