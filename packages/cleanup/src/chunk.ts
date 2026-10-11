@@ -103,15 +103,22 @@ export function stitch(
     const previous = kept[k - 1];
     const gap = previous ? separator(raw, chunks, previous.index, index) : "";
     text += gap;
+    const omitted = previous ? raw.slice(previous.chunk.end, chunk.start) : "";
+    const rawSentenceEnd =
+      previous !== undefined &&
+      (TERMINAL_END.test(previous.chunk.text) ||
+        TERMINAL_END.test(omitted) ||
+        SENTENCE_END.test(omitted));
+    const continuation =
+      previous !== undefined &&
+      !/[\r\n]\s*$/u.test(text) &&
+      !(gap && (TERMINAL_END.test(text) || rawSentenceEnd));
     text +=
       output === undefined
         ? chunk.text
-        : lowercaseContinuation(
-            previous ? previous.chunk.text + gap : "",
-            text,
-            chunk.text,
-            output,
-          );
+        : continuation
+          ? lowercaseContinuation(chunk.text, output)
+          : output;
   });
   return text;
 }
@@ -130,25 +137,14 @@ function separator(raw: string, chunks: readonly Chunk[], from: number, to: numb
   return selected || (to - from > 1 ? " " : "");
 }
 
-const firstWord = (text: string) => /^[\p{L}\p{N}'’]+/u.exec(text)?.[0];
+const initialWord = (text: string) => /^[({[]*([\p{L}\p{N}'’]+)/u.exec(text);
 
-function lowercaseContinuation(
-  rawBefore: string,
-  before: string,
-  rawChunk: string,
-  output: string,
-): string {
-  const hasGap = /\s$/u.test(rawBefore);
-  if (
-    !before ||
-    (hasGap && (TERMINAL_END.test(before) || TERMINAL_END.test(rawBefore))) ||
-    /[\r\n]\s*$/u.test(rawBefore) ||
-    /[\r\n]\s*$/u.test(before)
-  )
+function lowercaseContinuation(rawChunk: string, output: string): string {
+  const rawWord = initialWord(rawChunk)?.[1];
+  if (!rawWord || !/^\p{Ll}/u.test(rawWord) || rawWord === "i" || /^i['’]/.test(rawWord))
     return output;
-  if (!/^\p{Ll}/u.test(rawChunk)) return output;
-  const word = firstWord(rawChunk);
-  if (!word || word === "i" || /^i['’]/.test(word)) return output;
-  if (firstWord(output) !== word[0]!.toUpperCase() + word.slice(1)) return output;
-  return output[0]!.toLowerCase() + output.slice(1);
+  const cleaned = initialWord(output);
+  if (cleaned?.[1] !== rawWord[0]!.toUpperCase() + rawWord.slice(1)) return output;
+  const offset = cleaned[0].length - cleaned[1].length;
+  return output.slice(0, offset) + output[offset]!.toLowerCase() + output.slice(offset + 1);
 }
