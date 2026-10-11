@@ -329,6 +329,9 @@ export function createAccount({
 
   function requestDeletion() {
     if (state.kind !== "signedIn" || (state.deletion && state.deletion.kind !== "failed")) return;
+    // The UI disables Delete during a save. Publishing now would make the save's answer stale, so
+    // the saved name would never show.
+    if (saving > 0) return;
     abortCheck();
     publish({
       kind: "signedIn",
@@ -541,7 +544,7 @@ export function createAccount({
       // Claimed before the client resolves, so a show and a restore in one tick send one request.
       lastCheck = Date.now();
       const client = await cachedClient;
-      if (state !== refreshing) return;
+      if (state !== refreshing || saving > 0) return;
       await checkAuthSession(client);
     },
     async signIn() {

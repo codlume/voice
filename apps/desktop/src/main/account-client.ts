@@ -26,6 +26,8 @@ import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+const authSessionEnded = (status: number) => status === 401 || status === 403;
+
 function isGooglePicture(image: string) {
   const url = URL.parse(image);
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
@@ -266,7 +268,7 @@ export function createVoiceAuthClient({
         return { kind: "unknown", status: response.status };
       // Better Auth catches a failed database deletion and still returns success. Confirm it.
       const checked = await request("get-session");
-      if (checked.status === 401 || checked.status === 403) {
+      if (authSessionEnded(checked.status)) {
         return { kind: "ended", status: checked.status };
       }
       if (checked.ok && (await checked.json()) === null) {
@@ -384,7 +386,7 @@ export function createVoiceAuthClient({
       }
       const { data, error } = result;
       if (error) {
-        return error.status === 401 || error.status === 403
+        return authSessionEnded(error.status)
           ? { kind: "ended", status: error.status }
           : { kind: "unknown", status: error.status };
       }
@@ -437,7 +439,7 @@ export function createVoiceAuthClient({
           fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
         });
         if (error) {
-          return error.status === 401 || error.status === 403
+          return authSessionEnded(error.status)
             ? { kind: "ended", status: error.status }
             : { kind: "failed" };
         }
