@@ -211,7 +211,7 @@ const hubScenes: Record<string, Snapshot> = {
       ...ready.settings,
       snippets: [{ id: "email", trigger: "my email", expansion: "ada@example.com", enabled: true }],
       dictionary: [
-        { id: "flow", phrase: "Wispr Flow", replacement: null },
+        { id: "worcestershire", phrase: "Worcestershire", replacement: null },
         { id: "name", phrase: "Hadryś", replacement: null },
         { id: "btw", phrase: "btw", replacement: "by the way" },
         {

@@ -1,6 +1,6 @@
 # Dictionary
 
-The Dictionary lets a user save words and replacements. A word, such as "Wispr Flow" or "Hadryś", fixes how Voice writes it: "wispr flow" becomes "Wispr Flow" and "Hadrys" becomes "Hadryś", because matching ignores case and accents. A replacement, such as "btw → by the way", types the saved text in place of the phrase. Dictionary entries and snippets are applied together in one pass over the transcript, longest phrase first, so neither rewrites the other's saved text. A phrase matches only between word breaks or punctuation on both sides: "U.S." leaves "U.S.A." alone. The last transcript's raw text stays what the speech model heard. With no entries saved, the page shows one example row.
+The Dictionary lets a user save words and replacements. A word, such as "Worcestershire" or "Hadryś", fixes how Voice writes it: "worcestershire" becomes "Worcestershire" and "Hadrys" becomes "Hadryś", because matching ignores case and accents. A replacement, such as "btw → by the way", types the saved text in place of the phrase. Dictionary entries and snippets are applied together in one pass over the transcript, longest phrase first, so neither rewrites the other's saved text. A phrase matches only between word breaks or punctuation on both sides: "U.S." leaves "U.S.A." alone. The last transcript's raw text stays what the speech model heard. With no entries saved, the page shows one example row.
 
 ## Sub-features
 
@@ -19,10 +19,10 @@ The Dictionary lets a user save words and replacements. A word, such as "Wispr F
 
 ## Driving it with voice-verify
 
-Preconditions: baseline. No dictionary entries or snippets are saved. The phrase input has the placeholder `Wispr Flow` and the replacement input `Optional`, which tell the two inputs apart.
+Preconditions: baseline. No dictionary entries or snippets are saved. The phrase input has the placeholder `Worcestershire` and the replacement input `Optional`, which tell the two inputs apart.
 
-- **Open Dictionary.** `vv click Dictionary`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Dictionary"'`. Then `vv shot dictionary-empty`. The card shows the `Wispr Flow` example.
-- **Add a word.** `vv click "Add new"`, then `vv type 'css:[role="dialog"] input[placeholder="Wispr Flow"]' "Wispr Flow"`. `vv click "Add to dictionary"`, then wait for `s.settings.dictionary.some(x => x.phrase === "Wispr Flow" && x.replacement === null)`.
+- **Open Dictionary.** `vv click Dictionary`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Dictionary"'`. Then `vv shot dictionary-empty`. The card shows the `Worcestershire` example.
+- **Add a word.** `vv click "Add new"`, then `vv type 'css:[role="dialog"] input[placeholder="Worcestershire"]' "Worcestershire"`. `vv click "Add to dictionary"`, then wait for `s.settings.dictionary.some(x => x.phrase === "Worcestershire" && x.replacement === null)`.
 - **Add a replacement.** `vv click "Add new"`, type `btw` into the phrase and `by the way` into `css:[role="dialog"] input[placeholder="Optional"]`, then `vv click "Add to dictionary"`. The row reads `btw → by the way`. Then `vv shot dictionary-filled`.
 - **Stored value.** `cat "<userData>/settings.json"` lists both entries under `"dictionary"` with generated `id`s, the word with `"replacement": null`.
 - **Duplicate.** Add `WISPR  flow`. The dialog stays open and reads "This phrase is already in your dictionary." The stored list does not change. Click `Cancel`.
