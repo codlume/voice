@@ -207,3 +207,21 @@ test("abbreviations do not create sentence capitals at forced seams", () => {
     expect(stitch(raw, chunks, outputs)).toBe(raw[0]!.toUpperCase() + raw.slice(1));
   }
 });
+
+test("a sentence after an abbreviation keeps its cleaned capital", () => {
+  const raw = "we met at three p.m. then we left for dinner";
+  const chunks = spans(raw, ["we met at three p.m.", "then we left for dinner"]);
+  expect(stitch(raw, chunks, ["We met at three p.m.", "Then we left for dinner."])).toBe(
+    "We met at three p.m. Then we left for dinner.",
+  );
+});
+
+test("chunk seams keep ordinary abbreviations with the following word", () => {
+  const raw = "we need paper pens etc. and some envelopes before monday";
+  const chunks = chunkTranscript(raw, 23, chars);
+  const outputs = chunks.map((chunk) => chunk.text[0]!.toUpperCase() + chunk.text.slice(1));
+  expect(chunks.some((chunk) => /etc\.$/.test(chunk.text))).toBe(false);
+  expect(stitch(raw, chunks, outputs)).toBe(
+    "We need paper pens etc. and some envelopes before monday",
+  );
+});
