@@ -1047,6 +1047,26 @@ describe("updateName", () => {
     },
   );
 
+  test("an ended auth session lands in error, forgets it, and rejects with the same message", async () => {
+    const h = await signedIn();
+    const { forgotten } = h.fake;
+    const entriesBefore = h.entries.length;
+    const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
+    await flush();
+    h.fake.nameUpdates[0]?.answer({ kind: "ended", status: 401 });
+    await expect(saving).rejects.toThrow(AUTH_SESSION_ENDED_MESSAGE);
+    expect(h.state).toEqual({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
+    expect(h.fake.forgotten).toBe(forgotten + 1);
+    expect(h.fake.client.cachedUser()).toBeNull();
+    expect(h.entries.slice(entriesBefore)).toEqual([
+      {
+        message: "account auth session ended",
+        level: "warn",
+        attributes: { "http.response.status_code": 401 },
+      },
+    ]);
+  });
+
   test("is refused while signed out and while a deletion is in progress, without asking the API", async () => {
     const h = harness();
     await expect(h.account.updateName({ firstName: "Ada", lastName: "" })).rejects.toThrow(
@@ -1085,5 +1105,37 @@ describe("updateName", () => {
     h.checks[0]?.answer({ kind: "active", user: USER });
     await refreshed;
     expect(h.state).toEqual({ kind: "signedIn", ...renamed });
+  });
+
+  test("a check it aborts is not logged as a failed check", async () => {
+    const h = await signedIn();
+    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
+    const { done: refreshed } = await refresh(h);
+    const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
+    await flush();
+    // The real adapter answers an aborted get-session at once, before the update returns.
+    h.checks[0]?.answer({
+      kind: "unreachable",
+      error: new DOMException("This operation was aborted", "AbortError"),
+    });
+    await refreshed;
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
+    await saving;
+    expect(h.entries.map(({ message }) => message)).not.toContain(
+      "account auth session check failed",
+    );
+  });
+
+  test("a window shown while the update is in flight starts no check", async () => {
+    const h = await signedIn();
+    await vi.advanceTimersByTimeAsync(AUTH_SESSION_CHECK_INTERVAL_MS);
+    const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
+    await flush();
+    await refresh(h);
+    expect(h.checks).toEqual([]);
+    h.fake.nameUpdates[0]?.answer({ kind: "updated" });
+    await saving;
+    await refresh(h);
+    expect(h.checks).toHaveLength(1);
   });
 });

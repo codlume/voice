@@ -980,6 +980,16 @@ describe("name update through the real auth client", () => {
     expect(auth.cachedUser()).toEqual(USER);
   });
 
+  test.each([401, 403])(
+    "a %i update says the auth session ended, for the module to forget",
+    async (status) => {
+      const auth = await signedInClient("name-token");
+      http.answer = () => json({ code: "UNAUTHORIZED" }, { status });
+      expect(await auth.updateName(renamed)).toEqual({ kind: "ended", status });
+      expect(auth.cachedUser()).toEqual(USER);
+    },
+  );
+
   test("a sign-out while the update is in flight leaves no identity behind", async () => {
     const auth = await signedInClient("name-token");
     const pending = Promise.withResolvers<Response>();

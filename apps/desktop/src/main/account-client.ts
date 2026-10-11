@@ -436,7 +436,11 @@ export function createVoiceAuthClient({
           lastName: user.lastName,
           fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
         });
-        if (error) return { kind: "failed" };
+        if (error) {
+          return error.status === 401 || error.status === 403
+            ? { kind: "ended", status: error.status }
+            : { kind: "failed" };
+        }
         if (started === generation) saveIdentity(user);
         return { kind: "updated" };
       } catch (error) {

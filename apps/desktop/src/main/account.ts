@@ -57,7 +57,9 @@ export type RedeemResult =
 
 export type DeleteAccountResult = { kind: "deleted" | "reauthRequired" | "failed" | "offline" };
 
-export type UpdateNameResult = { kind: "updated" | "offline" | "failed" };
+export type UpdateNameResult =
+  | { kind: "updated" | "offline" | "failed" }
+  | { kind: "ended"; status: number };
 
 /** What confirming a deletion came to: the API's answer, or a cookie that is another account's. */
 type DeletionOutcome = DeleteAccountResult | { kind: "otherAccount"; user: Identity };
@@ -292,6 +294,8 @@ export function createAccount({
   // The get-session in flight. Its response would still write the cookie it carries, so anything
   // that replaces the auth session aborts it first.
   let checking: AbortController | null = null;
+  // Name updates in flight. A check sent meanwhile could answer with the old name and cache it.
+  let saving = 0;
 
   function abortCheck() {
     checking?.abort();
@@ -467,7 +471,7 @@ export function createAccount({
     lastCheck = Date.now();
     const answer = await client.checkAuthSession(controller.signal);
     if (checking === controller) checking = null;
-    if (state !== checked) return;
+    if (controller.signal.aborted || state !== checked) return;
     switch (answer.kind) {
       case "active":
         if (checked.kind !== "signedIn" || !sameIdentity(answer.user, checked)) {
@@ -531,7 +535,7 @@ export function createAccount({
     /** Called when the main window becomes visible. Checks at most once per interval. */
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;
-      if (state.deletion) return;
+      if (state.deletion || saving > 0) return;
       if (Date.now() - lastCheck < checkIntervalMs) return;
       const refreshing = state;
       // Claimed before the client resolves, so a show and a restore in one tick send one request.
@@ -636,20 +640,31 @@ export function createAccount({
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
       // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
+      const client = loadedClient;
       const started = state;
       const renamed = { ...identityOf(started), ...name, name: fullName(name) };
-      const { kind } = await loadedClient.updateName(renamed);
-      if (kind === "updated") {
+      let result: UpdateNameResult;
+      saving += 1;
+      try {
+        result = await client.updateName(renamed);
+      } finally {
+        saving -= 1;
+      }
+      if (result.kind === "updated") {
         if (state === started) publish({ kind: "signedIn", ...renamed });
         return;
+      }
+      if (result.kind === "ended") {
+        if (state === started) forgetEndedAuthSession(client, result.status);
+        throw new Error(AUTH_SESSION_ENDED_MESSAGE);
       }
       log("account name update failed", {
         message: "account name update failed",
         level: "warn",
-        attributes: { "account.failure": kind },
+        attributes: { "account.failure": result.kind },
       });
       throw new Error(
-        kind === "offline" ? UPDATE_NAME_OFFLINE_MESSAGE : UPDATE_NAME_FAILED_MESSAGE,
+        result.kind === "offline" ? UPDATE_NAME_OFFLINE_MESSAGE : UPDATE_NAME_FAILED_MESSAGE,
       );
     },
     requestDeletion,
