@@ -295,8 +295,8 @@ export function createAccount({
   // The get-session in flight. Its response would still write the cookie it carries, so anything
   // that replaces the auth session aborts it first.
   let checking: AbortController | null = null;
-  // Name updates in flight. A check sent meanwhile could answer with the old name and cache it.
-  let saving = 0;
+  // The name update in flight. A check sent meanwhile could answer with the old name and cache it.
+  let saving = false;
 
   function abortCheck() {
     checking?.abort();
@@ -332,7 +332,7 @@ export function createAccount({
     if (state.kind !== "signedIn" || (state.deletion && state.deletion.kind !== "failed")) return;
     // The UI disables Delete during a save. Publishing now would make the save's answer stale, so
     // the saved name would never show.
-    if (saving > 0) return;
+    if (saving) return;
     abortCheck();
     publish({
       kind: "signedIn",
@@ -539,7 +539,7 @@ export function createAccount({
     /** Called when the main window becomes visible. Checks at most once per interval. */
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;
-      if (state.deletion || saving > 0) return;
+      if (state.deletion || saving) return;
       if (Date.now() - lastCheck < checkIntervalMs) return;
       const refreshing = state;
       // Claimed before the client resolves, so a show and a restore in one tick send one request.
@@ -642,18 +642,18 @@ export function createAccount({
         throw new Error(UPDATE_NAME_SIGNED_OUT_MESSAGE);
       }
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
-      if (saving > 0) throw new Error(UPDATE_NAME_SAVING_MESSAGE);
+      if (saving) throw new Error(UPDATE_NAME_SAVING_MESSAGE);
       // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
       const client = loadedClient;
       const started = state;
       const renamed = { ...identityOf(started), ...name, name: fullName(name) };
       let result: UpdateNameResult;
-      saving += 1;
+      saving = true;
       try {
         result = await client.updateName(renamed);
       } finally {
-        saving -= 1;
+        saving = false;
       }
       if (result.kind === "updated") {
         if (state === started) publish({ kind: "signedIn", ...renamed });

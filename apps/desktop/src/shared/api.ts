@@ -71,7 +71,7 @@ export type AccountIdentity = {
 export type AccountName = Pick<AccountIdentity, "firstName" | "lastName">;
 
 export const fullName = ({ firstName, lastName }: AccountName) =>
-  [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+  [firstName, lastName].filter(Boolean).join(" ");
 
 export const ACCOUNT_NAME_MAX_LENGTH = 100;
 
