@@ -1,4 +1,4 @@
-import type { CleanupStyle } from "@voice/cleanup";
+import type { CleanResult, CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
@@ -6,6 +6,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
   CLEANUP_BASE_MS,
+  CLEANUP_GRACE_MS,
   CLEANUP_MAX_MS,
   CLEANUP_PER_WORD_MS,
   INSERT_TIMEOUT_MS,
@@ -37,6 +38,8 @@ type Options = {
   styling?: CleanupStyle["styling"];
   cleanFails?: "rejects" | "throws";
   cleanHangs?: boolean;
+  // One of three chunks cleaned before the budget ran out.
+  cleanPartial?: boolean;
   copyToClipboard?: boolean;
 };
 
@@ -75,7 +78,8 @@ function harness(opts: Options = {}) {
   const cleans: string[] = [];
   const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
-  const hung: ((text: string) => void)[] = [];
+  const budgets: number[] = [];
+  const hung: ((result: CleanResult) => void)[] = [];
   const levels: number[] = [];
   const logs: string[] = [];
   const entries: DiagnosticLog[] = [];
@@ -99,14 +103,16 @@ function harness(opts: Options = {}) {
     },
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
-      clean: (raw, style, signal) => {
+      clean: (raw, style, { budgetMs, signal }) => {
         cleans.push(raw);
         styles.push(style);
         signals.push(signal);
+        budgets.push(budgetMs);
         if (opts.cleanFails === "throws") throw new Error("model crashed");
         if (opts.cleanFails === "rejects") return Promise.reject(new Error("model crashed"));
-        if (opts.cleanHangs) return new Promise<string>((resolve) => hung.push(resolve));
-        return Promise.resolve(`${raw}.`);
+        if (opts.cleanHangs) return new Promise<CleanResult>((resolve) => hung.push(resolve));
+        const chunks = opts.cleanPartial ? 3 : 1;
+        return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1 });
       },
     },
     onLevel: (level) => levels.push(level),
@@ -145,6 +151,7 @@ function harness(opts: Options = {}) {
     cleans,
     styles,
     signals,
+    budgets,
     hung,
     levels,
     logs,
@@ -310,6 +317,8 @@ describe("createDictation", () => {
     });
     await flush();
     expect(h.cleans).toEqual(["hello world"]);
+    expect(h.budgets).toEqual([cleanupBudgetMs("hello world")]);
+    expect(h.entries).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world." });
     expect(h.store.state.last).toEqual({ raw: "hello world", text: "hello world." });
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
@@ -613,7 +622,7 @@ describe("createDictation", () => {
     },
   );
 
-  test("a cleanup that overruns its budget is aborted, inserts the raw text, and ignores the late result", async () => {
+  test("a cleanup that never settles is aborted after the budget and a grace, inserts the raw text, and ignores the late result", async () => {
     const h = harness({ cleanHangs: true });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
@@ -628,8 +637,10 @@ describe("createDictation", () => {
       asrMs: 100,
     });
     await flush();
+    const budgetMs = cleanupBudgetMs("one two three");
     expect(h.cleans).toEqual(["one two three"]);
-    await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one two three") - 1);
+    expect(h.budgets).toEqual([budgetMs]);
+    await vi.advanceTimersByTimeAsync(budgetMs + CLEANUP_GRACE_MS - 1);
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
     expect(h.signals[0]!.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -640,15 +651,31 @@ describe("createDictation", () => {
       {
         message: "cleanup timed out",
         level: "warn",
-        attributes: { "cleanup.budget_ms": cleanupBudgetMs("one two three") },
+        attributes: { "cleanup.budget_ms": budgetMs },
       },
     ]);
-    h.hung[0]!("late polished text");
+    h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([
       { type: "insert", id, text: "one two three" },
     ]);
     expect(h.store.state.last).toEqual({ raw: "one two three", text: "one two three" });
+  });
+
+  test("a partial cleanup inserts the stitched text and logs the share that was cleaned, without the text", async () => {
+    const h = harness({ cleanPartial: true });
+    const id = await dictate(h, "one two three");
+    const budgetMs = cleanupBudgetMs("one two three");
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three." });
+    expect(h.store.state.last).toEqual({ raw: "one two three", text: "one two three." });
+    expect(h.logs).toContain(`cleanup partial: 1 of 3 chunks cleaned, budget ${budgetMs} ms`);
+    expect(h.entries).toEqual([
+      {
+        message: "cleanup partial",
+        level: "info",
+        attributes: { "cleanup.chunks": 3, "cleanup.cleaned": 1, "cleanup.budget_ms": budgetMs },
+      },
+    ]);
   });
 
   test("cleanup budget grows with the input and is capped", () => {
@@ -671,7 +698,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
     });
-    await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one"));
+    await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one") + CLEANUP_GRACE_MS);
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
     await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
 
@@ -691,8 +718,8 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual(["one", "two"]);
     expect(h.signals.map((s) => s.aborted)).toEqual([true, false]);
 
-    h.hung[0]!("ONE");
-    h.hung[1]!("Two.");
+    h.hung[0]!({ text: "ONE", chunks: 1, cleaned: 1 });
+    h.hung[1]!({ text: "Two.", chunks: 1, cleaned: 1 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert").map((c) => c.text)).toEqual([
       "one",

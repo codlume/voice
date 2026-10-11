@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
+import { chunkTranscript } from "./chunk.ts";
 import type { CleanupStyle } from "./prompt.ts";
-import { createS1Mini, type S1Mini } from "./s1mini.ts";
+import { CHUNK_TOKENS, createS1Mini, type S1Mini } from "./s1mini.ts";
 
 const modelPath = process.env.VOICE_S1_MODEL ?? "";
 const semiFormal: CleanupStyle = { styling: "semi-formal" };
@@ -11,11 +12,11 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
 
   const timed = async (name: string, raw: string, style: CleanupStyle) => {
     const start = performance.now();
-    const cleaned = await s1.clean(raw, style);
+    const result = await s1.clean(raw, style);
     console.log(
-      `[s1-mini] ${name}: ${Math.round(performance.now() - start)} ms -> ${JSON.stringify(cleaned)}`,
+      `[s1-mini] ${name}: ${Math.round(performance.now() - start)} ms, ${result.cleaned}/${result.chunks} chunks -> ${JSON.stringify(result.text)}`,
     );
-    return cleaned;
+    return result;
   };
 
   beforeAll(async () => {
@@ -28,22 +29,24 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   afterAll(() => s1?.dispose());
 
   test("cases and punctuates plain lowercase speech", async () => {
-    const cleaned = await timed(
+    const { text } = await timed(
       "plain",
       "hey anna can we move the sync to thursday at three pm ill send the notes to the team",
       semiFormal,
     );
-    expect(cleaned).toMatch(/^Hey Anna,/);
-    expect(cleaned).toContain("Thursday");
-    expect(cleaned).toContain("I'll send the notes");
-    expect(cleaned).toMatch(/[.!?]$/);
+    expect(text).toMatch(/^Hey Anna,/);
+    expect(text).toContain("Thursday");
+    expect(text).toContain("I'll send the notes");
+    expect(text).toMatch(/[.!?]$/);
   });
 
   test("returns an empty string for filler-only speech", async () => {
-    expect(await timed("filler", "um uh", semiFormal)).toBe("");
+    expect(await timed("filler", "um uh", semiFormal)).toEqual({ text: "", chunks: 1, cleaned: 1 });
   });
 
-  test("cleans a transcript long enough to chunk and keeps both ends", async () => {
+  // The model drops too many words from one chunk of this repetitive fixture, so this is also the
+  // proof that a chunk the guard rejects comes back as the user's exact words.
+  test("cleans a transcript long enough to chunk, keeps both ends and every rejected chunk verbatim", async () => {
     const people = ["maria", "tom", "priya", "lukas", "sofia", "kenji"];
     const tasks = [
       "review the pricing page",
@@ -64,14 +67,18 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     const { getLlama } = await import("node-llama-cpp");
     const llama = await getLlama();
     const vocab = await llama.loadModel({ modelPath, vocabOnly: true });
-    const rawTokens = vocab.tokenize(raw).length;
+    const chunks = chunkTranscript(raw, CHUNK_TOKENS, (text) => vocab.tokenize(text).length);
     await llama.dispose();
-    expect(rawTokens).toBeGreaterThan(1000);
+    expect(chunks.length).toBeGreaterThan(1);
 
-    const cleaned = await timed("chunked", raw, semiFormal);
+    const result = await timed("chunked", raw, semiFormal);
 
-    expect(cleaned).toMatch(/^Maria will review the pricing page by Monday/);
-    expect(cleaned).toContain("Kenji");
-    expect(cleaned).toMatch(/Ada on Monday\.$/);
+    expect(result.chunks).toBe(chunks.length);
+    expect(result.cleaned).toBeGreaterThan(0);
+    const verbatim = chunks.filter((chunk) => result.text.includes(chunk.text));
+    expect(verbatim.length).toBeGreaterThanOrEqual(result.chunks - result.cleaned);
+    expect(result.text).toMatch(/^Maria will review the pricing page by Monday/i);
+    expect(result.text).toMatch(/Kenji/i);
+    expect(result.text).toMatch(/Ada on Monday\.$/i);
   }, 60_000);
 });
