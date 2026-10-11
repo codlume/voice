@@ -239,26 +239,25 @@ const commands = {
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
 
-    // Claim the instance before the slow work, so a second launch in this worktree fails instead
-    // of wiping this one's userData and starting a second app on it.
     const state = { ownerPid: process.pid, worktree };
     const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
     try {
-      writeFileSync(statePath, JSON.stringify(state, null, 2), { flag: existing ? "w" : "wx" });
-    } catch {
-      fail(`another launch in this worktree started first: ${readFileSync(statePath, "utf8")}`);
+      writeFileSync(statePath, JSON.stringify(state, null, 2), { flag: "wx" });
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      fail("this worktree has an instance record; run stop before relaunching");
     }
     let stopping = false;
-    const shutdown = async (code) => {
+    const shutdown = async (code, removeState = true) => {
       if (stopping) return;
       stopping = true;
       await stopChildren();
-      // `stop` deletes the scratch userData unless told to keep it; a plain launch wipes it anyway.
-      rmSync(statePath, { force: true });
+      if (removeState && readState()?.ownerPid === state.ownerPid)
+        rmSync(statePath, { force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
-    process.on("SIGTERM", () => void shutdown(0));
+    process.on("SIGTERM", () => void shutdown(0, false));
 
     try {
       const userData = keep ? keptUserData : await prepareUserData(scratchName);
@@ -347,11 +346,13 @@ const commands = {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       signalGroup(state.electronPid, "SIGKILL");
     }
-    rmSync(statePath, { force: true });
-    if (!keep && state.userData) rmSync(state.userData, { recursive: true, force: true });
+    if (readState()?.ownerPid === state.ownerPid) {
+      if (!keep && state.userData) rmSync(state.userData, { recursive: true, force: true });
+      rmSync(statePath, { force: true });
+    }
     out({
-      stopped: state.runId,
-      evidence: existsSync(state.evidence) ? state.evidence : "none captured",
+      stopped: state.runId ?? "launching",
+      evidence: state.evidence && existsSync(state.evidence) ? state.evidence : "none captured",
       ...(keep && { keptUserData: state.userData }),
     });
   },
