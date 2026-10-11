@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { once } from "node:events";
 import {
   appendFileSync,
   copyFileSync,
@@ -14,9 +13,9 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir } from "../../../../native/voice-helper/scripts/helper.mjs";
@@ -34,7 +33,8 @@ const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
 const fixturesDir = join(repoDir, "test-fixtures/audio");
-const worktreeId = createHash("sha256").update(repoDir).digest("hex").slice(0, 8);
+const worktree = resolve(repoDir);
+const worktreeId = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
 const scratchName = `voice-verify-${worktreeId}`;
 const statePath = join(tmpdir(), `${scratchName}.json`);
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
@@ -71,12 +71,17 @@ function signalGroup(pid, signal) {
   } catch {}
 }
 
-async function freePorts(count) {
-  const servers = Array.from({ length: count }, () => createServer().listen(0, "127.0.0.1"));
-  await Promise.all(servers.map((server) => once(server, "listening")));
-  const ports = servers.map((server) => server.address().port);
-  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
-  return ports;
+// Electron binds port 0 to a free port and prints the one it got, so no two instances share one.
+function announcedPort(child, server) {
+  const pattern = new RegExp(`^${server} listening on ws://127\\.0\\.0\\.1:(\\d+)/`);
+  return new Promise((resolve, reject) => {
+    createInterface({ input: child.stderr })
+      .on("line", (line) => {
+        const port = pattern.exec(line)?.[1];
+        if (port) resolve(Number(port));
+      })
+      .on("close", () => reject(new Error(`${server} never started listening`)));
+  });
 }
 
 function requireInstance() {
@@ -254,37 +259,15 @@ const commands = {
       VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
     };
     delete env.ELECTRON_RUN_AS_NODE;
-    const [port, inspectPort] = await freePorts(2);
     // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
     // after earlier unclean exits.
     const child = start(
       electronPath,
-      [
-        ".",
-        `--remote-debugging-port=${port}`,
-        `--inspect=${inspectPort}`,
-        "-ApplePersistenceIgnoreState",
-        "YES",
-      ],
+      [".", "--remote-debugging-port=0", "--inspect=0", "-ApplePersistenceIgnoreState", "YES"],
       { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
     );
     child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
     child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
-
-    const runId = new Date().toISOString().replace(/[:.]/g, "-");
-    const state = {
-      ownerPid: process.pid,
-      electronPid: child.pid,
-      app: desktopDir,
-      port,
-      inspectPort,
-      userData,
-      fakeMicrophonePath,
-      logPath,
-      runId,
-      evidence: join(evidenceRoot, runId),
-    };
-    writeFileSync(statePath, JSON.stringify(state, null, 2));
 
     let stopping = false;
     const shutdown = async (code) => {
@@ -292,7 +275,7 @@ const commands = {
       stopping = true;
       await stopChildren();
       // `stop` deletes the scratch userData unless told to keep it; a plain launch wipes it anyway.
-      rmSync(statePath, { force: true });
+      if (readState()?.ownerPid === process.pid) rmSync(statePath, { force: true });
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
@@ -303,31 +286,54 @@ const commands = {
       void shutdown(1);
     });
 
-    const hub = await Page.connect(port, "hub.html");
-    await Page.connect(port, "pill.html").then((pill) => pill.close());
-    const snapshots = await snapshotStream(hub);
-    const permissions = await snapshots.waitFor(
-      (s) => s.permissions.accessibility !== "notDetermined",
-      {
-        timeoutMs: 15_000,
-        label: "permission report",
-      },
-    );
-    let models;
     try {
-      models = (
-        await snapshots.waitFor(
-          (s) =>
-            ["ready", "failed"].includes(s.models.asr.state) &&
-            ["ready", "failed"].includes(s.models.cleanup.state),
-          { timeoutMs: 180_000, label: "models settled" },
-        )
-      ).models;
-    } catch {
-      models = snapshots.items.at(-1).models;
+      const [port, inspectPort] = await Promise.all([
+        announcedPort(child, "DevTools"),
+        announcedPort(child, "Debugger"),
+      ]);
+      const runId = new Date().toISOString().replace(/[:.]/g, "-");
+      const state = {
+        ownerPid: process.pid,
+        electronPid: child.pid,
+        worktree,
+        port,
+        inspectPort,
+        userData,
+        fakeMicrophonePath,
+        logPath,
+        runId,
+        evidence: join(evidenceRoot, runId),
+      };
+      writeFileSync(statePath, JSON.stringify(state, null, 2));
+      const hub = await Page.connect(port, "hub.html");
+      await Page.connect(port, "pill.html").then((pill) => pill.close());
+      const snapshots = await snapshotStream(hub);
+      const permissions = await snapshots.waitFor(
+        (s) => s.permissions.accessibility !== "notDetermined",
+        {
+          timeoutMs: 15_000,
+          label: "permission report",
+        },
+      );
+      let models;
+      try {
+        models = (
+          await snapshots.waitFor(
+            (s) =>
+              ["ready", "failed"].includes(s.models.asr.state) &&
+              ["ready", "failed"].includes(s.models.cleanup.state),
+            { timeoutMs: 180_000, label: "models settled" },
+          )
+        ).models;
+      } catch {
+        models = snapshots.items.at(-1).models;
+      }
+      hub.close();
+      out({ ready: true, ...state, permissions: permissions.permissions, models });
+    } catch (error) {
+      console.error(`voice-verify: launch failed: ${error.message}; see ${logPath}`);
+      await shutdown(1);
     }
-    hub.close();
-    out({ ready: true, ...state, permissions: permissions.permissions, models });
   },
 
   async stop() {
@@ -626,7 +632,7 @@ const commands = {
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0) {
       fail(
-        `refusing: another Voice is running and would record the real microphone on the synthetic key press. Ask the user to quit it.\n${others.join("\n")}`,
+        `refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. A helper under a voice-verify-* folder belongs to another worktree's verify session; wait for it to stop. Any other is the user's Voice, which would record the real microphone; ask the user to quit it.\n${others.join("\n")}`,
       );
     }
     const fixture = join(fixturesDir, wav);
@@ -656,15 +662,14 @@ const commands = {
       VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
     };
     delete targetEnv.ELECTRON_RUN_AS_NODE;
-    const [targetPort] = await freePorts(1);
     const target = start(
       electronPath,
-      [join(repoDir, "scripts/e2e-target/main.cjs"), `--remote-debugging-port=${targetPort}`],
-      { env: targetEnv, stdio: "ignore" },
+      [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
+      { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );
     try {
       const field = 'document.getElementById("field")';
-      const targetPage = await Page.connect(targetPort, "index.html");
+      const targetPage = await Page.connect(await announcedPort(target, "DevTools"), "index.html");
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
       );

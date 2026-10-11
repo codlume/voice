@@ -13,7 +13,7 @@ Every command below goes through one helper, run from the repo root. Spell the p
 node .claude/skills/verify/scripts/voice-verify.mjs <command>
 ```
 
-It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Each worktree has its own instance, with its own state file, userData, evidence directory, and CDP ports. Every command acts on the instance of the worktree it runs from, so sessions in different worktrees never drive or stop each other's app. `launch` and `doctor` print the instance's `app` path, which names the build a proof ran against.
+It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e2e` uses). Each worktree has its own instance, with its own state file, userData, evidence directory, and CDP ports. Every command acts on the instance of the worktree that contains the script you run, so sessions in different worktrees never drive or stop each other's app. `launch` and `doctor` print the instance's `worktree`, which names the checkout whose build a proof ran against. The hotkey, focus, and clipboard stay shared, so `dictate` and the clipboard recipes still need the desktop to themselves.
 
 Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists every entry point. A proof that covers only one of several entry points is incomplete.
 
@@ -33,7 +33,7 @@ Before driving a feature, read [features/README.md](features/README.md) and the 
    node .claude/skills/verify/scripts/voice-verify.mjs launch     # run_in_background
    ```
 
-   It is ready when it prints a JSON object with `"ready": true`, the CDP `port`, `app`, `userData`, `evidence`, `permissions`, and `models`. A cold run takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
+   It is ready when it prints a JSON object with `"ready": true`, the CDP `port`, `worktree`, `userData`, `evidence`, `permissions`, and `models`. A cold run, which includes the first launch in each worktree, takes 30 to 60 s, mostly CoreML compiling the speech model. The first run ever also downloads about 950 MB of test models into `~/Library/Caches/Voice Development/test-models`.
 
    What `launch` sets up:
    - Test mode (`VOICE_HELPER_TEST=1`) with a scratch userData in `$TMPDIR`, one per worktree. `launch` and `doctor` print its path as `userData`. It never touches `~/Library/Application Support/Voice`, `Voice Development`, or the login Keychain, because test mode encrypts with a mock Keychain.
