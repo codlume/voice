@@ -157,6 +157,12 @@ describe("rewrite with snippets", () => {
     expect(expand("please aſk now", [snippet("ask", "X")])).toEqual(none("please aſk now"));
   });
 
+  test("a shorter phrase inside a match left alone is still rewritten", () => {
+    const entries = [replace("this email", "X"), replace("email", "E")];
+    expect(fix("thiſ email", entries)).toBe("thiſ E");
+    expect(fix("thiſ email, this email", entries)).toBe("thiſ E, X");
+  });
+
   test("a switched-off snippet never expands while a switched-on one beside it does", () => {
     const address = snippet("my address", "1 Main St", false);
     expect(expand("my address", [email, address])).toEqual(none("my address"));

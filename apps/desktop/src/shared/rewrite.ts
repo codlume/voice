@@ -86,10 +86,15 @@ export function rewrite(text: string, rewrites: Rewrites): Rewritten {
   if (regex === null) return { text, snippets: 0, entireDictation: false };
   const { folded, source } = foldAccents(text);
   const found: Found[] = [];
-  for (const match of folded.matchAll(regex)) {
-    // The regex folds case more widely than toLowerCase (ſ matches s); leave such a match alone.
+  regex.lastIndex = 0;
+  for (let match = regex.exec(folded); match !== null; match = regex.exec(folded)) {
     const rule = rules.get(matchKey(match[0]));
-    if (!rule) continue;
+    if (!rule) {
+      // The regex folds case more widely than toLowerCase (ſ matches s). Leave such a match alone
+      // and look again from its next character, so a shorter phrase inside it is not lost.
+      regex.lastIndex = match.index + (folded.codePointAt(match.index)! > 0xffff ? 2 : 1);
+      continue;
+    }
     // `source` has an entry for every folded offset and for the end, so both lookups hit.
     const start = source[match.index]!;
     const end = source[match.index + match[0].length]!;
