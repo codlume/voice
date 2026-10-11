@@ -52,31 +52,15 @@ final class Insertion {
     }
 
     func insert(id: String, text: String, target: (id: String, target: InsertTarget)?) {
-        guard let target, target.id == id else {
-            output.log(.error, "insert \(id) refused: no finished capture with that id")
-            output.emit(.insertResult(id: id, method: .none, reason: .failed))
+        let focused: AXUIElement?
+        switch check(id: id, target: target) {
+        case .refused(let reason):
+            output.emit(.insertResult(id: id, method: .none, reason: reason))
             return
+        case .ready(let element):
+            focused = element
         }
-        let destination = target.target
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.pid else {
-            output.emit(.insertResult(id: id, method: .none, reason: .focusChanged))
-            return
-        }
-        guard !IsSecureEventInputEnabled() else {
-            output.emit(.insertResult(id: id, method: .none, reason: .secureInput))
-            return
-        }
-        // Without accessibility neither the AX write nor the Cmd+V keystroke can reach the app.
-        guard let pid = destination.pid, AXIsProcessTrusted() else {
-            output.emit(.insertResult(id: id, method: .none, reason: .failed))
-            return
-        }
-        guard let current = verifiedFocus(id: id, target: destination, pid: pid) else { return }
-        if forcePaste {
-            paste(id: id, text: text)
-            return
-        }
-        switch insertViaAccessibility(focused: current.element?.value, text: text) {
+        switch forcePaste ? .unverified : insertViaAccessibility(focused: focused, text: text) {
         case .inserted:
             output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
         case .notEditable:
@@ -96,23 +80,35 @@ final class Insertion {
         }
     }
 
-    private func verifiedFocus(id: String, target: InsertTarget, pid: pid_t) -> TargetFocus<FocusElement>? {
-        guard case .captured = target.focus else {
-            output.emit(.insertResult(id: id, method: .none, reason: .failed))
-            return nil
+    private enum TargetCheck {
+        case ready(focused: AXUIElement?)
+        case refused(InsertFailure)
+    }
+
+    private func check(id: String, target: (id: String, target: InsertTarget)?) -> TargetCheck {
+        guard let target, target.id == id else {
+            output.log(.error, "insert \(id) refused: no finished capture with that id")
+            return .refused(.failed)
         }
-        let current = readTargetFocus(pid: pid)
-        switch target.focus.validate(current) {
+        let destination = target.target
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.pid else {
+            return .refused(.focusChanged)
+        }
+        guard !IsSecureEventInputEnabled() else { return .refused(.secureInput) }
+        // Without accessibility neither the AX write nor the Cmd+V keystroke can reach the app.
+        guard let pid = destination.pid, AXIsProcessTrusted(), case .captured(let captured) = destination.focus
+        else {
+            return .refused(.failed)
+        }
+        switch destination.focus.validate(readTargetFocus(pid: pid)) {
         case .unchanged:
-            guard case .focused(let focus) = current else { return nil }
-            return focus
+            return .ready(focused: captured.element?.value)
         case .changed:
             output.log(.info, "insert refused: target focus changed")
-            output.emit(.insertResult(id: id, method: .none, reason: .focusChanged))
+            return .refused(.focusChanged)
         case .unverifiable:
-            output.emit(.insertResult(id: id, method: .none, reason: .failed))
+            return .refused(.failed)
         }
-        return nil
     }
 
     private enum AccessibilityOutcome {
