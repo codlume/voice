@@ -38,7 +38,6 @@ type Options = {
   styling?: CleanupStyle["styling"];
   cleanFails?: "rejects" | "throws";
   cleanHangs?: boolean;
-  // One of three chunks cleaned before the budget ran out.
   cleanPartial?: boolean;
   copyToClipboard?: boolean;
 };

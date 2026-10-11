@@ -9,7 +9,6 @@ type Reply = { response: string; stopReason?: string };
 const native = vi.hoisted(() => ({
   getLlamaCalls: 0,
   failNextLoad: false,
-  // How long a generation takes. Infinity stalls it until its signal aborts, like a long real one.
   delayMs: (_raw: string): number => 0,
   active: 0,
   maxActive: 0,
@@ -72,7 +71,6 @@ const style: CleanupStyle = { styling: "semi-formal" };
 const whole = (text: string): CleanResult => ({ text, chunks: 1, cleaned: 1 });
 const generations = () => native.events.filter((e) => e.startsWith("generate"));
 
-// Two full chunks and a short third one, from lines of equal length.
 const line = (i: number) =>
   `item ${String(i).padStart(2, "0")} is that we should ship the beta on october twelfth and the stable release after that.`;
 const lineCount = Math.floor((2.4 * CHUNK_TOKENS) / (line(0).length + 1));
@@ -95,8 +93,6 @@ beforeEach(() => {
 
 afterEach(() => vi.useRealTimers());
 
-// The third chunk must fit the budget a learned rate leaves after the first, or the skip test
-// could pass with a loop that continues past a miss.
 test("the fixture splits into three chunks, the third under two thirds of the first", () => {
   expect(chunkTranscript(threeChunkRaw, CHUNK_TOKENS, (t) => t.length)).toHaveLength(3);
   expect(third.length * 3).toBeLessThan(first.length * 2);

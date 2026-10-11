@@ -44,8 +44,6 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     expect(await timed("filler", "um uh", semiFormal)).toEqual({ text: "", chunks: 1, cleaned: 1 });
   });
 
-  // The model drops too many words from one chunk of this repetitive fixture, so this is also the
-  // proof that a chunk the guard rejects comes back as the user's exact words.
   test("cleans a transcript long enough to chunk, keeps both ends and every rejected chunk verbatim", async () => {
     const people = ["maria", "tom", "priya", "lukas", "sofia", "kenji"];
     const tasks = [

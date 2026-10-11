@@ -8,8 +8,7 @@ const CONTEXT_SIZE = 4096;
 // Longer chunks make S1-mini skip or loop over lines, so the guard rejects them and the user gets raw text.
 export const CHUNK_TOKENS = 400;
 const OUTPUT_TOKEN_SLACK = 32;
-// A shorter chunk measures the fixed prompt overhead more than the engine's speed.
-const RATE_MIN_TOKENS = 128;
+const MIN_TOKENS_FOR_RATE_ESTIMATE = 128;
 
 export type Generation = { chunk: string; output: string; truncated: boolean };
 type Output = Omit<Generation, "chunk">;
@@ -106,7 +105,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
             if (deadline.signal.aborted && !withdraw.aborted) break;
             throw error;
           }
-          if (tokens >= RATE_MIN_TOKENS) msPerToken = (Date.now() - startedAt) / tokens;
+          if (tokens >= MIN_TOKENS_FOR_RATE_ESTIMATE)
+            msPerToken = (Date.now() - startedAt) / tokens;
           outputs.push(guarded(chunk.text, generation));
         }
         return {

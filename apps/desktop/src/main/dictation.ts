@@ -30,7 +30,6 @@ export type DictationOptions = {
 export const CLEANUP_BASE_MS = 2000;
 export const CLEANUP_PER_WORD_MS = 20;
 export const CLEANUP_MAX_MS = 8000;
-// The engine resolves at the budget on its own; the grace covers a prefill it cannot interrupt.
 export const CLEANUP_GRACE_MS = 1000;
 
 export function cleanupBudgetMs(raw: string): number {
