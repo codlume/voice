@@ -161,8 +161,27 @@ function textEditTarget(userData) {
     async open(caseName) {
       const file = join(dir, `${caseName}.txt`);
       writeFileSync(file, "");
-      osascript(`tell application "TextEdit" to open POSIX file ${show(file)}`);
-      documents.push(`${caseName}.txt`);
+      // Launch Services, not an AppleScript `open`: from some agent shells an AppleScript tell
+      // that has to launch TextEdit fails with -600, while `open` starts it.
+      execFileSync("open", ["-a", "TextEdit", file]);
+      const name = `${caseName}.txt`;
+      const exists = () => {
+        try {
+          const script = `tell application "TextEdit" to exists document ${show(name)}`;
+          return execFileSync("osascript", ["-e", script], {
+            encoding: "utf8",
+            stdio: "pipe",
+          }).trim();
+        } catch (error) {
+          return error.message;
+        }
+      };
+      const deadline = Date.now() + 10_000;
+      for (let reply = exists(); reply !== "true"; reply = exists()) {
+        assert(Date.now() < deadline, `TextEdit did not open ${file}: ${reply}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      documents.push(name);
       const pid = osascript('tell application "System Events" to unix id of process "TextEdit"');
       await activate(Number(pid), "TextEdit");
     },
