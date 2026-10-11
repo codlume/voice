@@ -24,7 +24,6 @@ export type DownloadOptions = {
   signal?: AbortSignal | undefined;
 };
 
-// Idle time, not total time: a slow link that keeps delivering bytes is never a stall.
 const STALL_TIMEOUT_MS = 30_000;
 type StallOptions = { stallTimeoutMs?: number | undefined };
 

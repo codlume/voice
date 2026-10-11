@@ -68,8 +68,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   const loadModule = options.loadModule ?? importModule;
   let model: Model = { phase: "none" };
   let chain: Promise<void> = Promise.resolve();
-  // One controller per install from the moment it is queued, so a cancel reaches an install that
-  // has not started yet as well as the one downloading.
   const installs = new Set<AbortController>();
 
   const owns = (candidate: S1Mini) => held(model) && model.model === candidate;
