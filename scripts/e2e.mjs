@@ -250,7 +250,6 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
   const heldMs = Math.round(performance.now() - pressedAt);
 
   let snapshot;
-  let timing = null;
   if (c.end === "escape") {
     snapshot = await snapshots.waitFor((s) => s.session.kind === "idle", {
       timeoutMs: 5000,
@@ -262,18 +261,20 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
       timeoutMs: 90_000,
       label: "pill done",
     });
-    timing = parseTiming(
-      await logs.waitFor((line) => /\[voice\] session \w+ outcome=/.test(line), {
-        timeoutMs: 5000,
-        label: "session timing line",
-      }),
-    );
   }
   const outcome = snapshot.session.outcome ?? null;
-  const { text, landedMs } =
+  const [{ text, landedMs }, timingLine] = await Promise.all([
     outcome?.kind === "inserted"
-      ? await landedText(target.read, snapshot.last.text)
-      : { text: await target.read(), landedMs: null };
+      ? landedText(target.read, snapshot.last.text)
+      : { text: await target.read(), landedMs: null },
+    c.end === "escape"
+      ? null
+      : logs.waitFor((line) => /\[voice\] session \w+ outcome=/.test(line), {
+          timeoutMs: 5000,
+          label: "session timing line",
+        }),
+  ]);
+  const timing = timingLine && parseTiming(timingLine);
   try {
     assert(
       (outcome?.kind ?? null) === c.outcome,

@@ -794,17 +794,17 @@ const commands = {
           label: "done",
         });
       }
-      const timing =
+      const read = () => targetPage.evaluate(`${field}.value`);
+      const landing =
+        finalState.session.outcome?.kind === "inserted"
+          ? landedText(read, finalState.last.text)
+          : Promise.resolve({ text: await read(), landedMs: null });
+      const [{ text: inserted, landedMs }, timing] = await Promise.all([
+        landing,
         end === "escape"
           ? null
-          : await waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(
-              () => null,
-            );
-      const read = () => targetPage.evaluate(`${field}.value`);
-      const { text: inserted, landedMs } =
-        finalState.session.outcome?.kind === "inserted"
-          ? await landedText(read, finalState.last.text)
-          : { text: await read(), landedMs: null };
+          : waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(() => null),
+      ]);
       const result = {
         fixture: wav,
         end,
