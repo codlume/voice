@@ -1,17 +1,33 @@
 type CountTokens = (text: string) => number;
 
-const GRANULARITIES = ["sentence", "word", "grapheme"] as const;
+export type Chunk = { start: number; end: number; text: string };
+
+const CLOSERS = `["'”’)\\]]*`;
+const TERMINAL_END = new RegExp(`[.!?…]${CLOSERS}\\s*$`, "u");
+// UAX #29 does not end a sentence before a lowercase letter, so a lowercase dictation with
+// periods still reads as one sentence to Intl.Segmenter.
+const SENTENCE_END = new RegExp(`(?<=[.!?…]${CLOSERS}\\s+)(?!\\s)`, "u");
+const CLAUSE_SEAM =
+  /(?<=[,;:]\s+)(?!\s)|(?<=\s)(?=(?:and|but|so|or|then|because|which|while)(?!\p{L}))/iu;
+
+const segmenter = (granularity: "sentence" | "word" | "grapheme") => {
+  const intl = new Intl.Segmenter(undefined, { granularity });
+  return (text: string) => Array.from(intl.segment(text), (s) => s.segment);
+};
+const sentences = segmenter("sentence");
+
+const LEVELS: ((text: string) => string[])[] = [
+  (text) => sentences(text).flatMap((sentence) => sentence.split(SENTENCE_END)),
+  (text) => text.split(CLAUSE_SEAM),
+  segmenter("word"),
+  segmenter("grapheme"),
+];
 
 function pieces(text: string, maxTokens: number, countTokens: CountTokens, level = 0): string[] {
-  const granularity = GRANULARITIES[level] ?? "grapheme";
-  const segments = Array.from(
-    new Intl.Segmenter(undefined, { granularity }).segment(text),
-    (s) => s.segment,
-  );
-  return segments.flatMap((segment) =>
-    countTokens(segment.trim()) > maxTokens && level < GRANULARITIES.length - 1
-      ? pieces(segment, maxTokens, countTokens, level + 1)
-      : [segment],
+  return LEVELS[level]!(text).flatMap((piece) =>
+    countTokens(piece.trim()) > maxTokens && level < LEVELS.length - 1
+      ? pieces(piece, maxTokens, countTokens, level + 1)
+      : [piece],
   );
 }
 
@@ -19,16 +35,21 @@ export function chunkTranscript(
   text: string,
   maxTokens: number,
   countTokens: CountTokens,
-): string[] {
+): Chunk[] {
   const parts = pieces(text, maxTokens, countTokens);
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < parts.length) {
-    const end = fittingEnd(parts, start, maxTokens, countTokens);
-    chunks.push(parts.slice(start, end).join("").trim());
-    start = end;
+  const chunks: Chunk[] = [];
+  let first = 0;
+  let offset = 0;
+  while (first < parts.length) {
+    const last = fittingEnd(parts, first, maxTokens, countTokens);
+    const joined = parts.slice(first, last).join("");
+    const start = offset + joined.length - joined.trimStart().length;
+    const end = offset + joined.trimEnd().length;
+    if (start < end) chunks.push({ start, end, text: text.slice(start, end) });
+    offset += joined.length;
+    first = last;
   }
-  return chunks.filter(Boolean);
+  return chunks;
 }
 
 function fittingEnd(
@@ -46,4 +67,40 @@ function fittingEnd(
     else hi = mid - 1;
   }
   return lo;
+}
+
+export function stitch(
+  raw: string,
+  chunks: readonly Chunk[],
+  outputs: readonly (string | undefined)[],
+): string {
+  const kept = chunks.flatMap((chunk, index) =>
+    outputs[index] === "" ? [] : [{ index, chunk, output: outputs[index] }],
+  );
+  let text = "";
+  kept.forEach(({ index, chunk, output }, k) => {
+    if (k > 0) text += separator(raw, chunks, kept[k - 1]!.index, index);
+    text += output === undefined ? chunk.text : lowercaseContinuation(text, chunk.text, output);
+  });
+  return text;
+}
+
+function separator(raw: string, chunks: readonly Chunk[], from: number, to: number): string {
+  let widest = "";
+  for (let i = from + 1; i <= to; i++) {
+    const gap = raw.slice(chunks[i - 1]!.end, chunks[i]!.start);
+    if (gap.length > widest.length) widest = gap;
+  }
+  return widest || (to - from > 1 ? " " : "");
+}
+
+const firstWord = (text: string) => /^[\p{L}\p{N}'’]+/u.exec(text)?.[0];
+
+function lowercaseContinuation(before: string, rawChunk: string, output: string): string {
+  if (!before || TERMINAL_END.test(before)) return output;
+  if (!/^\p{Ll}/u.test(rawChunk)) return output;
+  const word = firstWord(rawChunk);
+  if (!word || word === "i" || /^i['’]/.test(word)) return output;
+  if (firstWord(output)?.toLowerCase() !== word.toLowerCase()) return output;
+  return output[0]!.toLowerCase() + output.slice(1);
 }

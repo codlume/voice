@@ -1,6 +1,6 @@
 import type { Llama, LlamaCompletion, LlamaModel } from "node-llama-cpp";
 
-import { chunkTranscript } from "./chunk.ts";
+import { type Chunk, chunkTranscript, stitch } from "./chunk.ts";
 import { assertPlausibleCleanup, MAX_OUTPUT_RATIO } from "./plausibility.ts";
 import { buildS1MiniPrompt, type CleanupStyle } from "./prompt.ts";
 
@@ -9,6 +9,7 @@ const CHUNK_TOKENS = 1000;
 const OUTPUT_TOKEN_SLACK = 32;
 
 export type Generation = { chunk: string; output: string; truncated: boolean };
+type Cleaned = Omit<Generation, "chunk"> & { chunk: Chunk };
 
 export type S1Mini = {
   load(): Promise<void>;
@@ -47,7 +48,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     raw: string,
     style: CleanupStyle,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<Generation> {
+  ): AsyncGenerator<Cleaned> {
     const abort = signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
     abort.throwIfAborted();
     const { model, completion } = await load();
@@ -55,13 +56,13 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     for (const chunk of chunkTranscript(raw, CHUNK_TOKENS, countTokens)) {
       abort.throwIfAborted();
       // Special-token parsing makes <|im_start|> and friends the trained control tokens, not literal text.
-      const prompt = model.tokenize(buildS1MiniPrompt(chunk, style), true);
+      const prompt = model.tokenize(buildS1MiniPrompt(chunk.text, style), true);
       const { response, metadata } = await completion.generateCompletionWithMeta(prompt, {
         signal: abort,
         temperature: 0,
         customStopTriggers: ["<|im_end|>"],
         maxTokens: Math.min(
-          MAX_OUTPUT_RATIO * countTokens(chunk) + OUTPUT_TOKEN_SLACK,
+          MAX_OUTPUT_RATIO * countTokens(chunk.text) + OUTPUT_TOKEN_SLACK,
           CONTEXT_SIZE - prompt.length,
         ),
       });
@@ -75,15 +76,22 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     },
     clean: (raw, style, signal) =>
       serialize(async () => {
+        const chunks: Chunk[] = [];
         const outputs: string[] = [];
         for await (const { chunk, output, truncated } of generate(raw, style, signal)) {
-          assertPlausibleCleanup(chunk, output, truncated);
-          if (output) outputs.push(output);
+          assertPlausibleCleanup(chunk.text, output, truncated);
+          chunks.push(chunk);
+          outputs.push(output);
         }
-        return outputs.join(" ");
+        return stitch(raw, chunks, outputs);
       }),
     generate: (raw, style, signal) =>
-      serialize(() => Array.fromAsync(generate(raw, style, signal))),
+      serialize(() =>
+        Array.fromAsync(generate(raw, style, signal), ({ chunk, ...rest }) => ({
+          chunk: chunk.text,
+          ...rest,
+        })),
+      ),
     dispose: () => {
       disposal.abort(new Error("Cleanup model disposed"));
       return serialize(async () => {

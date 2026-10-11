@@ -6,7 +6,6 @@ const chars = (text: string) => text.length;
 const words = (text: string) => text.split(/\s+/).filter(Boolean);
 const texts = (chunks: Chunk[]) => chunks.map((chunk) => chunk.text);
 
-// Chunks for hand-written pieces of a transcript, located by their first occurrence in order.
 function spans(raw: string, pieces: string[]): Chunk[] {
   let from = 0;
   return pieces.map((text) => {
