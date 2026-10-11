@@ -197,3 +197,13 @@ test("stitch drops a chunk cleaned to nothing and folds its gap into the next on
     "Call Ada then email Bob.",
   );
 });
+
+test("abbreviations do not create sentence capitals at forced seams", () => {
+  for (const abbreviation of ["p.m.", "a.m.", "e.g."]) {
+    const raw = `we met at 3 ${abbreviation} sharp and agreed to ship next week `.repeat(12).trim();
+    const chunks = chunkTranscript(raw, 80, chars);
+    const outputs = chunks.map((chunk) => chunk.text[0]!.toUpperCase() + chunk.text.slice(1));
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(stitch(raw, chunks, outputs)).toBe(raw[0]!.toUpperCase() + raw.slice(1));
+  }
+});
