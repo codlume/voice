@@ -56,6 +56,10 @@ const row = (snapshot: Snapshot, id: string) => {
 };
 
 const withAsr = (asr: ModelStatus): Snapshot => ({ ...fresh, models: { ...fresh.models, asr } });
+const withCleanup = (cleanup: ModelStatus): Snapshot => ({
+  ...fresh,
+  models: { ...fresh.models, cleanup },
+});
 
 describe("checklist", () => {
   test("a fresh install lists all four steps, each with its actions", () => {
@@ -105,7 +109,7 @@ describe("checklist", () => {
     ]);
   });
 
-  test("downloading shows progress and offers no action", () => {
+  test("a speech model download shows progress and offers no action", () => {
     const r = row(withAsr({ state: "downloading", progress: 0.42 }), "asr");
     expect(r.status).toEqual({ kind: "busy", text: "Downloading 42%", progress: 0.42 });
     expect(r.actions).toEqual([]);
@@ -114,6 +118,15 @@ describe("checklist", () => {
       text: "Downloading",
     });
     expect(row(withAsr({ state: "loading" }), "asr").actions).toEqual([]);
+  });
+
+  test("a cleanup model download offers Cancel, which uninstalls it", () => {
+    const cancel = { label: "Cancel", command: { type: "uninstallModel", id: "cleanup" } };
+    const r = row(withCleanup({ state: "downloading", progress: 0.42 }), "cleanup");
+    expect(r.status).toEqual({ kind: "busy", text: "Downloading 42%", progress: 0.42 });
+    expect(r.actions).toEqual([cancel]);
+    expect(row(withCleanup({ state: "downloading" }), "cleanup").actions).toEqual([cancel]);
+    expect(row(withCleanup({ state: "loading" }), "cleanup").actions).toEqual([]);
   });
 
   test("a failed model shows its message and offers Retry", () => {

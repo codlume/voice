@@ -22,6 +22,12 @@ export function modelsDir() {
   return dir;
 }
 
+export function stateDir() {
+  const dir = join(homedir(), "Library/Caches/Voice Development/test-state");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function fixture(name) {
   const path = join(fixturesDir, name);
   if (!existsSync(path)) throw new Error(`missing fixture ${path}; run node scripts/fixtures.mjs`);
@@ -32,17 +38,47 @@ export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
+export function runningVoiceProcesses() {
+  const helpers = new Set();
+  const nodes = [];
+  for (const [pid, executable] of listProcesses("ucomm")) {
+    if (executable === "voice-helper") helpers.add(pid);
+    else if (executable === "node") nodes.push(pid);
+  }
+  const candidates = [...helpers, ...nodes];
+  if (candidates.length === 0) return [];
+  return listProcesses("args", candidates)
+    .filter(([pid, args]) => helpers.has(pid) || /(^|[\s/])scripts\/dev\.mjs(\s|$)/.test(args))
+    .map(([pid, args]) => `${pid} ${args}`);
+}
+
+function listProcesses(column, pids) {
+  const ps = spawnSync(
+    "ps",
+    ["-ww", "-o", `pid=,${column}=`, ...(pids ? ["-p", pids.join(",")] : ["-ax"])],
+    { encoding: "utf8" },
+  );
+  if (ps.error) throw ps.error;
+  // With -p, ps exits 1 without output when every listed process has already exited.
+  if (pids && ps.status === 1 && ps.stdout === "" && ps.stderr === "") return [];
+  if (ps.status !== 0) throw new Error(`ps exited ${ps.status}: ${ps.stderr}`);
+  return ps.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const row = /^\s*(\d+) (.*?)\s*$/.exec(line);
+      if (!row) throw new Error(`unexpected ps line: ${line}`);
+      return [row[1], row[2]];
+    });
+}
+
 // Call before posting key events or installing a hotkey tap. A dev session or Voice.app runs its
 // own helper with real microphone permission, and its tap hears synthetic presses too, so it
-// records the room into the test documents. The pattern matches a helper binary but not script
-// paths under native/voice-helper/.
+// records the room into the test documents.
 export function refuseIfVoiceIsRunning() {
-  const pgrep = spawnSync("pgrep", ["-lf", "(^|/)voice-helper( |$)|scripts/dev\\.mjs( |$)"], {
-    encoding: "utf8",
-  });
-  if (pgrep.status === 1) return;
-  if (pgrep.status !== 0) throw new Error(`pgrep exited ${pgrep.status}: ${pgrep.stderr}`);
-  console.error(pgrep.stdout.trimEnd());
+  const running = runningVoiceProcesses();
+  if (running.length === 0) return;
+  console.error(running.join("\n"));
   console.error(
     "refusing to run: another Voice helper is running and would record from the real microphone",
   );
@@ -55,10 +91,14 @@ export class Helper {
   #waiters = [];
 
   constructor({ env = {}, args = [] } = {}) {
-    this.child = spawn(helperBinary(), ["--models-dir", modelsDir(), ...args], {
-      env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
-      stdio: ["pipe", "pipe", "inherit"],
-    });
+    this.child = spawn(
+      helperBinary(),
+      ["--models-dir", modelsDir(), "--state-dir", stateDir(), ...args],
+      {
+        env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
+        stdio: ["pipe", "pipe", "inherit"],
+      },
+    );
     this.exited = new Promise((resolve) =>
       this.child.on("exit", (code, signal) => resolve({ code, signal })),
     );

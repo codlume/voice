@@ -14,13 +14,15 @@ final class Helper {
     private let permissions: Permissions
 
     @MainActor
-    init(output: Output, modelsDir: URL, environment: [String: String]) {
+    init(output: Output, modelsDir: URL, stateDir: URL, environment: [String: String]) {
         self.output = output
         testMode = environment["VOICE_HELPER_TEST"] == "1"
         transcriber = Transcriber(modelsDir: modelsDir, output: output)
         let devices = AudioInputDevices(output: output)
         self.devices = devices
-        let capture = Capture(output: output, transcriber: transcriber, devices: devices)
+        let outputSilencer = OutputSilencer(output: output, stateDir: stateDir)
+        outputSilencer.recover()
+        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputSilencer: outputSilencer)
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         if testMode {
             capture.testAudioPath = environment["VOICE_HELPER_TEST_AUDIO"]
@@ -90,14 +92,14 @@ final class Helper {
     }
 }
 
-func modelsDirArgument() -> URL? {
+func directoryArgument(_ name: String) -> URL? {
     let args = CommandLine.arguments
-    guard let index = args.firstIndex(of: "--models-dir"), index + 1 < args.count else { return nil }
+    guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
     return URL(fileURLWithPath: args[index + 1])
 }
 
-guard let modelsDir = modelsDirArgument() else {
-    FileHandle.standardError.write(Data("usage: voice-helper --models-dir <dir>\n".utf8))
+guard let modelsDir = directoryArgument("--models-dir"), let stateDir = directoryArgument("--state-dir") else {
+    FileHandle.standardError.write(Data("usage: voice-helper --models-dir <dir> --state-dir <dir>\n".utf8))
     exit(64)
 }
 
@@ -107,7 +109,7 @@ let output = Output()
 output.emit(.ready(version: 7))
 
 let helper = MainActor.assumeIsolated {
-    Helper(output: output, modelsDir: modelsDir, environment: ProcessInfo.processInfo.environment)
+    Helper(output: output, modelsDir: modelsDir, stateDir: stateDir, environment: ProcessInfo.processInfo.environment)
 }
 
 let reader = Thread {

@@ -8,6 +8,7 @@ export const models = [
     size: "480 MB",
     lostUntilReinstalled: "Dictation stops working",
     neededWhileDictating: true,
+    cancelableDownload: false,
   },
   {
     id: "cleanup",
@@ -19,6 +20,7 @@ export const models = [
     lostUntilReinstalled: "Text cleanup stops",
     // Dictation falls back to the raw transcript without it.
     neededWhileDictating: false,
+    cancelableDownload: true,
   },
 ] as const;
 

@@ -30,6 +30,7 @@ export type DictationOptions = {
 export const CLEANUP_BASE_MS = 2000;
 export const CLEANUP_PER_WORD_MS = 20;
 export const CLEANUP_MAX_MS = 8000;
+export const CLEANUP_GRACE_MS = 1000;
 
 export function cleanupBudgetMs(raw: string): number {
   const words = raw.split(/\s+/).filter(Boolean).length;
@@ -170,7 +171,7 @@ export function createDictation(options: DictationOptions): Dictation {
         const budgetMs = cleanupBudgetMs(effect.raw);
         Effect.runFork(
           Effect.tryPromise({
-            try: (signal) => cleanup.clean(effect.raw, { styling }, signal),
+            try: (signal) => cleanup.clean(effect.raw, { styling }, { budgetMs, signal }),
             catch: (error): CleanupFailure => ({
               message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
               entry: {
@@ -181,10 +182,10 @@ export function createDictation(options: DictationOptions): Dictation {
             }),
           }).pipe(
             Effect.timeoutOrElse({
-              duration: budgetMs,
+              duration: budgetMs + CLEANUP_GRACE_MS,
               orElse: () =>
                 Effect.fail<CleanupFailure>({
-                  message: `cleanup timed out after ${budgetMs} ms`,
+                  message: `cleanup timed out after ${budgetMs + CLEANUP_GRACE_MS} ms`,
                   entry: {
                     message: "cleanup timed out",
                     level: "warn",
@@ -193,8 +194,22 @@ export function createDictation(options: DictationOptions): Dictation {
                 }),
             }),
             Effect.match({
-              onSuccess: (text) => {
+              onSuccess: ({ text, chunks, cleaned }) => {
                 track(effect.id, { cleanupMs: now() - startedAt });
+                if (cleaned < chunks) {
+                  log(
+                    `cleanup partial: ${cleaned} of ${chunks} chunks cleaned, budget ${budgetMs} ms`,
+                    {
+                      message: "cleanup partial",
+                      level: "info",
+                      attributes: {
+                        "cleanup.chunks": chunks,
+                        "cleanup.cleaned": cleaned,
+                        "cleanup.budget_ms": budgetMs,
+                      },
+                    },
+                  );
+                }
                 dispatch({ type: "cleaned", id: effect.id, text });
               },
               onFailure: ({ message, entry }) => {

@@ -32,6 +32,21 @@ describe("landing page", () => {
     expect(html).toContain("com.codlume.voice://auth/callback#token=");
   });
 
+  it("warns next to the code that it signs in to the account, and carries the state the sign-in gate redirects to (catches a page that frames the code as something to share)", async () => {
+    const html = await (await exports.default.fetch("http://localhost:8787/")).text();
+
+    expect(html).toContain('<main id="start-in-voice" hidden>');
+    expect(html).toContain("Open Voice and click Sign in with Google.");
+    expect(html).toContain(
+      "Voice runs on your Mac or Windows PC. Open Voice there and click Sign in with Google.",
+    );
+    const disclosure = html.match(/<details>([\s\S]*?)<\/details>/)?.[1] ?? "";
+    expect(disclosure).toContain('<code id="code">');
+    expect(disclosure).toContain(
+      "Paste this code only into Voice, under Settings &gt; Account. Anyone who has it can sign in to your Voice account. Voice will never ask you to send it to anyone. If you did not just click Sign in with Google in Voice, close this page.",
+    );
+  });
+
   it("does not loosen the CSP of JSON routes (catches the landing policy leaking to other routes)", async () => {
     const response = await exports.default.fetch(
       new Request("http://localhost:8787/api/auth/get-session", {

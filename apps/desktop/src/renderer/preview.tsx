@@ -6,9 +6,11 @@ import {
   type Outcome,
   type PillState,
   type Snapshot,
+  type HubApi,
+  type PillApi,
   type UpdateStatus,
-  type VoiceApi,
 } from "../shared/api.ts";
+import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
@@ -210,9 +212,10 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
-function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
+function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
   let snapshot = initial;
   const listeners = new Set<(snapshot: Snapshot) => void>();
+  const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
   const set = (next: Snapshot) => {
     snapshot = next;
     for (const listener of listeners) listener(snapshot);
@@ -368,15 +371,22 @@ function fakeVoice(initial: Snapshot, loop: boolean): VoiceApi {
     },
     installModel: async (id) => {
       let progress = 0;
+      clearInterval(installs.get(id));
       const timer = setInterval(() => {
         progress = Math.min(1, progress + 0.07);
         const model: ModelStatus =
           progress < 1 ? { state: "downloading", progress } : { state: "ready" };
         set({ ...snapshot, models: { ...snapshot.models, [id]: model } });
-        if (progress >= 1) clearInterval(timer);
+        if (progress >= 1) {
+          clearInterval(timer);
+          installs.delete(id);
+        }
       }, 200);
+      installs.set(id, timer);
     },
     uninstallModel: async (id) => {
+      clearInterval(installs.get(id));
+      installs.delete(id);
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
     copyLast: async (which) => {
