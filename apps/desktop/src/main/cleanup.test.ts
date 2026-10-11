@@ -22,6 +22,7 @@ type Behavior = {
   downloadError?: string;
   removeError?: string;
   warmUpError?: string;
+  moduleGate?: Promise<void>;
   downloadGate?: Promise<void>;
   loadGate?: Promise<void>;
   warmUpGate?: Promise<void>;
@@ -44,6 +45,7 @@ function fakeModule(behavior: Behavior = {}) {
       calls.downloads += 1;
       calls.downloadSignals.push(abort);
       if (behavior.downloadError) throw new Error(behavior.downloadError);
+      if (abort?.aborted) throw abort.reason;
       onProgress?.(0.5);
       await Promise.race([
         behavior.downloadGate,
@@ -85,7 +87,11 @@ function fakeModule(behavior: Behavior = {}) {
       };
     },
   };
-  return { calls, loadModule: async () => module };
+  const loadModule = async () => {
+    await behavior.moduleGate;
+    return module;
+  };
+  return { calls, loadModule };
 }
 
 describe("createCleanup", () => {
@@ -334,6 +340,48 @@ describe("createCleanup", () => {
     await Promise.all([installing, disposing]);
     expect(fake.calls.loads).toBe(0);
     expect(cleanup.loaded()).toBe(false);
+  });
+
+  test("uninstall during a download cancels it, ends missing without failed, and a later install downloads again", async () => {
+    const behavior: Behavior = { downloadGate: new Promise(() => {}) };
+    const fake = fakeModule(behavior);
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => fake.calls.downloads).toBe(1);
+
+    const uninstalling = cleanup.uninstall();
+
+    expect(fake.calls.downloadSignals[0]?.aborted).toBe(true);
+    await Promise.all([installing, uninstalling]);
+    expect(statuses.map((status) => status.state)).toEqual([
+      "downloading",
+      "downloading",
+      "missing",
+    ]);
+    expect(fake.calls.loads).toBe(0);
+    expect(await readdir(dir)).toEqual([]);
+
+    delete behavior.downloadGate;
+    await cleanup.install();
+    expect(fake.calls.downloads).toBe(2);
+    expect(statuses.at(-1)).toEqual({ state: "ready" });
+  });
+
+  test("a cancel that lands while the row shows Downloading but the module is still loading is honored", async () => {
+    let finishModule!: () => void;
+    const fake = fakeModule({ moduleGate: new Promise((resolve) => (finishModule = resolve)) });
+    const cleanup = start(fake);
+    const installing = cleanup.install();
+    await expect.poll(() => statuses).toEqual([{ state: "downloading", progress: 0 }]);
+
+    const uninstalling = cleanup.uninstall();
+    finishModule();
+    await Promise.all([installing, uninstalling]);
+
+    expect(fake.calls.downloadSignals[0]?.aborted).toBe(true);
+    expect(fake.calls.loads).toBe(0);
+    expect(statuses.map((status) => status.state)).not.toContain("failed");
+    expect(statuses.at(-1)).toEqual({ state: "missing" });
   });
 
   test("a download failure reports failed and does not try to load", async () => {
