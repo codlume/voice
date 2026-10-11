@@ -34,7 +34,7 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
-import { authSessionStored, authStored, otherChannelSignedIn } from "./account-storage.ts";
+import { authSessionStored, authStored } from "./account-storage.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   callbackUrlFromArgv,
@@ -275,7 +275,6 @@ async function main() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
-    otherChannelSignedIn: otherChannelSignedIn(userData, installedChannel),
     last: null,
   });
 
