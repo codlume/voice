@@ -70,13 +70,18 @@ function alive(pid) {
 
 function processIdentity(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart=", "-o", "ucomm="], {
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    "ps",
+    ["-p", String(pid), "-o", "stat=", "-o", "lstart=", "-o", "ucomm="],
+    {
+      encoding: "utf8",
+    },
+  );
   if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`cannot inspect process ${pid}: ${result.stderr}`);
-  return result.stdout.trim();
+  const match = /^(\S+)\s+(.+)$/.exec(result.stdout.trim());
+  return match && !match[1].startsWith("Z") ? match[2].trim() : null;
 }
 
 function sameProcess(pid, identity) {

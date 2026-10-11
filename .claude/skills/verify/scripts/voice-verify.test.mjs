@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -92,4 +92,25 @@ test("a contending stop cannot enter cleanup and the OS releases a dead holder's
   const recovered = await f.stop();
   assert.equal(recovered.status, 0, recovered.stderr);
   assert.equal(existsSync(f.statePath), false);
+});
+
+test("stop accepts an exited owner before its parent reaps it", { timeout: 3000 }, async (t) => {
+  const f = fixture(t);
+  const proc = await child(t, process.execPath, [
+    "-e",
+    'process.stdout.write("ready"); process.stdin.resume()',
+  ]);
+  const identity = execFileSync("ps", ["-p", String(proc.pid), "-o", "lstart=", "-o", "ucomm="], {
+    encoding: "utf8",
+  }).trim();
+  f.write({ ownerPid: proc.pid, ownerIdentity: identity });
+  const result = spawnSync(process.execPath, [script, "stop"], {
+    env: { ...process.env, TMPDIR: dirname(f.statePath) },
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(f.statePath), false);
+  assert.equal(existsSync(f.userData), false);
+  await once(proc, "exit");
 });
