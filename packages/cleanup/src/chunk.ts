@@ -5,6 +5,7 @@ export type Chunk = { start: number; end: number; text: string };
 const CLOSERS = `["'”’)\\]]*`;
 const TERMINAL_END = new RegExp(`([.!?…]+)${CLOSERS}\\s*$`, "u");
 const OMITTED_SENTENCE_END = new RegExp(`([.!?…]+)${CLOSERS}(?=\\s|$)`, "u");
+const SEAM_END = new RegExp(`(?:[,;:]+)?(${CLOSERS})\\s*$`, "u");
 const ABBREVIATION_END = new RegExp(
   `(?:\\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc)\\.|(?:\\p{L}\\.){2,})${CLOSERS}\\s*$`,
   "iu",
@@ -107,7 +108,8 @@ export function stitch(
     const rawTerminal = previous
       ? (TERMINAL_END.exec(previous.chunk.text)?.[1] ?? OMITTED_SENTENCE_END.exec(omitted)?.[1])
       : undefined;
-    if (gap && !/[\r\n]/u.test(gap) && rawTerminal && !TERMINAL_END.test(text)) text += rawTerminal;
+    if (gap && !/[\r\n]/u.test(gap) && rawTerminal && !TERMINAL_END.test(text))
+      text = text.replace(SEAM_END, `${rawTerminal}$1`);
     text += gap;
     const continuation =
       previous !== undefined && !/[\r\n]\s*$/u.test(text) && !(gap && TERMINAL_END.test(text));
