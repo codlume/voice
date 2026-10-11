@@ -43,6 +43,7 @@ const voice: HubApi = {
   submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),
   cancelSignIn: () => ipcRenderer.invoke(Channel.cancelSignIn),
   dismissAccountError: () => ipcRenderer.invoke(Channel.dismissAccountError),
+  updateAccountName: (name) => ipcRenderer.invoke(Channel.updateAccountName, name),
   requestAccountDeletion: () => ipcRenderer.invoke(Channel.requestAccountDeletion),
   confirmAccountDeletion: () => ipcRenderer.invoke(Channel.confirmAccountDeletion),
   cancelAccountDeletion: () => ipcRenderer.invoke(Channel.cancelAccountDeletion),

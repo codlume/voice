@@ -4,6 +4,13 @@
 // another subject whose email is still ada-lovelace@example.com.
 export const googleTokenUrl = "https://oauth2.googleapis.com/token";
 
+// Google sends the given and family name apart from the full name. They are the full name's first
+// word and the rest, except for these people; Google leaves both out for mary-ann-evans.
+const nameParts: Record<string, { given_name?: string; family_name?: string }> = {
+  "jean-paul-sartre": { given_name: "Jean Paul", family_name: "Sartre" },
+  "mary-ann-evans": {},
+};
+
 // Google answers alan-turing's URL with 400, to exercise the initials fallback.
 const pictures: Record<string, string> = {
   "grace-hopper": "https://lh3.googleusercontent.com/a/default-user=s96-c",
@@ -17,6 +24,7 @@ export function fakeGoogleToken(body: URLSearchParams) {
   const code = body.get("code") ?? "";
   const person = code.split("/")[0] ?? "";
   const now = Math.floor(Date.now() / 1000);
+  const words = person.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1));
   const claims = {
     iss: "https://accounts.google.com",
     aud: body.get("client_id"),
@@ -25,10 +33,8 @@ export function fakeGoogleToken(body: URLSearchParams) {
     email_verified: true,
     sub: `google-${code}`,
     email: `${person}@example.com`,
-    name: person
-      .split("-")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" "),
+    name: words.join(" "),
+    ...(nameParts[person] ?? { given_name: words[0], family_name: words.slice(1).join(" ") }),
     ...(pictures[person] && { picture: pictures[person] }),
   };
   return {

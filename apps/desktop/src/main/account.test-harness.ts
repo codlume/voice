@@ -1,6 +1,6 @@
 import { expect, vi } from "vite-plus/test";
 
-import { VOICE_URL_SCHEME, type AccountState } from "../shared/api.ts";
+import { VOICE_URL_SCHEME, type AccountName, type AccountState } from "../shared/api.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   createAccount,
@@ -9,6 +9,7 @@ import {
   type Identity,
   type DeleteAccountResult,
   type ServerSignOut,
+  type UpdateNameResult,
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
@@ -16,7 +17,13 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 export const API_URL = "https://api-nightly.voice.codlume.com";
-export const USER = { id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" };
+export const USER = {
+  id: "ada-id",
+  name: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  email: "ada@example.com",
+};
 export const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 export const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
 export const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });
@@ -36,6 +43,7 @@ export function fakeClient() {
   const exchanges: (Call & { code: string })[] = [];
   const checks: Check[] = [];
   const deletions: { answer: (value: DeleteAccountResult) => void }[] = [];
+  const nameUpdates: { name: AccountName; answer: (value: UpdateNameResult) => void }[] = [];
   const revocations = vi.fn(async () => {});
   const signOuts: { answer: (value: ServerSignOut) => void }[] = [];
   let serverSignOuts = 0;
@@ -68,6 +76,17 @@ export function fakeClient() {
         });
       }),
     deleteAccount: () => new Promise((resolve) => deletions.push({ answer: resolve })),
+    // As the real adapter: an update the API accepted is cached from its get-session answer.
+    updateName: (name) =>
+      new Promise((resolve) => {
+        nameUpdates.push({
+          name,
+          answer: (value) => {
+            if (value.kind === "updated") cached = value.user;
+            resolve(value);
+          },
+        });
+      }),
     revokeOlderAuthSession: revocations,
     cachedUser: () => cached,
     hasAuthSession: () => stored,
@@ -106,6 +125,7 @@ export function fakeClient() {
     checks,
     signOuts,
     deletions,
+    nameUpdates,
     revocations,
     get stored() {
       return stored;

@@ -39,6 +39,7 @@ import {
   SIGN_IN_TIMEOUT_MS,
   callbackUrlFromArgv,
   createAccount,
+  parseAccountName,
   resolveApiUrl,
 } from "./account.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
@@ -692,6 +693,9 @@ async function main() {
     hubCommands.handle(Channel.cancelSignIn, () => account.cancelSignIn());
     hubCommands.handle(Channel.signOut, () => account.signOut());
     hubCommands.handle(Channel.dismissAccountError, () => account.dismissError());
+    hubCommands.handle(Channel.updateAccountName, (_event, name: unknown) =>
+      account.updateName(parseAccountName(name)),
+    );
     hubCommands.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
     hubCommands.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
     hubCommands.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());

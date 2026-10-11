@@ -17,6 +17,44 @@ const accountLookupIndex = {
 // merges a hook's data over its own, so the token is overwritten with null, not omitted.
 const dropIdToken = async () => ({ data: { idToken: null } });
 
+const NAME_MAX_LENGTH = 100;
+
+type PersonName = { firstName: string; lastName: string };
+
+/** The first word is the first name and the rest the last name, as migration 0003 split `name`. */
+function splitName(name: string): PersonName {
+  const trimmed = name.trim();
+  const space = trimmed.indexOf(" ");
+  return space === -1
+    ? { firstName: trimmed, lastName: "" }
+    : { firstName: trimmed.slice(0, space), lastName: trimmed.slice(space + 1).trim() };
+}
+
+// Better Auth requires its own `name` column, so it holds the full name derived from the two
+// fields Voice edits. Only the server writes it.
+const fullName = ({ firstName, lastName }: PersonName) =>
+  [firstName, lastName].filter(Boolean).join(" ");
+
+/** The body of an update-user request: both names, trimmed, plus the `name` derived from them. */
+function nameUpdate(body: unknown) {
+  if (typeof body !== "object" || body === null || Array.isArray(body))
+    throw new APIError("BAD_REQUEST", { message: "The body must be an object" });
+  if (Object.keys(body).some((key) => key !== "firstName" && key !== "lastName"))
+    throw new APIError("BAD_REQUEST", { message: "Only firstName and lastName can be updated" });
+  if (
+    !("firstName" in body && typeof body.firstName === "string") ||
+    !("lastName" in body && typeof body.lastName === "string")
+  )
+    throw new APIError("BAD_REQUEST", { message: "firstName and lastName must be strings" });
+  const name = { firstName: body.firstName.trim(), lastName: body.lastName.trim() };
+  if (!name.firstName) throw new APIError("BAD_REQUEST", { message: "firstName is required" });
+  if (name.firstName.length > NAME_MAX_LENGTH || name.lastName.length > NAME_MAX_LENGTH)
+    throw new APIError("BAD_REQUEST", {
+      message: `A name can be at most ${NAME_MAX_LENGTH} characters`,
+    });
+  return { ...name, name: fullName(name) };
+}
+
 // Every setting that needs no Worker binding. The schema generator (auth.cli.ts) reads the same
 // object, so a plugin or table added here reaches both the runtime and the migration.
 export const authOptions = {
@@ -28,7 +66,13 @@ export const authOptions = {
   // The default reads NODE_ENV, which a Worker does not set, so it would stay off.
   rateLimit: { enabled: true, storage: "database" },
   advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
-  user: { deleteUser: { enabled: true } },
+  user: {
+    deleteUser: { enabled: true },
+    additionalFields: {
+      firstName: { type: "string", required: true, defaultValue: "" },
+      lastName: { type: "string", required: true, defaultValue: "" },
+    },
+  },
   // Better Auth's own messages quote request data (the OAuth state, callback errors). Only the
   // level leaves the Worker, next to the request-id line the error handler writes.
   logger: {
@@ -54,7 +98,10 @@ export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void
     database: drizzleAdapter(db, { provider: "sqlite", schema, transaction: false }),
     advanced: { ...authOptions.advanced, backgroundTasks: { handler: waitUntil } },
     hooks: {
-      before: createAuthMiddleware(async (ctx): Promise<void> => {
+      before: createAuthMiddleware(async (ctx) => {
+        // Better Auth's update-user writes any user field in the body, `image` and `name` included.
+        // Only the two name fields pass, and the merged context hands the handler the derived name.
+        if (ctx.path === "/update-user") return { context: { body: nameUpdate(ctx.body) } };
         // @better-auth/electron starts a sign-in by fetching the Worker's own /sign-in/social. In
         // production that request re-enters through Cloudflare stamped with one Worker-side
         // address, so every user's sign-in start shared a single rate-limit bucket. Starting it in
@@ -88,6 +135,14 @@ export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void
         clientSecret: env.GOOGLE_CLIENT_SECRET,
         prompt: "select_account",
         disableIdTokenSignIn: true,
+        // Runs at sign-up only: overrideUserInfoOnSignIn stays off, so a name the user edited
+        // survives the next sign-in.
+        mapProfileToUser: (profile) => {
+          const name = profile.given_name?.trim()
+            ? { firstName: profile.given_name.trim(), lastName: profile.family_name?.trim() ?? "" }
+            : splitName(profile.name ?? "");
+          return { ...name, name: fullName(name) };
+        },
       },
     },
     // Localhost is trusted only because the local BETTER_AUTH_URL is localhost.

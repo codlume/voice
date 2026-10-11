@@ -16,6 +16,14 @@ import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
 import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
 
+const ada = {
+  id: "ada-id",
+  name: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  email: "ada@example.com",
+};
+
 const base: Snapshot = {
   updates: {
     version: "1.4.2",
@@ -207,7 +215,7 @@ const hubScenes: Record<string, Snapshot> = {
   },
   "account-signed-in": {
     ...ready,
-    account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
+    account: { kind: "signedIn", ...ada },
   },
   "account-error": {
     ...ready,
@@ -354,7 +362,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
       if (!/^[\w-]{20,}$/.test(code)) throw new Error("Paste the whole code shown in the browser.");
       set({
         ...snapshot,
-        account: { kind: "signedIn", id: "ada-id", name: "Ada Lovelace", email: "ada@example.com" },
+        account: { kind: "signedIn", ...ada },
       });
     },
     cancelSignIn: async () => {
@@ -362,6 +370,13 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
     },
     dismissAccountError: async () => {
       set({ ...snapshot, account: { kind: "signedOut" } });
+    },
+    updateAccountName: async ({ firstName, lastName }) => {
+      if (snapshot.account.kind !== "signedIn") return;
+      const name = { firstName: firstName.trim(), lastName: lastName.trim() };
+      if (!name.firstName) throw new Error("Enter a first name.");
+      const fullName = [name.firstName, name.lastName].filter(Boolean).join(" ");
+      set({ ...snapshot, account: { ...snapshot.account, ...name, name: fullName } });
     },
     requestAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;
@@ -374,8 +389,8 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
     },
     cancelAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;
-      const { name, email } = snapshot.account;
-      set({ ...snapshot, account: { kind: "signedIn", id: "ada-id", name, email } });
+      const { deletion: _deletion, ...identity } = snapshot.account;
+      set({ ...snapshot, account: identity });
     },
     retryAccountDeletion: async () => {
       if (snapshot.account.kind !== "signedIn") return;

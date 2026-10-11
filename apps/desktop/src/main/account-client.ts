@@ -6,13 +6,19 @@ import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/clien
 import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
-import { VOICE_URL_SCHEME, type AccountIdentity, type UpdateChannel } from "../shared/api.ts";
+import {
+  VOICE_URL_SCHEME,
+  type AccountIdentity,
+  type AccountName,
+  type UpdateChannel,
+} from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
   Identity,
   RedeemResult,
   ServerSignOut,
+  UpdateNameResult,
 } from "./account.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
@@ -22,6 +28,15 @@ const REQUEST_TIMEOUT_MS = 30_000;
 function isGooglePicture(image: string) {
   const url = URL.parse(image);
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
+}
+
+/** The first word is the first name and the rest the last name, as the API split existing names. */
+function splitName(name: string): AccountName {
+  const trimmed = name.trim();
+  const space = trimmed.indexOf(" ");
+  return space === -1
+    ? { firstName: trimmed, lastName: "" }
+    : { firstName: trimmed.slice(0, space), lastName: trimmed.slice(space + 1).trim() };
 }
 
 function cachedIdentityOf(user: unknown): AccountIdentity | null {
@@ -35,7 +50,17 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   ) {
     return null;
   }
-  const identity: AccountIdentity = { name: user.name, email: user.email };
+  // Identities cached before first and last names have only `name`. The API never stores an empty
+  // first name, except for a sign-up served while its migration ran ahead of the Worker.
+  const { firstName, lastName } =
+    "firstName" in user &&
+    typeof user.firstName === "string" &&
+    user.firstName !== "" &&
+    "lastName" in user &&
+    typeof user.lastName === "string"
+      ? { firstName: user.firstName, lastName: user.lastName }
+      : splitName(user.name);
+  const identity: AccountIdentity = { name: user.name, firstName, lastName, email: user.email };
   if ("id" in user) {
     if (typeof user.id !== "string") return null;
     identity.id = user.id;
@@ -391,6 +416,22 @@ export function createVoiceAuthClient({
         if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
         refusedCookie = client.getCookie();
         return { kind: "reauthRequired" };
+      } catch (error) {
+        return { kind: error instanceof TypeError ? "offline" : "failed" };
+      }
+    },
+    updateName: async (name): Promise<UpdateNameResult> => {
+      const started = generation;
+      const fetchOptions = { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
+      try {
+        const updated = await client.updateUser({ ...name, fetchOptions });
+        if (updated.error) return { kind: "failed" };
+        const { data, error } = await client.getSession({ fetchOptions });
+        const user = error ? null : userOf(data);
+        if (user === null) return { kind: "failed" };
+        // A sign-out while the request was in flight must not leave the identity behind.
+        if (started === generation) saveIdentity(user);
+        return { kind: "updated", user };
       } catch (error) {
         return { kind: error instanceof TypeError ? "offline" : "failed" };
       }

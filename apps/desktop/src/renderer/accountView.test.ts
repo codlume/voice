@@ -38,8 +38,9 @@ describe("account view", () => {
   });
 
   test("the account name falls back to Google account when the name is blank", () => {
-    expect(accountName({ name: " Ada Lovelace ", email: "ada@example.com" })).toBe("Ada Lovelace");
-    expect(accountName({ name: "  ", email: "ada@example.com" })).toBe("Google account");
+    const ada = { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com" };
+    expect(accountName({ ...ada, name: " Ada Lovelace " })).toBe("Ada Lovelace");
+    expect(accountName({ ...ada, name: "  " })).toBe("Google account");
   });
 
   test("the email decoy keeps the email's shape but none of its text", () => {

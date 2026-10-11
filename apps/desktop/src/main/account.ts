@@ -1,7 +1,9 @@
 import {
+  ACCOUNT_NAME_MAX_LENGTH,
   VOICE_URL_SCHEME,
   type AccountDeletion,
   type AccountIdentity,
+  type AccountName,
   type AccountState,
   type UpdateChannel,
 } from "../shared/api.ts";
@@ -32,6 +34,13 @@ export const DELETE_ACCOUNT_OFFLINE_MESSAGE =
 export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your account.";
 export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
+export const FIRST_NAME_REQUIRED_MESSAGE = "Enter a first name.";
+export const NAME_TOO_LONG_MESSAGE = `A name can be at most ${ACCOUNT_NAME_MAX_LENGTH} characters.`;
+export const UPDATE_NAME_SIGNED_OUT_MESSAGE = "Sign in to change your name.";
+export const UPDATE_NAME_DELETING_MESSAGE = "Your name cannot be changed during account deletion.";
+export const UPDATE_NAME_FAILED_MESSAGE = "Could not save your name. Try again.";
+export const UPDATE_NAME_OFFLINE_MESSAGE =
+  "Could not reach Voice. Check your connection and save your name again.";
 
 export type Identity = AccountIdentity & { id: string };
 
@@ -45,6 +54,8 @@ export type RedeemResult =
   | { kind: "abandoned" };
 
 export type DeleteAccountResult = { kind: "deleted" | "reauthRequired" | "failed" | "offline" };
+
+export type UpdateNameResult = { kind: "updated"; user: Identity } | { kind: "offline" | "failed" };
 
 /** What confirming a deletion came to: the API's answer, or a cookie that is another account's. */
 type DeletionOutcome = DeleteAccountResult | { kind: "otherAccount"; user: Identity };
@@ -74,6 +85,8 @@ export type AuthClient = {
   endServerSignOuts(): Promise<ServerSignOut[]>;
   deleteAccount(): Promise<DeleteAccountResult>;
   revokeOlderAuthSession(): Promise<void>;
+  /** Saves the name, then reads the identity back from `get-session` and caches it. */
+  updateName(name: AccountName): Promise<UpdateNameResult>;
 };
 
 /**
@@ -96,7 +109,12 @@ const sameAccount = (confirmed: AccountIdentity, live: Identity) =>
   confirmed.id === undefined ? confirmed.email === live.email : confirmed.id === live.id;
 
 const sameIdentity = (a: Identity, b: AccountIdentity) =>
-  a.id === b.id && a.name === b.name && a.email === b.email && a.image === b.image;
+  a.id === b.id &&
+  a.name === b.name &&
+  a.firstName === b.firstName &&
+  a.lastName === b.lastName &&
+  a.email === b.email &&
+  a.image === b.image;
 
 function identityOf({
   kind: _kind,
@@ -187,6 +205,27 @@ export function parseCallbackUrl(url: string): SignInCode | null {
   // The landing page puts the cookie value in the fragment as is, so the token is the same
   // string the user would paste.
   return parseSignInCode(parsed.hash.slice("#token=".length));
+}
+
+/** A name from the renderer, trimmed. Throws the message the Account page shows. */
+export function parseAccountName(value: unknown): AccountName {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("firstName" in value && typeof value.firstName === "string") ||
+    !("lastName" in value && typeof value.lastName === "string")
+  ) {
+    throw new Error(FIRST_NAME_REQUIRED_MESSAGE);
+  }
+  const name = { firstName: value.firstName.trim(), lastName: value.lastName.trim() };
+  if (!name.firstName) throw new Error(FIRST_NAME_REQUIRED_MESSAGE);
+  if (
+    name.firstName.length > ACCOUNT_NAME_MAX_LENGTH ||
+    name.lastName.length > ACCOUNT_NAME_MAX_LENGTH
+  ) {
+    throw new Error(NAME_TOO_LONG_MESSAGE);
+  }
+  return name;
 }
 
 /** A second copy of Voice hands its command line to the first; this finds a callback URL in it. */
@@ -588,6 +627,41 @@ export function createAccount({
         state.attempt,
         state.resumeAs === null ? { kind: "signedOut" } : { kind: "signedIn", ...state.resumeAs },
       );
+    },
+    async updateName(name: AccountName) {
+      if (state.kind !== "signedIn" || loadedClient === null) {
+        throw new Error(UPDATE_NAME_SIGNED_OUT_MESSAGE);
+      }
+      if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
+      // A get-session already in flight would answer with the old name, and cache it.
+      abortCheck();
+      const result = await loadedClient.updateName(name);
+      switch (result.kind) {
+        case "updated":
+          // A deletion started meanwhile owns the state, so the name shows at the next check.
+          if (
+            state.kind === "signedIn" &&
+            !state.deletion &&
+            sameAccount(identityOf(state), result.user)
+          ) {
+            publish({ kind: "signedIn", ...result.user });
+          }
+          return;
+        case "offline":
+        case "failed":
+          log("account name update failed", {
+            message: "account name update failed",
+            level: "warn",
+            attributes: { "account.failure": result.kind },
+          });
+          throw new Error(
+            result.kind === "offline" ? UPDATE_NAME_OFFLINE_MESSAGE : UPDATE_NAME_FAILED_MESSAGE,
+          );
+        default: {
+          const exhaustive: never = result;
+          return exhaustive;
+        }
+      }
     },
     requestDeletion,
     cancelDeletion() {
