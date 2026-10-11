@@ -1,22 +1,14 @@
 // Spoken phrases that Voice finds inside dictated text: snippet triggers and dictionary entries.
 
-// A phrase's identity: case, punctuation, symbols, and spacing never tell two phrases apart.
+// A trigger's identity among snippets: case, punctuation, symbols, and spacing never tell two
+// triggers apart. Also how a dictation that is only a trigger is recognised.
 export const phraseKey = (text: string) => text.toLowerCase().replace(/[\p{P}\p{S}\p{Z}\s]/gu, "");
 
-const NOT_BEFORE_CONTRACTION_T = "(?!['‘’´`′]t(?![\\p{L}\\p{N}]))";
+// Letters that do not decompose, such as Ł, keep their shape.
+export const withoutAccents = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "");
 
-// Marks count as word characters so a decomposed accent is never split from its letter.
-const STARTS_WITH_WORD = /^[\p{L}\p{M}\p{N}_]/u;
-const ENDS_WITH_WORD = /[\p{L}\p{M}\p{N}_]$/u;
-
-// Regex source that finds the phrase as whole words, with any run of whitespace between them.
-// "don" never matches inside "don't".
-export function phrasePattern(phrase: string): string {
-  const words = phrase.match(/\S+/gu) ?? [];
-  const body = words.map((word) => RegExp.escape(word)).join("\\s+");
-  const before = STARTS_WITH_WORD.test(words[0] ?? "") ? "(?<![\\p{L}\\p{M}\\p{N}_])" : "";
-  const after = ENDS_WITH_WORD.test(words.at(-1) ?? "")
-    ? `(?![\\p{L}\\p{M}\\p{N}_])${NOT_BEFORE_CONTRACTION_T}`
-    : "";
-  return `${before}${body}${after}`;
-}
+// What the rewrite pass treats as one phrase: case, accents, and runs of whitespace never tell two
+// phrases apart, punctuation does, so "e-mail" and "email" are different phrases. A dictionary
+// phrase and a snippet trigger with the same key would shadow each other, so the pages refuse one.
+export const matchKey = (text: string) =>
+  withoutAccents(text).toLowerCase().trim().split(/\s+/u).join(" ");

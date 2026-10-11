@@ -265,7 +265,7 @@ describe("applyPatch", () => {
   });
 
   test.each([
-    ["a duplicate phrase", [WORD, { ...REPLACEMENT, phrase: "wispr-flow" }]],
+    ["a duplicate phrase", [WORD, { ...REPLACEMENT, phrase: "WISPR  flow" }]],
     ["a record missing its replacement", [WORD, { id: "2", phrase: "btw" }]],
     ["a blank replacement", [WORD, { ...REPLACEMENT, replacement: " " }]],
     ["a phrase that is a snippet trigger", [WORD, { ...REPLACEMENT, phrase: "My Email" }]],
@@ -277,7 +277,7 @@ describe("applyPatch", () => {
   });
 
   test("refuses a snippet whose trigger is already a dictionary phrase", () => {
-    const saved = applyPatch(DEFAULT_SETTINGS, { dictionary: [{ ...WORD, phrase: "My E-mail" }] });
+    const saved = applyPatch(DEFAULT_SETTINGS, { dictionary: [{ ...WORD, phrase: "My Email" }] });
     expect(() => applyPatch(saved, { snippets: [VALID_SNIPPET] })).toThrow(
       "Could not save these snippets.",
     );

@@ -1,4 +1,4 @@
-import { phraseKey, phrasePattern } from "./phrase.ts";
+import { matchKey } from "./phrase.ts";
 import type { Snippet } from "./snippets.ts";
 
 // replacement null is a word: Voice rewrites the phrase with its saved spelling.
@@ -8,59 +8,6 @@ export const PHRASE_MAX_LENGTH = 100;
 export const REPLACEMENT_MAX_LENGTH = 500;
 
 export type DictionaryProblem = { field: "phrase" | "replacement"; message: string };
-
-// Letters that do not decompose, such as Ł, keep their shape.
-const withoutAccents = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "");
-
-const entryKey = (text: string) => phraseKey(withoutAccents(text));
-
-// The text without accents, and for each of its UTF-16 offsets, plus its end, the matching offset
-// in the original. A dropped combining mark sits before the next offset, so a match keeps it.
-function foldAccents(text: string) {
-  let folded = "";
-  const source: number[] = [];
-  let at = 0;
-  for (const char of text) {
-    const base = withoutAccents(char);
-    for (let unit = 0; unit < base.length; unit += 1) source.push(at);
-    folded += base;
-    at += char.length;
-  }
-  source.push(at);
-  return { folded, source };
-}
-
-// One pass over the text, longest phrase first. Output is never re-scanned, and text outside a
-// match is kept as is.
-export function applyDictionary(text: string, entries: readonly DictionaryEntry[]): string {
-  if (entries.length === 0) return text;
-  const byKey = new Map(entries.map((entry) => [entryKey(entry.phrase), entry]));
-  const alternation = entries
-    .map((entry) => withoutAccents(entry.phrase))
-    .toSorted((a, b) => b.length - a.length)
-    .map(phrasePattern)
-    .join("|");
-  const { folded, source } = foldAccents(text);
-  let result = "";
-  let copied = 0;
-  for (const match of folded.matchAll(new RegExp(alternation, "giu"))) {
-    // The regex folds case more widely than toLowerCase (ſ matches s); leave such a match alone.
-    const entry = byKey.get(entryKey(match[0]));
-    if (!entry) continue;
-    const start = source[match.index];
-    const end = source[match.index + match[0].length]!;
-    result += text.slice(copied, start) + written(entry, text.slice(start, end));
-    copied = end;
-  }
-  return result + text.slice(copied);
-}
-
-// A word saved all lowercase keeps the capital the speech model gave a sentence start.
-function written({ phrase, replacement }: DictionaryEntry, matched: string): string {
-  if (replacement !== null) return replacement;
-  if (/\p{Lu}/u.test(phrase) || !/^\p{Lu}/u.test(matched)) return phrase;
-  return phrase.replace(/^./u, (first) => first.toUpperCase());
-}
 
 // `others` never contains the entry being checked; callers filter it out.
 export function dictionaryProblem(
@@ -76,8 +23,9 @@ export function dictionaryProblem(
   if (phrase.length > PHRASE_MAX_LENGTH) {
     return { field: "phrase", message: `Use ${PHRASE_MAX_LENGTH} characters or fewer.` };
   }
-  const key = entryKey(phrase);
-  if (others.some((other) => entryKey(other.phrase) === key)) {
+  // Two phrases the rewrite pass could not tell apart are one entry.
+  const key = matchKey(phrase);
+  if (others.some((other) => matchKey(other.phrase) === key)) {
     return { field: "phrase", message: "This phrase is already in your dictionary." };
   }
   if (isSnippetTrigger(phrase, snippets)) {
@@ -93,10 +41,10 @@ export function dictionaryProblem(
   return null;
 }
 
-// A dictionary phrase that is also a snippet trigger would be rewritten before it could expand.
+// A dictionary phrase that is also a snippet trigger would shadow it, or be shadowed by it.
 export function isSnippetTrigger(phrase: string, snippets: readonly Snippet[]): boolean {
-  const key = entryKey(phrase);
-  return snippets.some((snippet) => entryKey(snippet.trigger) === key);
+  const key = matchKey(phrase);
+  return snippets.some((snippet) => matchKey(snippet.trigger) === key);
 }
 
 // Snippets default to none, so loading a settings file never drops an entry that a snippet saved
