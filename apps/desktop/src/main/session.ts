@@ -1,11 +1,13 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
+import { expandSnippets, snippetText, type Snippet } from "../shared/snippets.ts";
+
 export type Session =
   | { phase: "idle" }
   | { phase: "starting"; id: string; pressedAt: number; releasedAt: number | null }
   | { phase: "recording"; id: string; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
-  | { phase: "cleaning"; id: string; raw: string }
+  | { phase: "cleaning"; id: string; raw: string; snippets: readonly Snippet[] }
   | { phase: "inserting"; id: string; raw: string; text: string }
   | { phase: "done"; id: string; outcome: Outcome };
 
@@ -19,7 +21,13 @@ export type SessionEvent =
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
-  | { type: "transcript"; id: string; text: string; cleanup: boolean }
+  | {
+      type: "transcript";
+      id: string;
+      text: string;
+      cleanup: boolean;
+      snippets: readonly Snippet[];
+    }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
   | { type: "cleanupFailed"; id: string }
@@ -140,11 +148,13 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
       }
       if (raw === "") return finish(state.id, { kind: "empty" });
-      if (!event.cleanup) return insert(state.id, raw, raw);
+      const expanded = expandSnippets(raw, event.snippets);
+      // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
+      if (!event.cleanup || expanded.entireDictation) return insert(state.id, raw, expanded.text);
       return {
-        state: { phase: "cleaning", id: state.id, raw },
+        state: { phase: "cleaning", id: state.id, raw, snippets: event.snippets },
         effects: [
-          { type: "remember", raw, text: raw },
+          { type: "remember", raw, text: expanded.text },
           { type: "cleanup", id: state.id, raw },
         ],
       };
@@ -155,7 +165,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "cleaned": {
       if (state.phase !== "cleaning") return same;
-      const text = event.text.trim();
+      const text = snippetText(state.raw, event.text.trim(), state.snippets);
       if (text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
@@ -163,7 +173,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
-      return insert(state.id, state.raw, state.raw);
+      return insert(state.id, state.raw, expandSnippets(state.raw, state.snippets).text);
     }
     case "insertResult": {
       if (state.phase !== "inserting") return same;

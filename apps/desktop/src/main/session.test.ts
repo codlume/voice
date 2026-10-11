@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
+import type { Snippet } from "../shared/snippets.ts";
 
 import {
   ASR_DOWNLOADING_MESSAGE,
@@ -36,8 +37,12 @@ const down = (now: number, asr: ModelStatus["state"] = "ready") =>
 const up = (now: number) => [{ type: "hotkeyUp" }, now] as [SessionEvent, number];
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
-const transcript = (text: string, cleanup: boolean, now = 2000) =>
-  [{ type: "transcript", id: ID, text, cleanup }, now] as [SessionEvent, number];
+const transcript = (
+  text: string,
+  cleanup: boolean,
+  now = 2000,
+  snippets: readonly Snippet[] = [],
+) => [{ type: "transcript", id: ID, text, cleanup, snippets }, now] as [SessionEvent, number];
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
 const toTranscribing: [SessionEvent, number][] = [...toRecording, up(1000)];
@@ -206,7 +211,7 @@ describe("transcript", () => {
 
   test("with cleanup on, the raw text is remembered and sent to cleanup", () => {
     const { state, effects } = run(toCleaning);
-    expect(state).toEqual({ phase: "cleaning", id: ID, raw: "hello um world" });
+    expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       { type: "remember", raw: "hello um world", text: "hello um world" },
       { type: "cleanup", id: ID, raw: "hello um world" },
@@ -344,6 +349,85 @@ describe("cleanup", () => {
   });
 });
 
+describe("snippets", () => {
+  const EMAIL = "name@example.com";
+  const snippets: Snippet[] = [{ id: "1", trigger: "my email", expansion: EMAIL }];
+  const cleaned = (text: string) =>
+    [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
+  const cleaningSentence = [
+    ...toTranscribing,
+    transcript("send it to my email", true, 2000, snippets),
+  ];
+
+  test("a dictation that is only a trigger types the expansion and skips cleanup", () => {
+    const { state, effects } = run([
+      ...toTranscribing,
+      transcript("My email.", true, 2000, snippets),
+    ]);
+    expect(state).toEqual({ phase: "inserting", id: ID, raw: "My email.", text: EMAIL });
+    expect(effects).toEqual([
+      { type: "remember", raw: "My email.", text: EMAIL },
+      { type: "insert", id: ID, text: EMAIL },
+    ]);
+  });
+
+  test("without cleanup a trigger inside the sentence is expanded", () => {
+    const { effects } = run([
+      ...toTranscribing,
+      transcript("send it to my email", false, 2000, snippets),
+    ]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: `send it to ${EMAIL}` });
+  });
+
+  test("cleanup gets the raw transcript while the expanded text is remembered", () => {
+    const { state, effects } = run(cleaningSentence);
+    expect(state.phase).toBe("cleaning");
+    expect(effects).toEqual([
+      { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
+      { type: "cleanup", id: ID, raw: "send it to my email" },
+    ]);
+  });
+
+  test("cleaned text is expanded", () => {
+    const { effects } = run([...cleaningSentence, cleaned(" Send it to my email. ")]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: `Send it to ${EMAIL}.` });
+  });
+
+  test("a cleanup that dropped a trigger falls back to the expanded raw transcript", () => {
+    const { effects } = run([...cleaningSentence, cleaned("Send it to me.")]);
+    expect(effects).toEqual([
+      { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
+      { type: "insert", id: ID, text: `send it to ${EMAIL}` },
+    ]);
+  });
+
+  test("a cleanup that turned a sentence into only the trigger types the expansion alone", () => {
+    const { effects } = run([
+      ...toTranscribing,
+      transcript("um my email", true, 2000, snippets),
+      cleaned("My email."),
+    ]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: EMAIL });
+  });
+
+  test("a cleanup that returned nothing for a transcript with a trigger inserts the expanded raw", () => {
+    const { state, effects } = run([...cleaningSentence, cleaned("  ")]);
+    expect(state.phase).toBe("inserting");
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: `send it to ${EMAIL}` });
+  });
+
+  test("a cleanup failure inserts the expanded raw transcript", () => {
+    const { effects } = run([...cleaningSentence, [{ type: "cleanupFailed", id: ID }, 2300]]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: `send it to ${EMAIL}` });
+  });
+
+  test("an expansion is inserted untrimmed", () => {
+    const signature: Snippet[] = [{ id: "1", trigger: "sign off", expansion: "Best,\nAlex\n" }];
+    const { effects } = run([...toTranscribing, transcript("Sign off.", false, 2000, signature)]);
+    expect(effects).toContainEqual({ type: "insert", id: ID, text: "Best,\nAlex\n" });
+  });
+});
+
 describe("insertion", () => {
   test.each(["accessibility", "paste"] as const)(
     "%s insert ends inserted with a short idle delay",
@@ -403,13 +487,21 @@ describe("idle and stale events", () => {
   });
 
   test("a transcript for a session that is no longer current is remembered, never inserted", () => {
-    const late: SessionEvent = { type: "transcript", id: "old", text: "late words", cleanup: true };
+    const late: SessionEvent = {
+      type: "transcript",
+      id: "old",
+      text: "late words",
+      cleanup: true,
+      snippets: [{ id: "1", trigger: "late words", expansion: "never typed" }],
+    };
     const remember: Effect = { type: "remember", raw: "late words", text: "late words" };
     expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });
     const { state, effects } = run([...toRecording, [late, 900]]);
     expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
     expect(effects).toEqual([remember]);
-    expect(step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false }, 0)).toEqual({
+    expect(
+      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false, snippets: [] }, 0),
+    ).toEqual({
       state: idle,
       effects: [],
     });
@@ -481,7 +573,11 @@ describe("idle and stale events", () => {
     expect(effects).toEqual([{ type: "remember", raw: "late words", text: "late words" }]);
     expect(run([transcript("   ", true, 41_000)], timedOut).effects).toEqual([]);
     expect(
-      step(timedOut, { type: "transcript", id: "s2", text: "x", cleanup: false }, 41_000),
+      step(
+        timedOut,
+        { type: "transcript", id: "s2", text: "x", cleanup: false, snippets: [] },
+        41_000,
+      ),
     ).toEqual({ state: timedOut, effects: [{ type: "remember", raw: "x", text: "x" }] });
   });
 

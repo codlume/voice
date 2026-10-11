@@ -39,6 +39,7 @@ const base: Snapshot = {
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
+    snippets: [],
     zoomLevel: 0,
   },
   microphones: {
@@ -173,6 +174,26 @@ const hubScenes: Record<string, Snapshot> = {
     session: { kind: "listening" },
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
+  snippets: {
+    ...ready,
+    settings: {
+      ...ready.settings,
+      snippets: [
+        { id: "email", trigger: "my email", expansion: "ada@example.com" },
+        {
+          id: "address",
+          trigger: "office address",
+          expansion: "Analytical Engines Ltd.\n12 Marylebone Road\nLondon NW1 5LR",
+        },
+        {
+          id: "signoff",
+          trigger: "standard sign-off",
+          expansion:
+            "Thanks for the quick turnaround on this. I will review the draft tomorrow morning and send notes before the 11:00 sync. If anything changes on your side, reply here and I will adjust the plan.",
+        },
+      ],
+    },
+  },
   nightly: {
     ...ready,
     settings: { ...ready.settings, updateChannel: "nightly" },
@@ -303,6 +324,7 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
+          snippets: patch.snippets ?? snapshot.settings.snippets,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
         },
         updates: patch.updateChannel

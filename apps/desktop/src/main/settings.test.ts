@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import type { SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import {
   applyPatch,
@@ -102,6 +103,7 @@ describe("parseSettings", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
+      snippets: [],
       zoomLevel: 0,
     });
   });
@@ -173,6 +175,7 @@ describe("applyPatch", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
+      snippets: [],
       zoomLevel: 0,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
@@ -218,6 +221,22 @@ describe("applyPatch", () => {
       ...DEFAULT_SETTINGS,
       theme: "light",
     });
+  });
+
+  const VALID_SNIPPET = { id: "1", trigger: "my email", expansion: "name@example.com\n" };
+
+  test("saves a snippet list and keeps it through other changes", () => {
+    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET] });
+    expect(applyPatch(saved, { theme: "dark" }).snippets).toEqual([VALID_SNIPPET]);
+  });
+
+  test.each([
+    ["a duplicate trigger", [VALID_SNIPPET, { ...VALID_SNIPPET, id: "2", trigger: "My Email!" }]],
+    ["a record missing its expansion", [VALID_SNIPPET, { id: "2", trigger: "address" }]],
+    ["a list that is not an array", { 0: VALID_SNIPPET }],
+  ])("refuses to save snippets with %s instead of dropping any", (_, snippets) => {
+    const patch = { snippets } as unknown as SettingsPatch;
+    expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save these snippets.");
   });
 });
 
@@ -272,6 +291,25 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual({ ...older, zoomLevel: 0 });
   });
 
+  test("a settings file from before snippets loads with none", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { snippets: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, snippets: [] });
+  });
+
+  test("a damaged snippet is dropped while the others load", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const valid = { id: "1", trigger: "my email", expansion: "name@example.com" };
+    await writeFile(
+      file,
+      JSON.stringify({
+        snippets: [valid, { id: "2", trigger: "My Email!", expansion: "x" }, { id: "3" }],
+      }),
+    );
+    expect(loadSettings(file).snippets).toEqual([valid]);
+  });
+
   test("a corrupt file yields defaults", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
@@ -295,6 +333,7 @@ describe("load and save", () => {
       updateChannel: "nightly",
       theme: "dark",
       cleanup: { enabled: false },
+      snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n" }],
       zoomLevel: 1.5,
     });
     await saveSettings(file, settings);

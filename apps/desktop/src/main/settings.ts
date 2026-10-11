@@ -11,6 +11,7 @@ import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { hotkeys } from "../shared/api.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
+import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
   diagnostics: "off",
+  snippets: [],
   zoomLevel: 0,
 };
 
@@ -59,11 +61,20 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
       styling: pick(STYLINGS, c.styling, d.styling),
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
+    snippets: parseSnippets(r.snippets),
     zoomLevel: parseZoomLevel(r.zoomLevel),
   };
 }
 
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
+  const { snippets } = patch;
+  // Parsing drops invalid snippets; refuse the save rather than lose text the user just typed.
+  if (
+    snippets !== undefined &&
+    (!Array.isArray(snippets) || parseSnippets(snippets).length !== snippets.length)
+  ) {
+    throw new Error("Could not save these snippets.");
+  }
   return parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
     hotkey: patch.hotkey ?? settings.hotkey,
@@ -76,6 +87,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
+    snippets: snippets ?? settings.snippets,
     zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
   });
 }

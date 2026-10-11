@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import type { ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import type { Snippet } from "../shared/snippets.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
   CLEANUP_BASE_MS,
@@ -40,6 +41,7 @@ type Options = {
   cleanHangs?: boolean;
   cleanPartial?: boolean;
   copyToClipboard?: boolean;
+  snippets?: readonly Snippet[];
 };
 
 function harness(opts: Options = {}) {
@@ -61,6 +63,7 @@ function harness(opts: Options = {}) {
       ...DEFAULT_SETTINGS,
       dictationLanguage: opts.dictationLanguage ?? DEFAULT_SETTINGS.dictationLanguage,
       copyToClipboard: opts.copyToClipboard ?? DEFAULT_SETTINGS.copyToClipboard,
+      snippets: opts.snippets ?? DEFAULT_SETTINGS.snippets,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
         styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
@@ -462,6 +465,15 @@ describe("createDictation", () => {
     expect(h.styles).toStrictEqual([{ styling: "casual" }]);
   });
 
+  test("a dictation of only a trigger inserts the saved expansion without running cleanup", async () => {
+    const expansion = "Best,\nAlex";
+    const h = harness({ snippets: [{ id: "1", trigger: "sign off", expansion }] });
+    const id = await dictate(h, "Sign off.");
+    expect(h.cleans).toEqual([]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion });
+    expect(h.store.state.last).toEqual({ raw: "Sign off.", text: expansion });
+  });
+
   test.each([
     ["cleanup is disabled", { cleanupEnabled: false }],
     ["the cleanup model is not loaded", { cleanupLoaded: false }],
@@ -737,6 +749,14 @@ describe("createDictation", () => {
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
       expect(h.store.state.session).toEqual(idle);
       expect(h.copies).toEqual(["hello world."]);
+    });
+
+    test("copies the text with its snippets expanded", async () => {
+      const snippets = [{ id: "1", trigger: "my email", expansion: "name@example.com" }];
+      const h = harness({ copyToClipboard: true, snippets });
+      const id = await dictate(h, "send it to my email");
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.copies).toEqual(["send it to name@example.com."]);
     });
 
     test("copies the text when insertion fails", async () => {

@@ -53,13 +53,23 @@ const styles = stylex.create({
     backgroundColor: { default: color.card, ":hover": color.accent },
     color: color.foreground,
   },
+  icon: {
+    width: 28,
+    height: 28,
+    paddingBlock: 0,
+    paddingInline: 0,
+    borderWidth: 0,
+    borderRadius: radius.small,
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    color: color.mutedForeground,
+  },
 });
 
 export function Button({
   variant = "primary",
   ...props
 }: Omit<ComponentProps<"button">, "type" | "className" | "style"> & {
-  variant?: "primary" | "secondary" | "destructive" | "text";
+  variant?: "primary" | "secondary" | "destructive" | "text" | "icon";
 }) {
   return <button type="button" {...props} {...stylex.props(styles.button, styles[variant])} />;
 }

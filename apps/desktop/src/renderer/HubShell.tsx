@@ -10,6 +10,7 @@ import {
   PenLineIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  TextQuoteIcon,
   UserIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ import {
   type Binding,
   type Shortcut,
 } from "./shortcuts.ts";
+import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
@@ -45,6 +47,7 @@ import { color, font, radius, space } from "./tokens.stylex.ts";
 const appPages = [
   { id: "home", label: "Home", icon: HouseIcon },
   { id: "style", label: "Style", icon: PenLineIcon },
+  { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
 ] as const;
 
 const settingsPages = [
@@ -62,6 +65,7 @@ type SettingsPage = (typeof settingsPages)[number]["id"];
 const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNode> = {
   home: (snapshot) => <Home snapshot={snapshot} />,
   style: (snapshot) => <Style settings={snapshot.settings} />,
+  snippets: (snapshot) => <Snippets snippets={snapshot.settings.snippets} />,
   general: (snapshot) => (
     <GeneralSettings
       settings={snapshot.settings}
