@@ -109,6 +109,23 @@ test("stitch keeps the whitespace between chunks verbatim", () => {
   expect(stitch(raw, chunks, ["A.", "B."])).toBe("A.\n\nB.");
 });
 
+test("line breaks stay outside model input even when both lines fit in one chunk", () => {
+  const raw = "call ada\r\n\r\n  send bob\nask priya";
+  const chunks = chunkTranscript(raw, 1000, chars);
+
+  expect(texts(chunks)).toEqual(["call ada", "send bob", "ask priya"]);
+  expect(stitch(raw, chunks, ["Call Ada", "Send Bob", "Ask Priya."])).toBe(
+    "Call Ada\r\n\r\n  Send Bob\nAsk Priya.",
+  );
+});
+
+test("stitch preserves paragraph capitalization after an unterminated line", () => {
+  const raw = "call ada\n\nsend bob";
+  const chunks = spans(raw, ["call ada", "send bob"]);
+
+  expect(stitch(raw, chunks, ["Call Ada", "Send Bob."])).toBe("Call Ada\n\nSend Bob.");
+});
+
 test("stitch keeps the raw text of a chunk without an output", () => {
   const raw = "call ada and i'll send the notes";
   const chunks = spans(raw, ["call ada and", "i'll send the notes"]);
