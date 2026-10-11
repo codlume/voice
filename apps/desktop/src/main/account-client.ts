@@ -3,25 +3,42 @@ import { writeFileSync } from "node:fs";
 import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import { createAuthClient, type BetterAuthClientPlugin } from "better-auth/client";
+import { inferAdditionalFields } from "better-auth/client/plugins";
 import { cookieNameRegex, getSessionCookie, parseSetCookieHeader } from "better-auth/cookies";
 import { safeStorage, shell } from "electron";
 
-import { VOICE_URL_SCHEME, type AccountIdentity, type UpdateChannel } from "../shared/api.ts";
+import {
+  VOICE_URL_SCHEME,
+  type AccountIdentity,
+  type AccountName,
+  type UpdateChannel,
+} from "../shared/api.ts";
 import type {
   AuthClient,
   AuthSessionCheck,
   Identity,
   RedeemResult,
   ServerSignOut,
+  UpdateNameResult,
 } from "./account.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { authStorageKeys, authStoragePrefix } from "./account-storage.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+const authSessionEnded = (status: number) => status === 401 || status === 403;
+
 function isGooglePicture(image: string) {
   const url = URL.parse(image);
   return url?.protocol === "https:" && url.hostname.endsWith(".googleusercontent.com");
+}
+
+function splitLegacyName(name: string): AccountName {
+  const trimmed = name.trim();
+  const space = trimmed.indexOf(" ");
+  return space === -1
+    ? { firstName: trimmed, lastName: "" }
+    : { firstName: trimmed.slice(0, space), lastName: trimmed.slice(space + 1).trim() };
 }
 
 function cachedIdentityOf(user: unknown): AccountIdentity | null {
@@ -35,7 +52,17 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   ) {
     return null;
   }
-  const identity: AccountIdentity = { name: user.name, email: user.email };
+  // Identities cached before first and last names have only `name`. Deploys apply migrations
+  // before the Worker, so in that window the old Worker can create users with an empty first name.
+  const { firstName, lastName } =
+    "firstName" in user &&
+    typeof user.firstName === "string" &&
+    user.firstName !== "" &&
+    "lastName" in user &&
+    typeof user.lastName === "string"
+      ? { firstName: user.firstName, lastName: user.lastName }
+      : splitLegacyName(user.name);
+  const identity: AccountIdentity = { name: user.name, firstName, lastName, email: user.email };
   if ("id" in user) {
     if (typeof user.id !== "string") return null;
     identity.id = user.id;
@@ -129,12 +156,20 @@ export function createVoiceAuthClient({
       disableCache: true,
       userImageProxy: { enabled: false },
     }) as ElectronPlugin;
-    return createAuthClient({ baseURL: apiUrl, plugins: [plugin] });
+    return createAuthClient({
+      baseURL: apiUrl,
+      plugins: [
+        plugin,
+        inferAdditionalFields({
+          user: { firstName: { type: "string" }, lastName: { type: "string" } },
+        }),
+      ],
+    });
   }
   let client = makeClient();
   // Encrypted like the plugin's own items. Without encryption nothing is written, so the
   // identity, like the auth session, lasts only until quit.
-  const saveIdentity = (user: Identity) => {
+  const saveIdentity = (user: AccountIdentity) => {
     if (!safeStorage.isEncryptionAvailable()) return;
     store.setItem(
       keys.identity,
@@ -233,7 +268,7 @@ export function createVoiceAuthClient({
         return { kind: "unknown", status: response.status };
       // Better Auth catches a failed database deletion and still returns success. Confirm it.
       const checked = await request("get-session");
-      if (checked.status === 401 || checked.status === 403) {
+      if (authSessionEnded(checked.status)) {
         return { kind: "ended", status: checked.status };
       }
       if (checked.ok && (await checked.json()) === null) {
@@ -351,7 +386,7 @@ export function createVoiceAuthClient({
       }
       const { data, error } = result;
       if (error) {
-        return error.status === 401 || error.status === 403
+        return authSessionEnded(error.status)
           ? { kind: "ended", status: error.status }
           : { kind: "unknown", status: error.status };
       }
@@ -391,6 +426,25 @@ export function createVoiceAuthClient({
         if (error.status !== 400 || error.code !== "SESSION_EXPIRED") return { kind: "failed" };
         refusedCookie = client.getCookie();
         return { kind: "reauthRequired" };
+      } catch (error) {
+        return { kind: error instanceof TypeError ? "offline" : "failed" };
+      }
+    },
+    updateName: async (user): Promise<UpdateNameResult> => {
+      const started = generation;
+      try {
+        const { error } = await client.updateUser({
+          firstName: user.firstName,
+          lastName: user.lastName,
+          fetchOptions: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+        });
+        if (error) {
+          return authSessionEnded(error.status)
+            ? { kind: "ended", status: error.status }
+            : { kind: "failed" };
+        }
+        if (started === generation) saveIdentity(user);
+        return { kind: "updated" };
       } catch (error) {
         return { kind: error instanceof TypeError ? "offline" : "failed" };
       }

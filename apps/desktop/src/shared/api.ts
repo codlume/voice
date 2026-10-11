@@ -59,7 +59,21 @@ export type AccountState =
   | ({ kind: "signedIn"; deletion?: AccountDeletion; notice?: string } & AccountIdentity)
   | { kind: "error"; message: string };
 
-export type AccountIdentity = { id?: string; name: string; email: string; image?: string };
+export type AccountIdentity = {
+  id?: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  image?: string;
+};
+
+export type AccountName = Pick<AccountIdentity, "firstName" | "lastName">;
+
+export const fullName = ({ firstName, lastName }: AccountName) =>
+  [firstName, lastName].filter(Boolean).join(" ");
+
+export const ACCOUNT_NAME_MAX_LENGTH = 100;
 
 export type AccountDeletion =
   | { kind: "confirming" }
@@ -206,6 +220,8 @@ export type HubApi = WindowApi & {
   submitSignInCode(code: string): Promise<void>;
   cancelSignIn(): Promise<void>;
   dismissAccountError(): Promise<void>;
+  /** Rejects with a message for the user when the name was not saved. */
+  updateAccountName(name: AccountName): Promise<void>;
   requestAccountDeletion(): Promise<void>;
   confirmAccountDeletion(): Promise<void>;
   cancelAccountDeletion(): Promise<void>;
@@ -238,6 +254,7 @@ export const Channel = {
   submitSignInCode: "voice:submitSignInCode",
   cancelSignIn: "voice:cancelSignIn",
   dismissAccountError: "voice:dismissAccountError",
+  updateAccountName: "voice:updateAccountName",
   requestAccountDeletion: "voice:requestAccountDeletion",
   confirmAccountDeletion: "voice:confirmAccountDeletion",
   cancelAccountDeletion: "voice:cancelAccountDeletion",

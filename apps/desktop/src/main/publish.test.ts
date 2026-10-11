@@ -6,7 +6,13 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, type AppState } from "./store.ts";
 
 const transcript = { raw: "meet ada at noon", text: "Meet Ada at noon." };
-const identity = { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" };
+const identity = {
+  id: "user-1",
+  name: "Ada Lovelace",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  email: "ada@example.com",
+};
 
 function fakeWindow() {
   const sent: { channel: string; value: unknown }[] = [];

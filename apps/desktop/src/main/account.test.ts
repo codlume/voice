@@ -484,13 +484,21 @@ describe("createAccount", () => {
     expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     h.account.handleCallbackUrl(callbackUrl(CODE));
     await flush();
-    h.setUser({ id: "second-id", name: "Second", email: "second@example.com" });
+    h.setUser({
+      id: "second-id",
+      name: "Second",
+      firstName: "Second",
+      lastName: "",
+      email: "second@example.com",
+    });
     h.exchanges[1]?.resolve();
     await flush();
     expect(h.state).toEqual({
       kind: "signedIn",
       id: "second-id",
       name: "Second",
+      firstName: "Second",
+      lastName: "",
       email: "second@example.com",
     });
     expectNoSecrets(h);
@@ -740,12 +748,12 @@ describe("restore", () => {
     expect(h.checks).toHaveLength(1);
     h.checks[0]?.answer({
       kind: "active",
-      user: { id: USER.id, name: "Ada King", email: USER.email },
+      user: { ...USER, name: "Ada King", lastName: "King" },
     });
     await restored.done;
     expect(h.states).toEqual([
       { kind: "signedIn", ...USER },
-      { kind: "signedIn", id: USER.id, name: "Ada King", email: USER.email },
+      { kind: "signedIn", ...USER, name: "Ada King", lastName: "King" },
     ]);
     expectNoSecrets(h);
   });

@@ -83,7 +83,13 @@ describe("account deletion through the snapshot", () => {
 
   test("deletion asks the API whose account the cookie is and refuses any other account", async () => {
     const h = await signedIn();
-    const other = { id: "grace-id", name: "Grace Hopper", email: "grace@example.com" };
+    const other = {
+      id: "grace-id",
+      name: "Grace Hopper",
+      firstName: "Grace",
+      lastName: "Hopper",
+      email: "grace@example.com",
+    };
     h.account.requestDeletion();
     const deleting = h.account.confirmDeletion();
     await flush();
@@ -253,6 +259,8 @@ describe("account deletion through the snapshot", () => {
       const other = {
         id: "grace-id",
         name: "Grace Hopper",
+        firstName: "Grace",
+        lastName: "Hopper",
         email: emailCase === "same email" ? USER.email : "grace@example.com",
       };
       h.setUser(other);
