@@ -4,7 +4,6 @@ import * as Schema from "effect/Schema";
 
 export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "dispose">;
 
-// A clean that outlives its abort by this long means the engine is wedged.
 export const ABORT_GRACE_MS = 2000;
 export const DISPOSE_GRACE_MS = 2000;
 const LOST_MESSAGE = "The cleanup model stopped unexpectedly.";

@@ -30,7 +30,6 @@ type Clean = {
   aborted: Promise<void>;
 };
 
-// Cleans wait for the test to finish them. `wedged` ignores abort and dispose like a stuck model.
 function fakeEngine({ wedged = false } = {}) {
   const calls = { modelPaths: [] as string[], loads: 0, disposes: 0, cleans: [] as Clean[] };
   const cleanStarted = deferred<Clean>();
@@ -73,7 +72,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// Main holds port1 as the utility process handle; the child serves on port2 as its parentPort.
 function connect(engine = fakeEngine()) {
   const { port1, port2 } = new MessageChannel();
   ports.push(port1, port2);
@@ -180,7 +178,6 @@ describe("cleanup engine process", () => {
 
     await expect(cleaning).rejects.toBe(reason);
     await clean.aborted;
-    // Replies arrive in order, so once this round trip ends the child's reply to the abort is in.
     await proxy.load();
     vi.advanceTimersByTime(ABORT_GRACE_MS);
     expect(kills()).toBe(0);

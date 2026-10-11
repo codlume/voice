@@ -35,7 +35,6 @@ export type CleanupOptions = {
   loadModule?: () => Promise<CleanupModule>;
 };
 
-// The model runs in a utility process so loading it never stalls main, where the hotkey lands.
 async function importModule(log: (message: string) => void): Promise<CleanupModule> {
   const [{ downloadS1Mini, findS1Mini, removeS1Mini }, { utilityProcess }] = await Promise.all([
     import("@voice/cleanup/download"),
@@ -142,7 +141,6 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     try {
       const candidate = module.createS1Mini({
         modelPath,
-        // Retry finds the file already on disk and starts a fresh engine.
         onLost: (lostMessage) => {
           if (!owns(candidate)) return;
           model = { phase: "none" };
