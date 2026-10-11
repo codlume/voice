@@ -114,8 +114,6 @@ export function createDictation(options: DictationOptions): Dictation {
     }
     for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
-      // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
-      // restoring the previous contents. Copying earlier would race the helper saving them.
       if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
         options.copy(before.text);
       }

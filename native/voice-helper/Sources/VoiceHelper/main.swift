@@ -26,7 +26,7 @@ final class Helper {
             capture.testAudioPath = environment["VOICE_HELPER_TEST_AUDIO"]
         }
         self.capture = capture
-        insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
+        insertion = Insertion(output: output, forceRecovery: testMode && environment["VOICE_HELPER_FORCE_RECOVERY"] == "1")
         let hotkeyTap = HotkeyTap(output: output) { capture.isActive }
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
@@ -87,7 +87,6 @@ final class Helper {
     func shutdown() {
         devices.shutdown()
         capture.shutdown()
-        insertion.shutdown()
     }
 }
 
@@ -126,7 +125,6 @@ let reader = Thread {
 reader.name = "stdin"
 reader.start()
 
-// SIGTERM ends the helper the way stdin EOF does, so a pending clipboard restore still runs.
 signal(SIGTERM, SIG_IGN)
 let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler {
