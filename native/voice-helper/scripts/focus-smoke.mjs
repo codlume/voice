@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +12,8 @@ import {
   withHelper,
 } from "./helper.mjs";
 
+const mode = process.argv[2];
+assert(mode === "ax" || mode === "paste", `usage: focus-smoke.mjs ax|paste (got ${mode})`);
 refuseIfVoiceIsRunning();
 
 function osascript(script) {
@@ -33,6 +35,11 @@ function clipboardChangeCount() {
   );
 }
 
+function clipboardSha256() {
+  const content = execFileSync("pbpaste", { encoding: "utf8" });
+  return createHash("sha256").update(content).digest("hex");
+}
+
 async function settle(read, expected, timeoutMs = 3_000) {
   const deadline = Date.now() + timeoutMs;
   let value = read();
@@ -45,6 +52,7 @@ async function settle(read, expected, timeoutMs = 3_000) {
 
 const textEditWasRunning = osascript('application "TextEdit" is running') === "true";
 const clipboardBefore = clipboardChangeCount();
+const clipboardShaBefore = clipboardSha256();
 
 // Named files, as in insert-smoke.mjs: an untitled document can fail to appear on a cold launch,
 // and closing one can raise a save sheet that blocks every later AppleEvent.
@@ -78,63 +86,77 @@ const b = createDocument("b");
 bringToFront(b);
 bringToFront(a);
 try {
-  await withHelper({}, async (helper) => {
-    await prepareAsr(helper);
+  await withHelper(
+    { env: mode === "paste" ? { VOICE_HELPER_FORCE_PASTE: "1" } : {} },
+    async (helper) => {
+      await prepareAsr(helper);
 
-    const controlText = `Voice focus control ${randomUUID()}`;
-    const controlCapture = await dictateFixture(helper, "short.wav", "focus-control");
-    assert(
-      controlCapture.transcript.text.trim() !== "",
-      "control capture returned an empty transcript",
-    );
-    const control = await insert(helper, "focus-control", controlText);
-    assert(
-      control.method === "accessibility",
-      `control insert.result method ${control.method} reason ${control.reason ?? ""}`,
-    );
-    const controlActual = await settle(() => textOf(a), controlText);
-    assert(
-      controlActual === controlText,
-      `document A text ${JSON.stringify(controlActual)} != ${JSON.stringify(controlText)}`,
-    );
+      const controlText = `Voice focus control ${randomUUID()}`;
+      const controlCapture = await dictateFixture(helper, "short.wav", "focus-control");
+      assert(
+        controlCapture.transcript.text.trim() !== "",
+        "control capture returned an empty transcript",
+      );
+      const control = await insert(helper, "focus-control", controlText);
+      assert(
+        control.method === (mode === "ax" ? "accessibility" : "paste"),
+        `control insert.result method ${control.method} reason ${control.reason ?? ""}`,
+      );
+      const controlActual = await settle(() => textOf(a), controlText);
+      assert(
+        controlActual === controlText,
+        `document A text ${JSON.stringify(controlActual)} != ${JSON.stringify(controlText)}`,
+      );
 
-    const aBefore = textOf(a);
-    const bBefore = textOf(b);
-    const switchText = `Voice focus switch ${randomUUID()}`;
-    const switchCapture = await dictateFixture(helper, "short.wav", "focus-switch");
-    assert(
-      switchCapture.transcript.text.trim() !== "",
-      "switch capture returned an empty transcript",
-    );
-    bringToFront(b);
-    const switched = await insert(helper, "focus-switch", switchText);
-    assert(
-      switched.method === "none" && switched.reason === "focusChanged",
-      `switch insert.result method ${switched.method} reason ${switched.reason ?? ""}`,
-    );
-    const aAfter = textOf(a);
-    const bAfter = textOf(b);
-    assert(aAfter === aBefore, `document A changed to ${JSON.stringify(aAfter)}`);
-    assert(bAfter === bBefore, `document B changed to ${JSON.stringify(bAfter)}`);
+      const restored = await settle(clipboardSha256, clipboardShaBefore);
+      assert(
+        restored === clipboardShaBefore,
+        "clipboard was not restored after the control insert",
+      );
+      const switchClipboardBefore = clipboardChangeCount();
+      const aBefore = textOf(a);
+      const bBefore = textOf(b);
+      const switchText = `Voice focus switch ${randomUUID()}`;
+      const switchCapture = await dictateFixture(helper, "short.wav", "focus-switch");
+      assert(
+        switchCapture.transcript.text.trim() !== "",
+        "switch capture returned an empty transcript",
+      );
+      bringToFront(b);
+      const switched = await insert(helper, "focus-switch", switchText);
+      assert(
+        switched.method === "none" && switched.reason === "focusChanged",
+        `switch insert.result method ${switched.method} reason ${switched.reason ?? ""}`,
+      );
+      const aAfter = textOf(a);
+      const bAfter = textOf(b);
+      assert(aAfter === aBefore, `document A changed to ${JSON.stringify(aAfter)}`);
+      assert(bAfter === bBefore, `document B changed to ${JSON.stringify(bAfter)}`);
 
-    const clipboardAfter = clipboardChangeCount();
-    assert(
-      clipboardAfter === clipboardBefore,
-      `clipboard changeCount changed ${clipboardBefore} -> ${clipboardAfter}`,
-    );
-    console.log(
-      JSON.stringify({
-        control: { method: control.method, documentA: "transcript" },
-        switch: {
-          method: switched.method,
-          reason: switched.reason ?? null,
-          documentA: "unchanged",
-          documentB: "unchanged",
-        },
-        clipboardChangeCount: clipboardAfter,
-      }),
-    );
-  });
+      const clipboardAfter = clipboardChangeCount();
+      assert(
+        clipboardAfter === switchClipboardBefore,
+        `refused insert changed the clipboard ${switchClipboardBefore} -> ${clipboardAfter}`,
+      );
+      assert(
+        mode === "paste" || clipboardAfter === clipboardBefore,
+        `clipboard changeCount changed ${clipboardBefore} -> ${clipboardAfter}`,
+      );
+      console.log(
+        JSON.stringify({
+          mode,
+          control: { method: control.method, documentA: "transcript" },
+          switch: {
+            method: switched.method,
+            reason: switched.reason ?? null,
+            documentA: "unchanged",
+            documentB: "unchanged",
+          },
+          clipboardChangeCount: clipboardAfter,
+        }),
+      );
+    },
+  );
 } finally {
   try {
     for (const doc of [a, b]) {

@@ -8,7 +8,6 @@ let package = Package(
         .executable(name: "voice-helper", targets: ["VoiceHelper"]),
         .executable(name: "fnpost", targets: ["FnPost"]),
         .executable(name: "disclaim", targets: ["Disclaim"]),
-        .executable(name: "slow-paste-target", targets: ["SlowPasteTarget"]),
         .library(name: "VoiceHelperCore", targets: ["VoiceHelperCore"]),
     ],
     dependencies: [
@@ -28,7 +27,6 @@ let package = Package(
         ),
         .executableTarget(name: "FnPost"),
         .executableTarget(name: "Disclaim"),
-        .executableTarget(name: "SlowPasteTarget"),
         .testTarget(name: "VoiceHelperCoreTests", dependencies: ["VoiceHelperCore"]),
         .testTarget(name: "VoiceHelperTests", dependencies: ["VoiceHelper"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]

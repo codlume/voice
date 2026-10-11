@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,26 +13,16 @@ import {
 } from "./helper.mjs";
 
 const mode = process.argv[2];
-assert(mode === "ax" || mode === "recovery", `usage: insert-smoke.mjs ax|recovery (got ${mode})`);
+assert(mode === "ax" || mode === "paste", `usage: insert-smoke.mjs ax|paste (got ${mode})`);
 refuseIfVoiceIsRunning();
 
 function osascript(script) {
   return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 }
 
-function clipboardChangeCount() {
-  return Number(
-    execFileSync(
-      "osascript",
-      [
-        "-l",
-        "JavaScript",
-        "-e",
-        "ObjC.import('AppKit'); $.NSPasteboard.generalPasteboard.changeCount",
-      ],
-      { encoding: "utf8" },
-    ).trim(),
-  );
+function clipboardSha256() {
+  const content = execFileSync("pbpaste", { encoding: "utf8" });
+  return createHash("sha256").update(content).digest("hex");
 }
 
 async function settle(read, expected, timeoutMs = 3_000) {
@@ -46,7 +36,8 @@ async function settle(read, expected, timeoutMs = 3_000) {
 }
 
 const textEditWasRunning = osascript('application "TextEdit" is running') === "true";
-const clipboardBefore = clipboardChangeCount();
+// The helper must hand back whatever the developer already had, so the smoke never writes it.
+const clipboardBefore = clipboardSha256();
 
 // A named file, as in scripts/e2e.mjs. An untitled document can fail to appear on a cold launch,
 // and closing one can raise a save sheet that blocks every later AppleEvent.
@@ -60,7 +51,7 @@ osascript(
 );
 try {
   await withHelper(
-    { env: mode === "recovery" ? { VOICE_HELPER_FORCE_RECOVERY: "1" } : {} },
+    { env: mode === "paste" ? { VOICE_HELPER_FORCE_PASTE: "1" } : {} },
     async (helper) => {
       await prepareAsr(helper);
       const id = `insert-${mode}`;
@@ -74,28 +65,32 @@ try {
           label: "insert.result",
         },
       );
-      const expectedMethod = mode === "ax" ? "accessibility" : "none";
+      const expectedMethod = mode === "ax" ? "accessibility" : "paste";
       assert(
         result.method === expectedMethod,
         `insert.result method ${result.method} reason ${result.reason ?? ""}`,
       );
-      if (mode === "recovery") {
-        assert(result.reason === "failed", `recovery reason ${result.reason ?? ""}`);
-      }
-      const expectedText = mode === "ax" ? expected : "";
+      // insert.result can arrive before TextEdit handles the pasted Cmd+V, and the helper
+      // restores the clipboard only after that, so both are awaited rather than read once.
       const actual = await settle(
         () => osascript(`tell application "TextEdit" to get text of ${document}`),
-        expectedText,
+        expected,
       );
-      assert(actual === expectedText, "document did not match the expected insertion outcome");
-      const clipboardAfter = clipboardChangeCount();
-      assert(clipboardAfter === clipboardBefore, "clipboard changed during insertion");
+      assert(
+        actual === expected,
+        `document text ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`,
+      );
+      const clipboardAfter = await settle(clipboardSha256, clipboardBefore);
+      assert(
+        clipboardAfter === clipboardBefore,
+        `clipboard sha256 changed ${clipboardBefore} -> ${clipboardAfter}`,
+      );
       console.log(
         JSON.stringify({
           mode,
           method: result.method,
-          targetMatched: true,
-          clipboardUnchanged: true,
+          documentText: actual,
+          clipboardSha256: clipboardAfter,
         }),
       );
     },
