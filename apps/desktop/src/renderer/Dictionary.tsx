@@ -44,7 +44,7 @@ export function Dictionary({
       save={(next) => hubApi().updateSettings({ dictionary: next })}
       blank={() => ({ id: crypto.randomUUID(), phrase: "", replacement: null })}
       name={(entry) => entry.phrase}
-      example={{ title: "Wispr Flow" }}
+      example={{ title: "Worcestershire" }}
       row={(entry) => ({ title: label(entry) })}
       normalize={dictionaryEntry}
       problem={(entry, others) => dictionaryProblem(entry, others, snippets)}
@@ -61,7 +61,7 @@ export function Dictionary({
               maxLength={PHRASE_MAX_LENGTH}
               autoComplete="off"
               spellCheck={false}
-              placeholder="Wispr Flow"
+              placeholder="Worcestershire"
               onValueChange={(phrase) => edit({ phrase })}
               onKeyDown={saveOnEnter}
               {...stylex.props(styles.input, shown?.field === "phrase" && styles.invalid)}
