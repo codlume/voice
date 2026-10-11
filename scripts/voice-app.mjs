@@ -220,6 +220,20 @@ export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
   });
 }
 
+// The helper reports a paste 50 ms after it posts Cmd+V, before a slow target has handled the
+// keystroke, and restores the user's clipboard 1 s after Cmd+V (Insertion.swift). Reading for
+// 800 ms catches a slow paste but stops before a later one could insert the user's own clipboard.
+export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
+  const started = performance.now();
+  for (;;) {
+    const text = await read();
+    const elapsed = Math.round(performance.now() - started);
+    if (text === expected) return { text, landedMs: elapsed };
+    if (elapsed >= timeoutMs) return { text, landedMs: null };
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 export function launchVoice(userData, { port, env: extraEnv = {} }) {
   const env = {
     ...process.env,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 
-import { announcedPorts } from "./voice-app.mjs";
+import { announcedPorts, landedText } from "./voice-app.mjs";
 
 const child = () => ({ stderr: new PassThrough() });
 
@@ -26,4 +26,18 @@ test("fails when the process ends before announcing every port", async () => {
 test("fails when no port is announced in time", async () => {
   const ports = announcedPorts(child(), ["DevTools"], { timeoutMs: 20 });
   await assert.rejects(ports, /no DevTools port announced after 20 ms/);
+});
+
+test("reads the target until the expected text lands", async () => {
+  const reads = ["", "", "Hi Anna."];
+  const landed = await landedText(() => reads.shift() ?? "Hi Anna.", "Hi Anna.");
+  assert.equal(landed.text, "Hi Anna.");
+  assert.ok(landed.landedMs >= 0, `landedMs ${landed.landedMs}`);
+});
+
+test("gives up with the last read when the text never lands", async () => {
+  assert.deepEqual(await landedText(() => "", "Hi Anna.", { timeoutMs: 30 }), {
+    text: "",
+    landedMs: null,
+  });
 });

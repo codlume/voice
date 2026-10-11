@@ -26,6 +26,7 @@ import {
 import {
   announcedPorts,
   electronPath,
+  landedText,
   modelFiles,
   Page,
   prepareUserData,
@@ -799,12 +800,11 @@ const commands = {
           : await waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(
               () => null,
             );
-      // The helper reports a paste as soon as it posts Cmd+V, before a slow target handles it.
-      if (finalState.session.outcome?.kind === "inserted") {
-        await waitOn(targetPage, `${field}.value === ${show(finalState.last.text)}`, 2000).catch(
-          () => {},
-        );
-      }
+      const read = () => targetPage.evaluate(`${field}.value`);
+      const { text: inserted, landedMs } =
+        finalState.session.outcome?.kind === "inserted"
+          ? await landedText(read, finalState.last.text)
+          : { text: await read(), landedMs: null };
       const result = {
         fixture: wav,
         end,
@@ -813,7 +813,8 @@ const commands = {
         heldMs,
         ...(captureEndedEarly && { captureEndedEarly }),
         outcome: finalState.session.outcome ?? finalState.session.kind,
-        inserted: await targetPage.evaluate(`${field}.value`),
+        inserted,
+        landedMs,
         last: finalState.last,
         timing: timing?.replace(/^.*\[voice\] /, "") ?? null,
       };

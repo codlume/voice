@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   assert,
   electronPath,
+  landedText,
   launchVoice,
   Page,
   prepareUserData,
@@ -210,17 +211,6 @@ function parseTiming(line) {
   return timing;
 }
 
-// The helper reports a paste as soon as it posts Cmd+V, before a slow target handles it.
-async function readInserted(target, before) {
-  const deadline = Date.now() + 2000;
-  let text = await target.read();
-  while (text === before && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    text = await target.read();
-  }
-  return text;
-}
-
 async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
   const target = targets[c.target];
   const wav = readFileSync(join(fixturesDir, c.wav));
@@ -280,8 +270,10 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     );
   }
   const outcome = snapshot.session.outcome ?? null;
-  const text =
-    outcome?.kind === "inserted" ? await readInserted(target, before) : await target.read();
+  const { text, landedMs } =
+    outcome?.kind === "inserted"
+      ? await landedText(target.read, snapshot.last.text)
+      : { text: await target.read(), landedMs: null };
   try {
     assert(
       (outcome?.kind ?? null) === c.outcome,
@@ -295,6 +287,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
         target: target.name,
         outcome,
         text,
+        landedMs,
         heldMs,
         timing: timing && {
           startMs: timing.startMs,
