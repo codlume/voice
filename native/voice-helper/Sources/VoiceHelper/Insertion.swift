@@ -229,10 +229,11 @@ final class Insertion {
 
 private let axMessagingTimeout: Float = 0.3
 
+/// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
+/// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
+/// would refuse insertions whose focus never changed.
 private func focusInputStamp() -> [UInt32] {
-    [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown,
-     .leftMouseUp, .rightMouseUp, .otherMouseUp, .mouseMoved,
-     .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel, .tabletPointer, .tabletProximity].map {
+    [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
         CGEventSource.counterForEventType(.combinedSessionState, eventType: $0)
     }
 }
