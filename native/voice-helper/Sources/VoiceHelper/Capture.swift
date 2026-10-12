@@ -466,6 +466,7 @@ final class MicSource {
     private let sinkNode: AVAudioSinkNode
     private var sink: (([Float]) -> Void)?
     private var pump: DispatchSourceTimer?
+    private var pumpSettled = false
     private var observer: NSObjectProtocol?
     let device: AudioInputDevices.Device
     let preference: Microphone?
@@ -576,7 +577,10 @@ final class MicSource {
     private func startPump() {
         stopPump()
         let pump = DispatchSource.makeTimerSource(queue: .main)
-        pump.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
+        // Polls fast until the first audio arrives, so capture.started and the listening pill are not
+        // held back by the steady 100 ms cadence.
+        pumpSettled = false
+        pump.schedule(deadline: .now(), repeating: 0.005, leeway: .milliseconds(1))
         pump.setEventHandler { [weak self] in self?.tick() }
         self.pump = pump
         pump.resume()
@@ -589,7 +593,12 @@ final class MicSource {
 
     private func tick() {
         let chunk = pipeline.pull()
-        if !chunk.isEmpty { sink?(chunk) }
+        guard !chunk.isEmpty else { return }
+        if !pumpSettled {
+            pumpSettled = true
+            pump?.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
+        }
+        sink?(chunk)
     }
 }
 
