@@ -96,23 +96,11 @@ function writeInline(nodes: readonly LexicalNode[]): Written {
 // A <br> that ends a block, or is its only content, does not render a line, and Lexical drops it
 // on import. One more keeps empty lines visible in the target and the round trip stable.
 function writeBlockContent(block: ElementNode): Written {
-  const children = block.getChildren().filter((child) => !$isListNode(child));
+  const children = block.getChildren();
   const written = writeInline(children);
   const last = children.at(-1);
   if (last === undefined || $isLineBreakNode(last)) written.html += "<br>";
   return written;
-}
-
-function flattenedListItems(list: ListNode, items: ListItemNode[] = []): ListItemNode[] {
-  for (const item of list.getChildren()) {
-    if (!$isListItemNode(item)) continue;
-    const children = item.getChildren();
-    const nested = children.filter($isListNode);
-    // Lexical holds an indented item as an item whose only child is a list.
-    if (nested.length < children.length || nested.length === 0) items.push(item);
-    for (const child of nested) flattenedListItems(child, items);
-  }
-  return items;
 }
 
 export function $readSnippetText(): SnippetText {
@@ -123,12 +111,16 @@ export function $readSnippetText(): SnippetText {
     if ($isListNode(block)) {
       formatted = true;
       const tag = block.getListType() === "number" ? "ol" : "ul";
-      const items = flattenedListItems(block).map((item, index) => {
-        const written = writeBlockContent(item);
-        formatted ||= written.formatted;
-        lines.push(`${tag === "ol" ? `${index + 1}.` : "-"} ${written.text}`);
-        return `<li>${written.html}</li>`;
-      });
+      // $storedList keeps every list one level deep, so each item is one line.
+      const items = block
+        .getChildren()
+        .filter($isListItemNode)
+        .map((item, index) => {
+          const written = writeBlockContent(item);
+          formatted ||= written.formatted;
+          lines.push(`${tag === "ol" ? `${index + 1}.` : "-"} ${written.text}`);
+          return `<li>${written.html}</li>`;
+        });
       html.push(`<${tag}>${items.join("")}</${tag}>`);
     } else if ($isElementNode(block)) {
       const written = writeBlockContent(block);

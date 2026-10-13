@@ -7,7 +7,14 @@ import {
   INSERT_UNORDERED_LIST_COMMAND,
   REMOVE_LIST_COMMAND,
 } from "@lexical/list";
-import { BOLD_STAR, ITALIC_STAR, LINK, ORDERED_LIST, UNORDERED_LIST } from "@lexical/markdown";
+import {
+  BOLD_STAR,
+  ITALIC_STAR,
+  LINK,
+  ORDERED_LIST,
+  UNORDERED_LIST,
+  type ElementTransformer,
+} from "@lexical/markdown";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -21,6 +28,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import * as stylex from "@stylexjs/stylex";
 import {
   $createTextNode,
+  $getRoot,
   $getSelection,
   $insertNodes,
   $isRangeSelection,
@@ -121,6 +129,9 @@ const theme = {
 };
 
 const KEPT_FORMATS = IS_BOLD | IS_ITALIC;
+// Saved lists number from 1, so only "1. " starts one; "2024. " stays a year. The replace reads
+// the number from the second group.
+const ORDERED_LIST_FROM_1: ElementTransformer = { ...ORDERED_LIST, regExp: /^(\s*)(1)\.\s/ };
 const shortcut = (key: string) => (IS_APPLE ? `⌘${key}` : `Ctrl+${key}`);
 const isShortcut = (event: KeyboardEvent | null): event is KeyboardEvent =>
   event !== null && (IS_APPLE ? event.metaKey : event.ctrlKey) && !event.altKey;
@@ -208,7 +219,7 @@ export function SnippetEditor({
       <ListPlugin />
       <LinkPlugin validateUrl={(url) => allowedHref(url) !== null} />
       <MarkdownShortcutPlugin
-        transformers={[UNORDERED_LIST, ORDERED_LIST, BOLD_STAR, ITALIC_STAR, LINK]}
+        transformers={[UNORDERED_LIST, ORDERED_LIST_FROM_1, BOLD_STAR, ITALIC_STAR, LINK]}
       />
       <OnChangePlugin
         ignoreSelectionChange
@@ -303,7 +314,14 @@ function Toolbar({ onSave }: { onSave: () => void }) {
   const applyLink = (href: string | null) => {
     if (linkRow === null) return;
     editor.update(() => {
-      $setSelection(linkRow.selectionAtOpen?.clone() ?? null);
+      if (linkRow.selectionAtOpen === null) {
+        // Opened before the editor ever had focus: a new link goes at the end, after any link
+        // already there.
+        const end = $getRoot().selectEnd();
+        $nearestLink(end.anchor.getNode())?.selectNext();
+      } else {
+        $setSelection(linkRow.selectionAtOpen.clone());
+      }
       const selection = $getSelection();
       if (
         href !== null &&

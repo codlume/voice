@@ -32,8 +32,16 @@ function editor() {
   });
 }
 
+// The editor as the Snippets page runs it, with the transforms that keep it showing what is saved.
+function editing(): LexicalEditor {
+  const edited = editor();
+  edited.registerNodeTransform(LinkNode, $storedLink);
+  edited.registerNodeTransform(ListNode, $storedList);
+  return edited;
+}
+
 function reload(text: SnippetText): SnippetText {
-  const loaded = editor();
+  const loaded = editing();
   withDOM(() => loaded.update(() => $writeSnippetText(text), { discrete: true }));
   const written = loaded.read($readSnippetText);
   if (written.expansionHtml !== null) expect(isSnippetHtml(written.expansionHtml)).toBe(true);
@@ -120,12 +128,16 @@ describe("snippet text", () => {
     ).toBe("https://example.com site (https://example.com) mail me (a@example.com)");
   });
 
-  it("marks list items in the plain text and flattens nested lists", () => {
+  it("marks list items in the plain text, flattens nested lists, and numbers from 1", () => {
     expect(
-      html("<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul><ol><li>x</li><li>y</li></ol>"),
+      html(
+        "<ul><li>a<ul><li>b</li><li>c</li></ul></li><li>d</li></ul>" +
+          '<ol start="3"><li>x</li><li>y</li></ol>',
+      ),
     ).toEqual({
-      expansion: "- a\n- b\n- c\n1. x\n2. y",
-      expansionHtml: "<ul><li>a</li><li>b</li><li>c</li></ul><ol><li>x</li><li>y</li></ol>",
+      expansion: "- a\n- b\n- c\n- d\n1. x\n2. y",
+      expansionHtml:
+        "<ul><li>a</li><li>b</li><li>c</li><li>d</li></ul><ol><li>x</li><li>y</li></ol>",
     });
   });
 
@@ -152,14 +164,6 @@ describe("snippet text", () => {
     });
   });
 });
-
-// The editor as the Snippets page runs it, with the transforms that keep it showing what is saved.
-function editing(): LexicalEditor {
-  const edited = editor();
-  edited.registerNodeTransform(LinkNode, $storedLink);
-  edited.registerNodeTransform(ListNode, $storedList);
-  return edited;
-}
 
 function load(edited: LexicalEditor, expansionHtml: string) {
   withDOM(() =>
