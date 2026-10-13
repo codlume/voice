@@ -135,7 +135,7 @@ export function createDictation(options: DictationOptions): Dictation {
       // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
       // restoring the previous contents. Copying earlier would race the helper saving them.
       if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
-        options.copy({ text: before.text, html: before.html });
+        options.copy(before.output);
       }
       finish(state.id, state.outcome);
     }
@@ -242,12 +242,7 @@ export function createDictation(options: DictationOptions): Dictation {
       }
       case "insert":
         track(effect.id, { insertStartedAt: now() });
-        send({
-          type: "insert",
-          id: effect.id,
-          text: effect.text,
-          ...(effect.html === null ? {} : { html: effect.html }),
-        });
+        send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
         return;
       case "remember":
         store.update((s) => ({ ...s, last: { raw: effect.raw, text: effect.text } }));

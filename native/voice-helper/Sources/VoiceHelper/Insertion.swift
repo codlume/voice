@@ -60,7 +60,18 @@ final class Insertion {
         case .ready(let element):
             focused = element
         }
-        switch forcePaste ? .unverified : insertViaAccessibility(focused: focused, text: text, html: html) {
+        let outcome: AccessibilityOutcome
+        if forcePaste {
+            outcome = .unverified
+        } else if !takesText(focused) {
+            outcome = .notEditable
+        } else if html != nil {
+            // The accessibility write takes plain text only; a paste keeps the formatting.
+            outcome = .unverified
+        } else {
+            outcome = insertViaAccessibility(focused: focused, text: text)
+        }
+        switch outcome {
         case .inserted:
             output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
         case .notEditable:
@@ -116,19 +127,19 @@ final class Insertion {
         case unchanged(AXUIElement, before: AXTextState)
     }
 
-    private func insertViaAccessibility(focused: AXUIElement?, text: String, html: String?) -> AccessibilityOutcome {
-        // No focused element is not proof that nothing is focused: Chromium and Electron answer
-        // that way without an accessibility client opt-in, and apps without a tree cannot
-        // answer at all. A paste keystroke reaches both.
-        guard let focused else { return .unverified }
+    // False only when the app describes the focused element and it takes no text (a button, a
+    // list, a window): pasting there inserts nothing and may trigger the app's own paste action.
+    // No focused element is not proof that nothing is focused: Chromium and Electron answer that
+    // way without an accessibility client opt-in, and apps without a tree cannot answer at all.
+    // A paste keystroke reaches both.
+    private func takesText(_ focused: AXUIElement?) -> Bool {
+        guard let focused else { return true }
         AXUIElementSetMessagingTimeout(focused, axMessagingTimeout)
-        // The app describes the focused element, and it takes no text (a button, a list, a
-        // window): pasting there inserts nothing and may trigger the app's own paste action.
-        guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
-            return .notEditable
-        }
-        // The accessibility write takes plain text only; a paste keeps the formatting.
-        guard html == nil else { return .unverified }
+        return isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute)
+    }
+
+    private func insertViaAccessibility(focused: AXUIElement?, text: String) -> AccessibilityOutcome {
+        guard let focused else { return .unverified }
         let before = textState(of: focused)
         guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
         else {

@@ -8,7 +8,7 @@ export type Session =
   | { phase: "recording"; id: string; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
   | { phase: "cleaning"; id: string; raw: string; rewrites: Rewrites }
-  | { phase: "inserting"; id: string; raw: string; text: string; html: string | null }
+  | { phase: "inserting"; id: string; raw: string; output: Output }
   | { phase: "done"; id: string; outcome: Outcome };
 
 export type InsertMethod = "accessibility" | "paste" | "none";
@@ -35,7 +35,7 @@ export type Effect =
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string }
-  | { type: "insert"; id: string; text: string; html: string | null }
+  | { type: "insert"; id: string; output: Output }
   | { type: "remember"; raw: string; text: string }
   | { type: "scheduleIdle"; id: string; ms: number };
 
@@ -74,11 +74,13 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
 }
 
 function insert(id: string, raw: string, { text, html }: Output): Step {
+  // Not the argument itself: a rewrite result also carries its match counts.
+  const output = { text, html };
   return {
-    state: { phase: "inserting", id, raw, text, html },
+    state: { phase: "inserting", id, raw, output },
     effects: [
       { type: "remember", raw, text },
-      { type: "insert", id, text, html },
+      { type: "insert", id, output },
     ],
   };
 }

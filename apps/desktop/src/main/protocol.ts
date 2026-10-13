@@ -26,7 +26,7 @@ export type HelperCommand =
   | { type: "capture.cancel"; id: string }
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
-  | { type: "insert"; id: string; text: string; html?: string }
+  | { type: "insert"; id: string; text: string; html: string | null }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }

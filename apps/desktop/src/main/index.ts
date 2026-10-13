@@ -367,10 +367,13 @@ async function main() {
     },
     log,
     onSessionDone: diagnostics.sessionDone,
+    // Without the charset, readers decode the HTML as Latin-1, as in the helper's paste.
     copy: ({ text, html }) =>
       html === null
         ? clipboard.writeText(text)
-        : clipboard.write([new ClipboardItem({ "text/plain": text, "text/html": html })]),
+        : clipboard.write([
+            new ClipboardItem({ "text/plain": text, "text/html": `<meta charset="utf-8">${html}` }),
+          ]),
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({

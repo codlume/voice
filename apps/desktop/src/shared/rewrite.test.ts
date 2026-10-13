@@ -412,6 +412,22 @@ describe("rewrite with formatted snippets", () => {
       entireDictation: false,
     });
   });
+
+  test("spaces a rich target would collapse keep their width, and single spaces stay spaces", () => {
+    const card = formatted(
+      "my card",
+      "Name:  Ada\n  Engineer",
+      "<p>Name:  <strong>Ada</strong><br>  Engineer</p><ul><li> one</li></ul><p><em> two</em></p>",
+    );
+    expect(expand("my card", [card]).html).toBe(
+      "<p>Name:&nbsp; <strong>Ada</strong><br>&nbsp; Engineer</p>" +
+        "<ul><li>&nbsp;one</li></ul><p><em>&nbsp;two</em></p>",
+    );
+    expect(expand("see   my name  now", [name]).html).toBe(
+      "see&nbsp; &nbsp;<strong>Ana</strong> Lopez&nbsp; now",
+    );
+    expect(expand("a\n b my name", [name]).html).toBe("a<br>&nbsp;b <strong>Ana</strong> Lopez");
+  });
 });
 
 describe("finalOutput", () => {
