@@ -2,11 +2,23 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { EMPTY_INSIGHTS, type DayKey, type Insights } from "../shared/insights.ts";
 import type { Dictated } from "./dictation.ts";
 import { add, createInsights, parseInsights, tally } from "./insights.ts";
+
+const saves = vi.hoisted(() => ({ hold: Promise.resolve(), started: [] as Promise<void>[] }));
+vi.mock("./atomic-file.ts", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./atomic-file.ts")>();
+  return {
+    writeFileAtomic: (file: string, text: string) => {
+      const write = saves.hold.then(() => real.writeFileAtomic(file, text));
+      saves.started.push(write);
+      return write;
+    },
+  };
+});
 
 const at = (day: string, time = "12:00") => new Date(`${day}T${time}:00`).getTime();
 
@@ -34,6 +46,11 @@ describe("tally", () => {
       tally(dictated({ raw, insertedCleanup: "So I think we're going to ship it." })).corrected,
     ).toBe(3);
     expect(tally(dictated({ raw, insertedCleanup: null })).corrected).toBe(0);
+    expect(
+      tally(
+        dictated({ raw: "I don't think it's ready", insertedCleanup: "I don’t think it’s ready." }),
+      ).corrected,
+    ).toBe(0);
     expect(tally(dictated({ raw: "hello there", insertedCleanup: "Hello there." })).corrected).toBe(
       0,
     );
@@ -142,6 +159,8 @@ describe("createInsights", () => {
     file = NodePath.join(dir, "insights.json");
     changes = [];
     logs = [];
+    saves.hold = Promise.resolve();
+    saves.started = [];
   });
   afterEach(async () => {
     await chmod(dir, 0o700);
@@ -214,6 +233,21 @@ describe("createInsights", () => {
     expect(changes.map((value) => value.days)).toEqual([{}, { "2026-10-13": 1 }]);
   });
 
+  test("a clear removes a session whose save was still in flight", async () => {
+    const insights = open();
+    let release!: () => void;
+    saves.hold = new Promise((resolve) => (release = resolve));
+    insights.record(dictated());
+    await vi.waitFor(() => expect(saves.started).toHaveLength(1));
+    const cleared = insights.clear();
+    release();
+    await cleared;
+    await insights.settled();
+    await Promise.all(saves.started);
+    expect(await exists()).toBe(false);
+    expect(await insights.get()).toEqual(EMPTY_INSIGHTS);
+  });
+
   test("the saved file holds no dictated words", async () => {
     const insights = open();
     insights.record(
@@ -235,6 +269,18 @@ describe("createInsights", () => {
     expect(await readFile(file, "utf8")).toBe(original);
     expect(await insights.get()).toEqual(EMPTY_INSIGHTS);
     expect(logs.some((line) => line.startsWith("insights: could not read the file"))).toBe(true);
+  });
+
+  test("a file from a newer format is never written over", async () => {
+    const original = `${JSON.stringify({ version: 2, days: { "2026-10-12": 40 }, futureCounter: 9 })}\n`;
+    await writeFile(file, original);
+    const insights = open();
+    insights.record(dictated());
+    await insights.settled();
+    expect(await readFile(file, "utf8")).toBe(original);
+    expect(await insights.get()).toEqual(EMPTY_INSIGHTS);
+    await insights.clear();
+    expect(await exists()).toBe(false);
   });
 
   test("a damaged file keeps its valid days, and one that is not JSON starts over", async () => {

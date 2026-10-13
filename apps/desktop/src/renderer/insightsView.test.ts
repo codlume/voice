@@ -33,8 +33,9 @@ describe("pace", () => {
   });
 
   test("claims faster than typing only above the average typist", () => {
-    expect(pace([{ words: 52, ms: 60_000 }])?.fasterThanTyping).toBe(1);
-    expect(pace([{ words: 51, ms: 60_000 }])?.fasterThanTyping).toBeNull();
+    expect(pace([{ words: 103, ms: 120_000 }])?.fasterThanTyping).toBeNull();
+    expect(pace([{ words: 52, ms: 60_000 }])?.fasterThanTyping).toBeNull();
+    expect(pace([{ words: 57, ms: 60_000 }])?.fasterThanTyping).toBe(1.1);
     expect(pace([{ words: 40, ms: 60_000 }])).toEqual({
       wpm: 40,
       sessions: 1,
@@ -60,17 +61,24 @@ describe("streaks", () => {
   });
 
   test("a run across the spring and autumn clock changes counts every day", () => {
-    const march = days(
-      "2026-03-07",
-      "2026-03-08",
-      "2026-03-09",
-      "2026-03-28",
-      "2026-03-29",
-      "2026-03-30",
-    );
-    expect(streaks(march, day("2026-03-30"))).toEqual({ current: 3, longest: 3 });
-    const autumn = days("2026-10-31", "2026-11-01", "2026-11-02");
-    expect(streaks(autumn, day("2026-11-02"))).toEqual({ current: 3, longest: 3 });
+    const zone = process.env.TZ;
+    process.env.TZ = "Europe/Warsaw";
+    try {
+      const march = days(
+        "2026-03-07",
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-28",
+        "2026-03-29",
+        "2026-03-30",
+      );
+      expect(streaks(march, day("2026-03-30"))).toEqual({ current: 3, longest: 3 });
+      const autumn = days("2026-10-24", "2026-10-25", "2026-10-26");
+      expect(streaks(autumn, day("2026-10-26"))).toEqual({ current: 3, longest: 3 });
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
   });
 });
 
@@ -111,7 +119,7 @@ describe("heatmap", () => {
   });
 
   test("a month that starts after today gets no label yet", () => {
-    expect(heatmap({}, day("2026-10-29"), 1).months).toEqual([]);
+    expect(heatmap({}, day("2026-09-30"), 1).months).toEqual([]);
   });
 });
 

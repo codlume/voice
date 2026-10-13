@@ -30,6 +30,10 @@ private func span(_ chunks: [(seconds: Double, rms: Float)]) -> Double? {
     #expect(SpeechSpan().milliseconds(sampleRate: rate) == nil)
 }
 
+@Test func roomNoiseFarBelowThePeakIsTrimmed() {
+    #expect(span([(1, 0.005), (1, 0.2), (1, 0.005)]) == 1400)
+}
+
 @Test func softSpeechWellBelowThePeakIsStillSpeech() {
     #expect(span([(1, quiet), (1, 0.003), (1, 0.08), (1, quiet)]) == 2400.0)
 }

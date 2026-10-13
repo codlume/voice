@@ -46,11 +46,12 @@ export function pace(recent: readonly Pace[]): InsightsView["pace"] {
   const words = recent.reduce((sum, sample) => sum + sample.words, 0);
   const ms = recent.reduce((sum, sample) => sum + sample.ms, 0);
   if (words === 0 || ms === 0) return null;
-  const wpm = Math.round(words / (ms / 60_000));
+  const rate = words / (ms / 60_000);
+  const times = Math.round((rate / TYPING_WPM) * 10) / 10;
   return {
-    wpm,
+    wpm: Math.round(rate),
     sessions: recent.length,
-    fasterThanTyping: wpm > TYPING_WPM ? Math.round((wpm / TYPING_WPM) * 10) / 10 : null,
+    fasterThanTyping: times > 1 ? times : null,
   };
 }
 

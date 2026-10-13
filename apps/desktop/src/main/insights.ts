@@ -90,11 +90,18 @@ async function load(file: string, log: Log): Promise<Insights | "unreadable"> {
     log(`insights: could not read the file, so nothing is recorded (${String(error)})`);
     return "unreadable";
   }
+  let json: unknown;
   try {
-    return parseInsights(JSON.parse(text));
+    json = JSON.parse(text);
   } catch {
+    log("insights: the file is not JSON, so counting starts over");
     return EMPTY_INSIGHTS;
   }
+  if (typeof json === "object" && json !== null && "version" in json && json.version !== 1) {
+    log(`insights: the file has version ${String(json.version)}, so nothing is recorded`);
+    return "unreadable";
+  }
+  return parseInsights(json);
 }
 
 export type Tally = {
@@ -150,7 +157,13 @@ function foldedWords(text: string, locale: string | undefined): string[] {
   }
   const found: string[] = [];
   for (const { segment, isWordLike } of segmenter.segment(text)) {
-    if (isWordLike) found.push(segment.normalize("NFC").toLocaleLowerCase(locale));
+    if (!isWordLike) continue;
+    found.push(
+      segment
+        .normalize("NFC")
+        .replace(/[‘’ʼ]/gu, "'")
+        .toLocaleLowerCase(locale),
+    );
   }
   return found;
 }

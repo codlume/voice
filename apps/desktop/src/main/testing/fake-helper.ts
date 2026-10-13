@@ -10,7 +10,6 @@ type Config = {
   asr?: string;
   permissions?: { microphone: string; accessibility: string };
   startMs?: number;
-  speechMs?: number | null;
   script?: { at: number; action: Action }[];
   control?: string;
   version?: number;
@@ -124,7 +123,7 @@ function handle(command: Record<string, unknown>) {
           text: config.transcript ?? "hello world",
           audioMs,
           asrMs: 40,
-          speechMs: config.speechMs === undefined ? audioMs : config.speechMs,
+          speechMs: audioMs,
         });
       }, 40);
       return;
