@@ -9,8 +9,8 @@ const CONTEXT_SIZE = 4096;
 export const CHUNK_TOKENS = 400;
 const OUTPUT_TOKEN_SLACK = 32;
 const MIN_TOKENS_FOR_RATE_ESTIMATE = 128;
-const WARM_GAP_MS = 25;
-const WARM_STYLE: CleanupStyle = { styling: "semi-formal" };
+const BUSY_GAP_MS = 25;
+const BUSY_STYLE: CleanupStyle = { styling: "semi-formal" };
 
 export type Generation = { chunk: string; output: string; truncated: boolean };
 type Output = Omit<Generation, "chunk">;
@@ -20,9 +20,9 @@ export type CleanResult = { text: string; chunks: number; cleaned: number };
 
 export type S1Mini = {
   load(): Promise<void>;
-  // Keeps the GPU busy with one-token generations for up to ms, or until a clean is requested.
-  // A no-op before load. Another call while warming moves the deadline.
-  warm(ms: number): void;
+  // Keeps the GPU busy with one-token generations for the next ms, or until a clean, generate, or
+  // dispose is requested. 0 stops it. A no-op until load() has been called.
+  keepGpuBusy(ms: number): void;
   // Aborting the signal or disposing withdraws the clean: generation stops within a token and the
   // promise rejects with the reason. Running out of budget is not an error: the chunk in flight
   // stops and every chunk not cleaned comes back as the user's exact words. The budget counts
@@ -41,8 +41,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
   let queue: Promise<unknown> = Promise.resolve();
   let disposal = new AbortController();
   let msPerToken: number | undefined;
-  let warmUntil = 0;
-  let warming = false;
+  let busyUntil = 0;
+  let busy = false;
 
   function load(): Promise<Engine> {
     if (engine) return engine;
@@ -60,27 +60,35 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return run;
   }
 
+  // Real work ends the busy loop, so it never queues behind it.
+  function work<T>(task: () => Promise<T>): Promise<T> {
+    busyUntil = 0;
+    return serialize(task);
+  }
+
   const withdrawal = (signal: AbortSignal | undefined) =>
     signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
 
-  // The GPU clocks down while the user speaks, so the first clean after that idle pays ~60 ms of
-  // ramp-up. Without the gap the loop slows the speech model running alongside it by ~10 ms.
-  async function keepWarm() {
-    warming = true;
+  // The GPU clocks down while the user speaks: a clean after 5 s of idle measured 216 ms against
+  // 155 ms right after another. Without the gap the loop slowed the speech model by ~10 ms.
+  async function busyLoop() {
+    busy = true;
     try {
-      while (engine && Date.now() < warmUntil) {
+      while (engine && Date.now() < busyUntil) {
         await serialize(async () => {
-          if (!engine || Date.now() >= warmUntil) return;
+          if (!engine || Date.now() >= busyUntil) return;
           const { model, completion } = await engine;
           await completion.generateCompletionWithMeta(
-            model.tokenize(buildS1MiniPrompt("ok", WARM_STYLE), true),
+            model.tokenize(buildS1MiniPrompt("ok", BUSY_STYLE), true),
             { signal: disposal.signal, temperature: 0, maxTokens: 1 },
           );
-        }).catch(() => undefined);
-        await new Promise((resolve) => setTimeout(resolve, WARM_GAP_MS));
+        }).catch(() => {
+          busyUntil = 0;
+        });
+        await new Promise((resolve) => setTimeout(resolve, BUSY_GAP_MS));
       }
     } finally {
-      warming = false;
+      busy = false;
     }
   }
 
@@ -110,18 +118,17 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     load: async () => {
       await load();
     },
-    warm: (ms) => {
+    keepGpuBusy: (ms) => {
       if (!engine) return;
-      warmUntil = Math.max(warmUntil, Date.now() + ms);
-      if (!warming) void keepWarm();
+      busyUntil = Date.now() + ms;
+      if (!busy) void busyLoop();
     },
     clean: (raw, style, { budgetMs, signal } = {}) => {
-      warmUntil = 0;
       const deadline = new AbortController();
       const deadlineAt = budgetMs === undefined ? Infinity : Date.now() + budgetMs;
       const timer =
         budgetMs === undefined ? undefined : setTimeout(() => deadline.abort(), budgetMs);
-      return serialize(async () => {
+      return work(async () => {
         const withdraw = withdrawal(signal);
         const { chunks, countTokens, run } = await prepare(raw, style, withdraw);
         const stop = AbortSignal.any([withdraw, deadline.signal]);
@@ -150,9 +157,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         };
       }).finally(() => clearTimeout(timer));
     },
-    generate: (raw, style, signal) => {
-      warmUntil = 0;
-      return serialize(async () => {
+    generate: (raw, style, signal) =>
+      work(async () => {
         const abort = withdrawal(signal);
         const { chunks, run } = await prepare(raw, style, abort);
         const generations: Generation[] = [];
@@ -161,12 +167,10 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           generations.push({ chunk: chunk.text, ...(await run(chunk, abort)) });
         }
         return generations;
-      });
-    },
+      }),
     dispose: () => {
-      warmUntil = 0;
       disposal.abort(new Error("Cleanup model disposed"));
-      return serialize(async () => {
+      return work(async () => {
         const pending = engine;
         engine = undefined;
         disposal = new AbortController();

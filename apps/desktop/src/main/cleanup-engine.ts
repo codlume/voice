@@ -2,7 +2,7 @@ import type { S1Mini } from "@voice/cleanup";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "warm" | "dispose">;
+export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "keepGpuBusy" | "dispose">;
 
 export const ABORT_GRACE_MS = 2000;
 export const DISPOSE_GRACE_MS = 2000;
@@ -22,7 +22,7 @@ const RequestSchema = Schema.Union([
     budgetMs: Schema.optionalKey(Schema.Finite),
   }),
   Schema.Struct({ type: Schema.Literal("abort"), id: Id }),
-  Schema.Struct({ type: Schema.Literal("warm"), ms: Schema.Finite }),
+  Schema.Struct({ type: Schema.Literal("keepGpuBusy"), ms: Schema.Finite }),
   Schema.Struct({ type: Schema.Literal("dispose"), id: Id }),
 ]);
 
@@ -101,8 +101,8 @@ export function serve(
       case "abort":
         cleans.get(request.id)?.abort();
         return;
-      case "warm":
-        engine?.warm(request.ms);
+      case "keepGpuBusy":
+        engine?.keepGpuBusy(request.ms);
         return;
       case "dispose":
         respond(request.id, async () => {
@@ -194,8 +194,8 @@ export function createS1MiniProcess({
       const reply = await send({ type: "load", id: nextId++, modelPath });
       if (reply.type !== "loaded") throw new Error(`cleanup engine replied ${reply.type}`);
     },
-    warm: (ms) => {
-      if (!lost && !disposal) post({ type: "warm", ms });
+    keepGpuBusy: (ms) => {
+      if (!lost && !disposal) post({ type: "keepGpuBusy", ms });
     },
     clean: async (raw, style, { signal, ...budget } = {}) => {
       signal?.throwIfAborted();

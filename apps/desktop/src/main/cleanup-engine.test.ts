@@ -35,11 +35,11 @@ function fakeEngine({ wedged = false } = {}) {
     modelPaths: [] as string[],
     loads: 0,
     disposes: 0,
-    warms: [] as number[],
+    busy: [] as number[],
     cleans: [] as Clean[],
   };
   const cleanStarted = deferred<Clean>();
-  const warmed = deferred<number>();
+  const busied = deferred<number>();
   const disposeStarted = deferred();
   const create = ({ modelPath: path }: { modelPath: string }): CleanupEngine => {
     calls.modelPaths.push(path);
@@ -47,9 +47,9 @@ function fakeEngine({ wedged = false } = {}) {
       async load() {
         calls.loads += 1;
       },
-      warm(ms) {
-        calls.warms.push(ms);
-        warmed.resolve(ms);
+      keepGpuBusy(ms) {
+        calls.busy.push(ms);
+        busied.resolve(ms);
       },
       clean: (raw, cleanStyle, request) =>
         new Promise((resolve, reject) => {
@@ -73,7 +73,7 @@ function fakeEngine({ wedged = false } = {}) {
     calls,
     create,
     cleanStarted: cleanStarted.promise,
-    warmed: warmed.promise,
+    busied: busied.promise,
     disposeStarted: disposeStarted.promise,
   };
 }
@@ -163,17 +163,22 @@ describe("cleanup engine process", () => {
     expect(clean.request).not.toHaveProperty("budgetMs");
   });
 
-  test("warm crosses to the engine, needs no reply, and is dropped after dispose", async () => {
-    const { proxy, engine } = connect();
+  test("keepGpuBusy crosses to the engine, needs no reply, and is not sent once dispose starts", async () => {
+    const { proxy, engine, received } = connect();
     await proxy.load();
 
-    proxy.warm(1000);
+    proxy.keepGpuBusy(1000);
+    await expect(engine.busied).resolves.toBe(1000);
+    const disposing = proxy.dispose();
+    proxy.keepGpuBusy(1000);
+    await disposing;
 
-    await expect(engine.warmed).resolves.toBe(1000);
-    expect(engine.calls.warms).toEqual([1000]);
-    await proxy.dispose();
-    expect(() => proxy.warm(1000)).not.toThrow();
-    expect(engine.calls.warms).toEqual([1000]);
+    expect(received.map((message) => (message as { type: string }).type)).toEqual([
+      "load",
+      "keepGpuBusy",
+      "dispose",
+    ]);
+    expect(engine.calls.busy).toEqual([1000]);
   });
 
   test("an engine error comes back with its name and message", async () => {

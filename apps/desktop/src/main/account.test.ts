@@ -592,7 +592,8 @@ describe("createAccount", () => {
       send: (command) => commands.push(command),
       cleanup: {
         loaded: () => true,
-        warm: () => {},
+        keepGpuBusy: () => {},
+        letGpuIdle: () => {},
         clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
       },
       onLevel: () => {},
@@ -670,7 +671,8 @@ describe("createAccount", () => {
       send: (command) => commands.push(command),
       cleanup: {
         loaded: () => true,
-        warm: () => {},
+        keepGpuBusy: () => {},
+        letGpuIdle: () => {},
         clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
       },
       onLevel: () => {},

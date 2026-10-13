@@ -22,8 +22,10 @@ export type Cleanup = {
   uninstall(): Promise<void>;
   unload(): Promise<void>;
   loaded(): boolean;
-  // Keeps the GPU busy while the speech model transcribes, so the clean that follows starts warm.
-  warm(): void;
+  // Keeps the GPU clocked up while the speech model transcribes, so the clean that follows does not
+  // pay the ramp-up. letGpuIdle ends it when no clean follows.
+  keepGpuBusy(): void;
+  letGpuIdle(): void;
   clean(raw: string, style: CleanupStyle, request: Required<CleanRequest>): Promise<CleanResult>;
   dispose(): Promise<void>;
 };
@@ -67,8 +69,8 @@ async function importModule(log: (message: string) => void): Promise<CleanupModu
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
 const WARM_UP_STYLE: CleanupStyle = { styling: "semi-formal" };
-// Transcription takes 150-250 ms; the cap only bounds the waste when no clean follows.
-const WARM_MS = 1000;
+// Typical transcription takes 150-250 ms. A longer one outlasts the cap and its clean starts cold.
+const GPU_BUSY_MS = 1000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -228,8 +230,11 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     // Rerunning the startup check reports installed, or reloads if cleanup came back on meanwhile.
     unload: () => disposeThen(loadIfOnDisk),
     loaded: () => model.phase === "loaded",
-    warm() {
-      if (model.phase === "loaded") model.model.warm(WARM_MS);
+    keepGpuBusy() {
+      if (model.phase === "loaded") model.model.keepGpuBusy(GPU_BUSY_MS);
+    },
+    letGpuIdle() {
+      if (model.phase === "loaded") model.model.keepGpuBusy(0);
     },
     clean(raw, style, request) {
       if (model.phase !== "loaded") return Promise.reject(new Error("cleanup model is not ready"));

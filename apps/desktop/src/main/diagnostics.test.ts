@@ -165,7 +165,8 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     send: () => {},
     cleanup: {
       loaded: () => true,
-      warm: () => {},
+      keepGpuBusy: () => {},
+      letGpuIdle: () => {},
       clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1 }),
     },
     onLevel: () => {},

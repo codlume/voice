@@ -19,7 +19,7 @@ import type { Store } from "./store.ts";
 export type DictationOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
-  cleanup: Pick<Cleanup, "clean" | "loaded" | "warm">;
+  cleanup: Pick<Cleanup, "clean" | "loaded" | "keepGpuBusy" | "letGpuIdle">;
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
@@ -122,6 +122,12 @@ export function createDictation(options: DictationOptions): Dictation {
       const overdue =
         state.phase === "transcribing" && before.phase === "transcribing" && state.overdue;
       if (state.phase !== before.phase || overdue) armWatchdog(state);
+      // Transcription is the window to keep the GPU clocked up for the clean that follows.
+      if (state.phase !== before.phase) {
+        if (state.phase === "transcribing" && willCleanup(state.id)) cleanup.keepGpuBusy();
+        else if (before.phase === "transcribing" && state.phase !== "cleaning")
+          cleanup.letGpuIdle();
+      }
     }
     for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
@@ -176,9 +182,6 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "cancelCapture":
         send({ type: "capture.cancel", id: effect.id });
-        return;
-      case "warmCleanup":
-        if (willCleanup(effect.id)) cleanup.warm();
         return;
       case "cleanup": {
         const startedAt = now();

@@ -34,9 +34,6 @@ export type Effect =
   | { type: "startCapture"; id: string }
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
-  // Transcription is the window to warm the cleanup model in; the runner skips it when cleanup
-  // will not run.
-  | { type: "warmCleanup"; id: string }
   | { type: "cleanup"; id: string; raw: string }
   | { type: "insert"; id: string; text: string }
   | { type: "remember"; raw: string; text: string }
@@ -72,10 +69,7 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
   }
   return {
     state: { phase: "transcribing", id, overdue: false },
-    effects: [
-      { type: "stopCapture", id, releasedAt },
-      { type: "warmCleanup", id },
-    ],
+    effects: [{ type: "stopCapture", id, releasedAt }],
   };
 }
 
@@ -137,10 +131,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStopped": {
       if (state.phase !== "recording") return same;
-      return {
-        state: { phase: "transcribing", id: state.id, overdue: false },
-        effects: [{ type: "warmCleanup", id: state.id }],
-      };
+      return { state: { phase: "transcribing", id: state.id, overdue: false }, effects: [] };
     }
     case "transcript": {
       const raw = event.text.trim();

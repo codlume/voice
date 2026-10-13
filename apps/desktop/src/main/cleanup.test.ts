@@ -44,7 +44,7 @@ function fakeModule(behavior: Behavior = {}) {
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
-    warms: [] as number[],
+    busy: [] as number[],
     requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
     lost: [] as ((message: string) => void)[],
@@ -80,8 +80,8 @@ function fakeModule(behavior: Behavior = {}) {
           await behavior.loadGate;
           if (behavior.loadError) throw new Error(behavior.loadError);
         },
-        warm(ms) {
-          calls.warms.push(ms);
+        keepGpuBusy(ms) {
+          calls.busy.push(ms);
         },
         async clean(raw, s, cleanRequest) {
           calls.cleans.push([raw, s]);
@@ -179,7 +179,7 @@ describe("createCleanup", () => {
     expect(fake.calls.requests).toEqual([undefined, request]);
   });
 
-  test("warm reaches the model once it is loaded, and nothing while it loads or after unload", async () => {
+  test("the GPU busy loop is started and stopped only on a loaded model", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     let finishLoad!: () => void;
     const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
@@ -187,18 +187,21 @@ describe("createCleanup", () => {
     const loading = cleanup.loadIfDownloaded();
     await expect.poll(() => fake.calls.loads).toBe(1);
 
-    cleanup.warm();
-    expect(fake.calls.warms).toEqual([]);
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toEqual([]);
     finishLoad();
     await loading;
-    cleanup.warm();
-    expect(fake.calls.warms).toHaveLength(1);
-    expect(fake.calls.warms[0]).toBeGreaterThan(0);
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toEqual([expect.any(Number), 0]);
+    expect(fake.calls.busy[0]).toBeGreaterThan(0);
 
     enabled = false;
     await cleanup.unload();
-    cleanup.warm();
-    expect(fake.calls.warms).toHaveLength(1);
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toHaveLength(2);
   });
 
   test("dispose during load frees the model once it loads and never reports ready", async () => {

@@ -80,7 +80,7 @@ function harness(opts: Options = {}) {
   const commands: HelperCommand[] = [];
   let transcribing: string | null = null;
   const cleans: string[] = [];
-  let warms = 0;
+  const gpu: ("busy" | "idle")[] = [];
   const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
   const budgets: number[] = [];
@@ -108,9 +108,8 @@ function harness(opts: Options = {}) {
     },
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
-      warm: () => {
-        warms += 1;
-      },
+      keepGpuBusy: () => gpu.push("busy"),
+      letGpuIdle: () => gpu.push("idle"),
       clean: (raw, style, { budgetMs, signal }) => {
         cleans.push(raw);
         styles.push(style);
@@ -157,7 +156,7 @@ function harness(opts: Options = {}) {
     helper,
     commands,
     cleans,
-    warms: () => warms,
+    gpu,
     styles,
     signals,
     budgets,
@@ -472,30 +471,55 @@ describe("createDictation", () => {
     expect(h.styles).toStrictEqual([{ styling: "casual" }]);
   });
 
-  test("a release after the minimum hold warms the cleanup model before the transcript arrives", async () => {
+  test("a release after the minimum hold keeps the GPU busy until the clean starts", async () => {
     const h = harness();
     const id = release(h, 800);
-    expect(h.warms()).toBe(1);
+    expect(h.gpu).toEqual(["busy"]);
     expect(h.cleans).toEqual([]);
     h.helper.transcript(id, "hey");
     await flush();
     expect(h.cleans).toEqual(["hey"]);
+    expect(h.gpu).toEqual(["busy"]);
   });
 
-  test("a capture the helper stops on its own warms the cleanup model", () => {
+  test("a capture the helper stops on its own keeps the GPU busy", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
-    expect(h.warms()).toBe(1);
+    expect(h.gpu).toEqual(["busy"]);
   });
 
-  test("a tap too short to transcribe warms nothing", () => {
+  test("a tap too short to transcribe leaves the GPU alone", () => {
     const h = harness();
     release(h, 100);
-    expect(h.warms()).toBe(0);
+    expect(h.gpu).toEqual([]);
+  });
+
+  test("an empty transcript lets the GPU idle at once", async () => {
+    const h = harness();
+    const id = release(h, 800);
+    h.helper.transcript(id, "  ");
+    await flush();
+    expect(h.cleans).toEqual([]);
+    expect(h.gpu).toEqual(["busy", "idle"]);
+  });
+
+  test("a failed transcription lets the GPU idle at once", () => {
+    const h = harness();
+    const id = release(h, 800);
+    h.dictation.onHelperEvent({ type: "transcript.failed", id, message: "decoder crashed" });
+    expect(h.gpu).toEqual(["busy", "idle"]);
+  });
+
+  test("an overdue transcription keeps the GPU busy", () => {
+    const h = harness();
+    const id = release(h, 800);
+    vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
+    expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
+    expect(h.gpu).toEqual(["busy"]);
   });
 
   test.each<[string, Options]>([
@@ -503,11 +527,11 @@ describe("createDictation", () => {
     ["the language has no cleanup", { dictationLanguage: "de" }],
     ["the model is not loaded", { cleanupLoaded: false }],
   ])(
-    "a release does not warm the cleanup model when %s, and the transcript is not cleaned",
+    "a release leaves the GPU idle when %s, and the transcript is inserted raw",
     async (_, opts) => {
       const h = harness(opts);
       const id = release(h, 800);
-      expect(h.warms()).toBe(0);
+      expect(h.gpu).toEqual([]);
       h.helper.transcript(id, "hey");
       await flush();
       expect(h.cleans).toEqual([]);
