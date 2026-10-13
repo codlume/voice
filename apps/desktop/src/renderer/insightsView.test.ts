@@ -1,7 +1,13 @@
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 
 import { EMPTY_INSIGHTS, type DayKey } from "../shared/insights.ts";
 import { cellLabel, heatmap, insightsView, level, pace, stepDay, streaks } from "./insightsView.ts";
+
+// West of UTC, a local-time slip moves every cell a day early. CI runs in UTC, so pin the zone
+// before the module builds its date formatters.
+vi.hoisted(() => {
+  process.env.TZ = "America/Los_Angeles";
+});
 
 const day = (key: string) => key as DayKey;
 const days = (...keys: string[]) => Object.fromEntries(keys.map((key) => [key, 100]));
@@ -116,6 +122,7 @@ describe("heatmap", () => {
     expect(map.months.map(({ column }) => column)).toEqual([1, 5]);
     expect(map.weeks[1]?.[2]?.day).toBe("2026-09-01");
     expect(map.weeks[5]?.[4]?.day).toBe("2026-10-01");
+    expect(heatmap({}, day("2026-08-13"), 3).months.map(({ column }) => column)).toEqual([0]);
   });
 
   test("a month that starts after today gets no label yet", () => {

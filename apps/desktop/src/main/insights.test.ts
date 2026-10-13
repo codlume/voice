@@ -283,6 +283,21 @@ describe("createInsights", () => {
     expect(await exists()).toBe(false);
   });
 
+  test("a file with a malformed version is kept, and a clear starts counting again", async () => {
+    const original = `{"version":{"toString":null},"days":{"2026-10-12":40}}\n`;
+    await writeFile(file, original);
+    const insights = open();
+    expect(await insights.get()).toEqual(EMPTY_INSIGHTS);
+    insights.record(dictated());
+    await insights.settled();
+    expect(await readFile(file, "utf8")).toBe(original);
+    await insights.clear();
+    expect(await exists()).toBe(false);
+    insights.record(dictated());
+    await insights.settled();
+    expect(await insights.get()).toMatchObject({ days: { "2026-10-13": 2 } });
+  });
+
   test("a damaged file keeps its valid days, and one that is not JSON starts over", async () => {
     await writeFile(file, JSON.stringify({ days: { "2026-10-01": 900, nope: 1 }, recent: "x" }));
     const damaged = open();

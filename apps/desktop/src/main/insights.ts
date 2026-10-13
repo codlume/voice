@@ -29,7 +29,11 @@ export function createInsights(options: {
 }): InsightsStore {
   const { file, log, onChange } = options;
   let generation = 0;
-  let current = load(file, log);
+  // Every method waits on current, so a load that throws must still settle.
+  let current = load(file, log).catch(() => {
+    log("insights: could not load the file, so nothing is recorded");
+    return "unreadable" as const;
+  });
   let writes = Promise.resolve();
 
   function mutate(change: (insights: Insights) => Insights) {
@@ -98,7 +102,7 @@ async function load(file: string, log: Log): Promise<Insights | "unreadable"> {
     return EMPTY_INSIGHTS;
   }
   if (typeof json === "object" && json !== null && "version" in json && json.version !== 1) {
-    log(`insights: the file has version ${String(json.version)}, so nothing is recorded`);
+    log("insights: the file is from another version, so nothing is recorded");
     return "unreadable";
   }
   return parseInsights(json);
