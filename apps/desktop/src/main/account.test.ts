@@ -637,6 +637,7 @@ describe("createAccount", () => {
       text: "hello world",
       audioMs: 800,
       asrMs: 1,
+      speechMs: 600,
     });
     await flush();
     expect(shownDuring).toEqual([]);

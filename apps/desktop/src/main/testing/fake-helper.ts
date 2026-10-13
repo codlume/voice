@@ -10,6 +10,7 @@ type Config = {
   asr?: string;
   permissions?: { microphone: string; accessibility: string };
   startMs?: number;
+  speechMs?: number | null;
   script?: { at: number; action: Action }[];
   control?: string;
   version?: number;
@@ -123,6 +124,7 @@ function handle(command: Record<string, unknown>) {
           text: config.transcript ?? "hello world",
           audioMs,
           asrMs: 40,
+          speechMs: config.speechMs === undefined ? audioMs : config.speechMs,
         });
       }, 40);
       return;
@@ -148,7 +150,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 7 });
+const ready = () => emit({ type: "ready", version: config.version ?? 8 });
 
 if (config.control) {
   const path = config.control;

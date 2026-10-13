@@ -10,7 +10,7 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 7;
+export const HELPER_PROTOCOL_VERSION = 8;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
@@ -101,6 +101,7 @@ const HelperEventSchema = Schema.Union([
     text: Schema.String,
     audioMs: Schema.Finite,
     asrMs: Schema.Finite,
+    speechMs: nullOnInvalid(Schema.Finite),
   }),
   Schema.Struct({
     type: Schema.Literal("transcript.failed"),

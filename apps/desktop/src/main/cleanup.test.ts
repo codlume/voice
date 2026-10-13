@@ -640,7 +640,14 @@ describe("followSettings", () => {
     const finish = (id: string, text: string) => {
       clock += 800;
       dictation.onHelperEvent({ type: "hotkey", action: "up" });
-      dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
+      dictation.onHelperEvent({
+        type: "transcript",
+        id,
+        text,
+        audioMs: 800,
+        asrMs: 100,
+        speechMs: 600,
+      });
     };
     return { store, cleanup, commands, dictation, setLanguage, record, finish };
   }

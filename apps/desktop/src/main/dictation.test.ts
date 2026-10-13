@@ -147,7 +147,14 @@ function harness(opts: Options = {}) {
   const helper = {
     transcript(sessionId: string, text: string) {
       if (transcribing !== sessionId) return;
-      onHelperEvent({ type: "transcript", id: sessionId, text, audioMs: 800, asrMs: 100 });
+      onHelperEvent({
+        type: "transcript",
+        id: sessionId,
+        text,
+        audioMs: 800,
+        asrMs: 100,
+        speechMs: 600,
+      });
     },
   };
   return {
@@ -181,7 +188,14 @@ async function dictate(h: ReturnType<typeof harness>, text: string) {
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
   vi.advanceTimersByTime(800);
   h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-  h.dictation.onHelperEvent({ type: "transcript", id, text, audioMs: 800, asrMs: 100 });
+  h.dictation.onHelperEvent({
+    type: "transcript",
+    id,
+    text,
+    audioMs: 800,
+    asrMs: 100,
+    speechMs: 600,
+  });
   await flush();
   return id;
 }
@@ -321,6 +335,7 @@ describe("createDictation", () => {
       text: "hello world",
       audioMs: 800,
       asrMs: 120,
+      speechMs: 600,
     });
     await flush();
     expect(h.cleans).toEqual(["hello world"]);
@@ -360,6 +375,7 @@ describe("createDictation", () => {
       text: "call Anna",
       audioMs: 800,
       asrMs: 120,
+      speechMs: 600,
     });
     await flush();
     vi.advanceTimersByTime(30);
@@ -400,7 +416,14 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(200);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 500 });
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "hi", audioMs: 0, asrMs: 10 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hi",
+      audioMs: 0,
+      asrMs: 10,
+      speechMs: 600,
+    });
     vi.advanceTimersByTime(100);
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
@@ -465,7 +488,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "hey", audioMs: 800, asrMs: 120 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hey",
+      audioMs: 800,
+      asrMs: 120,
+      speechMs: 600,
+    });
     await flush();
     expect(h.styles).toStrictEqual([{ styling: "casual" }]);
   });
@@ -571,6 +601,7 @@ describe("createDictation", () => {
       text: "raw words",
       audioMs: 800,
       asrMs: 100,
+      speechMs: 600,
     });
     await flush();
     expect(h.cleans).toEqual([]);
@@ -590,7 +621,14 @@ describe("createDictation", () => {
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-      h.dictation.onHelperEvent({ type: "transcript", id, text: raw, audioMs: 800, asrMs: 100 });
+      h.dictation.onHelperEvent({
+        type: "transcript",
+        id,
+        text: raw,
+        audioMs: 800,
+        asrMs: 100,
+        speechMs: 600,
+      });
       await flush();
       expect(h.cleans).toEqual([]);
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: raw });
@@ -634,6 +672,7 @@ describe("createDictation", () => {
         text: "first",
         audioMs: 800,
         asrMs: 100,
+        speechMs: 600,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({
@@ -663,6 +702,7 @@ describe("createDictation", () => {
         text: "second",
         audioMs: 800,
         asrMs: 100,
+        speechMs: 600,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({
@@ -682,7 +722,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "hi", audioMs: 800, asrMs: 100 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hi",
+      audioMs: 800,
+      asrMs: 100,
+      speechMs: 600,
+    });
     await flush();
     expect(h.cleans).toEqual(["hi"]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hi." });
@@ -703,6 +750,7 @@ describe("createDictation", () => {
         text: "keep me",
         audioMs: 800,
         asrMs: 100,
+        speechMs: 600,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me" });
@@ -727,6 +775,7 @@ describe("createDictation", () => {
       text: "one two three",
       audioMs: 800,
       asrMs: 100,
+      speechMs: 600,
     });
     await flush();
     const budgetMs = cleanupBudgetMs("one two three");
@@ -789,6 +838,7 @@ describe("createDictation", () => {
       text: "one",
       audioMs: 800,
       asrMs: 100,
+      speechMs: 600,
     });
     await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one") + CLEANUP_GRACE_MS);
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
@@ -805,6 +855,7 @@ describe("createDictation", () => {
       text: "two",
       audioMs: 800,
       asrMs: 100,
+      speechMs: 600,
     });
     await flush();
     expect(h.cleans).toEqual(["one", "two"]);
@@ -891,7 +942,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "stuck", audioMs: 800, asrMs: 100 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "stuck",
+      audioMs: 800,
+      asrMs: 100,
+      speechMs: 600,
+    });
     vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
     expect(h.store.state.session.phase).toBe("inserting");
     vi.advanceTimersByTime(1);
@@ -967,7 +1025,14 @@ describe("createDictation", () => {
       TRANSCRIBE_TIMEOUT_MS + TRANSCRIBE_OVERDUE_MIN_MS + IDLE_AFTER_OTHER_MS + 1,
     );
     expect(h.store.state.session).toEqual(idle);
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "late", audioMs: 800, asrMs: 100 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "late",
+      audioMs: 800,
+      asrMs: 100,
+      speechMs: 600,
+    });
     expect(h.store.state.last).toEqual({ raw: "late", text: "late" });
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
     expect(h.store.state.session).toEqual(idle);
@@ -1006,7 +1071,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "deviceChanged" });
-    h.dictation.onHelperEvent({ type: "transcript", id, text: "so far", audioMs: 800, asrMs: 100 });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "so far",
+      audioMs: 800,
+      asrMs: 100,
+      speechMs: 600,
+    });
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.store.state.session).toMatchObject({
       phase: "done",
@@ -1096,6 +1168,7 @@ describe("createDictation", () => {
       text: "one",
       audioMs: 800,
       asrMs: 100,
+      speechMs: 600,
     });
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS - 100);
