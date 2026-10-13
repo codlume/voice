@@ -44,9 +44,10 @@ export function $storedLink(link: LinkNode): void {
   }
 }
 
-// Saved lists number from 1 and have one level, so the editor shows them that way: an indented
-// item moves out to follow its parent.
+// Saved lists are bulleted or number from 1, and have one level, so the editor shows them that
+// way: a pasted task list loses its checkboxes, and an indented item moves out to follow its parent.
 export function $storedList(list: ListNode): void {
+  if (list.getListType() === "check") list.setListType("bullet");
   if (list.getStart() !== 1) list.setStart(1);
   const item = list.getParent();
   if (!$isListItemNode(item)) return;

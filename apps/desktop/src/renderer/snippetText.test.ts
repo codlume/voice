@@ -128,6 +128,13 @@ describe("snippet text", () => {
     ).toBe("https://example.com site (https://example.com) mail me (a@example.com)");
   });
 
+  it("drops a link with no text", () => {
+    expect(html('<p>a<a href="https://x.com"><strong></strong></a>b</p>')).toEqual({
+      expansion: "ab",
+      expansionHtml: null,
+    });
+  });
+
   it("marks list items in the plain text, flattens nested lists, and numbers from 1", () => {
     expect(
       html(
@@ -224,6 +231,38 @@ describe("what the editor shows", () => {
       { start: 1, items: ["x", "y"] },
       { start: 1, items: ["a", "b", "c", "d", "e"] },
     ]);
+  });
+
+  it("shows a pasted task list as the bullet list it saves as", () => {
+    const edited = editing();
+    load(
+      edited,
+      '<ul class="contains-task-list"><li class="task-list-item">' +
+        '<input type="checkbox" class="task-list-item-checkbox" checked disabled>done</li>' +
+        '<li class="task-list-item"><input type="checkbox" disabled>todo</li></ul>',
+    );
+    expect(
+      edited.read(() =>
+        $getRoot()
+          .getChildren()
+          .filter($isListNode)
+          .map((list) => list.getListType()),
+      ),
+    ).toEqual(["bullet"]);
+    expect(edited.read($readSnippetText)).toEqual({
+      expansion: "- done\n- todo",
+      expansionHtml: "<ul><li>done</li><li>todo</li></ul>",
+    });
+  });
+
+  it("opens stored HTML with no content as the same empty line as a new snippet", () => {
+    const stored = editing();
+    load(stored, "<strong></strong>");
+    const fresh = editing();
+    fresh.update(() => $writeSnippetText({ expansion: "", expansionHtml: null }), {
+      discrete: true,
+    });
+    expect(stored.getEditorState().toJSON()).toEqual(fresh.getEditorState().toJSON());
   });
 });
 
