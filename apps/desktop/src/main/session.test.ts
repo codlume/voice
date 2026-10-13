@@ -127,7 +127,10 @@ describe("hold and release", () => {
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 300 }]);
+    expect(effects).toEqual([
+      { type: "stopCapture", id: ID, releasedAt: 300 },
+      { type: "warmCleanup", id: ID },
+    ]);
   });
 
   test("a tap released before capture.started is tooShort once capture starts", () => {
@@ -162,10 +165,13 @@ describe("hold and release", () => {
     ]);
   });
 
-  test("a hold of 250 ms or more stops capture and transcribes", () => {
+  test("a hold of 250 ms or more stops capture, warms cleanup, and transcribes", () => {
     const { state, effects } = run([down(0), started(50), up(250)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 250 }]);
+    expect(effects).toEqual([
+      { type: "stopCapture", id: ID, releasedAt: 250 },
+      { type: "warmCleanup", id: ID },
+    ]);
   });
 
   test("Escape during starting cancels capture and returns straight to idle", () => {
@@ -270,11 +276,11 @@ describe("capture the helper stops on its own", () => {
   const stopped = (now: number) =>
     [{ type: "captureStopped", id: ID }, now] as [SessionEvent, number];
 
-  test("leaves listening at once, commands nothing, and ignores the release of the still-held key", () => {
+  test("leaves listening at once, warms cleanup, commands the helper nothing, and ignores the release of the still-held key", () => {
     const { state, effects } = run([...toRecording, stopped(600_000)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(toPillState(state)).toEqual({ kind: "processing", overdue: false });
-    expect(effects).toEqual([]);
+    expect(effects).toEqual([{ type: "warmCleanup", id: ID }]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
   });
 

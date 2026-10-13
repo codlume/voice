@@ -321,6 +321,67 @@ test("dispose aborts the running and queued cleans instead of waiting, then free
   expect(native.events).toEqual(["generate call ada", "aborted", "model.dispose", "llama.dispose"]);
 });
 
+test("warm keeps generating until a clean arrives, which follows the iteration in flight", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  await s1.load();
+  native.delayMs = () => 10;
+
+  s1.warm(1000);
+  await vi.advanceTimersByTimeAsync(75);
+  expect(native.active).toBe(1);
+  const clean = s1.clean("call ada", style);
+  await vi.advanceTimersByTimeAsync(20);
+
+  await expect(clean).resolves.toEqual(whole("CALL ADA"));
+  expect(native.events.slice(-3)).toEqual(["done", "generate call ada", "done"]);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(generations()).toEqual([...Array<string>(3).fill("generate ok"), "generate call ada"]);
+  expect(native.maxActive).toBe(1);
+});
+
+test("warm stops at its deadline, and a second warm moves the deadline instead of starting another loop", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  await s1.load();
+  native.delayMs = () => 10;
+
+  s1.warm(50);
+  await vi.advanceTimersByTimeAsync(40);
+  s1.warm(50);
+  await vi.advanceTimersByTimeAsync(200);
+
+  expect(generations()).toEqual(Array<string>(3).fill("generate ok"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(generations()).toHaveLength(3);
+  expect(native.maxActive).toBe(1);
+});
+
+test("warm before load does nothing, now or once the model loads", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+
+  s1.warm(1000);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(native.getLlamaCalls).toBe(0);
+  await s1.load();
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(native.events).toEqual([]);
+});
+
+test("dispose stops the warm loop and frees the model", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  await s1.load();
+  native.delayMs = () => Infinity;
+
+  s1.warm(60_000);
+  await expect.poll(() => native.events).toContain("generate ok");
+  await s1.dispose();
+
+  expect(native.events).toEqual(["generate ok", "aborted", "model.dispose", "llama.dispose"]);
+});
+
 test("the model reloads after dispose", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   await s1.load();

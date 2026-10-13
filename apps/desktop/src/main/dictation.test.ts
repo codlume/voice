@@ -80,6 +80,7 @@ function harness(opts: Options = {}) {
   const commands: HelperCommand[] = [];
   let transcribing: string | null = null;
   const cleans: string[] = [];
+  let warms = 0;
   const styles: CleanupStyle[] = [];
   const signals: AbortSignal[] = [];
   const budgets: number[] = [];
@@ -107,6 +108,9 @@ function harness(opts: Options = {}) {
     },
     cleanup: {
       loaded: () => opts.cleanupLoaded ?? true,
+      warm: () => {
+        warms += 1;
+      },
       clean: (raw, style, { budgetMs, signal }) => {
         cleans.push(raw);
         styles.push(style);
@@ -153,6 +157,7 @@ function harness(opts: Options = {}) {
     helper,
     commands,
     cleans,
+    warms: () => warms,
     styles,
     signals,
     budgets,
@@ -466,6 +471,49 @@ describe("createDictation", () => {
     await flush();
     expect(h.styles).toStrictEqual([{ styling: "casual" }]);
   });
+
+  test("a release after the minimum hold warms the cleanup model before the transcript arrives", async () => {
+    const h = harness();
+    const id = release(h, 800);
+    expect(h.warms()).toBe(1);
+    expect(h.cleans).toEqual([]);
+    h.helper.transcript(id, "hey");
+    await flush();
+    expect(h.cleans).toEqual(["hey"]);
+  });
+
+  test("a capture the helper stops on its own warms the cleanup model", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
+    expect(h.warms()).toBe(1);
+  });
+
+  test("a tap too short to transcribe warms nothing", () => {
+    const h = harness();
+    release(h, 100);
+    expect(h.warms()).toBe(0);
+  });
+
+  test.each<[string, Options]>([
+    ["cleanup is off", { cleanupEnabled: false }],
+    ["the language has no cleanup", { dictationLanguage: "de" }],
+    ["the model is not loaded", { cleanupLoaded: false }],
+  ])(
+    "a release does not warm the cleanup model when %s, and the transcript is not cleaned",
+    async (_, opts) => {
+      const h = harness(opts);
+      const id = release(h, 800);
+      expect(h.warms()).toBe(0);
+      h.helper.transcript(id, "hey");
+      await flush();
+      expect(h.cleans).toEqual([]);
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hey" });
+    },
+  );
 
   test("a dictation of only a trigger inserts the saved expansion without running cleanup", async () => {
     const expansion = "Best,\nAlex";

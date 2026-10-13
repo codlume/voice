@@ -2,7 +2,7 @@ import type { S1Mini } from "@voice/cleanup";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "dispose">;
+export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "warm" | "dispose">;
 
 export const ABORT_GRACE_MS = 2000;
 export const DISPOSE_GRACE_MS = 2000;
@@ -22,6 +22,7 @@ const RequestSchema = Schema.Union([
     budgetMs: Schema.optionalKey(Schema.Finite),
   }),
   Schema.Struct({ type: Schema.Literal("abort"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("warm"), ms: Schema.Finite }),
   Schema.Struct({ type: Schema.Literal("dispose"), id: Id }),
 ]);
 
@@ -100,6 +101,9 @@ export function serve(
       case "abort":
         cleans.get(request.id)?.abort();
         return;
+      case "warm":
+        engine?.warm(request.ms);
+        return;
       case "dispose":
         respond(request.id, async () => {
           for (const controller of cleans.values()) controller.abort();
@@ -174,7 +178,7 @@ export function createS1MiniProcess({
     exit: stopped,
   });
 
-  function send(request: Request): Promise<Reply> {
+  function send(request: Extract<Request, { id: number }>): Promise<Reply> {
     if (lost) return Promise.reject(lost);
     if (disposal && request.type !== "dispose") {
       return Promise.reject(new Error("cleanup model is disposing"));
@@ -189,6 +193,9 @@ export function createS1MiniProcess({
     load: async () => {
       const reply = await send({ type: "load", id: nextId++, modelPath });
       if (reply.type !== "loaded") throw new Error(`cleanup engine replied ${reply.type}`);
+    },
+    warm: (ms) => {
+      if (!lost && !disposal) post({ type: "warm", ms });
     },
     clean: async (raw, style, { signal, ...budget } = {}) => {
       signal?.throwIfAborted();

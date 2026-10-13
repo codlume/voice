@@ -44,6 +44,7 @@ function fakeModule(behavior: Behavior = {}) {
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
+    warms: [] as number[],
     requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
     lost: [] as ((message: string) => void)[],
@@ -78,6 +79,9 @@ function fakeModule(behavior: Behavior = {}) {
           calls.loads += 1;
           await behavior.loadGate;
           if (behavior.loadError) throw new Error(behavior.loadError);
+        },
+        warm(ms) {
+          calls.warms.push(ms);
         },
         async clean(raw, s, cleanRequest) {
           calls.cleans.push([raw, s]);
@@ -173,6 +177,28 @@ describe("createCleanup", () => {
     await expect(session).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
     expect(fake.calls.requests).toEqual([undefined, request]);
+  });
+
+  test("warm reaches the model once it is loaded, and nothing while it loads or after unload", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishLoad!: () => void;
+    const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
+    const cleanup = start(fake);
+    const loading = cleanup.loadIfDownloaded();
+    await expect.poll(() => fake.calls.loads).toBe(1);
+
+    cleanup.warm();
+    expect(fake.calls.warms).toEqual([]);
+    finishLoad();
+    await loading;
+    cleanup.warm();
+    expect(fake.calls.warms).toHaveLength(1);
+    expect(fake.calls.warms[0]).toBeGreaterThan(0);
+
+    enabled = false;
+    await cleanup.unload();
+    cleanup.warm();
+    expect(fake.calls.warms).toHaveLength(1);
   });
 
   test("dispose during load frees the model once it loads and never reports ready", async () => {
