@@ -18,7 +18,7 @@ import type {
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
-import { hotkeys } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
@@ -26,6 +26,7 @@ import { hotkeyLabels } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
+import { ResetButton, resetLayout } from "./ResetButton.tsx";
 import { Select } from "./Select.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { useAction } from "./useAction.ts";
@@ -136,31 +137,54 @@ export function GlobeHint() {
   );
 }
 
+// The default check uses ===, so settings that hold an object or array never match their default.
+type ScalarSetting = {
+  [K in keyof Settings]: Settings[K] extends object ? never : K;
+}[keyof Settings];
+
+// Undefined while the setting already holds its default, which hides the reset button.
+function resetSetting<K extends ScalarSetting>(
+  settings: Settings,
+  key: K,
+  action: Action,
+): (() => void) | undefined {
+  if (settings[key] === DEFAULT_SETTINGS[key]) return undefined;
+  return () => update(action, { [key]: DEFAULT_SETTINGS[key] });
+}
+
 // A native label passes its :hover and clicks to the labelled control, which is wrong for Select
-// triggers. Switch rows opt in to keep click-to-toggle on the title.
+// triggers. Switch rows opt in to keep click-to-toggle on the title. The reset button sits beside
+// the label, not inside it, so it stays out of the control's accessible name and click target.
 function Row({
   title,
   detail,
   disabled = false,
   nativeLabel = false,
+  onReset,
   children,
 }: {
   title: string;
   detail: string;
   disabled?: boolean;
   nativeLabel?: boolean;
+  onReset?: (() => void) | undefined;
   children: ReactNode;
 }) {
   return (
     <Field.Root {...stylex.props(styles.row, disabled && styles.disabled)}>
       <div {...stylex.props(styles.rowText)}>
-        <Field.Label
-          nativeLabel={nativeLabel}
-          render={nativeLabel ? undefined : <div />}
-          {...stylex.props(styles.rowTitle)}
-        >
-          {title}
-        </Field.Label>
+        <div {...stylex.props(resetLayout.titleLine)}>
+          <Field.Label
+            nativeLabel={nativeLabel}
+            render={nativeLabel ? undefined : <div />}
+            {...stylex.props(styles.rowTitle)}
+          >
+            {title}
+          </Field.Label>
+          <span {...stylex.props(resetLayout.slot)}>
+            {onReset && <ResetButton label={title} disabled={disabled} onReset={onReset} />}
+          </span>
+        </div>
         <p {...stylex.props(styles.rowDetail)}>{detail}</p>
       </div>
       {children}
@@ -220,14 +244,27 @@ const themes = [
   { value: "dark", label: "Dark" },
 ] as const satisfies readonly { value: Theme; label: string }[];
 
-function ThemePicker({ theme, onChange }: { theme: Theme; onChange: (theme: Theme) => void }) {
+function ThemePicker({
+  theme,
+  onChange,
+  onReset,
+}: {
+  theme: Theme;
+  onChange: (theme: Theme) => void;
+  onReset: (() => void) | undefined;
+}) {
   const titleId = useId();
   return (
     <div {...stylex.props(styles.row)}>
       <div {...stylex.props(styles.rowText)}>
-        <span id={titleId} {...stylex.props(styles.rowTitle)}>
-          Theme
-        </span>
+        <div {...stylex.props(resetLayout.titleLine)}>
+          <span id={titleId} {...stylex.props(styles.rowTitle)}>
+            Theme
+          </span>
+          <span {...stylex.props(resetLayout.slot)}>
+            {onReset && <ResetButton label="Theme" onReset={onReset} />}
+          </span>
+        </div>
         <p {...stylex.props(styles.rowDetail)}>Match your Mac, or pick light or dark.</p>
       </div>
       <Segmented labelledBy={titleId} options={themes} value={theme} onChange={onChange} />
@@ -320,6 +357,8 @@ export function GeneralSettings({
             test={microphoneTest}
             permission={microphonePermission}
             canTest={microphones.kind === "ready" && devices.length > 0 && !missing}
+            resetDisabled={microphoneAction.pending}
+            onReset={resetSetting(settings, "microphone", microphoneAction)}
           >
             <Select
               id="setting-microphone"
@@ -343,6 +382,7 @@ export function GeneralSettings({
           <Row
             title="Spoken language"
             detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
+            onReset={resetSetting(settings, "dictationLanguage", languageAction)}
           >
             <Select
               id="setting-dictation-language"
@@ -365,6 +405,7 @@ export function GeneralSettings({
             nativeLabel
             title="Copy transcript to clipboard"
             detail="Keeps each transcript on your clipboard too, replacing what you copied before."
+            onReset={resetSetting(settings, "copyToClipboard", clipboardAction)}
           >
             <Switch
               id="setting-copy-to-clipboard"
@@ -386,6 +427,11 @@ export function GeneralSettings({
             title="Update channel"
             detail="Stable gets regular releases. Nightly gets early builds."
             disabled={updates.status.kind === "installing"}
+            onReset={
+              updates.channel === updates.installedChannel
+                ? undefined
+                : () => void changeChannel(updates.installedChannel)
+            }
           >
             <Select
               id="setting-update-channel"
@@ -478,6 +524,7 @@ export function SystemSettings({
             nativeLabel
             title="Mute all audio while dictating"
             detail="Silences supported output devices while recording, then restores their previous audio state."
+            onReset={resetSetting(settings, "muteWhileDictating", audioAction)}
           >
             <Switch
               id="setting-mute-while-dictating"
@@ -498,11 +545,13 @@ export function SystemSettings({
           <ThemePicker
             theme={settings.theme}
             onChange={(theme) => update(appearanceAction, { theme })}
+            onReset={resetSetting(settings, "theme", appearanceAction)}
           />
           <Row
             nativeLabel
             title="Show in Dock"
             detail="When off, Voice stays out of the Dock and Cmd-Tab. Open it from the menu bar."
+            onReset={resetSetting(settings, "showInDock", appearanceAction)}
           >
             <Switch
               id="setting-show-in-dock"
@@ -514,6 +563,7 @@ export function SystemSettings({
             nativeLabel
             title="Show Flow Bar at all times"
             detail="When off, the Flow Bar appears only while you dictate."
+            onReset={resetSetting(settings, "alwaysShowPill", appearanceAction)}
           >
             <Switch
               id="setting-always-show-pill"
@@ -544,6 +594,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             nativeLabel
             title="Share crash reports"
             detail="Sends crashes, dictation timings, and app events, such as a helper restart or a failed cleanup. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
+            onReset={resetSetting(settings, "diagnostics", diagnosticsAction)}
           >
             <Switch
               id="setting-diagnostics"
@@ -709,7 +760,11 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
 
       <Section label="Dictation">
         <div {...stylex.props(styles.card)}>
-          <Row title="Hold to talk" detail="Hold the key while you speak.">
+          <Row
+            title="Hold to talk"
+            detail="Hold the key while you speak."
+            onReset={resetSetting(settings, "hotkey", hotkeyAction)}
+          >
             <Select
               id="setting-hotkey"
               value={settings.hotkey}

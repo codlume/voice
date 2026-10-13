@@ -1,8 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { Channel } from "../shared/api.ts";
+import { Channel, DEFAULT_SETTINGS } from "../shared/api.ts";
 import { publish } from "./publish.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, type AppState } from "./store.ts";
 
 const transcript = { raw: "meet ada at noon", text: "Meet Ada at noon." };

@@ -6,12 +6,11 @@ import * as SentryNode from "@sentry/node";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { configureIPC } from "../../node_modules/@sentry/electron/esm/main/ipc.js";
-import type { DiagnosticsConsent, Outcome } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type DiagnosticsConsent, type Outcome } from "../shared/api.ts";
 import { HELPER_EXIT_MESSAGE } from "./diagnostics-scrub.ts";
 import { sessionSpan, startDiagnostics, type Diagnostics } from "./diagnostics.ts";
 import { createDictation, type SessionReport } from "./dictation.ts";
 import { idle } from "./session.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore } from "./store.ts";
 
 // The Sentry SDK's main module parses the Electron version at load.

@@ -12,6 +12,7 @@ import {
   type MicrophoneTestAction,
 } from "./microphoneTestView.ts";
 import { smoothLevel } from "./pillView.ts";
+import { ResetButton, resetLayout } from "./ResetButton.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
@@ -124,12 +125,16 @@ export function MicrophoneRow({
   test,
   permission,
   canTest,
+  resetDisabled,
+  onReset,
   children,
 }: {
   detail: string;
   test: MicrophoneTest;
   permission: PermissionState;
   canTest: boolean;
+  resetDisabled: boolean;
+  onReset: (() => void) | undefined;
   children: ReactNode;
 }) {
   const [accessRequested, setAccessRequested] = useState(false);
@@ -165,9 +170,16 @@ export function MicrophoneRow({
     <Field.Root {...stylex.props(styles.row)}>
       <div {...stylex.props(styles.line)}>
         <div {...stylex.props(styles.text)}>
-          <Field.Label nativeLabel={false} render={<div />} {...stylex.props(styles.title)}>
-            Microphone
-          </Field.Label>
+          <div {...stylex.props(resetLayout.titleLine)}>
+            <Field.Label nativeLabel={false} render={<div />} {...stylex.props(styles.title)}>
+              Microphone
+            </Field.Label>
+            <span {...stylex.props(resetLayout.slot)}>
+              {onReset && (
+                <ResetButton label="Microphone" disabled={resetDisabled} onReset={onReset} />
+              )}
+            </span>
+          </div>
           <p {...stylex.props(styles.detail)}>{detail}</p>
         </div>
         <div {...stylex.props(styles.controls)}>

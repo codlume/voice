@@ -1,6 +1,11 @@
 import { expect, vi } from "vite-plus/test";
 
-import { VOICE_URL_SCHEME, type AccountIdentity, type AccountState } from "../shared/api.ts";
+import {
+  DEFAULT_SETTINGS,
+  VOICE_URL_SCHEME,
+  type AccountIdentity,
+  type AccountState,
+} from "../shared/api.ts";
 import {
   SIGN_IN_TIMEOUT_MS,
   createAccount,
@@ -13,7 +18,6 @@ import {
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 export const API_URL = "https://api-nightly.voice.codlume.com";

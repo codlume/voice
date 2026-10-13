@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import { DEFAULT_SETTINGS } from "../shared/api.ts";
 import { START_TIMEOUT_MS } from "./dictation.ts";
 import { MICROPHONE_TEST_MAX_MS, createMicrophoneTest } from "./microphone-test.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore } from "./store.ts";
 
 const usb = { uid: "usb", name: "USB Microphone" };
