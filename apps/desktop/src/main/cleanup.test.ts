@@ -44,6 +44,7 @@ function fakeModule(behavior: Behavior = {}) {
     loads: 0,
     disposes: 0,
     cleans: [] as [string, CleanupStyle][],
+    busy: [] as number[],
     requests: [] as (CleanRequest | undefined)[],
     downloadSignals: [] as (AbortSignal | undefined)[],
     lost: [] as ((message: string) => void)[],
@@ -78,6 +79,9 @@ function fakeModule(behavior: Behavior = {}) {
           calls.loads += 1;
           await behavior.loadGate;
           if (behavior.loadError) throw new Error(behavior.loadError);
+        },
+        keepGpuBusy(ms) {
+          calls.busy.push(ms);
         },
         async clean(raw, s, cleanRequest) {
           calls.cleans.push([raw, s]);
@@ -173,6 +177,31 @@ describe("createCleanup", () => {
     await expect(session).resolves.toEqual(whole("HELLO"));
     expect(fake.calls.cleans.map(([raw]) => raw)).toEqual([fake.calls.cleans[0]![0], "hello"]);
     expect(fake.calls.requests).toEqual([undefined, request]);
+  });
+
+  test("the GPU busy loop is started and stopped only on a loaded model", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    let finishLoad!: () => void;
+    const fake = fakeModule({ loadGate: new Promise((resolve) => (finishLoad = resolve)) });
+    const cleanup = start(fake);
+    const loading = cleanup.loadIfDownloaded();
+    await expect.poll(() => fake.calls.loads).toBe(1);
+
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toEqual([]);
+    finishLoad();
+    await loading;
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toEqual([expect.any(Number), 0]);
+    expect(fake.calls.busy[0]).toBeGreaterThan(0);
+
+    enabled = false;
+    await cleanup.unload();
+    cleanup.keepGpuBusy();
+    cleanup.letGpuIdle();
+    expect(fake.calls.busy).toHaveLength(2);
   });
 
   test("dispose during load frees the model once it loads and never reports ready", async () => {

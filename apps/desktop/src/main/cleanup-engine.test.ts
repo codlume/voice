@@ -31,14 +31,25 @@ type Clean = {
 };
 
 function fakeEngine({ wedged = false } = {}) {
-  const calls = { modelPaths: [] as string[], loads: 0, disposes: 0, cleans: [] as Clean[] };
+  const calls = {
+    modelPaths: [] as string[],
+    loads: 0,
+    disposes: 0,
+    busy: [] as number[],
+    cleans: [] as Clean[],
+  };
   const cleanStarted = deferred<Clean>();
+  const busied = deferred<number>();
   const disposeStarted = deferred();
   const create = ({ modelPath: path }: { modelPath: string }): CleanupEngine => {
     calls.modelPaths.push(path);
     return {
       async load() {
         calls.loads += 1;
+      },
+      keepGpuBusy(ms) {
+        calls.busy.push(ms);
+        busied.resolve(ms);
       },
       clean: (raw, cleanStyle, request) =>
         new Promise((resolve, reject) => {
@@ -62,6 +73,7 @@ function fakeEngine({ wedged = false } = {}) {
     calls,
     create,
     cleanStarted: cleanStarted.promise,
+    busied: busied.promise,
     disposeStarted: disposeStarted.promise,
   };
 }
@@ -149,6 +161,24 @@ describe("cleanup engine process", () => {
 
     await expect(cleaning).resolves.toEqual({ text: "Warm up.", chunks: 1, cleaned: 1 });
     expect(clean.request).not.toHaveProperty("budgetMs");
+  });
+
+  test("keepGpuBusy crosses to the engine, needs no reply, and is not sent once dispose starts", async () => {
+    const { proxy, engine, received } = connect();
+    await proxy.load();
+
+    proxy.keepGpuBusy(1000);
+    await expect(engine.busied).resolves.toBe(1000);
+    const disposing = proxy.dispose();
+    proxy.keepGpuBusy(1000);
+    await disposing;
+
+    expect(received.map((message) => (message as { type: string }).type)).toEqual([
+      "load",
+      "keepGpuBusy",
+      "dispose",
+    ]);
+    expect(engine.calls.busy).toEqual([1000]);
   });
 
   test("an engine error comes back with its name and message", async () => {

@@ -163,7 +163,12 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   const dictation = createDictation({
     store,
     send: () => {},
-    cleanup: { loaded: () => true, clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1 }) },
+    cleanup: {
+      loaded: () => true,
+      keepGpuBusy: () => {},
+      letGpuIdle: () => {},
+      clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1 }),
+    },
     onLevel: () => {},
     log: () => {},
     onSessionDone: diagnostics.sessionDone,

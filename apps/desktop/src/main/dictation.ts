@@ -19,7 +19,7 @@ import type { Store } from "./store.ts";
 export type DictationOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
-  cleanup: Pick<Cleanup, "clean" | "loaded">;
+  cleanup: Pick<Cleanup, "clean" | "loaded" | "keepGpuBusy" | "letGpuIdle">;
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
@@ -104,6 +104,16 @@ export function createDictation(options: DictationOptions): Dictation {
   }
   let watchdog: NodeJS.Timeout | null = null;
 
+  // The language is the one captured at the start of the session, not the current setting.
+  function willCleanup(id: string): boolean {
+    return (
+      started?.id === id &&
+      supportsCleanup(started.language) &&
+      store.state.settings.cleanup.enabled &&
+      cleanup.loaded()
+    );
+  }
+
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
@@ -112,6 +122,12 @@ export function createDictation(options: DictationOptions): Dictation {
       const overdue =
         state.phase === "transcribing" && before.phase === "transcribing" && state.overdue;
       if (state.phase !== before.phase || overdue) armWatchdog(state);
+      // Transcription is the window to keep the GPU clocked up for the clean that follows.
+      if (state.phase !== before.phase) {
+        if (state.phase === "transcribing" && willCleanup(state.id)) cleanup.keepGpuBusy();
+        else if (before.phase === "transcribing" && state.phase !== "cleaning")
+          cleanup.letGpuIdle();
+      }
     }
     for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
@@ -294,11 +310,7 @@ export function createDictation(options: DictationOptions): Dictation {
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup:
-            started?.id === event.id &&
-            supportsCleanup(started.language) &&
-            store.state.settings.cleanup.enabled &&
-            cleanup.loaded(),
+          cleanup: willCleanup(event.id),
           rewrites: {
             dictionary: store.state.settings.dictionary,
             snippets: store.state.settings.snippets,
