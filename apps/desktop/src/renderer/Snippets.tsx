@@ -37,7 +37,13 @@ export function Snippets({
       copy={copy}
       records={snippets}
       save={(next) => hubApi().updateSettings({ snippets: next })}
-      blank={() => ({ id: crypto.randomUUID(), trigger: "", expansion: "", enabled: true })}
+      blank={() => ({
+        id: crypto.randomUUID(),
+        trigger: "",
+        expansion: "",
+        expansionHtml: null,
+        enabled: true,
+      })}
       name={(snippet) => snippet.trigger}
       example={{ title: "my email", detail: "name@example.com" }}
       row={(snippet) => ({

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
+import type { Output } from "../shared/rewrite.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -23,7 +24,7 @@ export type DictationOptions = {
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
-  copy: (text: string) => void;
+  copy: (output: Output) => void;
   now?: () => number;
 };
 
@@ -134,7 +135,7 @@ export function createDictation(options: DictationOptions): Dictation {
       // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
       // restoring the previous contents. Copying earlier would race the helper saving them.
       if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
-        options.copy(before.text);
+        options.copy(before.output);
       }
       finish(state.id, state.outcome);
     }
@@ -241,7 +242,7 @@ export function createDictation(options: DictationOptions): Dictation {
       }
       case "insert":
         track(effect.id, { insertStartedAt: now() });
-        send({ type: "insert", id: effect.id, text: effect.text });
+        send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
         return;
       case "remember":
         store.update((s) => ({ ...s, last: { raw: effect.raw, text: effect.text } }));
