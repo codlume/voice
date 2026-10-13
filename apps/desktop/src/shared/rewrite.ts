@@ -209,7 +209,7 @@ function correct({ phrase, replacement }: DictionaryEntry, matched: string): str
 
 // What to insert after cleanup: the cleaned text rewritten, unless cleanup lost a snippet trigger
 // the raw transcript had (the local model cannot be told to keep them), then the rewritten raw
-// transcript.
+// transcript. Its text is "" only when cleanup emptied a transcript that had no trigger.
 export function finalRewrite(
   raw: string,
   cleaned: string,

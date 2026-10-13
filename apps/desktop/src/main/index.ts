@@ -751,8 +751,9 @@ async function main() {
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
 
-  // Electron quits without waiting on promises, so the first quit only starts the shutdown. The
-  // quit that follows it passes.
+  // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
+  // settings save, the Insights write, the helper, and the cleanup process get to finish, and their
+  // logs get sent. The quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
