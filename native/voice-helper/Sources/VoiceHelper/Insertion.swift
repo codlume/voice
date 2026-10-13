@@ -51,7 +51,7 @@ final class Insertion {
         return target
     }
 
-    func insert(id: String, text: String, target: (id: String, target: InsertTarget)?) {
+    func insert(id: String, text: String, html: String?, target: (id: String, target: InsertTarget)?) {
         let focused: AXUIElement?
         switch check(id: id, target: target) {
         case .refused(let reason):
@@ -60,13 +60,13 @@ final class Insertion {
         case .ready(let element):
             focused = element
         }
-        switch forcePaste ? .unverified : insertViaAccessibility(focused: focused, text: text) {
+        switch forcePaste ? .unverified : insertViaAccessibility(focused: focused, text: text, html: html) {
         case .inserted:
             output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
         case .notEditable:
             output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
         case .unverified:
-            paste(id: id, text: text)
+            paste(id: id, text: text, html: html)
         case .unchanged(let focused, let before):
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
@@ -74,7 +74,7 @@ final class Insertion {
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
                     output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
                 } else {
-                    paste(id: id, text: text)
+                    paste(id: id, text: text, html: html)
                 }
             }
         }
@@ -116,7 +116,7 @@ final class Insertion {
         case unchanged(AXUIElement, before: AXTextState)
     }
 
-    private func insertViaAccessibility(focused: AXUIElement?, text: String) -> AccessibilityOutcome {
+    private func insertViaAccessibility(focused: AXUIElement?, text: String, html: String?) -> AccessibilityOutcome {
         // No focused element is not proof that nothing is focused: Chromium and Electron answer
         // that way without an accessibility client opt-in, and apps without a tree cannot
         // answer at all. A paste keystroke reaches both.
@@ -127,6 +127,8 @@ final class Insertion {
         guard isSettable(focused, kAXSelectedTextAttribute) || isSettable(focused, kAXValueAttribute) else {
             return .notEditable
         }
+        // The accessibility write takes plain text only; a paste keeps the formatting.
+        guard html == nil else { return .unverified }
         let before = textState(of: focused)
         guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
         else {
@@ -160,7 +162,7 @@ final class Insertion {
         return AXTextState(value: text, selection: selection)
     }
 
-    private func paste(id: String, text: String) {
+    private func paste(id: String, text: String, html: String?) {
         let pasteboard = NSPasteboard.general
         let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
             let items = pasteboard.pasteboardItems ?? []
@@ -173,6 +175,8 @@ final class Insertion {
         // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
         pasteboard.prepareForNewContents(with: .currentHostOnly)
         let item = NSPasteboardItem()
+        // Without the charset, readers decode the HTML as Latin-1 and garble non-ASCII text.
+        if let html { item.setString("<meta charset=\"utf-8\">" + html, forType: .html) }
         item.setString(text, forType: .string)
         item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))

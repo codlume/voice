@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { DictionaryEntry } from "../shared/dictionary.ts";
+import type { Output } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
@@ -43,6 +44,14 @@ type Options = {
   copyToClipboard?: boolean;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
+};
+
+const formattedName: Snippet = {
+  id: "1",
+  trigger: "my name",
+  expansion: "Ana",
+  expansionHtml: "<p><em>Ana</em></p>",
+  enabled: true,
 };
 
 function harness(opts: Options = {}) {
@@ -89,7 +98,7 @@ function harness(opts: Options = {}) {
   const entries: DiagnosticLog[] = [];
   const phases: string[] = [];
   const reports: SessionReport[] = [];
-  const copies: string[] = [];
+  const copies: Output[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
@@ -127,7 +136,7 @@ function harness(opts: Options = {}) {
       if (entry) entries.push(entry);
     },
     onSessionDone: (report) => reports.push(report),
-    copy: (text) => copies.push(text),
+    copy: (output) => copies.push(output),
   });
   const id = () => {
     const session = store.state.session;
@@ -540,11 +549,25 @@ describe("createDictation", () => {
 
   test("a dictation of only a trigger inserts the saved expansion without running cleanup", async () => {
     const expansion = "Best,\nAlex";
-    const h = harness({ snippets: [{ id: "1", trigger: "sign off", expansion, enabled: true }] });
+    const h = harness({
+      snippets: [{ id: "1", trigger: "sign off", expansion, expansionHtml: null, enabled: true }],
+    });
     const id = await dictate(h, "Sign off.");
     expect(h.cleans).toEqual([]);
     expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion });
     expect(h.store.state.last).toEqual({ raw: "Sign off.", text: expansion });
+  });
+
+  test("a formatted snippet sends its HTML to the helper and keeps history plain", async () => {
+    const h = harness({ snippets: [formattedName] });
+    const id = await dictate(h, "sign it my name");
+    expect(h.commands.at(-1)).toEqual({
+      type: "insert",
+      id,
+      text: "sign it Ana.",
+      html: "sign it <em>Ana</em>.",
+    });
+    expect(h.store.state.last).toEqual({ raw: "sign it my name", text: "sign it Ana." });
   });
 
   test("the saved dictionary fixes the cleaned text while cleanup and history get the raw words", async () => {
@@ -826,20 +849,33 @@ describe("createDictation", () => {
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world." });
       expect(h.copies).toEqual([]);
       h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
-      expect(h.copies).toEqual(["hello world."]);
+      expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
       expect(h.store.state.session).toEqual(idle);
-      expect(h.copies).toEqual(["hello world."]);
+      expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
     });
 
     test("copies the text with its snippets expanded", async () => {
       const snippets = [
-        { id: "1", trigger: "my email", expansion: "name@example.com", enabled: true },
+        {
+          id: "1",
+          trigger: "my email",
+          expansion: "name@example.com",
+          expansionHtml: null,
+          enabled: true,
+        },
       ];
       const h = harness({ copyToClipboard: true, snippets });
       const id = await dictate(h, "send it to my email");
       h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
-      expect(h.copies).toEqual(["send it to name@example.com."]);
+      expect(h.copies).toEqual([{ text: "send it to name@example.com.", html: null }]);
+    });
+
+    test("copies both the plain text and the HTML of a formatted snippet", async () => {
+      const h = harness({ copyToClipboard: true, snippets: [formattedName] });
+      const id = await dictate(h, "sign it my name");
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.copies).toEqual([{ text: "sign it Ana.", html: "sign it <em>Ana</em>." }]);
     });
 
     test("copies the text when insertion fails", async () => {
@@ -855,7 +891,7 @@ describe("createDictation", () => {
         phase: "done",
         outcome: { kind: "notInserted" },
       });
-      expect(h.copies).toEqual(["keep me"]);
+      expect(h.copies).toEqual([{ text: "keep me", html: null }]);
     });
 
     test("copies the text when the helper never answers the insert", async () => {
@@ -864,7 +900,7 @@ describe("createDictation", () => {
       vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
       expect(h.copies).toEqual([]);
       vi.advanceTimersByTime(1);
-      expect(h.copies).toEqual(["stuck"]);
+      expect(h.copies).toEqual([{ text: "stuck", html: null }]);
     });
 
     test("copies the text when the helper exits mid-insert", async () => {
@@ -872,7 +908,7 @@ describe("createDictation", () => {
       await dictate(h, "x");
       h.dictation.dispatch({ type: "helperExited" });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "failed" } });
-      expect(h.copies).toEqual(["x"]);
+      expect(h.copies).toEqual([{ text: "x", html: null }]);
     });
 
     test("copies nothing when the setting is off", async () => {

@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  ClipboardItem,
   dialog,
   Menu,
   nativeTheme,
@@ -366,7 +367,10 @@ async function main() {
     },
     log,
     onSessionDone: diagnostics.sessionDone,
-    copy: (text) => clipboard.writeText(text),
+    copy: ({ text, html }) =>
+      html === null
+        ? clipboard.writeText(text)
+        : clipboard.write([new ClipboardItem({ "text/plain": text, "text/html": html })]),
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({

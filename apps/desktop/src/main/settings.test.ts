@@ -223,6 +223,7 @@ describe("applyPatch", () => {
     id: "1",
     trigger: "my email",
     expansion: "name@example.com\n",
+    expansionHtml: null,
     enabled: true,
   };
 
@@ -232,7 +233,13 @@ describe("applyPatch", () => {
   });
 
   test("saves a switched-off snippet as switched off", () => {
-    const off = { id: "2", trigger: "address", expansion: "1 Main St", enabled: false };
+    const off = {
+      id: "2",
+      trigger: "address",
+      expansion: "1 Main St",
+      expansionHtml: null,
+      enabled: false,
+    };
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET, off] });
     expect(saved.snippets).toEqual([VALID_SNIPPET, off]);
   });
@@ -277,7 +284,13 @@ describe("applyPatch", () => {
 
   test("a phrase that is also a snippet trigger never blocks a save of either list", () => {
     const shadow = { ...WORD, phrase: "My Email" };
-    const other = { id: "2", trigger: "sig", expansion: "Best, A", enabled: true };
+    const other = {
+      id: "2",
+      trigger: "sig",
+      expansion: "Best, A",
+      expansionHtml: null,
+      enabled: true,
+    };
     const saved = applyPatch(DEFAULT_SETTINGS, {
       snippets: [VALID_SNIPPET, other],
       dictionary: [shadow],
@@ -295,8 +308,8 @@ describe("applyPatch", () => {
 
   test("two loaded triggers the page would refuse as one never block a later save", () => {
     const twins = [
-      { id: "a", trigger: "café", expansion: "Café Nero", enabled: true },
-      { id: "b", trigger: "cafe", expansion: "coffee", enabled: true },
+      { id: "a", trigger: "café", expansion: "Café Nero", expansionHtml: null, enabled: true },
+      { id: "b", trigger: "cafe", expansion: "coffee", expansionHtml: null, enabled: true },
       VALID_SNIPPET,
     ];
     const saved = applyPatch(DEFAULT_SETTINGS, { snippets: twins });
@@ -373,7 +386,7 @@ describe("load and save", () => {
         snippets: [valid, { id: "2", trigger: "   ", expansion: "x" }, { id: "3" }],
       }),
     );
-    expect(loadSettings(file).snippets).toEqual([{ ...valid, enabled: true }]);
+    expect(loadSettings(file).snippets).toEqual([{ ...valid, expansionHtml: null, enabled: true }]);
   });
 
   test("a settings file from before the dictionary loads with an empty one", async () => {
@@ -433,7 +446,15 @@ describe("load and save", () => {
       updateChannel: "nightly",
       theme: "dark",
       cleanup: { enabled: false },
-      snippets: [{ id: "1", trigger: "my email", expansion: "name@example.com\n", enabled: false }],
+      snippets: [
+        {
+          id: "1",
+          trigger: "my email",
+          expansion: "name@example.com\n",
+          expansionHtml: null,
+          enabled: false,
+        },
+      ],
       dictionary: [
         { id: "1", phrase: "Hadryś", replacement: null },
         { id: "2", phrase: "btw", replacement: "by the way" },

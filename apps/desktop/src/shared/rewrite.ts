@@ -5,8 +5,10 @@ import type { Snippet } from "./snippets.ts";
 /** Everything the user saved that rewrites dictated text. */
 export type Rewrites = { dictionary: readonly DictionaryEntry[]; snippets: readonly Snippet[] };
 
+export type Output = { text: string; html: string | null };
+
 // `snippets` counts the snippet matches; 0 with `text` unchanged means nothing matched.
-export type Rewritten = { text: string; snippets: number; entireDictation: boolean };
+export type Rewritten = Output & { snippets: number; entireDictation: boolean };
 
 type Rule = { kind: "entry"; entry: DictionaryEntry } | { kind: "snippet"; snippet: Snippet };
 
@@ -92,7 +94,7 @@ function foldAccents(text: string) {
  */
 export function rewrite(text: string, rewrites: Rewrites): Rewritten {
   const { rules, regex } = matcher(rewrites);
-  if (regex === null) return { text, snippets: 0, entireDictation: false };
+  if (regex === null) return { text, html: null, snippets: 0, entireDictation: false };
   const { folded, source } = foldAccents(text);
   const found: Found[] = [];
   regex.lastIndex = 0;
@@ -110,16 +112,46 @@ export function rewrite(text: string, rewrites: Rewrites): Rewritten {
     found.push({ rule, start, end });
   }
   const whole = alone(text, found);
-  if (whole) return { text: whole.expansion, snippets: 1, entireDictation: true };
-  let result = "";
+  if (whole) return { ...join([expanded(whole)]), snippets: 1, entireDictation: true };
+  const pieces: Output[] = [];
   let copied = 0;
   let count = 0;
   for (const { rule, start, end } of found) {
-    result += text.slice(copied, start) + write(rule, text.slice(start, end));
+    pieces.push(plain(text.slice(copied, start)), write(rule, text.slice(start, end)));
     copied = end;
     if (rule.kind === "snippet") count += 1;
   }
-  return { text: result + text.slice(copied), snippets: count, entireDictation: false };
+  pieces.push(plain(text.slice(copied)));
+  return { ...join(pieces), snippets: count, entireDictation: false };
+}
+
+const plain = (text: string): Output => ({ text, html: null });
+const expanded = (snippet: Snippet): Output => ({
+  text: snippet.expansion,
+  html: snippet.expansionHtml,
+});
+
+function join(pieces: readonly Output[]): Output {
+  const text = pieces.map((piece) => piece.text).join("");
+  if (pieces.every((piece) => piece.html === null)) return { text, html: null };
+  const html = pieces.map((piece) =>
+    piece.html === null ? escape(piece.text) : inline(piece.html),
+  );
+  return { text, html: html.join("") };
+}
+
+const escape = (text: string) =>
+  text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("\n", "<br>");
+
+// Rich text editors end a pasted paragraph with a line break the plain text does not have.
+function inline(html: string): string {
+  const single = html.startsWith("<p>") && html.indexOf("</p>") === html.length - "</p>".length;
+  return single ? html.slice("<p>".length, -"</p>".length) : html;
 }
 
 // The snippet when the dictation is only its trigger, give or take the punctuation the speech
@@ -131,9 +163,12 @@ function alone(text: string, found: readonly Found[]): Snippet | null {
   return /^[\p{P}\p{S}\s]*$/u.test(around) ? only.rule.snippet : null;
 }
 
-function write(rule: Rule, matched: string): string {
-  if (rule.kind === "snippet") return rule.snippet.expansion;
-  const { phrase, replacement } = rule.entry;
+function write(rule: Rule, matched: string): Output {
+  if (rule.kind === "snippet") return expanded(rule.snippet);
+  return plain(correct(rule.entry, matched));
+}
+
+function correct({ phrase, replacement }: DictionaryEntry, matched: string): string {
   if (replacement !== null) return replacement;
   // A word saved all lowercase keeps the capital the speech model gave a sentence start.
   if (/\p{Lu}/u.test(phrase) || !/^\p{Lu}/u.test(matched)) return phrase;
@@ -143,8 +178,9 @@ function write(rule: Rule, matched: string): string {
 // What to insert after cleanup: the cleaned text rewritten, unless cleanup lost a snippet trigger
 // the raw transcript had (the local model cannot be told to keep them), then the rewritten raw
 // transcript. "" only when cleanup emptied a transcript that had no trigger.
-export function finalText(raw: string, cleaned: string, rewrites: Rewrites): string {
+export function finalOutput(raw: string, cleaned: string, rewrites: Rewrites): Output {
   const fromRaw = rewrite(raw, rewrites);
   const fromCleaned = rewrite(cleaned, rewrites);
-  return fromCleaned.snippets < fromRaw.snippets ? fromRaw.text : fromCleaned.text;
+  const { text, html } = fromCleaned.snippets < fromRaw.snippets ? fromRaw : fromCleaned;
+  return { text, html };
 }
