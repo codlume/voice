@@ -75,7 +75,7 @@ function bringToFront(doc) {
 const textOf = (doc) => osascript(`tell application "TextEdit" to get text of ${doc.ref}`);
 
 async function insert(helper, id, text) {
-  helper.send({ type: "insert", id, text });
+  helper.send({ type: "insert", id, text, html: null });
   return helper.waitFor((event) => event.type === "insert.result" && event.id === id, {
     label: "insert.result",
   });

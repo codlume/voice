@@ -654,7 +654,14 @@ describe("followSettings", () => {
       a.setLanguage(language);
       a.finish(id, "first");
 
-      await expect.poll(() => a.commands.at(-1)).toEqual({ type: "insert", id, text: "FIRST" });
+      await expect
+        .poll(() => a.commands.at(-1))
+        .toEqual({
+          type: "insert",
+          id,
+          text: "FIRST",
+          html: null,
+        });
       expect(a.store.state.models.cleanup.state).toBe("ready");
       a.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
       await expect.poll(() => a.store.state.models.cleanup.state).toBe("installed");
