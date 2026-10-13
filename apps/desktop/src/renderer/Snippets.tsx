@@ -9,6 +9,7 @@ import {
   type Snippet,
 } from "../shared/snippets.ts";
 import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
+import { SnippetEditor } from "./SnippetEditor.tsx";
 import { Switch } from "./Switch.tsx";
 import { hubApi } from "./voice.ts";
 
@@ -66,7 +67,8 @@ export function Snippets({
       )}
       normalize={(draft) => ({ ...draft, trigger: draft.trigger.trim() })}
       problem={(snippet, others) => snippetProblem(snippet, others, dictionary)}
-      renderFields={({ draft, edit, shown, message, saveOnEnter }) => (
+      wide
+      renderFields={({ draft, edit, shown, message, submit, saveOnEnter }) => (
         <>
           <CountedField
             label="Trigger"
@@ -91,18 +93,11 @@ export function Snippets({
             max={EXPANSION_MAX_LENGTH}
             problem={message("expansion")}
           >
-            <Field.Control
-              render={<textarea />}
-              value={draft.expansion}
-              maxLength={EXPANSION_MAX_LENGTH}
-              spellCheck={false}
-              placeholder="name@example.com"
-              onValueChange={(expansion) => edit({ expansion })}
-              {...stylex.props(
-                styles.input,
-                styles.textarea,
-                shown?.field === "expansion" && styles.invalid,
-              )}
+            <SnippetEditor
+              defaultValue={draft}
+              invalid={shown?.field === "expansion"}
+              onChange={edit}
+              onSave={submit}
             />
           </CountedField>
         </>

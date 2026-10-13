@@ -42,6 +42,7 @@ const styles = stylex.create({
     transitionProperty: "opacity, transform",
     transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
+  popupWide: { width: "min(600px, calc(100vw - 32px))" },
   popupHidden: { opacity: 0, transform: `${centered} scale(0.96)` },
   title: { margin: 0, fontSize: 15, fontWeight: 600, color: color.foreground },
   description: {
@@ -68,11 +69,13 @@ export function DialogFrame({
   title,
   actions,
   finalFocus,
+  wide = false,
   children,
 }: {
   title: string;
   actions: ReactNode;
   finalFocus?: RefObject<HTMLElement | null> | undefined;
+  wide?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -85,7 +88,11 @@ export function DialogFrame({
       <Dialog.Popup
         finalFocus={finalFocus}
         className={({ transitionStatus }) =>
-          stylex.props(styles.popup, hidden(transitionStatus) && styles.popupHidden).className
+          stylex.props(
+            styles.popup,
+            wide && styles.popupWide,
+            hidden(transitionStatus) && styles.popupHidden,
+          ).className
         }
       >
         <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
