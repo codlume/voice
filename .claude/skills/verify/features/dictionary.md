@@ -4,8 +4,8 @@ The Dictionary lets a user save words and replacements. A word, such as "Worcest
 
 ## Sub-features
 
-- `dictionary-add`: `Add new` opens the `Add to dictionary` dialog with a `Phrase` field and an optional `Replace with` field, each with an n/max counter (100 and 500). An empty `Replace with` saves a word. Enter in either field saves.
-- `dictionary-validate`: saving an empty, too long, or duplicate phrase keeps the dialog open and shows the problem under the field. Duplicates ignore case, accents, and spacing; phrases that differ in punctuation, such as `e-mail` and `email`, are separate entries. A phrase that is a snippet trigger, up to case, accents, and spacing, shows "This phrase is already a snippet trigger."
+- `dictionary-add`: `Add new` opens the `Add to dictionary` dialog with a `Replace with other text` switch, off by default, and one `Add a new word` input. Turning the switch on splits the row into `Phrase` → `Replace with`, keeping the typed phrase; turning it off drops the replacement. Clicking the switch's label also toggles it. The inputs have no visible labels or counters, but cap at 100 and 500 characters. A blank `Replace with` saves a word. Enter in any input saves. Editing an entry with a replacement opens with the switch on.
+- `dictionary-validate`: saving an empty, too long, or duplicate phrase keeps the dialog open and shows the problem under the inputs, with a red border on the input that owns it. Duplicates ignore case, accents, and spacing; phrases that differ in punctuation, such as `e-mail` and `email`, are separate entries. A phrase that is a snippet trigger, up to case, accents, and spacing, shows "This phrase is already a snippet trigger."
 - `dictionary-snippet-guard`: on the Snippets page, a trigger that is already a dictionary phrase shows "This trigger is already in your dictionary."
 - `dictionary-edit`: the pencil button on a row opens `Edit dictionary entry`, and `Save changes` replaces that entry in place.
 - `dictionary-delete`: the trash button asks "Delete from dictionary?" with "‘<phrase>’ will be deleted permanently." (curly quotes) before it deletes.
@@ -19,16 +19,16 @@ The Dictionary lets a user save words and replacements. A word, such as "Worcest
 
 ## Driving it with voice-verify
 
-Preconditions: baseline. No dictionary entries or snippets are saved. The phrase input has the placeholder `Worcestershire` and the replacement input `Optional`, which tell the two inputs apart.
+Preconditions: baseline. No dictionary entries or snippets are saved. With the switch off, the one input has the placeholder `Add a new word`. With it on, the inputs have the placeholders `Phrase` and `Replace with`, which tell them apart.
 
 - **Open Dictionary.** `vv click Dictionary`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Dictionary"'`. Then `vv shot dictionary-empty`. The card shows the `Worcestershire` example.
-- **Add a word.** `vv click "Add new"`, then `vv type 'css:[role="dialog"] input[placeholder="Worcestershire"]' "Worcestershire"`. `vv click "Add to dictionary"`, then wait for `s.settings.dictionary.some(x => x.phrase === "Worcestershire" && x.replacement === null)`.
-- **Add a replacement.** `vv click "Add new"`, type `btw` into the phrase and `by the way` into `css:[role="dialog"] input[placeholder="Optional"]`, then `vv click "Add to dictionary"`. The row reads `btw → by the way`. Then `vv shot dictionary-filled`.
+- **Add a word.** `vv click "Add new"`, then `vv type 'css:[role="dialog"] input[placeholder="Add a new word"]' "Worcestershire"`. `vv click "Add to dictionary"`, then wait for `s.settings.dictionary.some(x => x.phrase === "Worcestershire" && x.replacement === null)`.
+- **Add a replacement.** `vv click "Add new"`, then `vv click "Replace with other text"`. Type `btw` into `css:[role="dialog"] input[placeholder="Phrase"]` and `by the way` into `css:[role="dialog"] input[placeholder="Replace with"]`, then `vv click "Add to dictionary"`. The row reads `btw → by the way`. Then `vv shot dictionary-filled`.
 - **Stored value.** `cat "<userData>/settings.json"` lists both entries under `"dictionary"` with generated `id`s, the word with `"replacement": null`.
 - **Duplicate.** Add `WISPR  flow`. The dialog stays open and reads "This phrase is already in your dictionary." The stored list does not change. Click `Cancel`.
 - **Snippet collision.** Save a `my email` snippet on the Snippets page, then add `My Email` here. The dialog reads "This phrase is already a snippet trigger." On the Snippets page, adding the trigger `BTW` reads "This trigger is already in your dictionary."
 - **Effect on dictation.** When `dictate` is available, save the word `THURSDAY` and run `vv dictate short.wav`. `inserted` contains "THURSDAY" and `last.raw` still contains "Thursday".
-- **Edit.** `vv click "Edit btw"`. Select the old replacement first with `vv eval hub 'document.querySelector("[role=dialog] input[placeholder=Optional]").select(), true'`, then type the new one. `vv click "Save changes"`, then wait for it in `s.settings.dictionary`. The `id` stays the same.
+- **Edit.** `vv click "Edit btw"`. Select the old replacement first with `vv eval hub 'document.querySelector("[role=dialog] input[placeholder=\"Replace with\"]").select(), true'`, then type the new one. `vv click "Save changes"`, then wait for it in `s.settings.dictionary`. The `id` stays the same.
 - **Delete.** `vv click "Delete btw"`, wait for the confirm text in `[role=alertdialog]`, then `vv click Delete` and wait for the entry to leave `s.settings.dictionary`. With no entries left, the page shows the example row again.
 
 ## Gotchas
