@@ -9,28 +9,11 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
-import { hotkeys } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
-
-export const DEFAULT_SETTINGS: Settings = {
-  microphone: null,
-  hotkey: "fn",
-  muteWhileDictating: false,
-  copyToClipboard: false,
-  showInDock: true,
-  alwaysShowPill: true,
-  dictationLanguage: "en",
-  updateChannel: "stable",
-  theme: "system",
-  cleanup: { enabled: true, styling: "semi-formal" },
-  diagnostics: "off",
-  snippets: [],
-  dictionary: [],
-  zoomLevel: 0,
-};
 
 const THEMES = ["system", "light", "dark"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;

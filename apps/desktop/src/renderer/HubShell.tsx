@@ -45,6 +45,7 @@ import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const appPages = [
   { id: "home", label: "Home", icon: HouseIcon },
@@ -238,39 +239,20 @@ const styles = stylex.create({
   footerHidden: { opacity: 0, visibility: "hidden" },
   back: { flex: 1 },
   backCollapsed: { flex: "none", width: navItemSize },
-  tooltipPositioner: {
-    zIndex: 10,
+  // One tooltip glides between the rail's triggers, resizing to each label.
+  tooltipGlide: {
     width: "var(--positioner-width)",
     height: "var(--positioner-height)",
     transitionProperty: "left, right, top, bottom",
     transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
-  tooltip: {
+  tooltipResize: {
     width: "var(--popup-width)",
     height: "var(--popup-height)",
     overflow: "hidden",
-    whiteSpace: "nowrap",
-    paddingBlock: 5,
-    paddingInline: space.sm,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.small,
-    backgroundColor: color.card,
-    color: color.foreground,
-    boxShadow: "0 2px 8px rgb(0 0 0 / 12%)",
-    fontFamily: font.sans,
-    fontSize: 12,
-    lineHeight: 1.4,
-    WebkitFontSmoothing: "antialiased",
-    opacity: 1,
     transitionProperty: "opacity, width, height",
-    transitionDuration: { default: "180ms", [reducedMotion]: "0s" },
-    transitionTimingFunction: easing,
   },
-  tooltipHidden: { opacity: 0 },
-  tooltipInstant: { transitionDuration: "0s" },
   main: {
     minWidth: 0,
     overflow: "auto",
@@ -300,23 +282,9 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
                 side="right"
                 align="center"
                 sideOffset={10}
-                className={({ instant }) =>
-                  stylex.props(
-                    styles.tooltipPositioner,
-                    (instant === "focus" || instant === "dismiss") && styles.tooltipInstant,
-                  ).className
-                }
+                className={tooltipPositionerClass(styles.tooltipGlide)}
               >
-                <Tooltip.Popup
-                  className={({ transitionStatus, instant }) =>
-                    stylex.props(
-                      styles.tooltip,
-                      (transitionStatus === "starting" || transitionStatus === "ending") &&
-                        styles.tooltipHidden,
-                      (instant === "focus" || instant === "dismiss") && styles.tooltipInstant,
-                    ).className
-                  }
-                >
+                <Tooltip.Popup className={tooltipPopupClass(styles.tooltipResize)}>
                   <Tooltip.Viewport className="sidebar-tooltip-viewport">
                     {payload}
                   </Tooltip.Viewport>

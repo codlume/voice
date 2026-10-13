@@ -4,15 +4,9 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { SettingsPatch } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
-import {
-  applyPatch,
-  DEFAULT_SETTINGS,
-  loadSettings,
-  parseSettings,
-  saveSettings,
-} from "./settings.ts";
+import { applyPatch, loadSettings, parseSettings, saveSettings } from "./settings.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
 vi.mock("node:fs/promises", async (importOriginal) => {

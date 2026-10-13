@@ -140,6 +140,23 @@ export type Settings = {
   zoomLevel: number;
 };
 
+export const DEFAULT_SETTINGS: Settings = {
+  microphone: null,
+  hotkey: "fn",
+  muteWhileDictating: false,
+  copyToClipboard: false,
+  showInDock: true,
+  alwaysShowPill: true,
+  dictationLanguage: "en",
+  updateChannel: "stable",
+  theme: "system",
+  cleanup: { enabled: true, styling: "semi-formal" },
+  diagnostics: "off",
+  snippets: [],
+  dictionary: [],
+  zoomLevel: 0,
+};
+
 export type SettingsPatch = {
   microphone?: Microphone | null;
   hotkey?: Hotkey;

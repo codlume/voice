@@ -1,7 +1,7 @@
 import type { CleanResult, CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { ModelStatus } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
@@ -29,7 +29,6 @@ import {
   idle,
   type SessionEvent,
 } from "./session.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {

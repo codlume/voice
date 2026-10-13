@@ -11,9 +11,8 @@ import {
 } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { ModelStatus, Settings } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type ModelStatus, type Settings } from "../shared/api.ts";
 import { wantsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
-import { DEFAULT_SETTINGS } from "./settings.ts";
 import { createCleanup, followSettings, type CleanupModule } from "./cleanup.ts";
 import { createDictation } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
