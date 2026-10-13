@@ -625,6 +625,7 @@ describe("followSettings", () => {
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
+      onDictated: () => {},
       copy: () => {},
       now: () => clock,
     });

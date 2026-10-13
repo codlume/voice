@@ -6,7 +6,12 @@ import type { Snippet } from "./snippets.ts";
 export type Rewrites = { dictionary: readonly DictionaryEntry[]; snippets: readonly Snippet[] };
 
 // `snippets` counts the snippet matches; 0 with `text` unchanged means nothing matched.
-export type Rewritten = { text: string; snippets: number; entireDictation: boolean };
+export type Rewritten = {
+  text: string;
+  snippets: number;
+  dictionaryFixes: number;
+  entireDictation: boolean;
+};
 
 type Rule = { kind: "entry"; entry: DictionaryEntry } | { kind: "snippet"; snippet: Snippet };
 
@@ -92,7 +97,7 @@ function foldAccents(text: string) {
  */
 export function rewrite(text: string, rewrites: Rewrites): Rewritten {
   const { rules, regex } = matcher(rewrites);
-  if (regex === null) return { text, snippets: 0, entireDictation: false };
+  if (regex === null) return { text, snippets: 0, dictionaryFixes: 0, entireDictation: false };
   const { folded, source } = foldAccents(text);
   const found: Found[] = [];
   regex.lastIndex = 0;
@@ -110,16 +115,22 @@ export function rewrite(text: string, rewrites: Rewrites): Rewritten {
     found.push({ rule, start, end });
   }
   const whole = alone(text, found);
-  if (whole) return { text: whole.expansion, snippets: 1, entireDictation: true };
+  if (whole) {
+    return { text: whole.expansion, snippets: 1, dictionaryFixes: 0, entireDictation: true };
+  }
   let result = "";
   let copied = 0;
-  let count = 0;
+  let snippets = 0;
+  let dictionaryFixes = 0;
   for (const { rule, start, end } of found) {
-    result += text.slice(copied, start) + write(rule, text.slice(start, end));
+    const matched = text.slice(start, end);
+    const written = write(rule, matched);
+    result += text.slice(copied, start) + written;
     copied = end;
-    if (rule.kind === "snippet") count += 1;
+    if (rule.kind === "snippet") snippets += 1;
+    else if (written !== matched) dictionaryFixes += 1;
   }
-  return { text: result + text.slice(copied), snippets: count, entireDictation: false };
+  return { text: result + text.slice(copied), snippets, dictionaryFixes, entireDictation: false };
 }
 
 // The snippet when the dictation is only its trigger, give or take the punctuation the speech
@@ -142,9 +153,15 @@ function write(rule: Rule, matched: string): string {
 
 // What to insert after cleanup: the cleaned text rewritten, unless cleanup lost a snippet trigger
 // the raw transcript had (the local model cannot be told to keep them), then the rewritten raw
-// transcript. "" only when cleanup emptied a transcript that had no trigger.
-export function finalText(raw: string, cleaned: string, rewrites: Rewrites): string {
+// transcript.
+export function finalRewrite(
+  raw: string,
+  cleaned: string,
+  rewrites: Rewrites,
+): Rewritten & { source: "raw" | "cleaned" } {
   const fromRaw = rewrite(raw, rewrites);
   const fromCleaned = rewrite(cleaned, rewrites);
-  return fromCleaned.snippets < fromRaw.snippets ? fromRaw.text : fromCleaned.text;
+  return fromCleaned.snippets < fromRaw.snippets
+    ? { ...fromRaw, source: "raw" }
+    : { ...fromCleaned, source: "cleaned" };
 }

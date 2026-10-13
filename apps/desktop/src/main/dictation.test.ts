@@ -18,6 +18,7 @@ import {
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
+  type Dictated,
   type SessionReport,
 } from "./dictation.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -89,6 +90,7 @@ function harness(opts: Options = {}) {
   const entries: DiagnosticLog[] = [];
   const phases: string[] = [];
   const reports: SessionReport[] = [];
+  const dictated: Dictated[] = [];
   const copies: string[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
@@ -127,6 +129,7 @@ function harness(opts: Options = {}) {
       if (entry) entries.push(entry);
     },
     onSessionDone: (report) => reports.push(report),
+    onDictated: (session) => dictated.push(session),
     copy: (text) => copies.push(text),
   });
   const id = () => {
@@ -172,6 +175,7 @@ function harness(opts: Options = {}) {
     entries,
     phases,
     reports,
+    dictated,
     copies,
     dictation: { dispatch, onHelperEvent },
     id,
@@ -441,6 +445,117 @@ describe("createDictation", () => {
     expect(h.reports[0]).toMatchObject({ capture: { language: "pl", timings: { startMs: 25 } } });
     expect(h.reports[0]?.outcome.kind).toBe("failed");
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBeUndefined();
+  });
+
+  test("hands each session with a usable transcript to Insights, inserted or not", async () => {
+    const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
+    const first = await dictate(h, "ask hadrys");
+    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    const firstAt = Date.now();
+    const second = await dictate(h, "hello there");
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: second,
+      method: "none",
+      reason: "secureInput",
+    });
+    expect(h.dictated).toEqual([
+      {
+        raw: "ask hadrys",
+        insertedCleanup: "ask hadrys.",
+        dictionaryFixes: 1,
+        language: "en",
+        paceMs: 600,
+        finishedAt: firstAt,
+      },
+      {
+        raw: "hello there",
+        insertedCleanup: "hello there.",
+        dictionaryFixes: 0,
+        language: "en",
+        paceMs: 600,
+        finishedAt: Date.now(),
+      },
+    ]);
+    expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted", "notInserted"]);
+  });
+
+  test("never hands over an empty, too short, failed, or superseded session", async () => {
+    const h = harness();
+    await dictate(h, "");
+    release(h, 100);
+    const failed = release(h, 800);
+    h.dictation.onHelperEvent({ type: "transcript.failed", id: failed, message: "decoder broke" });
+    await dictate(h, "the helper quit mid insert");
+    h.dictation.dispatch({ type: "helperExited" });
+    const superseded = release(h, 800);
+    h.dictation.dispatch({ type: "helperExited" });
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id: superseded,
+      text: "late words",
+      audioMs: 800,
+      asrMs: 100,
+      speechMs: 600,
+    });
+    await flush();
+    expect(h.reports.map((report) => report.outcome.kind)).toEqual([
+      "empty",
+      "tooShort",
+      "failed",
+      "failed",
+      "failed",
+    ]);
+    expect(h.dictated).toEqual([]);
+  });
+
+  test("hands over no cleanup output when the raw transcript was inserted", async () => {
+    const email = { id: "s", trigger: "my email", expansion: "name@example.com", enabled: true };
+    const lost = harness({ cleanHangs: true, snippets: [email] });
+    const id = await dictate(lost, "send it to my email");
+    lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1 });
+    await flush();
+    lost.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    const off = harness({ cleanupEnabled: false });
+    const offId = await dictate(off, "um hello");
+    off.dictation.onHelperEvent({
+      type: "insert.result",
+      id: offId,
+      method: "paste",
+      reason: null,
+    });
+    const failing = harness({ cleanFails: "rejects" });
+    const failingId = await dictate(failing, "um hello");
+    failing.dictation.onHelperEvent({
+      type: "insert.result",
+      id: failingId,
+      method: "paste",
+      reason: null,
+    });
+    for (const h of [lost, off, failing]) {
+      expect(h.dictated).toHaveLength(1);
+      expect(h.dictated[0]?.insertedCleanup).toBeNull();
+    }
+    expect(lost.commands.at(-1)).toEqual({
+      type: "insert",
+      id,
+      text: "send it to name@example.com",
+    });
+  });
+
+  test("hands over the audio length as the speech span when the helper sent none", async () => {
+    const h = harness({ cleanupEnabled: false });
+    const id = release(h, 800);
+    h.dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: "hello",
+      audioMs: 900,
+      asrMs: 100,
+      speechMs: null,
+    });
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.dictated[0]?.paceMs).toBe(900);
   });
 
   test("reports a session that ended before capture without the previous session's data", () => {

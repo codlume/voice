@@ -50,6 +50,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import { createInsights } from "./insights.ts";
 import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
@@ -357,6 +358,13 @@ async function main() {
     ],
     log,
   });
+  const insights = createInsights({
+    file: NodePath.join(userData, "insights.json"),
+    log,
+    onChange: (value) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.insights, value);
+    },
+  });
   dictation = createDictation({
     store,
     send: helper.send,
@@ -366,6 +374,7 @@ async function main() {
     },
     log,
     onSessionDone: diagnostics.sessionDone,
+    onDictated: insights.record,
     copy: (text) => clipboard.writeText(text),
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
@@ -700,6 +709,15 @@ async function main() {
     hubCommands.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
     hubCommands.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
     hubCommands.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
+    hubCommands.handle(Channel.getInsights, () => insights.get());
+    hubCommands.handle(Channel.clearInsights, async () => {
+      try {
+        await insights.clear();
+      } catch (error) {
+        log(`insights: clear failed (${String(error)})`);
+        throw new Error("Could not clear insights. Try again.", { cause: error });
+      }
+    });
   }
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
@@ -726,15 +744,19 @@ async function main() {
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});
 
-  // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
-  // settings save, the helper, and the cleanup process get to finish, and their logs get sent.
-  // The quit that follows it passes.
+  // Electron quits without waiting on promises, so the first quit only starts the shutdown. The
+  // quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
-    const stopped = Promise.allSettled([saving, helper.stop(), cleanup.dispose()]);
+    const stopped = Promise.allSettled([
+      saving,
+      insights.settled(),
+      helper.stop(),
+      cleanup.dispose(),
+    ]);
     const result = await Promise.race([stopped, timeout]);
     clearTimeout(timer);
     if (result === "timeout") {

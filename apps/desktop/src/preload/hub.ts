@@ -3,6 +3,7 @@ import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
+import type { Insights } from "../shared/insights.ts";
 import { subscribe } from "./subscribe.ts";
 
 // The tray can ask before React has mounted, for example right after it creates the hub.
@@ -48,6 +49,9 @@ const voice: HubApi = {
   confirmAccountDeletion: () => ipcRenderer.invoke(Channel.confirmAccountDeletion),
   cancelAccountDeletion: () => ipcRenderer.invoke(Channel.cancelAccountDeletion),
   retryAccountDeletion: () => ipcRenderer.invoke(Channel.retryAccountDeletion),
+  getInsights: () => ipcRenderer.invoke(Channel.getInsights),
+  onInsights: (listener) => subscribe<Insights>(Channel.insights, listener),
+  clearInsights: () => ipcRenderer.invoke(Channel.clearInsights),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

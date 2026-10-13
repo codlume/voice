@@ -1,6 +1,6 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
-import { finalText, rewrite, type Rewrites } from "../shared/rewrite.ts";
+import { finalRewrite, rewrite, type Rewrites, type Rewritten } from "../shared/rewrite.ts";
 
 export type Session =
   | { phase: "idle" }
@@ -8,7 +8,14 @@ export type Session =
   | { phase: "recording"; id: string; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
   | { phase: "cleaning"; id: string; raw: string; rewrites: Rewrites }
-  | { phase: "inserting"; id: string; raw: string; text: string }
+  | {
+      phase: "inserting";
+      id: string;
+      raw: string;
+      text: string;
+      insertedCleanup: string | null;
+      dictionaryFixes: number;
+    }
   | { phase: "done"; id: string; outcome: Outcome };
 
 export type InsertMethod = "accessibility" | "paste" | "none";
@@ -73,9 +80,15 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
   };
 }
 
-function insert(id: string, raw: string, text: string): Step {
+function insert(
+  id: string,
+  raw: string,
+  rewritten: Rewritten,
+  insertedCleanup: string | null,
+): Step {
+  const { text, dictionaryFixes } = rewritten;
   return {
-    state: { phase: "inserting", id, raw, text },
+    state: { phase: "inserting", id, raw, text, insertedCleanup, dictionaryFixes },
     effects: [
       { type: "remember", raw, text },
       { type: "insert", id, text },
@@ -144,7 +157,9 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (raw === "") return finish(state.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
       // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
-      if (!event.cleanup || rewritten.entireDictation) return insert(state.id, raw, rewritten.text);
+      if (!event.cleanup || rewritten.entireDictation) {
+        return insert(state.id, raw, rewritten, null);
+      }
       return {
         state: { phase: "cleaning", id: state.id, raw, rewrites: event.rewrites },
         effects: [
@@ -159,15 +174,16 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "cleaned": {
       if (state.phase !== "cleaning") return same;
-      const text = finalText(state.raw, event.text.trim(), state.rewrites);
-      if (text === "") {
+      const cleaned = event.text.trim();
+      const final = finalRewrite(state.raw, cleaned, state.rewrites);
+      if (final.text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
-      return insert(state.id, state.raw, text);
+      return insert(state.id, state.raw, final, final.source === "cleaned" ? cleaned : null);
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
-      return insert(state.id, state.raw, rewrite(state.raw, state.rewrites).text);
+      return insert(state.id, state.raw, rewrite(state.raw, state.rewrites), null);
     }
     case "insertResult": {
       if (state.phase !== "inserting") return same;

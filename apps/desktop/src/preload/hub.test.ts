@@ -38,13 +38,16 @@ describe("hub preload", () => {
       "cancelAccountDeletion",
       "cancelSignIn",
       "checkForUpdates",
+      "clearInsights",
       "confirmAccountDeletion",
       "copyLast",
       "diagnosticsStartedAtLaunch",
       "dismissAccountError",
       "downloadUpdate",
+      "getInsights",
       "getSnapshot",
       "installModel",
+      "onInsights",
       "onLevel",
       "onRestartRequest",
       "onSnapshot",
@@ -72,6 +75,7 @@ describe("hub preload", () => {
     api.onSnapshot(() => {});
     api.onLevel(() => {});
     api.onRestartRequest(() => {});
+    api.onInsights(() => {});
     const channels = new Set(listened);
     const known = new Set<string>(Object.values(Channel));
     expect([...channels].filter((channel) => !known.has(channel))).toEqual([]);

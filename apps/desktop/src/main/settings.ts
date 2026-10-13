@@ -1,6 +1,4 @@
 import { readFileSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import * as NodePath from "node:path";
 
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -14,6 +12,7 @@ import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
+import { writeFileAtomic } from "./atomic-file.ts";
 
 const THEMES = ["system", "light", "dark"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
@@ -101,9 +100,5 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
 }
 
 export async function saveSettings(file: string, settings: Settings): Promise<void> {
-  await mkdir(NodePath.dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  // Without the flush, a power loss can land the rename before the data and leave an empty file.
-  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`, { flush: true });
-  await rename(temp, file);
+  await writeFileAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
 }

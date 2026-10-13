@@ -23,6 +23,7 @@ export type DictationOptions = {
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
+  onDictated: (dictated: Dictated) => void;
   copy: (text: string) => void;
   now?: () => number;
 };
@@ -60,6 +61,7 @@ type Started = {
   startMs?: number;
   releasedAt?: number;
   audioMs?: number;
+  speechMs?: number | null;
   asrMs?: number;
   cleanupMs?: number;
   insertStartedAt?: number;
@@ -80,6 +82,18 @@ export type SessionReport = {
   finishedAt: number;
   capture: { language: DictationLanguage; pressedAt: number; timings: SessionTimings } | null;
 };
+
+export type Dictated = {
+  raw: string;
+  insertedCleanup: string | null;
+  dictionaryFixes: number;
+  language: DictationLanguage;
+  paceMs: number | null;
+  finishedAt: number;
+};
+
+const gaveTranscript = (outcome: Outcome) =>
+  outcome.kind === "inserted" || outcome.kind === "notInserted";
 
 function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
   return {
@@ -136,7 +150,7 @@ export function createDictation(options: DictationOptions): Dictation {
       if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
         options.copy(before.text);
       }
-      finish(state.id, state.outcome);
+      finish(state.id, state.outcome, before.phase === "inserting" ? before : null);
     }
   }
 
@@ -253,7 +267,11 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function finish(id: string, outcome: Outcome) {
+  function finish(
+    id: string,
+    outcome: Outcome,
+    produced: Extract<Session, { phase: "inserting" }> | null,
+  ) {
     const s = started?.id === id ? started : null;
     const finishedAt = now();
     const capture = s && {
@@ -266,6 +284,16 @@ export function createDictation(options: DictationOptions): Dictation {
     );
     log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
     options.onSessionDone({ outcome, finishedAt, capture });
+    if (produced && gaveTranscript(outcome)) {
+      options.onDictated({
+        raw: produced.raw,
+        insertedCleanup: produced.insertedCleanup,
+        dictionaryFixes: produced.dictionaryFixes,
+        language: s?.language ?? "auto",
+        paceMs: s?.speechMs ?? s?.audioMs ?? null,
+        finishedAt,
+      });
+    }
   }
 
   function onHelperEvent(event: HelperEvent) {
@@ -305,7 +333,11 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "captureStopped", id: event.id });
         return;
       case "transcript": {
-        track(event.id, { audioMs: event.audioMs, asrMs: event.asrMs });
+        track(event.id, {
+          audioMs: event.audioMs,
+          speechMs: event.speechMs,
+          asrMs: event.asrMs,
+        });
         dispatch({
           type: "transcript",
           id: event.id,

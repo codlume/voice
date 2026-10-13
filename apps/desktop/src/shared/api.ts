@@ -2,6 +2,7 @@ import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
+import type { Insights } from "./insights.ts";
 import type { Snippet } from "./snippets.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
@@ -246,6 +247,11 @@ export type HubApi = WindowApi & {
   confirmAccountDeletion(): Promise<void>;
   cancelAccountDeletion(): Promise<void>;
   retryAccountDeletion(): Promise<void>;
+  getInsights(): Promise<Insights>;
+  /** Fires after each counted session and after a clear, with the whole value. */
+  onInsights(listener: (insights: Insights) => void): () => void;
+  /** Rejects with a message for the user when the file could not be removed. */
+  clearInsights(): Promise<void>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -279,4 +285,7 @@ export const Channel = {
   confirmAccountDeletion: "voice:confirmAccountDeletion",
   cancelAccountDeletion: "voice:cancelAccountDeletion",
   retryAccountDeletion: "voice:retryAccountDeletion",
+  getInsights: "voice:getInsights",
+  insights: "voice:insights",
+  clearInsights: "voice:clearInsights",
 } as const;

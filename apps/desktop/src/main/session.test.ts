@@ -219,7 +219,14 @@ describe("transcript", () => {
 
   test("with cleanup off, the raw text is remembered and inserted", () => {
     const { state, effects } = run(toInserting);
-    expect(state).toEqual({ phase: "inserting", id: ID, raw: "hello world", text: "hello world" });
+    expect(state).toEqual({
+      phase: "inserting",
+      id: ID,
+      raw: "hello world",
+      text: "hello world",
+      insertedCleanup: null,
+      dictionaryFixes: 0,
+    });
     expect(effects).toEqual([
       { type: "remember", raw: "hello world", text: "hello world" },
       { type: "insert", id: ID, text: "hello world" },
@@ -233,6 +240,8 @@ describe("transcript", () => {
       id: ID,
       raw: "long dictation",
       text: "long dictation",
+      insertedCleanup: null,
+      dictionaryFixes: 0,
     });
     expect(effects).toEqual([
       { type: "remember", raw: "long dictation", text: "long dictation" },
@@ -289,6 +298,8 @@ describe("capture the helper stops on its own", () => {
       id: ID,
       raw: "long dictation",
       text: "long dictation",
+      insertedCleanup: null,
+      dictionaryFixes: 0,
     });
     expect(effects).toEqual([
       { type: "remember", raw: "long dictation", text: "long dictation" },
@@ -318,6 +329,8 @@ describe("cleanup", () => {
       id: ID,
       raw: "hello um world",
       text: "Hello, world.",
+      insertedCleanup: "Hello, world.",
+      dictionaryFixes: 0,
     });
     expect(effects).toEqual([
       { type: "remember", raw: "hello um world", text: "Hello, world." },
@@ -332,6 +345,8 @@ describe("cleanup", () => {
       id: ID,
       raw: "hello um world",
       text: "hello um world",
+      insertedCleanup: null,
+      dictionaryFixes: 0,
     });
     expect(effects).toContainEqual({ type: "insert", id: ID, text: "hello um world" });
   });
@@ -363,7 +378,14 @@ describe("snippets", () => {
       ...toTranscribing,
       transcript("My email.", true, 2000, { ...NONE, snippets }),
     ]);
-    expect(state).toEqual({ phase: "inserting", id: ID, raw: "My email.", text: EMAIL });
+    expect(state).toEqual({
+      phase: "inserting",
+      id: ID,
+      raw: "My email.",
+      text: EMAIL,
+      insertedCleanup: null,
+      dictionaryFixes: 0,
+    });
     expect(effects).toEqual([
       { type: "remember", raw: "My email.", text: EMAIL },
       { type: "insert", id: ID, text: EMAIL },
@@ -393,7 +415,8 @@ describe("snippets", () => {
   });
 
   test("a cleanup that dropped a trigger falls back to the expanded raw transcript", () => {
-    const { effects } = run([...cleaningSentence, cleaned("Send it to me.")]);
+    const { state, effects } = run([...cleaningSentence, cleaned("Send it to me.")]);
+    expect(state).toMatchObject({ phase: "inserting", insertedCleanup: null });
     expect(effects).toEqual([
       { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
       { type: "insert", id: ID, text: `send it to ${EMAIL}` },
@@ -469,6 +492,25 @@ describe("dictionary", () => {
       { type: "remember", raw: RAW, text: "by the way, ask Hadryś about Wispr Flow." },
       { type: "insert", id: ID, text: "by the way, ask Hadryś about Wispr Flow." },
     ]);
+  });
+
+  test("the inserting session counts the fixes of the branch it inserts", () => {
+    expect(run([...toTranscribing, said(RAW, false)]).state).toMatchObject({
+      insertedCleanup: null,
+      dictionaryFixes: 3,
+    });
+    expect(run([...cleaning, cleaned("Ask Hadryś about Wispr Flow.")]).state).toMatchObject({
+      insertedCleanup: "Ask Hadryś about Wispr Flow.",
+      dictionaryFixes: 0,
+    });
+    expect(
+      run([...toTranscribing, said("hadrys wants my signature", true), cleaned("Hadryś left.")])
+        .state,
+    ).toMatchObject({
+      text: "Hadryś wants wispr flow, btw, hadrys",
+      insertedCleanup: null,
+      dictionaryFixes: 1,
+    });
   });
 
   test("a cleanup failure inserts the fixed raw transcript", () => {
@@ -632,6 +674,8 @@ describe("idle and stale events", () => {
       id: ID,
       raw: "late words",
       text: "late words",
+      insertedCleanup: null,
+      dictionaryFixes: 0,
     });
     expect(
       run([...toOverdue, [{ type: "transcriptFailed", id: ID, message: "asr broke" }, 50_000]])
