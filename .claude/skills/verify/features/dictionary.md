@@ -15,7 +15,7 @@ The Dictionary lets a user save words and replacements. A word, such as "Worcest
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Dictionary`, after Snippets.
-- Keyboard: Cmd-4 in the Voice nav.
+- Keyboard: Cmd-5 in the Voice nav.
 
 ## Driving it with voice-verify
 

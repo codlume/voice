@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   BookAIcon,
   BoxIcon,
+  ChartColumnIcon,
   HouseIcon,
   KeyboardIcon,
   MonitorIcon,
@@ -23,6 +24,7 @@ import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
+import { Insights } from "./Insights.tsx";
 import {
   DataPrivacySettings,
   GeneralSettings,
@@ -49,6 +51,7 @@ import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const appPages = [
   { id: "home", label: "Home", icon: HouseIcon },
+  { id: "insights", label: "Insights", icon: ChartColumnIcon },
   { id: "style", label: "Style", icon: PenLineIcon },
   { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
   { id: "dictionary", label: "Dictionary", icon: BookAIcon },
@@ -68,6 +71,7 @@ type SettingsPage = (typeof settingsPages)[number]["id"];
 
 const pageViews: Record<AppPage | SettingsPage, (snapshot: Snapshot) => ReactNode> = {
   home: (snapshot) => <Home snapshot={snapshot} />,
+  insights: () => <Insights />,
   style: (snapshot) => <Style settings={snapshot.settings} />,
   snippets: (snapshot) => (
     <Snippets snippets={snapshot.settings.snippets} dictionary={snapshot.settings.dictionary} />

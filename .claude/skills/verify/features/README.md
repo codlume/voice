@@ -34,6 +34,7 @@ Each file has an H1, one paragraph on user-visible behavior, then exactly these 
 - [Style](./style.md): turn cleanup on or off and choose the writing style. Proven end to end on 2026-10-03, when this skill was generated.
 - [Snippets](./snippets.md): save a spoken trigger and the exact text Voice types in its place, then add, edit, validate, and delete snippets from the Snippets page. Add, validate, restart persistence, edit, and delete are proven with `voice-verify`; the dictation step is not yet run.
 - [Dictionary](./dictionary.md): save words Voice writes with their saved spelling, ignoring case and accents, and replacements that swap a phrase for saved text, from the Dictionary page. Add, validate, the snippet guard in both directions, edit, and delete are proven with `voice-verify`. The dictation step is not yet run.
+- [Insights](./insights.md): words, pace, fixes, streaks, and the daily heatmap from the Insights page, kept across restarts, and cleared from Settings > Data and Privacy. Not yet proven with `voice-verify`.
 - [Last dictation](./last-dictation.md): view and copy the last transcript, raw or cleaned, from Home or the tray.
 - [Models](./models.md): see, install, and uninstall the speech and cleanup models from Settings > Models and the Home checklist.
 - [Settings](./settings.md): General, System, Shortcuts, and Data and Privacy controls.
