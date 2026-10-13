@@ -7,6 +7,7 @@ import {
   PHRASE_MAX_LENGTH,
   REPLACEMENT_MAX_LENGTH,
   type DictionaryEntry,
+  type DictionaryProblem,
 } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
 import { RecordList, styles, type Copy } from "./RecordList.tsx";
@@ -63,15 +64,16 @@ export function Dictionary({
       row={(entry) => ({ title: label(entry) })}
       normalize={dictionaryEntry}
       problem={(entry, others) => dictionaryProblem(entry, others, snippets)}
-      renderFields={({ draft, edit, shown, message, saveOnEnter }) => {
-        const replacing = draft.replacement !== null;
-        const problem = shown?.message;
-        const input = (field: "phrase" | "replacement") => ({
+      renderFields={({ draft, edit, shown, saveOnEnter }) => {
+        const { replacement } = draft;
+        const replacing = replacement !== null;
+        const invalid = (field: DictionaryProblem["field"]) => shown?.field === field;
+        const input = (field: DictionaryProblem["field"]) => ({
           autoComplete: "off",
           spellCheck: false,
           onKeyDown: saveOnEnter,
-          "aria-describedby": message(field) === undefined ? undefined : problemId,
-          ...stylex.props(styles.input, shown?.field === field && styles.invalid),
+          "aria-describedby": invalid(field) ? problemId : undefined,
+          ...stylex.props(styles.input, invalid(field) && styles.invalid),
         });
         return (
           <>
@@ -87,7 +89,7 @@ export function Dictionary({
             </div>
             <div {...stylex.props(styles.field)}>
               <div {...stylex.props(local.inputs)}>
-                <Field.Root invalid={message("phrase") !== undefined} {...stylex.props(local.cell)}>
+                <Field.Root invalid={invalid("phrase")} {...stylex.props(local.cell)}>
                   <Field.Control
                     value={draft.phrase}
                     maxLength={PHRASE_MAX_LENGTH}
@@ -102,25 +104,22 @@ export function Dictionary({
                     <span aria-hidden="true" {...stylex.props(local.arrow)}>
                       →
                     </span>
-                    <Field.Root
-                      invalid={message("replacement") !== undefined}
-                      {...stylex.props(local.cell)}
-                    >
+                    <Field.Root invalid={invalid("replacement")} {...stylex.props(local.cell)}>
                       <Field.Control
-                        value={draft.replacement ?? ""}
+                        value={replacement}
                         maxLength={REPLACEMENT_MAX_LENGTH}
                         placeholder="Replace with"
                         aria-label="Replace with"
-                        onValueChange={(replacement) => edit({ replacement })}
+                        onValueChange={(text) => edit({ replacement: text })}
                         {...input("replacement")}
                       />
                     </Field.Root>
                   </>
                 )}
               </div>
-              {problem !== undefined && (
+              {shown && (
                 <p id={problemId} {...stylex.props(settings.error)}>
-                  {problem}
+                  {shown.message}
                 </p>
               )}
             </div>
