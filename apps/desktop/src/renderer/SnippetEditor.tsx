@@ -277,9 +277,11 @@ function Toolbar({ onSave }: { onSave: () => void }) {
 
   useEffect(() => {
     const unregister = [
-      editor.registerUpdateListener(({ editorState }) =>
-        setFormats(editorState.read($readFormats)),
-      ),
+      editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves }) => {
+        setFormats(editorState.read($readFormats));
+        // An edit or undo can delete the nodes the link row's saved selection points into.
+        if (dirtyElements.size > 0 || dirtyLeaves.size > 0) setLinkRow(null);
+      }),
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (event) => {
