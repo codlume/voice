@@ -348,7 +348,7 @@ describe("rewrite with formatted snippets", () => {
   const name = formatted("my name", "Ana Lopez", "<p><strong>Ana</strong> Lopez</p>");
   const steps = formatted(
     "the steps",
-    "Steps:\nPlug in\nRestart",
+    "Steps:\n- Plug in\n- Restart",
     "<p>Steps:</p><ul><li>Plug in</li><li>Restart</li></ul>",
   );
 
@@ -368,19 +368,51 @@ describe("rewrite with formatted snippets", () => {
     });
   });
 
-  test("a snippet with blocks goes in whole between the dictated words", () => {
+  test("a snippet's paragraphs run on as lines between the dictated words, and its lists stay lists", () => {
     expect(expand("try the steps then call", [steps])).toEqual({
-      text: "try Steps:\nPlug in\nRestart then call",
-      html: "try <p>Steps:</p><ul><li>Plug in</li><li>Restart</li></ul> then call",
+      text: "try Steps:\n- Plug in\n- Restart then call",
+      html: "try Steps:<ul><li>Plug in</li><li>Restart</li></ul> then call",
+      snippets: 1,
+      entireDictation: false,
+    });
+    const around = formatted(
+      "the plan",
+      "Steps:\n- a\nthen",
+      "<p>Steps:</p><ul><li>a</li></ul><p>then</p>",
+    );
+    expect(expand("the plan", [around]).html).toBe("Steps:<ul><li>a</li></ul>then");
+  });
+
+  test("paragraphs paste as lines, with no break the plain text lacks", () => {
+    const signOff = formatted("sign off", "Best,\nAda", "<p>Best,</p><p><strong>Ada</strong></p>");
+    expect(expand("thanks sign off", [signOff])).toEqual({
+      text: "thanks Best,\nAda",
+      html: "thanks Best,<br><strong>Ada</strong>",
       snippets: 1,
       entireDictation: false,
     });
   });
 
+  test("empty lines and a trailing line break paste as many breaks as the plain text has", () => {
+    const gap = formatted("the gap", "x\n\ny", "<p><em>x</em></p><p><br></p><p>y</p>");
+    expect(expand("the gap", [gap]).html).toBe("<em>x</em><br><br>y");
+    const trailing = formatted("the end", "a\n", "<p><em>a</em><br><br></p>");
+    expect(expand("the end now", [trailing])).toMatchObject({
+      text: "a\n now",
+      html: "<em>a</em><br>&nbsp;now",
+    });
+    const beforeList = formatted(
+      "the list",
+      "a\n\n- b",
+      "<p>a<br><br></p><ul><li><em>b</em></li></ul>",
+    );
+    expect(expand("the list", [beforeList]).html).toBe("a<br><br><ul><li><em>b</em></li></ul>");
+  });
+
   test("a dictation that is only the trigger inserts the snippet's own formatting", () => {
     expect(expand("The steps.", [steps])).toEqual({
       text: steps.expansion,
-      html: steps.expansionHtml,
+      html: "Steps:<ul><li>Plug in</li><li>Restart</li></ul>",
       snippets: 1,
       entireDictation: true,
     });
@@ -420,8 +452,8 @@ describe("rewrite with formatted snippets", () => {
       "<p>Name:  <strong>Ada</strong><br>  Engineer</p><ul><li> one</li></ul><p><em> two</em></p>",
     );
     expect(expand("my card", [card]).html).toBe(
-      "<p>Name:&nbsp; <strong>Ada</strong><br>&nbsp; Engineer</p>" +
-        "<ul><li>&nbsp;one</li></ul><p><em>&nbsp;two</em></p>",
+      "Name:&nbsp; <strong>Ada</strong><br>&nbsp; Engineer" +
+        "<ul><li>&nbsp;one</li></ul><em>&nbsp;two</em>",
     );
     expect(expand("see   my name  now", [name]).html).toBe(
       "see&nbsp; &nbsp;<strong>Ana</strong> Lopez&nbsp; now",

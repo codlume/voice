@@ -30,6 +30,8 @@ describe("allowedHref", () => {
     "data:text/html,x",
     "example.com",
     "https://",
+    "mailto:",
+    " mailto: ",
     "",
   ])("refuses %j", (raw) => {
     expect(allowedHref(raw)).toBeNull();
@@ -43,6 +45,7 @@ describe("isSnippetHtml", () => {
       '\nhttps://example.com/?q="x"&r=<y>',
       "ht\ttps://example.com",
       "mailto:ada@example.com",
+      "https:example.com",
     ]) {
       const href = allowedHref(raw);
       expect(href).not.toBeNull();

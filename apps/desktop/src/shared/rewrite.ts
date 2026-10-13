@@ -1,6 +1,6 @@
 import type { DictionaryEntry } from "./dictionary.ts";
 import { matchKey, withoutAccents } from "./phrase.ts";
-import { escapeHtml, inline } from "./snippet-html.ts";
+import { escapeHtml, paragraphsAsLines } from "./snippet-html.ts";
 import type { Snippet } from "./snippets.ts";
 
 /** Everything the user saved that rewrites dictated text. */
@@ -136,33 +136,40 @@ function join(pieces: readonly Output[]): Output {
   const text = pieces.map((piece) => piece.text).join("");
   if (pieces.every((piece) => piece.html === null)) return { text, html: null };
   const html = pieces.map((piece) =>
-    piece.html === null ? escapeHtml(piece.text).replaceAll("\n", "<br>") : inline(piece.html),
+    piece.html === null
+      ? escapeHtml(piece.text).replaceAll("\n", "<br>")
+      : paragraphsAsLines(piece.html),
   );
-  return { text, html: keepSpaces(html.join("")) };
+  return { text, html: keepSpaces(html) };
 }
 
-// Where a typed line starts. Text right after a closing block is the dictated words around it,
-// whose separating space a target rightly drops.
-const LINE_START = /^<(?:p|br|li)>$/i;
+const LINE_START = /^<(?:br|li)>$/i;
+const LIST_END = /^<\/(?:ul|ol)>$/i;
 
 // A rich target collapses a run of spaces to one and drops a space that starts a line. Alternating
 // a no-break space with a space keeps the typed width and still lets the line wrap.
-function keepSpaces(html: string): string {
+function keepSpaces(pieces: readonly string[]): string {
   let kept = "";
-  let lineStart = true;
-  // Text never holds a raw "<", so every part that starts with one is a tag.
-  for (const part of html.split(/(<[^>]*>)/)) {
-    if (part.startsWith("<")) {
-      lineStart ||= LINE_START.test(part);
-      kept += part;
-      continue;
+  let line: "start" | "after list" | "inside" = "start";
+  for (const piece of pieces) {
+    // Dictated words after a snippet's list continue the sentence; a target rightly drops their
+    // separating space. A line of the snippet itself after its list keeps its leading space.
+    if (line === "after list") line = "inside";
+    // Text never holds a raw "<", so every part that starts with one is a tag.
+    for (const part of piece.split(/(<[^>]*>)/)) {
+      if (part.startsWith("<")) {
+        if (LINE_START.test(part)) line = "start";
+        else if (LIST_END.test(part)) line = "after list";
+        kept += part;
+        continue;
+      }
+      kept += part.replace(/ +/g, (run, offset: number) =>
+        run.length > 1 || (offset === 0 && line !== "inside")
+          ? Array.from(run, (_, at) => (at % 2 === 0 ? "&nbsp;" : " ")).join("")
+          : run,
+      );
+      if (part !== "") line = "inside";
     }
-    kept += part.replace(/ +/g, (run, offset: number) =>
-      run.length > 1 || (offset === 0 && lineStart)
-        ? Array.from(run, (_, at) => (at % 2 === 0 ? "&nbsp;" : " ")).join("")
-        : run,
-    );
-    if (part !== "") lineStart = false;
   }
   return kept;
 }

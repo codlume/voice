@@ -26,7 +26,7 @@ export function allowedHref(raw: string): string | null {
   // As the URL parser does: tabs and newlines anywhere, spaces and controls at the ends.
   // eslint-disable-next-line no-control-regex
   const href = raw.replace(/[\t\n\r]/g, "").replace(/^[\u0000- ]+|[\u0000- ]+$/g, "");
-  return /^(?:https?|mailto):/i.test(href) && URL.canParse(href) ? href : null;
+  return /^(?:https?:|mailto:.)/i.test(href) && URL.canParse(href) ? href : null;
 }
 
 const SNIPPET_TAG = new RegExp(`</?(?:${TAGS.join("|")})>|<a href="([^"<>]*)">`, "gi");
@@ -44,8 +44,12 @@ export function isSnippetHtml(html: string): boolean {
   return links && !/[<>]/.test(rest);
 }
 
-// Rich text editors end a pasted paragraph with a line break the plain text does not have.
-export function inline(html: string): string {
-  const single = html.startsWith("<p>") && html.indexOf("</p>") === html.length - "</p>".length;
-  return single ? html.slice("<p>".length, -"</p>".length) : html;
+// Cocoa targets give each pasted paragraph spacing and end the last one with a newline the plain
+// text lacks. Paragraphs become lines joined by <br>; lists stay blocks. The editor ends a line
+// with a filler <br> that is redundant before another line or at the snippet's end.
+export function paragraphsAsLines(html: string): string {
+  return html
+    .replace(/<br><\/p>(?=<p>|$)/gi, "</p>")
+    .replace(/<\/p><p>/gi, "<br>")
+    .replace(/<\/?p>/gi, "");
 }
