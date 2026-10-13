@@ -223,12 +223,11 @@ describe("transcript", () => {
       phase: "inserting",
       id: ID,
       raw: "hello world",
-      text: "hello world",
-      html: null,
+      output: { text: "hello world", html: null },
     });
     expect(effects).toEqual([
       { type: "remember", raw: "hello world", text: "hello world" },
-      { type: "insert", id: ID, text: "hello world", html: null },
+      { type: "insert", id: ID, output: { text: "hello world", html: null } },
     ]);
   });
 
@@ -238,12 +237,11 @@ describe("transcript", () => {
       phase: "inserting",
       id: ID,
       raw: "long dictation",
-      text: "long dictation",
-      html: null,
+      output: { text: "long dictation", html: null },
     });
     expect(effects).toEqual([
       { type: "remember", raw: "long dictation", text: "long dictation" },
-      { type: "insert", id: ID, text: "long dictation", html: null },
+      { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
   });
@@ -295,12 +293,11 @@ describe("capture the helper stops on its own", () => {
       phase: "inserting",
       id: ID,
       raw: "long dictation",
-      text: "long dictation",
-      html: null,
+      output: { text: "long dictation", html: null },
     });
     expect(effects).toEqual([
       { type: "remember", raw: "long dictation", text: "long dictation" },
-      { type: "insert", id: ID, text: "long dictation", html: null },
+      { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({ state, effects: [] });
   });
@@ -325,12 +322,11 @@ describe("cleanup", () => {
       phase: "inserting",
       id: ID,
       raw: "hello um world",
-      text: "Hello, world.",
-      html: null,
+      output: { text: "Hello, world.", html: null },
     });
     expect(effects).toEqual([
       { type: "remember", raw: "hello um world", text: "Hello, world." },
-      { type: "insert", id: ID, text: "Hello, world.", html: null },
+      { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
     ]);
   });
 
@@ -340,10 +336,13 @@ describe("cleanup", () => {
       phase: "inserting",
       id: ID,
       raw: "hello um world",
-      text: "hello um world",
-      html: null,
+      output: { text: "hello um world", html: null },
     });
-    expect(effects).toContainEqual({ type: "insert", id: ID, text: "hello um world", html: null });
+    expect(effects).toContainEqual({
+      type: "insert",
+      id: ID,
+      output: { text: "hello um world", html: null },
+    });
   });
 
   test("cleanup returning empty for filler input ends empty and keeps the raw transcript", () => {
@@ -379,12 +378,11 @@ describe("snippets", () => {
       phase: "inserting",
       id: ID,
       raw: "My email.",
-      text: EMAIL,
-      html: null,
+      output: { text: EMAIL, html: null },
     });
     expect(effects).toEqual([
       { type: "remember", raw: "My email.", text: EMAIL },
-      { type: "insert", id: ID, text: EMAIL, html: null },
+      { type: "insert", id: ID, output: { text: EMAIL, html: null } },
     ]);
   });
 
@@ -396,8 +394,7 @@ describe("snippets", () => {
     expect(effects).toContainEqual({
       type: "insert",
       id: ID,
-      text: `send it to ${EMAIL}`,
-      html: null,
+      output: { text: `send it to ${EMAIL}`, html: null },
     });
   });
 
@@ -415,8 +412,7 @@ describe("snippets", () => {
     expect(effects).toContainEqual({
       type: "insert",
       id: ID,
-      text: `Send it to ${EMAIL}.`,
-      html: null,
+      output: { text: `Send it to ${EMAIL}.`, html: null },
     });
   });
 
@@ -424,7 +420,7 @@ describe("snippets", () => {
     const { effects } = run([...cleaningSentence, cleaned("Send it to me.")]);
     expect(effects).toEqual([
       { type: "remember", raw: "send it to my email", text: `send it to ${EMAIL}` },
-      { type: "insert", id: ID, text: `send it to ${EMAIL}`, html: null },
+      { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
     ]);
   });
 
@@ -434,7 +430,7 @@ describe("snippets", () => {
       transcript("um my email", true, 2000, { ...NONE, snippets }),
       cleaned("My email."),
     ]);
-    expect(effects).toContainEqual({ type: "insert", id: ID, text: EMAIL, html: null });
+    expect(effects).toContainEqual({ type: "insert", id: ID, output: { text: EMAIL, html: null } });
   });
 
   test("a cleanup that returned nothing for a transcript with a trigger inserts the expanded raw", () => {
@@ -443,8 +439,7 @@ describe("snippets", () => {
     expect(effects).toContainEqual({
       type: "insert",
       id: ID,
-      text: `send it to ${EMAIL}`,
-      html: null,
+      output: { text: `send it to ${EMAIL}`, html: null },
     });
   });
 
@@ -453,8 +448,7 @@ describe("snippets", () => {
     expect(effects).toContainEqual({
       type: "insert",
       id: ID,
-      text: `send it to ${EMAIL}`,
-      html: null,
+      output: { text: `send it to ${EMAIL}`, html: null },
     });
   });
 
@@ -472,7 +466,11 @@ describe("snippets", () => {
       ...toTranscribing,
       transcript("Sign off.", false, 2000, { ...NONE, snippets: signature }),
     ]);
-    expect(effects).toContainEqual({ type: "insert", id: ID, text: "Best,\nAlex\n", html: null });
+    expect(effects).toContainEqual({
+      type: "insert",
+      id: ID,
+      output: { text: "Best,\nAlex\n", html: null },
+    });
   });
 
   test("a formatted snippet is inserted with its HTML while history keeps the plain text", () => {
@@ -493,12 +491,11 @@ describe("snippets", () => {
       phase: "inserting",
       id: ID,
       raw: "My name.",
-      text: "Ana",
-      html: "<em>Ana</em>",
+      output: { text: "Ana", html: "<em>Ana</em>" },
     });
     expect(whole.effects).toEqual([
       { type: "remember", raw: "My name.", text: "Ana" },
-      { type: "insert", id: ID, text: "Ana", html: "<em>Ana</em>" },
+      { type: "insert", id: ID, output: { text: "Ana", html: "<em>Ana</em>" } },
     ]);
     const cleanedSentence = run([
       ...toTranscribing,
@@ -507,7 +504,7 @@ describe("snippets", () => {
     ]);
     expect(cleanedSentence.effects).toEqual([
       { type: "remember", raw: "sign it my name", text: "Sign it, Ana." },
-      { type: "insert", id: ID, text: "Sign it, Ana.", html: "Sign it, <em>Ana</em>." },
+      { type: "insert", id: ID, output: { text: "Sign it, Ana.", html: "Sign it, <em>Ana</em>." } },
     ]);
   });
 });
@@ -540,7 +537,7 @@ describe("dictionary", () => {
     const { effects } = run([...toTranscribing, said(RAW, false)]);
     expect(effects).toEqual([
       { type: "remember", raw: RAW, text: FIXED },
-      { type: "insert", id: ID, text: FIXED, html: null },
+      { type: "insert", id: ID, output: { text: FIXED, html: null } },
     ]);
   });
 
@@ -553,7 +550,11 @@ describe("dictionary", () => {
     const { effects } = run([...cleaning, cleaned("BTW, ask hadrys about wispr  flow.")]);
     expect(effects).toEqual([
       { type: "remember", raw: RAW, text: "by the way, ask Hadryś about Wispr Flow." },
-      { type: "insert", id: ID, text: "by the way, ask Hadryś about Wispr Flow.", html: null },
+      {
+        type: "insert",
+        id: ID,
+        output: { text: "by the way, ask Hadryś about Wispr Flow.", html: null },
+      },
     ]);
   });
 
@@ -561,7 +562,7 @@ describe("dictionary", () => {
     const { effects } = run([...cleaning, [{ type: "cleanupFailed", id: ID }, 2300]]);
     expect(effects).toEqual([
       { type: "remember", raw: RAW, text: FIXED },
-      { type: "insert", id: ID, text: FIXED, html: null },
+      { type: "insert", id: ID, output: { text: FIXED, html: null } },
     ]);
   });
 
@@ -574,8 +575,7 @@ describe("dictionary", () => {
     expect(effects).toContainEqual({
       type: "insert",
       id: ID,
-      text: "Hadryś wants wispr flow, btw, hadrys",
-      html: null,
+      output: { text: "Hadryś wants wispr flow, btw, hadrys", html: null },
     });
   });
 
@@ -583,17 +583,17 @@ describe("dictionary", () => {
     const { effects } = run([...toTranscribing, said("My signature.", true)]);
     expect(effects).toEqual([
       { type: "remember", raw: "My signature.", text: "wispr flow, btw, hadrys" },
-      { type: "insert", id: ID, text: "wispr flow, btw, hadrys", html: null },
+      { type: "insert", id: ID, output: { text: "wispr flow, btw, hadrys", html: null } },
     ]);
   });
 
   test("a replacement whose text contains a trigger is typed as saved on every path", () => {
     const inserts = (events: [SessionEvent, number][]) =>
       run(events).all.filter((effect) => effect.type === "insert");
-    const typed = [{ type: "insert", id: ID, text: "see my signature", html: null }];
+    const typed = [{ type: "insert", id: ID, output: { text: "see my signature", html: null } }];
     expect(inserts([...toTranscribing, said("idk", false)])).toEqual(typed);
     expect(inserts([...toTranscribing, said("idk", true), cleaned("Idk.")])).toEqual([
-      { type: "insert", id: ID, text: "see my signature.", html: null },
+      { type: "insert", id: ID, output: { text: "see my signature.", html: null } },
     ]);
     expect(
       inserts([...toTranscribing, said("idk", true), [{ type: "cleanupFailed", id: ID }, 2300]]),
@@ -726,8 +726,7 @@ describe("idle and stale events", () => {
       phase: "inserting",
       id: ID,
       raw: "late words",
-      text: "late words",
-      html: null,
+      output: { text: "late words", html: null },
     });
     expect(
       run([...toOverdue, [{ type: "transcriptFailed", id: ID, message: "asr broke" }, 50_000]])
