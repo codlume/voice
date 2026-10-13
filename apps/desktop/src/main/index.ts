@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  ClipboardItem,
   dialog,
   Menu,
   nativeTheme,
@@ -375,7 +376,13 @@ async function main() {
     log,
     onSessionDone: diagnostics.sessionDone,
     onDictated: insights.record,
-    copy: (text) => clipboard.writeText(text),
+    // Without the charset, readers decode the HTML as Latin-1, as in the helper's paste.
+    copy: ({ text, html }) =>
+      html === null
+        ? clipboard.writeText(text)
+        : clipboard.write([
+            new ClipboardItem({ "text/plain": text, "text/html": `<meta charset="utf-8">${html}` }),
+          ]),
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({

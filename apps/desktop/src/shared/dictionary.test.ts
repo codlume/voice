@@ -40,7 +40,13 @@ describe("dictionaryEntry", () => {
 describe("dictionaryProblem", () => {
   const saved = [word("Wispr Flow"), replace("btw", "by the way")];
   const snippets: Snippet[] = [
-    { id: "s", trigger: "my email", expansion: "a@example.com", enabled: true },
+    {
+      id: "s",
+      trigger: "my email",
+      expansion: "a@example.com",
+      expansionHtml: null,
+      enabled: true,
+    },
   ];
   const problem = (entry: DictionaryEntry) => dictionaryProblem(entry, saved, snippets);
 

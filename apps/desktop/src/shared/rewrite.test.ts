@@ -19,24 +19,37 @@ const snippet = (trigger: string, expansion: string, enabled = true): Snippet =>
   id: String((ids += 1)),
   trigger,
   expansion,
+  expansionHtml: null,
   enabled,
 });
 
 const EMAIL = "name@example.com";
 const email = snippet("my email", EMAIL);
+const formatted = (trigger: string, expansion: string, expansionHtml: string): Snippet => ({
+  ...snippet(trigger, expansion),
+  expansionHtml,
+});
 const none = (text: string, dictionaryFixes = 0) => ({
   text,
+  html: null,
   snippets: 0,
   dictionaryFixes,
   entireDictation: false,
 });
 const inside = (text: string, snippets: number, dictionaryFixes = 0) => ({
   text,
+  html: null,
   snippets,
   dictionaryFixes,
   entireDictation: false,
 });
-const only = (text: string) => ({ text, snippets: 1, dictionaryFixes: 0, entireDictation: true });
+const only = (text: string) => ({
+  text,
+  html: null,
+  snippets: 1,
+  dictionaryFixes: 0,
+  entireDictation: true,
+});
 
 // Dictionary alone: the rewritten text.
 const fix = (text: string, dictionary: readonly DictionaryEntry[]) =>
@@ -363,6 +376,130 @@ describe("dictionary fixes", () => {
   });
 });
 
+describe("rewrite with formatted snippets", () => {
+  const name = formatted("my name", "Ana Lopez", "<p><strong>Ana</strong> Lopez</p>");
+  const steps = formatted(
+    "the steps",
+    "Steps:\n- Plug in\n- Restart",
+    "<p>Steps:</p><ul><li>Plug in</li><li>Restart</li></ul>",
+  );
+
+  test("has no HTML when none of the expanded snippets is formatted", () => {
+    expect(rewrite("send it to my email", { dictionary: [], snippets: [email, name] }).html).toBe(
+      null,
+    );
+    expect(rewrite("no triggers here", { dictionary: [], snippets: [name] }).html).toBe(null);
+  });
+
+  test("a one-paragraph snippet runs on inside the sentence", () => {
+    expect(expand("thanks, my name, for coming", [name])).toEqual({
+      text: "thanks, Ana Lopez, for coming",
+      html: "thanks, <strong>Ana</strong> Lopez, for coming",
+      snippets: 1,
+      dictionaryFixes: 0,
+      entireDictation: false,
+    });
+  });
+
+  test("a snippet's paragraphs run on as lines between the dictated words, and its lists stay lists", () => {
+    expect(expand("try the steps then call", [steps])).toEqual({
+      text: "try Steps:\n- Plug in\n- Restart then call",
+      html: "try Steps:<ul><li>Plug in</li><li>Restart</li></ul> then call",
+      snippets: 1,
+      dictionaryFixes: 0,
+      entireDictation: false,
+    });
+    const around = formatted(
+      "the plan",
+      "Steps:\n- a\nthen",
+      "<p>Steps:</p><ul><li>a</li></ul><p>then</p>",
+    );
+    expect(expand("the plan", [around]).html).toBe("Steps:<ul><li>a</li></ul>then");
+  });
+
+  test("paragraphs paste as lines, with no break the plain text lacks", () => {
+    const signOff = formatted("sign off", "Best,\nAda", "<p>Best,</p><p><strong>Ada</strong></p>");
+    expect(expand("thanks sign off", [signOff])).toEqual({
+      text: "thanks Best,\nAda",
+      html: "thanks Best,<br><strong>Ada</strong>",
+      snippets: 1,
+      dictionaryFixes: 0,
+      entireDictation: false,
+    });
+  });
+
+  test("empty lines and a trailing line break paste as many breaks as the plain text has", () => {
+    const gap = formatted("the gap", "x\n\ny", "<p><em>x</em></p><p><br></p><p>y</p>");
+    expect(expand("the gap", [gap]).html).toBe("<em>x</em><br><br>y");
+    const trailing = formatted("the end", "a\n", "<p><em>a</em><br><br></p>");
+    expect(expand("the end now", [trailing])).toMatchObject({
+      text: "a\n now",
+      html: "<em>a</em><br>&nbsp;now",
+    });
+    const beforeList = formatted(
+      "the list",
+      "a\n\n- b",
+      "<p>a<br><br></p><ul><li><em>b</em></li></ul>",
+    );
+    expect(expand("the list", [beforeList]).html).toBe("a<br><br><ul><li><em>b</em></li></ul>");
+  });
+
+  test("a dictation that is only the trigger inserts the snippet's own formatting", () => {
+    expect(expand("The steps.", [steps])).toEqual({
+      text: steps.expansion,
+      html: "Steps:<ul><li>Plug in</li><li>Restart</li></ul>",
+      snippets: 1,
+      dictionaryFixes: 0,
+      entireDictation: true,
+    });
+    expect(expand("My name.", [name]).html).toBe("<strong>Ana</strong> Lopez");
+  });
+
+  test("dictated markup characters are typed as text, not read as HTML", () => {
+    expect(expand('if a < b & "c" > d, my name', [name]).html).toBe(
+      "if a &lt; b &amp; &quot;c&quot; &gt; d, <strong>Ana</strong> Lopez",
+    );
+  });
+
+  test("a plain snippet beside a formatted one keeps its text and line breaks", () => {
+    const signOff = snippet("sign off", "Best,\n<Ana>");
+    expect(expand("my name sign off", [name, signOff])).toEqual({
+      text: "Ana Lopez Best,\n<Ana>",
+      html: "<strong>Ana</strong> Lopez Best,<br>&lt;Ana&gt;",
+      snippets: 2,
+      dictionaryFixes: 0,
+      entireDictation: false,
+    });
+  });
+
+  test("a dictionary correction beside a formatted snippet is escaped like dictated text", () => {
+    const rewrites: Rewrites = { dictionary: [replace("r and d", "R&D")], snippets: [name] };
+    expect(rewrite("r and d is my name", rewrites)).toEqual({
+      text: "R&D is Ana Lopez",
+      html: "R&amp;D is <strong>Ana</strong> Lopez",
+      snippets: 1,
+      dictionaryFixes: 1,
+      entireDictation: false,
+    });
+  });
+
+  test("spaces a rich target would collapse keep their width, and single spaces stay spaces", () => {
+    const card = formatted(
+      "my card",
+      "Name:  Ada\n  Engineer",
+      "<p>Name:  <strong>Ada</strong><br>  Engineer</p><ul><li> one</li></ul><p><em> two</em></p>",
+    );
+    expect(expand("my card", [card]).html).toBe(
+      "Name:&nbsp; <strong>Ada</strong><br>&nbsp; Engineer" +
+        "<ul><li>&nbsp;one</li></ul><em>&nbsp;two</em>",
+    );
+    expect(expand("see   my name  now", [name]).html).toBe(
+      "see&nbsp; &nbsp;<strong>Ana</strong> Lopez&nbsp; now",
+    );
+    expect(expand("a\n b my name", [name]).html).toBe("a<br>&nbsp;b <strong>Ana</strong> Lopez");
+  });
+});
+
 describe("finalRewrite", () => {
   const rewrites: Rewrites = { dictionary: [word("Hadryś")], snippets: [email] };
 
@@ -376,6 +513,21 @@ describe("finalRewrite", () => {
   test("falls back to the raw transcript when cleanup lost a trigger", () => {
     expect(finalRewrite("hadrys wants my email", "Hadrys wants it.", rewrites)).toEqual({
       ...inside(`Hadryś wants ${EMAIL}`, 1, 1),
+      source: "raw",
+    });
+  });
+
+  test("carries the formatting of whichever transcript it picks", () => {
+    const name = formatted("my name", "Ana", "<p><em>Ana</em></p>");
+    const withName: Rewrites = { dictionary: [], snippets: [name] };
+    expect(finalRewrite("sign it my name", "Sign it, my name.", withName)).toMatchObject({
+      text: "Sign it, Ana.",
+      html: "Sign it, <em>Ana</em>.",
+      source: "cleaned",
+    });
+    expect(finalRewrite("sign it my name", "Sign it.", withName)).toMatchObject({
+      text: "sign it Ana",
+      html: "sign it <em>Ana</em>",
       source: "raw",
     });
   });

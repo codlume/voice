@@ -10,7 +10,7 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 8;
+export const HELPER_PROTOCOL_VERSION = 9;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey }
@@ -26,7 +26,7 @@ export type HelperCommand =
   | { type: "capture.cancel"; id: string }
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
-  | { type: "insert"; id: string; text: string }
+  | { type: "insert"; id: string; text: string; html: string | null }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }

@@ -99,7 +99,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 8 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 9 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -135,7 +135,7 @@ describe("startHelper", () => {
     expect(transcript).toMatchObject({ id: "s1", text: "call ada tomorrow", asrMs: 40 });
     expect(transcript.audioMs).toBeGreaterThanOrEqual(100);
 
-    h.helper.send({ type: "insert", id: "s1", text: transcript.text });
+    h.helper.send({ type: "insert", id: "s1", text: transcript.text, html: null });
     await h.waitFor((e) => e.type === "insert.result");
     expect(h.of("insert.result")[0]?.event).toEqual({
       type: "insert.result",
@@ -162,12 +162,12 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v8; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v9; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 8 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 9 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);
@@ -246,7 +246,7 @@ describe("startHelper", () => {
     await h.waitFor((e) => e.type === "ready");
     await sleep(60);
     const text = "x".repeat(1 << 20);
-    expect(() => h.helper.send({ type: "insert", id: "s1", text })).not.toThrow();
+    expect(() => h.helper.send({ type: "insert", id: "s1", text, html: null })).not.toThrow();
     await expect.poll(() => h.logs.join("\n")).toMatch(/helper: stdin .*EPIPE/);
     expect(h.entries).toContainEqual({
       message: "helper stdin failed",

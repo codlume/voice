@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { DictionaryEntry } from "../shared/dictionary.ts";
+import type { Output } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
@@ -44,6 +45,14 @@ type Options = {
   copyToClipboard?: boolean;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
+};
+
+const formattedName: Snippet = {
+  id: "1",
+  trigger: "my name",
+  expansion: "Ana",
+  expansionHtml: "<p><em>Ana</em></p>",
+  enabled: true,
 };
 
 function harness(opts: Options = {}) {
@@ -91,7 +100,7 @@ function harness(opts: Options = {}) {
   const phases: string[] = [];
   const reports: SessionReport[] = [];
   const dictated: Dictated[] = [];
-  const copies: string[] = [];
+  const copies: Output[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
@@ -130,7 +139,7 @@ function harness(opts: Options = {}) {
     },
     onSessionDone: (report) => reports.push(report),
     onDictated: (session) => dictated.push(session),
-    copy: (text) => copies.push(text),
+    copy: (output) => copies.push(output),
   });
   const id = () => {
     const session = store.state.session;
@@ -345,7 +354,7 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual(["hello world"]);
     expect(h.budgets).toEqual([cleanupBudgetMs("hello world")]);
     expect(h.entries).toEqual([]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world." });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
     expect(h.store.state.last).toEqual({ raw: "hello world", text: "hello world." });
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
     expect(h.store.state.session).toEqual({
@@ -510,7 +519,13 @@ describe("createDictation", () => {
   });
 
   test("hands over no cleanup output when the raw transcript was inserted", async () => {
-    const email = { id: "s", trigger: "my email", expansion: "name@example.com", enabled: true };
+    const email = {
+      id: "s",
+      trigger: "my email",
+      expansion: "name@example.com",
+      expansionHtml: null,
+      enabled: true,
+    };
     const lost = harness({ cleanHangs: true, snippets: [email] });
     const id = await dictate(lost, "send it to my email");
     lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1 });
@@ -540,6 +555,7 @@ describe("createDictation", () => {
       type: "insert",
       id,
       text: "send it to name@example.com",
+      html: null,
     });
   });
 
@@ -679,24 +695,38 @@ describe("createDictation", () => {
       h.helper.transcript(id, "hey");
       await flush();
       expect(h.cleans).toEqual([]);
-      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hey" });
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hey", html: null });
     },
   );
 
   test("a dictation of only a trigger inserts the saved expansion without running cleanup", async () => {
     const expansion = "Best,\nAlex";
-    const h = harness({ snippets: [{ id: "1", trigger: "sign off", expansion, enabled: true }] });
+    const h = harness({
+      snippets: [{ id: "1", trigger: "sign off", expansion, expansionHtml: null, enabled: true }],
+    });
     const id = await dictate(h, "Sign off.");
     expect(h.cleans).toEqual([]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion, html: null });
     expect(h.store.state.last).toEqual({ raw: "Sign off.", text: expansion });
+  });
+
+  test("a formatted snippet sends its HTML to the helper and keeps history plain", async () => {
+    const h = harness({ snippets: [formattedName] });
+    const id = await dictate(h, "sign it my name");
+    expect(h.commands.at(-1)).toEqual({
+      type: "insert",
+      id,
+      text: "sign it Ana.",
+      html: "sign it <em>Ana</em>.",
+    });
+    expect(h.store.state.last).toEqual({ raw: "sign it my name", text: "sign it Ana." });
   });
 
   test("the saved dictionary fixes the cleaned text while cleanup and history get the raw words", async () => {
     const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
     const id = await dictate(h, "ask hadrys");
     expect(h.cleans).toEqual(["ask hadrys"]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "ask Hadryś." });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "ask Hadryś.", html: null });
     expect(h.store.state.last).toEqual({ raw: "ask hadrys", text: "ask Hadryś." });
   });
 
@@ -720,7 +750,7 @@ describe("createDictation", () => {
     });
     await flush();
     expect(h.cleans).toEqual([]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "raw words" });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "raw words", html: null });
   });
 
   test.each(dictationLanguages.filter(({ value }) => value !== "en"))(
@@ -746,7 +776,7 @@ describe("createDictation", () => {
       });
       await flush();
       expect(h.cleans).toEqual([]);
-      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: raw });
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: raw, html: null });
       expect(h.store.state.last).toEqual({ raw, text: raw });
       h.dictation.onHelperEvent({
         type: "insert.result",
@@ -794,6 +824,7 @@ describe("createDictation", () => {
         type: "insert",
         id: first,
         text: firstCleaned ? "first." : "first",
+        html: null,
       });
       h.dictation.onHelperEvent({
         type: "insert.result",
@@ -824,6 +855,7 @@ describe("createDictation", () => {
         type: "insert",
         id: second,
         text: firstCleaned ? "second" : "second.",
+        html: null,
       });
       expect(h.cleans).toEqual([firstCleaned ? "first" : "second"]);
     },
@@ -847,7 +879,7 @@ describe("createDictation", () => {
     });
     await flush();
     expect(h.cleans).toEqual(["hi"]);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hi." });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hi.", html: null });
   });
 
   test.each(["rejects", "throws"] as const)(
@@ -868,7 +900,7 @@ describe("createDictation", () => {
         speechMs: 600,
       });
       await flush();
-      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me" });
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me", html: null });
       expect(h.store.state.last).toEqual({ raw: "keep me", text: "keep me" });
       expect(h.logs).toContain("cleanup failed: model crashed");
       expect(h.entries).toEqual([
@@ -901,7 +933,7 @@ describe("createDictation", () => {
     expect(h.signals[0]!.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.signals[0]!.aborted).toBe(true);
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three" });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three", html: null });
     expect(h.logs).toContainEqual(expect.stringContaining("cleanup timed out"));
     expect(h.entries).toEqual([
       {
@@ -913,7 +945,7 @@ describe("createDictation", () => {
     h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([
-      { type: "insert", id, text: "one two three" },
+      { type: "insert", id, text: "one two three", html: null },
     ]);
     expect(h.store.state.last).toEqual({ raw: "one two three", text: "one two three" });
   });
@@ -922,7 +954,7 @@ describe("createDictation", () => {
     const h = harness({ cleanPartial: true });
     const id = await dictate(h, "one two three");
     const budgetMs = cleanupBudgetMs("one two three");
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three." });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "one two three.", html: null });
     expect(h.store.state.last).toEqual({ raw: "one two three", text: "one two three." });
     expect(h.logs).toContain(`cleanup partial: 1 of 3 chunks cleaned, budget ${budgetMs} ms`);
     expect(h.entries).toEqual([
@@ -989,23 +1021,36 @@ describe("createDictation", () => {
     test("copies the cleaned text once, only after insertion reports back", async () => {
       const h = harness({ copyToClipboard: true });
       const id = await dictate(h, "hello world");
-      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world." });
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
       expect(h.copies).toEqual([]);
       h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
-      expect(h.copies).toEqual(["hello world."]);
+      expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
       expect(h.store.state.session).toEqual(idle);
-      expect(h.copies).toEqual(["hello world."]);
+      expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
     });
 
     test("copies the text with its snippets expanded", async () => {
       const snippets = [
-        { id: "1", trigger: "my email", expansion: "name@example.com", enabled: true },
+        {
+          id: "1",
+          trigger: "my email",
+          expansion: "name@example.com",
+          expansionHtml: null,
+          enabled: true,
+        },
       ];
       const h = harness({ copyToClipboard: true, snippets });
       const id = await dictate(h, "send it to my email");
       h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
-      expect(h.copies).toEqual(["send it to name@example.com."]);
+      expect(h.copies).toEqual([{ text: "send it to name@example.com.", html: null }]);
+    });
+
+    test("copies both the plain text and the HTML of a formatted snippet", async () => {
+      const h = harness({ copyToClipboard: true, snippets: [formattedName] });
+      const id = await dictate(h, "sign it my name");
+      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      expect(h.copies).toEqual([{ text: "sign it Ana.", html: "sign it <em>Ana</em>." }]);
     });
 
     test("copies the text when insertion fails", async () => {
@@ -1021,7 +1066,7 @@ describe("createDictation", () => {
         phase: "done",
         outcome: { kind: "notInserted" },
       });
-      expect(h.copies).toEqual(["keep me"]);
+      expect(h.copies).toEqual([{ text: "keep me", html: null }]);
     });
 
     test("copies the text when the helper never answers the insert", async () => {
@@ -1030,7 +1075,7 @@ describe("createDictation", () => {
       vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
       expect(h.copies).toEqual([]);
       vi.advanceTimersByTime(1);
-      expect(h.copies).toEqual(["stuck"]);
+      expect(h.copies).toEqual([{ text: "stuck", html: null }]);
     });
 
     test("copies the text when the helper exits mid-insert", async () => {
@@ -1038,7 +1083,7 @@ describe("createDictation", () => {
       await dictate(h, "x");
       h.dictation.dispatch({ type: "helperExited" });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "failed" } });
-      expect(h.copies).toEqual(["x"]);
+      expect(h.copies).toEqual([{ text: "x", html: null }]);
     });
 
     test("copies nothing when the setting is off", async () => {
@@ -1086,7 +1131,7 @@ describe("createDictation", () => {
     expect(h.commands.filter((c) => c.type === "capture.cancel")).toEqual([]);
     vi.advanceTimersByTime(10_000);
     h.helper.transcript(id, "late words");
-    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "late words" });
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "late words", html: null });
     expect(h.store.state.last).toEqual({ raw: "late words", text: "late words" });
   });
 

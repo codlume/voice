@@ -44,7 +44,7 @@ public enum HelperCommand: Equatable, Sendable {
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
-    case insert(id: String, text: String)
+    case insert(id: String, text: String, html: String?)
     case permissionsCheck
     case permissionsRequest(kind: PermissionKind)
     case asrPrepare(download: Bool)
@@ -82,7 +82,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
-    case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method
+    case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid
 }
 
@@ -106,7 +106,9 @@ extension HelperCommand: Decodable {
                                         microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "microphone.test.stop": self = .microphoneTestStop(id: try c.decode(String.self, forKey: .id))
         case "insert":
-            self = .insert(id: try c.decode(String.self, forKey: .id), text: try c.decode(String.self, forKey: .text))
+            self = .insert(id: try c.decode(String.self, forKey: .id),
+                           text: try c.decode(String.self, forKey: .text),
+                           html: try c.decodeIfPresent(String.self, forKey: .html))
         case "permissions.check": self = .permissionsCheck
         case "permissions.request":
             self = .permissionsRequest(kind: try c.decode(PermissionKind.self, forKey: .kind))

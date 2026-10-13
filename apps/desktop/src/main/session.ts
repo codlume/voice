@@ -1,6 +1,12 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
-import { finalRewrite, rewrite, type Rewrites, type Rewritten } from "../shared/rewrite.ts";
+import {
+  finalRewrite,
+  rewrite,
+  type Output,
+  type Rewrites,
+  type Rewritten,
+} from "../shared/rewrite.ts";
 
 export type Session =
   | { phase: "idle" }
@@ -12,7 +18,7 @@ export type Session =
       phase: "inserting";
       id: string;
       raw: string;
-      text: string;
+      output: Output;
       insertedCleanup: string | null;
       dictionaryFixes: number;
     }
@@ -42,7 +48,7 @@ export type Effect =
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string }
-  | { type: "insert"; id: string; text: string }
+  | { type: "insert"; id: string; output: Output }
   | { type: "remember"; raw: string; text: string }
   | { type: "scheduleIdle"; id: string; ms: number };
 
@@ -83,15 +89,15 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
 function insert(
   id: string,
   raw: string,
-  rewritten: Rewritten,
+  { text, html, dictionaryFixes }: Rewritten,
   insertedCleanup: string | null,
 ): Step {
-  const { text, dictionaryFixes } = rewritten;
+  const output = { text, html };
   return {
-    state: { phase: "inserting", id, raw, text, insertedCleanup, dictionaryFixes },
+    state: { phase: "inserting", id, raw, output, insertedCleanup, dictionaryFixes },
     effects: [
       { type: "remember", raw, text },
-      { type: "insert", id, text },
+      { type: "insert", id, output },
     ],
   };
 }

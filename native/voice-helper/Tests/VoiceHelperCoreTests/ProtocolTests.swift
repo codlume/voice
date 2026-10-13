@@ -17,7 +17,10 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"microphone.test.start","id":"t1","microphone":{"uid":"usb","name":"USB"}}"#,
          .microphoneTestStart(id: "t1", microphone: Microphone(uid: "usb", name: "USB"))),
         (#"{"type":"microphone.test.stop","id":"t1"}"#, .microphoneTestStop(id: "t1")),
-        (#"{"type":"insert","id":"s1","text":"hi there"}"#, .insert(id: "s1", text: "hi there")),
+        (#"{"type":"insert","id":"s1","text":"hi there","html":null}"#,
+         .insert(id: "s1", text: "hi there", html: nil)),
+        (#"{"type":"insert","id":"s1","text":"Hi Ana","html":"Hi <strong>Ana</strong>"}"#,
+         .insert(id: "s1", text: "Hi Ana", html: "Hi <strong>Ana</strong>")),
         (#"{"type":"permissions.check"}"#, .permissionsCheck),
         (#"{"type":"permissions.request","kind":"accessibility"}"#, .permissionsRequest(kind: .accessibility)),
         (#"{"type":"asr.prepare","download":true}"#, .asrPrepare(download: true)),
@@ -55,7 +58,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 8), ["type": "ready", "version": 8]),
+        (.ready(version: 9), ["type": "ready", "version": 9]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),

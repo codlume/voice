@@ -63,13 +63,23 @@ const styles = stylex.create({
     backgroundColor: { default: "transparent", ":hover": color.accent },
     color: color.mutedForeground,
   },
+  pressed: { backgroundColor: color.accent, color: color.foreground },
 });
 
 export function Button({
   variant = "primary",
+  pressed,
   ...props
-}: Omit<ComponentProps<"button">, "type" | "className" | "style"> & {
+}: Omit<ComponentProps<"button">, "type" | "className" | "style" | "aria-pressed"> & {
   variant?: "primary" | "secondary" | "destructive" | "text" | "icon";
+  pressed?: boolean;
 }) {
-  return <button type="button" {...props} {...stylex.props(styles.button, styles[variant])} />;
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      {...props}
+      {...stylex.props(styles.button, styles[variant], pressed && styles.pressed)}
+    />
+  );
 }

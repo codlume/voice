@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import {
+  EXPANSION_HTML_MAX_LENGTH,
   EXPANSION_MAX_LENGTH,
   TRIGGER_MAX_LENGTH,
   parseSnippets,
@@ -13,6 +14,7 @@ const snippet = (id: string, trigger: string, expansion: string): Snippet => ({
   id,
   trigger,
   expansion,
+  expansionHtml: null,
   enabled: true,
 });
 const email = snippet("1", "my email", EMAIL);
@@ -73,6 +75,14 @@ describe("snippetProblem", () => {
     expect(snippetProblem(snippet("2", "e-mail", "x"), [], [{ phrase: "email" }])).toBeNull();
   });
 
+  test("formatting far beyond what the text needs is rejected", () => {
+    const expansionHtml = `<p>${"<strong></strong>".repeat(EXPANSION_HTML_MAX_LENGTH / 17 + 1)}</p>`;
+    expect(snippetProblem({ ...email, expansionHtml }, [], [])?.field).toBe("expansion");
+    expect(
+      snippetProblem({ ...email, expansionHtml: "<p><strong>x</strong></p>" }, [], []),
+    ).toBeNull();
+  });
+
   test("a message never repeats the expansion", () => {
     const secret = "s3cret-token ".repeat(400);
     expect(snippetProblem({ ...email, expansion: secret }, [], [])?.message).not.toContain(
@@ -99,8 +109,14 @@ describe("parseSnippets", () => {
       { id: "6", trigger: "address", expansion: "1 Main St" },
     ];
     expect(parseSnippets(raw)).toEqual([
-      { id: "1", trigger: "my email", expansion: " name@example.com\n", enabled: true },
-      { id: "6", trigger: "address", expansion: "1 Main St", enabled: true },
+      {
+        id: "1",
+        trigger: "my email",
+        expansion: " name@example.com\n",
+        expansionHtml: null,
+        enabled: true,
+      },
+      { id: "6", trigger: "address", expansion: "1 Main St", expansionHtml: null, enabled: true },
     ]);
   });
 
@@ -121,5 +137,53 @@ describe("parseSnippets", () => {
       { id: "3", trigger: "phone", expansion: "555", enabled: "no" },
     ];
     expect(parseSnippets(raw).map((s) => s.enabled)).toEqual([true, false, true]);
+  });
+
+  test("formatting is kept, and a snippet without it or from before it reads as plain", () => {
+    const html = "<p>Thanks,<br><strong>Ada</strong></p>";
+    const raw = [
+      { id: "1", trigger: "sign off", expansion: "Thanks,\nAda", expansionHtml: html },
+      { id: "2", trigger: "my email", expansion: EMAIL },
+      { id: "3", trigger: "phone", expansion: "555", expansionHtml: "" },
+      { id: "4", trigger: "fax", expansion: "556", expansionHtml: 7 },
+    ];
+    expect(parseSnippets(raw).map((s) => s.expansionHtml)).toEqual([html, null, null, null]);
+  });
+
+  test("formatting with markup the editor never writes reads as plain, keeping the text", () => {
+    const raw = [
+      { id: "1", trigger: "a", expansion: "x", expansionHtml: '<p><img src="x" onerror="y"></p>' },
+      {
+        id: "2",
+        trigger: "b",
+        expansion: "x",
+        expansionHtml: '<a href="javascript:alert(1)">x</a>',
+      },
+      { id: "3", trigger: "c", expansion: "x", expansionHtml: '<p style="color:red">x</p>' },
+      {
+        id: "4",
+        trigger: "d",
+        expansion: "x",
+        expansionHtml: '<a href="https://a.b/?q=1&amp;r=2">x</a>',
+      },
+    ];
+    expect(parseSnippets(raw).map((s) => [s.expansion, s.expansionHtml])).toEqual([
+      ["x", null],
+      ["x", null],
+      ["x", null],
+      ["x", '<a href="https://a.b/?q=1&amp;r=2">x</a>'],
+    ]);
+  });
+
+  test("formatting past the size limit reads as plain, keeping the snippet", () => {
+    const expansionHtml = `<p>${"<strong>x</strong>".repeat(EXPANSION_HTML_MAX_LENGTH / 18 + 1)}</p>`;
+    const [loaded] = parseSnippets([{ id: "1", trigger: "a", expansion: "x", expansionHtml }]);
+    expect(loaded).toEqual({
+      id: "1",
+      trigger: "a",
+      expansion: "x",
+      expansionHtml: null,
+      enabled: true,
+    });
   });
 });
