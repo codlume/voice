@@ -22,6 +22,12 @@
     "node-llama-cpp": "3.21.1"
   },
   "devDependencies": {
+    "@lexical/headless": "0.52.0",
+    "@lexical/html": "0.52.0",
+    "@lexical/link": "0.52.0",
+    "@lexical/list": "0.52.0",
+    "@lexical/markdown": "0.52.0",
+    "@lexical/react": "0.52.0",
     "@sentry/electron": "7.20.0",
     "@sentry/node": "10.75.0",
     "@stylexjs/unplugin": "catalog:",
@@ -32,6 +38,7 @@
     "@voice/cleanup": "workspace:*",
     "electron": "44.4.5",
     "electron-builder": "26.15.6",
+    "lexical": "0.52.0",
     "lucide-react": "1.52.0",
     "react": "catalog:",
     "react-dom": "catalog:",

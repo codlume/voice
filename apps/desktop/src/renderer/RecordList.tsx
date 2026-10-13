@@ -45,7 +45,6 @@ export const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
   },
-  textarea: { minHeight: 120, lineHeight: 1.45, resize: "vertical" },
   invalid: { borderColor: { default: color.error, ":focus": color.error } },
   saveError: { marginTop: space.md },
 });
@@ -79,6 +78,7 @@ export type Editor<T, F extends string> = {
   // The problem to show, once a save was attempted.
   shown: Problem<F> | null;
   message: (field: F) => string | undefined;
+  submit: () => void;
   saveOnEnter: (event: KeyboardEvent) => void;
 };
 
@@ -95,6 +95,7 @@ export function RecordList<T extends { id: string }, F extends string>({
   normalize,
   problem,
   renderFields,
+  wide = false,
 }: {
   copy: Copy;
   records: readonly T[];
@@ -112,6 +113,7 @@ export function RecordList<T extends { id: string }, F extends string>({
   // `others` never contains the record being checked.
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  wide?: boolean;
 }) {
   const [modal, setModal] = useState<Modal<T> | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
@@ -227,6 +229,7 @@ export function RecordList<T extends { id: string }, F extends string>({
           normalize={normalize}
           problem={problem}
           renderFields={renderFields}
+          wide={wide}
         />
       )}
       {(modal?.kind === "delete" || modal?.kind === "deleted") && (
@@ -256,6 +259,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize,
   problem,
   renderFields,
+  wide,
   open,
   onOpenChange,
   onOpenChangeComplete,
@@ -268,6 +272,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize: (draft: T) => T;
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  wide: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
@@ -289,7 +294,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   useEffect(() => {
     if (failedSaves === 0) return;
     fieldsRef.current
-      ?.querySelector<HTMLElement>("input[data-invalid], textarea[data-invalid]")
+      ?.querySelector<HTMLElement>("input[data-invalid], [contenteditable][data-invalid]")
       ?.focus();
   }, [failedSaves]);
 
@@ -313,10 +318,11 @@ function RecordEditor<T extends { id: string }, F extends string>({
     draft,
     edit: (patch) => {
       clearError();
-      setDraft({ ...draft, ...patch });
+      setDraft((previous) => ({ ...previous, ...patch }));
     },
     shown,
     message: (field) => (shown?.field === field ? shown.message : undefined),
+    submit,
     saveOnEnter: (event) => {
       if (event.key === "Enter" && !event.nativeEvent.isComposing) submit();
     },
@@ -331,6 +337,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
     >
       <DialogFrame
         title={text.title}
+        wide={wide}
         actions={
           <Button disabled={pending} onClick={submit}>
             {text.save}

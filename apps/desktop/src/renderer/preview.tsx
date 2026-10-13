@@ -193,7 +193,8 @@ const hubScenes: Record<string, Snapshot> = {
           trigger: "standard sign-off",
           expansion:
             "Thanks for the quick turnaround on this. I will review the draft tomorrow morning and send notes before the 11:00 sync. If anything changes on your side, reply here and I will adjust the plan.",
-          expansionHtml: null,
+          expansionHtml:
+            "<p>Thanks for the quick turnaround on this. I will review the draft <strong>tomorrow morning</strong> and send notes before the <em>11:00 sync</em>. If anything changes on your side, reply here and I will adjust the plan.</p>",
           enabled: true,
         },
       ],
