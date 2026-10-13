@@ -14,35 +14,51 @@ import {
   type LexicalNode,
 } from "lexical";
 
+import { allowedHref, escapeHtml } from "../shared/snippet-html.ts";
 import type { Snippet } from "../shared/snippets.ts";
 
 export type SnippetText = Pick<Snippet, "expansion" | "expansionHtml">;
 
 export const snippetNodes: readonly Klass<LexicalNode>[] = [ListNode, ListItemNode, LinkNode];
 
-const ALLOWED_SCHEMES = new Set(["http:", "https:", "mailto:"]);
-
-export function allowedHref(href: string): string | null {
-  if (!URL.canParse(href)) return null;
-  return ALLOWED_SCHEMES.has(new URL(href).protocol) ? href : null;
-}
-
+// A link as typed or pasted: a stored scheme, or an address or domain that gets one. A relative
+// link ("/docs", "#top") has no page to resolve against and gets none.
 export function hrefFromInput(input: string): string | null {
+  const href = allowedHref(input);
+  if (href !== null) return href;
   const trimmed = input.trim();
-  if (trimmed === "") return null;
-  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed)) return allowedHref(trimmed);
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed) || !/^[\p{L}\p{N}]/u.test(trimmed)) return null;
   if (/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(trimmed)) return allowedHref(`mailto:${trimmed}`);
   return allowedHref(`https://${trimmed}`);
 }
 
-type Written = { html: string; text: string; formatted: boolean };
+// What the editor shows is what is saved, so a link gets the href the serializer would write,
+// and a link with none stops being a link.
+export function $storedLink(link: LinkNode): void {
+  const href = hrefFromInput(link.getURL());
+  if (href === null) {
+    for (const child of link.getChildren()) link.insertBefore(child);
+    link.remove();
+  } else if (href !== link.getURL()) {
+    link.setURL(href);
+  }
+}
 
-const escapeHtml = (text: string) =>
-  text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+// Saved lists number from 1 and have one level, so the editor shows them that way: an indented
+// item moves out to follow its parent.
+export function $storedList(list: ListNode): void {
+  if (list.getStart() !== 1) list.setStart(1);
+  const item = list.getParent();
+  if (!$isListItemNode(item)) return;
+  let last: LexicalNode = item;
+  for (const nested of item.getChildren().filter($isListNode)) {
+    for (const child of nested.getChildren()) last = last.insertAfter(child);
+    nested.remove();
+  }
+  if (item.isEmpty()) item.remove();
+}
+
+type Written = { html: string; text: string; formatted: boolean };
 
 function writeInline(nodes: readonly LexicalNode[]): Written {
   let html = "";

@@ -2,6 +2,7 @@ import { Field } from "@base-ui/react/field";
 import { $isLinkNode, $createLinkNode, $toggleLink, LinkNode } from "@lexical/link";
 import {
   $isListNode,
+  ListNode,
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
   REMOVE_LIST_COMMAND,
@@ -42,12 +43,14 @@ import {
 import { BoldIcon, ItalicIcon, LinkIcon, ListIcon, ListOrderedIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useState, type MouseEvent, type ReactNode } from "react";
 
+import { allowedHref } from "../shared/snippet-html.ts";
 import { Button } from "./Button.tsx";
 import { styles as form } from "./RecordList.tsx";
 import {
   $readSnippetText,
+  $storedLink,
+  $storedList,
   $writeSnippetText,
-  allowedHref,
   hrefFromInput,
   snippetNodes,
   type SnippetText,
@@ -236,11 +239,8 @@ function SupportedFormatsOnly() {
         if (node.getFormatType() !== "") node.setFormat("");
         if (node.getIndent() !== 0) node.setIndent(0);
       }),
-      editor.registerNodeTransform(LinkNode, (node) => {
-        if (allowedHref(node.getURL()) !== null) return;
-        for (const child of node.getChildren()) node.insertBefore(child);
-        node.remove();
-      }),
+      editor.registerNodeTransform(LinkNode, $storedLink),
+      editor.registerNodeTransform(ListNode, $storedList),
     ];
     return () => {
       for (const off of unregister) off();

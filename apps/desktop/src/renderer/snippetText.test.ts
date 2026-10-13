@@ -1,13 +1,22 @@
 import { createHeadlessEditor } from "@lexical/headless";
 import { withDOM } from "@lexical/headless/dom";
-import { $createLinkNode } from "@lexical/link";
-import { $createParagraphNode, $createTextNode, $getRoot } from "lexical";
+import { $createLinkNode, $isLinkNode, LinkNode } from "@lexical/link";
+import { $isListItemNode, $isListNode, ListNode } from "@lexical/list";
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $isElementNode,
+  type LexicalEditor,
+} from "lexical";
 import { describe, expect, it } from "vite-plus/test";
 
-import { isSnippetHtml } from "../shared/snippets.ts";
+import { isSnippetHtml } from "../shared/snippet-html.ts";
 
 import {
   $readSnippetText,
+  $storedLink,
+  $storedList,
   $writeSnippetText,
   hrefFromInput,
   snippetNodes,
@@ -93,6 +102,15 @@ describe("snippet text", () => {
     expect(written.read($readSnippetText)).toEqual({ expansion: "gogogo", expansionHtml: null });
   });
 
+  it("stores a pasted link without the whitespace around its scheme", () => {
+    for (const href of ["\nhttps://example.com", " https://example.com", "ht\ttps://example.com"]) {
+      expect(html(`<p>see <a href="${href}">site</a></p>`)).toEqual({
+        expansion: "see site (https://example.com)",
+        expansionHtml: '<p>see <a href="https://example.com">site</a></p>',
+      });
+    }
+  });
+
   it("writes a link as its URL when the text is the URL, else as text (url)", () => {
     expect(
       html(
@@ -135,6 +153,76 @@ describe("snippet text", () => {
   });
 });
 
+// The editor as the Snippets page runs it, with the transforms that keep it showing what is saved.
+function editing(): LexicalEditor {
+  const edited = editor();
+  edited.registerNodeTransform(LinkNode, $storedLink);
+  edited.registerNodeTransform(ListNode, $storedList);
+  return edited;
+}
+
+function load(edited: LexicalEditor, expansionHtml: string) {
+  withDOM(() =>
+    edited.update(() => $writeSnippetText({ expansion: "", expansionHtml }), { discrete: true }),
+  );
+}
+
+describe("what the editor shows", () => {
+  it("is a link to the href that gets saved, or no link when none can be", () => {
+    const edited = editing();
+    edited.update(
+      () => {
+        const paragraph = $createParagraphNode().append(
+          $createLinkNode("example.com").append($createTextNode("docs")),
+          $createTextNode(" "),
+          $createLinkNode("javascript:alert(1)").append($createTextNode("go")),
+        );
+        $getRoot().clear().append(paragraph);
+      },
+      { discrete: true },
+    );
+    const links = edited.read(() =>
+      $getRoot()
+        .getChildren()
+        .flatMap((block) => ($isElementNode(block) ? block.getChildren() : []))
+        .filter($isLinkNode)
+        .map((link) => [link.getURL(), link.getTextContent()]),
+    );
+    expect(links).toEqual([["https://example.com", "docs"]]);
+    expect(edited.read($readSnippetText)).toEqual({
+      expansion: "docs (https://example.com) go",
+      expansionHtml: '<p><a href="https://example.com">docs</a> go</p>',
+    });
+  });
+
+  it("numbers lists from 1 and holds every item at one level", () => {
+    const edited = editing();
+    load(
+      edited,
+      '<ol start="3"><li>x</li><li>y</li></ol>' +
+        "<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li><ul><li>d</li></ul></li><li>e</li></ul>",
+    );
+    const lists = edited.read(() =>
+      $getRoot()
+        .getChildren()
+        .filter($isListNode)
+        .map((list) => ({
+          start: list.getStart(),
+          items: list
+            .getChildren()
+            .filter($isListItemNode)
+            .map((item) =>
+              item.getChildren().some($isListNode) ? "nested" : item.getTextContent(),
+            ),
+        })),
+    );
+    expect(lists).toEqual([
+      { start: 1, items: ["x", "y"] },
+      { start: 1, items: ["a", "b", "c", "d", "e"] },
+    ]);
+  });
+});
+
 describe("link row input", () => {
   it("adds a scheme the user left out and refuses ones that cannot be stored", () => {
     expect(hrefFromInput(" example.com/docs ")).toBe("https://example.com/docs");
@@ -143,5 +231,9 @@ describe("link row input", () => {
     expect(hrefFromInput("javascript:alert(1)")).toBeNull();
     expect(hrefFromInput("ftp://example.com")).toBeNull();
     expect(hrefFromInput("   ")).toBeNull();
+    expect(hrefFromInput("\nhttps://example.com")).toBe("https://example.com");
+    expect(hrefFromInput("ht\ttps://example.com")).toBe("https://example.com");
+    expect(hrefFromInput("/docs")).toBeNull();
+    expect(hrefFromInput("#top")).toBeNull();
   });
 });

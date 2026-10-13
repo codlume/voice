@@ -28,7 +28,6 @@
     "@lexical/list": "0.52.0",
     "@lexical/markdown": "0.52.0",
     "@lexical/react": "0.52.0",
-    "@lexical/rich-text": "0.52.0",
     "@sentry/electron": "7.20.0",
     "@sentry/node": "10.75.0",
     "@stylexjs/unplugin": "catalog:",
