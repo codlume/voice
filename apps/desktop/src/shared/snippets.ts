@@ -1,4 +1,5 @@
 import { samePhrase } from "./phrase.ts";
+import { isSnippetHtml } from "./snippet-html.ts";
 
 export type Snippet = {
   id: string;
@@ -11,11 +12,6 @@ export type Snippet = {
 export const TRIGGER_MAX_LENGTH = 60;
 export const EXPANSION_MAX_LENGTH = 4000;
 export const EXPANSION_HTML_MAX_LENGTH = EXPANSION_MAX_LENGTH * 8;
-
-const SNIPPET_TAG = /<\/?(?:p|br|strong|em|ul|ol|li|a)>|<a href="(?:https?|mailto):[^"<>]*">/gi;
-
-// The editor escapes every < and > in text, so markup outside the allowed tags is not ours.
-export const isSnippetHtml = (html: string) => !/[<>]/.test(html.replace(SNIPPET_TAG, ""));
 
 export type SnippetProblem = { field: "trigger" | "expansion"; message: string };
 
@@ -68,8 +64,12 @@ export function parseSnippets(raw: unknown): Snippet[] {
       id,
       trigger: trigger.trim(),
       expansion,
+      // Formatting that cannot be pasted falls back to the plain text rather than losing the snippet.
       expansionHtml:
-        typeof expansionHtml === "string" && expansionHtml !== "" && isSnippetHtml(expansionHtml)
+        typeof expansionHtml === "string" &&
+        expansionHtml !== "" &&
+        expansionHtml.length <= EXPANSION_HTML_MAX_LENGTH &&
+        isSnippetHtml(expansionHtml)
           ? expansionHtml
           : null,
       enabled: enabled !== false,

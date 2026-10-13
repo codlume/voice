@@ -1,5 +1,6 @@
 import type { DictionaryEntry } from "./dictionary.ts";
 import { matchKey, withoutAccents } from "./phrase.ts";
+import { escapeHtml, inline } from "./snippet-html.ts";
 import type { Snippet } from "./snippets.ts";
 
 /** Everything the user saved that rewrites dictated text. */
@@ -135,23 +136,35 @@ function join(pieces: readonly Output[]): Output {
   const text = pieces.map((piece) => piece.text).join("");
   if (pieces.every((piece) => piece.html === null)) return { text, html: null };
   const html = pieces.map((piece) =>
-    piece.html === null ? escape(piece.text) : inline(piece.html),
+    piece.html === null ? escapeHtml(piece.text).replaceAll("\n", "<br>") : inline(piece.html),
   );
-  return { text, html: html.join("") };
+  return { text, html: keepSpaces(html.join("")) };
 }
 
-const escape = (text: string) =>
-  text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("\n", "<br>");
+// Where a typed line starts. Text right after a closing block is the dictated words around it,
+// whose separating space a target rightly drops.
+const LINE_START = /^<(?:p|br|li)>$/i;
 
-// Rich text editors end a pasted paragraph with a line break the plain text does not have.
-function inline(html: string): string {
-  const single = html.startsWith("<p>") && html.indexOf("</p>") === html.length - "</p>".length;
-  return single ? html.slice("<p>".length, -"</p>".length) : html;
+// A rich target collapses a run of spaces to one and drops a space that starts a line. Alternating
+// a no-break space with a space keeps the typed width and still lets the line wrap.
+function keepSpaces(html: string): string {
+  let kept = "";
+  let lineStart = true;
+  // Text never holds a raw "<", so every part that starts with one is a tag.
+  for (const part of html.split(/(<[^>]*>)/)) {
+    if (part.startsWith("<")) {
+      lineStart ||= LINE_START.test(part);
+      kept += part;
+      continue;
+    }
+    kept += part.replace(/ +/g, (run, offset: number) =>
+      run.length > 1 || (offset === 0 && lineStart)
+        ? Array.from(run, (_, at) => (at % 2 === 0 ? "&nbsp;" : " ")).join("")
+        : run,
+    );
+    if (part !== "") lineStart = false;
+  }
+  return kept;
 }
 
 // The snippet when the dictation is only its trigger, give or take the punctuation the speech

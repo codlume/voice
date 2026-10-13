@@ -174,4 +174,16 @@ describe("parseSnippets", () => {
       ["x", '<a href="https://a.b/?q=1&amp;r=2">x</a>'],
     ]);
   });
+
+  test("formatting past the size limit reads as plain, keeping the snippet", () => {
+    const expansionHtml = `<p>${"<strong>x</strong>".repeat(EXPANSION_HTML_MAX_LENGTH / 18 + 1)}</p>`;
+    const [loaded] = parseSnippets([{ id: "1", trigger: "a", expansion: "x", expansionHtml }]);
+    expect(loaded).toEqual({
+      id: "1",
+      trigger: "a",
+      expansion: "x",
+      expansionHtml: null,
+      enabled: true,
+    });
+  });
 });
