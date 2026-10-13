@@ -5,6 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
 import type {
+  DiagnosticsConsent,
+  Hotkey,
   LoginItem,
   MicrophoneCatalog,
   MicrophoneTest,
@@ -26,8 +28,8 @@ import { hotkeyLabels } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
-import { ResetButton, resetLayout } from "./ResetButton.tsx";
 import { Select } from "./Select.tsx";
+import { SettingTitle } from "./SettingTitle.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { useAction } from "./useAction.ts";
 import { Switch } from "./Switch.tsx";
@@ -137,24 +139,15 @@ export function GlobeHint() {
   );
 }
 
-// The default check uses ===, so settings that hold an object or array never match their default.
-type ScalarSetting = {
-  [K in keyof Settings]: Settings[K] extends object ? never : K;
-}[keyof Settings];
-
-// Undefined while the setting already holds its default, which hides the reset button.
-function resetSetting<K extends ScalarSetting>(
-  settings: Settings,
-  key: K,
-  action: Action,
+// Undefined while the value already equals its default, which hides the reset button.
+function resetTo<T>(
+  value: T,
+  defaultValue: T,
+  change: (value: T) => void,
 ): (() => void) | undefined {
-  if (settings[key] === DEFAULT_SETTINGS[key]) return undefined;
-  return () => update(action, { [key]: DEFAULT_SETTINGS[key] });
+  return value === defaultValue ? undefined : () => change(defaultValue);
 }
 
-// A native label passes its :hover and clicks to the labelled control, which is wrong for Select
-// triggers. Switch rows opt in to keep click-to-toggle on the title. The reset button sits beside
-// the label, not inside it, so it stays out of the control's accessible name and click target.
 function Row({
   title,
   detail,
@@ -167,24 +160,18 @@ function Row({
   detail: string;
   disabled?: boolean;
   nativeLabel?: boolean;
-  onReset?: (() => void) | undefined;
+  onReset: (() => void) | undefined;
   children: ReactNode;
 }) {
   return (
     <Field.Root {...stylex.props(styles.row, disabled && styles.disabled)}>
       <div {...stylex.props(styles.rowText)}>
-        <div {...stylex.props(resetLayout.titleLine)}>
-          <Field.Label
-            nativeLabel={nativeLabel}
-            render={nativeLabel ? undefined : <div />}
-            {...stylex.props(styles.rowTitle)}
-          >
-            {title}
-          </Field.Label>
-          <span {...stylex.props(resetLayout.slot)}>
-            {onReset && <ResetButton label={title} disabled={disabled} onReset={onReset} />}
-          </span>
-        </div>
+        <SettingTitle
+          title={title}
+          nativeLabel={nativeLabel}
+          onReset={onReset}
+          disabled={disabled}
+        />
         <p {...stylex.props(styles.rowDetail)}>{detail}</p>
       </div>
       {children}
@@ -205,33 +192,34 @@ export function Section({ label, children }: { label: string; children: ReactNod
 }
 
 function Segmented<T extends string>({
-  labelledBy,
   options,
   value,
   disabled = false,
   onChange,
 }: {
-  labelledBy: string;
   options: readonly { value: T; label: string }[];
   value: T;
   disabled?: boolean;
   onChange: (value: T) => void;
 }) {
+  const id = useId();
   return (
     <RadioGroup<T>
-      aria-labelledby={labelledBy}
       value={value}
       disabled={disabled}
       onValueChange={onChange}
       {...stylex.props(styles.segments)}
     >
       {options.map((option) => (
+        // Inside a Field, Base UI labels each radio with the field's label, so each option points
+        // at its own text to keep its name.
         <Radio.Root
           key={option.value}
           value={option.value}
+          aria-labelledby={`${id}-${option.value}`}
           {...stylex.props(styles.segment, option.value === value && styles.segmentOn)}
         >
-          {option.label}
+          <span id={`${id}-${option.value}`}>{option.label}</span>
         </Radio.Root>
       ))}
     </RadioGroup>
@@ -243,34 +231,6 @@ const themes = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ] as const satisfies readonly { value: Theme; label: string }[];
-
-function ThemePicker({
-  theme,
-  onChange,
-  onReset,
-}: {
-  theme: Theme;
-  onChange: (theme: Theme) => void;
-  onReset: (() => void) | undefined;
-}) {
-  const titleId = useId();
-  return (
-    <div {...stylex.props(styles.row)}>
-      <div {...stylex.props(styles.rowText)}>
-        <div {...stylex.props(resetLayout.titleLine)}>
-          <span id={titleId} {...stylex.props(styles.rowTitle)}>
-            Theme
-          </span>
-          <span {...stylex.props(resetLayout.slot)}>
-            {onReset && <ResetButton label="Theme" onReset={onReset} />}
-          </span>
-        </div>
-        <p {...stylex.props(styles.rowDetail)}>Match your Mac, or pick light or dark.</p>
-      </div>
-      <Segmented labelledBy={titleId} options={themes} value={theme} onChange={onChange} />
-    </div>
-  );
-}
 
 export function GeneralSettings({
   settings,
@@ -318,10 +278,13 @@ export function GeneralSettings({
     microphoneDetail = `Currently ${defaultName}. Changes apply to your next dictation.`;
   }
 
-  async function changeMicrophone(uid: string) {
+  // The empty uid is the "System default" option, which saves no microphone.
+  const microphoneUid = selected?.uid ?? "";
+
+  function changeMicrophone(uid: string) {
     const microphone = uid === "" ? null : devices.find((device) => device.uid === uid);
     if (microphone === undefined) return;
-    await microphoneAction.run(
+    void microphoneAction.run(
       () => hubApi().updateSettings({ microphone }),
       "Could not save microphone.",
     );
@@ -329,18 +292,21 @@ export function GeneralSettings({
 
   const languageAction = useAction();
 
-  async function changeLanguage(dictationLanguage: DictationLanguage) {
-    await languageAction.run(
+  function changeLanguage(dictationLanguage: DictationLanguage) {
+    void languageAction.run(
       () => hubApi().updateSettings({ dictationLanguage }),
       "Could not save dictation language.",
     );
   }
 
   const clipboardAction = useAction();
+  const changeClipboard = (copyToClipboard: boolean) =>
+    update(clipboardAction, { copyToClipboard });
+
   const channelAction = useAction();
 
-  async function changeChannel(channel: UpdateChannel) {
-    await channelAction.run(
+  function changeChannel(channel: UpdateChannel) {
+    void channelAction.run(
       () => hubApi().updateSettings({ updateChannel: channel }),
       "Could not change update channel.",
     );
@@ -357,16 +323,16 @@ export function GeneralSettings({
             test={microphoneTest}
             permission={microphonePermission}
             canTest={microphones.kind === "ready" && devices.length > 0 && !missing}
-            resetDisabled={microphoneAction.pending}
-            onReset={resetSetting(settings, "microphone", microphoneAction)}
+            onReset={resetTo(microphoneUid, "", changeMicrophone)}
+            disabled={microphoneAction.pending}
           >
             <Select
               id="setting-microphone"
-              value={selected?.uid ?? ""}
+              value={microphoneUid}
               options={microphoneOptions}
               disabled={microphoneAction.pending}
               grouped
-              onChange={(uid) => void changeMicrophone(uid)}
+              onChange={changeMicrophone}
             />
           </MicrophoneRow>
         </div>
@@ -382,13 +348,17 @@ export function GeneralSettings({
           <Row
             title="Spoken language"
             detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
-            onReset={resetSetting(settings, "dictationLanguage", languageAction)}
+            onReset={resetTo(
+              settings.dictationLanguage,
+              DEFAULT_SETTINGS.dictationLanguage,
+              changeLanguage,
+            )}
           >
             <Select
               id="setting-dictation-language"
               value={settings.dictationLanguage}
               options={dictationLanguages}
-              onChange={(language) => void changeLanguage(language)}
+              onChange={changeLanguage}
             />
           </Row>
         </div>
@@ -405,12 +375,16 @@ export function GeneralSettings({
             nativeLabel
             title="Copy transcript to clipboard"
             detail="Keeps each transcript on your clipboard too, replacing what you copied before."
-            onReset={resetSetting(settings, "copyToClipboard", clipboardAction)}
+            onReset={resetTo(
+              settings.copyToClipboard,
+              DEFAULT_SETTINGS.copyToClipboard,
+              changeClipboard,
+            )}
           >
             <Switch
               id="setting-copy-to-clipboard"
               checked={settings.copyToClipboard}
-              onChange={(copyToClipboard) => update(clipboardAction, { copyToClipboard })}
+              onChange={changeClipboard}
             />
           </Row>
         </div>
@@ -427,18 +401,15 @@ export function GeneralSettings({
             title="Update channel"
             detail="Stable gets regular releases. Nightly gets early builds."
             disabled={updates.status.kind === "installing"}
-            onReset={
-              updates.channel === updates.installedChannel
-                ? undefined
-                : () => void changeChannel(updates.installedChannel)
-            }
+            // The default is the installed build's channel, not DEFAULT_SETTINGS.updateChannel.
+            onReset={resetTo(updates.channel, updates.installedChannel, changeChannel)}
           >
             <Select
               id="setting-update-channel"
               value={updates.channel}
               options={updateChannels}
               disabled={updates.status.kind === "installing"}
-              onChange={(channel) => void changeChannel(channel)}
+              onChange={changeChannel}
             />
           </Row>
           <div {...stylex.props(styles.row)}>
@@ -486,6 +457,10 @@ export function SystemSettings({
   const loginAction = useAction();
   const audioAction = useAction();
   const appearanceAction = useAction();
+  const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
+  const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
+  const changeDock = (showInDock: boolean) => update(appearanceAction, { showInDock });
+  const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>System</h1>
@@ -497,6 +472,8 @@ export function SystemSettings({
             title="Open at login"
             detail={loginItemDetails[loginItem]}
             disabled={loginItem === "unavailable"}
+            // Mirrors macOS Login Items rather than a stored setting, so it has no default.
+            onReset={undefined}
           >
             <Switch
               id="setting-open-at-login"
@@ -524,12 +501,16 @@ export function SystemSettings({
             nativeLabel
             title="Mute all audio while dictating"
             detail="Silences supported output devices while recording, then restores their previous audio state."
-            onReset={resetSetting(settings, "muteWhileDictating", audioAction)}
+            onReset={resetTo(
+              settings.muteWhileDictating,
+              DEFAULT_SETTINGS.muteWhileDictating,
+              changeMute,
+            )}
           >
             <Switch
               id="setting-mute-while-dictating"
               checked={settings.muteWhileDictating}
-              onChange={(muteWhileDictating) => update(audioAction, { muteWhileDictating })}
+              onChange={changeMute}
             />
           </Row>
         </div>
@@ -542,33 +523,31 @@ export function SystemSettings({
 
       <Section label="Appearance">
         <div {...stylex.props(styles.card)}>
-          <ThemePicker
-            theme={settings.theme}
-            onChange={(theme) => update(appearanceAction, { theme })}
-            onReset={resetSetting(settings, "theme", appearanceAction)}
-          />
+          <Row
+            title="Theme"
+            detail="Match your Mac, or pick light or dark."
+            onReset={resetTo(settings.theme, DEFAULT_SETTINGS.theme, changeTheme)}
+          >
+            <Segmented options={themes} value={settings.theme} onChange={changeTheme} />
+          </Row>
           <Row
             nativeLabel
             title="Show in Dock"
             detail="When off, Voice stays out of the Dock and Cmd-Tab. Open it from the menu bar."
-            onReset={resetSetting(settings, "showInDock", appearanceAction)}
+            onReset={resetTo(settings.showInDock, DEFAULT_SETTINGS.showInDock, changeDock)}
           >
-            <Switch
-              id="setting-show-in-dock"
-              checked={settings.showInDock}
-              onChange={(showInDock) => update(appearanceAction, { showInDock })}
-            />
+            <Switch id="setting-show-in-dock" checked={settings.showInDock} onChange={changeDock} />
           </Row>
           <Row
             nativeLabel
             title="Show Flow Bar at all times"
             detail="When off, the Flow Bar appears only while you dictate."
-            onReset={resetSetting(settings, "alwaysShowPill", appearanceAction)}
+            onReset={resetTo(settings.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill, changePill)}
           >
             <Switch
               id="setting-always-show-pill"
               checked={settings.alwaysShowPill}
-              onChange={(alwaysShowPill) => update(appearanceAction, { alwaysShowPill })}
+              onChange={changePill}
             />
           </Row>
         </div>
@@ -584,6 +563,8 @@ export function SystemSettings({
 
 export function DataPrivacySettings({ settings }: { settings: Settings }) {
   const diagnosticsAction = useAction();
+  const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
+    update(diagnosticsAction, { diagnostics });
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
@@ -594,12 +575,12 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             nativeLabel
             title="Share crash reports"
             detail="Sends crashes, dictation timings, and app events, such as a helper restart or a failed cleanup. Never sends your words, audio, clipboard, or the app you dictate into. Turning this on takes effect the next time Voice opens. Turning it off stops sending right away."
-            onReset={resetSetting(settings, "diagnostics", diagnosticsAction)}
+            onReset={resetTo(settings.diagnostics, DEFAULT_SETTINGS.diagnostics, changeDiagnostics)}
           >
             <Switch
               id="setting-diagnostics"
               checked={settings.diagnostics === "on"}
-              onChange={(on) => update(diagnosticsAction, { diagnostics: on ? "on" : "off" })}
+              onChange={(on) => changeDiagnostics(on ? "on" : "off")}
             />
           </Row>
         </div>
@@ -754,6 +735,7 @@ function ShortcutRow({
 
 export function ShortcutsSettings({ settings }: { settings: Settings }) {
   const hotkeyAction = useAction();
+  const changeHotkey = (hotkey: Hotkey) => update(hotkeyAction, { hotkey });
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
@@ -763,13 +745,13 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           <Row
             title="Hold to talk"
             detail="Hold the key while you speak."
-            onReset={resetSetting(settings, "hotkey", hotkeyAction)}
+            onReset={resetTo(settings.hotkey, DEFAULT_SETTINGS.hotkey, changeHotkey)}
           >
             <Select
               id="setting-hotkey"
               value={settings.hotkey}
               options={hotkeyOptions}
-              onChange={(hotkey) => update(hotkeyAction, { hotkey })}
+              onChange={changeHotkey}
             />
           </Row>
           <ShortcutRow

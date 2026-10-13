@@ -6,7 +6,7 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
 
-export const tooltip = stylex.create({
+const tooltip = stylex.create({
   positioner: { zIndex: 10 },
   popup: {
     whiteSpace: "nowrap",
@@ -31,3 +31,23 @@ export const tooltip = stylex.create({
   hidden: { opacity: 0 },
   instant: { transitionDuration: "0s" },
 });
+
+type TooltipState = { transitionStatus?: string | undefined; instant?: string | undefined };
+
+const isInstant = ({ instant }: TooltipState) => instant === "focus" || instant === "dismiss";
+
+export const tooltipPositionerClass =
+  (...extra: stylex.StyleXStyles[]) =>
+  (state: TooltipState) =>
+    stylex.props(tooltip.positioner, ...extra, isInstant(state) && tooltip.instant).className;
+
+export const tooltipPopupClass =
+  (...extra: stylex.StyleXStyles[]) =>
+  (state: TooltipState) =>
+    stylex.props(
+      tooltip.popup,
+      ...extra,
+      (state.transitionStatus === "starting" || state.transitionStatus === "ending") &&
+        tooltip.hidden,
+      isInstant(state) && tooltip.instant,
+    ).className;

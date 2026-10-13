@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import {
+  DEFAULT_SETTINGS,
   fullName,
   toPillSnapshot,
   type ModelStatus,
@@ -36,22 +37,7 @@ const base: Snapshot = {
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
   loginItem: "off",
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
-  settings: {
-    hotkey: "fn",
-    updateChannel: "stable",
-    theme: "system",
-    microphone: null,
-    muteWhileDictating: false,
-    copyToClipboard: false,
-    showInDock: true,
-    alwaysShowPill: true,
-    dictationLanguage: "en",
-    cleanup: { enabled: true, styling: "semi-formal" },
-    diagnostics: "off",
-    snippets: [],
-    dictionary: [],
-    zoomLevel: 0,
-  },
+  settings: DEFAULT_SETTINGS,
   microphones: {
     kind: "ready",
     devices: [

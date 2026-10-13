@@ -12,7 +12,7 @@ import {
   type MicrophoneTestAction,
 } from "./microphoneTestView.ts";
 import { smoothLevel } from "./pillView.ts";
-import { ResetButton, resetLayout } from "./ResetButton.tsx";
+import { SettingTitle } from "./SettingTitle.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
@@ -23,7 +23,6 @@ const styles = stylex.create({
   row: { paddingBlock: 14, paddingInline: space.lg },
   line: { display: "flex", alignItems: "center", gap: space.lg },
   text: { flexGrow: 1, minWidth: 0 },
-  title: { display: "block", fontWeight: 500 },
   detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { color: color.errorForeground },
   controls: {
@@ -125,16 +124,16 @@ export function MicrophoneRow({
   test,
   permission,
   canTest,
-  resetDisabled,
   onReset,
+  disabled = false,
   children,
 }: {
   detail: string;
   test: MicrophoneTest;
   permission: PermissionState;
   canTest: boolean;
-  resetDisabled: boolean;
   onReset: (() => void) | undefined;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   const [accessRequested, setAccessRequested] = useState(false);
@@ -170,16 +169,7 @@ export function MicrophoneRow({
     <Field.Root {...stylex.props(styles.row)}>
       <div {...stylex.props(styles.line)}>
         <div {...stylex.props(styles.text)}>
-          <div {...stylex.props(resetLayout.titleLine)}>
-            <Field.Label nativeLabel={false} render={<div />} {...stylex.props(styles.title)}>
-              Microphone
-            </Field.Label>
-            <span {...stylex.props(resetLayout.slot)}>
-              {onReset && (
-                <ResetButton label="Microphone" disabled={resetDisabled} onReset={onReset} />
-              )}
-            </span>
-          </div>
+          <SettingTitle title="Microphone" onReset={onReset} disabled={disabled} />
           <p {...stylex.props(styles.detail)}>{detail}</p>
         </div>
         <div {...stylex.props(styles.controls)}>

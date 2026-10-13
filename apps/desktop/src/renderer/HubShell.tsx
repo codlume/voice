@@ -45,7 +45,7 @@ import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
-import { tooltip } from "./tooltip.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const appPages = [
   { id: "home", label: "Home", icon: HouseIcon },
@@ -282,25 +282,9 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
                 side="right"
                 align="center"
                 sideOffset={10}
-                className={({ instant }) =>
-                  stylex.props(
-                    tooltip.positioner,
-                    styles.tooltipGlide,
-                    (instant === "focus" || instant === "dismiss") && tooltip.instant,
-                  ).className
-                }
+                className={tooltipPositionerClass(styles.tooltipGlide)}
               >
-                <Tooltip.Popup
-                  className={({ transitionStatus, instant }) =>
-                    stylex.props(
-                      tooltip.popup,
-                      styles.tooltipResize,
-                      (transitionStatus === "starting" || transitionStatus === "ending") &&
-                        tooltip.hidden,
-                      (instant === "focus" || instant === "dismiss") && tooltip.instant,
-                    ).className
-                  }
-                >
+                <Tooltip.Popup className={tooltipPopupClass(styles.tooltipResize)}>
                   <Tooltip.Viewport className="sidebar-tooltip-viewport">
                     {payload}
                   </Tooltip.Viewport>
