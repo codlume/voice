@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryState } from "../shared/history.ts";
 import { hubApi } from "./voice.ts";
 
 /** Null until the first list arrives. The hub root waits for it, so pages never see null. */
-export function useHistory(): readonly HistoryEntry[] | null {
-  const [history, setHistory] = useState<readonly HistoryEntry[] | null>(null);
+export function useHistory(): HistoryState | null {
+  const [history, setHistory] = useState<HistoryState | null>(null);
   useEffect(() => {
     let answerStale = false;
     const unsubscribe = hubApi().onHistory((next) => {

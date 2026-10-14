@@ -8,11 +8,13 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
+import { historyRetentions, type HistoryRetention } from "../shared/history.ts";
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
+import type { Log } from "./diagnostics-scrub.ts";
 
 const THEMES = ["system", "light", "dark"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
@@ -45,6 +47,11 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
       styling: pick(STYLINGS, c.styling, d.styling),
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
+    historyRetention: pick(
+      historyRetentions,
+      r.historyRetention,
+      DEFAULT_SETTINGS.historyRetention,
+    ),
     snippets: parseSnippets(r.snippets),
     dictionary: parseDictionary(r.dictionary),
     zoomLevel: parseZoomLevel(r.zoomLevel),
@@ -78,6 +85,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: { ...settings.cleanup, ...patch.cleanup },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
+    historyRetention: patch.historyRetention ?? settings.historyRetention,
     snippets: snippets ?? settings.snippets,
     dictionary: dictionary ?? settings.dictionary,
     zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
@@ -101,4 +109,35 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
 
 export async function saveSettings(file: string, settings: Settings): Promise<void> {
   await writeFileAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+/**
+ * Writes `next`, then moves the history to its retention when that changed. The history moves
+ * only once the settings are on disk, so a failed save prunes and deletes nothing, and a move
+ * that fails puts the settings back with one write. Rejects with what the user should read.
+ */
+export async function commitSettings(options: {
+  file: string;
+  previous: Settings;
+  next: Settings;
+  moveHistory: (retention: HistoryRetention) => Promise<void>;
+  log: Log;
+}): Promise<void> {
+  const { file, previous, next, moveHistory, log } = options;
+  try {
+    await saveSettings(file, next);
+  } catch (error) {
+    log(`settings: save failed (${String(error)})`);
+    throw new Error("Could not save this setting. Try again.", { cause: error });
+  }
+  if (next.historyRetention === previous.historyRetention) return;
+  try {
+    await moveHistory(next.historyRetention);
+  } catch (error) {
+    log(`history: retention change failed (${String(error)})`);
+    await saveSettings(file, previous).catch((undo: unknown) =>
+      log(`settings: could not put the retention back (${String(undo)})`),
+    );
+    throw new Error("Could not change where your history is kept. Try again.", { cause: error });
+  }
 }

@@ -293,7 +293,9 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     });
   }
   const outcome = snapshot.session.outcome ?? null;
-  const [latest] = await hub.evaluate("window.voice.getHistory()");
+  const {
+    entries: [latest],
+  } = await hub.evaluate("window.voice.getHistory()");
   const [{ text, landedMs }, timingLine] = await Promise.all([
     outcome?.kind === "inserted"
       ? landedText(target.read, latest.text)

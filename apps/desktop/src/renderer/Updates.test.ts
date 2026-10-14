@@ -135,19 +135,19 @@ describe("update controls", () => {
   });
 
   test("a restart offers to save the last transcript and requires it when it was not inserted", () => {
-    const withoutTranscript = restartPrompt(null);
+    const withoutTranscript = restartPrompt(null, "memory", false);
     expect(choices(withoutTranscript)).toEqual(["Restart -> restart"]);
     expect(withoutTranscript.description).toBe(
       "Voice will close and reopen with the downloaded version.",
     );
 
     for (const status of ["notInserted", "pending"] as const) {
-      expect(choices(restartPrompt(latest(status)))).toEqual([
+      expect(choices(restartPrompt(latest(status), "memory", false))).toEqual([
         "Copy transcript and restart -> copyTranscriptAndRestart",
       ]);
     }
 
-    const prompt = restartPrompt(latest("inserted"));
+    const prompt = restartPrompt(latest("inserted"), "memory", false);
     expect(choices(prompt)).toEqual([
       "Restart -> restart",
       "Copy transcript and restart -> copyTranscriptAndRestart",
@@ -155,5 +155,25 @@ describe("update controls", () => {
     expect(prompt.description).toBe(
       "Your history is kept only until Voice closes. Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.",
     );
+  });
+
+  test("a saved history needs no copy, even for a transcript that was not inserted", () => {
+    for (const retention of ["day", "month", "forever"] as const) {
+      const prompt = restartPrompt(latest("notInserted"), retention, false);
+      expect(choices(prompt)).toEqual(["Restart -> restart"]);
+      expect(prompt.description).toContain("Your history is saved on this Mac");
+    }
+  });
+
+  test("a saved history that failed to save asks for a copy like one kept in memory", () => {
+    const prompt = restartPrompt(latest("notInserted"), "month", true);
+    expect(choices(prompt)).toEqual(["Copy transcript and restart -> copyTranscriptAndRestart"]);
+    expect(prompt.description).toContain("could not be saved");
+    expect(prompt.description).not.toContain("will still be there");
+
+    expect(choices(restartPrompt(latest("inserted"), "month", true))).toEqual([
+      "Restart -> restart",
+      "Copy transcript and restart -> copyTranscriptAndRestart",
+    ]);
   });
 });

@@ -22,6 +22,7 @@ import type {
 } from "../shared/api.ts";
 import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import { droppedBy, type HistoryEntry, type HistoryRetention } from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
@@ -98,6 +99,18 @@ export const styles = stylex.create({
 });
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
+const retentionOptions = [
+  { value: "memory", label: "Until I quit Voice" },
+  { value: "day", label: "24 hours" },
+  { value: "month", label: "30 days" },
+  { value: "forever", label: "Forever" },
+] as const satisfies readonly { value: HistoryRetention; label: string }[];
+const retentionLabel = (retention: HistoryRetention) =>
+  retentionOptions.find((option) => option.value === retention)?.label ?? retention;
+const dropsNow = (entries: readonly HistoryEntry[], retention: HistoryRetention) =>
+  droppedBy(entries, retention, Date.now());
+const shorteningDescription = (drops: number) =>
+  `${drops === 1 ? "1 older transcript is" : `${drops} older transcripts are`} deleted from your history. This cannot be undone.`;
 const updateChannels = [
   { value: "stable", label: "Stable" },
   { value: "nightly", label: "Nightly" },
@@ -540,12 +553,32 @@ export function SystemSettings({
   );
 }
 
-export function DataPrivacySettings({ settings }: { settings: Settings }) {
+export function DataPrivacySettings({
+  settings,
+  entries,
+}: {
+  settings: Settings;
+  entries: readonly HistoryEntry[];
+}) {
   const diagnosticsAction = useAction();
   const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
     update(diagnosticsAction, { diagnostics });
   const clearAction = useAction();
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const historyAction = useAction();
+  const applyRetention = (historyRetention: HistoryRetention) =>
+    update(historyAction, { historyRetention });
+  // A window that would drop entries on screen asks first. Memory keeps the list until quit, and
+  // a longer window drops nothing, so neither asks.
+  const [shortening, setShortening] = useState<{ to: HistoryRetention; drops: number } | null>(
+    null,
+  );
+  const changeRetention = (historyRetention: HistoryRetention) => {
+    const drops = dropsNow(entries, historyRetention);
+    if (drops > 0) setShortening({ to: historyRetention, drops });
+    else applyRetention(historyRetention);
+  };
+  const [confirmingClearHistory, setConfirmingClearHistory] = useState(false);
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
@@ -572,6 +605,76 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
         )}
       </Section>
 
+      <Section label="History">
+        <Card>
+          <Row
+            title="Keep history"
+            detail="Your transcripts on Home. Saved history stays on this Mac. Audio is never saved."
+            onReset={resetTo(
+              settings.historyRetention,
+              DEFAULT_SETTINGS.historyRetention,
+              changeRetention,
+            )}
+          >
+            <Select
+              id="setting-history-retention"
+              value={settings.historyRetention}
+              options={retentionOptions}
+              onChange={changeRetention}
+            />
+          </Row>
+          <Row
+            title="Clear history"
+            detail="Deletes every transcript in your history, in memory and on this Mac."
+            onReset={undefined}
+          >
+            <Button
+              variant="secondary"
+              aria-label="Clear history"
+              onClick={() => setConfirmingClearHistory(true)}
+            >
+              Clear…
+            </Button>
+          </Row>
+        </Card>
+        {historyAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {historyAction.error}
+          </p>
+        )}
+        <ConfirmDialog
+          open={shortening !== null}
+          onOpenChange={(open) => {
+            if (!open) setShortening(null);
+          }}
+          title={`Keep history for ${retentionLabel(shortening?.to ?? settings.historyRetention)}?`}
+          description={shorteningDescription(shortening?.drops ?? 0)}
+          actions={[
+            {
+              label: "Delete older",
+              variant: "destructive",
+              onClick: () => {
+                if (shortening) applyRetention(shortening.to);
+              },
+            },
+          ]}
+        />
+        <ConfirmDialog
+          open={confirmingClearHistory}
+          onOpenChange={setConfirmingClearHistory}
+          title="Clear history?"
+          description="Every transcript in your history is deleted. This cannot be undone."
+          actions={[
+            {
+              label: "Clear",
+              variant: "destructive",
+              onClick: () =>
+                void historyAction.run(() => hubApi().clearHistory(), "Could not clear history."),
+            },
+          ]}
+        />
+      </Section>
+
       <Section label="Insights">
         <Card>
           <Row
@@ -579,7 +682,11 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             detail="Deletes your word counts, pace, fixes, and streaks from this Mac. Your dictionary and snippets stay."
             onReset={undefined}
           >
-            <Button variant="secondary" onClick={() => setConfirmingClear(true)}>
+            <Button
+              variant="secondary"
+              aria-label="Clear insights"
+              onClick={() => setConfirmingClear(true)}
+            >
               Clear…
             </Button>
           </Row>

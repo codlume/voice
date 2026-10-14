@@ -5,7 +5,11 @@ import {
   type RestartChoice,
   type UpdateStatus,
 } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import {
+  historySurvivesQuit,
+  type HistoryEntry,
+  type HistoryRetention,
+} from "../shared/history.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -101,18 +105,32 @@ const copyAndRestartAction = {
   choice: "copyTranscriptAndRestart",
 } as const;
 
-export function restartPrompt(latest: HistoryEntry | null): RestartPrompt {
+export function restartPrompt(
+  latest: HistoryEntry | null,
+  retention: HistoryRetention,
+  saveFailed: boolean,
+): RestartPrompt {
   if (latest === null) {
     return {
       description: "Voice will close and reopen with the downloaded version.",
       actions: [restartAction],
     };
   }
+  if (historySurvivesQuit(retention, saveFailed)) {
+    return {
+      description:
+        "Voice will close and reopen with the downloaded version. Your history is saved on this Mac, so your transcripts will still be there.",
+      actions: [restartAction],
+    };
+  }
   // A transcript that never reached its target exists nowhere else, so restarting must save it.
   const needsRecovery = latest.status !== "inserted";
+  const kept =
+    retention === "memory"
+      ? "Your history is kept only until Voice closes."
+      : "Your history could not be saved on this Mac.";
   return {
-    description:
-      "Your history is kept only until Voice closes. Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.",
+    description: `${kept} Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.`,
     actions: needsRecovery ? [copyAndRestartAction] : [restartAction, copyAndRestartAction],
   };
 }

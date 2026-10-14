@@ -4,7 +4,7 @@ import { CheckIcon } from "lucide-react";
 import { useId, useMemo } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryState } from "../shared/history.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
@@ -358,7 +358,7 @@ export function Home({
   onOpenInsights,
 }: {
   snapshot: Snapshot;
-  history: readonly HistoryEntry[];
+  history: HistoryState;
   onOpenInsights: () => void;
 }) {
   const { ready, rows } = checklist(snapshot);
@@ -378,7 +378,7 @@ export function Home({
           ) : (
             <Setup snapshot={snapshot} rows={rows} />
           )}
-          <History history={history} storage="Kept in memory until you quit Voice" />
+          <History history={history} />
         </div>
         <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
           <Stats onOpenInsights={onOpenInsights} />

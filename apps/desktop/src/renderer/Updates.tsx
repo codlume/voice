@@ -8,7 +8,7 @@ import {
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
@@ -169,31 +169,46 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
 
+type PromptAsOpened = {
+  open: boolean;
+  latest: HistoryEntry | null;
+  retention: HistoryRetention;
+  saveFailed: boolean;
+  prompt: RestartPrompt;
+};
+
 export function SidebarUpdates({
   updates,
   session,
-  latest,
+  history,
 }: {
   updates: UpdatesSnapshot;
   session: PillState;
-  latest: HistoryEntry | null;
+  history: HistoryState;
 }) {
   const { error: actionError, run: runAction } = useAction();
-  // The prompt is fixed when it opens, so its choices match the transcript the user saw.
-  const [confirm, setConfirm] = useState<{
-    open: boolean;
-    latest: HistoryEntry | null;
-    prompt: RestartPrompt;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<PromptAsOpened | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
+  const latest = history.entries[0] ?? null;
+  const { retention, saveFailed } = history;
 
-  // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
-  if (confirm?.open && (action !== "restart" || confirm.latest?.id !== latest?.id))
-    setConfirm({ ...confirm, open: false });
+  const promptOutdated =
+    action !== "restart" ||
+    confirm?.latest?.id !== latest?.id ||
+    confirm?.retention !== retention ||
+    confirm?.saveFailed !== saveFailed;
+  if (confirm?.open && promptOutdated) setConfirm({ ...confirm, open: false });
 
-  const confirmRestart = () => setConfirm({ open: true, latest, prompt: restartPrompt(latest) });
+  const confirmRestart = () =>
+    setConfirm({
+      open: true,
+      latest,
+      retention,
+      saveFailed,
+      prompt: restartPrompt(latest, retention, saveFailed),
+    });
   const onRestartRequest = useEffectEvent(() => {
     if (action === "restart") confirmRestart();
   });

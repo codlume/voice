@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import * as NodePath from "node:path";
+
 import type { CleanResult, CleanupStyle } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -86,7 +89,12 @@ function harness(opts: Options = {}) {
     microphoneTest: { kind: "off" },
     account: { kind: "signedOut" },
   });
-  const history = createHistory({ onChange: () => {} });
+  const history = createHistory({
+    file: NodePath.join(tmpdir(), "voice-dictation-test", "history.json"),
+    retention: "memory",
+    log: () => {},
+    onChange: () => {},
+  });
   const commands: HelperCommand[] = [];
   let transcribing: string | null = null;
   const cleans: string[] = [];

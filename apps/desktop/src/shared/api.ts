@@ -2,7 +2,7 @@ import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
-import type { HistoryEntry } from "./history.ts";
+import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { Snippet } from "./snippets.ts";
 
@@ -136,6 +136,7 @@ export type Settings = {
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
   };
   diagnostics: DiagnosticsConsent;
+  historyRetention: HistoryRetention;
   snippets: readonly Snippet[];
   dictionary: readonly DictionaryEntry[];
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
@@ -154,6 +155,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
   diagnostics: "off",
+  historyRetention: "memory",
   snippets: [],
   dictionary: [],
   zoomLevel: 0,
@@ -171,6 +173,7 @@ export type SettingsPatch = {
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
   diagnostics?: DiagnosticsConsent;
+  historyRetention?: HistoryRetention;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
   zoomLevel?: number;
@@ -234,9 +237,9 @@ export type HubApi = WindowApi & {
   stopMicrophoneTest(): Promise<void>;
   installModel(id: ModelId): Promise<void>;
   uninstallModel(id: ModelId): Promise<void>;
-  getHistory(): Promise<readonly HistoryEntry[]>;
+  getHistory(): Promise<HistoryState>;
   /** Fires after every change to the history, with the whole list, newest first. */
-  onHistory(listener: (entries: readonly HistoryEntry[]) => void): () => void;
+  onHistory(listener: (history: HistoryState) => void): () => void;
   copyHistoryEntry(id: string, version: TranscriptVersion): Promise<void>;
   deleteHistoryEntry(id: string): Promise<void>;
   clearHistory(): Promise<void>;

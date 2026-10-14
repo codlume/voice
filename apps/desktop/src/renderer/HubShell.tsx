@@ -20,7 +20,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { Dictionary } from "./Dictionary.tsx";
@@ -72,7 +72,7 @@ type SettingsPage = (typeof settingsPages)[number]["id"];
 
 type PageView = {
   snapshot: Snapshot;
-  history: readonly HistoryEntry[];
+  history: HistoryState;
   openPage: (id: AppPage) => void;
 };
 
@@ -108,7 +108,9 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
       session={snapshot.session}
     />
   ),
-  privacy: ({ snapshot }) => <DataPrivacySettings settings={snapshot.settings} />,
+  privacy: ({ snapshot, history }) => (
+    <DataPrivacySettings settings={snapshot.settings} entries={history.entries} />
+  ),
   shortcuts: ({ snapshot }) => <ShortcutsSettings settings={snapshot.settings} />,
 };
 
@@ -386,13 +388,7 @@ function NavItems<Id extends string>({
   ));
 }
 
-export function HubShell({
-  snapshot,
-  history,
-}: {
-  snapshot: Snapshot;
-  history: readonly HistoryEntry[];
-}) {
+export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
   const [appPage, setAppPage] = useState<AppPage>("home");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const page = settingsPage ?? appPage;
@@ -541,7 +537,7 @@ export function HubShell({
               <SidebarUpdates
                 updates={snapshot.updates}
                 session={snapshot.session}
-                latest={history[0] ?? null}
+                history={history}
               />
             </div>
           </div>

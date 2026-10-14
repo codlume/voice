@@ -795,7 +795,9 @@ const commands = {
         });
       }
       const read = () => targetPage.evaluate(`${field}.value`);
-      const [latest = null] = await hub.evaluate("window.voice.getHistory()");
+      const {
+        entries: [latest = null],
+      } = await hub.evaluate("window.voice.getHistory()");
       const landing =
         finalState.session.outcome?.kind === "inserted"
           ? landedText(read, latest.text)

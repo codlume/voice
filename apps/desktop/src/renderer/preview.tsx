@@ -12,7 +12,7 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryEntry, HistoryState } from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
@@ -57,6 +57,11 @@ const ready: Snapshot = {
   ...base,
   permissions: { microphone: "granted", accessibility: "granted" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+};
+
+const historySaved: Snapshot = {
+  ...ready,
+  settings: { ...ready.settings, historyRetention: "month" },
 };
 
 const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
@@ -168,6 +173,9 @@ const hubScenes: Record<string, Snapshot> = {
   },
   "history-empty": ready,
   history: ready,
+  "history-saved": historySaved,
+  "history-long": historySaved,
+  "history-save-failed": historySaved,
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -319,9 +327,22 @@ function sampleHistory(): HistoryEntry[] {
 
 const [newest, ...older] = sampleHistory();
 
+// More rows than Home mounts at once, so the Show more button has something to reveal.
+function longHistory(): HistoryEntry[] {
+  const first = newest!.at;
+  return Array.from({ length: 130 }, (_, i) => ({
+    id: `long-${i}`,
+    at: first - i * 5_400_000,
+    raw: `Entry ${i + 1} of the long history.`,
+    text: `Entry ${i + 1} of the long history.`,
+    status: "inserted",
+  }));
+}
+
 const historyScenes: Record<string, HistoryEntry[]> = {
   fresh: [],
   "history-empty": [],
+  "history-long": longHistory(),
   "ready-no-transcript": [],
   "ready-not-inserted": [{ ...newest!, status: "notInserted" }, ...older],
 };
@@ -346,21 +367,32 @@ function fakeVoice(
   initial: Snapshot,
   loop: boolean,
   initialHistory: readonly HistoryEntry[] = sampleHistory(),
+  saveFailed = false,
 ): HubApi & PillApi {
   let snapshot = initial;
   let history = initialHistory;
-  const historyListeners = new Set<(entries: readonly HistoryEntry[]) => void>();
+  const historyListeners = new Set<(history: HistoryState) => void>();
+  const historyState = (): HistoryState => ({
+    entries: history,
+    retention: snapshot.settings.historyRetention,
+    saveFailed,
+  });
+  const publishHistory = () => {
+    for (const listener of historyListeners) listener(historyState());
+  };
   const setHistory = (next: readonly HistoryEntry[]) => {
     history = next;
-    for (const listener of historyListeners) listener(history);
+    publishHistory();
   };
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
   let insights = sampleInsights();
   const insightsListeners = new Set<(insights: Insights) => void>();
   const set = (next: Snapshot) => {
+    const retentionChanged = next.settings.historyRetention !== snapshot.settings.historyRetention;
     snapshot = next;
     for (const listener of listeners) listener(snapshot);
+    if (retentionChanged) publishHistory();
   };
 
   if (loop) {
@@ -445,6 +477,7 @@ function fakeVoice(
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
+          historyRetention: patch.historyRetention ?? snapshot.settings.historyRetention,
           snippets: patch.snippets ?? snapshot.settings.snippets,
           dictionary: patch.dictionary ?? snapshot.settings.dictionary,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
@@ -539,7 +572,7 @@ function fakeVoice(
       installs.delete(id);
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
-    getHistory: async () => history,
+    getHistory: async () => historyState(),
     onHistory: (listener) => {
       historyListeners.add(listener);
       return () => historyListeners.delete(listener);
@@ -619,7 +652,12 @@ if (pill) {
   if (params.get("backdrop") !== "none") document.body.style.background = "#d9dde3";
   root.render(<PillPreview />);
 } else if (hub) {
-  window.voice = fakeVoice(hubScenes[hub] ?? base, false, historyScenes[hub]);
+  window.voice = fakeVoice(
+    hubScenes[hub] ?? base,
+    false,
+    historyScenes[hub],
+    hub === "history-save-failed",
+  );
   root.render(<HubPreview />);
 } else {
   window.voice = fakeVoice(ready, true);

@@ -3,7 +3,7 @@ import { CheckIcon, CopyIcon, FileTextIcon, SearchIcon, Trash2Icon } from "lucid
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
-import type { HistoryEntry } from "../shared/history.ts";
+import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { historyDays, limitDays, timeLabel } from "./historyView.ts";
@@ -20,6 +20,7 @@ const styles = stylex.create({
   head: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
   title: { margin: 0, fontSize: 13, fontWeight: 600 },
   note: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  noteFailed: { color: color.errorForeground },
   days: { display: "flex", flexDirection: "column", gap: space.lg },
   day: { display: "flex", flexDirection: "column", gap: space.sm },
   dayHead: {
@@ -124,6 +125,13 @@ const styles = stylex.create({
 
 // Rows mount all at once, so a long history shows its newest page and grows on request.
 const ROWS_PER_PAGE = 100;
+
+const storageLabels: Record<HistoryRetention, string> = {
+  memory: "Kept in memory until you quit Voice",
+  day: "Saved on this Mac for 24 hours",
+  month: "Saved on this Mac for 30 days",
+  forever: "Saved on this Mac",
+};
 
 type Copied = { id: string; version: TranscriptVersion };
 
@@ -232,11 +240,9 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
 }
 
 export function History({
-  history: entries,
-  storage,
+  history: { entries, retention, saveFailed },
 }: {
-  history: readonly HistoryEntry[];
-  storage: string;
+  history: HistoryState;
 }) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<Copied | null>(null);
@@ -285,7 +291,11 @@ export function History({
         <h2 id="history" {...stylex.props(styles.title)}>
           History
         </h2>
-        <p {...stylex.props(styles.note)}>{storage}</p>
+        <p {...stylex.props(styles.note, saveFailed && styles.noteFailed)}>
+          {saveFailed
+            ? "Could not save on this Mac, so kept until you quit"
+            : storageLabels[retention]}
+        </p>
       </div>
       {entries.length === 0 ? (
         <Card>
