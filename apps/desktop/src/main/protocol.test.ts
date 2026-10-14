@@ -7,7 +7,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 7 },
+      { type: "ready", version: 9 },
       { type: "hotkey", action: "down" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
@@ -19,7 +19,8 @@ describe("parseHelperEvent", () => {
       { type: "microphone.test.level", id: "t", level: 0.3 },
       { type: "microphone.test.ended", id: "t" },
       { type: "microphone.test.failed", id: "t", message: "Finish dictating, then test again." },
-      { type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300 },
+      { type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300, speechMs: 900 },
+      { type: "transcript", id: "a", text: "", audioMs: 40, asrMs: 0, speechMs: null },
       { type: "transcript.failed", id: "a", message: "no model" },
       { type: "insert.result", id: "a", method: "accessibility", reason: null },
       { type: "insert.result", id: "a", method: "none", reason: "focusChanged" },
@@ -102,6 +103,24 @@ describe("parseHelperEvent", () => {
         type: "asr.status",
         state: "ready",
         message: null,
+      });
+    },
+  );
+
+  test.each([undefined, "900", {}])(
+    "keeps a transcript whose speech span %j is missing or invalid, with a null span",
+    (speechMs) => {
+      expect(
+        parseHelperEvent(
+          line({ type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300, speechMs }),
+        ),
+      ).toEqual({
+        type: "transcript",
+        id: "a",
+        text: "hi",
+        audioMs: 1200,
+        asrMs: 300,
+        speechMs: null,
       });
     },
   );

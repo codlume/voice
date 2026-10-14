@@ -171,6 +171,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     onLevel: () => {},
     log: () => {},
     onSessionDone: diagnostics.sessionDone,
+    onDictated: () => {},
     copy: () => {},
     now: () => clock,
   });
@@ -183,7 +184,14 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     clock += 800;
     dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    dictation.onHelperEvent({ type: "transcript", id, text: RAW, audioMs: 800, asrMs: 120 });
+    dictation.onHelperEvent({
+      type: "transcript",
+      id,
+      text: RAW,
+      audioMs: 800,
+      asrMs: 120,
+      speechMs: 600,
+    });
     await expect.poll(() => store.state.session.phase).toBe("inserting");
     clock += 30;
     dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });

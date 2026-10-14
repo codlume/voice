@@ -11,7 +11,7 @@ Style lets a user turn text cleanup on or off and choose how cleaned-up dictatio
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Style`.
-- Keyboard: Cmd-2 in the Voice nav jumps to the second sidebar item.
+- Keyboard: Cmd-3 in the Voice nav jumps to the third sidebar item.
 
 ## Driving it with voice-verify
 

@@ -123,6 +123,7 @@ function handle(command: Record<string, unknown>) {
           text: config.transcript ?? "hello world",
           audioMs,
           asrMs: 40,
+          speechMs: audioMs,
         });
       }, 40);
       return;
@@ -148,7 +149,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 8 });
+const ready = () => emit({ type: "ready", version: config.version ?? 9 });
 
 if (config.control) {
   const path = config.control;

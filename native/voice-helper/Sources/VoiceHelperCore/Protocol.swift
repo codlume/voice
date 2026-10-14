@@ -67,7 +67,7 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
     case microphoneTestFailed(id: String, message: String)
-    case transcript(id: String, text: String, audioMs: Double, asrMs: Double)
+    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
@@ -82,7 +82,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
-    case version, startMs, level, reason, message, audioMs, asrMs, method, html
+    case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid
 }
 
@@ -198,12 +198,13 @@ extension HelperEvent: Encodable {
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
-        case .transcript(let id, let text, let audioMs, let asrMs):
+        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs):
             try c.encode("transcript", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
             try c.encode(finite(audioMs), forKey: .audioMs)
             try c.encode(finite(asrMs), forKey: .asrMs)
+            try c.encode(speechMs.map(finite), forKey: .speechMs)
         case .transcriptFailed(let id, let reason, let message):
             try c.encode("transcript.failed", forKey: .type)
             try c.encode(id, forKey: .id)

@@ -12,6 +12,7 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
+import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
@@ -264,10 +265,28 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
+function sampleInsights(): Insights {
+  const days: Record<DayKey, number> = {};
+  const today = new Date();
+  for (let back = 0; back < 150; back += 1) {
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
+    const weekend = date.getDay() === 0 || date.getDay() === 6;
+    const words = ((back * 7919) % 997) - (weekend ? 600 : 150);
+    if ((back < 40 || back > 46) && words > 0) days[dayKey(date)] = words;
+  }
+  const recent = Array.from({ length: 100 }, (_, i) => ({
+    words: 20 + ((i * 37) % 90),
+    ms: 9000 + ((i * 53) % 30) * 1000,
+  }));
+  return { days, corrected: 1843, dictionaryFixes: 212, recent };
+}
+
 function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
   let snapshot = initial;
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
+  let insights = sampleInsights();
+  const insightsListeners = new Set<(insights: Insights) => void>();
   const set = (next: Snapshot) => {
     snapshot = next;
     for (const listener of listeners) listener(snapshot);
@@ -451,6 +470,15 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
     },
     copyLast: async (which) => {
       console.info("copyLast", which);
+    },
+    getInsights: async () => insights,
+    onInsights: (listener) => {
+      insightsListeners.add(listener);
+      return () => insightsListeners.delete(listener);
+    },
+    clearInsights: async () => {
+      insights = EMPTY_INSIGHTS;
+      for (const listener of insightsListeners) listener(insights);
     },
   };
 }

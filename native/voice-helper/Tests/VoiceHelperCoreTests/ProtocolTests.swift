@@ -58,7 +58,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 8), ["type": "ready", "version": 8]),
+        (.ready(version: 9), ["type": "ready", "version": 9]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
@@ -75,8 +75,10 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.microphoneTestEnded(id: "t"), ["type": "microphone.test.ended", "id": "t"]),
         (.microphoneTestFailed(id: "t", message: "Finish dictating, then test again."),
          ["type": "microphone.test.failed", "id": "t", "message": "Finish dictating, then test again."]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80),
-         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80]),
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640),
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640]),
+        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil),
+         ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull()]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
         (.insertResult(id: "s", method: .none, reason: .focusChanged),
@@ -101,7 +103,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 }
 
 @Test func keepsFilePathsAndUnicodeReadable() throws {
-    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0).encodeLine()
+    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil).encodeLine()
     #expect(line.contains("/tmp/x"))
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
 }

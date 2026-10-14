@@ -15,6 +15,7 @@ struct CaptureSession {
 final class Recording {
     let session: CaptureSession
     var samples: [Float] = []
+    var speech = SpeechSpan()
     var stream: StreamingTranscription?
     var transcription: Task<Void, Never>?
 
@@ -156,16 +157,17 @@ final class Capture {
         state = .transcribing(recording)
         defer { stopSourceAfterTranscriptionStarts() }
         let audioMs = Double(samples.count) / asrSampleRate * 1000
+        let speechMs = recording.speech.milliseconds(sampleRate: asrSampleRate)
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
-            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0))
+            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs))
             return
         }
         recording.transcription = Task { @MainActor in
             do {
                 let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs))
+                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs))
             } catch let error as TranscribeError {
                 finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
             } catch {
@@ -370,8 +372,10 @@ final class Capture {
             recording.samples = chunk
             state = .recording(recording)
             output.emit(.captureStarted(id: current.id, startMs: current.commandedAt.millisecondsToNow()))
+            recording.speech.add(frames: chunk.count, rms: rms(chunk))
         case .recording(let recording) where recording.session.id == session.id:
             recording.samples.append(contentsOf: chunk)
+            recording.speech.add(frames: chunk.count, rms: rms(chunk))
             if let stream = recording.stream {
                 stream.enqueue(chunk)
             } else if recording.samples.count >= StreamingTranscription.minimumSamples,
@@ -428,7 +432,7 @@ final class Capture {
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
-        if case .transcript(_, let text, _, _) = event, !text.isEmpty {
+        if case .transcript(_, let text, _, _, _) = event, !text.isEmpty {
             lastTarget = (session.id, session.target)
         } else {
             lastTarget = nil

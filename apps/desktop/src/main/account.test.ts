@@ -599,6 +599,7 @@ describe("createAccount", () => {
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
+      onDictated: () => {},
       copy: () => {},
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
@@ -637,6 +638,7 @@ describe("createAccount", () => {
       text: "hello world",
       audioMs: 800,
       asrMs: 1,
+      speechMs: 600,
     });
     await flush();
     expect(shownDuring).toEqual([]);
@@ -678,6 +680,7 @@ describe("createAccount", () => {
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
+      onDictated: () => {},
       copy: () => {},
     });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { DictionaryEntry } from "./dictionary.ts";
-import { finalOutput, rewrite, type Rewrites } from "./rewrite.ts";
+import { finalRewrite, rewrite, type Rewrites } from "./rewrite.ts";
 import type { Snippet } from "./snippets.ts";
 
 let ids = 0;
@@ -29,14 +29,27 @@ const formatted = (trigger: string, expansion: string, expansionHtml: string): S
   ...snippet(trigger, expansion),
   expansionHtml,
 });
-const none = (text: string) => ({ text, html: null, snippets: 0, entireDictation: false });
-const inside = (text: string, snippets: number) => ({
+const none = (text: string, dictionaryFixes = 0) => ({
+  text,
+  html: null,
+  snippets: 0,
+  dictionaryFixes,
+  entireDictation: false,
+});
+const inside = (text: string, snippets: number, dictionaryFixes = 0) => ({
   text,
   html: null,
   snippets,
+  dictionaryFixes,
   entireDictation: false,
 });
-const only = (text: string) => ({ text, html: null, snippets: 1, entireDictation: true });
+const only = (text: string) => ({
+  text,
+  html: null,
+  snippets: 1,
+  dictionaryFixes: 0,
+  entireDictation: true,
+});
 
 // Dictionary alone: the rewritten text.
 const fix = (text: string, dictionary: readonly DictionaryEntry[]) =>
@@ -285,7 +298,7 @@ describe("rewrite with the dictionary", () => {
 
   test("a dictation that is only a word keeps its punctuation and still goes through cleanup", () => {
     expect(rewrite("Hadrys.", { dictionary: [word("Hadryś")], snippets: [] })).toEqual(
-      none("Hadryś."),
+      none("Hadryś.", 1),
     );
   });
 });
@@ -303,7 +316,7 @@ describe("rewrite with both lists", () => {
 
   test("a snippet expansion is never rewritten by the dictionary", () => {
     expect(rewrite("see my link, wispr flow", both)).toEqual(
-      inside("see wispr flow and btw, Wispr Flow", 1),
+      inside("see wispr flow and btw, Wispr Flow", 1, 1),
     );
   });
 
@@ -312,7 +325,7 @@ describe("rewrite with both lists", () => {
   });
 
   test("a replacement's text is typed as saved even when it contains a trigger", () => {
-    expect(rewrite("idk", both)).toEqual(none("see my link"));
+    expect(rewrite("idk", both)).toEqual(none("see my link", 1));
   });
 
   test("a snippet whose trigger contains a dictionary phrase still fires", () => {
@@ -334,13 +347,32 @@ describe("rewrite with both lists", () => {
       dictionary: [replace("email", "D")],
       snippets: [snippet("e-mail", "S")],
     };
-    expect(rewrite("Email.", pair)).toEqual(none("D."));
+    expect(rewrite("Email.", pair)).toEqual(none("D.", 1));
     expect(rewrite("E-mail.", pair)).toEqual(only("S"));
   });
 
   test("a switched-off snippet leaves the dictionary in charge of its words", () => {
     const off: Rewrites = { dictionary, snippets: [snippet("btw thanks", "ta!", false)] };
-    expect(rewrite("btw thanks", off)).toEqual(none("by the way thanks"));
+    expect(rewrite("btw thanks", off)).toEqual(none("by the way thanks", 1));
+  });
+});
+
+const count = (text: string, rewrites: Rewrites) => rewrite(text, rewrites).dictionaryFixes;
+
+describe("dictionary fixes", () => {
+  test("count each entry match that changed the words", () => {
+    const dictionary = [word("Hadryś"), replace("btw", "by the way")];
+    expect(count("hadrys said btw, then btw again", { dictionary, snippets: [] })).toBe(3);
+  });
+
+  test("a saved spelling the speech model already produced is not a fix", () => {
+    expect(count("Hadryś said hi", { dictionary: [word("Hadryś")], snippets: [] })).toBe(0);
+    expect(count("Ask Voice", { dictionary: [word("voice")], snippets: [] })).toBe(0);
+  });
+
+  test("snippets are never dictionary fixes", () => {
+    expect(count("send my email now", { dictionary: [], snippets: [email] })).toBe(0);
+    expect(count("my email", { dictionary: [], snippets: [email] })).toBe(0);
   });
 });
 
@@ -364,6 +396,7 @@ describe("rewrite with formatted snippets", () => {
       text: "thanks, Ana Lopez, for coming",
       html: "thanks, <strong>Ana</strong> Lopez, for coming",
       snippets: 1,
+      dictionaryFixes: 0,
       entireDictation: false,
     });
   });
@@ -373,6 +406,7 @@ describe("rewrite with formatted snippets", () => {
       text: "try Steps:\n- Plug in\n- Restart then call",
       html: "try Steps:<ul><li>Plug in</li><li>Restart</li></ul> then call",
       snippets: 1,
+      dictionaryFixes: 0,
       entireDictation: false,
     });
     const around = formatted(
@@ -389,6 +423,7 @@ describe("rewrite with formatted snippets", () => {
       text: "thanks Best,\nAda",
       html: "thanks Best,<br><strong>Ada</strong>",
       snippets: 1,
+      dictionaryFixes: 0,
       entireDictation: false,
     });
   });
@@ -414,6 +449,7 @@ describe("rewrite with formatted snippets", () => {
       text: steps.expansion,
       html: "Steps:<ul><li>Plug in</li><li>Restart</li></ul>",
       snippets: 1,
+      dictionaryFixes: 0,
       entireDictation: true,
     });
     expect(expand("My name.", [name]).html).toBe("<strong>Ana</strong> Lopez");
@@ -431,6 +467,7 @@ describe("rewrite with formatted snippets", () => {
       text: "Ana Lopez Best,\n<Ana>",
       html: "<strong>Ana</strong> Lopez Best,<br>&lt;Ana&gt;",
       snippets: 2,
+      dictionaryFixes: 0,
       entireDictation: false,
     });
   });
@@ -441,6 +478,7 @@ describe("rewrite with formatted snippets", () => {
       text: "R&D is Ana Lopez",
       html: "R&amp;D is <strong>Ana</strong> Lopez",
       snippets: 1,
+      dictionaryFixes: 1,
       entireDictation: false,
     });
   });
@@ -462,40 +500,47 @@ describe("rewrite with formatted snippets", () => {
   });
 });
 
-describe("finalOutput", () => {
+describe("finalRewrite", () => {
   const rewrites: Rewrites = { dictionary: [word("Hadryś")], snippets: [email] };
 
   test("prefers the cleaned text when it kept every trigger", () => {
-    expect(finalOutput("send it to my email", "Send it to my email.", rewrites).text).toBe(
-      `Send it to ${EMAIL}.`,
-    );
+    expect(finalRewrite("send it to my email", "Send it to my email.", rewrites)).toEqual({
+      ...inside(`Send it to ${EMAIL}.`, 1),
+      source: "cleaned",
+    });
   });
 
   test("falls back to the raw transcript when cleanup lost a trigger", () => {
-    expect(finalOutput("hadrys wants my email", "Hadrys wants it.", rewrites).text).toBe(
-      `Hadryś wants ${EMAIL}`,
-    );
+    expect(finalRewrite("hadrys wants my email", "Hadrys wants it.", rewrites)).toEqual({
+      ...inside(`Hadryś wants ${EMAIL}`, 1, 1),
+      source: "raw",
+    });
   });
 
   test("carries the formatting of whichever transcript it picks", () => {
     const name = formatted("my name", "Ana", "<p><em>Ana</em></p>");
     const withName: Rewrites = { dictionary: [], snippets: [name] };
-    expect(finalOutput("sign it my name", "Sign it, my name.", withName)).toEqual({
+    expect(finalRewrite("sign it my name", "Sign it, my name.", withName)).toMatchObject({
       text: "Sign it, Ana.",
       html: "Sign it, <em>Ana</em>.",
+      source: "cleaned",
     });
-    expect(finalOutput("sign it my name", "Sign it.", withName)).toEqual({
+    expect(finalRewrite("sign it my name", "Sign it.", withName)).toMatchObject({
       text: "sign it Ana",
       html: "sign it <em>Ana</em>",
+      source: "raw",
     });
   });
 
   test("a switched-off snippet is ignored in both the raw and the cleaned text", () => {
     const off: Rewrites = { dictionary: [], snippets: [{ ...email, enabled: false }] };
-    expect(finalOutput("my email", "My email.", off).text).toBe("My email.");
+    expect(finalRewrite("my email", "My email.", off)).toEqual({
+      ...none("My email."),
+      source: "cleaned",
+    });
   });
 
   test("returns nothing when cleanup emptied a transcript with no trigger", () => {
-    expect(finalOutput("um", "", rewrites).text).toBe("");
+    expect(finalRewrite("um", "", rewrites)).toEqual({ ...none(""), source: "cleaned" });
   });
 });

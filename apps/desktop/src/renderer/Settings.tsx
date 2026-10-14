@@ -565,6 +565,8 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
   const diagnosticsAction = useAction();
   const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
     update(diagnosticsAction, { diagnostics });
+  const clearAction = useAction();
+  const [confirmingClear, setConfirmingClear] = useState(false);
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
@@ -589,6 +591,39 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
             {diagnosticsAction.error}
           </p>
         )}
+      </Section>
+
+      <Section label="Insights">
+        <div {...stylex.props(styles.card)}>
+          <Row
+            title="Clear insights"
+            detail="Deletes your word counts, pace, fixes, and streaks from this Mac. Your dictionary and snippets stay."
+            onReset={undefined}
+          >
+            <Button variant="secondary" onClick={() => setConfirmingClear(true)}>
+              Clear…
+            </Button>
+          </Row>
+        </div>
+        {clearAction.error && (
+          <p role="alert" {...stylex.props(styles.error)}>
+            {clearAction.error}
+          </p>
+        )}
+        <ConfirmDialog
+          open={confirmingClear}
+          onOpenChange={setConfirmingClear}
+          title="Clear insights?"
+          description="Your words, pace, fixes, and streaks start again from zero. This cannot be undone."
+          actions={[
+            {
+              label: "Clear",
+              variant: "destructive",
+              onClick: () =>
+                void clearAction.run(() => hubApi().clearInsights(), "Could not clear insights."),
+            },
+          ]}
+        />
       </Section>
     </div>
   );
