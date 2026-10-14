@@ -43,11 +43,12 @@ type SavedRetention = Exclude<HistoryRetention, "memory">;
 
 /**
  * What the file is to this run. `written` is the revision it holds; a change bumps the revision,
- * and a sync writes again until they agree.
+ * and a sync writes again until they agree. While loading, the hub hears `reports`: a switch from
+ * memory reports memory, since the new window is a claim until the file holds the list.
  */
 type Disk =
   | { kind: "memory" }
-  | { kind: "loading"; retention: SavedRetention }
+  | { kind: "loading"; retention: SavedRetention; reports: HistoryRetention }
   | { kind: "ok"; retention: SavedRetention }
   | { kind: "writeFailed"; retention: SavedRetention }
   | { kind: "leftAlone"; retention: SavedRetention };
@@ -76,6 +77,9 @@ export function createHistory(options: {
   let revision = 0;
   let written: number | null = null;
   let disk: Disk = { kind: "memory" };
+  // A sweep could not remove a temp file, which may hold a transcript the user thinks is gone, so
+  // the hub hears about it until a sweep succeeds.
+  let tempsLeft = false;
   // Ids the user deleted this run, so a later transcript or refinement of the same session does
   // not bring the entry back.
   const tombstones = new Set<string>();
@@ -88,8 +92,9 @@ export function createHistory(options: {
   let diskQueue: Promise<void> = Promise.resolve();
   let loading: Promise<void> = Promise.resolve();
 
-  const retentionNow = (): HistoryRetention => (disk.kind === "memory" ? "memory" : disk.retention);
-  const saveFailed = () => disk.kind === "writeFailed" || disk.kind === "leftAlone";
+  const retentionNow = (): HistoryRetention =>
+    disk.kind === "memory" ? "memory" : disk.kind === "loading" ? disk.reports : disk.retention;
+  const saveFailed = () => disk.kind === "writeFailed" || disk.kind === "leftAlone" || tempsLeft;
   const state = (): HistoryState => ({
     entries: pruned(entries),
     retention: retentionNow(),
@@ -156,6 +161,12 @@ export function createHistory(options: {
     disk = next;
     if (saveFailed() !== before.saveFailed || retentionNow() !== before.retention) publishSoon();
     scheduleExpiry();
+  }
+
+  function setTempsLeft(next: boolean) {
+    const before = saveFailed();
+    tempsLeft = next;
+    if (saveFailed() !== before) publishSoon();
   }
 
   function forget(ids: ReadonlySet<string>) {
@@ -235,6 +246,17 @@ export function createHistory(options: {
         .filter((name) => name.startsWith(prefix) && name.endsWith(".tmp"))
         .map((name) => rm(NodePath.join(dir, name), { force: true })),
     );
+    setTempsLeft(false);
+  }
+
+  // Hygiene after a crash. It never gates a read or a clear of the list; a failure is reported.
+  async function sweepTemps() {
+    try {
+      await removeTemps();
+    } catch (error) {
+      setTempsLeft(true);
+      log(`history: could not remove temp files (${String(error)})`);
+    }
   }
 
   // Temps go first: a failure there leaves the file in place, so the history is never half gone.
@@ -268,14 +290,13 @@ export function createHistory(options: {
 
   // Reads the file into the list and writes the list back when they differ.
   async function adopt(retention: SavedRetention) {
-    await removeTemps();
     const loaded = await load();
     const dirty = entries.length > 0 || pruned(loaded, retention) !== loaded;
     const pending = pendingClears[0];
     if (pending) {
-      // The clear deletes the file, or hands these back if it fails; a write now would only churn.
+      // The clear deletes the file and settles the disk state, or hands these back if it fails; a
+      // write now would only churn.
       pending.held.push(...loaded);
-      setDisk({ kind: "ok", retention });
       written = null;
       return;
     }
@@ -289,12 +310,10 @@ export function createHistory(options: {
   }
 
   if (options.retention === "memory") {
-    onDisk(removeTemps).catch((error: unknown) =>
-      log(`history: could not remove temp files (${String(error)})`),
-    );
+    void onDisk(sweepTemps);
   } else {
     const retention = options.retention;
-    disk = { kind: "loading", retention };
+    disk = { kind: "loading", retention, reports: retention };
     loading = onDisk(async () => {
       try {
         await adopt(retention);
@@ -307,6 +326,7 @@ export function createHistory(options: {
           logSaveFailure(error);
         }
       }
+      await sweepTemps();
     });
   }
 
@@ -346,14 +366,22 @@ export function createHistory(options: {
       pendingClears.push(pending);
       return onDisk(async () => {
         pendingClears.shift();
+        if (disk.kind === "memory") {
+          // An earlier run may have saved a file; the user asked for it gone too.
+          await rm(file, { force: true });
+          await sweepTemps();
+          forget(pending.doomed);
+          return;
+        }
         try {
           await removeFile();
         } catch (error) {
+          if (disk.kind === "loading") setDisk({ kind: "ok", retention: disk.retention });
           restore(pending.held);
+          requestSync();
           throw error;
         }
         forget(pending.doomed);
-        if (disk.kind === "memory") return;
         // The file is gone, so what the user added since the clear has to be written again.
         written = entries.length === 0 ? revision : null;
         setDisk({ kind: "ok", retention: disk.retention });
@@ -369,7 +397,7 @@ export function createHistory(options: {
           return;
         }
         if (disk.kind === "memory") {
-          setDisk({ kind: "loading", retention: next });
+          setDisk({ kind: "loading", retention: next, reports: "memory" });
           try {
             await adopt(next);
           } catch (error) {

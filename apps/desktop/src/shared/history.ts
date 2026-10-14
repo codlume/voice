@@ -33,7 +33,8 @@ export type Transcript = Pick<HistoryEntry, "id" | "raw" | "text"> & {
 /**
  * What the hub shows. `retention` is the window the store is on, which the settings only name
  * once it landed. `saveFailed` is true while that window keeps history on this Mac but this run's
- * entries are not all there, so a quit would lose some.
+ * entries are not all there, so a quit would lose some, and while a temp file a crash left, which
+ * may hold a transcript, could not be removed.
  */
 export type HistoryState = {
   entries: readonly HistoryEntry[];
