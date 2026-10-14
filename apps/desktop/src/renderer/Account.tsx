@@ -1,10 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import { ACCOUNT_NAME_MAX_LENGTH, type AccountName, type AccountState } from "../shared/api.ts";
 import { accountRow } from "./accountView.ts";
 import { Avatar, AvatarSpinner } from "./Avatar.tsx";
 import { Button } from "./Button.tsx";
+import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { GoogleIcon } from "./Icons.tsx";
@@ -83,10 +84,6 @@ function RowText({ account }: { account: Exclude<AccountState, { kind: "signedIn
       <p {...stylex.props(settings.rowDetail)}>{detail}</p>
     </div>
   );
-}
-
-function Card({ children }: { children: ReactNode }) {
-  return <div {...stylex.props(settings.card)}>{children}</div>;
 }
 
 function ErrorLine({ text }: { text: string }) {

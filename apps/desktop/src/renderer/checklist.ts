@@ -1,10 +1,4 @@
-import type {
-  Hotkey,
-  ModelStatus,
-  PermissionKind,
-  PermissionState,
-  Snapshot,
-} from "../shared/api.ts";
+import type { ModelStatus, PermissionKind, PermissionState, Snapshot } from "../shared/api.ts";
 
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
@@ -32,12 +26,6 @@ export type ChecklistRow = {
 };
 
 type Checklist = { ready: boolean; rows: ChecklistRow[] };
-
-export const hotkeyLabels: Record<Hotkey, string> = {
-  fn: "fn",
-  rightOption: "Right Option",
-  rightCommand: "Right Command",
-};
 
 type RowState = Pick<ChecklistRow, "status" | "actions">;
 

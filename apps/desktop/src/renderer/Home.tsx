@@ -2,19 +2,47 @@ import { Progress } from "@base-ui/react/progress";
 import { Toggle } from "@base-ui/react/toggle";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
+import { dayKey } from "../shared/insights.ts";
 import { Button } from "./Button.tsx";
-import { checklist, hotkeyLabels, type ChecklistRow, type SetupCommand } from "./checklist.ts";
+import { Card } from "./Card.tsx";
+import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
+import { hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
+import { insightsView } from "./insightsView.ts";
+import { Keycap } from "./Keycap.tsx";
 import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { useInsights } from "./useInsights.ts";
 import { hubApi } from "./voice.ts";
 
+const narrow = "@container (max-width: 720px)";
+
 const styles = stylex.create({
-  page: { display: "flex", flexDirection: "column", gap: space.xl },
+  page: { display: "flex", flexDirection: "column", gap: space.xl, containerType: "inline-size" },
+  columns: {
+    display: "flex",
+    flexDirection: { default: "row", [narrow]: "column" },
+    alignItems: { default: "flex-start", [narrow]: "stretch" },
+    gap: space.lg,
+  },
+  main: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.xl,
+    flexGrow: 1,
+    minWidth: 0,
+  },
+  aside: {
+    position: { default: "sticky", [narrow]: "static" },
+    top: 0,
+    flexShrink: 0,
+    width: { default: 250, [narrow]: "auto" },
+    order: { default: 0, [narrow]: -1 },
+  },
   headline: {
     margin: 0,
     fontFamily: font.serif,
@@ -23,18 +51,17 @@ const styles = stylex.create({
     lineHeight: 1.15,
     letterSpacing: "-0.01em",
   },
-  lede: { margin: 0, marginTop: space.sm, color: color.mutedForeground, fontSize: 15 },
+  lede: {
+    margin: 0,
+    marginTop: space.sm,
+    color: color.mutedForeground,
+    fontSize: 15,
+    lineHeight: 1.6,
+  },
   section: { display: "flex", flexDirection: "column", gap: space.sm },
   sectionHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
   label: { margin: 0, fontSize: 13, fontWeight: 600 },
-  aside: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  card: {
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.large,
-    backgroundColor: color.card,
-  },
+  note: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   list: { margin: 0, padding: 0, listStyle: "none" },
   row: {
     display: "flex",
@@ -95,29 +122,61 @@ const styles = stylex.create({
   markFailed: { borderColor: color.error },
   markBusy: { borderStyle: "dashed", borderColor: color.foreground },
   markEmpty: { borderColor: "transparent" },
-  ready: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.md,
-    paddingBlock: 14,
-    paddingInline: space.lg,
-    fontSize: 15,
-  },
+  tryIt: { display: "flex", flexDirection: "column", gap: space.sm, padding: space.lg },
   textarea: {
     width: "100%",
-    minHeight: 112,
-    padding: space.lg,
+    minHeight: 96,
+    padding: space.md,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.large,
-    backgroundColor: color.card,
+    borderRadius: radius.medium,
+    backgroundColor: color.background,
     color: color.foreground,
     font: "inherit",
     fontSize: 15,
     lineHeight: 1.5,
     resize: "vertical",
     outline: "none",
+  },
+  stats: {
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: "inherit",
+    backgroundColor: { default: "transparent", ":hover": color.accent },
+    color: "inherit",
+    font: "inherit",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  statList: {
+    display: "flex",
+    flexDirection: { default: "column", [narrow]: "row" },
+    flexWrap: "wrap",
+    gap: { default: space.md, [narrow]: space.xl },
+    padding: space.lg,
+  },
+  stat: { display: "flex", alignItems: "baseline", gap: space.sm },
+  statValue: {
+    fontFamily: font.serif,
+    fontSize: 28,
+    fontWeight: 400,
+    lineHeight: 1.1,
+    letterSpacing: "-0.02em",
+    fontVariantNumeric: "tabular-nums",
+  },
+  statLabel: { color: color.mutedForeground, fontSize: 14 },
+  statFoot: {
+    paddingBlock: space.md,
+    paddingInline: space.lg,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: color.border,
+    color: color.mutedForeground,
+    fontSize: 12.5,
   },
   transcript: {
     margin: 0,
@@ -249,18 +308,7 @@ function CrashReportsRow({ on }: { on: boolean }) {
   );
 }
 
-function Setup({ snapshot }: { snapshot: Snapshot }) {
-  const { ready, rows } = checklist(snapshot);
-  if (ready) {
-    return (
-      <div {...stylex.props(styles.card, styles.ready)}>
-        <span {...stylex.props(styles.mark, styles.markReady)}>
-          <CheckIcon size={12} strokeWidth={3} />
-        </span>
-        Ready. Hold {hotkeyLabels[snapshot.settings.hotkey]} and speak.
-      </div>
-    );
-  }
+function Setup({ snapshot, rows }: { snapshot: Snapshot; rows: readonly ChecklistRow[] }) {
   const done = rows.filter((row) => row.status.kind === "ready").length;
   return (
     <section aria-labelledby="setup" {...stylex.props(styles.section)}>
@@ -268,18 +316,19 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
         <h2 id="setup" {...stylex.props(styles.label)}>
           Set up Voice
         </h2>
-        <p {...stylex.props(styles.aside)}>
+        <p {...stylex.props(styles.note)}>
           {done} of {rows.length} done
         </p>
       </div>
-      <div {...stylex.props(styles.card)}>
+      <Card>
         <ul {...stylex.props(styles.list)}>
           {rows.map((row) => (
             <SetupRow key={row.id} row={row} />
           ))}
         </ul>
         <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
-      </div>
+      </Card>
+      {snapshot.settings.hotkey === "fn" && <GlobeHint />}
     </section>
   );
 }
@@ -287,17 +336,48 @@ function Setup({ snapshot }: { snapshot: Snapshot }) {
 function TryIt({ hotkey }: { hotkey: Hotkey }) {
   const id = useId();
   return (
-    <section {...stylex.props(styles.section)}>
+    <Card style={styles.tryIt}>
       <label htmlFor={id} {...stylex.props(styles.label)}>
         Try it
       </label>
       <textarea
         id={id}
-        placeholder={`Click here, hold ${hotkeyLabels[hotkey]}, and say something.`}
+        placeholder={`Click here, hold ${hotkeyLabel(hotkey)}, and say something.`}
         {...stylex.props(styles.textarea)}
       />
       {hotkey === "fn" && <GlobeHint />}
-    </section>
+    </Card>
+  );
+}
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <span {...stylex.props(styles.stat)}>
+      <span {...stylex.props(styles.statValue)}>{value}</span>
+      <span {...stylex.props(styles.statLabel)}>{label}</span>
+    </span>
+  );
+}
+
+function Stats({ onOpenInsights }: { onOpenInsights: () => void }) {
+  const insights = useInsights();
+  const today = dayKey(new Date());
+  const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
+  return (
+    <Card>
+      <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
+        <span {...stylex.props(styles.statList)}>
+          <Stat value={view ? view.totalWords.toLocaleString() : "–"} label="words" />
+          <Stat value={view?.pace ? String(view.pace.wpm) : "–"} label="WPM" />
+          <Stat value={view ? String(view.streak.current) : "–"} label="day streak" />
+        </span>
+        {view?.pace?.fasterThanTyping && (
+          <span {...stylex.props(styles.statFoot)}>
+            {view.pace.fasterThanTyping.toFixed(1)}× faster than typing
+          </span>
+        )}
+      </button>
+    </Card>
   );
 }
 
@@ -325,9 +405,9 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
         <h2 id="last" {...stylex.props(styles.label)}>
           Last dictation
         </h2>
-        <p {...stylex.props(styles.aside)}>Kept in memory only</p>
+        <p {...stylex.props(styles.note)}>Kept in memory only</p>
       </div>
-      <div {...stylex.props(styles.card)}>
+      <Card>
         {last === null ? (
           <p {...stylex.props(styles.empty)}>
             Your last dictation shows up here, so you can copy it if it didn't land.
@@ -359,7 +439,7 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
             </div>
           </>
         )}
-      </div>
+      </Card>
       {copyAction.error && (
         <p role="alert" {...stylex.props(styles.error)}>
           {copyAction.error}
@@ -369,19 +449,36 @@ function LastDictation({ last }: { last: Snapshot["last"] }) {
   );
 }
 
-export function Home({ snapshot }: { snapshot: Snapshot }) {
-  const hotkey = hotkeyLabels[snapshot.settings.hotkey];
+export function Home({
+  snapshot,
+  onOpenInsights,
+}: {
+  snapshot: Snapshot;
+  onOpenInsights: () => void;
+}) {
+  const { ready, rows } = checklist(snapshot);
   return (
     <div {...stylex.props(styles.page)}>
       <header>
         <h1 {...stylex.props(styles.headline)}>{greeting(new Date().getHours())}</h1>
         <p {...stylex.props(styles.lede)}>
-          Hold {hotkey}, speak, and let go. Voice types it wherever your cursor is.
+          Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go. Voice
+          types it wherever your cursor is.
         </p>
       </header>
-      <Setup snapshot={snapshot} />
-      <TryIt hotkey={snapshot.settings.hotkey} />
-      <LastDictation last={snapshot.last} />
+      <div {...stylex.props(styles.columns)}>
+        <div {...stylex.props(styles.main)}>
+          {ready ? (
+            <TryIt hotkey={snapshot.settings.hotkey} />
+          ) : (
+            <Setup snapshot={snapshot} rows={rows} />
+          )}
+          <LastDictation last={snapshot.last} />
+        </div>
+        <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
+          <Stats onOpenInsights={onOpenInsights} />
+        </aside>
+      </div>
     </div>
   );
 }
