@@ -3,6 +3,7 @@ import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import type { Insights } from "../shared/insights.ts";
 import { subscribe } from "./subscribe.ts";
 
@@ -38,7 +39,11 @@ const voice: HubApi = {
   stopMicrophoneTest: () => ipcRenderer.invoke(Channel.stopMicrophoneTest),
   installModel: (id) => ipcRenderer.invoke(Channel.installModel, id),
   uninstallModel: (id) => ipcRenderer.invoke(Channel.uninstallModel, id),
-  copyLast: (which) => ipcRenderer.invoke(Channel.copyLast, which),
+  getHistory: () => ipcRenderer.invoke(Channel.getHistory),
+  onHistory: (listener) => subscribe<readonly HistoryEntry[]>(Channel.history, listener),
+  copyHistoryEntry: (id, version) => ipcRenderer.invoke(Channel.copyHistoryEntry, id, version),
+  deleteHistoryEntry: (id) => ipcRenderer.invoke(Channel.deleteHistoryEntry, id),
+  clearHistory: () => ipcRenderer.invoke(Channel.clearHistory),
   signIn: () => ipcRenderer.invoke(Channel.signIn),
   signOut: () => ipcRenderer.invoke(Channel.signOut),
   submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),

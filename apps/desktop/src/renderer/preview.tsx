@@ -12,11 +12,13 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
+import { useHistory } from "./useHistory.ts";
 import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
 
 const ada = {
@@ -49,17 +51,12 @@ const base: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  last: null,
 };
 
 const ready: Snapshot = {
   ...base,
   permissions: { microphone: "granted", accessibility: "granted" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
-  last: {
-    raw: "um so I think we should uh push the launch to Friday because the the QA pass isn't done yet",
-    text: "I think we should push the launch to Friday because the QA pass isn't done yet.",
-  },
 };
 
 const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
@@ -140,6 +137,11 @@ const hubScenes: Record<string, Snapshot> = {
       cleanup: { state: "failed", message: "Download interrupted. Check your connection." },
     },
   },
+  "setup-not-ready": {
+    ...base,
+    permissions: { microphone: "granted", accessibility: "notDetermined" },
+    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+  },
   ready,
   "cleanup-off": {
     ...ready,
@@ -157,7 +159,6 @@ const hubScenes: Record<string, Snapshot> = {
   ),
   "ready-no-transcript": {
     ...ready,
-    last: null,
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
   "ready-not-inserted": {
@@ -165,6 +166,8 @@ const hubScenes: Record<string, Snapshot> = {
     session: done({ kind: "notInserted", reason: "focusChanged" }),
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
+  "history-empty": ready,
+  history: ready,
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -265,6 +268,64 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
+function sampleHistory(): HistoryEntry[] {
+  const today = new Date();
+  const at = (daysBack: number, hours: number, minutes: number) =>
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - daysBack,
+      hours,
+      minutes,
+    ).getTime();
+  return [
+    {
+      id: "h1",
+      at: Math.min(Date.now(), at(0, 11, 44)),
+      raw: "um so I think we should uh push the launch to Friday because the the QA pass isn't done yet",
+      text: "I think we should push the launch to Friday because the QA pass isn't done yet.",
+      status: "inserted",
+    },
+    {
+      id: "h2",
+      at: Math.min(Date.now(), at(0, 9, 12)) - 1,
+      raw: "send the invoice to ada at example dot com",
+      text: "Send the invoice to ada@example.com.",
+      status: "notInserted",
+    },
+    {
+      id: "h3",
+      at: at(1, 17, 5),
+      raw: "Standup notes.",
+      text: "Standup notes.",
+      status: "inserted",
+    },
+    {
+      id: "h4",
+      at: at(1, 8, 30),
+      raw: "dear team the offsite moves to the twelfth new paragraph bring a laptop and your ideas for Q3",
+      text: "Dear team,\n\nThe offsite moves to the 12th.\n\nBring a laptop and your ideas for Q3.",
+      status: "inserted",
+    },
+    {
+      id: "h5",
+      at: at(4, 14, 2),
+      raw: "Call Hadryś about the Worcestershire order.",
+      text: "Call Hadryś about the Worcestershire order.",
+      status: "inserted",
+    },
+  ];
+}
+
+const [newest, ...older] = sampleHistory();
+
+const historyScenes: Record<string, HistoryEntry[]> = {
+  fresh: [],
+  "history-empty": [],
+  "ready-no-transcript": [],
+  "ready-not-inserted": [{ ...newest!, status: "notInserted" }, ...older],
+};
+
 function sampleInsights(): Insights {
   const days: Record<DayKey, number> = {};
   const today = new Date();
@@ -281,8 +342,18 @@ function sampleInsights(): Insights {
   return { days, corrected: 1843, dictionaryFixes: 212, recent };
 }
 
-function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
+function fakeVoice(
+  initial: Snapshot,
+  loop: boolean,
+  initialHistory: readonly HistoryEntry[] = sampleHistory(),
+): HubApi & PillApi {
   let snapshot = initial;
+  let history = initialHistory;
+  const historyListeners = new Set<(entries: readonly HistoryEntry[]) => void>();
+  const setHistory = (next: readonly HistoryEntry[]) => {
+    history = next;
+    for (const listener of historyListeners) listener(history);
+  };
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
   let insights = sampleInsights();
@@ -468,8 +539,19 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
       installs.delete(id);
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
-    copyLast: async (which) => {
-      console.info("copyLast", which);
+    getHistory: async () => history,
+    onHistory: (listener) => {
+      historyListeners.add(listener);
+      return () => historyListeners.delete(listener);
+    },
+    copyHistoryEntry: async (id, version) => {
+      console.info("copyHistoryEntry", id, version);
+    },
+    deleteHistoryEntry: async (id) => {
+      setHistory(history.filter((entry) => entry.id !== id));
+    },
+    clearHistory: async () => {
+      setHistory([]);
     },
     getInsights: async () => insights,
     onInsights: (listener) => {
@@ -490,7 +572,8 @@ function PillPreview() {
 
 function HubPreview() {
   const snapshot = useSnapshot();
-  return snapshot ? <HubShell snapshot={snapshot} /> : null;
+  const history = useHistory();
+  return snapshot && history ? <HubShell snapshot={snapshot} history={history} /> : null;
 }
 
 function Gallery() {
@@ -536,7 +619,7 @@ if (pill) {
   if (params.get("backdrop") !== "none") document.body.style.background = "#d9dde3";
   root.render(<PillPreview />);
 } else if (hub) {
-  window.voice = fakeVoice(hubScenes[hub] ?? base, false);
+  window.voice = fakeVoice(hubScenes[hub] ?? base, false, historyScenes[hub]);
   root.render(<HubPreview />);
 } else {
   window.voice = fakeVoice(ready, true);

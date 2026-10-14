@@ -27,7 +27,7 @@ Preconditions: baseline. No dictionary entries or snippets are saved. With the s
 - **Stored value.** `cat "<userData>/settings.json"` lists both entries under `"dictionary"` with generated `id`s, the word with `"replacement": null`.
 - **Duplicate.** Add `WISPR  flow`. The dialog stays open and reads "This phrase is already in your dictionary." The stored list does not change. Click `Cancel`.
 - **Snippet collision.** Save a `my email` snippet on the Snippets page, then add `My Email` here. The dialog reads "This phrase is already a snippet trigger." On the Snippets page, adding the trigger `BTW` reads "This trigger is already in your dictionary."
-- **Effect on dictation.** When `dictate` is available, save the word `THURSDAY` and run `vv dictate short.wav`. `inserted` contains "THURSDAY" and `last.raw` still contains "Thursday".
+- **Effect on dictation.** When `dictate` is available, save the word `THURSDAY` and run `vv dictate short.wav`. `inserted` contains "THURSDAY" and `latest.raw` still contains "Thursday".
 - **Edit.** `vv click "Edit btw"`. Select the old replacement first with `vv eval hub 'document.querySelector("[role=dialog] input[placeholder=\"Replace with\"]").select(), true'`, then type the new one. `vv click "Save changes"`, then wait for it in `s.settings.dictionary`. The `id` stays the same.
 - **Delete.** `vv click "Delete btw"`, wait for the confirm text in `[role=alertdialog]`, then `vv click Delete` and wait for the entry to leave `s.settings.dictionary`. With no entries left, the page shows the example row again.
 

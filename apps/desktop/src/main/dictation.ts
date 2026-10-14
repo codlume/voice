@@ -7,6 +7,7 @@ import { supportsCleanup, type DictationLanguage } from "../shared/dictation-lan
 import type { Output } from "../shared/rewrite.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
+import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
   dictating,
@@ -25,6 +26,7 @@ export type DictationOptions = {
   log: Log;
   onSessionDone: (report: SessionReport) => void;
   onDictated: (dictated: Dictated) => void;
+  history: Pick<History, "remember" | "settle">;
   copy: (output: Output) => void;
   now?: () => number;
 };
@@ -259,7 +261,10 @@ export function createDictation(options: DictationOptions): Dictation {
         send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
         return;
       case "remember":
-        store.update((s) => ({ ...s, last: { raw: effect.raw, text: effect.text } }));
+        options.history.remember(
+          { id: effect.id, raw: effect.raw, text: effect.text, status: effect.status },
+          now(),
+        );
         return;
       case "scheduleIdle":
         if (idleTimer) clearTimeout(idleTimer);
@@ -285,6 +290,7 @@ export function createDictation(options: DictationOptions): Dictation {
     );
     log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
     options.onSessionDone({ outcome, finishedAt, capture });
+    options.history.settle(id, outcome.kind === "inserted");
     if (produced && gaveTranscript(outcome)) {
       options.onDictated({
         raw: produced.raw,

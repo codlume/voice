@@ -1,5 +1,6 @@
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
+import type { Transcript } from "../shared/history.ts";
 import {
   finalRewrite,
   rewrite,
@@ -49,7 +50,7 @@ export type Effect =
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string }
   | { type: "insert"; id: string; output: Output }
-  | { type: "remember"; raw: string; text: string }
+  | ({ type: "remember" } & Transcript)
   | { type: "scheduleIdle"; id: string; ms: number };
 
 type Step = { state: Session; effects: Effect[] };
@@ -96,7 +97,7 @@ function insert(
   return {
     state: { phase: "inserting", id, raw, output, insertedCleanup, dictionaryFixes },
     effects: [
-      { type: "remember", raw, text },
+      { type: "remember", id, raw, text, status: "pending" },
       { type: "insert", id, output },
     ],
   };
@@ -154,11 +155,20 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "transcript": {
       const raw = event.text.trim();
-      if (
-        (state.phase !== "transcribing" && state.phase !== "recording") ||
-        state.id !== event.id
-      ) {
-        return { state, effects: raw === "" ? [] : [{ type: "remember", raw, text: raw }] };
+      const current = state.phase !== "idle" && state.id === event.id;
+      // A second transcript for the session already being cleaned or inserted is a duplicate.
+      if (current && (state.phase === "cleaning" || state.phase === "inserting")) return same;
+      const sessionOver =
+        !current || (state.phase !== "transcribing" && state.phase !== "recording");
+      if (sessionOver) {
+        const remember: Effect = {
+          type: "remember",
+          id: event.id,
+          raw,
+          text: raw,
+          status: "notInserted",
+        };
+        return { state, effects: raw === "" ? [] : [remember] };
       }
       if (raw === "") return finish(state.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
@@ -169,7 +179,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       return {
         state: { phase: "cleaning", id: state.id, raw, rewrites: event.rewrites },
         effects: [
-          { type: "remember", raw, text: rewritten.text },
+          { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
           { type: "cleanup", id: state.id, raw },
         ],
       };

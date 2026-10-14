@@ -3,9 +3,9 @@ import {
   type PendingUpdate,
   type PillState,
   type RestartChoice,
-  type Snapshot,
   type UpdateStatus,
 } from "../shared/api.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -101,18 +101,18 @@ const copyAndRestartAction = {
   choice: "copyTranscriptAndRestart",
 } as const;
 
-export function restartPrompt(last: Snapshot["last"], session: PillState): RestartPrompt {
-  if (last === null) {
+export function restartPrompt(latest: HistoryEntry | null): RestartPrompt {
+  if (latest === null) {
     return {
       description: "Voice will close and reopen with the downloaded version.",
       actions: [restartAction],
     };
   }
   // A transcript that never reached its target exists nowhere else, so restarting must save it.
-  const needsRecovery = session.kind === "done" && session.outcome.kind !== "inserted";
+  const needsRecovery = latest.status !== "inserted";
   return {
     description:
-      "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents.",
+      "Your history is kept only until Voice closes. Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.",
     actions: needsRecovery ? [copyAndRestartAction] : [restartAction, copyAndRestartAction],
   };
 }

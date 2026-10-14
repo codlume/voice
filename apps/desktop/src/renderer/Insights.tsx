@@ -1,9 +1,9 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { InfoIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { dayKey, type DayKey } from "../shared/insights.ts";
+import type { DayKey } from "../shared/insights.ts";
 import { Card } from "./Card.tsx";
 import {
   cellLabel,
@@ -17,6 +17,7 @@ import {
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
+import { useToday } from "./useToday.ts";
 
 const CELL = 12;
 const GAP = 3;
@@ -139,18 +140,6 @@ const shades = stylex.create({
   top: { backgroundColor: color.primary },
 });
 const levels = [shades.none, shades.low, shades.medium, shades.high, shades.top] as const;
-
-function useTodayOnReturn() {
-  const [, render] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    window.addEventListener("focus", render);
-    document.addEventListener("visibilitychange", render);
-    return () => {
-      window.removeEventListener("focus", render);
-      document.removeEventListener("visibilitychange", render);
-    };
-  }, []);
-}
 
 function useWeeksThatFit(): [(element: HTMLElement | null) => void, number | null] {
   const [element, setElement] = useState<HTMLElement | null>(null);
@@ -295,8 +284,7 @@ function Activity({
 
 export const Insights = memo(function Insights() {
   const insights = useInsights();
-  useTodayOnReturn();
-  const today = dayKey(new Date());
+  const today = useToday();
   const [fit, weeks] = useWeeksThatFit();
   const view = useMemo(
     () => insights && insightsView(insights, today, weeks ?? 1),

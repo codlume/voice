@@ -4,12 +4,11 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 import {
   pendingUpdate,
-  sameTranscript,
   type PillState,
-  type Snapshot,
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
@@ -173,17 +172,17 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
 export function SidebarUpdates({
   updates,
   session,
-  last,
+  latest,
 }: {
   updates: UpdatesSnapshot;
   session: PillState;
-  last: Snapshot["last"];
+  latest: HistoryEntry | null;
 }) {
   const { error: actionError, run: runAction } = useAction();
   // The prompt is fixed when it opens, so its choices match the transcript the user saw.
   const [confirm, setConfirm] = useState<{
     open: boolean;
-    last: Snapshot["last"];
+    latest: HistoryEntry | null;
     prompt: RestartPrompt;
   } | null>(null);
   const status = updates.status;
@@ -191,11 +190,10 @@ export function SidebarUpdates({
   const card = updateCard(status, actionError);
 
   // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
-  if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
+  if (confirm?.open && (action !== "restart" || confirm.latest?.id !== latest?.id))
     setConfirm({ ...confirm, open: false });
 
-  const confirmRestart = () =>
-    setConfirm({ open: true, last, prompt: restartPrompt(last, session) });
+  const confirmRestart = () => setConfirm({ open: true, latest, prompt: restartPrompt(latest) });
   const onRestartRequest = useEffectEvent(() => {
     if (action === "restart") confirmRestart();
   });
@@ -239,7 +237,10 @@ export function SidebarUpdates({
             variant: "primary",
             onClick: () =>
               void run(() =>
-                hubApi().restartForUpdate({ choice: option.choice, last: confirm.last }),
+                hubApi().restartForUpdate({
+                  choice: option.choice,
+                  latest: confirm.latest?.id ?? null,
+                }),
               ),
           }))}
         />

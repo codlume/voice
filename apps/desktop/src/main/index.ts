@@ -21,7 +21,6 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
-  sameTranscript,
   toPillSnapshot,
   type HubApi,
   type LoginItem,
@@ -32,6 +31,7 @@ import {
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
@@ -51,6 +51,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import { createHistory } from "./history.ts";
 import { createInsights } from "./insights.ts";
 import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
@@ -278,7 +279,6 @@ async function main() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
-    last: null,
   });
 
   // The SDK has to start before ready, so the consent read at launch decides whether it runs.
@@ -359,6 +359,17 @@ async function main() {
     ],
     log,
   });
+  // The tray only shows the newest transcript, so it is rebuilt for a change to that one alone.
+  let trayLatest: HistoryEntry | undefined;
+  const history = createHistory({
+    onChange: (entries) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, entries);
+      const [latest] = entries;
+      if (latest?.id === trayLatest?.id && latest?.text === trayLatest?.text) return;
+      trayLatest = latest;
+      refreshTray(store.state);
+    },
+  });
   const insights = createInsights({
     file: NodePath.join(userData, "insights.json"),
     log,
@@ -376,6 +387,7 @@ async function main() {
     log,
     onSessionDone: diagnostics.sessionDone,
     onDictated: insights.record,
+    history,
     // Without the charset, readers decode the HTML as Latin-1, as in the helper's paste.
     copy: ({ text, html }) =>
       html === null
@@ -520,18 +532,17 @@ async function main() {
 
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
-  function copyLast(which: "text" | "raw") {
-    const last = store.state.last;
-    if (last) clipboard.writeText(last[which]);
-  }
   function refreshTray(state: AppState) {
+    const [latest] = history.entries();
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Voice", click: showHub },
         {
           label: "Copy last transcript",
-          enabled: state.last !== null,
-          click: () => copyLast("text"),
+          enabled: latest !== undefined,
+          click: () => {
+            if (latest) clipboard.writeText(latest.text || latest.raw);
+          },
         },
         { type: "separator" },
         {
@@ -565,7 +576,7 @@ async function main() {
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
-    if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
+    if (state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     followSettings(cleanup, state, previous);
   });
@@ -651,13 +662,13 @@ async function main() {
     hubCommands.handle(Channel.restartForUpdate, (_event, value: unknown) => {
       const request = parseRestartRequest(value);
       if (!request) return;
-      const last = store.state.last;
-      if (!sameTranscript(request.last, last)) {
+      const [latest] = history.entries();
+      if (request.latest !== (latest?.id ?? null)) {
         throw new Error("A new transcript arrived. Check it, then restart.");
       }
       return updates.restart(
-        request.choice === "copyTranscriptAndRestart" && last
-          ? () => clipboard.writeText(last.text || last.raw)
+        request.choice === "copyTranscriptAndRestart" && latest
+          ? () => clipboard.writeText(latest.text || latest.raw)
           : undefined,
       );
     });
@@ -696,9 +707,16 @@ async function main() {
       assertCanUninstall(model);
       return modelControls[model.id].uninstall();
     });
-    hubCommands.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
-      copyLast(which === "raw" ? "raw" : "text");
+    hubCommands.handle(Channel.getHistory, () => history.entries());
+    hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, version: unknown) => {
+      const entry = history.entries().find((candidate) => candidate.id === id);
+      if (!entry) throw new Error("This transcript is no longer in your history.");
+      clipboard.writeText(version === "raw" ? entry.raw : entry.text);
     });
+    hubCommands.handle(Channel.deleteHistoryEntry, (_event, id: unknown) => {
+      if (typeof id === "string") history.remove(id);
+    });
+    hubCommands.handle(Channel.clearHistory, () => history.clear());
     hubCommands.handle(Channel.signIn, () => {
       assertNotRestarting();
       return account.signIn();

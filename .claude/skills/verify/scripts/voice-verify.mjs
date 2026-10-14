@@ -795,9 +795,10 @@ const commands = {
         });
       }
       const read = () => targetPage.evaluate(`${field}.value`);
+      const [latest = null] = await hub.evaluate("window.voice.getHistory()");
       const landing =
         finalState.session.outcome?.kind === "inserted"
-          ? landedText(read, finalState.last.text)
+          ? landedText(read, latest.text)
           : Promise.resolve({ text: await read(), landedMs: null });
       const [{ text: inserted, landedMs }, timing] = await Promise.all([
         landing,
@@ -815,7 +816,7 @@ const commands = {
         outcome: finalState.session.outcome ?? finalState.session.kind,
         inserted,
         landedMs,
-        last: finalState.last,
+        latest,
         timing: timing?.replace(/^.*\[voice\] /, "") ?? null,
       };
       targetPage.close();

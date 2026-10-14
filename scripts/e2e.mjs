@@ -76,8 +76,8 @@ const cases = [
     end: "audio",
     target: "textedit",
     outcome: "inserted",
-    check: ({ text, snapshot, timing }) => {
-      const { raw, text: cleaned } = snapshot.last;
+    check: ({ text, latest, timing }) => {
+      const { raw, text: cleaned } = latest;
       assert(text === raw, `document ${show(text)} != raw transcript ${show(raw)}`);
       assert(cleaned === raw, `cleanup ran with cleanup off: ${show(cleaned)}`);
       assert(hasSpeech(raw), `raw transcript lacks Anna/Thursday: ${show(raw)}`);
@@ -293,9 +293,10 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     });
   }
   const outcome = snapshot.session.outcome ?? null;
+  const [latest] = await hub.evaluate("window.voice.getHistory()");
   const [{ text, landedMs }, timingLine] = await Promise.all([
     outcome?.kind === "inserted"
-      ? landedText(target.read, snapshot.last.text)
+      ? landedText(target.read, latest.text)
       : { text: await target.read(), landedMs: null },
     c.end === "escape"
       ? null
@@ -310,7 +311,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
       (outcome?.kind ?? null) === c.outcome,
       `outcome ${show(outcome)} != ${c.outcome} (held ${heldMs} ms, document ${show(text)})`,
     );
-    c.check({ text, before, snapshot, timing });
+    c.check({ text, before, latest, timing });
   } finally {
     console.log(
       JSON.stringify({

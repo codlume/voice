@@ -1,14 +1,14 @@
 import { Progress } from "@base-ui/react/progress";
-import { Toggle } from "@base-ui/react/toggle";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
-import { dayKey } from "../shared/insights.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
+import { History } from "./History.tsx";
 import { hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { insightsView } from "./insightsView.ts";
 import { Keycap } from "./Keycap.tsx";
@@ -17,6 +17,7 @@ import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useInsights } from "./useInsights.ts";
+import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
 const narrow = "@container (max-width: 720px)";
@@ -178,36 +179,6 @@ const styles = stylex.create({
     color: color.mutedForeground,
     fontSize: 12.5,
   },
-  transcript: {
-    margin: 0,
-    padding: space.lg,
-    fontSize: 15,
-    lineHeight: 1.55,
-    whiteSpace: "pre-wrap",
-    overflowWrap: "anywhere",
-  },
-  transcriptRaw: { color: color.mutedForeground },
-  empty: { margin: 0, padding: space.lg, color: color.mutedForeground },
-  cardFoot: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    paddingBlock: space.md,
-    paddingInline: space.lg,
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: color.border,
-  },
-  spacer: { flexGrow: 1 },
-  toggle: {
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: { default: color.mutedForeground, ":hover": color.foreground },
-    font: "inherit",
-    fontSize: 12.5,
-    cursor: "pointer",
-  },
 });
 
 function greeting(hour: number): string {
@@ -361,7 +332,7 @@ function Stat({ value, label }: { value: string; label: string }) {
 
 function Stats({ onOpenInsights }: { onOpenInsights: () => void }) {
   const insights = useInsights();
-  const today = dayKey(new Date());
+  const today = useToday();
   const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
   return (
     <Card>
@@ -381,79 +352,13 @@ function Stats({ onOpenInsights }: { onOpenInsights: () => void }) {
   );
 }
 
-function LastDictation({ last }: { last: Snapshot["last"] }) {
-  const [showRaw, setShowRaw] = useState(false);
-  const [copied, setCopied] = useState<"text" | "raw" | null>(null);
-  const copyAction = useAction();
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(null), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const copy = (which: "text" | "raw") =>
-    void copyAction.run(async () => {
-      await hubApi().copyLast(which);
-      setCopied(which);
-    }, "Could not copy the transcript.");
-  const hasRaw = last !== null && last.raw !== last.text;
-
-  return (
-    <section aria-labelledby="last" {...stylex.props(styles.section)}>
-      <div {...stylex.props(styles.sectionHead)}>
-        <h2 id="last" {...stylex.props(styles.label)}>
-          Last dictation
-        </h2>
-        <p {...stylex.props(styles.note)}>Kept in memory only</p>
-      </div>
-      <Card>
-        {last === null ? (
-          <p {...stylex.props(styles.empty)}>
-            Your last dictation shows up here, so you can copy it if it didn't land.
-          </p>
-        ) : (
-          <>
-            <p {...stylex.props(styles.transcript, showRaw && hasRaw && styles.transcriptRaw)}>
-              {showRaw && hasRaw ? last.raw : last.text}
-            </p>
-            <div {...stylex.props(styles.cardFoot)}>
-              <Button variant="secondary" onClick={() => copy("text")}>
-                {copied === "text" ? "Copied" : "Copy"}
-              </Button>
-              {hasRaw && (
-                <Button variant="secondary" onClick={() => copy("raw")}>
-                  {copied === "raw" ? "Copied" : "Copy raw"}
-                </Button>
-              )}
-              <span {...stylex.props(styles.spacer)} />
-              {hasRaw && (
-                <Toggle
-                  pressed={showRaw}
-                  onPressedChange={setShowRaw}
-                  {...stylex.props(styles.toggle)}
-                >
-                  Show raw transcript
-                </Toggle>
-              )}
-            </div>
-          </>
-        )}
-      </Card>
-      {copyAction.error && (
-        <p role="alert" {...stylex.props(styles.error)}>
-          {copyAction.error}
-        </p>
-      )}
-    </section>
-  );
-}
-
 export function Home({
   snapshot,
+  history,
   onOpenInsights,
 }: {
   snapshot: Snapshot;
+  history: readonly HistoryEntry[];
   onOpenInsights: () => void;
 }) {
   const { ready, rows } = checklist(snapshot);
@@ -473,7 +378,7 @@ export function Home({
           ) : (
             <Setup snapshot={snapshot} rows={rows} />
           )}
-          <LastDictation last={snapshot.last} />
+          <History history={history} storage="Kept in memory until you quit Voice" />
         </div>
         <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
           <Stats onOpenInsights={onOpenInsights} />

@@ -33,12 +33,10 @@ export function parseRestartRequest(value: unknown): RestartRequest | null {
     (value.choice !== "restart" && value.choice !== "copyTranscriptAndRestart")
   )
     return null;
-  if (!("last" in value)) return null;
-  const last = value.last;
-  if (last === null) return { choice: value.choice, last };
-  if (typeof last !== "object" || !("raw" in last) || !("text" in last)) return null;
-  if (typeof last.raw !== "string" || typeof last.text !== "string") return null;
-  return { choice: value.choice, last: { raw: last.raw, text: last.text } };
+  if (!("latest" in value)) return null;
+  const { latest } = value;
+  if (latest !== null && typeof latest !== "string") return null;
+  return { choice: value.choice, latest };
 }
 
 type Engine = Pick<

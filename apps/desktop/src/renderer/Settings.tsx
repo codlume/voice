@@ -786,6 +786,11 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
           <ShortcutRow title="Leave Settings" keys={shortcuts.closeSettings.keys} />
           <ShortcutRow
+            title="Search history"
+            detail="On Home."
+            keys={shortcuts.searchHistory.keys}
+          />
+          <ShortcutRow
             title="Go to sidebar item"
             detail="Jump to an item in the sidebar, top to bottom."
             keys={["⌘", `1–${jumpShortcuts.length}`]}

@@ -198,7 +198,6 @@ export function harness(
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
-    last: null,
   });
   const states: AccountState[] = [];
   store.subscribe((state) => states.push(toSnapshot(state).account));

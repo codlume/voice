@@ -90,23 +90,22 @@ describe("release configuration", () => {
 });
 
 describe("restart requests", () => {
-  test("accept a known choice with the transcript the user saw, and nothing else", () => {
-    const last = { raw: "um ship it", text: "Ship it." };
-    expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", last })).toEqual({
+  test("accept a known choice with the newest transcript the user saw, and nothing else", () => {
+    expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", latest: "s1" })).toEqual({
       choice: "copyTranscriptAndRestart",
-      last,
+      latest: "s1",
     });
-    expect(parseRestartRequest({ choice: "restart", last: null })).toEqual({
+    expect(parseRestartRequest({ choice: "restart", latest: null })).toEqual({
       choice: "restart",
-      last: null,
+      latest: null,
     });
     for (const value of [
       null,
       "restart",
       { choice: "restart" },
-      { choice: "quit", last: null },
-      { choice: "restart", last: { raw: "um ship it" } },
-      { choice: "restart", last: { raw: 1, text: "Ship it." } },
+      { choice: "quit", latest: null },
+      { choice: "restart", latest: 1 },
+      { choice: "restart", latest: { raw: "um ship it", text: "Ship it." } },
     ]) {
       expect(parseRestartRequest(value)).toBeNull();
     }

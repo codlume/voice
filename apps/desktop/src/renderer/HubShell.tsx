@@ -20,6 +20,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
+import type { HistoryEntry } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { Dictionary } from "./Dictionary.tsx";
@@ -69,19 +70,25 @@ const settingsPages = [
 type AppPage = (typeof appPages)[number]["id"];
 type SettingsPage = (typeof settingsPages)[number]["id"];
 
-const pageViews: Record<
-  Exclude<AppPage, "home"> | SettingsPage,
-  (snapshot: Snapshot) => ReactNode
-> = {
+type PageView = {
+  snapshot: Snapshot;
+  history: readonly HistoryEntry[];
+  openPage: (id: AppPage) => void;
+};
+
+const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> = {
+  home: ({ snapshot, history, openPage }) => (
+    <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
+  ),
   insights: () => <Insights />,
-  style: (snapshot) => <Style settings={snapshot.settings} />,
-  snippets: (snapshot) => (
+  style: ({ snapshot }) => <Style settings={snapshot.settings} />,
+  snippets: ({ snapshot }) => (
     <Snippets snippets={snapshot.settings.snippets} dictionary={snapshot.settings.dictionary} />
   ),
-  dictionary: (snapshot) => (
+  dictionary: ({ snapshot }) => (
     <Dictionary dictionary={snapshot.settings.dictionary} snippets={snapshot.settings.snippets} />
   ),
-  general: (snapshot) => (
+  general: ({ snapshot }) => (
     <GeneralSettings
       settings={snapshot.settings}
       microphones={snapshot.microphones}
@@ -90,19 +97,19 @@ const pageViews: Record<
       updates={snapshot.updates}
     />
   ),
-  account: (snapshot) => <AccountSettings account={snapshot.account} />,
-  system: (snapshot) => (
+  account: ({ snapshot }) => <AccountSettings account={snapshot.account} />,
+  system: ({ snapshot }) => (
     <SystemSettings settings={snapshot.settings} loginItem={snapshot.loginItem} />
   ),
-  models: (snapshot) => (
+  models: ({ snapshot }) => (
     <ModelsSettings
       models={snapshot.models}
       settings={snapshot.settings}
       session={snapshot.session}
     />
   ),
-  privacy: (snapshot) => <DataPrivacySettings settings={snapshot.settings} />,
-  shortcuts: (snapshot) => <ShortcutsSettings settings={snapshot.settings} />,
+  privacy: ({ snapshot }) => <DataPrivacySettings settings={snapshot.settings} />,
+  shortcuts: ({ snapshot }) => <ShortcutsSettings settings={snapshot.settings} />,
 };
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
@@ -379,7 +386,13 @@ function NavItems<Id extends string>({
   ));
 }
 
-export function HubShell({ snapshot }: { snapshot: Snapshot }) {
+export function HubShell({
+  snapshot,
+  history,
+}: {
+  snapshot: Snapshot;
+  history: readonly HistoryEntry[];
+}) {
   const [appPage, setAppPage] = useState<AppPage>("home");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const page = settingsPage ?? appPage;
@@ -447,6 +460,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
+  const Page = pageViews[page];
   return (
     <div {...stylex.props(styles.shell)}>
       <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
@@ -527,7 +541,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
               <SidebarUpdates
                 updates={snapshot.updates}
                 session={snapshot.session}
-                last={snapshot.last}
+                latest={history[0] ?? null}
               />
             </div>
           </div>
@@ -539,11 +553,7 @@ export function HubShell({ snapshot }: { snapshot: Snapshot }) {
         {...stylex.props(styles.main, page === "style" && styles.styleMain)}
       >
         <div {...stylex.props(styles.column, page === "home" && styles.homeColumn)}>
-          {page === "home" ? (
-            <Home snapshot={snapshot} onOpenInsights={() => selectAppPage("insights")} />
-          ) : (
-            pageViews[page](snapshot)
-          )}
+          <Page snapshot={snapshot} history={history} openPage={selectAppPage} />
         </div>
       </main>
     </div>
