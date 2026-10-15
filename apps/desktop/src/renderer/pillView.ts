@@ -71,7 +71,7 @@ export function smoothLevel(previous: number, next: number): number {
 }
 
 export function barScales(level: number, tick: number): number[] {
-  const loud = Math.sqrt(Math.min(1, Math.max(0, level)));
+  const loud = Math.sqrt(level);
   return Array.from({ length: BAR_COUNT }, (_, i) => {
     const center = 1 - Math.abs(i - (BAR_COUNT - 1) / 2) / BAR_COUNT;
     const ripple = 0.7 + 0.3 * Math.sin(tick * 0.9 + i * 1.7);
