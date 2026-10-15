@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const repoDir = fileURLToPath(new URL("..", import.meta.url));
 export const fixturesDir = join(repoDir, "test-fixtures/audio");
 
-export const fixtures = [
+const fixtures = [
   {
     name: "short.wav",
     speech:

@@ -19,7 +19,7 @@ export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
-export class Stream {
+class Stream {
   items = [];
   #cursor = 0;
   #waiters = [];
@@ -168,21 +168,16 @@ function signalGroup(child, signal) {
   } catch {}
 }
 
-export async function prepareTestModels() {
-  const dir = modelsDir();
-  console.error(`preparing test models in ${dir}`);
-  await Promise.all([
-    downloadS1Mini({ dir }),
-    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
-  ]);
-  return dir;
-}
-
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
-  const cache = await prepareTestModels();
+  const cache = modelsDir();
+  console.error(`preparing test models in ${cache}`);
+  await Promise.all([
+    downloadS1Mini({ dir: cache }),
+    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
+  ]);
   const userData = join(tmpdir(), name);
   rmSync(userData, { recursive: true, force: true });
   const models = join(userData, "models");
