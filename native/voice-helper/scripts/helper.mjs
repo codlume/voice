@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-export const packageDir = fileURLToPath(new URL("..", import.meta.url));
-export const repoDir = join(packageDir, "../..");
-export const fixturesDir = join(repoDir, "test-fixtures/audio");
+import { fixturesDir } from "../../../scripts/fixtures.mjs";
+
+const packageDir = fileURLToPath(new URL("..", import.meta.url));
 
 export function helperBinary(name = "voice-helper") {
   if (name === "voice-helper" && process.env.VOICE_HELPER_BIN) return process.env.VOICE_HELPER_BIN;
@@ -22,7 +22,7 @@ export function modelsDir() {
   return dir;
 }
 
-export function stateDir() {
+function stateDir() {
   const dir = join(homedir(), "Library/Caches/Voice Development/test-state");
   mkdirSync(dir, { recursive: true });
   return dir;
@@ -90,15 +90,11 @@ export class Helper {
   #cursor = 0;
   #waiters = [];
 
-  constructor({ env = {}, args = [] } = {}) {
-    this.child = spawn(
-      helperBinary(),
-      ["--models-dir", modelsDir(), "--state-dir", stateDir(), ...args],
-      {
-        env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
-        stdio: ["pipe", "pipe", "inherit"],
-      },
-    );
+  constructor({ env = {} } = {}) {
+    this.child = spawn(helperBinary(), ["--models-dir", modelsDir(), "--state-dir", stateDir()], {
+      env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
     this.exited = new Promise((resolve) =>
       this.child.on("exit", (code, signal) => resolve({ code, signal })),
     );
