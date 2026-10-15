@@ -12,7 +12,12 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
-import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
+import type {
+  HistoryEntry,
+  HistoryRetention,
+  HistoryState,
+  HistoryStatus,
+} from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
@@ -59,10 +64,7 @@ const ready: Snapshot = {
   models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
 };
 
-const historySaved: Snapshot = {
-  ...ready,
-  settings: { ...ready.settings, historyRetention: "month" },
-};
+const historySaved: HubScene = { ...ready, retention: "month" };
 
 const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
 
@@ -107,7 +109,11 @@ const updateScenes: Record<string, UpdateStatus> = {
 
 // A hub scene is the snapshot main would publish plus the history beside it, which defaults to
 // sampleHistory() with saving working.
-type HubScene = Snapshot & { history?: readonly HistoryEntry[]; saveFailed?: boolean };
+type HubScene = Snapshot & {
+  history?: readonly HistoryEntry[];
+  retention?: HistoryRetention;
+  saveFailed?: boolean;
+};
 
 const hubScenes: Record<string, HubScene> = {
   "microphone-test-failed": {
@@ -360,15 +366,21 @@ function sampleInsights(): Insights {
 }
 
 function fakeVoice(
-  { history: initialHistory = sampleHistory(), saveFailed = false, ...initial }: HubScene,
+  {
+    history: initialHistory = sampleHistory(),
+    retention: initialRetention = "memory",
+    saveFailed = false,
+    ...initial
+  }: HubScene,
   loop: boolean,
 ): HubApi & PillApi {
   let snapshot: Snapshot = initial;
   let history = initialHistory;
+  let retention = initialRetention;
   const historyListeners = new Set<(history: HistoryState) => void>();
   const historyState = (): HistoryState => ({
     entries: history,
-    retention: snapshot.settings.historyRetention,
+    retention,
     saveFailed,
   });
   const publishHistory = () => {
@@ -383,10 +395,8 @@ function fakeVoice(
   let insights = sampleInsights();
   const insightsListeners = new Set<(insights: Insights) => void>();
   const set = (next: Snapshot) => {
-    const retentionChanged = next.settings.historyRetention !== snapshot.settings.historyRetention;
     snapshot = next;
     for (const listener of listeners) listener(snapshot);
-    if (retentionChanged) publishHistory();
   };
 
   if (loop) {
@@ -471,7 +481,6 @@ function fakeVoice(
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
           cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
-          historyRetention: patch.historyRetention ?? snapshot.settings.historyRetention,
           snippets: patch.snippets ?? snapshot.settings.snippets,
           dictionary: patch.dictionary ?? snapshot.settings.dictionary,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
@@ -579,6 +588,10 @@ function fakeVoice(
     },
     clearHistory: async () => {
       setHistory([]);
+    },
+    setHistoryRetention: async (next) => {
+      retention = next;
+      publishHistory();
     },
     getInsights: async () => insights,
     onInsights: (listener) => {

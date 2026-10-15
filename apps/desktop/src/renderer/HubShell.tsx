@@ -109,7 +109,7 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
     />
   ),
   privacy: ({ snapshot, history }) => (
-    <DataPrivacySettings settings={snapshot.settings} entries={history.entries} />
+    <DataPrivacySettings settings={snapshot.settings} history={history} />
   ),
   shortcuts: ({ snapshot }) => <ShortcutsSettings settings={snapshot.settings} />,
 };

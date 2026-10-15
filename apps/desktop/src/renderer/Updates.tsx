@@ -9,6 +9,7 @@ import {
   type UpdatesSnapshot,
 } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
+import { a11y } from "./a11y.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
@@ -85,14 +86,6 @@ const styles = stylex.create({
     backgroundColor: color.foreground,
     color: color.background,
     boxShadow: `0 0 0 2px ${color.card}`,
-  },
-  visuallyHidden: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    overflow: "hidden",
-    clipPath: "inset(50%)",
-    whiteSpace: "nowrap",
   },
 });
 
@@ -202,7 +195,7 @@ export function SidebarUpdates({
 
   return (
     <>
-      <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
+      <p role="status" aria-live="polite" {...stylex.props(a11y.visuallyHidden)}>
         {actionError || updateStatusText(status)}
       </p>
       <UpdateCardTrigger
