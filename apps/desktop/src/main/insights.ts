@@ -198,10 +198,8 @@ export function parseInsights(raw: unknown): Insights {
   const recent = Array.isArray(r.recent)
     ? r.recent.flatMap((item: unknown) => {
         if (typeof item !== "object" || item === null) return [];
-        const pace = item as Record<string, unknown>;
-        const { ms } = pace;
-        const count = pace.words;
-        return isCount(count) && count > 0 && isCount(ms) && ms > 0 ? [{ words: count, ms }] : [];
+        const { words, ms } = item as Record<string, unknown>;
+        return isCount(words) && words > 0 && isCount(ms) && ms > 0 ? [{ words, ms }] : [];
       })
     : [];
   return {
