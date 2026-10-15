@@ -4,20 +4,20 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 import {
   pendingUpdate,
-  sameTranscript,
   type PillState,
-  type Snapshot,
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
+import type { HistoryState } from "../shared/history.ts";
+import { a11y } from "./a11y.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
   restartPrompt,
+  samePrompt,
   updateButton,
   updateCard,
   updateStatusText,
-  type RestartPrompt,
 } from "./updateStatus.ts";
 import { useAction } from "./useAction.ts";
 import { color, radius } from "./tokens.stylex.ts";
@@ -86,14 +86,6 @@ const styles = stylex.create({
     backgroundColor: color.foreground,
     color: color.background,
     boxShadow: `0 0 0 2px ${color.card}`,
-  },
-  visuallyHidden: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    overflow: "hidden",
-    clipPath: "inset(50%)",
-    whiteSpace: "nowrap",
   },
 });
 
@@ -170,32 +162,29 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
 
+// The history as it was when the prompt opened. The prompt describes that, stays mounted through
+// its fade-out, and is withdrawn when the live history would change what it says or offers.
+type RestartConfirm = { open: boolean; history: HistoryState };
+
 export function SidebarUpdates({
   updates,
   session,
-  last,
+  history,
 }: {
   updates: UpdatesSnapshot;
   session: PillState;
-  last: Snapshot["last"];
+  history: HistoryState;
 }) {
   const { error: actionError, run: runAction } = useAction();
-  // The prompt is fixed when it opens, so its choices match the transcript the user saw.
-  const [confirm, setConfirm] = useState<{
-    open: boolean;
-    last: Snapshot["last"];
-    prompt: RestartPrompt;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<RestartConfirm | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
-
-  // Dictation, a channel switch, or a newer transcript can withdraw the restart the dialog offered.
-  if (confirm?.open && (action !== "restart" || !sameTranscript(confirm.last, last)))
+  if (confirm?.open && (action !== "restart" || !samePrompt(confirm.history, history)))
     setConfirm({ ...confirm, open: false });
+  const prompt = confirm && restartPrompt(confirm.history);
 
-  const confirmRestart = () =>
-    setConfirm({ open: true, last, prompt: restartPrompt(last, session) });
+  const confirmRestart = () => setConfirm({ open: true, history });
   const onRestartRequest = useEffectEvent(() => {
     if (action === "restart") confirmRestart();
   });
@@ -206,7 +195,7 @@ export function SidebarUpdates({
 
   return (
     <>
-      <p role="status" aria-live="polite" {...stylex.props(styles.visuallyHidden)}>
+      <p role="status" aria-live="polite" {...stylex.props(a11y.visuallyHidden)}>
         {actionError || updateStatusText(status)}
       </p>
       <UpdateCardTrigger
@@ -228,18 +217,21 @@ export function SidebarUpdates({
       >
         <StatusIcon status={status} />
       </UpdateCardTrigger>
-      {confirm && (
+      {confirm && prompt && (
         <ConfirmDialog
           open={confirm.open}
           onOpenChange={(open) => setConfirm({ ...confirm, open })}
           title="Restart Voice to install the update?"
-          description={confirm.prompt.description}
-          actions={confirm.prompt.actions.map((option) => ({
+          description={prompt.description}
+          actions={prompt.actions.map((option) => ({
             label: option.label,
             variant: "primary",
             onClick: () =>
               void run(() =>
-                hubApi().restartForUpdate({ choice: option.choice, last: confirm.last }),
+                hubApi().restartForUpdate({
+                  choice: option.choice,
+                  latest: confirm.history.entries[0]?.id ?? null,
+                }),
               ),
           }))}
         />

@@ -605,7 +605,6 @@ describe("followSettings", () => {
       microphones: { kind: "loading" },
       microphoneTest: { kind: "off" },
       account: { kind: "signedOut" },
-      last: null,
     });
     const cleanup = createCleanup({
       modelsDir: dir,
@@ -626,6 +625,7 @@ describe("followSettings", () => {
       log: () => {},
       onSessionDone: () => {},
       onDictated: () => {},
+      history: { remember: () => {}, settle: () => {} },
       copy: () => {},
       now: () => clock,
     });

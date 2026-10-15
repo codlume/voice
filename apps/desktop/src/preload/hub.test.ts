@@ -38,15 +38,19 @@ describe("hub preload", () => {
       "cancelAccountDeletion",
       "cancelSignIn",
       "checkForUpdates",
+      "clearHistory",
       "clearInsights",
       "confirmAccountDeletion",
-      "copyLast",
+      "copyHistoryEntry",
+      "deleteHistoryEntry",
       "diagnosticsStartedAtLaunch",
       "dismissAccountError",
       "downloadUpdate",
+      "getHistory",
       "getInsights",
       "getSnapshot",
       "installModel",
+      "onHistory",
       "onInsights",
       "onLevel",
       "onRestartRequest",
@@ -56,6 +60,7 @@ describe("hub preload", () => {
       "requestPermission",
       "restartForUpdate",
       "retryAccountDeletion",
+      "setHistoryRetention",
       "setOpenAtLogin",
       "signIn",
       "signOut",
@@ -76,11 +81,13 @@ describe("hub preload", () => {
     api.onLevel(() => {});
     api.onRestartRequest(() => {});
     api.onInsights(() => {});
+    api.onHistory(() => {});
     const channels = new Set(listened);
     const known = new Set<string>(Object.values(Channel));
     expect([...channels].filter((channel) => !known.has(channel))).toEqual([]);
     expect([...channels].filter((channel) => channel.startsWith("better-auth"))).toEqual([]);
     expect(channels.has(Channel.snapshot)).toBe(true);
+    expect(channels.has(Channel.history)).toBe(true);
     expect(channels.has(Channel.pillSnapshot)).toBe(false);
   });
 

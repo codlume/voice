@@ -5,6 +5,7 @@ import { PencilIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Button } from "./Button.tsx";
+import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
@@ -172,7 +173,7 @@ export function RecordList<T extends { id: string }, F extends string>({
         </Button>
       </header>
 
-      <div {...stylex.props(settings.card)}>
+      <Card>
         {records.length === 0 ? (
           <div {...stylex.props(settings.row)}>
             {text(example, true)}
@@ -206,7 +207,7 @@ export function RecordList<T extends { id: string }, F extends string>({
             ))}
           </ul>
         )}
-      </div>
+      </Card>
 
       <p {...stylex.props(settings.hint)}>{copy.hint}</p>
       {rowAction.error && (

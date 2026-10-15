@@ -1,6 +1,6 @@
 # Settings
 
-Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, and the always-visible Flow Bar. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting and clearing Insights.
+Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, and the always-visible Flow Bar. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting, how long to keep history (see [History](./history.md)), clearing history, and clearing Insights.
 
 ## Sub-features
 

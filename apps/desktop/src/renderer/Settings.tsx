@@ -22,10 +22,19 @@ import type {
 } from "../shared/api.ts";
 import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
+import {
+  historyRetentions,
+  type HistoryEntry,
+  type HistoryRetention,
+  type HistoryState,
+} from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
-import { hotkeyLabels } from "./checklist.ts";
+import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { droppedBy } from "./historyView.ts";
+import { hotkeyLabel } from "./hotkeys.ts";
+import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
 import { Select } from "./Select.tsx";
@@ -49,13 +58,6 @@ export const styles = stylex.create({
   },
   section: { display: "flex", flexDirection: "column", gap: space.sm },
   sectionLabel: { margin: 0, fontSize: 13, fontWeight: 600 },
-  card: {
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.large,
-    backgroundColor: color.card,
-  },
   row: {
     display: "flex",
     alignItems: "center",
@@ -96,29 +98,28 @@ export const styles = stylex.create({
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
-  keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
-  key: {
-    minWidth: 22,
-    paddingBlock: 2,
-    paddingInline: 6,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.small,
-    backgroundColor: color.segmentTrack,
-    color: color.foreground,
-    fontFamily: "inherit",
-    fontSize: 12,
-    fontVariantNumeric: "tabular-nums",
-    lineHeight: "16px",
-    textAlign: "center",
-  },
+  keys: { display: "flex", flexShrink: 0, gap: 6, fontFamily: "inherit" },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
-const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabels[value] }));
+const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
+const retentionLabels: Record<HistoryRetention, string> = {
+  memory: "Until I quit Voice",
+  day: "24 hours",
+  month: "30 days",
+  forever: "Forever",
+};
+const retentionOptions = historyRetentions.map((value) => ({
+  value,
+  label: retentionLabels[value],
+}));
+// Outside the component so the purity lint sees the clock read happens on a click, not a render.
+const dropsNow = (entries: readonly HistoryEntry[], to: HistoryRetention) =>
+  droppedBy(entries, to, Date.now());
+const shorteningDescription = (drops: number) =>
+  `${drops === 1 ? "1 older transcript is" : `${drops} older transcripts are`} deleted from your history. This cannot be undone.`;
 const updateChannels = [
   { value: "stable", label: "Stable" },
   { value: "nightly", label: "Nightly" },
@@ -317,7 +318,7 @@ export function GeneralSettings({
       <h1 {...stylex.props(styles.headline)}>General</h1>
 
       <Section label="Input">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <MicrophoneRow
             detail={microphoneDetail}
             test={microphoneTest}
@@ -335,7 +336,7 @@ export function GeneralSettings({
               onChange={changeMicrophone}
             />
           </MicrophoneRow>
-        </div>
+        </Card>
         {microphoneAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {microphoneAction.error}
@@ -344,7 +345,7 @@ export function GeneralSettings({
       </Section>
 
       <Section label="Dictation language">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             title="Spoken language"
             detail="Your choice guides speech recognition for your next dictation. Choose Auto-detect for multiple languages. Text cleanup is available for English only."
@@ -361,7 +362,7 @@ export function GeneralSettings({
               onChange={changeLanguage}
             />
           </Row>
-        </div>
+        </Card>
         {languageAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {languageAction.error}
@@ -370,7 +371,7 @@ export function GeneralSettings({
       </Section>
 
       <Section label="After dictation">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             nativeLabel
             title="Copy transcript to clipboard"
@@ -387,7 +388,7 @@ export function GeneralSettings({
               onChange={changeClipboard}
             />
           </Row>
-        </div>
+        </Card>
         {clipboardAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {clipboardAction.error}
@@ -396,7 +397,7 @@ export function GeneralSettings({
       </Section>
 
       <Section label="About">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             title="Update channel"
             detail="Stable gets regular releases. Nightly gets early builds."
@@ -433,7 +434,7 @@ export function GeneralSettings({
               )}
             </div>
           </div>
-        </div>
+        </Card>
       </Section>
     </div>
   );
@@ -466,7 +467,7 @@ export function SystemSettings({
       <h1 {...stylex.props(styles.headline)}>System</h1>
 
       <Section label="Startup">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             nativeLabel
             title="Open at login"
@@ -487,7 +488,7 @@ export function SystemSettings({
               }
             />
           </Row>
-        </div>
+        </Card>
         {loginAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {loginAction.error}
@@ -496,7 +497,7 @@ export function SystemSettings({
       </Section>
 
       <Section label="Audio">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             nativeLabel
             title="Mute all audio while dictating"
@@ -513,7 +514,7 @@ export function SystemSettings({
               onChange={changeMute}
             />
           </Row>
-        </div>
+        </Card>
         {audioAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {audioAction.error}
@@ -522,7 +523,7 @@ export function SystemSettings({
       </Section>
 
       <Section label="Appearance">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             title="Theme"
             detail="Match your Mac, or pick light or dark."
@@ -550,7 +551,7 @@ export function SystemSettings({
               onChange={changePill}
             />
           </Row>
-        </div>
+        </Card>
         {appearanceAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {appearanceAction.error}
@@ -561,7 +562,13 @@ export function SystemSettings({
   );
 }
 
-export function DataPrivacySettings({ settings }: { settings: Settings }) {
+export function DataPrivacySettings({
+  settings,
+  history,
+}: {
+  settings: Settings;
+  history: HistoryState;
+}) {
   const diagnosticsAction = useAction();
   const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
     update(diagnosticsAction, { diagnostics });
@@ -572,7 +579,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
 
       <Section label="Diagnostics">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             nativeLabel
             title="Share crash reports"
@@ -585,7 +592,7 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
               onChange={(on) => changeDiagnostics(on ? "on" : "off")}
             />
           </Row>
-        </div>
+        </Card>
         {diagnosticsAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {diagnosticsAction.error}
@@ -593,18 +600,24 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
         )}
       </Section>
 
+      <HistorySection history={history} />
+
       <Section label="Insights">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             title="Clear insights"
             detail="Deletes your word counts, pace, fixes, and streaks from this Mac. Your dictionary and snippets stay."
             onReset={undefined}
           >
-            <Button variant="secondary" onClick={() => setConfirmingClear(true)}>
+            <Button
+              variant="secondary"
+              aria-label="Clear insights"
+              onClick={() => setConfirmingClear(true)}
+            >
               Clear…
             </Button>
           </Row>
-        </div>
+        </Card>
         {clearAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {clearAction.error}
@@ -626,6 +639,89 @@ export function DataPrivacySettings({ settings }: { settings: Settings }) {
         />
       </Section>
     </div>
+  );
+}
+
+// A shorter window that would drop entries on screen asks first. The dialog keeps what it asked
+// while it fades out, so it stays mounted with `open: false` rather than losing its content.
+type Shortening = { open: boolean; to: HistoryRetention; drops: number };
+
+function HistorySection({ history: { entries, retention } }: { history: HistoryState }) {
+  const action = useAction();
+  const apply = (to: HistoryRetention) =>
+    void action.run(
+      () => hubApi().setHistoryRetention(to),
+      "Could not change where your history is kept.",
+    );
+  const [shortening, setShortening] = useState<Shortening | null>(null);
+  const change = (to: HistoryRetention) => {
+    const drops = dropsNow(entries, to);
+    if (drops > 0) setShortening({ open: true, to, drops });
+    else apply(to);
+  };
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  return (
+    <Section label="History">
+      <Card>
+        <Row
+          title="Keep history"
+          detail="Your transcripts on Home. Saved history stays on this Mac. Audio is never saved."
+          disabled={action.pending}
+          onReset={resetTo(retention, "memory", change)}
+        >
+          <Select
+            id="setting-history-retention"
+            value={retention}
+            options={retentionOptions}
+            disabled={action.pending}
+            onChange={change}
+          />
+        </Row>
+        <Row
+          title="Clear history"
+          detail="Deletes every transcript in your history, in memory and on this Mac."
+          onReset={undefined}
+        >
+          <Button
+            variant="secondary"
+            aria-label="Clear history"
+            onClick={() => setConfirmingClear(true)}
+          >
+            Clear…
+          </Button>
+        </Row>
+      </Card>
+      {action.error && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          {action.error}
+        </p>
+      )}
+      {shortening && (
+        <ConfirmDialog
+          open={shortening.open}
+          onOpenChange={(open) => setShortening({ ...shortening, open })}
+          title={`Keep history for ${retentionLabels[shortening.to]}?`}
+          description={shorteningDescription(shortening.drops)}
+          actions={[
+            { label: "Delete older", variant: "destructive", onClick: () => apply(shortening.to) },
+          ]}
+        />
+      )}
+      <ConfirmDialog
+        open={confirmingClear}
+        onOpenChange={setConfirmingClear}
+        title="Clear history?"
+        description="Every transcript in your history is deleted. This cannot be undone."
+        actions={[
+          {
+            label: "Clear",
+            variant: "destructive",
+            onClick: () =>
+              void action.run(() => hubApi().clearHistory(), "Could not clear history."),
+          },
+        ]}
+      />
+    </Section>
   );
 }
 
@@ -664,7 +760,7 @@ function ModelSection({
 
   return (
     <Section label={model.purpose}>
-      <div {...stylex.props(styles.card)}>
+      <Card>
         <div {...stylex.props(styles.row)}>
           <div {...stylex.props(styles.rowText)}>
             <span {...stylex.props(styles.rowTitle)}>{model.name}</span>
@@ -697,7 +793,7 @@ function ModelSection({
             </div>
           )}
         </div>
-      </div>
+      </Card>
       {error && (
         <p role="alert" {...stylex.props(styles.error)}>
           {error}
@@ -759,9 +855,7 @@ function ShortcutRow({
       </div>
       <kbd {...stylex.props(styles.keys)}>
         {keys.map((key) => (
-          <kbd key={key} {...stylex.props(styles.key)}>
-            {key}
-          </kbd>
+          <Keycap key={key}>{key}</Keycap>
         ))}
       </kbd>
     </div>
@@ -776,7 +870,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
       <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
 
       <Section label="Dictation">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <Row
             title="Hold to talk"
             detail="Hold the key while you speak."
@@ -794,7 +888,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
             detail="Press while dictating to stop without inserting."
             keys={["Esc"]}
           />
-        </div>
+        </Card>
         {hotkeyAction.error && (
           <p role="alert" {...stylex.props(styles.error)}>
             {hotkeyAction.error}
@@ -804,10 +898,15 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
       </Section>
 
       <Section label="Voice window">
-        <div {...stylex.props(styles.card)}>
+        <Card>
           <ShortcutRow title="Toggle sidebar" keys={shortcuts.toggleSidebar.keys} />
           <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
           <ShortcutRow title="Leave Settings" keys={shortcuts.closeSettings.keys} />
+          <ShortcutRow
+            title="Search history"
+            detail="On Home."
+            keys={shortcuts.searchHistory.keys}
+          />
           <ShortcutRow
             title="Go to sidebar item"
             detail="Jump to an item in the sidebar, top to bottom."
@@ -816,7 +915,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           <ShortcutRow title="Zoom in" keys={["⌘", "+"]} />
           <ShortcutRow title="Zoom out" keys={["⌘", "-"]} />
           <ShortcutRow title="Actual size" keys={["⌘", "0"]} />
-        </div>
+        </Card>
       </Section>
     </div>
   );

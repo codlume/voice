@@ -12,11 +12,18 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
+import type {
+  HistoryEntry,
+  HistoryRetention,
+  HistoryState,
+  HistoryStatus,
+} from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
 import { PillCapsule } from "./PillCapsule.tsx";
+import { useHistory } from "./useHistory.ts";
 import { usePillSnapshot, useSnapshot } from "./useSnapshot.ts";
 
 const ada = {
@@ -49,18 +56,15 @@ const base: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  last: null,
 };
 
 const ready: Snapshot = {
   ...base,
   permissions: { microphone: "granted", accessibility: "granted" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
-  last: {
-    raw: "um so I think we should uh push the launch to Friday because the the QA pass isn't done yet",
-    text: "I think we should push the launch to Friday because the QA pass isn't done yet.",
-  },
 };
+
+const historySaved: HubScene = { ...ready, retention: "month" };
 
 const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
 
@@ -103,7 +107,15 @@ const updateScenes: Record<string, UpdateStatus> = {
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };
 
-const hubScenes: Record<string, Snapshot> = {
+// A hub scene is the snapshot main would publish plus the history beside it, which defaults to
+// sampleHistory() with saving working.
+type HubScene = Snapshot & {
+  history?: readonly HistoryEntry[];
+  retention?: HistoryRetention;
+  saveFailed?: boolean;
+};
+
+const hubScenes: Record<string, HubScene> = {
   "microphone-test-failed": {
     ...ready,
     microphoneTest: {
@@ -131,7 +143,7 @@ const hubScenes: Record<string, Snapshot> = {
       message: "Could not list microphones. Reopen Voice to try again.",
     },
   },
-  fresh: base,
+  fresh: { ...base, history: [] },
   progress: {
     ...base,
     permissions: { microphone: "granted", accessibility: "denied" },
@@ -139,6 +151,11 @@ const hubScenes: Record<string, Snapshot> = {
       asr: { state: "downloading", progress: 0.42 },
       cleanup: { state: "failed", message: "Download interrupted. Check your connection." },
     },
+  },
+  "setup-not-ready": {
+    ...base,
+    permissions: { microphone: "granted", accessibility: "notDetermined" },
+    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
   },
   ready,
   "cleanup-off": {
@@ -157,14 +174,20 @@ const hubScenes: Record<string, Snapshot> = {
   ),
   "ready-no-transcript": {
     ...ready,
-    last: null,
+    history: [],
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
   "ready-not-inserted": {
     ...ready,
     session: done({ kind: "notInserted", reason: "focusChanged" }),
+    history: sampleHistory("notInserted"),
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
+  "history-empty": { ...ready, history: [] },
+  history: ready,
+  "history-saved": historySaved,
+  "history-long": { ...historySaved, history: longHistory() },
+  "history-save-failed": { ...historySaved, saveFailed: true },
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -265,6 +288,67 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
+function sampleHistory(newestStatus: HistoryStatus = "inserted"): HistoryEntry[] {
+  const today = new Date();
+  const at = (daysBack: number, hours: number, minutes: number) =>
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - daysBack,
+      hours,
+      minutes,
+    ).getTime();
+  return [
+    {
+      id: "h1",
+      at: Math.min(Date.now(), at(0, 11, 44)),
+      raw: "um so I think we should uh push the launch to Friday because the the QA pass isn't done yet",
+      text: "I think we should push the launch to Friday because the QA pass isn't done yet.",
+      status: newestStatus,
+    },
+    {
+      id: "h2",
+      at: Math.min(Date.now(), at(0, 9, 12)) - 1,
+      raw: "send the invoice to ada at example dot com",
+      text: "Send the invoice to ada@example.com.",
+      status: "notInserted",
+    },
+    {
+      id: "h3",
+      at: at(1, 17, 5),
+      raw: "Standup notes.",
+      text: "Standup notes.",
+      status: "inserted",
+    },
+    {
+      id: "h4",
+      at: at(1, 8, 30),
+      raw: "dear team the offsite moves to the twelfth new paragraph bring a laptop and your ideas for Q3",
+      text: "Dear team,\n\nThe offsite moves to the 12th.\n\nBring a laptop and your ideas for Q3.",
+      status: "inserted",
+    },
+    {
+      id: "h5",
+      at: at(4, 14, 2),
+      raw: "Call Hadryś about the Worcestershire order.",
+      text: "Call Hadryś about the Worcestershire order.",
+      status: "inserted",
+    },
+  ];
+}
+
+// More rows than Home mounts at once, so the Show more button has something to reveal.
+function longHistory(): HistoryEntry[] {
+  const first = Date.now();
+  return Array.from({ length: 130 }, (_, i) => ({
+    id: `long-${i}`,
+    at: first - i * 5_400_000,
+    raw: `Entry ${i + 1} of the long history.`,
+    text: `Entry ${i + 1} of the long history.`,
+    status: "inserted",
+  }));
+}
+
 function sampleInsights(): Insights {
   const days: Record<DayKey, number> = {};
   const today = new Date();
@@ -281,8 +365,31 @@ function sampleInsights(): Insights {
   return { days, corrected: 1843, dictionaryFixes: 212, recent };
 }
 
-function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
-  let snapshot = initial;
+function fakeVoice(
+  {
+    history: initialHistory = sampleHistory(),
+    retention: initialRetention = "memory",
+    saveFailed = false,
+    ...initial
+  }: HubScene,
+  loop: boolean,
+): HubApi & PillApi {
+  let snapshot: Snapshot = initial;
+  let history = initialHistory;
+  let retention = initialRetention;
+  const historyListeners = new Set<(history: HistoryState) => void>();
+  const historyState = (): HistoryState => ({
+    entries: history,
+    retention,
+    saveFailed,
+  });
+  const publishHistory = () => {
+    for (const listener of historyListeners) listener(historyState());
+  };
+  const setHistory = (next: readonly HistoryEntry[]) => {
+    history = next;
+    publishHistory();
+  };
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
   let insights = sampleInsights();
@@ -468,8 +575,23 @@ function fakeVoice(initial: Snapshot, loop: boolean): HubApi & PillApi {
       installs.delete(id);
       set({ ...snapshot, models: { ...snapshot.models, [id]: { state: "missing" } } });
     },
-    copyLast: async (which) => {
-      console.info("copyLast", which);
+    getHistory: async () => historyState(),
+    onHistory: (listener) => {
+      historyListeners.add(listener);
+      return () => historyListeners.delete(listener);
+    },
+    copyHistoryEntry: async (id, version) => {
+      console.info("copyHistoryEntry", id, version);
+    },
+    deleteHistoryEntry: async (id) => {
+      setHistory(history.filter((entry) => entry.id !== id));
+    },
+    clearHistory: async () => {
+      setHistory([]);
+    },
+    setHistoryRetention: async (next) => {
+      retention = next;
+      publishHistory();
     },
     getInsights: async () => insights,
     onInsights: (listener) => {
@@ -490,7 +612,8 @@ function PillPreview() {
 
 function HubPreview() {
   const snapshot = useSnapshot();
-  return snapshot ? <HubShell snapshot={snapshot} /> : null;
+  const history = useHistory();
+  return snapshot && history ? <HubShell snapshot={snapshot} history={history} /> : null;
 }
 
 function Gallery() {

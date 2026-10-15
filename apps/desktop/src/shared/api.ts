@@ -2,6 +2,7 @@ import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
+import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { Snippet } from "./snippets.ts";
 
@@ -185,7 +186,6 @@ export type Snapshot = {
   models: Record<ModelId, ModelStatus>;
   settings: Settings;
   account: AccountState;
-  last: { raw: string; text: string } | null;
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &
@@ -200,12 +200,16 @@ export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
 }
 
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";
-/** `last` is the transcript the user saw when they chose, so main can refuse if a newer one arrived. */
-export type RestartRequest = { choice: RestartChoice; last: Snapshot["last"] };
+/**
+ * `latest` is the id of the newest history entry the user saw when they chose, so main can refuse
+ * if a newer transcript arrived.
+ */
+export type RestartRequest = { choice: RestartChoice; latest: string | null };
 
-export function sameTranscript(a: Snapshot["last"], b: Snapshot["last"]): boolean {
-  return a?.raw === b?.raw && a?.text === b?.text;
-}
+export type TranscriptVersion = "text" | "raw";
+
+export const parseTranscriptVersion = (value: unknown): TranscriptVersion | null =>
+  value === "text" || value === "raw" ? value : null;
 
 type WindowApi = {
   diagnosticsStartedAtLaunch: boolean;
@@ -233,7 +237,14 @@ export type HubApi = WindowApi & {
   stopMicrophoneTest(): Promise<void>;
   installModel(id: ModelId): Promise<void>;
   uninstallModel(id: ModelId): Promise<void>;
-  copyLast(which: "text" | "raw"): Promise<void>;
+  getHistory(): Promise<HistoryState>;
+  /** Fires after every change to the history, with the whole list, newest first. */
+  onHistory(listener: (history: HistoryState) => void): () => void;
+  copyHistoryEntry(id: string, version: TranscriptVersion): Promise<void>;
+  deleteHistoryEntry(id: string): Promise<void>;
+  clearHistory(): Promise<void>;
+  /** Rejects with a message for the user when the file could not be written or deleted. */
+  setHistoryRetention(retention: HistoryRetention): Promise<void>;
   /** Opens the system browser on the API. Resolves once the browser is open, not once signed in. */
   signIn(): Promise<void>;
   signOut(): Promise<void>;
@@ -274,7 +285,12 @@ export const Channel = {
   stopMicrophoneTest: "voice:stopMicrophoneTest",
   installModel: "voice:installModel",
   uninstallModel: "voice:uninstallModel",
-  copyLast: "voice:copyLast",
+  getHistory: "voice:getHistory",
+  history: "voice:history",
+  copyHistoryEntry: "voice:copyHistoryEntry",
+  deleteHistoryEntry: "voice:deleteHistoryEntry",
+  clearHistory: "voice:clearHistory",
+  setHistoryRetention: "voice:setHistoryRetention",
   signIn: "voice:signIn",
   signOut: "voice:signOut",
   submitSignInCode: "voice:submitSignInCode",

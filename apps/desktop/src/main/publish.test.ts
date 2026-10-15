@@ -4,7 +4,6 @@ import { Channel, DEFAULT_SETTINGS } from "../shared/api.ts";
 import { publish } from "./publish.ts";
 import { createStore, type AppState } from "./store.ts";
 
-const transcript = { raw: "meet ada at noon", text: "Meet Ada at noon." };
 const identity = {
   id: "user-1",
   name: "Ada Lovelace",
@@ -38,7 +37,6 @@ function harness() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: { kind: "signedIn", ...identity },
-    last: null,
   });
   const hub = fakeWindow();
   const pill = fakeWindow();
@@ -48,12 +46,11 @@ function harness() {
 }
 
 describe("publish", () => {
-  test("the pill gets the session and its two settings, never the transcript or the account", () => {
+  test("the pill gets the session and its two settings, never the account", () => {
     const { hub, pill, update } = harness();
     update({ session: { phase: "recording", id: "s1", pressedAt: 0 } });
     update({
       session: { phase: "done", id: "s1", outcome: { kind: "inserted", method: "paste" } },
-      last: transcript,
     });
 
     expect(pill.sent.every(({ channel }) => channel === Channel.pillSnapshot)).toBe(true);
@@ -70,15 +67,15 @@ describe("publish", () => {
       },
     ]);
     const sentToPill = JSON.stringify(pill.sent);
-    for (const secret of [transcript.raw, transcript.text, identity.email, identity.name]) {
+    for (const secret of [identity.email, identity.name]) {
       expect(sentToPill).not.toContain(secret);
     }
-    expect(hub.sent.at(-1)?.value).toMatchObject({ last: transcript, account: identity });
+    expect(hub.sent.at(-1)?.value).toMatchObject({ account: identity });
   });
 
   test("the pill hears only changes to what it renders", () => {
     const { hub, pill, update } = harness();
-    update({ last: transcript });
+    update({ loginItem: "on" });
     update({ account: { kind: "signedOut" } });
     update({
       models: { asr: { state: "ready" }, cleanup: { state: "downloading", progress: 0.5 } },

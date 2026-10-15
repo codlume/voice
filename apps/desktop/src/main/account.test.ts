@@ -600,6 +600,7 @@ describe("createAccount", () => {
       log: () => {},
       onSessionDone: () => {},
       onDictated: () => {},
+      history: { remember: () => {}, settle: () => {} },
       copy: () => {},
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
@@ -681,6 +682,7 @@ describe("createAccount", () => {
       log: () => {},
       onSessionDone: () => {},
       onDictated: () => {},
+      history: { remember: () => {}, settle: () => {} },
       copy: () => {},
     });
 

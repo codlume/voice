@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { Outcome, PillState, UpdateStatus } from "../shared/api.ts";
+import type { PillState, UpdateStatus } from "../shared/api.ts";
+import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
 import {
   releaseCardTitle,
   restartPrompt,
+  samePrompt,
   updateButton,
   updateCard,
   updateStatusText,
@@ -21,7 +23,18 @@ function choices(prompt: RestartPrompt) {
 }
 
 const idle: PillState = { kind: "idle" };
-const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
+const latest = (status: HistoryStatus): HistoryEntry => ({
+  id: "s1",
+  at: 0,
+  raw: "um ship it friday",
+  text: "Ship it Friday.",
+  status,
+});
+const history = (
+  entry: HistoryEntry | null,
+  retention: HistoryState["retention"],
+  saveFailed = false,
+): HistoryState => ({ entries: entry ? [entry] : [], retention, saveFailed });
 
 describe("update controls", () => {
   test("dictation blocks restart but not download", () => {
@@ -128,32 +141,54 @@ describe("update controls", () => {
   });
 
   test("a restart offers to save the last transcript and requires it when it was not inserted", () => {
-    const last = { raw: "um ship it friday", text: "Ship it Friday." };
-    const inserted = done({ kind: "inserted", method: "paste" });
-    const notInserted = done({ kind: "notInserted", reason: "focusChanged" });
-
-    const withoutTranscript = restartPrompt(null, notInserted);
+    const withoutTranscript = restartPrompt(history(null, "memory"));
     expect(choices(withoutTranscript)).toEqual(["Restart -> restart"]);
     expect(withoutTranscript.description).toBe(
       "Voice will close and reopen with the downloaded version.",
     );
 
-    expect(choices(restartPrompt(last, notInserted))).toEqual([
-      "Copy transcript and restart -> copyTranscriptAndRestart",
-    ]);
-    expect(choices(restartPrompt(last, done({ kind: "failed", message: "Paste failed" })))).toEqual(
-      ["Copy transcript and restart -> copyTranscriptAndRestart"],
-    );
-
-    for (const session of [inserted, idle]) {
-      const prompt = restartPrompt(last, session);
-      expect(choices(prompt)).toEqual([
-        "Restart -> restart",
+    for (const status of ["notInserted", "pending"] as const) {
+      expect(choices(restartPrompt(history(latest(status), "memory")))).toEqual([
         "Copy transcript and restart -> copyTranscriptAndRestart",
       ]);
-      expect(prompt.description).toBe(
-        "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents.",
-      );
     }
+
+    const prompt = restartPrompt(history(latest("inserted"), "memory"));
+    expect(choices(prompt)).toEqual([
+      "Restart -> restart",
+      "Copy transcript and restart -> copyTranscriptAndRestart",
+    ]);
+    expect(prompt.description).toBe(
+      "Your history is kept only until Voice closes. Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.",
+    );
+  });
+
+  test("a saved history needs no copy, even for a transcript that was not inserted", () => {
+    for (const retention of ["day", "month", "forever"] as const) {
+      const prompt = restartPrompt(history(latest("notInserted"), retention));
+      expect(choices(prompt)).toEqual(["Restart -> restart"]);
+      expect(prompt.description).toContain("Your history is saved on this Mac");
+    }
+  });
+
+  test("a saved history that failed to save asks for a copy like one kept in memory", () => {
+    const prompt = restartPrompt(history(latest("notInserted"), "month", true));
+    expect(choices(prompt)).toEqual(["Copy transcript and restart -> copyTranscriptAndRestart"]);
+    expect(prompt.description).toContain("could not be saved");
+    expect(prompt.description).not.toContain("will still be there");
+
+    expect(choices(restartPrompt(history(latest("inserted"), "month", true)))).toEqual([
+      "Restart -> restart",
+      "Copy transcript and restart -> copyTranscriptAndRestart",
+    ]);
+  });
+
+  test("an open prompt stays for a settled entry and withdraws when what it says would change", () => {
+    const opened = history(latest("pending"), "memory");
+    expect(samePrompt(opened, history(latest("inserted"), "memory"))).toBe(true);
+    expect(samePrompt(opened, history({ ...latest("pending"), id: "s2" }, "memory"))).toBe(false);
+    expect(samePrompt(opened, history(latest("pending"), "month"))).toBe(false);
+    expect(samePrompt(opened, history(latest("pending"), "memory", true))).toBe(false);
+    expect(samePrompt(history(null, "memory"), history(null, "memory"))).toBe(true);
   });
 });

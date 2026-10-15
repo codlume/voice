@@ -156,7 +156,6 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: { kind: "signedOut" },
-    last: null,
   });
   let clock = Date.now();
   const dictation = createDictation({
@@ -172,6 +171,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     log: () => {},
     onSessionDone: diagnostics.sessionDone,
     onDictated: () => {},
+    history: { remember: () => {}, settle: () => {} },
     copy: () => {},
     now: () => clock,
   });

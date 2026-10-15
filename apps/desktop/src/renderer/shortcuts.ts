@@ -18,6 +18,7 @@ export const shortcuts = {
   toggleSidebar: shortcut("b"),
   openSettings: shortcut(","),
   closeSettings: shortcut("["),
+  searchHistory: shortcut("f"),
 };
 
 export const jumpShortcuts = Array.from({ length: 9 }, (_, index) => shortcut(String(index + 1)));

@@ -76,8 +76,8 @@ const cases = [
     end: "audio",
     target: "textedit",
     outcome: "inserted",
-    check: ({ text, snapshot, timing }) => {
-      const { raw, text: cleaned } = snapshot.last;
+    check: ({ text, latest, timing }) => {
+      const { raw, text: cleaned } = latest;
       assert(text === raw, `document ${show(text)} != raw transcript ${show(raw)}`);
       assert(cleaned === raw, `cleanup ran with cleanup off: ${show(cleaned)}`);
       assert(hasSpeech(raw), `raw transcript lacks Anna/Thursday: ${show(raw)}`);
@@ -260,6 +260,9 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
 
   await target.open(c.name);
   const before = await target.read();
+  const newestEntry = () =>
+    hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
+  const previous = await newestEntry();
   snapshots.skipToEnd();
   logs.skipToEnd();
 
@@ -293,9 +296,13 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     });
   }
   const outcome = snapshot.session.outcome ?? null;
+  // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
+  const current = await newestEntry();
+  const latest = current?.id === previous?.id ? null : current;
+  assert(outcome?.kind !== "inserted" || latest, "inserted session added no history entry");
   const [{ text, landedMs }, timingLine] = await Promise.all([
     outcome?.kind === "inserted"
-      ? landedText(target.read, snapshot.last.text)
+      ? landedText(target.read, latest.text)
       : { text: await target.read(), landedMs: null },
     c.end === "escape"
       ? null
@@ -310,7 +317,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
       (outcome?.kind ?? null) === c.outcome,
       `outcome ${show(outcome)} != ${c.outcome} (held ${heldMs} ms, document ${show(text)})`,
     );
-    c.check({ text, before, snapshot, timing });
+    c.check({ text, before, latest, timing });
   } finally {
     console.log(
       JSON.stringify({

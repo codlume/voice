@@ -1,9 +1,10 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { InfoIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { dayKey, type DayKey, type Insights as InsightsData } from "../shared/insights.ts";
+import type { DayKey } from "../shared/insights.ts";
+import { Card } from "./Card.tsx";
 import {
   cellLabel,
   DAY_MS,
@@ -15,7 +16,8 @@ import {
 } from "./insightsView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
-import { hubApi } from "./voice.ts";
+import { useInsights } from "./useInsights.ts";
+import { useToday } from "./useToday.ts";
 
 const CELL = 12;
 const GAP = 3;
@@ -33,17 +35,7 @@ const styles = stylex.create({
   },
   lede: { margin: 0, marginTop: space.sm, color: color.mutedForeground, fontSize: 15 },
   stats: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: space.md },
-  card: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    padding: space.lg,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: color.border,
-    borderRadius: radius.large,
-    backgroundColor: color.card,
-  },
+  stat: { display: "flex", flexDirection: "column", gap: 6, padding: space.lg },
   label: {
     display: "flex",
     alignItems: "center",
@@ -149,27 +141,6 @@ const shades = stylex.create({
 });
 const levels = [shades.none, shades.low, shades.medium, shades.high, shades.top] as const;
 
-function useInsights(): InsightsData | null {
-  const [insights, setInsights] = useState<InsightsData | null>(null);
-  useEffect(() => {
-    void hubApi().getInsights().then(setInsights);
-    return hubApi().onInsights(setInsights);
-  }, []);
-  return insights;
-}
-
-function useTodayOnReturn() {
-  const [, render] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    window.addEventListener("focus", render);
-    document.addEventListener("visibilitychange", render);
-    return () => {
-      window.removeEventListener("focus", render);
-      document.removeEventListener("visibilitychange", render);
-    };
-  }, []);
-}
-
 function useWeeksThatFit(): [(element: HTMLElement | null) => void, number | null] {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [weeks, setWeeks] = useState<number | null>(null);
@@ -215,13 +186,13 @@ function Stat({
   children: ReactNode;
 }) {
   return (
-    <section {...stylex.props(styles.card)}>
+    <Card style={styles.stat}>
       <h2 {...stylex.props(styles.label)}>
         {label}
         {info && <Info label={label}>{info}</Info>}
       </h2>
       {children}
-    </section>
+    </Card>
   );
 }
 
@@ -313,8 +284,7 @@ function Activity({
 
 export const Insights = memo(function Insights() {
   const insights = useInsights();
-  useTodayOnReturn();
-  const today = dayKey(new Date());
+  const today = useToday();
   const [fit, weeks] = useWeeksThatFit();
   const view = useMemo(
     () => insights && insightsView(insights, today, weeks ?? 1),

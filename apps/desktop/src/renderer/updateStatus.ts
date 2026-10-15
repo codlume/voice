@@ -3,9 +3,9 @@ import {
   type PendingUpdate,
   type PillState,
   type RestartChoice,
-  type Snapshot,
   type UpdateStatus,
 } from "../shared/api.ts";
+import { atRiskOnQuit, historySurvivesQuit, type HistoryState } from "../shared/history.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -101,18 +101,38 @@ const copyAndRestartAction = {
   choice: "copyTranscriptAndRestart",
 } as const;
 
-export function restartPrompt(last: Snapshot["last"], session: PillState): RestartPrompt {
-  if (last === null) {
+export function restartPrompt(history: HistoryState): RestartPrompt {
+  const { retention, saveFailed } = history;
+  if (history.entries.length === 0) {
     return {
       description: "Voice will close and reopen with the downloaded version.",
       actions: [restartAction],
     };
   }
+  if (historySurvivesQuit(retention, saveFailed)) {
+    return {
+      description:
+        "Voice will close and reopen with the downloaded version. Your history is saved on this Mac, so your transcripts will still be there.",
+      actions: [restartAction],
+    };
+  }
   // A transcript that never reached its target exists nowhere else, so restarting must save it.
-  const needsRecovery = session.kind === "done" && session.outcome.kind !== "inserted";
+  const needsRecovery = atRiskOnQuit(history) !== null;
+  const kept =
+    retention === "memory"
+      ? "Your history is kept only until Voice closes."
+      : "Your history could not be saved on this Mac.";
   return {
-    description:
-      "Your last transcript is kept only until Voice closes. Copy it to the clipboard before restarting. This replaces the current clipboard contents.",
+    description: `${kept} Copy your last transcript to the clipboard before restarting. This replaces the current clipboard contents.`,
     actions: needsRecovery ? [copyAndRestartAction] : [restartAction, copyAndRestartAction],
   };
 }
+
+/**
+ * Whether a prompt opened on `opened` still says and offers the same for `current`. Status is not
+ * compared: it only moves from pending to settled, and main checks it again before restarting.
+ */
+export const samePrompt = (opened: HistoryState, current: HistoryState) =>
+  opened.entries[0]?.id === current.entries[0]?.id &&
+  opened.retention === current.retention &&
+  opened.saveFailed === current.saveFailed;

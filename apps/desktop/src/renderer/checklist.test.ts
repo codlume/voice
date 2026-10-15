@@ -41,7 +41,6 @@ const fresh: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
-  last: null,
 };
 
 const allReady: Snapshot = {

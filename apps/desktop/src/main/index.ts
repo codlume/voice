@@ -10,6 +10,7 @@ import {
   dialog,
   Menu,
   nativeTheme,
+  powerMonitor,
   screen,
   session,
   shell,
@@ -21,7 +22,7 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
-  sameTranscript,
+  parseTranscriptVersion,
   toPillSnapshot,
   type HubApi,
   type LoginItem,
@@ -32,6 +33,7 @@ import {
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
+import { copyText, parseHistoryRetention } from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
@@ -51,6 +53,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
+import { createHistory } from "./history.ts";
 import { createInsights } from "./insights.ts";
 import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
@@ -61,7 +64,12 @@ import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
-import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
+import {
+  createUpdates,
+  parseReleaseConfig,
+  parseRestartRequest,
+  restartRefusal,
+} from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -278,7 +286,6 @@ async function main() {
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
     account: account.state,
-    last: null,
   });
 
   // The SDK has to start before ready, so the consent read at launch decides whether it runs.
@@ -359,6 +366,22 @@ async function main() {
     ],
     log,
   });
+  // The tray reads the newest entry when clicked, so it is rebuilt only when it goes from none to
+  // some or back.
+  let trayHasEntry = false;
+  const history = createHistory({
+    file: NodePath.join(userData, "history.json"),
+    log,
+    onChange: (state) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, state);
+      const hasEntry = state.entries.length > 0;
+      if (hasEntry === trayHasEntry) return;
+      trayHasEntry = hasEntry;
+      refreshTray(store.state);
+    },
+  });
+  // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
+  powerMonitor.on("resume", history.expire);
   const insights = createInsights({
     file: NodePath.join(userData, "insights.json"),
     log,
@@ -376,6 +399,7 @@ async function main() {
     log,
     onSessionDone: diagnostics.sessionDone,
     onDictated: insights.record,
+    history,
     // Without the charset, readers decode the HTML as Latin-1, as in the helper's paste.
     copy: ({ text, html }) =>
       html === null
@@ -476,6 +500,7 @@ async function main() {
       helper.send({ type: "permissions.check" });
       refreshLoginItem();
       void account.refresh();
+      history.expire();
     });
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
@@ -520,18 +545,17 @@ async function main() {
 
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
-  function copyLast(which: "text" | "raw") {
-    const last = store.state.last;
-    if (last) clipboard.writeText(last[which]);
-  }
   function refreshTray(state: AppState) {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Voice", click: showHub },
         {
           label: "Copy last transcript",
-          enabled: state.last !== null,
-          click: () => copyLast("text"),
+          enabled: trayHasEntry,
+          click: () => {
+            const [latest] = history.entries();
+            if (latest) clipboard.writeText(copyText(latest));
+          },
         },
         { type: "separator" },
         {
@@ -565,13 +589,20 @@ async function main() {
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
-    if (state.last !== previous.last || state.updates !== previous.updates) refreshTray(state);
+    if (state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     followSettings(cleanup, state, previous);
   });
 
+  // A restart request holds the history still from the moment it starts draining it, so what it
+  // checks is what the restart will leave behind.
+  let restartRequested = false;
   function assertNotRestarting() {
-    if (lifecycle !== "running" || store.state.updates.status.kind === "installing")
+    if (
+      lifecycle !== "running" ||
+      restartRequested ||
+      store.state.updates.status.kind === "installing"
+    )
       throw new Error("Voice is restarting.");
   }
 
@@ -648,18 +679,27 @@ async function main() {
     hubCommands.handle(Channel.getSnapshot, () => toSnapshot(store.state));
     hubCommands.handle(Channel.checkForUpdates, () => updates.check());
     hubCommands.handle(Channel.downloadUpdate, () => updates.download());
-    hubCommands.handle(Channel.restartForUpdate, (_event, value: unknown) => {
+    hubCommands.handle(Channel.restartForUpdate, async (_event, value: unknown) => {
       const request = parseRestartRequest(value);
       if (!request) return;
-      const last = store.state.last;
-      if (!sameTranscript(request.last, last)) {
-        throw new Error("A new transcript arrived. Check it, then restart.");
+      assertNotRestarting();
+      restartRequested = true;
+      try {
+        // An accepted channel change must reach the updater before it installs.
+        await saving;
+        await history.settled();
+        const state = history.state();
+        const refusal = restartRefusal(request, state);
+        if (refusal) throw new Error(refusal);
+        const [latest] = state.entries;
+        await updates.restart(
+          request.choice === "copyTranscriptAndRestart" && latest
+            ? () => clipboard.writeText(copyText(latest))
+            : undefined,
+        );
+      } finally {
+        restartRequested = false;
       }
-      return updates.restart(
-        request.choice === "copyTranscriptAndRestart" && last
-          ? () => clipboard.writeText(last.text || last.raw)
-          : undefined,
-      );
     });
     hubCommands.handle(Channel.openRelease, () => {
       const url = updates.releaseUrl();
@@ -696,8 +736,46 @@ async function main() {
       assertCanUninstall(model);
       return modelControls[model.id].uninstall();
     });
-    hubCommands.handle(Channel.copyLast, (_event, which: "text" | "raw") => {
-      copyLast(which === "raw" ? "raw" : "text");
+    // The first list the hub sees is the loaded one, so an empty list means empty, not pending.
+    hubCommands.handle(Channel.getHistory, () => history.loaded().then(history.state));
+    hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, value: unknown) => {
+      const version = parseTranscriptVersion(value);
+      if (typeof id !== "string" || version === null) return;
+      const entry = history.entries().find((candidate) => candidate.id === id);
+      if (!entry) throw new Error("This transcript is no longer in your history.");
+      clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
+    });
+    hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
+      if (typeof id !== "string") return;
+      try {
+        await history.remove(id);
+      } catch (error) {
+        log(`history: delete failed (${String(error)})`);
+        throw new Error("Could not delete this transcript from the saved history. Try again.", {
+          cause: error,
+        });
+      }
+    });
+    hubCommands.handle(Channel.clearHistory, async () => {
+      try {
+        await history.clear();
+      } catch (error) {
+        log(`history: clear failed (${String(error)})`);
+        throw new Error("Could not clear the saved history. Try again.", { cause: error });
+      }
+    });
+    hubCommands.handle(Channel.setHistoryRetention, async (_event, value: unknown) => {
+      const retention = parseHistoryRetention(value);
+      if (retention === null) return;
+      assertNotRestarting();
+      try {
+        await history.setRetention(retention);
+      } catch (error) {
+        log(`history: retention change failed (${String(error)})`);
+        throw new Error("Could not change where your history is kept. Try again.", {
+          cause: error,
+        });
+      }
     });
     hubCommands.handle(Channel.signIn, () => {
       assertNotRestarting();
@@ -752,8 +830,8 @@ async function main() {
   app.on("window-all-closed", () => {});
 
   // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
-  // settings save, the Insights write, the helper, and the cleanup process get to finish, and their
-  // logs get sent. The quit that follows it passes.
+  // settings save, the Insights and history writes, the helper, and the cleanup process get to
+  // finish, and their logs get sent. The quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
@@ -762,6 +840,7 @@ async function main() {
     const stopped = Promise.allSettled([
       saving,
       insights.settled(),
+      history.settled(),
       helper.stop(),
       cleanup.dispose(),
     ]);

@@ -7,6 +7,7 @@ import {
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
+import { atRiskOnQuit, type HistoryState } from "../shared/history.ts";
 import { releaseNoteItems } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
@@ -33,12 +34,23 @@ export function parseRestartRequest(value: unknown): RestartRequest | null {
     (value.choice !== "restart" && value.choice !== "copyTranscriptAndRestart")
   )
     return null;
-  if (!("last" in value)) return null;
-  const last = value.last;
-  if (last === null) return { choice: value.choice, last };
-  if (typeof last !== "object" || !("raw" in last) || !("text" in last)) return null;
-  if (typeof last.raw !== "string" || typeof last.text !== "string") return null;
-  return { choice: value.choice, last: { raw: last.raw, text: last.text } };
+  if (!("latest" in value)) return null;
+  const { latest } = value;
+  if (latest !== null && typeof latest !== "string") return null;
+  return { choice: value.choice, latest };
+}
+
+/**
+ * Why a restart has to wait, or null. The request was made against the newest entry the user saw,
+ * so a newer one means they chose on stale facts, and a plain restart must not lose the only copy
+ * of a transcript.
+ */
+export function restartRefusal(request: RestartRequest, history: HistoryState): string | null {
+  if (request.latest !== (history.entries[0]?.id ?? null))
+    return "A new transcript arrived. Check it, then restart.";
+  if (request.choice === "restart" && atRiskOnQuit(history))
+    return "Your last transcript is not saved anywhere. Copy it, then restart.";
+  return null;
 }
 
 type Engine = Pick<
