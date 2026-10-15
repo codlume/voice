@@ -4,7 +4,13 @@ import type { UpdateCheckResult } from "electron-updater";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { UpdatesSnapshot } from "../shared/api.ts";
-import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
+import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
+import {
+  createUpdates,
+  parseReleaseConfig,
+  parseRestartRequest,
+  restartRefusal,
+} from "./updates.ts";
 
 function result(
   version = "0.0.2",
@@ -89,6 +95,19 @@ describe("release configuration", () => {
   });
 });
 
+const entry = (status: HistoryStatus): HistoryEntry => ({
+  id: "s1",
+  at: 0,
+  raw: "um ship it",
+  text: "Ship it.",
+  status,
+});
+const history = (
+  latest: HistoryEntry | null,
+  retention: HistoryState["retention"],
+  saveFailed = false,
+): HistoryState => ({ entries: latest ? [latest] : [], retention, saveFailed });
+
 describe("restart requests", () => {
   test("accept a known choice with the newest transcript the user saw, and nothing else", () => {
     expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", latest: "s1" })).toEqual({
@@ -109,6 +128,42 @@ describe("restart requests", () => {
     ]) {
       expect(parseRestartRequest(value)).toBeNull();
     }
+  });
+
+  test("refuse a request made before a newer transcript arrived", () => {
+    expect(
+      restartRefusal({ choice: "restart", latest: null }, history(entry("inserted"), "memory")),
+    ).toBe("A new transcript arrived. Check it, then restart.");
+    expect(
+      restartRefusal(
+        { choice: "copyTranscriptAndRestart", latest: "s0" },
+        history(entry("inserted"), "month"),
+      ),
+    ).toBe("A new transcript arrived. Check it, then restart.");
+    expect(restartRefusal({ choice: "restart", latest: null }, history(null, "memory"))).toBeNull();
+  });
+
+  test("refuse a plain restart only when the newest transcript would be lost", () => {
+    for (const status of ["pending", "notInserted"] as const) {
+      expect(
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory")),
+      ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
+      expect(
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month", true)),
+      ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
+      expect(
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month")),
+      ).toBeNull();
+      expect(
+        restartRefusal(
+          { choice: "copyTranscriptAndRestart", latest: "s1" },
+          history(entry(status), "memory"),
+        ),
+      ).toBeNull();
+    }
+    expect(
+      restartRefusal({ choice: "restart", latest: "s1" }, history(entry("inserted"), "memory")),
+    ).toBeNull();
   });
 });
 

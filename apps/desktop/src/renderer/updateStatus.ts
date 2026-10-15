@@ -5,11 +5,7 @@ import {
   type RestartChoice,
   type UpdateStatus,
 } from "../shared/api.ts";
-import {
-  historySurvivesQuit,
-  type HistoryEntry,
-  type HistoryRetention,
-} from "../shared/history.ts";
+import { atRiskOnQuit, historySurvivesQuit, type HistoryState } from "../shared/history.ts";
 
 export function updateStatusText(status: UpdateStatus): string {
   switch (status.kind) {
@@ -105,12 +101,9 @@ const copyAndRestartAction = {
   choice: "copyTranscriptAndRestart",
 } as const;
 
-export function restartPrompt(
-  latest: HistoryEntry | null,
-  retention: HistoryRetention,
-  saveFailed: boolean,
-): RestartPrompt {
-  if (latest === null) {
+export function restartPrompt(history: HistoryState): RestartPrompt {
+  const { retention, saveFailed } = history;
+  if (history.entries.length === 0) {
     return {
       description: "Voice will close and reopen with the downloaded version.",
       actions: [restartAction],
@@ -124,7 +117,7 @@ export function restartPrompt(
     };
   }
   // A transcript that never reached its target exists nowhere else, so restarting must save it.
-  const needsRecovery = latest.status !== "inserted";
+  const needsRecovery = atRiskOnQuit(history) !== null;
   const kept =
     retention === "memory"
       ? "Your history is kept only until Voice closes."
@@ -134,3 +127,12 @@ export function restartPrompt(
     actions: needsRecovery ? [copyAndRestartAction] : [restartAction, copyAndRestartAction],
   };
 }
+
+/**
+ * Whether a prompt opened on `opened` still says and offers the same for `current`. Status is not
+ * compared: it only moves from pending to settled, and main checks it again before restarting.
+ */
+export const samePrompt = (opened: HistoryState, current: HistoryState) =>
+  opened.entries[0]?.id === current.entries[0]?.id &&
+  opened.retention === current.retention &&
+  opened.saveFailed === current.saveFailed;

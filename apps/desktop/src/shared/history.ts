@@ -48,6 +48,18 @@ export type HistoryState = {
 export const historySurvivesQuit = (retention: HistoryRetention, saveFailed: boolean) =>
   retention !== "memory" && !saveFailed;
 
+/** The newest entry when quitting now would lose it: never inserted, and not saved on this Mac. */
+export const atRiskOnQuit = ({
+  entries: [latest],
+  retention,
+  saveFailed,
+}: HistoryState): HistoryEntry | null =>
+  latest !== undefined &&
+  latest.status !== "inserted" &&
+  !historySurvivesQuit(retention, saveFailed)
+    ? latest
+    : null;
+
 /** How many entries a retention window would drop at `now`. */
 export function droppedBy(
   entries: readonly HistoryEntry[],

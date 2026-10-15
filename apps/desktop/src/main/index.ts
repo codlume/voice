@@ -32,11 +32,7 @@ import {
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import {
-  historySurvivesQuit,
-  parseHistoryRetention,
-  type HistoryEntry,
-} from "../shared/history.ts";
+import { parseHistoryRetention, type HistoryEntry } from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
@@ -67,7 +63,12 @@ import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
-import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
+import {
+  createUpdates,
+  parseReleaseConfig,
+  parseRestartRequest,
+  restartRefusal,
+} from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -684,19 +685,10 @@ async function main() {
       restartRequested = true;
       try {
         await history.settled();
-        const { entries, retention, saveFailed } = history.state();
-        const [latest] = entries;
-        if (request.latest !== (latest?.id ?? null)) {
-          throw new Error("A new transcript arrived. Check it, then restart.");
-        }
-        if (
-          request.choice === "restart" &&
-          latest !== undefined &&
-          latest.status !== "inserted" &&
-          !historySurvivesQuit(retention, saveFailed)
-        ) {
-          throw new Error("Your last transcript is not saved anywhere. Copy it, then restart.");
-        }
+        const state = history.state();
+        const refusal = restartRefusal(request, state);
+        if (refusal) throw new Error(refusal);
+        const [latest] = state.entries;
         await updates.restart(
           request.choice === "copyTranscriptAndRestart" && latest
             ? () => clipboard.writeText(latest.text || latest.raw)

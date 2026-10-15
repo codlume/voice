@@ -8,15 +8,15 @@ import {
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
-import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
+import type { HistoryState } from "../shared/history.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { UpdateCardTrigger } from "./UpdateCard.tsx";
 import {
   restartPrompt,
+  samePrompt,
   updateButton,
   updateCard,
   updateStatusText,
-  type RestartPrompt,
 } from "./updateStatus.ts";
 import { useAction } from "./useAction.ts";
 import { color, radius } from "./tokens.stylex.ts";
@@ -169,13 +169,9 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
 
-type PromptAsOpened = {
-  open: boolean;
-  latest: HistoryEntry | null;
-  retention: HistoryRetention;
-  saveFailed: boolean;
-  prompt: RestartPrompt;
-};
+// The history as it was when the prompt opened. The prompt describes that, stays mounted through
+// its fade-out, and is withdrawn when the live history would change what it says or offers.
+type RestartConfirm = { open: boolean; history: HistoryState };
 
 export function SidebarUpdates({
   updates,
@@ -187,28 +183,15 @@ export function SidebarUpdates({
   history: HistoryState;
 }) {
   const { error: actionError, run: runAction } = useAction();
-  const [confirm, setConfirm] = useState<PromptAsOpened | null>(null);
+  const [confirm, setConfirm] = useState<RestartConfirm | null>(null);
   const status = updates.status;
   const { action, label } = updateButton(status, session);
   const card = updateCard(status, actionError);
-  const latest = history.entries[0] ?? null;
-  const { retention, saveFailed } = history;
+  if (confirm?.open && (action !== "restart" || !samePrompt(confirm.history, history)))
+    setConfirm({ ...confirm, open: false });
+  const prompt = confirm && restartPrompt(confirm.history);
 
-  const promptOutdated =
-    action !== "restart" ||
-    confirm?.latest?.id !== latest?.id ||
-    confirm?.retention !== retention ||
-    confirm?.saveFailed !== saveFailed;
-  if (confirm?.open && promptOutdated) setConfirm({ ...confirm, open: false });
-
-  const confirmRestart = () =>
-    setConfirm({
-      open: true,
-      latest,
-      retention,
-      saveFailed,
-      prompt: restartPrompt(latest, retention, saveFailed),
-    });
+  const confirmRestart = () => setConfirm({ open: true, history });
   const onRestartRequest = useEffectEvent(() => {
     if (action === "restart") confirmRestart();
   });
@@ -241,20 +224,20 @@ export function SidebarUpdates({
       >
         <StatusIcon status={status} />
       </UpdateCardTrigger>
-      {confirm && (
+      {confirm && prompt && (
         <ConfirmDialog
           open={confirm.open}
           onOpenChange={(open) => setConfirm({ ...confirm, open })}
           title="Restart Voice to install the update?"
-          description={confirm.prompt.description}
-          actions={confirm.prompt.actions.map((option) => ({
+          description={prompt.description}
+          actions={prompt.actions.map((option) => ({
             label: option.label,
             variant: "primary",
             onClick: () =>
               void run(() =>
                 hubApi().restartForUpdate({
                   choice: option.choice,
-                  latest: confirm.latest?.id ?? null,
+                  latest: confirm.history.entries[0]?.id ?? null,
                 }),
               ),
           }))}
