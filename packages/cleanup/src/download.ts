@@ -16,7 +16,7 @@ export const S1_MINI = {
   sha256: "3b41ebe2502cbd03e811d5d16b022f5ab551eda58d62597d152f89535003c634",
 };
 
-export type ModelSource = { baseUrl: string; file: string; bytes: number; sha256: string };
+type ModelSource = { baseUrl: string; file: string; bytes: number; sha256: string };
 
 export type DownloadOptions = {
   dir: string;
