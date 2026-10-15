@@ -18,7 +18,6 @@ export const dictationKeys = ({ hotkey, toggleHotkey }: DictationKeySettings): H
 export const dictatesWithFn = (settings: DictationKeySettings) =>
   dictationKeys(settings).includes("fn");
 
-/** The label with the key's symbol in front, for a keycap. */
 export function hotkeyKeycap(hotkey: Hotkey): string {
   const { label, symbol } = hotkeyKeys[hotkey];
   return symbol === null ? label : `${symbol} ${label}`;
