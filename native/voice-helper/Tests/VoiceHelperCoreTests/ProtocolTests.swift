@@ -28,9 +28,6 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"asr.remove"}"#, .asrRemove),
         (#"{"type":"test.audioFile","path":"/tmp/a.wav"}"#, .testAudioFile(path: "/tmp/a.wav")),
         (#"{"type":"test.audioFile","path":null}"#, .testAudioFile(path: nil)),
-        (#"{"type":"test.hotkey","action":"down"}"#, .testHotkey(action: .down)),
-        (#"{"type":"test.hotkey","action":"toggle"}"#, .testHotkey(action: .toggle)),
-        (#"{"type":"test.hotkey","action":"cancel"}"#, .testHotkey(action: .cancel)),
     ]
     for (line, expected) in cases {
         #expect(HelperCommand.decode(line: line) == .success(expected), Comment(rawValue: line))

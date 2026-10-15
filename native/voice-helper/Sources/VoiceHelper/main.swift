@@ -79,9 +79,6 @@ final class Helper {
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path
-        case .testHotkey(let action):
-            guard testMode else { return output.log(.error, "test hooks disabled") }
-            output.emit(.hotkey(action: action))
         }
     }
 
