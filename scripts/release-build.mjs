@@ -29,6 +29,8 @@ const config = {
 };
 const configFile = join(desktop, "release-config.json");
 writeFileSync(configFile, JSON.stringify(config));
+const sentryCli = (...args) =>
+  execFileSync("pnpm", ["exec", "sentry-cli", ...args], { stdio: "inherit" });
 // Debug IDs have to be injected before electron-builder packs the bundles, so the shipped files
 // match the uploaded maps.
 function uploadSourceMaps() {
@@ -40,10 +42,8 @@ function uploadSourceMaps() {
     if (!process.env[name]) throw new Error(`${name} is required when SENTRY_AUTH_TOKEN is set`);
   }
   const bundles = [join(desktop, "dist"), join(desktop, "dist-electron")];
-  const cli = (...args) =>
-    execFileSync("pnpm", ["exec", "sentry-cli", ...args], { stdio: "inherit" });
-  cli("sourcemaps", "inject", ...bundles);
-  cli("sourcemaps", "upload", "--release", `voice@${version}`, ...bundles);
+  sentryCli("sourcemaps", "inject", ...bundles);
+  sentryCli("sourcemaps", "upload", "--release", `voice@${version}`, ...bundles);
 }
 
 try {
