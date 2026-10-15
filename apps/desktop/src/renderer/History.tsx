@@ -9,6 +9,7 @@ import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { excerpt, historyPage, timeLabel } from "./historyView.ts";
+import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -107,7 +108,6 @@ const styles = stylex.create({
   },
   empty: { margin: 0, padding: space.lg, color: color.mutedForeground },
   more: { display: "flex", justifyContent: "center" },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
 // Rows mount all at once, so a long history shows its newest page and grows on request.
@@ -322,7 +322,7 @@ export function History({
         {copied && copiedLabels[copied.version]}
       </p>
       {action.error && (
-        <p role="alert" {...stylex.props(styles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error)}>
           {action.error}
         </p>
       )}

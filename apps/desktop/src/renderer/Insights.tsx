@@ -14,6 +14,7 @@ import {
   type Heatmap,
   type Level,
 } from "./insightsView.ts";
+import { pageStyles } from "./pageStyles.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
@@ -25,14 +26,6 @@ const MAX_WEEKS = 53;
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
-  headline: {
-    margin: 0,
-    fontFamily: font.serif,
-    fontSize: 36,
-    fontWeight: 400,
-    lineHeight: 1.15,
-    letterSpacing: "-0.01em",
-  },
   lede: { margin: 0, marginTop: space.sm, color: color.mutedForeground, fontSize: 15 },
   stats: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: space.md },
   stat: { display: "flex", flexDirection: "column", gap: 6, padding: space.lg },
@@ -294,7 +287,7 @@ export const Insights = memo(function Insights() {
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(styles.headline)}>Insights</h1>
+        <h1 {...stylex.props(pageStyles.headline)}>Insights</h1>
         <p {...stylex.props(styles.lede)}>
           Counted on this Mac from your dictations. Voice keeps the numbers, never your words.
         </p>

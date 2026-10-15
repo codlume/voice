@@ -9,6 +9,7 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { GoogleIcon } from "./Icons.tsx";
+import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -89,7 +90,7 @@ function RowText({ account }: { account: Exclude<AccountState, { kind: "signedIn
 function ErrorLine({ text }: { text: string }) {
   return (
     text && (
-      <p role="alert" {...stylex.props(settings.error)}>
+      <p role="alert" {...stylex.props(pageStyles.error)}>
         {text}
       </p>
     )
@@ -434,7 +435,7 @@ function AccountRow({ account }: { account: AccountState }) {
 export function AccountSettings({ account }: { account: AccountState }) {
   return (
     <div {...stylex.props(settings.page)}>
-      <h1 {...stylex.props(settings.headline)}>Account</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>Account</h1>
       <AccountRow account={account} />
     </div>
   );

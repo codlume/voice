@@ -10,6 +10,7 @@ import {
   type DictionaryProblem,
 } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
+import { pageStyles } from "./pageStyles.ts";
 import { RecordList, styles, type Copy } from "./RecordList.tsx";
 import { styles as settings } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
@@ -118,7 +119,7 @@ export function Dictionary({
                 )}
               </div>
               {shown && (
-                <p id={problemId} {...stylex.props(settings.error)}>
+                <p id={problemId} {...stylex.props(pageStyles.error)}>
                   {shown.message}
                 </p>
               )}

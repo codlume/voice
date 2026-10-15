@@ -6,6 +6,7 @@ import { useId } from "react";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
+import { pageStyles } from "./pageStyles.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -46,14 +47,6 @@ const stylings: {
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.lg },
   header: { display: "flex", flexDirection: "column", gap: space.sm },
-  headline: {
-    margin: 0,
-    fontFamily: font.serif,
-    fontSize: 36,
-    fontWeight: 400,
-    lineHeight: 1.15,
-    letterSpacing: "-0.01em",
-  },
   subtitle: { margin: 0, color: color.mutedForeground },
   cleanup: {
     display: "flex",
@@ -132,7 +125,6 @@ const styles = stylex.create({
     lineHeight: 1.35,
     letterSpacing: "-0.01em",
   },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
 export function Style({ settings }: { settings: SettingsValue }) {
@@ -148,7 +140,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
   return (
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
-        <h1 {...stylex.props(styles.headline)}>Style</h1>
+        <h1 {...stylex.props(pageStyles.headline)}>Style</h1>
         <p {...stylex.props(styles.subtitle)}>Choose how your dictation reads.</p>
       </header>
 
@@ -230,7 +222,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
             : "Applies to English dictation. Your meaning stays the same."}
       </p>
       {saveError && (
-        <p role="alert" {...stylex.props(styles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error)}>
           {saveError}
         </p>
       )}
