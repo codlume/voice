@@ -5,6 +5,7 @@ import { useId, useMemo } from "react";
 
 import type { Hotkey, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
+import type { DayKey } from "../shared/insights.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
@@ -330,9 +331,8 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function Stats({ onOpenInsights }: { onOpenInsights: () => void }) {
+function Stats({ today, onOpenInsights }: { today: DayKey; onOpenInsights: () => void }) {
   const insights = useInsights();
-  const today = useToday();
   const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
   return (
     <Card>
@@ -362,6 +362,7 @@ export function Home({
   onOpenInsights: () => void;
 }) {
   const { ready, rows } = checklist(snapshot);
+  const today = useToday();
   return (
     <div {...stylex.props(styles.page)}>
       <header>
@@ -378,10 +379,10 @@ export function Home({
           ) : (
             <Setup snapshot={snapshot} rows={rows} />
           )}
-          <History history={history} />
+          <History history={history} today={today} />
         </div>
         <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
-          <Stats onOpenInsights={onOpenInsights} />
+          <Stats today={today} onOpenInsights={onOpenInsights} />
         </aside>
       </div>
     </div>

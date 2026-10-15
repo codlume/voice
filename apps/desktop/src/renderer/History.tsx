@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
 import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
+import type { DayKey } from "../shared/insights.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { historyPage, timeLabel } from "./historyView.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
@@ -235,14 +235,15 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
 
 export function History({
   history: { entries, retention, saveFailed },
+  today,
 }: {
   history: HistoryState;
+  today: DayKey;
 }) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<Copied | null>(null);
   const [rowLimit, setRowLimit] = useState(ROWS_PER_PAGE);
   const action = useAction();
-  const today = useToday();
   const { days, hidden } = useMemo(
     () => historyPage(entries, { query, limit: rowLimit, today }),
     [entries, query, today, rowLimit],
