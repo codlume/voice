@@ -56,18 +56,23 @@ export function useShortcuts(bindings: readonly Binding[]) {
   }, []);
 }
 
-export function showsHints(event: ShortcutEvent, hotkey: Hotkey): boolean {
-  const holdsDictationHotkey = hotkey === "rightCommand" && event.code === "MetaRight";
+export function showsHints(
+  event: ShortcutEvent,
+  hotkey: Hotkey,
+  toggleHotkey: Hotkey | null,
+): boolean {
+  const dictates = hotkey === "rightCommand" || toggleHotkey === "rightCommand";
+  const pressesDictationKey = dictates && event.code === "MetaRight";
   // Some input paths report metaKey false on the Meta keydown itself, so check the key.
-  return event.key === "Meta" && noOtherModifiers(event) && !holdsDictationHotkey;
+  return event.key === "Meta" && noOtherModifiers(event) && !pressesDictationKey;
 }
 
-export function useCommandHeld(hotkey: Hotkey): boolean {
+export function useCommandHeld(hotkey: Hotkey, toggleHotkey: Hotkey | null): boolean {
   const [held, setHeld] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      setHeld(showsHints(event, hotkey));
+      setHeld(showsHints(event, hotkey, toggleHotkey));
     }
     function onKeyUp(event: KeyboardEvent) {
       if (event.key === "Meta") setHeld(false);
@@ -84,7 +89,7 @@ export function useCommandHeld(hotkey: Hotkey): boolean {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [hotkey]);
+  }, [hotkey, toggleHotkey]);
 
   return held;
 }

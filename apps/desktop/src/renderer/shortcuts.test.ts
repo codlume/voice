@@ -72,16 +72,22 @@ test("shortcut hints", () => {
 
 describe("showsHints", () => {
   test("⌘ on its own shows hints", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn")).toBe(true);
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn")).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn", null)).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", null)).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", "rightOption")).toBe(true);
   });
 
   test("⌘ with another modifier does not", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft", shift: true }), "fn")).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft", shift: true }), "fn", null)).toBe(false);
   });
 
   test("holding Right ⌘ to dictate does not", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "rightCommand")).toBe(false);
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "rightCommand")).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "rightCommand", null)).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "rightCommand", null)).toBe(true);
+  });
+
+  test("pressing Right ⌘ to toggle dictation does not", () => {
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", "rightCommand")).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn", "rightCommand")).toBe(true);
   });
 });

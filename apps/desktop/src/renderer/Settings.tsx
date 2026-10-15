@@ -33,7 +33,7 @@ import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { droppedBy } from "./historyView.ts";
-import { hotkeyLabel } from "./hotkeys.ts";
+import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
@@ -105,6 +105,8 @@ export const styles = stylex.create({
 });
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
+const TOGGLE_OFF = "off";
+type ToggleChoice = Hotkey | typeof TOGGLE_OFF;
 const retentionLabels: Record<HistoryRetention, string> = {
   memory: "Until I quit Voice",
   day: "24 hours",
@@ -865,6 +867,13 @@ function ShortcutRow({
 export function ShortcutsSettings({ settings }: { settings: Settings }) {
   const hotkeyAction = useAction();
   const changeHotkey = (hotkey: Hotkey) => update(hotkeyAction, { hotkey });
+  const toggleChoice: ToggleChoice = settings.toggleHotkey ?? TOGGLE_OFF;
+  const changeToggle = (choice: ToggleChoice) =>
+    update(hotkeyAction, { toggleHotkey: choice === TOGGLE_OFF ? null : choice });
+  const toggleOptions: readonly { value: ToggleChoice; label: string }[] = [
+    { value: TOGGLE_OFF, label: "Off" },
+    ...hotkeyOptions.filter((option) => option.value !== settings.hotkey),
+  ];
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
@@ -883,6 +892,18 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
               onChange={changeHotkey}
             />
           </Row>
+          <Row
+            title="Toggle dictation"
+            detail="Press once to start, press again to stop and insert."
+            onReset={resetTo(toggleChoice, TOGGLE_OFF, changeToggle)}
+          >
+            <Select
+              id="setting-toggle-hotkey"
+              value={toggleChoice}
+              options={toggleOptions}
+              onChange={changeToggle}
+            />
+          </Row>
           <ShortcutRow
             title="Cancel dictation"
             detail="Press while dictating to stop without inserting."
@@ -894,7 +915,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
             {hotkeyAction.error}
           </p>
         )}
-        {settings.hotkey === "fn" && <GlobeHint />}
+        {dictatesWithFn(settings) && <GlobeHint />}
       </Section>
 
       <Section label="Voice window">
