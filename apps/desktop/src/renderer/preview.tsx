@@ -12,7 +12,7 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
-import type { HistoryEntry, HistoryState } from "../shared/history.ts";
+import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
@@ -105,7 +105,11 @@ const updateScenes: Record<string, UpdateStatus> = {
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };
 
-const hubScenes: Record<string, Snapshot> = {
+// A hub scene is the snapshot main would publish plus the history beside it, which defaults to
+// sampleHistory() with saving working.
+type HubScene = Snapshot & { history?: readonly HistoryEntry[]; saveFailed?: boolean };
+
+const hubScenes: Record<string, HubScene> = {
   "microphone-test-failed": {
     ...ready,
     microphoneTest: {
@@ -133,7 +137,7 @@ const hubScenes: Record<string, Snapshot> = {
       message: "Could not list microphones. Reopen Voice to try again.",
     },
   },
-  fresh: base,
+  fresh: { ...base, history: [] },
   progress: {
     ...base,
     permissions: { microphone: "granted", accessibility: "denied" },
@@ -164,18 +168,20 @@ const hubScenes: Record<string, Snapshot> = {
   ),
   "ready-no-transcript": {
     ...ready,
+    history: [],
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
   "ready-not-inserted": {
     ...ready,
     session: done({ kind: "notInserted", reason: "focusChanged" }),
+    history: sampleHistory("notInserted"),
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
-  "history-empty": ready,
+  "history-empty": { ...ready, history: [] },
   history: ready,
   "history-saved": historySaved,
-  "history-long": historySaved,
-  "history-save-failed": historySaved,
+  "history-long": { ...historySaved, history: longHistory() },
+  "history-save-failed": { ...historySaved, saveFailed: true },
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -276,7 +282,7 @@ const cycle: [PillState, number][] = [
   [done({ kind: "notInserted", reason: "focusChanged" }), 2500],
 ];
 
-function sampleHistory(): HistoryEntry[] {
+function sampleHistory(newestStatus: HistoryStatus = "inserted"): HistoryEntry[] {
   const today = new Date();
   const at = (daysBack: number, hours: number, minutes: number) =>
     new Date(
@@ -292,7 +298,7 @@ function sampleHistory(): HistoryEntry[] {
       at: Math.min(Date.now(), at(0, 11, 44)),
       raw: "um so I think we should uh push the launch to Friday because the the QA pass isn't done yet",
       text: "I think we should push the launch to Friday because the QA pass isn't done yet.",
-      status: "inserted",
+      status: newestStatus,
     },
     {
       id: "h2",
@@ -325,11 +331,9 @@ function sampleHistory(): HistoryEntry[] {
   ];
 }
 
-const [newest, ...older] = sampleHistory();
-
 // More rows than Home mounts at once, so the Show more button has something to reveal.
 function longHistory(): HistoryEntry[] {
-  const first = newest!.at;
+  const first = Date.now();
   return Array.from({ length: 130 }, (_, i) => ({
     id: `long-${i}`,
     at: first - i * 5_400_000,
@@ -338,14 +342,6 @@ function longHistory(): HistoryEntry[] {
     status: "inserted",
   }));
 }
-
-const historyScenes: Record<string, HistoryEntry[]> = {
-  fresh: [],
-  "history-empty": [],
-  "history-long": longHistory(),
-  "ready-no-transcript": [],
-  "ready-not-inserted": [{ ...newest!, status: "notInserted" }, ...older],
-};
 
 function sampleInsights(): Insights {
   const days: Record<DayKey, number> = {};
@@ -364,12 +360,10 @@ function sampleInsights(): Insights {
 }
 
 function fakeVoice(
-  initial: Snapshot,
+  { history: initialHistory = sampleHistory(), saveFailed = false, ...initial }: HubScene,
   loop: boolean,
-  initialHistory: readonly HistoryEntry[] = sampleHistory(),
-  saveFailed = false,
 ): HubApi & PillApi {
-  let snapshot = initial;
+  let snapshot: Snapshot = initial;
   let history = initialHistory;
   const historyListeners = new Set<(history: HistoryState) => void>();
   const historyState = (): HistoryState => ({
@@ -652,12 +646,7 @@ if (pill) {
   if (params.get("backdrop") !== "none") document.body.style.background = "#d9dde3";
   root.render(<PillPreview />);
 } else if (hub) {
-  window.voice = fakeVoice(
-    hubScenes[hub] ?? base,
-    false,
-    historyScenes[hub],
-    hub === "history-save-failed",
-  );
+  window.voice = fakeVoice(hubScenes[hub] ?? base, false);
   root.render(<HubPreview />);
 } else {
   window.voice = fakeVoice(ready, true);
