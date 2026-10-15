@@ -3,7 +3,7 @@ import { dayKey, type DayKey } from "../shared/insights.ts";
 
 export type HistoryDay = { day: DayKey; label: string; entries: readonly HistoryEntry[] };
 
-export function matches(entry: HistoryEntry, query: string): boolean {
+function matches(entry: HistoryEntry, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
   if (needle === "") return true;
   return (
@@ -27,42 +27,26 @@ export function timeLabel(at: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(at);
 }
 
-export function historyDays(
+/**
+ * The newest `limit` entries that match `query`, grouped by local day, and how many matches the
+ * limit hides. Entries arrive newest first, so cutting before grouping keeps the newest days.
+ */
+export function historyPage(
   entries: readonly HistoryEntry[],
-  query: string,
-  today: DayKey,
+  { query, limit, today }: { query: string; limit: number; today: DayKey },
   locale?: string,
-): HistoryDay[] {
-  const days = Map.groupBy(
-    entries.filter((entry) => matches(entry, query)),
-    (entry) => dayKey(new Date(entry.at)),
-  );
-  return Array.from(days, ([day, dayEntries]) => ({
-    day,
-    label: dayLabel(day, today, locale),
-    entries: dayEntries,
-  }));
-}
-
-/** The first `max` entries across days, oldest days cut first, and how many entries that hides. */
-export function limitDays(
-  days: readonly HistoryDay[],
-  max: number,
 ): { days: HistoryDay[]; hidden: number } {
-  const shown: HistoryDay[] = [];
-  let room = max;
-  let hidden = 0;
-  for (const day of days) {
-    if (room <= 0) {
-      hidden += day.entries.length;
-      continue;
-    }
-    const entries = day.entries.slice(0, room);
-    hidden += day.entries.length - entries.length;
-    room -= entries.length;
-    shown.push(entries.length === day.entries.length ? day : { ...day, entries });
-  }
-  return { days: shown, hidden };
+  const matched = entries.filter((entry) => matches(entry, query));
+  const shown = matched.slice(0, limit);
+  const days = Map.groupBy(shown, (entry) => dayKey(new Date(entry.at)));
+  return {
+    days: Array.from(days, ([day, dayEntries]) => ({
+      day,
+      label: dayLabel(day, today, locale),
+      entries: dayEntries,
+    })),
+    hidden: matched.length - shown.length,
+  };
 }
 
 /** Milliseconds until one second past the next local midnight. */

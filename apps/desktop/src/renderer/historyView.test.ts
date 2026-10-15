@@ -1,15 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { HistoryEntry } from "../shared/history.ts";
-import { dayKey, type DayKey } from "../shared/insights.ts";
-import {
-  droppedBy,
-  historyDays,
-  limitDays,
-  msUntilNextDay,
-  timeLabel,
-  type HistoryDay,
-} from "./historyView.ts";
+import { dayKey } from "../shared/insights.ts";
+import { droppedBy, historyPage, msUntilNextDay, timeLabel } from "./historyView.ts";
 
 const ZONE_WEST_OF_UTC = "America/Los_Angeles";
 process.env.TZ = ZONE_WEST_OF_UTC;
@@ -24,7 +17,9 @@ const entry = (id: string, at: Date, text: string, raw = text): HistoryEntry => 
 
 const NOW = new Date(2026, 9, 14, 9, 30);
 const TODAY = dayKey(NOW);
-const labels = (days: ReturnType<typeof historyDays>) =>
+const page = (entries: readonly HistoryEntry[], query = "", limit = 100, today = TODAY) =>
+  historyPage(entries, { query, limit, today }, "en-US");
+const labels = ({ days }: ReturnType<typeof historyPage>) =>
   days.map(({ label, entries }) => [label, entries.map(({ id }) => id)]);
 
 describe("history days", () => {
@@ -35,7 +30,7 @@ describe("history days", () => {
       entry("before-midnight", new Date(2026, 9, 13, 23, 59), "Later one."),
       entry("older", new Date(2026, 9, 12, 11, 44), "Hello."),
     ];
-    expect(labels(historyDays(entries, "", TODAY, "en-US"))).toEqual([
+    expect(labels(page(entries))).toEqual([
       ["Today", ["morning", "after-midnight"]],
       ["Yesterday", ["before-midnight"]],
       ["October 12, 2026", ["older"]],
@@ -48,7 +43,7 @@ describe("history days", () => {
       entry("yesterday", new Date(2026, 9, 13, 18, 0), "Between."),
       entry("today-late", new Date(2026, 9, 14, 9, 0), "Second."),
     ];
-    expect(labels(historyDays(entries, "", TODAY, "en-US"))).toEqual([
+    expect(labels(page(entries))).toEqual([
       ["Today", ["today-early", "today-late"]],
       ["Yesterday", ["yesterday"]],
     ]);
@@ -56,7 +51,7 @@ describe("history days", () => {
 
   test("Yesterday reaches back across a month boundary", () => {
     const entries = [entry("halloween", new Date(2026, 9, 31, 22, 0), "Boo.")];
-    expect(labels(historyDays(entries, "", dayKey(new Date(2026, 10, 1, 8, 0)), "en-US"))).toEqual([
+    expect(labels(page(entries, "", 100, dayKey(new Date(2026, 10, 1, 8, 0))))).toEqual([
       ["Yesterday", ["halloween"]],
     ]);
   });
@@ -66,9 +61,9 @@ describe("history days", () => {
       entry("cleaned", NOW, "Push the launch to Friday.", "um push the uh launch to friday"),
       entry("other", NOW, "Lunch at noon."),
     ];
-    expect(labels(historyDays(entries, "  UH  ", TODAY))).toEqual([["Today", ["cleaned"]]]);
-    expect(labels(historyDays(entries, "LAUNCH", TODAY))).toEqual([["Today", ["cleaned"]]]);
-    expect(historyDays(entries, "dinner", TODAY)).toEqual([]);
+    expect(labels(page(entries, "  UH  "))).toEqual([["Today", ["cleaned"]]]);
+    expect(labels(page(entries, "LAUNCH"))).toEqual([["Today", ["cleaned"]]]);
+    expect(page(entries, "dinner")).toEqual({ days: [], hidden: 0 });
   });
 
   test("search drops days whose entries all miss", () => {
@@ -76,7 +71,7 @@ describe("history days", () => {
       entry("today", NOW, "Standup notes."),
       entry("yesterday", new Date(2026, 9, 13, 10, 0), "Invoice for Ada."),
     ];
-    expect(labels(historyDays(entries, "invoice", TODAY))).toEqual([["Yesterday", ["yesterday"]]]);
+    expect(labels(page(entries, "invoice"))).toEqual([["Yesterday", ["yesterday"]]]);
   });
 });
 
@@ -86,22 +81,30 @@ describe("time label", () => {
   });
 });
 
-describe("limitDays", () => {
-  const day = (name: string, count: number): HistoryDay => ({
-    day: name as DayKey,
-    label: name,
-    entries: Array.from({ length: count }, (_, i) => entry(`${name}-${i}`, NOW, `${i}`)),
+describe("history page", () => {
+  const hours = (count: number, text = (i: number) => `Note ${i}.`) =>
+    Array.from({ length: count }, (_, i) =>
+      entry(`e${i}`, new Date(NOW.getTime() - i * 3_600_000 * 7), text(i)),
+    );
+
+  test("shows the newest entries up to the limit, cutting the oldest day mid-way", () => {
+    const entries = hours(6);
+    expect(labels(page(entries, "", 4))).toEqual([
+      ["Today", ["e0", "e1"]],
+      ["Yesterday", ["e2", "e3"]],
+    ]);
+    expect(page(entries, "", 4).hidden).toBe(2);
+    expect(page(entries, "", 6).hidden).toBe(0);
   });
 
-  test("cuts the oldest days first and counts what it hides", () => {
-    const days = [day("2026-10-14", 2), day("2026-10-13", 3), day("2026-10-12", 1)];
-    const limited = limitDays(days, 4);
-    expect(limited.days.map((d) => [d.day, d.entries.length])).toEqual([
-      ["2026-10-14", 2],
-      ["2026-10-13", 2],
+  test("searches every entry before the limit and counts only hidden matches", () => {
+    const entries = hours(6, (i) => (i % 2 === 0 ? `Invoice ${i}.` : `Lunch ${i}.`));
+    const found = page(entries, "invoice", 2);
+    expect(labels(found)).toEqual([
+      ["Today", ["e0"]],
+      ["Yesterday", ["e2"]],
     ]);
-    expect(limited.hidden).toBe(2);
-    expect(limitDays(days, 6)).toEqual({ days, hidden: 0 });
+    expect(found.hidden).toBe(1);
   });
 });
 

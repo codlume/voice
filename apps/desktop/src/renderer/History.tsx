@@ -6,7 +6,7 @@ import type { TranscriptVersion } from "../shared/api.ts";
 import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
-import { historyDays, limitDays, timeLabel } from "./historyView.ts";
+import { historyPage, timeLabel } from "./historyView.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -17,19 +17,13 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   section: { display: "flex", flexDirection: "column", gap: space.sm },
-  head: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
+  head: { display: "flex", alignItems: "center", gap: space.md, minHeight: 30 },
+  heading: { display: "flex", alignItems: "baseline", gap: space.sm, flexGrow: 1, minWidth: 0 },
   title: { margin: 0, fontSize: 13, fontWeight: 600 },
   note: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   noteFailed: { color: color.errorForeground },
   days: { display: "flex", flexDirection: "column", gap: space.lg },
   day: { display: "flex", flexDirection: "column", gap: space.sm },
-  dayHead: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: space.md,
-    minHeight: 30,
-  },
   dayLabel: {
     margin: 0,
     color: color.mutedForeground,
@@ -250,7 +244,7 @@ export function History({
   const action = useAction();
   const today = useToday();
   const { days, hidden } = useMemo(
-    () => limitDays(historyDays(entries, query, today), rowLimit),
+    () => historyPage(entries, { query, limit: rowLimit, today }),
     [entries, query, today, rowLimit],
   );
 
@@ -268,34 +262,20 @@ export function History({
   const remove = (id: string) =>
     void action.run(() => hubApi().deleteHistoryEntry(id), "Could not delete the transcript.");
 
-  const [first, ...rest] = days;
-  const dayCard = (day: (typeof days)[number]) => (
-    <Card>
-      <ul {...stylex.props(styles.list)}>
-        {day.entries.map((entry) => (
-          <Row
-            key={entry.id}
-            entry={entry}
-            copied={copied?.id === entry.id ? copied.version : null}
-            onCopy={(version) => copy(entry.id, version)}
-            onDelete={() => remove(entry.id)}
-          />
-        ))}
-      </ul>
-    </Card>
-  );
-
   return (
     <section aria-labelledby="history" {...stylex.props(styles.section)}>
       <div {...stylex.props(styles.head)}>
-        <h2 id="history" {...stylex.props(styles.title)}>
-          History
-        </h2>
-        <p {...stylex.props(styles.note, saveFailed && styles.noteFailed)}>
-          {saveFailed
-            ? "Could not save on this Mac, so kept until you quit"
-            : storageLabels[retention]}
-        </p>
+        <div {...stylex.props(styles.heading)}>
+          <h2 id="history" {...stylex.props(styles.title)}>
+            History
+          </h2>
+          <p {...stylex.props(styles.note, saveFailed && styles.noteFailed)}>
+            {saveFailed
+              ? "Could not save on this Mac, so kept until you quit"
+              : storageLabels[retention]}
+          </p>
+        </div>
+        {entries.length > 0 && <Search query={query} onChange={setQuery} />}
       </div>
       {entries.length === 0 ? (
         <Card>
@@ -303,27 +283,28 @@ export function History({
             Your dictations show up here, so you can copy one if it didn't land.
           </p>
         </Card>
+      ) : days.length === 0 ? (
+        <Card>
+          <p {...stylex.props(styles.empty)}>No dictations match “{query.trim()}”.</p>
+        </Card>
       ) : (
         <div {...stylex.props(styles.days)}>
-          <div {...stylex.props(styles.day)}>
-            <div {...stylex.props(styles.dayHead)}>
-              <h3 {...stylex.props(styles.dayLabel)}>{first?.label ?? "No matches"}</h3>
-              <Search query={query} onChange={setQuery} />
-            </div>
-            {first ? (
-              dayCard(first)
-            ) : (
-              <Card>
-                <p {...stylex.props(styles.empty)}>No dictations match “{query.trim()}”.</p>
-              </Card>
-            )}
-          </div>
-          {rest.map((day) => (
+          {days.map((day) => (
             <div key={day.day} {...stylex.props(styles.day)}>
-              <div {...stylex.props(styles.dayHead)}>
-                <h3 {...stylex.props(styles.dayLabel)}>{day.label}</h3>
-              </div>
-              {dayCard(day)}
+              <h3 {...stylex.props(styles.dayLabel)}>{day.label}</h3>
+              <Card>
+                <ul {...stylex.props(styles.list)}>
+                  {day.entries.map((entry) => (
+                    <Row
+                      key={entry.id}
+                      entry={entry}
+                      copied={copied?.id === entry.id ? copied.version : null}
+                      onCopy={(version) => copy(entry.id, version)}
+                      onDelete={() => remove(entry.id)}
+                    />
+                  ))}
+                </ul>
+              </Card>
             </div>
           ))}
           {hidden > 0 && (
