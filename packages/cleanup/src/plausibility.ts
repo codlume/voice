@@ -101,22 +101,24 @@ const PRONOUNS = "i you he she it we they that there here what who where how whe
 const MODALS = "would should could must might";
 const AUXILIARIES = "is are was were has have had do does did need ca wo sha ai";
 const STEM_SPELLINGS: Record<string, string> = { ca: "can", wo: "will", sha: "shall", ai: "is" };
-const CONTRACTIONS: [stems: Set<string>, suffixes: Record<string, string>][] = [
-  [new Set(PRONOUNS.split(" ")), { ll: "will", ve: "have", d: "would" }],
-  [new Set("you we they that there here what who where how when".split(" ")), { re: "are" }],
-  [new Set("he she it that there here what who where how when".split(" ")), { s: "is" }],
-  [new Set(MODALS.split(" ")), { nt: "not", ve: "have" }],
-  [new Set(AUXILIARIES.split(" ")), { nt: "not" }],
-];
+const CONTRACTIONS = (
+  [
+    [new Set(PRONOUNS.split(" ")), { ll: "will", ve: "have", d: "would" }],
+    [new Set("you we they that there here what who where how when".split(" ")), { re: "are" }],
+    [new Set("he she it that there here what who where how when".split(" ")), { s: "is" }],
+    [new Set(MODALS.split(" ")), { nt: "not", ve: "have" }],
+    [new Set(AUXILIARIES.split(" ")), { nt: "not" }],
+  ] satisfies [stems: Set<string>, suffixes: Record<string, string>][]
+).flatMap(([stems, suffixes]) =>
+  Object.entries(suffixes).map(([suffix, written]) => ({ stems, suffix, written })),
+);
 
 function expandContraction(word: string): string | undefined {
   if (word === "im") return "i am";
-  for (const [stems, suffixes] of CONTRACTIONS) {
-    for (const [suffix, written] of Object.entries(suffixes)) {
-      const stem = word.slice(0, -suffix.length);
-      if (word.endsWith(suffix) && stems.has(stem))
-        return `${STEM_SPELLINGS[stem] ?? stem} ${written}`;
-    }
+  for (const { stems, suffix, written } of CONTRACTIONS) {
+    if (!word.endsWith(suffix)) continue;
+    const stem = word.slice(0, -suffix.length);
+    if (stems.has(stem)) return `${STEM_SPELLINGS[stem] ?? stem} ${written}`;
   }
   return undefined;
 }
