@@ -51,8 +51,8 @@ final class Helper {
     @MainActor
     private func dispatch(_ command: HelperCommand, receivedAt: DispatchTime) {
         switch command {
-        case .hotkeyConfigure(let key):
-            hotkeyTap.configure(key)
+        case .hotkeyConfigure(let key, let toggleKey):
+            hotkeyTap.configure(key: key, toggleKey: toggleKey)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let muteWhileDictating, let microphone):
@@ -79,9 +79,9 @@ final class Helper {
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path
-        case .testHotkey(let action):
+        case .testHotkey(let action, let mode):
             guard testMode else { return output.log(.error, "test hooks disabled") }
-            output.emit(.hotkey(action: action))
+            output.emit(.hotkey(action: action, mode: mode))
         }
     }
 
@@ -107,7 +107,7 @@ guard let modelsDir = directoryArgument("--models-dir"), let stateDir = director
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 9))
+output.emit(.ready(version: 10))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, stateDir: stateDir, environment: ProcessInfo.processInfo.environment)

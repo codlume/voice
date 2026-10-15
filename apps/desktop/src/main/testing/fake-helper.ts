@@ -50,7 +50,7 @@ function act(action: Action) {
   // Stops reading commands, so a large write from main is still in flight when a later exit
   // closes the pipe and the write fails with EPIPE.
   if (action === "stall") return process.stdin.pause();
-  emit({ type: "hotkey", action });
+  emit({ type: "hotkey", action, mode: action === "cancel" ? null : "hold" });
 }
 
 function handle(command: Record<string, unknown>) {
@@ -149,7 +149,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 9 });
+const ready = () => emit({ type: "ready", version: config.version ?? 10 });
 
 if (config.control) {
   const path = config.control;

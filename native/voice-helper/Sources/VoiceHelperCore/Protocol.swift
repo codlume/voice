@@ -2,6 +2,7 @@ import Foundation
 
 public enum HotkeyKey: String, Codable, Sendable { case fn, rightOption, rightCommand }
 public enum HotkeyAction: String, Codable, Sendable { case down, up, cancel }
+public enum DictationMode: String, Codable, Sendable { case hold, toggle }
 public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
@@ -37,7 +38,7 @@ public struct Microphone: Codable, Equatable, Sendable {
 }
 
 public enum HelperCommand: Equatable, Sendable {
-    case hotkeyConfigure(key: HotkeyKey)
+    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?)
     case microphoneConfigure(microphone: Microphone?)
     case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?)
     case captureStop(id: String)
@@ -50,14 +51,14 @@ public enum HelperCommand: Equatable, Sendable {
     case asrPrepare(download: Bool)
     case asrRemove
     case testAudioFile(path: String?)
-    case testHotkey(action: HotkeyAction)
+    case testHotkey(action: HotkeyAction, mode: DictationMode?)
 }
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
     case microphonesUnavailable(message: String)
     case ready(version: Int)
-    case hotkey(action: HotkeyAction)
+    case hotkey(action: HotkeyAction, mode: DictationMode?)
     case captureStarted(id: String, startMs: Double)
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
@@ -83,7 +84,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
-    case microphone, accessibility, state, devices, defaultUid
+    case microphone, accessibility, state, devices, defaultUid, toggleKey, mode
 }
 
 extension HelperCommand: Decodable {
@@ -91,7 +92,9 @@ extension HelperCommand: Decodable {
         let c = try decoder.container(keyedBy: Key.self)
         let type = try c.decode(String.self, forKey: .type)
         switch type {
-        case "hotkey.configure": self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key))
+        case "hotkey.configure":
+            self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key),
+                                    toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey))
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
@@ -115,7 +118,11 @@ extension HelperCommand: Decodable {
         case "asr.prepare": self = .asrPrepare(download: try c.decode(Bool.self, forKey: .download))
         case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
-        case "test.hotkey": self = .testHotkey(action: try c.decode(HotkeyAction.self, forKey: .action))
+        case "test.hotkey":
+            // An absent mode is the hold key, so older test scripts keep driving hold sessions;
+            // an explicit null is the Escape cancel.
+            self = .testHotkey(action: try c.decode(HotkeyAction.self, forKey: .action),
+                               mode: c.contains(.mode) ? try c.decode(DictationMode?.self, forKey: .mode) : .hold)
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -161,9 +168,10 @@ extension HelperEvent: Encodable {
         case .ready(let version):
             try c.encode("ready", forKey: .type)
             try c.encode(version, forKey: .version)
-        case .hotkey(let action):
+        case .hotkey(let action, let mode):
             try c.encode("hotkey", forKey: .type)
             try c.encode(action, forKey: .action)
+            try c.encode(mode, forKey: .mode)
         case .captureStarted(let id, let startMs):
             try c.encode("capture.started", forKey: .type)
             try c.encode(id, forKey: .id)

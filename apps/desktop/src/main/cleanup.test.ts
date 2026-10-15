@@ -632,7 +632,7 @@ describe("followSettings", () => {
     const setLanguage = (dictationLanguage: DictationLanguage) =>
       store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage } }));
     const record = () => {
-      dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      dictation.onHelperEvent({ type: "hotkey", action: "down", mode: "hold" });
       const session = store.state.session;
       if (session.phase === "idle") throw new Error("no session");
       dictation.onHelperEvent({ type: "capture.started", id: session.id, startMs: 40 });
@@ -640,7 +640,7 @@ describe("followSettings", () => {
     };
     const finish = (id: string, text: string) => {
       clock += 800;
-      dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      dictation.onHelperEvent({ type: "hotkey", action: "up", mode: "hold" });
       dictation.onHelperEvent({
         type: "transcript",
         id,

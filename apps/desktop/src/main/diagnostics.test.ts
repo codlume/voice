@@ -177,13 +177,13 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   });
 
   async function dictate() {
-    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down", mode: "hold" });
     const session = store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const { id } = session;
     dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     clock += 800;
-    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up", mode: "hold" });
     dictation.onHelperEvent({
       type: "transcript",
       id,

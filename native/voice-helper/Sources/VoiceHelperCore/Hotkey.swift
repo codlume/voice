@@ -13,16 +13,27 @@ public struct KeyEvent: Equatable, Sendable {
     }
 }
 
+public struct HotkeySignal: Equatable, Sendable {
+    public var action: HotkeyAction
+    /// The configured key that produced the signal; nil for an Escape cancel, which ends any session.
+    public var mode: DictationMode?
+
+    public init(_ action: HotkeyAction, _ mode: DictationMode?) {
+        self.action = action
+        self.mode = mode
+    }
+}
+
 public struct HotkeyDecision: Equatable, Sendable {
-    public var action: HotkeyAction?
+    public var signals: [HotkeySignal]
     public var consume: Bool
 
-    public init(action: HotkeyAction?, consume: Bool) {
-        self.action = action
+    public init(signals: [HotkeySignal], consume: Bool) {
+        self.signals = signals
         self.consume = consume
     }
 
-    public static let none = HotkeyDecision(action: nil, consume: false)
+    public static let none = HotkeyDecision(signals: [], consume: false)
 }
 
 extension HotkeyKey {
@@ -56,62 +67,96 @@ extension HotkeyKey {
     }
 }
 
-public struct HotkeyInterpreter: Sendable {
-    private enum Hold { case released, held, staleHeld, heldCancelled }
+/// Watches the hold key and the optional toggle key. Each key tracks its own hold; Escape is
+/// handled once here so it cancels a session exactly once whichever keys are configured.
+public struct Hotkeys: Sendable {
+    private var hold: KeyHold
+    private var toggle: KeyHold?
 
-    public let key: HotkeyKey
-    private var hold: Hold
-
-    public init(key: HotkeyKey, initialFlags: UInt64) {
-        self.key = key
-        hold = initialFlags & key.flagMask != 0 ? .staleHeld : .released
+    public init(key: HotkeyKey, toggleKey: HotkeyKey?, initialFlags: UInt64) {
+        hold = KeyHold(key: key, initialFlags: initialFlags)
+        toggle = toggleKey.map { KeyHold(key: $0, initialFlags: initialFlags) }
     }
 
-    /// True while the key may still be down, so the live state deserves a periodic check.
-    public var awaitingRelease: Bool { hold != .released }
+    /// True while a key may still be down, so the live state deserves a periodic check.
+    public var awaitingRelease: Bool { hold.awaitingRelease || toggle?.awaitingRelease == true }
 
-    /// Re-derives the hold from the live modifier state after events may have been missed: a
+    /// Re-derives each hold from the live modifier state after events may have been missed: a
     /// tap disabled by timeout, or a release that never reached the tap. Emits `up` for a hold
     /// that was live. Never emits `down`, since a press seen only through polling is not a
     /// deliberate press.
-    public mutating func reconcile(flags: UInt64) -> HotkeyAction? {
-        guard flags & key.releasedMask == 0, hold != .released else { return nil }
-        let wasHeld = hold == .held
-        hold = .released
-        return wasHeld ? .up : nil
+    public mutating func reconcile(flags: UInt64) -> [HotkeySignal] {
+        var signals: [HotkeySignal] = []
+        if let action = hold.reconcile(flags: flags) { signals.append(HotkeySignal(action, .hold)) }
+        if let action = toggle?.reconcile(flags: flags) { signals.append(HotkeySignal(action, .toggle)) }
+        return signals
     }
 
     public mutating func handle(_ event: KeyEvent, captureActive: Bool) -> HotkeyDecision {
+        if event.kind == .keyDown, event.keycode == escapeKeycode {
+            guard captureActive else { return .none }
+            hold.cancel()
+            toggle?.cancel()
+            return HotkeyDecision(signals: [HotkeySignal(.cancel, nil)], consume: true)
+        }
+        var signals: [HotkeySignal] = []
+        if let action = hold.handle(event) { signals.append(HotkeySignal(action, .hold)) }
+        if let action = toggle?.handle(event) { signals.append(HotkeySignal(action, .toggle)) }
+        return HotkeyDecision(signals: signals, consume: false)
+    }
+}
+
+private struct KeyHold: Sendable {
+    private enum State { case released, held, staleHeld, heldCancelled }
+
+    let key: HotkeyKey
+    private var state: State
+
+    init(key: HotkeyKey, initialFlags: UInt64) {
+        self.key = key
+        state = initialFlags & key.flagMask != 0 ? .staleHeld : .released
+    }
+
+    var awaitingRelease: Bool { state != .released }
+
+    mutating func reconcile(flags: UInt64) -> HotkeyAction? {
+        guard flags & key.releasedMask == 0, state != .released else { return nil }
+        let wasHeld = state == .held
+        state = .released
+        return wasHeld ? .up : nil
+    }
+
+    /// The session ended while the key is down, so its release must stay silent.
+    mutating func cancel() {
+        if state == .held { state = .heldCancelled }
+    }
+
+    mutating func handle(_ event: KeyEvent) -> HotkeyAction? {
         switch event.kind {
         case .flagsChanged:
-            guard event.keycode == key.keycode else { return .none }
+            guard event.keycode == key.keycode else { return nil }
             let isDown = event.flags & key.flagMask != 0
-            switch (hold, isDown) {
+            switch (state, isDown) {
             case (.released, true):
-                hold = .held
-                return HotkeyDecision(action: .down, consume: false)
+                state = .held
+                return .down
             case (.held, false):
-                hold = .released
-                return HotkeyDecision(action: .up, consume: false)
+                state = .released
+                return .up
             case (.staleHeld, false), (.heldCancelled, false):
-                hold = .released
-                return .none
+                state = .released
+                return nil
             case (.held, true), (.staleHeld, true), (.heldCancelled, true), (.released, false):
-                return .none
+                return nil
             }
         case .keyDown:
-            if event.keycode == escapeKeycode {
-                guard captureActive else { return .none }
-                if hold == .held { hold = .heldCancelled }
-                return HotkeyDecision(action: .cancel, consume: true)
+            guard state == .held, event.keycode != key.keycode, !modifierKeycodes.contains(event.keycode) else {
+                return nil
             }
-            guard hold == .held, event.keycode != key.keycode, !modifierKeycodes.contains(event.keycode) else {
-                return .none
-            }
-            hold = .heldCancelled
-            return HotkeyDecision(action: .cancel, consume: false)
+            state = .heldCancelled
+            return .cancel
         case .keyUp:
-            return .none
+            return nil
         }
     }
 }

@@ -10,10 +10,10 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 9;
+export const HELPER_PROTOCOL_VERSION = 10;
 
 export type HelperCommand =
-  | { type: "hotkey.configure"; key: Hotkey }
+  | { type: "hotkey.configure"; key: Hotkey; toggleKey: Hotkey | null }
   | { type: "microphone.configure"; microphone: Microphone | null }
   | {
       type: "capture.start";
@@ -33,6 +33,7 @@ export type HelperCommand =
   | { type: "asr.remove" };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
+const dictationMode = Schema.Literals(["hold", "toggle"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
 const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(
@@ -60,7 +61,14 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
   Schema.Struct({
     type: Schema.Literal("hotkey"),
-    action: Schema.Literals(["down", "up", "cancel"]),
+    action: Schema.Literals(["down", "up"]),
+    mode: dictationMode,
+  }),
+  // A null mode is Escape, which cancels a session whichever key started it.
+  Schema.Struct({
+    type: Schema.Literal("hotkey"),
+    action: Schema.Literal("cancel"),
+    mode: Schema.NullOr(dictationMode),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.started"),

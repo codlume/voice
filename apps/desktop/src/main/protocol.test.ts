@@ -7,8 +7,10 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 9 },
-      { type: "hotkey", action: "down" },
+      { type: "ready", version: 10 },
+      { type: "hotkey", action: "down", mode: "hold" },
+      { type: "hotkey", action: "up", mode: "toggle" },
+      { type: "hotkey", action: "cancel", mode: null },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },
@@ -142,7 +144,9 @@ describe("parseHelperEvent", () => {
     ["a missing id", line({ type: "capture.started", startMs: 1 })],
     ["a test failure without a message", line({ type: "microphone.test.failed", id: "t" })],
     ["a wrong field type", line({ type: "transcript", id: "a", text: 5, audioMs: 1, asrMs: 1 })],
-    ["an unknown enum value", line({ type: "hotkey", action: "sideways" })],
+    ["an unknown enum value", line({ type: "hotkey", action: "sideways", mode: "hold" })],
+    ["a hotkey without its mode", line({ type: "hotkey", action: "down" })],
+    ["an unknown hotkey mode", line({ type: "hotkey", action: "down", mode: "latch" })],
     ["a NaN number", '{"type":"capture.level","id":"a","level":NaN}'],
     [
       "an unknown permission state",

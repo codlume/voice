@@ -314,9 +314,12 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "hotkey":
         if (event.action === "down") {
-          dispatch({ type: "hotkeyDown", id: randomUUID(), asr: store.state.models.asr.state });
+          const asr = store.state.models.asr.state;
+          dispatch({ type: "hotkeyDown", id: randomUUID(), asr, mode: event.mode });
+        } else if (event.action === "up") {
+          dispatch({ type: "hotkeyUp", mode: event.mode });
         } else {
-          dispatch({ type: event.action === "up" ? "hotkeyUp" : "cancel" });
+          dispatch({ type: "cancel", mode: event.mode });
         }
         return;
       case "capture.started":

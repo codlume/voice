@@ -16,6 +16,7 @@ import {
   idle,
   step,
   toPillState,
+  type DictationMode,
   type Effect,
   type Session,
   type SessionEvent,
@@ -34,9 +35,12 @@ function run(events: [SessionEvent, number][], from: Session = idle) {
   return { state, effects, all };
 }
 
-const down = (now: number, asr: ModelStatus["state"] = "ready") =>
-  [{ type: "hotkeyDown", id: ID, asr }, now] as [SessionEvent, number];
-const up = (now: number) => [{ type: "hotkeyUp" }, now] as [SessionEvent, number];
+const down = (now: number, asr: ModelStatus["state"] = "ready", mode: DictationMode = "hold") =>
+  [{ type: "hotkeyDown", id: ID, asr, mode }, now] as [SessionEvent, number];
+const up = (now: number, mode: DictationMode = "hold") =>
+  [{ type: "hotkeyUp", mode }, now] as [SessionEvent, number];
+const press = (now: number) => down(now, "ready", "toggle");
+const escape = (now: number) => [{ type: "cancel", mode: null }, now] as [SessionEvent, number];
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
 const NONE: Rewrites = { dictionary: [], snippets: [] };
@@ -89,7 +93,13 @@ describe("a second transcript for the same session", () => {
 describe("starting a session", () => {
   test("hotkey down in idle starts capture", () => {
     const { state, effects } = run([down(0)]);
-    expect(state).toEqual({ phase: "starting", id: ID, pressedAt: 0, releasedAt: null });
+    expect(state).toEqual({
+      phase: "starting",
+      id: ID,
+      mode: "hold",
+      pressedAt: 0,
+      releasedAt: null,
+    });
     expect(effects).toEqual([{ type: "startCapture", id: ID }]);
   });
 
@@ -97,9 +107,15 @@ describe("starting a session", () => {
     const { state, effects } = run([
       ...toInserting,
       [{ type: "insertResult", id: ID, method: "paste", reason: null }, 2100],
-      [{ type: "hotkeyDown", id: "s2", asr: "ready" }, 2200],
+      [{ type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" }, 2200],
     ]);
-    expect(state).toEqual({ phase: "starting", id: "s2", pressedAt: 2200, releasedAt: null });
+    expect(state).toEqual({
+      phase: "starting",
+      id: "s2",
+      mode: "hold",
+      pressedAt: 2200,
+      releasedAt: null,
+    });
     expect(effects).toEqual([{ type: "startCapture", id: "s2" }]);
   });
 
@@ -136,7 +152,7 @@ describe("starting a session", () => {
       const before = run(path).state;
       const { state, effects } = run([
         ...path,
-        [{ type: "hotkeyDown", id: "s2", asr: "ready" }, 3000],
+        [{ type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" }, 3000],
       ]);
       expect(state).toEqual(before);
       expect(effects).toEqual([]);
@@ -146,12 +162,23 @@ describe("starting a session", () => {
 
 describe("hold and release", () => {
   test("capture.started moves to recording", () => {
-    expect(run(toRecording).state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+    expect(run(toRecording).state).toEqual({
+      phase: "recording",
+      id: ID,
+      mode: "hold",
+      pressedAt: 0,
+    });
   });
 
   test("release before capture.started stops as soon as capture starts", () => {
     const afterUp = run([down(0), up(300)]);
-    expect(afterUp.state).toEqual({ phase: "starting", id: ID, pressedAt: 0, releasedAt: 300 });
+    expect(afterUp.state).toEqual({
+      phase: "starting",
+      id: ID,
+      mode: "hold",
+      pressedAt: 0,
+      releasedAt: 300,
+    });
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
@@ -197,19 +224,19 @@ describe("hold and release", () => {
   });
 
   test("Escape during starting cancels capture and returns straight to idle", () => {
-    const { state, effects } = run([down(0), [{ type: "cancel" }, 100]]);
+    const { state, effects } = run([down(0), escape(100)]);
     expect(state).toEqual(idle);
     expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
   });
 
   test("Escape during recording cancels capture and returns straight to idle", () => {
-    const { state, effects } = run([...toRecording, [{ type: "cancel" }, 800]]);
+    const { state, effects } = run([...toRecording, escape(800)]);
     expect(state).toEqual(idle);
     expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
   });
 
   test("Escape while processing is ignored", () => {
-    const { state, effects } = run([...toTranscribing, [{ type: "cancel" }, 1100]]);
+    const { state, effects } = run([...toTranscribing, escape(1100)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([]);
   });
@@ -225,6 +252,74 @@ describe("hold and release", () => {
       outcome: { kind: "failed", message: "no mic" },
     });
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+  });
+});
+
+describe("toggle dictation", () => {
+  const chord = (now: number, mode: DictationMode) =>
+    [{ type: "cancel", mode }, now] as [SessionEvent, number];
+  const toToggleRecording: [SessionEvent, number][] = [press(0), up(100, "toggle"), started(150)];
+
+  test("a press starts capture, releasing the key keeps recording, and a second press stops and transcribes", () => {
+    const recording = run(toToggleRecording);
+    expect(recording.state).toEqual({ phase: "recording", id: ID, mode: "toggle", pressedAt: 0 });
+    expect(recording.all).toEqual([{ type: "startCapture", id: ID }]);
+    const { state, effects } = run([...toToggleRecording, press(4000)]);
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
+    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 4000 }]);
+  });
+
+  test("a second press before capture starts stops once capture starts", () => {
+    const pressedTwice = run([press(0), press(400)]);
+    expect(pressedTwice.state).toMatchObject({ phase: "starting", releasedAt: 400 });
+    expect(pressedTwice.effects).toEqual([]);
+    const { state, all } = run([press(0), press(400), press(450), started(500)]);
+    expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
+    expect(all.filter((effect) => effect.type === "stopCapture")).toEqual([
+      { type: "stopCapture", id: ID, releasedAt: 400 },
+    ]);
+  });
+
+  test("a double-tap under 250 ms cancels as tooShort", () => {
+    const { state, effects } = run([press(0), started(50), press(200)]);
+    expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
+    expect(types(effects)).toEqual(["cancelCapture", "scheduleIdle"]);
+  });
+
+  test("a hold-key chord cancel and a hold press leave a toggle session recording", () => {
+    const before = run(toToggleRecording).state;
+    for (const event of [chord(3000, "hold"), down(3000), up(3100)]) {
+      const { state, effects } = run([...toToggleRecording, event]);
+      expect(state).toEqual(before);
+      expect(effects).toEqual([]);
+    }
+  });
+
+  test("a chord on the toggle key cancels its session", () => {
+    const { state, effects } = run([press(0), chord(100, "toggle")]);
+    expect(state).toEqual(idle);
+    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+  });
+
+  test("Escape cancels a toggle session", () => {
+    const { state, effects } = run([...toToggleRecording, escape(5000)]);
+    expect(state).toEqual(idle);
+    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+  });
+
+  test("a toggle press or a toggle-key chord leaves a hold session alone", () => {
+    const before = run(toRecording).state;
+    for (const event of [press(600), up(700, "toggle"), chord(600, "toggle")]) {
+      const { state, effects } = run([...toRecording, event]);
+      expect(state).toEqual(before);
+      expect(effects).toEqual([]);
+    }
+  });
+
+  test("a chord on the hold key cancels a hold session", () => {
+    const { state, effects } = run([...toRecording, chord(600, "hold")]);
+    expect(state).toEqual(idle);
+    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
   });
 });
 
@@ -275,7 +370,10 @@ describe("transcript", () => {
       remembered("long dictation", "long dictation"),
       { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
-    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
+    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_100)).toEqual({
+      state,
+      effects: [],
+    });
   });
 
   test("transcription failure ends failed", () => {
@@ -312,7 +410,10 @@ describe("capture the helper stops on its own", () => {
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(toPillState(state)).toEqual({ kind: "processing", overdue: false });
     expect(effects).toEqual([]);
-    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({ state, effects: [] });
+    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_100)).toEqual({
+      state,
+      effects: [],
+    });
   });
 
   test("the transcript of the capture so far is inserted, and a release after that is still ignored", () => {
@@ -333,7 +434,10 @@ describe("capture the helper stops on its own", () => {
       remembered("long dictation", "long dictation"),
       { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
-    expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({ state, effects: [] });
+    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_600)).toEqual({
+      state,
+      effects: [],
+    });
   });
 
   test("a stop reported in any other phase changes nothing", () => {
@@ -702,7 +806,7 @@ describe("idle and stale events", () => {
 
   test("idle timeout for an earlier session does not end the current one", () => {
     const { state } = run([...toRecording, [{ type: "idleTimeout", id: "s0" }, 500]]);
-    expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+    expect(state).toEqual({ phase: "recording", id: ID, mode: "hold", pressedAt: 0 });
   });
 
   test("events for a stale session id are dropped", () => {
@@ -713,7 +817,7 @@ describe("idle and stale events", () => {
     ];
     for (const event of stale) {
       const { state, effects } = run([...toRecording, [event, 900]]);
-      expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+      expect(state).toEqual({ phase: "recording", id: ID, mode: "hold", pressedAt: 0 });
       expect(effects).toEqual([]);
     }
   });
@@ -740,7 +844,7 @@ describe("idle and stale events", () => {
     const remember = rememberedLate("late words", "old");
     expect(step(idle, late, 0)).toEqual({ state: idle, effects: [remember] });
     const { state, effects } = run([...toRecording, [late, 900]]);
-    expect(state).toEqual({ phase: "recording", id: ID, pressedAt: 0 });
+    expect(state).toEqual({ phase: "recording", id: ID, mode: "hold", pressedAt: 0 });
     expect(effects).toEqual([remember]);
     expect(
       step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false, rewrites: NONE }, 0),
@@ -803,9 +907,9 @@ describe("idle and stale events", () => {
   test("the hotkey and Escape while overdue change nothing, so the busy helper is never asked", () => {
     const overdue = run(toOverdue).state;
     for (const event of [
-      { type: "hotkeyDown", id: "s2", asr: "ready" },
-      { type: "hotkeyUp" },
-      { type: "cancel" },
+      { type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" },
+      { type: "hotkeyUp", mode: "hold" },
+      { type: "cancel", mode: null },
     ] satisfies SessionEvent[]) {
       expect(step(overdue, event, 50_000)).toEqual({ state: overdue, effects: [] });
     }
@@ -840,6 +944,7 @@ describe("idle and stale events", () => {
     expect(run([...toRecording, [{ type: "timedOut", id: ID }, 500]]).state).toEqual({
       phase: "recording",
       id: ID,
+      mode: "hold",
       pressedAt: 0,
     });
     expect(run([...toTranscribing, [{ type: "timedOut", id: "old" }, 500]]).state).toEqual({
