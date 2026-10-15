@@ -260,6 +260,9 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
 
   await target.open(c.name);
   const before = await target.read();
+  const newestEntry = () =>
+    hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
+  const previous = await newestEntry();
   snapshots.skipToEnd();
   logs.skipToEnd();
 
@@ -293,9 +296,10 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     });
   }
   const outcome = snapshot.session.outcome ?? null;
-  const {
-    entries: [latest],
-  } = await hub.evaluate("window.voice.getHistory()");
+  // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
+  const current = await newestEntry();
+  const latest = current?.id === previous?.id ? null : current;
+  assert(outcome?.kind !== "inserted" || latest, "inserted session added no history entry");
   const [{ text, landedMs }, timingLine] = await Promise.all([
     outcome?.kind === "inserted"
       ? landedText(target.read, latest.text)

@@ -753,6 +753,9 @@ const commands = {
         `${field}.focus() || (document.hasFocus() && document.activeElement.id === "field")`,
         5000,
       );
+      const newestEntry = () =>
+        hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
+      const previous = await newestEntry();
       copyFileSync(fixture, state.fakeMicrophonePath);
       snapshots.skipToEnd();
 
@@ -795,11 +798,11 @@ const commands = {
         });
       }
       const read = () => targetPage.evaluate(`${field}.value`);
-      const {
-        entries: [latest = null],
-      } = await hub.evaluate("window.voice.getHistory()");
+      // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
+      const current = await newestEntry();
+      const latest = current?.id === previous?.id ? null : current;
       const landing =
-        finalState.session.outcome?.kind === "inserted"
+        finalState.session.outcome?.kind === "inserted" && latest
           ? landedText(read, latest.text)
           : Promise.resolve({ text: await read(), landedMs: null });
       const [{ text: inserted, landedMs }, timing] = await Promise.all([
