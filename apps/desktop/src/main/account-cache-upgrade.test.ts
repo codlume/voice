@@ -8,6 +8,7 @@ import {
   signedIn,
   signedInClient,
   client,
+  confirmsSignOut,
   snapshotAccount,
   signInCode,
   requests,
@@ -185,7 +186,7 @@ test("sign-out during the legacy id lookup cannot start deletion or restore the 
   h.account.requestDeletion();
   const deleting = h.account.confirmDeletion();
   await vi.waitFor(() => expect(http.sent).toHaveLength(1));
-  http.answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+  http.answer = confirmsSignOut;
   await h.account.signOut();
   pending.resolve(signedIn("old-token"));
   await deleting;

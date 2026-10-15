@@ -7,6 +7,7 @@ import {
   SIGN_IN_ERRORS,
 } from "./account.ts";
 import {
+  GRACE,
   SECOND_CODE,
   USER,
   harness,
@@ -83,32 +84,25 @@ describe("account deletion through the snapshot", () => {
 
   test("deletion asks the API whose account the cookie is and refuses any other account", async () => {
     const h = await signedIn();
-    const other = {
-      id: "grace-id",
-      name: "Grace Hopper",
-      firstName: "Grace",
-      lastName: "Hopper",
-      email: "grace@example.com",
-    };
     h.account.requestDeletion();
     const deleting = h.account.confirmDeletion();
     await flush();
     expect(h.fake.deletions).toEqual([]);
     expect(h.state).toEqual({ kind: "signedIn", ...USER, deletion: { kind: "deleting" } });
-    h.checks.at(-1)?.answer({ kind: "active", user: other });
+    h.checks.at(-1)?.answer({ kind: "active", user: GRACE });
     await deleting;
     expect(h.fake.deletions).toEqual([]);
     expect(h.fake.forgotten).toBe(1);
     expect(h.state).toEqual({
       kind: "signedIn",
-      ...other,
-      notice: `Voice is signed in as ${other.email}, so it did not delete ${USER.email}.`,
+      ...GRACE,
+      notice: `Voice is signed in as ${GRACE.email}, so it did not delete ${USER.email}.`,
     });
 
     // A fresh confirmation names the account the cookie belongs to.
     h.account.requestDeletion();
-    expect(h.state).toEqual({ kind: "signedIn", ...other, deletion: { kind: "confirming" } });
-    const { done: retried } = await confirmAsCookieOwner(h, other);
+    expect(h.state).toEqual({ kind: "signedIn", ...GRACE, deletion: { kind: "confirming" } });
+    const { done: retried } = await confirmAsCookieOwner(h, GRACE);
     h.fake.deletions[0]?.answer({ kind: "deleted" });
     await retried;
     expect(h.state).toEqual({ kind: "signedOut" });
@@ -256,13 +250,7 @@ describe("account deletion through the snapshot", () => {
       const h = await signedIn();
       const revoke = vi.fn(async () => {});
       await staleDeletion(h, revoke);
-      const other = {
-        id: "grace-id",
-        name: "Grace Hopper",
-        firstName: "Grace",
-        lastName: "Hopper",
-        email: emailCase === "same email" ? USER.email : "grace@example.com",
-      };
+      const other = { ...GRACE, email: emailCase === "same email" ? USER.email : GRACE.email };
       h.setUser(other);
       const submitted = h.account.submitSignInCode(SECOND_CODE);
       await flush();

@@ -8,6 +8,7 @@ import {
   signedIn,
   client,
   config,
+  confirmsSignOut,
   snapshotAccount,
   signInCode,
 } from "./account-client.test-harness.ts";
@@ -23,9 +24,6 @@ import {
   authStored,
   serverSignOutsStored,
 } from "./account-storage.ts";
-
-const confirmed = (url: string) =>
-  url.endsWith("/sign-out") ? json({ success: true }) : json(null);
 
 describe("an abandoned exchange through the real auth client", () => {
   const keys = authStorageKeys("nightly");
@@ -59,7 +57,7 @@ describe("an abandoned exchange through the real auth client", () => {
       expect(auth.cachedUser()).toBeNull();
       expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
       expect(h.entries.map((entry) => entry.message)).not.toContain("account sign-in failed");
-      http.answer = confirmed;
+      http.answer = confirmsSignOut;
       expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
       expect(http.sent.slice(-2).map(({ url, cookie }) => [new URL(url).pathname, cookie])).toEqual(
         [
@@ -117,7 +115,7 @@ describe("an abandoned exchange through the real auth client", () => {
     expect(storage().getItem(keys.identity)).toBeNull();
     expect(result).toEqual({ kind: "abandoned" });
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(http.sent.at(-2)?.cookie).toBe("better-auth.session_token=late-token");
   });
@@ -140,7 +138,7 @@ describe("a session Voice does not keep", () => {
     });
     expect(auth.cachedUser()).toBeNull();
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
-    http.answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+    http.answer = confirmsSignOut;
     expect(await auth.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(http.sent.at(-2)?.cookie).toBe("better-auth.session_token=stray-token");
   });

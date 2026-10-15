@@ -28,6 +28,13 @@ export const USER = {
   lastName: "Lovelace",
   email: "ada@example.com",
 };
+export const GRACE = {
+  id: "grace-id",
+  name: "Grace Hopper",
+  firstName: "Grace",
+  lastName: "Hopper",
+  email: "grace@example.com",
+};
 export const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 export const CODE = encode({ identifier: "electron_authorization_code_1", state: "state1" });
 export const SECOND_CODE = encode({ identifier: "electron_authorization_code_2", state: "state2" });

@@ -11,6 +11,7 @@ import {
   signedIn,
   client,
   config,
+  confirmsSignOut,
   storedIdentity,
   signIn,
   signedInClient,
@@ -200,7 +201,7 @@ async function storeSession(auxiliaryCookie = false) {
 async function restoreExpiredSession() {
   vi.setSystemTime(new Date("2026-01-01T01:00:01Z"));
   http.sent = [];
-  http.answer = (url) => (url.endsWith("/sign-out") ? json({ success: true }) : json(null));
+  http.answer = confirmsSignOut;
   const restarted = client("nightly");
   const h = snapshotAccount(restarted);
   await h.account.restore();
@@ -302,9 +303,6 @@ describe("authSessionStored", () => {
   });
 });
 
-const confirmed = (url: string) =>
-  url.endsWith("/sign-out") ? json({ success: true }) : json(null);
-
 describe("server sign-outs", () => {
   test.each(["garbage ciphertext", JSON.stringify({ cookie: "wrong shape" }), "[123]"])(
     "discards an unreadable queue once and still constructs the client (%s)",
@@ -354,7 +352,7 @@ describe("server sign-outs", () => {
     active.queueServerSignOut("better-auth.session_token=old-token");
     expect(storage().getItem(keys.cookie)).toBe(activeCookie);
     expect(storage().getItem(keys.identity)).toBe(identity);
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(
       http.sent.filter(({ url }) => url.endsWith("/sign-out")).map(({ cookie }) => cookie),
@@ -382,7 +380,7 @@ describe("server sign-outs", () => {
     expect(active.cachedUser()).toBeNull();
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
     expect(config()).not.toContain("old-token");
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(http.sent.slice(-2).map(({ url, cookie }) => [url, cookie])).toEqual([
       [`${API.nightly}/api/auth/sign-out`, "better-auth.session_token=old-token"],
@@ -406,7 +404,7 @@ describe("server sign-outs", () => {
       expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(true);
       const restarted = client("nightly");
       expect(restarted.cachedUser()).toBeNull();
-      http.answer = confirmed;
+      http.answer = confirmsSignOut;
       expect(await restarted.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
       expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
       expect(authSessionStored(electron.state.userData, "nightly")).toBe(false);
@@ -441,7 +439,7 @@ describe("server sign-outs", () => {
     await active.checkAuthSession(new AbortController().signal);
     pending.resolve(signedIn("old-token"));
     await oldCheck;
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     await active.endServerSignOuts();
     expect(active.cachedUser()).toEqual(GRACE);
     expect(authSessionStored(electron.state.userData, "nightly")).toBe(true);
@@ -496,7 +494,7 @@ describe("server sign-outs", () => {
     http.answer = () => signedIn("token-b");
     await active.checkAuthSession(new AbortController().signal);
     active.retireAuthSession();
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await client("stable").endServerSignOuts()).toEqual([]);
     const restarted = client("nightly");
     expect(await restarted.endServerSignOuts()).toEqual([
@@ -523,7 +521,7 @@ describe("server sign-outs", () => {
     await active.checkAuthSession(new AbortController().signal);
     active.retireAuthSession();
     expect(active.endServerSignOuts()).toBe(first);
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     pending.resolve(json({ success: true }));
     expect(await first).toEqual([
       { kind: "ended", status: 200 },
@@ -543,7 +541,7 @@ describe("server sign-outs", () => {
     expect(await client("nightly").endServerSignOuts()).toEqual([]);
     expect(storage().getItem("voice.nightly.retired_auth_sessions")).toBe(encrypted);
     electron.state.encryption = true;
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await client("nightly").endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
   });
 
@@ -583,7 +581,7 @@ describe("server sign-outs", () => {
     });
     expect(config()).not.toContain("memory-token");
     expect(serverSignOutsStored(electron.state.userData, "nightly")).toBe(false);
-    http.answer = confirmed;
+    http.answer = confirmsSignOut;
     expect(await active.endServerSignOuts()).toEqual([{ kind: "ended", status: 200 }]);
     expect(http.sent.at(-1)?.cookie).toBe("better-auth.session_token=memory-token");
   });
@@ -892,7 +890,7 @@ describe("deletion through the real auth client", () => {
   test("a successful deletion is reported only with the server's deletion receipt", async () => {
     http.answer = () => json({ success: true, message: "User deleted" });
     expect(await client("nightly").deleteAccount()).toEqual({ kind: "deleted" });
-    http.answer = () => json({ success: true, message: "Verification email http.sent" });
+    http.answer = () => json({ success: true, message: "Verification email sent" });
     expect(await client("nightly").deleteAccount()).toEqual({ kind: "failed" });
   });
 
