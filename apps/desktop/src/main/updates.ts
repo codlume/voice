@@ -103,10 +103,10 @@ export function createUpdates({
     onChange(snapshot);
   }
 
-  // Electron emits errors as well as rejecting operations. Keep a listener for errors
+  // electron-updater emits errors as well as rejecting operations. Keep a listener for errors
   // raised by Squirrel after quitAndInstall has returned.
   const onError = () => {
-    if (snapshot.status.kind === "installing") {
+    if (installing()) {
       restarting = false;
       publish({
         kind: "failed",
