@@ -440,17 +440,20 @@ export function createAccount({
     }
   }
 
-  // One bounded get-session for a decision. Null when a sign-out, a sign-in or dispose aborted
-  // it; past the deadline, unreachable.
-  async function askAuthSession(client: AuthClient): Promise<AuthSessionCheck | null> {
+  // Null when a sign-out, a sign-in, or dispose aborted it. Past the deadline, unreachable.
+  async function askAuthSession(
+    client: AuthClient,
+    deadline?: AbortSignal,
+  ): Promise<AuthSessionCheck | null> {
     const controller = new AbortController();
     abortCheck();
     checking = controller;
-    const deadline = AbortSignal.timeout(30_000);
-    const answer = await client.checkAuthSession(AbortSignal.any([controller.signal, deadline]));
+    const answer = await client.checkAuthSession(
+      deadline ? AbortSignal.any([controller.signal, deadline]) : controller.signal,
+    );
     if (checking === controller) checking = null;
     if (controller.signal.aborted) return null;
-    return deadline.aborted ? { kind: "unreachable", error: deadline.reason } : answer;
+    return deadline?.aborted ? { kind: "unreachable", error: deadline.reason } : answer;
   }
 
   // The API no longer has the auth session, so the stored one is gone and only a fresh sign-in can
@@ -469,13 +472,9 @@ export function createAccount({
   // request is in flight is never overwritten.
   async function checkAuthSession(client: AuthClient) {
     const checked = state;
-    const controller = new AbortController();
-    abortCheck();
-    checking = controller;
     lastCheck = Date.now();
-    const answer = await client.checkAuthSession(controller.signal);
-    if (checking === controller) checking = null;
-    if (controller.signal.aborted || state !== checked) return;
+    const answer = await askAuthSession(client);
+    if (answer === null || state !== checked) return;
     switch (answer.kind) {
       case "active":
         if (checked.kind !== "signedIn" || !sameIdentity(answer.user, checked)) {
@@ -690,7 +689,7 @@ export function createAccount({
         if (state !== deleting) return;
         // The API deletes whichever account the stored cookie belongs to, and the cached identity
         // can be another account's. The cookie's account is asked for and must be the confirmed one.
-        const answer = await askAuthSession(client);
+        const answer = await askAuthSession(client, AbortSignal.timeout(30_000));
         if (state !== deleting || answer === null) return;
         // Revoked, or already deleted by a request whose receipt was lost. A failed deletion
         // would only offer a retry that asks the same question again.
