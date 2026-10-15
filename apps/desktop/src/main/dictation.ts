@@ -50,8 +50,6 @@ export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
 export const INSERT_TIMEOUT_MS = 5000;
 
-export const overdueBudgetMs = (holdMs: number) => Math.max(TRANSCRIBE_OVERDUE_MIN_MS, holdMs);
-
 export type Dictation = {
   dispatch(event: SessionEvent): void;
   onHelperEvent(event: HelperEvent): void;
@@ -167,7 +165,7 @@ export function createDictation(options: DictationOptions): Dictation {
       arm(state.id, START_TIMEOUT_MS);
     } else if (state.phase === "transcribing" && state.overdue) {
       const hold = started?.id === state.id ? (started.releasedAt ?? now()) - started.pressedAt : 0;
-      arm(state.id, overdueBudgetMs(hold));
+      arm(state.id, Math.max(TRANSCRIBE_OVERDUE_MIN_MS, hold));
     } else if (state.phase === "transcribing") {
       const ready = store.state.models.asr.state === "ready";
       arm(state.id, ready ? TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS);
