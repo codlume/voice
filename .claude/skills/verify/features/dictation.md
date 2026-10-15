@@ -29,7 +29,7 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - **Too short.** `vv dictate short.wav --end=immediate`. The output has `outcome.kind` `tooShort` and an empty `inserted`.
 - **Silence.** `vv dictate silence.wav`. The output has `outcome.kind` `empty` and an empty `inserted`.
 - **Flow Bar.** During a session, `vv shot flow-bar pill` captures the pill. `vv eval pill 'document.body.innerText'` reads its text.
-- **Proof.** Each `dictate` writes `dictate-<fixture>-<end>-<ts>.json` to the evidence dir with the outcome, the inserted text, `latest` (the newest history entry), and the timing line.
+- **Proof.** Each `dictate` writes `dictate-<fixture>-<end>-<ts>.json` to the evidence dir with the outcome, the inserted text, `latest` (the history entry this session added, or `null`), and the timing line.
 - **TextEdit target.** `dictate` covers only the Electron textarea. For a native Cocoa target, `stop` the instance and run `pnpm e2e`.
 
 ## Gotchas
