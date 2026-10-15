@@ -67,27 +67,23 @@ export function updateButton(status: UpdateStatus, session: PillState): UpdateBu
     case "idle":
     case "current":
     case "failed":
-      return button("check", "Check for updates");
+      return { action: "check", label: "Check for updates" };
     case "available":
-      return button("download", releaseCardTitle(status));
+      return { action: "download", label: releaseCardTitle(status) };
     case "ready":
       return session.kind === "listening" || session.kind === "processing"
-        ? button(null, "Finish dictation before restarting")
-        : button("restart", releaseCardTitle(status));
+        ? { action: null, label: "Finish dictation before restarting" }
+        : { action: "restart", label: releaseCardTitle(status) };
     case "checking":
     case "downloading":
     case "installing":
     case "disabled":
-      return button(null, updateStatusText(status));
+      return { action: null, label: updateStatusText(status) };
     default: {
       const exhaustive: never = status;
       return exhaustive;
     }
   }
-}
-
-function button(action: UpdateButton["action"], label: string): UpdateButton {
-  return { action, label };
 }
 
 export type RestartPrompt = {
