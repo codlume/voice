@@ -685,6 +685,8 @@ async function main() {
       assertNotRestarting();
       restartRequested = true;
       try {
+        // An accepted channel change must reach the updater before it installs.
+        await saving;
         await history.settled();
         const state = history.state();
         const refusal = restartRefusal(request, state);
