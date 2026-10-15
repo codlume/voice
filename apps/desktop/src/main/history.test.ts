@@ -373,6 +373,20 @@ describe("saved history", () => {
     expect(ids((await saved()).entries)).toEqual(["new", "old"]);
   });
 
+  test("a switch from memory removes temp files a launch could not, so saved stops meaning failed", async () => {
+    const stale = NodePath.join(dir, "history.json.12345.tmp");
+    await writeFile(stale, "{}");
+    await chmod(dir, 0o300);
+    const { history } = harness("memory");
+    await history.settled();
+    expect(history.state().saveFailed).toBe(true);
+
+    await chmod(dir, 0o700);
+    await history.setRetention("month");
+    expect(await tempFiles()).toEqual([]);
+    expect(history.state()).toMatchObject({ retention: "month", saveFailed: false });
+  });
+
   test("delete and clear reach the file", async () => {
     const { history } = harness("month");
     history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
