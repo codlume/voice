@@ -10,10 +10,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertPlausibleCleanup, wordSurvival } from "../src/plausibility.ts";
-import type { CleanupStyle } from "../src/prompt.ts";
+import { STYLINGS, type CleanupStyle } from "../src/prompt.ts";
 import { createS1Mini, type Generation } from "../src/s1mini.ts";
 
-const STYLES: CleanupStyle["styling"][] = ["casual", "semi-casual", "semi-formal", "formal"];
 const [modelPath, recordingPath] = process.argv.slice(2);
 if (!modelPath || !recordingPath) throw new Error("usage: calibrate.mts <model.gguf> <out.jsonl>");
 
@@ -45,7 +44,7 @@ const fixtures: Fixture[] = JSON.parse(
 );
 const inputOf = (f: Fixture) => ("text" in f ? f.text : generated[f.generate]);
 
-async function record(): Promise<Row[]> {
+const record = async (): Promise<Row[]> => {
   if (existsSync(recordingPath)) {
     return readFileSync(recordingPath, "utf8")
       .trim()
@@ -56,7 +55,7 @@ async function record(): Promise<Row[]> {
   await s1.load();
   const rows: Row[] = [];
   for (const fixture of fixtures) {
-    for (const styling of STYLES) {
+    for (const styling of STYLINGS) {
       const t = performance.now();
       const generations = await s1.generate(inputOf(fixture), { styling });
       console.error(`${fixture.name} ${styling} ${Math.round(performance.now() - t)} ms`);
@@ -67,7 +66,7 @@ async function record(): Promise<Row[]> {
   await s1.dispose();
   writeFileSync(recordingPath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   return rows;
-}
+};
 
 let rejected = 0;
 const rows = await record();

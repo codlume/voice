@@ -1,4 +1,5 @@
 import type { S1Mini } from "@voice/cleanup";
+import { STYLINGS } from "@voice/cleanup/prompt";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -17,7 +18,7 @@ const RequestSchema = Schema.Union([
     id: Id,
     raw: Schema.String,
     style: Schema.Struct({
-      styling: Schema.Literals(["casual", "semi-casual", "semi-formal", "formal"]),
+      styling: Schema.Literals(STYLINGS),
     }),
     budgetMs: Schema.optionalKey(Schema.Finite),
   }),
