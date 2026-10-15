@@ -46,8 +46,8 @@ type SavedRetention = Exclude<HistoryRetention, "memory">;
  * What the file is to this run. The file names the window: no file means memory. `loading` is
  * the launch read; nothing is written until it ends. `leftAlone` is a file this run could not
  * use, which it never overwrites or deletes on its own: the run keeps history in memory and says
- * saving failed, `retention` is only what the user chose since, and a clear or a switch to memory
- * removes the file.
+ * saving failed, and `retention` is only what the user chose since. A switch to memory deletes the
+ * file; a clear deletes it in memory, or replaces it with the chosen window's empty file.
  */
 type Disk =
   | { kind: "loading" }
@@ -282,6 +282,11 @@ export function createHistory(options: {
     return parseEnvelope(parsed);
   }
 
+  function leaveAlone(error: LeftAlone, retention: HistoryRetention) {
+    setDisk({ kind: "leftAlone", retention });
+    log(`history: ${error.message}, so this run keeps it in memory`);
+  }
+
   const loading = serial(async () => {
     try {
       const found = await load();
@@ -301,8 +306,7 @@ export function createHistory(options: {
       }
     } catch (error) {
       if (!(error instanceof LeftAlone)) throw error;
-      setDisk({ kind: "leftAlone", retention: "memory" });
-      log(`history: ${error.message}, so this run keeps it in memory`);
+      leaveAlone(error, "memory");
     }
     await sweepTemps();
     ready = true;
@@ -377,7 +381,14 @@ export function createHistory(options: {
         if (disk.kind === "memory") {
           // A file that appeared since launch is read before anything is written over it. The
           // disk stays memory until the write lands, so a failure leaves nothing to undo.
-          const found = await load();
+          let found: Envelope | null;
+          try {
+            found = await load();
+          } catch (error) {
+            if (!(error instanceof LeftAlone)) throw error;
+            leaveAlone(error, next);
+            return;
+          }
           if (found) merge(pruned(found.entries, next));
           await persist(entries, next);
           await sweepTemps();

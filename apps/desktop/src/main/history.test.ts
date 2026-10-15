@@ -326,6 +326,37 @@ describe("saved history", () => {
     expect(ids(history.entries())).toEqual(["a"]);
   });
 
+  test("a clear over a file left alone under a chosen window replaces it with that window's empty file", async () => {
+    const newer = JSON.stringify({ version: 2, retention: "day", entries: [] });
+    await writeFile(file, newer);
+    const { history } = harness();
+    await history.settled();
+    await history.setRetention("month");
+    history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
+
+    await history.clear();
+    expect(await saved()).toEqual({ version: 1, retention: "month", entries: [] });
+    expect(history.state()).toMatchObject({ entries: [], retention: "month", saveFailed: false });
+  });
+
+  test("a switch from memory onto a file that appeared since launch and cannot be used leaves it alone", async () => {
+    const { history, logs } = harness();
+    await history.settled();
+    history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
+    const newer = JSON.stringify({ version: 2, retention: "day", entries: [] });
+    await writeFile(file, newer);
+
+    await history.setRetention("month");
+    await history.settled();
+    expect(await readFile(file, "utf8")).toBe(newer);
+    expect(history.state()).toMatchObject({ retention: "month", saveFailed: true });
+    expect(ids(history.entries())).toEqual(["a"]);
+    expect(logs).toEqual([expect.stringMatching(/so this run keeps it in memory$/)]);
+
+    await history.clear();
+    expect(await saved()).toEqual({ version: 1, retention: "month", entries: [] });
+  });
+
   test("prunes entries older than the window when it loads", async () => {
     await writeFile(
       file,
@@ -846,20 +877,24 @@ describe("saved history", () => {
     expect((await saved()).retention).toBe("forever");
   });
 
-  test("a switch from memory that fails to save keeps the history in memory", async () => {
-    const { history } = harness("memory");
-    history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
-    await blockWrites();
+  test.skipIf(asRoot)(
+    "a switch from memory that fails to save keeps the history in memory",
+    async () => {
+      const { history } = harness("memory");
+      history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
+      await history.settled();
+      await chmod(dir, 0o500);
 
-    await expect(history.setRetention("month")).rejects.toThrow();
-    expect(history.state().saveFailed).toBe(false);
-    expect(ids(history.entries())).toEqual(["a"]);
+      await expect(history.setRetention("month")).rejects.toThrow();
+      expect(history.state()).toMatchObject({ retention: "memory", saveFailed: false });
+      expect(ids(history.entries())).toEqual(["a"]);
 
-    await unblockWrites();
-    history.remember({ id: "b", raw: "b", text: "b", status: "notInserted" }, START);
-    await history.settled();
-    expect(await exists(file)).toBe(false);
-  });
+      await chmod(dir, 0o700);
+      history.remember({ id: "b", raw: "b", text: "b", status: "notInserted" }, START);
+      await history.settled();
+      expect(await exists(file)).toBe(false);
+    },
+  );
 
   test("a switch to memory that cannot delete the file keeps saving", async () => {
     const { history } = harness("month");
