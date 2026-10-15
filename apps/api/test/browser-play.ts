@@ -2,8 +2,8 @@
 // then, as the landing page's script does, the page itself, the browser's sign-out and a
 // get-session that must come back null. The workerd tests pass the Worker, the script passes fetch.
 
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-export type Jar = Map<string, string>;
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+type Jar = Map<string, string>;
 
 export function storeCookies(response: Response, jar: Jar = new Map()): Jar {
   for (const line of response.headers.getSetCookie()) {
