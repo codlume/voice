@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import type { HistoryEntry } from "../shared/history.ts";
 import { dayKey } from "../shared/insights.ts";
-import { droppedBy, historyPage, msUntilNextDay, timeLabel } from "./historyView.ts";
+import { droppedBy, excerpt, historyPage, msUntilNextDay, timeLabel } from "./historyView.ts";
 
 const ZONE_WEST_OF_UTC = "America/Los_Angeles";
 process.env.TZ = ZONE_WEST_OF_UTC;
@@ -105,6 +105,18 @@ describe("history page", () => {
       ["Yesterday", ["e2"]],
     ]);
     expect(found.hidden).toBe(1);
+  });
+});
+
+describe("excerpt", () => {
+  test("keeps a short transcript whole on one line", () => {
+    expect(excerpt("Dear team,\n\nThe offsite moves.")).toBe("Dear team, The offsite moves.");
+  });
+
+  test("cuts a long transcript at a word and marks the cut", () => {
+    expect(
+      excerpt("I think we should push the launch to Friday because the QA pass isn't done yet."),
+    ).toBe("I think we should push the launch to…");
   });
 });
 

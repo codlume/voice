@@ -6,6 +6,7 @@ import { useId, useMemo } from "react";
 import type { Hotkey, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import type { DayKey } from "../shared/insights.ts";
+import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
@@ -337,6 +338,7 @@ function Stats({ today, onOpenInsights }: { today: DayKey; onOpenInsights: () =>
   return (
     <Card>
       <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
+        <span {...stylex.props(a11y.visuallyHidden)}>Open Insights.</span>
         <span {...stylex.props(styles.statList)}>
           <Stat value={view ? view.totalWords.toLocaleString() : "–"} label="words" />
           <Stat value={view?.pace ? String(view.pace.wpm) : "–"} label="WPM" />

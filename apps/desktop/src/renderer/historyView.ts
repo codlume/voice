@@ -43,6 +43,17 @@ export function timeLabel(at: number, locale?: string): string {
   return shortTime(locale).format(at);
 }
 
+const EXCERPT_LENGTH = 40;
+
+/** The start of a transcript on one line, short enough to name a row's buttons. */
+export function excerpt(text: string): string {
+  const line = text.replace(/\s+/gu, " ").trim();
+  if (line.length <= EXCERPT_LENGTH) return line;
+  const cut = line.slice(0, EXCERPT_LENGTH);
+  const wordEnd = cut.lastIndexOf(" ");
+  return `${wordEnd > 0 ? cut.slice(0, wordEnd) : cut}…`;
+}
+
 /**
  * The newest `limit` entries that match `query`, grouped by local day, and how many matches the
  * limit hides. Entries arrive newest first, so cutting before grouping keeps the newest days.

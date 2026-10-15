@@ -5,9 +5,10 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { TranscriptVersion } from "../shared/api.ts";
 import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
 import type { DayKey } from "../shared/insights.ts";
+import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
-import { historyPage, timeLabel } from "./historyView.ts";
+import { excerpt, historyPage, timeLabel } from "./historyView.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -107,14 +108,6 @@ const styles = stylex.create({
   empty: { margin: 0, padding: space.lg, color: color.mutedForeground },
   more: { display: "flex", justifyContent: "center" },
   error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
-  visuallyHidden: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    overflow: "hidden",
-    clipPath: "inset(50%)",
-    whiteSpace: "nowrap",
-  },
 });
 
 // Rows mount all at once, so a long history shows its newest page and grows on request.
@@ -146,6 +139,7 @@ function Row({
   onDelete: () => void;
 }) {
   const time = timeLabel(entry.at);
+  const named = `from ${time}: ${excerpt(entry.text)}`;
   const copyRow = (event: MouseEvent<HTMLLIElement>) => {
     const clickedButton =
       event.target instanceof Element && event.target.closest("button") !== null;
@@ -155,7 +149,9 @@ function Row({
   };
   return (
     <li onClick={copyRow} {...stylex.props(stylex.defaultMarker(), styles.row)}>
-      <span {...stylex.props(styles.time)}>{time}</span>
+      <time dateTime={new Date(entry.at).toISOString()} {...stylex.props(styles.time)}>
+        {time}
+      </time>
       <div {...stylex.props(styles.body)}>
         <p {...stylex.props(styles.text)}>{entry.text}</p>
         {entry.status === "notInserted" && (
@@ -171,7 +167,7 @@ function Row({
         )}
         <Button
           variant="icon"
-          aria-label={`Copy dictation from ${time}`}
+          aria-label={`Copy dictation ${named}`}
           title="Copy"
           onClick={() => onCopy("text")}
         >
@@ -180,7 +176,7 @@ function Row({
         {entry.raw !== entry.text && (
           <Button
             variant="icon"
-            aria-label={`Copy raw transcript from ${time}`}
+            aria-label={`Copy raw transcript ${named}`}
             title="Copy raw transcript"
             onClick={() => onCopy("raw")}
           >
@@ -189,7 +185,7 @@ function Row({
         )}
         <Button
           variant="icon"
-          aria-label={`Delete dictation from ${time}`}
+          aria-label={`Delete dictation ${named}`}
           title="Delete"
           onClick={onDelete}
         >
@@ -218,6 +214,8 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
         ref={input}
         type="search"
         aria-label="Search history"
+        autoComplete="off"
+        spellCheck={false}
         placeholder={withShortcut("Search", shortcuts.searchHistory)}
         value={query}
         onChange={(event) => onChange(event.target.value)}
@@ -320,7 +318,7 @@ export function History({
           )}
         </div>
       )}
-      <p role="status" {...stylex.props(styles.visuallyHidden)}>
+      <p role="status" {...stylex.props(a11y.visuallyHidden)}>
         {copied && copiedLabels[copied.version]}
       </p>
       {action.error && (
