@@ -60,6 +60,7 @@ describe("hub preload", () => {
       "requestPermission",
       "restartForUpdate",
       "retryAccountDeletion",
+      "setHistoryRetention",
       "setOpenAtLogin",
       "signIn",
       "signOut",

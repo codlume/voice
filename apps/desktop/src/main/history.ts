@@ -2,6 +2,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import {
+  historyRetentions,
   retentionMs,
   type HistoryEntry,
   type HistoryRetention,
@@ -19,7 +20,7 @@ export type History = {
   settle(id: string, inserted: boolean): void;
   entries(): readonly HistoryEntry[];
   state(): HistoryState;
-  /** Resolves once the launch read of the saved history is in the list; at once in memory mode. */
+  /** Resolves once the launch read of the file is in the list and the window is known. */
   loaded(): Promise<void>;
   /** Drops entries whose window ended. The timer runs late after sleep, so wake-ups call this. */
   expire(): void;
@@ -28,8 +29,8 @@ export type History = {
   /** Rejects, and keeps the entries, when the saved history could not be deleted. */
   clear(): Promise<void>;
   /**
-   * Saves under the new window, picks up or deletes the file when memory is one side of the
-   * change, and keeps the old retention when that fails, so the caller records only what landed.
+   * Writes the window with the entries, or deletes the file for memory, and keeps the old window
+   * when that fails, so the published retention is what the file holds.
    */
   setRetention(next: HistoryRetention): Promise<void>;
   /**
@@ -42,19 +43,23 @@ export type History = {
 type SavedRetention = Exclude<HistoryRetention, "memory">;
 
 /**
- * What the file is to this run. `loading` is the launch read; nothing is written until it ends.
- * A switch from memory stays `memory` until the file holds the list, since the new window is a
- * claim until then.
+ * What the file is to this run. The file names the window: no file means memory. `loading` is
+ * the launch read; nothing is written until it ends. `leftAlone` is a file this run could not
+ * use, which it never overwrites or deletes on its own: the run keeps history in memory and says
+ * saving failed, `retention` is only what the user chose since, and a clear or a switch to memory
+ * removes the file.
  */
 type Disk =
+  | { kind: "loading" }
   | { kind: "memory" }
-  | { kind: "loading"; retention: SavedRetention }
   | { kind: "ok"; retention: SavedRetention }
   | { kind: "writeFailed"; retention: SavedRetention }
-  | { kind: "leftAlone"; retention: SavedRetention };
+  | { kind: "leftAlone"; retention: HistoryRetention };
 
 const writable = (value: Disk): value is Extract<Disk, { kind: "ok" | "writeFailed" }> =>
   value.kind === "ok" || value.kind === "writeFailed";
+
+type Envelope = { retention: SavedRetention; entries: HistoryEntry[] };
 
 // setTimeout turns a longer delay into an immediate one; the timer re-arms when it fires early.
 const MAX_TIMER_MS = 2 ** 31 - 1;
@@ -63,7 +68,6 @@ class LeftAlone extends Error {}
 
 export function createHistory(options: {
   file: string;
-  retention: HistoryRetention;
   log: Log;
   onChange: (state: HistoryState) => void;
   now?: () => number;
@@ -75,7 +79,7 @@ export function createHistory(options: {
   // The list the file holds, by identity: every change makes a new list, so a sync writes until
   // they are the same one. Null when the file holds nothing of the list, or something older.
   let fileHolds: readonly HistoryEntry[] | null = null;
-  let disk: Disk = { kind: "memory" };
+  let disk: Disk = { kind: "loading" };
   // A sweep could not remove a temp file, which may hold a transcript the user thinks is gone, so
   // the hub hears about it until a sweep succeeds.
   let tempsLeft = false;
@@ -90,9 +94,9 @@ export function createHistory(options: {
   let publishQueued = false;
   let syncQueued = false;
   let queue: Promise<void> = Promise.resolve();
-  let loading: Promise<void> = Promise.resolve();
 
-  const retentionNow = (): HistoryRetention => (disk.kind === "memory" ? "memory" : disk.retention);
+  const retentionNow = (): HistoryRetention =>
+    disk.kind === "loading" || disk.kind === "memory" ? "memory" : disk.retention;
   const saveFailed = () => disk.kind === "writeFailed" || disk.kind === "leftAlone" || tempsLeft;
   const state = (): HistoryState => ({
     entries: pruned(entries),
@@ -175,7 +179,9 @@ export function createHistory(options: {
     if (next.length !== entries.length) change(next);
   }
 
+  // Takes what a read found into the list. A clear asked for before the read covers it too.
   function merge(loaded: readonly HistoryEntry[]) {
+    for (const doomed of pendingClears) for (const entry of loaded) doomed.add(entry.id);
     const known = new Set(entries.map((entry) => entry.id));
     const fresh = loaded.filter((entry) => !known.has(entry.id) && !tombstones.has(entry.id));
     if (fresh.length > 0) change([...entries, ...fresh].toSorted(newestFirst));
@@ -187,8 +193,8 @@ export function createHistory(options: {
     return run;
   }
 
-  const write = (list: readonly HistoryEntry[]) =>
-    writeFileAtomic(file, `${JSON.stringify({ version: VERSION, entries: list })}\n`, {
+  const write = (list: readonly HistoryEntry[], retention: SavedRetention) =>
+    writeFileAtomic(file, `${JSON.stringify({ version: VERSION, retention, entries: list })}\n`, {
       mode: 0o600,
     });
 
@@ -199,7 +205,7 @@ export function createHistory(options: {
    */
   async function persist(list: readonly HistoryEntry[], retention: SavedRetention) {
     const base = entries;
-    await write(pruned(list, retention));
+    await write(pruned(list, retention), retention);
     setDisk({ kind: "ok", retention });
     if (entries !== base) return;
     if (list !== base) change(list);
@@ -207,8 +213,11 @@ export function createHistory(options: {
   }
 
   async function sync() {
-    if (!writable(disk) || fileHolds === entries) return;
-    const { retention } = disk;
+    if (writable(disk) && fileHolds !== entries) await save(disk.retention);
+  }
+
+  // A write whose failure is the run's state rather than a caller's error.
+  async function save(retention: SavedRetention) {
     try {
       await persist(entries, retention);
     } catch (error) {
@@ -253,63 +262,48 @@ export function createHistory(options: {
     await rm(file, { force: true });
   }
 
-  async function load(): Promise<HistoryEntry[]> {
+  /** The file's window and entries, null when there is no file, and LeftAlone for one to keep off. */
+  async function load(): Promise<Envelope | null> {
     let text: string;
     try {
       text = await readFile(file, "utf8");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw new LeftAlone(`could not read the saved history (${String(error)})`);
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      log("history: the saved history is not JSON, so it starts over");
-      return [];
+      throw new LeftAlone("the saved history is not JSON");
     }
-    const version =
-      typeof parsed === "object" && parsed !== null && "version" in parsed ? parsed.version : null;
-    if (typeof version === "number" && version > VERSION) {
-      throw new LeftAlone(`the saved history is from a newer Voice (version ${version})`);
-    }
-    return parseHistory(parsed);
+    return parseEnvelope(parsed);
   }
 
-  // Reads the file into the list and writes the list back when they differ.
-  async function adopt(retention: SavedRetention) {
-    const loaded = await load();
-    for (const doomed of pendingClears) for (const entry of loaded) doomed.add(entry.id);
-    const dirty = entries.length > 0 || pruned(loaded, retention) !== loaded;
-    merge(loaded);
-    if (dirty) {
-      await persist(entries, retention);
-      return;
-    }
-    setDisk({ kind: "ok", retention });
-    fileHolds = entries;
-  }
-
-  if (options.retention === "memory") {
-    void serial(sweepTemps);
-  } else {
-    const retention = options.retention;
-    disk = { kind: "loading", retention };
-    loading = serial(async () => {
-      try {
-        await adopt(retention);
-      } catch (error) {
-        if (error instanceof LeftAlone) {
-          setDisk({ kind: "leftAlone", retention });
-          log(`history: ${error.message}, so this run keeps it in memory`);
+  const loading = serial(async () => {
+    try {
+      const found = await load();
+      if (found === null) {
+        setDisk({ kind: "memory" });
+      } else {
+        const { retention } = found;
+        const kept = pruned(found.entries, retention);
+        const dirty = entries.length > 0 || kept !== found.entries;
+        merge(kept);
+        if (dirty) {
+          await save(retention);
         } else {
-          setDisk({ kind: "writeFailed", retention });
-          logSaveFailure(error);
+          setDisk({ kind: "ok", retention });
+          fileHolds = entries;
         }
       }
-      await sweepTemps();
-    });
-  }
+    } catch (error) {
+      if (!(error instanceof LeftAlone)) throw error;
+      setDisk({ kind: "leftAlone", retention: "memory" });
+      log(`history: ${error.message}, so this run keeps it in memory`);
+    }
+    await sweepTemps();
+  });
 
   return {
     remember({ id, raw, text, status }, at) {
@@ -347,40 +341,45 @@ export function createHistory(options: {
       pendingClears.push(doomed);
       return serial(async () => {
         pendingClears.shift();
-        if (disk.kind === "memory") {
-          // An earlier run may have saved a file; the user asked for it gone too.
+        const retention = retentionNow();
+        if (retention === "memory") {
+          // A file left alone is one the user asked to be rid of too.
           await rm(file, { force: true });
           await sweepTemps();
+          setDisk({ kind: "memory" });
           forget(doomed);
           return;
         }
-        await removeFile();
+        await removeTemps();
+        await persist(
+          entries.filter((entry) => !doomed.has(entry.id)),
+          retention,
+        );
         forget(doomed);
-        // The file is gone, so what the user added since the clear has to be written again.
-        fileHolds = entries.length === 0 ? entries : null;
-        setDisk({ kind: "ok", retention: disk.retention });
-        requestSync();
       });
     },
     setRetention: (next) =>
       serial(async () => {
-        if (next === retentionNow()) return;
         if (next === "memory") {
+          if (disk.kind === "memory") return;
           await removeFile();
           setDisk({ kind: "memory" });
-          return;
-        }
-        if (disk.kind === "memory") {
-          // The disk stays memory until adopt wrote the list, so a failure leaves nothing to undo.
-          await adopt(next);
-          await sweepTemps();
           return;
         }
         if (disk.kind === "leftAlone") {
           setDisk({ kind: "leftAlone", retention: next });
           return;
         }
-        await persist(entries, next);
+        if (disk.kind === "memory") {
+          // A file that appeared since launch is read before anything is written over it. The
+          // disk stays memory until the write lands, so a failure leaves nothing to undo.
+          const found = await load();
+          if (found) merge(pruned(found.entries, next));
+          await persist(entries, next);
+          await sweepTemps();
+          return;
+        }
+        if (writable(disk) && disk.retention !== next) await persist(entries, next);
       }),
     async settled() {
       expire();
@@ -399,14 +398,26 @@ const newestFirst = (a: HistoryEntry, b: HistoryEntry) => b.at - a.at;
 const isText = (value: unknown): value is string => typeof value === "string";
 const isStatus = (value: unknown): value is HistoryStatus =>
   value === "pending" || value === "inserted" || value === "notInserted";
+const isSavedRetention = (value: unknown): value is SavedRetention =>
+  value !== "memory" && historyRetentions.some((retention) => retention === value);
 const statusAfterRestart = (status: HistoryStatus): HistoryStatus =>
   status === "pending" ? "notInserted" : status;
 
-export function parseHistory(raw: unknown): HistoryEntry[] {
-  const list: unknown[] =
-    typeof raw === "object" && raw !== null && "entries" in raw && Array.isArray(raw.entries)
-      ? raw.entries
-      : [];
+function parseEnvelope(raw: unknown): Envelope {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new LeftAlone("the saved history is not an object");
+  }
+  const { version, retention, entries } = raw as Record<string, unknown>;
+  if (typeof version === "number" && version > VERSION) {
+    throw new LeftAlone(`the saved history is from a newer Voice (version ${version})`);
+  }
+  if (version !== VERSION) throw new LeftAlone("the saved history has no version");
+  if (!isSavedRetention(retention)) throw new LeftAlone("the saved history names no window");
+  return { retention, entries: parseEntries(entries) };
+}
+
+function parseEntries(raw: unknown): HistoryEntry[] {
+  const list: unknown[] = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   const entries: HistoryEntry[] = [];
   for (const item of list) {

@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -6,14 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import { DEFAULT_SETTINGS, type SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
-import { createHistory } from "./history.ts";
-import {
-  applyPatch,
-  commitSettings,
-  loadSettings,
-  parseSettings,
-  saveSettings,
-} from "./settings.ts";
+import { applyPatch, loadSettings, parseSettings, saveSettings } from "./settings.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -104,7 +97,6 @@ describe("parseSettings", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "semi-formal" },
       diagnostics: "off",
-      historyRetention: "memory",
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
@@ -121,23 +113,6 @@ describe("parseSettings", () => {
   test.each(["on", "off"] as const)("keeps a saved diagnostics choice %j", (diagnostics) => {
     expect(parseSettings({ diagnostics }).diagnostics).toBe(diagnostics);
   });
-
-  test.each([undefined, null, "week", "MEMORY", 30, {}])(
-    "keeps history in memory only for a missing or invalid retention %j",
-    (historyRetention) => {
-      expect(parseSettings({ historyRetention }).historyRetention).toBe("memory");
-    },
-  );
-
-  test.each(["day", "month", "forever"] as const)(
-    "keeps a saved history retention %j",
-    (historyRetention) => {
-      expect(parseSettings({ historyRetention }).historyRetention).toBe(historyRetention);
-      expect(applyPatch(DEFAULT_SETTINGS, { historyRetention }).historyRetention).toBe(
-        historyRetention,
-      );
-    },
-  );
 
   test("drops the retired list and email options from an old settings file", () => {
     expect(parseSettings({ cleanup: { structure: "lists", context: "email" } }).cleanup).toEqual(
@@ -195,7 +170,6 @@ describe("applyPatch", () => {
       dictationLanguage: "en",
       cleanup: { enabled: false, styling: "formal" },
       diagnostics: "off",
-      historyRetention: "memory",
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
@@ -529,164 +503,5 @@ describe("microphone settings", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
-});
-
-describe("commitSettings", () => {
-  const DAY = 86_400_000;
-  const START = new Date(2026, 9, 14, 12, 0).getTime();
-  let dir: string;
-  let file: string;
-  const logs: string[] = [];
-  const log = (message: string) => logs.push(message);
-  const saved = async () =>
-    JSON.parse(await readFile(file, "utf8")) as { historyRetention: string };
-
-  beforeEach(async () => {
-    dir = await mkdtemp(NodePath.join(tmpdir(), "voice-commit-settings-"));
-    file = NodePath.join(dir, "settings.json");
-    logs.length = 0;
-  });
-
-  afterEach(async () => {
-    await chmod(NodePath.join(dir, "history"), 0o700).catch(() => {});
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  test("writes the settings first, and only then moves the history", async () => {
-    const previous = DEFAULT_SETTINGS;
-    const next = applyPatch(previous, { historyRetention: "month" });
-    const onDiskWhenMoved: string[] = [];
-    await commitSettings({
-      file,
-      previous,
-      next,
-      log,
-      moveHistory: async (retention) => {
-        onDiskWhenMoved.push(`${(await saved()).historyRetention} -> ${retention}`);
-      },
-    });
-    expect(onDiskWhenMoved).toEqual(["month -> month"]);
-    expect((await saved()).historyRetention).toBe("month");
-  });
-
-  test("a history that cannot move puts the settings back with one write", async () => {
-    const previous = applyPatch(DEFAULT_SETTINGS, { historyRetention: "forever" });
-    await saveSettings(file, previous);
-    const next = applyPatch(previous, { historyRetention: "day" });
-    disk.events.length = 0;
-    await expect(
-      commitSettings({
-        file,
-        previous,
-        next,
-        log,
-        moveHistory: () => Promise.reject(new Error("EACCES")),
-      }),
-    ).rejects.toThrow("Could not change where your history is kept. Try again.");
-    expect((await saved()).historyRetention).toBe("forever");
-    expect(disk.events.filter((event) => event.startsWith("rename"))).toHaveLength(2);
-  });
-
-  test("a settings write that fails never moves the history", async () => {
-    await mkdir(file);
-    const moved: string[] = [];
-    await expect(
-      commitSettings({
-        file,
-        previous: DEFAULT_SETTINGS,
-        next: applyPatch(DEFAULT_SETTINGS, { historyRetention: "month" }),
-        log,
-        moveHistory: async (retention) => {
-          moved.push(retention);
-        },
-      }),
-    ).rejects.toThrow("Could not save this setting. Try again.");
-    expect(moved).toEqual([]);
-  });
-
-  test("a change to another setting leaves the history alone", async () => {
-    const moved: string[] = [];
-    await commitSettings({
-      file,
-      previous: DEFAULT_SETTINGS,
-      next: applyPatch(DEFAULT_SETTINGS, { theme: "dark" }),
-      log,
-      moveHistory: async (retention) => {
-        moved.push(retention);
-      },
-    });
-    expect(moved).toEqual([]);
-    expect(loadSettings(file).theme).toBe("dark");
-  });
-
-  test("a shorter window whose settings cannot be written prunes nothing and shows nothing shorter", async () => {
-    const historyFile = NodePath.join(dir, "history.json");
-    const published: string[][] = [];
-    const history = createHistory({
-      file: historyFile,
-      retention: "forever",
-      log,
-      onChange: (state) => published.push(state.entries.map((entry) => entry.id)),
-      now: () => START,
-    });
-    history.remember(
-      { id: "old", raw: "old", text: "old", status: "notInserted" },
-      START - 2 * DAY,
-    );
-    history.remember({ id: "recent", raw: "recent", text: "recent", status: "notInserted" }, START);
-    await history.settled();
-    const previous = applyPatch(DEFAULT_SETTINGS, { historyRetention: "forever" });
-    await mkdir(file);
-    await expect(
-      commitSettings({
-        file,
-        previous,
-        next: applyPatch(previous, { historyRetention: "day" }),
-        log,
-        moveHistory: history.setRetention,
-      }),
-    ).rejects.toThrow("Could not save this setting. Try again.");
-    await history.settled();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(history.entries().map((entry) => entry.id)).toEqual(["recent", "old"]);
-    const onDisk = JSON.parse(await readFile(historyFile, "utf8")) as { entries: { id: string }[] };
-    expect(onDisk.entries.map((entry) => entry.id)).toEqual(["recent", "old"]);
-    expect(published).not.toContainEqual(["recent"]);
-    expect(history.state().retention).toBe("forever");
-  });
-
-  test("a switch from memory whose history cannot be saved leaves an earlier run's file alone", async () => {
-    const historyDir = NodePath.join(dir, "history");
-    await mkdir(historyDir);
-    const historyFile = NodePath.join(historyDir, "history.json");
-    const earlier = JSON.stringify({
-      version: 1,
-      entries: [{ id: "old", at: START - DAY, raw: "old", text: "old", status: "inserted" }],
-    });
-    await writeFile(historyFile, earlier);
-    const history = createHistory({
-      file: historyFile,
-      retention: "memory",
-      log,
-      onChange: () => {},
-      now: () => START,
-    });
-    history.remember({ id: "new", raw: "new", text: "new", status: "notInserted" }, START);
-    await saveSettings(file, DEFAULT_SETTINGS);
-    await chmod(historyDir, 0o500);
-    await expect(
-      commitSettings({
-        file,
-        previous: DEFAULT_SETTINGS,
-        next: applyPatch(DEFAULT_SETTINGS, { historyRetention: "month" }),
-        log,
-        moveHistory: history.setRetention,
-      }),
-    ).rejects.toThrow("Could not change where your history is kept. Try again.");
-    await chmod(historyDir, 0o700);
-    expect((await saved()).historyRetention).toBe("memory");
-    expect(history.state().retention).toBe("memory");
-    expect(await readFile(historyFile, "utf8")).toBe(earlier);
   });
 });

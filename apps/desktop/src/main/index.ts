@@ -32,7 +32,11 @@ import {
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { historySurvivesQuit, type HistoryEntry } from "../shared/history.ts";
+import {
+  historySurvivesQuit,
+  parseHistoryRetention,
+  type HistoryEntry,
+} from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
@@ -60,7 +64,7 @@ import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
-import { applyPatch, commitSettings, loadSettings } from "./settings.ts";
+import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import { createUpdates, parseReleaseConfig, parseRestartRequest } from "./updates.ts";
@@ -364,7 +368,6 @@ async function main() {
   let trayLatest: HistoryEntry | undefined;
   const history = createHistory({
     file: NodePath.join(userData, "history.json"),
-    retention: settings.historyRetention,
     log,
     onChange: (state) => {
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, state);
@@ -589,8 +592,8 @@ async function main() {
     followSettings(cleanup, state, previous);
   });
 
-  // A restart request holds settings still from the moment it starts draining them, so what it
-  // checks about the history is what the restart will leave behind.
+  // A restart request holds the history still from the moment it starts draining it, so what it
+  // checks is what the restart will leave behind.
   let restartRequested = false;
   function assertNotRestarting() {
     if (
@@ -602,21 +605,18 @@ async function main() {
   }
 
   // Patches run one at a time, and each applies only once it is on disk, so a failed save leaves
-  // the app and the hub on the last saved settings. The history moves after the settings landed
-  // and reports its own retention, so the hub and the restart guard never trust settings.json
-  // for what the file holds.
+  // the app and the hub on the last saved settings.
   async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
     assertNotRestarting();
     const saved = saving.then(async () => {
       const previous = store.state.settings;
       const next = applyPatch(previous, typeof patch === "function" ? patch(previous) : patch);
-      await commitSettings({
-        file: settingsFile,
-        previous,
-        next,
-        moveHistory: history.setRetention,
-        log,
-      });
+      try {
+        await saveSettings(settingsFile, next);
+      } catch (error) {
+        log(`settings: save failed (${String(error)})`);
+        throw new Error("Could not save this setting. Try again.", { cause: error });
+      }
       store.update((s) => ({ ...s, settings: next }));
       if (next.hotkey !== previous.hotkey)
         helper.send({ type: "hotkey.configure", key: next.hotkey });
@@ -683,7 +683,6 @@ async function main() {
       assertNotRestarting();
       restartRequested = true;
       try {
-        await saving;
         await history.settled();
         const { entries, retention, saveFailed } = history.state();
         const [latest] = entries;
@@ -766,6 +765,19 @@ async function main() {
       } catch (error) {
         log(`history: clear failed (${String(error)})`);
         throw new Error("Could not clear the saved history. Try again.", { cause: error });
+      }
+    });
+    hubCommands.handle(Channel.setHistoryRetention, async (_event, value: unknown) => {
+      const retention = parseHistoryRetention(value);
+      if (retention === null) return;
+      assertNotRestarting();
+      try {
+        await history.setRetention(retention);
+      } catch (error) {
+        log(`history: retention change failed (${String(error)})`);
+        throw new Error("Could not change where your history is kept. Try again.", {
+          cause: error,
+        });
       }
     });
     hubCommands.handle(Channel.signIn, () => {

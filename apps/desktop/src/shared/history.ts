@@ -1,6 +1,9 @@
 export const historyRetentions = ["memory", "day", "month", "forever"] as const;
 export type HistoryRetention = (typeof historyRetentions)[number];
 
+export const parseHistoryRetention = (value: unknown): HistoryRetention | null =>
+  historyRetentions.find((retention) => retention === value) ?? null;
+
 const DAY_MS = 86_400_000;
 
 export const retentionMs: Record<HistoryRetention, number> = {

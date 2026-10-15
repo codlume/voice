@@ -44,6 +44,7 @@ const voice: HubApi = {
   copyHistoryEntry: (id, version) => ipcRenderer.invoke(Channel.copyHistoryEntry, id, version),
   deleteHistoryEntry: (id) => ipcRenderer.invoke(Channel.deleteHistoryEntry, id),
   clearHistory: () => ipcRenderer.invoke(Channel.clearHistory),
+  setHistoryRetention: (retention) => ipcRenderer.invoke(Channel.setHistoryRetention, retention),
   signIn: () => ipcRenderer.invoke(Channel.signIn),
   signOut: () => ipcRenderer.invoke(Channel.signOut),
   submitSignInCode: (code) => ipcRenderer.invoke(Channel.submitSignInCode, code),

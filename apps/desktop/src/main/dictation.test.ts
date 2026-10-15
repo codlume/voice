@@ -91,7 +91,6 @@ function harness(opts: Options = {}) {
   });
   const history = createHistory({
     file: NodePath.join(tmpdir(), "voice-dictation-test", "history.json"),
-    retention: "memory",
     log: () => {},
     onChange: () => {},
   });

@@ -27,7 +27,6 @@ const fresh: Snapshot = {
     dictationLanguage: "en",
     cleanup: { enabled: true, styling: "semi-formal" },
     diagnostics: "off",
-    historyRetention: "memory",
     snippets: [],
     dictionary: [],
     zoomLevel: 0,

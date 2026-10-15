@@ -22,7 +22,12 @@ import type {
 } from "../shared/api.ts";
 import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
-import { droppedBy, type HistoryEntry, type HistoryRetention } from "../shared/history.ts";
+import {
+  droppedBy,
+  type HistoryEntry,
+  type HistoryRetention,
+  type HistoryState,
+} from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
@@ -555,10 +560,10 @@ export function SystemSettings({
 
 export function DataPrivacySettings({
   settings,
-  entries,
+  history: { entries, retention },
 }: {
   settings: Settings;
-  entries: readonly HistoryEntry[];
+  history: HistoryState;
 }) {
   const diagnosticsAction = useAction();
   const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
@@ -566,8 +571,11 @@ export function DataPrivacySettings({
   const clearAction = useAction();
   const [confirmingClear, setConfirmingClear] = useState(false);
   const historyAction = useAction();
-  const applyRetention = (historyRetention: HistoryRetention) =>
-    update(historyAction, { historyRetention });
+  const applyRetention = (to: HistoryRetention) =>
+    void historyAction.run(
+      () => hubApi().setHistoryRetention(to),
+      "Could not change where your history is kept.",
+    );
   // A window that would drop entries on screen asks first. Memory keeps the list until quit, and
   // a longer window drops nothing, so neither asks.
   const [shortening, setShortening] = useState<{ to: HistoryRetention; drops: number } | null>(
@@ -610,15 +618,11 @@ export function DataPrivacySettings({
           <Row
             title="Keep history"
             detail="Your transcripts on Home. Saved history stays on this Mac. Audio is never saved."
-            onReset={resetTo(
-              settings.historyRetention,
-              DEFAULT_SETTINGS.historyRetention,
-              changeRetention,
-            )}
+            onReset={resetTo(retention, "memory", changeRetention)}
           >
             <Select
               id="setting-history-retention"
-              value={settings.historyRetention}
+              value={retention}
               options={retentionOptions}
               onChange={changeRetention}
             />
@@ -647,7 +651,7 @@ export function DataPrivacySettings({
           onOpenChange={(open) => {
             if (!open) setShortening(null);
           }}
-          title={`Keep history for ${retentionLabel(shortening?.to ?? settings.historyRetention)}?`}
+          title={`Keep history for ${retentionLabel(shortening?.to ?? retention)}?`}
           description={shorteningDescription(shortening?.drops ?? 0)}
           actions={[
             {

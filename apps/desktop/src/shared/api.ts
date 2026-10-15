@@ -136,7 +136,6 @@ export type Settings = {
     styling: "casual" | "semi-casual" | "semi-formal" | "formal";
   };
   diagnostics: DiagnosticsConsent;
-  historyRetention: HistoryRetention;
   snippets: readonly Snippet[];
   dictionary: readonly DictionaryEntry[];
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
@@ -155,7 +154,6 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   cleanup: { enabled: true, styling: "semi-formal" },
   diagnostics: "off",
-  historyRetention: "memory",
   snippets: [],
   dictionary: [],
   zoomLevel: 0,
@@ -173,7 +171,6 @@ export type SettingsPatch = {
   theme?: Theme;
   cleanup?: Partial<Settings["cleanup"]>;
   diagnostics?: DiagnosticsConsent;
-  historyRetention?: HistoryRetention;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
   zoomLevel?: number;
@@ -243,6 +240,8 @@ export type HubApi = WindowApi & {
   copyHistoryEntry(id: string, version: TranscriptVersion): Promise<void>;
   deleteHistoryEntry(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  /** Rejects with a message for the user when the file could not be written or deleted. */
+  setHistoryRetention(retention: HistoryRetention): Promise<void>;
   /** Opens the system browser on the API. Resolves once the browser is open, not once signed in. */
   signIn(): Promise<void>;
   signOut(): Promise<void>;
@@ -288,6 +287,7 @@ export const Channel = {
   copyHistoryEntry: "voice:copyHistoryEntry",
   deleteHistoryEntry: "voice:deleteHistoryEntry",
   clearHistory: "voice:clearHistory",
+  setHistoryRetention: "voice:setHistoryRetention",
   signIn: "voice:signIn",
   signOut: "voice:signOut",
   submitSignInCode: "voice:submitSignInCode",
