@@ -90,6 +90,8 @@ export function createHistory(options: {
   // what it read, since the clear covers the file too.
   const pendingClears: Set<string>[] = [];
   let expiry: NodeJS.Timeout | null = null;
+  // The hub hears nothing before the launch read: an early list would look complete.
+  let ready = false;
   let published: { entries: readonly HistoryEntry[]; state: HistoryState } | null = null;
   let publishQueued = false;
   let syncQueued = false;
@@ -117,7 +119,7 @@ export function createHistory(options: {
   // Both run after the caller's turn and the I/O already queued, so a session's insert command
   // reaches the helper before the hub gets the list or the file gets serialized.
   function publishSoon() {
-    if (publishQueued) return;
+    if (publishQueued || !ready) return;
     publishQueued = true;
     setImmediate(() => {
       publishQueued = false;
@@ -303,6 +305,8 @@ export function createHistory(options: {
       log(`history: ${error.message}, so this run keeps it in memory`);
     }
     await sweepTemps();
+    ready = true;
+    publishSoon();
   });
 
   return {

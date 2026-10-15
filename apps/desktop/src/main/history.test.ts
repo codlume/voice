@@ -171,6 +171,7 @@ describe("history in memory", () => {
   test("tells the hub it keeps the history in memory", async () => {
     const { history, published } = harness("memory");
     history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
+    await history.settled();
     await settledTick();
     expect(published.at(-1)).toMatchObject({ retention: "memory", saveFailed: false });
     expect(history.state().retention).toBe("memory");
@@ -490,6 +491,22 @@ describe("saved history", () => {
     expect(published.at(-1)).toMatchObject({ retention: "day", saveFailed: false });
     expect(history.state().retention).toBe("day");
     expect((await saved()).retention).toBe("day");
+  });
+
+  test("tells the hub nothing until the file is read, then the complete state once", async () => {
+    execFileSync("mkfifo", [file]);
+    const { history, published } = harness();
+    history.remember({ id: "a", raw: "a", text: "a", status: "pending" }, START);
+    await settledTick();
+    await settledTick();
+    expect(published).toEqual([]);
+
+    await writeFile(file, envelope("forever", [savedEntry("old", START - HOUR)]));
+    await history.loaded();
+    await settledTick();
+    expect(published.map((state) => [ids(state.entries), state.retention])).toEqual([
+      [["a", "old"], "forever"],
+    ]);
   });
 
   test("the first state the hub asks for already holds the saved entries", async () => {
