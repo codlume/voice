@@ -10,7 +10,7 @@ import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
-  typeof import("@voice/cleanup"),
+  typeof import("@voice/cleanup/download"),
   "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
 > & {
   createS1Mini(options: { modelPath: string; onLost: (message: string) => void }): CleanupEngine;

@@ -18,7 +18,7 @@ export const S1_MINI = {
 
 type ModelSource = { baseUrl: string; file: string; bytes: number; sha256: string };
 
-export type DownloadOptions = {
+type DownloadOptions = {
   dir: string;
   onProgress?: ((fraction: number) => void) | undefined;
   signal?: AbortSignal | undefined;
