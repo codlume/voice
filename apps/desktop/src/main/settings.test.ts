@@ -87,6 +87,7 @@ describe("parseSettings", () => {
       }),
     ).toEqual({
       hotkey: "rightOption",
+      toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
       microphone: null,
@@ -160,6 +161,7 @@ describe("applyPatch", () => {
     const next = applyPatch(formal, { cleanup: { enabled: false } });
     expect(next).toEqual({
       hotkey: "fn",
+      toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
       microphone: null,
@@ -210,6 +212,38 @@ describe("applyPatch", () => {
 
   test("changes the hotkey alone", () => {
     expect(applyPatch(DEFAULT_SETTINGS, { hotkey: "rightCommand" }).hotkey).toBe("rightCommand");
+  });
+
+  test("leaves toggle dictation off by default and drops an unknown toggle key", () => {
+    expect(DEFAULT_SETTINGS.toggleHotkey).toBeNull();
+    expect(parseSettings({}).toggleHotkey).toBeNull();
+    expect(parseSettings({ toggleHotkey: "capsLock" }).toggleHotkey).toBeNull();
+  });
+
+  test("sets a toggle key, keeps it through other changes, and turns it off with an explicit null", () => {
+    const toggle = applyPatch(DEFAULT_SETTINGS, { toggleHotkey: "rightOption" });
+    expect(toggle).toEqual({ ...DEFAULT_SETTINGS, toggleHotkey: "rightOption" });
+    expect(applyPatch(toggle, { theme: "dark" }).toggleHotkey).toBe("rightOption");
+    expect(applyPatch(toggle, { hotkey: "rightCommand" })).toEqual({
+      ...DEFAULT_SETTINGS,
+      hotkey: "rightCommand",
+      toggleHotkey: "rightOption",
+    });
+    expect(applyPatch(toggle, { toggleHotkey: null })).toEqual(DEFAULT_SETTINGS);
+  });
+
+  test("never lets one key both hold and toggle", () => {
+    expect(parseSettings({ hotkey: "rightOption", toggleHotkey: "rightOption" })).toMatchObject({
+      hotkey: "rightOption",
+      toggleHotkey: null,
+    });
+    expect(applyPatch(DEFAULT_SETTINGS, { toggleHotkey: "fn" }).toggleHotkey).toBeNull();
+    const toggle = applyPatch(DEFAULT_SETTINGS, { toggleHotkey: "rightOption" });
+    expect(applyPatch(toggle, { hotkey: "rightOption" })).toEqual({
+      ...DEFAULT_SETTINGS,
+      hotkey: "rightOption",
+      toggleHotkey: null,
+    });
   });
 
   test("changes the theme alone and keeps other fields", () => {

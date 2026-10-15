@@ -17,6 +17,7 @@ const fresh: Snapshot = {
   models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
   settings: {
     hotkey: "fn",
+    toggleHotkey: null,
     updateChannel: "stable",
     theme: "system",
     microphone: null,

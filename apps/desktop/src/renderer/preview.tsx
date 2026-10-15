@@ -466,10 +466,14 @@ function fakeVoice(
       return () => clearInterval(timer);
     },
     updateSettings: async (patch) => {
+      const hotkey = patch.hotkey ?? snapshot.settings.hotkey;
+      const toggleHotkey =
+        patch.toggleHotkey === undefined ? snapshot.settings.toggleHotkey : patch.toggleHotkey;
       set({
         ...snapshot,
         settings: {
-          hotkey: patch.hotkey ?? snapshot.settings.hotkey,
+          hotkey,
+          toggleHotkey: toggleHotkey === hotkey ? null : toggleHotkey,
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           dictationLanguage: patch.dictationLanguage ?? snapshot.settings.dictationLanguage,
           theme: patch.theme ?? snapshot.settings.theme,

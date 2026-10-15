@@ -124,6 +124,8 @@ export type MicrophoneTest =
 export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
+  /** Press once to start, press again to stop. Never equal to `hotkey`. */
+  toggleHotkey: Hotkey | null;
   muteWhileDictating: boolean;
   copyToClipboard: boolean;
   showInDock: boolean;
@@ -145,6 +147,7 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   microphone: null,
   hotkey: "fn",
+  toggleHotkey: null,
   muteWhileDictating: false,
   copyToClipboard: false,
   showInDock: true,
@@ -162,6 +165,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export type SettingsPatch = {
   microphone?: Microphone | null;
   hotkey?: Hotkey;
+  toggleHotkey?: Hotkey | null;
   muteWhileDictating?: boolean;
   copyToClipboard?: boolean;
   showInDock?: boolean;
