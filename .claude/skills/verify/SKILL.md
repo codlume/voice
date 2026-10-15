@@ -121,3 +121,4 @@ These are scripts the repo already has. Run them when the change is in their are
 - `node scripts/models-smoke.mjs` covers model uninstall and reinstall from the Models page.
 - `node scripts/quit-smoke.mjs` quits during model loading and during cleanup.
 - `node scripts/idle-footprint.mjs` reports idle CPU and memory.
+- `node scripts/cleanup-lag-smoke.mjs` measures main-process stalls while the cleanup model loads.
