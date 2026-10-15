@@ -1,4 +1,4 @@
-import type { HistoryEntry } from "../shared/history.ts";
+import { retentionMs, type HistoryEntry, type HistoryRetention } from "../shared/history.ts";
 import { dayKey, type DayKey } from "../shared/insights.ts";
 
 export type HistoryDay = { day: DayKey; label: string; entries: readonly HistoryEntry[] };
@@ -69,4 +69,14 @@ export function limitDays(
 export function msUntilNextDay(now: Date): number {
   const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
   return next.getTime() - now.getTime();
+}
+
+/** How many entries a window would drop at `now`. The edge counts as dropped, as main prunes it. */
+export function droppedBy(
+  entries: readonly HistoryEntry[],
+  retention: HistoryRetention,
+  now: number,
+): number {
+  const cutoff = now - retentionMs[retention];
+  return entries.filter((entry) => entry.at <= cutoff).length;
 }

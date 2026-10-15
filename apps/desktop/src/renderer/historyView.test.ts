@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import type { HistoryEntry } from "../shared/history.ts";
 import { dayKey, type DayKey } from "../shared/insights.ts";
 import {
+  droppedBy,
   historyDays,
   limitDays,
   msUntilNextDay,
@@ -111,5 +112,23 @@ describe("msUntilNextDay", () => {
     expect([next.getDate(), next.getHours(), next.getMinutes(), next.getSeconds()]).toEqual([
       15, 0, 0, 1,
     ]);
+  });
+});
+
+describe("droppedBy", () => {
+  const entries = [
+    entry("now", NOW, "Now."),
+    entry("day-edge", new Date(NOW.getTime() - 24 * 3_600_000), "A day old."),
+    entry("week", new Date(NOW.getTime() - 7 * 24 * 3_600_000), "A week old."),
+    entry("quarter", new Date(NOW.getTime() - 90 * 24 * 3_600_000), "A quarter old."),
+  ];
+
+  test("counts the entries a window drops, with the edge of the window dropped like main does", () => {
+    const now = NOW.getTime();
+    expect(droppedBy(entries, "day", now)).toBe(3);
+    expect(droppedBy(entries, "month", now)).toBe(1);
+    expect(droppedBy(entries, "forever", now)).toBe(0);
+    expect(droppedBy(entries, "memory", now)).toBe(0);
+    expect(droppedBy([], "day", now)).toBe(0);
   });
 });

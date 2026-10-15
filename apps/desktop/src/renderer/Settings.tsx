@@ -23,7 +23,7 @@ import type {
 import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import {
-  droppedBy,
+  historyRetentions,
   type HistoryEntry,
   type HistoryRetention,
   type HistoryState,
@@ -32,6 +32,7 @@ import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { droppedBy } from "./historyView.ts";
 import { hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
@@ -104,16 +105,19 @@ export const styles = stylex.create({
 });
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
-const retentionOptions = [
-  { value: "memory", label: "Until I quit Voice" },
-  { value: "day", label: "24 hours" },
-  { value: "month", label: "30 days" },
-  { value: "forever", label: "Forever" },
-] as const satisfies readonly { value: HistoryRetention; label: string }[];
-const retentionLabel = (retention: HistoryRetention) =>
-  retentionOptions.find((option) => option.value === retention)?.label ?? retention;
-const dropsNow = (entries: readonly HistoryEntry[], retention: HistoryRetention) =>
-  droppedBy(entries, retention, Date.now());
+const retentionLabels: Record<HistoryRetention, string> = {
+  memory: "Until I quit Voice",
+  day: "24 hours",
+  month: "30 days",
+  forever: "Forever",
+};
+const retentionOptions = historyRetentions.map((value) => ({
+  value,
+  label: retentionLabels[value],
+}));
+// Outside the component so the purity lint sees the clock read happens on a click, not a render.
+const dropsNow = (entries: readonly HistoryEntry[], to: HistoryRetention) =>
+  droppedBy(entries, to, Date.now());
 const shorteningDescription = (drops: number) =>
   `${drops === 1 ? "1 older transcript is" : `${drops} older transcripts are`} deleted from your history. This cannot be undone.`;
 const updateChannels = [
@@ -560,7 +564,7 @@ export function SystemSettings({
 
 export function DataPrivacySettings({
   settings,
-  history: { entries, retention },
+  history,
 }: {
   settings: Settings;
   history: HistoryState;
@@ -570,23 +574,6 @@ export function DataPrivacySettings({
     update(diagnosticsAction, { diagnostics });
   const clearAction = useAction();
   const [confirmingClear, setConfirmingClear] = useState(false);
-  const historyAction = useAction();
-  const applyRetention = (to: HistoryRetention) =>
-    void historyAction.run(
-      () => hubApi().setHistoryRetention(to),
-      "Could not change where your history is kept.",
-    );
-  // A window that would drop entries on screen asks first. Memory keeps the list until quit, and
-  // a longer window drops nothing, so neither asks.
-  const [shortening, setShortening] = useState<{ to: HistoryRetention; drops: number } | null>(
-    null,
-  );
-  const changeRetention = (historyRetention: HistoryRetention) => {
-    const drops = dropsNow(entries, historyRetention);
-    if (drops > 0) setShortening({ to: historyRetention, drops });
-    else applyRetention(historyRetention);
-  };
-  const [confirmingClearHistory, setConfirmingClearHistory] = useState(false);
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
@@ -613,71 +600,7 @@ export function DataPrivacySettings({
         )}
       </Section>
 
-      <Section label="History">
-        <Card>
-          <Row
-            title="Keep history"
-            detail="Your transcripts on Home. Saved history stays on this Mac. Audio is never saved."
-            onReset={resetTo(retention, "memory", changeRetention)}
-          >
-            <Select
-              id="setting-history-retention"
-              value={retention}
-              options={retentionOptions}
-              onChange={changeRetention}
-            />
-          </Row>
-          <Row
-            title="Clear history"
-            detail="Deletes every transcript in your history, in memory and on this Mac."
-            onReset={undefined}
-          >
-            <Button
-              variant="secondary"
-              aria-label="Clear history"
-              onClick={() => setConfirmingClearHistory(true)}
-            >
-              Clear…
-            </Button>
-          </Row>
-        </Card>
-        {historyAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
-            {historyAction.error}
-          </p>
-        )}
-        <ConfirmDialog
-          open={shortening !== null}
-          onOpenChange={(open) => {
-            if (!open) setShortening(null);
-          }}
-          title={`Keep history for ${retentionLabel(shortening?.to ?? retention)}?`}
-          description={shorteningDescription(shortening?.drops ?? 0)}
-          actions={[
-            {
-              label: "Delete older",
-              variant: "destructive",
-              onClick: () => {
-                if (shortening) applyRetention(shortening.to);
-              },
-            },
-          ]}
-        />
-        <ConfirmDialog
-          open={confirmingClearHistory}
-          onOpenChange={setConfirmingClearHistory}
-          title="Clear history?"
-          description="Every transcript in your history is deleted. This cannot be undone."
-          actions={[
-            {
-              label: "Clear",
-              variant: "destructive",
-              onClick: () =>
-                void historyAction.run(() => hubApi().clearHistory(), "Could not clear history."),
-            },
-          ]}
-        />
-      </Section>
+      <HistorySection history={history} />
 
       <Section label="Insights">
         <Card>
@@ -716,6 +639,89 @@ export function DataPrivacySettings({
         />
       </Section>
     </div>
+  );
+}
+
+// A shorter window that would drop entries on screen asks first. The dialog keeps what it asked
+// while it fades out, so it stays mounted with `open: false` rather than losing its content.
+type Shortening = { open: boolean; to: HistoryRetention; drops: number };
+
+function HistorySection({ history: { entries, retention } }: { history: HistoryState }) {
+  const action = useAction();
+  const apply = (to: HistoryRetention) =>
+    void action.run(
+      () => hubApi().setHistoryRetention(to),
+      "Could not change where your history is kept.",
+    );
+  const [shortening, setShortening] = useState<Shortening | null>(null);
+  const change = (to: HistoryRetention) => {
+    const drops = dropsNow(entries, to);
+    if (drops > 0) setShortening({ open: true, to, drops });
+    else apply(to);
+  };
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  return (
+    <Section label="History">
+      <Card>
+        <Row
+          title="Keep history"
+          detail="Your transcripts on Home. Saved history stays on this Mac. Audio is never saved."
+          disabled={action.pending}
+          onReset={resetTo(retention, "memory", change)}
+        >
+          <Select
+            id="setting-history-retention"
+            value={retention}
+            options={retentionOptions}
+            disabled={action.pending}
+            onChange={change}
+          />
+        </Row>
+        <Row
+          title="Clear history"
+          detail="Deletes every transcript in your history, in memory and on this Mac."
+          onReset={undefined}
+        >
+          <Button
+            variant="secondary"
+            aria-label="Clear history"
+            onClick={() => setConfirmingClear(true)}
+          >
+            Clear…
+          </Button>
+        </Row>
+      </Card>
+      {action.error && (
+        <p role="alert" {...stylex.props(styles.error)}>
+          {action.error}
+        </p>
+      )}
+      {shortening && (
+        <ConfirmDialog
+          open={shortening.open}
+          onOpenChange={(open) => setShortening({ ...shortening, open })}
+          title={`Keep history for ${retentionLabels[shortening.to]}?`}
+          description={shorteningDescription(shortening.drops)}
+          actions={[
+            { label: "Delete older", variant: "destructive", onClick: () => apply(shortening.to) },
+          ]}
+        />
+      )}
+      <ConfirmDialog
+        open={confirmingClear}
+        onOpenChange={setConfirmingClear}
+        title="Clear history?"
+        description="Every transcript in your history is deleted. This cannot be undone."
+        actions={[
+          {
+            label: "Clear",
+            variant: "destructive",
+            onClick: () =>
+              void action.run(() => hubApi().clearHistory(), "Could not clear history."),
+          },
+        ]}
+      />
+    </Section>
   );
 }
 
