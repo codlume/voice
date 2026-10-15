@@ -182,7 +182,7 @@ function Row({
   );
 }
 
-export function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
   return (
     <section aria-labelledby={id} {...stylex.props(styles.section)}>
@@ -197,22 +197,15 @@ export function Section({ label, children }: { label: string; children: ReactNod
 function Segmented<T extends string>({
   options,
   value,
-  disabled = false,
   onChange,
 }: {
   options: readonly { value: T; label: string }[];
   value: T;
-  disabled?: boolean;
   onChange: (value: T) => void;
 }) {
   const id = useId();
   return (
-    <RadioGroup<T>
-      value={value}
-      disabled={disabled}
-      onValueChange={onChange}
-      {...stylex.props(styles.segments)}
-    >
+    <RadioGroup<T> value={value} onValueChange={onChange} {...stylex.props(styles.segments)}>
       {options.map((option) => (
         // Inside a Field, Base UI labels each radio with the field's label, so each option points
         // at its own text to keep its name.

@@ -60,7 +60,7 @@ export function updateCard(status: UpdateStatus, actionError: string): UpdateCar
   return update && { kind: "release", update };
 }
 
-export type UpdateButton = { action: "check" | "download" | "restart" | null; label: string };
+type UpdateButton = { action: "check" | "download" | "restart" | null; label: string };
 
 export function updateButton(status: UpdateStatus, session: PillState): UpdateButton {
   switch (status.kind) {
