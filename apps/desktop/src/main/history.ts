@@ -264,7 +264,7 @@ export function createHistory(options: {
     await rm(file, { force: true });
   }
 
-  /** The file's window and entries, null when there is no file, and LeftAlone for one to keep off. */
+  /** The file's window and entries, null when there is no file. Throws LeftAlone for one not to touch. */
   async function load(): Promise<Envelope | null> {
     let text: string;
     try {
@@ -415,7 +415,7 @@ function parseEnvelope(raw: unknown): Envelope {
   if (typeof version === "number" && version > VERSION) {
     throw new LeftAlone(`the saved history is from a newer Voice (version ${version})`);
   }
-  if (version !== VERSION) throw new LeftAlone("the saved history has no version");
+  if (version !== VERSION) throw new LeftAlone("the saved history has no version this Voice knows");
   if (!isSavedRetention(retention)) throw new LeftAlone("the saved history names no window");
   return { retention, entries: parseEntries(entries) };
 }
