@@ -1,12 +1,13 @@
 # Dictation
 
-The user holds the hotkey (`fn` by default), speaks, and releases. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape while holding cancels the session without inserting.
+The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle key set, the user can instead press it once to start and again to stop. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape while holding cancels the session without inserting.
 
 ## Sub-features
 
 - `dictate-insert`: speech becomes text in the focused field. Outcome `inserted` with method `accessibility`, or `paste` as the fallback.
 - `dictate-cleanup`: with cleanup on, the inserted text is the cleaned version, and the raw transcript is kept in `latest.raw`.
 - `dictate-raw`: with cleanup off, the inserted text equals the raw transcript.
+- `dictate-toggle`: a press of the toggle key starts listening, its release does nothing, and the next press stops and inserts.
 - `dictate-cancel`: Escape during listening returns to idle and inserts nothing.
 - `dictate-too-short`: a press-and-release with almost no audio ends as `tooShort` and inserts nothing.
 - `dictate-empty`: silence ends as `empty` and inserts nothing.
@@ -17,6 +18,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. The Flow Bar 
 
 - Hold the configured key (`fn`, Right Option, or Right Command) anywhere in macOS. Release to finish, or press Escape to cancel.
 - Choose the key under Settings > Shortcuts > `Hold to talk`.
+- Optionally choose a second key under Settings > Shortcuts > `Toggle dictation` (Off by default). Press it once to start and again to stop.
 
 ## Driving it with voice-verify
 
@@ -25,6 +27,7 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - **Insert with cleanup.** `vv dictate short.wav`. The output has `outcome.kind` `inserted`, and `inserted` contains "Anna" and "Thursday" and starts with a capital. The timing line has `cleanupMs`.
 - **Long dictation with false starts.** `vv dictate long.wav`. The output has `latest.raw` containing "um" or "uh", and `latest.text` without them.
 - **Raw insert.** Turn cleanup off as in [Style](./style.md), then run `vv dictate short.wav`. The output has `inserted === latest.raw` and no `cleanupMs`.
+- **Toggle.** Choose a key under `Toggle dictation` (`click css:#setting-toggle-hotkey`, then `click "Right Option"`), then `vv dictate short.wav --key=toggle`. The output has `mode` `toggle` and `outcome.kind` `inserted`.
 - **Cancel.** `vv dictate short.wav --end=escape`. The output has `outcome` `idle` and an empty `inserted`.
 - **Too short.** `vv dictate short.wav --end=immediate`. The output has `outcome.kind` `tooShort` and an empty `inserted`.
 - **Silence.** `vv dictate silence.wav`. The output has `outcome.kind` `empty` and an empty `inserted`.
