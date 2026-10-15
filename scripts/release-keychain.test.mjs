@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { appBuilderRequire } from "./release-check-app.mjs";
 
-const require = createRequire(
-  realpathSync(
-    new URL("../apps/desktop/node_modules/electron-builder/package.json", import.meta.url),
-  ),
-);
-const macCodeSign = require("app-builder-lib/out/codeSign/macCodeSign.js");
+const macCodeSign = appBuilderRequire()("app-builder-lib/out/codeSign/macCodeSign.js");
 
 test("release keychain exports an electron-builder qualifier that selects the imported identity", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "voice-release-keychain-test-"));
