@@ -208,6 +208,9 @@ export type RestartRequest = { choice: RestartChoice; latest: string | null };
 
 export type TranscriptVersion = "text" | "raw";
 
+export const parseTranscriptVersion = (value: unknown): TranscriptVersion | null =>
+  value === "text" || value === "raw" ? value : null;
+
 type WindowApi = {
   diagnosticsStartedAtLaunch: boolean;
   onLevel(listener: (level: number) => void): () => void;

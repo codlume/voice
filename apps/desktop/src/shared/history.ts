@@ -60,6 +60,9 @@ export const atRiskOnQuit = ({
     ? latest
     : null;
 
+/** What a copy of an entry puts on the clipboard. Never an empty string: raw stands in for it. */
+export const copyText = (entry: HistoryEntry) => entry.text || entry.raw;
+
 /** How many entries a retention window would drop at `now`. */
 export function droppedBy(
   entries: readonly HistoryEntry[],

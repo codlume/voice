@@ -22,6 +22,7 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
+  parseTranscriptVersion,
   toPillSnapshot,
   type HubApi,
   type LoginItem,
@@ -32,7 +33,7 @@ import {
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { parseHistoryRetention, type HistoryEntry } from "../shared/history.ts";
+import { copyText, parseHistoryRetention } from "../shared/history.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
@@ -365,16 +366,17 @@ async function main() {
     ],
     log,
   });
-  // The tray only shows the newest transcript, so it is rebuilt for a change to that one alone.
-  let trayLatest: HistoryEntry | undefined;
+  // The tray reads the newest entry when clicked, so it is rebuilt only when it goes from none to
+  // some or back.
+  let trayHasEntry = false;
   const history = createHistory({
     file: NodePath.join(userData, "history.json"),
     log,
     onChange: (state) => {
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, state);
-      const [latest] = state.entries;
-      if (latest?.id === trayLatest?.id && latest?.text === trayLatest?.text) return;
-      trayLatest = latest;
+      const hasEntry = state.entries.length > 0;
+      if (hasEntry === trayHasEntry) return;
+      trayHasEntry = hasEntry;
       refreshTray(store.state);
     },
   });
@@ -500,7 +502,6 @@ async function main() {
       void account.refresh();
       history.expire();
     });
-    hub.on("show", history.expire);
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
     hub.on("minimize", syncPermissionPolling);
@@ -545,15 +546,15 @@ async function main() {
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
   function refreshTray(state: AppState) {
-    const [latest] = history.entries();
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Voice", click: showHub },
         {
           label: "Copy last transcript",
-          enabled: latest !== undefined,
+          enabled: trayHasEntry,
           click: () => {
-            if (latest) clipboard.writeText(latest.text || latest.raw);
+            const [latest] = history.entries();
+            if (latest) clipboard.writeText(copyText(latest));
           },
         },
         { type: "separator" },
@@ -691,7 +692,7 @@ async function main() {
         const [latest] = state.entries;
         await updates.restart(
           request.choice === "copyTranscriptAndRestart" && latest
-            ? () => clipboard.writeText(latest.text || latest.raw)
+            ? () => clipboard.writeText(copyText(latest))
             : undefined,
         );
       } finally {
@@ -735,10 +736,12 @@ async function main() {
     });
     // The first list the hub sees is the loaded one, so an empty list means empty, not pending.
     hubCommands.handle(Channel.getHistory, () => history.loaded().then(history.state));
-    hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, version: unknown) => {
+    hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, value: unknown) => {
+      const version = parseTranscriptVersion(value);
+      if (typeof id !== "string" || version === null) return;
       const entry = history.entries().find((candidate) => candidate.id === id);
       if (!entry) throw new Error("This transcript is no longer in your history.");
-      clipboard.writeText(version === "raw" ? entry.raw : entry.text);
+      clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
     });
     hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
       if (typeof id !== "string") return;
