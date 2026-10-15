@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from "react";
 
-import type { Hotkey } from "../shared/api.ts";
+import { dictationKeys, type DictationKeySettings } from "./hotkeys.ts";
 
 type ShortcutEvent = Pick<
   KeyboardEvent,
@@ -56,23 +56,19 @@ export function useShortcuts(bindings: readonly Binding[]) {
   }, []);
 }
 
-export function showsHints(
-  event: ShortcutEvent,
-  hotkey: Hotkey,
-  toggleHotkey: Hotkey | null,
-): boolean {
-  const dictates = hotkey === "rightCommand" || toggleHotkey === "rightCommand";
-  const pressesDictationKey = dictates && event.code === "MetaRight";
+export function showsHints(event: ShortcutEvent, settings: DictationKeySettings): boolean {
+  const pressesDictationKey =
+    event.code === "MetaRight" && dictationKeys(settings).includes("rightCommand");
   // Some input paths report metaKey false on the Meta keydown itself, so check the key.
   return event.key === "Meta" && noOtherModifiers(event) && !pressesDictationKey;
 }
 
-export function useCommandHeld(hotkey: Hotkey, toggleHotkey: Hotkey | null): boolean {
+export function useCommandHeld({ hotkey, toggleHotkey }: DictationKeySettings): boolean {
   const [held, setHeld] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      setHeld(showsHints(event, hotkey, toggleHotkey));
+      setHeld(showsHints(event, { hotkey, toggleHotkey }));
     }
     function onKeyUp(event: KeyboardEvent) {
       if (event.key === "Meta") setHeld(false);

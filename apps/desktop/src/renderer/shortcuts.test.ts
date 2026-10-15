@@ -71,23 +71,32 @@ test("shortcut hints", () => {
 });
 
 describe("showsHints", () => {
+  const fnOnly = { hotkey: "fn", toggleHotkey: null } as const;
+
   test("⌘ on its own shows hints", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn", null)).toBe(true);
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", null)).toBe(true);
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", "rightOption")).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), fnOnly)).toBe(true);
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), fnOnly)).toBe(true);
+    expect(
+      showsHints(keyEvent("Meta", { code: "MetaRight" }), {
+        hotkey: "fn",
+        toggleHotkey: "rightOption",
+      }),
+    ).toBe(true);
   });
 
   test("⌘ with another modifier does not", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft", shift: true }), "fn", null)).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft", shift: true }), fnOnly)).toBe(false);
   });
 
   test("holding Right ⌘ to dictate does not", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "rightCommand", null)).toBe(false);
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "rightCommand", null)).toBe(true);
+    const holdsRightCommand = { hotkey: "rightCommand", toggleHotkey: null } as const;
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), holdsRightCommand)).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), holdsRightCommand)).toBe(true);
   });
 
   test("pressing Right ⌘ to toggle dictation does not", () => {
-    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), "fn", "rightCommand")).toBe(false);
-    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), "fn", "rightCommand")).toBe(true);
+    const togglesRightCommand = { hotkey: "fn", toggleHotkey: "rightCommand" } as const;
+    expect(showsHints(keyEvent("Meta", { code: "MetaRight" }), togglesRightCommand)).toBe(false);
+    expect(showsHints(keyEvent("Meta", { code: "MetaLeft" }), togglesRightCommand)).toBe(true);
   });
 });
