@@ -221,9 +221,6 @@ export function createUpdates({
   }
 
   return {
-    get snapshot() {
-      return snapshot;
-    },
     start() {
       if (!enabled || startupTimer || pollTimer || disposed) return;
       startupTimer = setTimeout(() => {

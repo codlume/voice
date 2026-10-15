@@ -47,18 +47,19 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   const canRestart = vi.fn(() => true);
   const prepareRestart = vi.fn(async () => {});
   const onRestartFailure = vi.fn();
+  const initial: UpdatesSnapshot = {
+    version: options.nightly ? "0.0.3-nightly.8" : "0.0.1",
+    installedChannel: options.nightly ? "nightly" : "stable",
+    channel: options.nightly ? "nightly" : "stable",
+    status: options.disabled ? { kind: "disabled", reason: "Development" } : { kind: "idle" },
+  };
   const updates = createUpdates({
     loadEngine,
     release: {
       channel: options.nightly ? "nightly" : "stable",
       updateUrl: "https://downloads.example.com",
     },
-    initial: {
-      version: options.nightly ? "0.0.3-nightly.8" : "0.0.1",
-      installedChannel: options.nightly ? "nightly" : "stable",
-      channel: options.nightly ? "nightly" : "stable",
-      status: options.disabled ? { kind: "disabled", reason: "Development" } : { kind: "idle" },
-    },
+    initial,
     onChange: (snapshot) => snapshots.push(snapshot),
     canRestart,
     prepareRestart,
@@ -69,6 +70,7 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
     loadEngine,
     snapshots,
     updates,
+    status: () => (snapshots.at(-1) ?? initial).status,
     canRestart,
     prepareRestart,
     onRestartFailure,
@@ -170,7 +172,7 @@ describe("restart requests", () => {
 describe("updates", () => {
   test("automatically checks, downloads only when asked, and never installs on normal quit", async () => {
     vi.useFakeTimers();
-    const { updates, engine } = setup();
+    const { updates, engine, status } = setup();
     engine.checkForUpdates.mockResolvedValue(
       result(
         "0.0.2",
@@ -182,10 +184,10 @@ describe("updates", () => {
     updates.start();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(updates.snapshot.status).toEqual({ kind: "available", version: "0.0.2", notes });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes });
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
     await updates.download();
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes });
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
     expect(engine.autoDownload).toBe(false);
     expect(engine.autoInstallOnAppQuit).toBe(false);
@@ -222,19 +224,19 @@ describe("updates", () => {
   });
 
   test("an updater that fails to load reports a failed check", async () => {
-    const { updates, loadEngine } = setup();
+    const { updates, loadEngine, status } = setup();
     loadEngine.mockImplementationOnce(() => {
       throw new Error("Cannot find module 'electron-updater'");
     });
     await updates.check();
-    expect(updates.snapshot.status.kind).toBe("failed");
+    expect(status().kind).toBe("failed");
     await updates.check();
-    expect(updates.snapshot.status.kind).toBe("available");
+    expect(status().kind).toBe("available");
   });
 
   test("an available update waits for the user and download acts only on it", async () => {
     vi.useFakeTimers();
-    const { updates, engine } = setup();
+    const { updates, engine, status } = setup();
     await updates.download();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     updates.start();
@@ -243,24 +245,24 @@ describe("updates", () => {
     await updates.check();
     expect(engine.checkForUpdates).toHaveBeenCalledOnce();
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
-    expect(updates.snapshot.status).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
     await updates.download();
     await updates.download();
     await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
-    expect(updates.snapshot.status.kind).toBe("ready");
+    expect(status().kind).toBe("ready");
     expect(engine.checkForUpdates).toHaveBeenCalledOnce();
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
     updates.dispose();
   });
 
   test("download fetches the update the user saw without checking the feed again", async () => {
-    const { updates, engine, snapshots } = setup();
+    const { updates, engine, snapshots, status } = setup();
     await updates.check();
     engine.checkForUpdates.mockResolvedValue(result("0.0.3"));
     const before = snapshots.length;
     await updates.download();
     expect(snapshots.slice(before).map((s) => s.status.kind)).toEqual(["downloading", "ready"]);
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
     expect(engine.checkForUpdates).toHaveBeenCalledOnce();
   });
 
@@ -282,7 +284,7 @@ describe("updates", () => {
   });
 
   test("switching to Stable can replace a newer installed Nightly", async () => {
-    const { updates, engine } = setup({ nightly: true });
+    const { updates, engine, status } = setup({ nightly: true });
     await updates.setChannel("stable");
     expect(engine.allowDowngrade).toBe(true);
     expect(engine.allowPrerelease).toBe(false);
@@ -292,12 +294,12 @@ describe("updates", () => {
       channel: "latest",
       useMultipleRangeRequest: false,
     });
-    expect(updates.snapshot.status).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
   });
 
   test("coalesces checks and drains an old download before changing feeds", async () => {
-    const { updates, engine, snapshots } = setup();
+    const { updates, engine, snapshots, status } = setup();
     const download = Promise.withResolvers<string[]>();
     engine.downloadUpdate.mockReturnValueOnce(download.promise);
     await updates.check();
@@ -308,17 +310,17 @@ describe("updates", () => {
     engine.checkForUpdates.mockResolvedValue(result("0.0.3-nightly.9"));
     const switching = updates.setChannel("nightly");
     engine.emit("download-progress", { percent: 99 });
-    expect(updates.snapshot.status.kind).toBe("checking");
+    expect(status().kind).toBe("checking");
     expect(engine.setFeedURL).toHaveBeenCalledOnce();
     download.resolve(["Voice.zip"]);
     await Promise.all([first, duplicate, switching]);
-    expect(updates.snapshot.status).toEqual({
+    expect(status()).toEqual({
       kind: "available",
       version: "0.0.3-nightly.9",
       notes: [],
     });
     await updates.download();
-    expect(updates.snapshot.status).toEqual({
+    expect(status()).toEqual({
       kind: "ready",
       version: "0.0.3-nightly.9",
       notes: [],
@@ -335,26 +337,26 @@ describe("updates", () => {
   });
 
   test("a failed download can be retried and a ready update survives duplicate checks", async () => {
-    const { updates, engine } = setup();
+    const { updates, engine, status } = setup();
     engine.downloadUpdate.mockRejectedValueOnce(new Error("offline"));
     await updates.check();
     await updates.download();
-    expect(updates.snapshot.status).toEqual({
+    expect(status()).toEqual({
       kind: "failed",
       message: "The update could not be downloaded. Check your connection and try again.",
     });
     await updates.check();
-    expect(updates.snapshot.status.kind).toBe("available");
+    expect(status().kind).toBe("available");
     await updates.download();
     await updates.check();
     await updates.download();
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
     expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
     expect(engine.downloadUpdate).toHaveBeenCalledTimes(2);
   });
 
   test("carries the feed's release notes from the available update to the ready one", async () => {
-    const { updates, engine, snapshots } = setup();
+    const { updates, engine, snapshots, status } = setup();
     engine.checkForUpdates.mockResolvedValue(
       result(
         "0.0.2",
@@ -364,7 +366,7 @@ describe("updates", () => {
     );
     await updates.check();
     const notes = ["feat: add a setting by @someone in #120"];
-    expect(updates.snapshot.status).toEqual({ kind: "available", version: "0.0.2", notes });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes });
     await updates.download();
     expect(snapshots.find((s) => s.status.kind === "downloading")?.status).toEqual({
       kind: "downloading",
@@ -372,38 +374,38 @@ describe("updates", () => {
       notes,
       percent: 0,
     });
-    expect(updates.snapshot.status).toEqual({ kind: "ready", version: "0.0.2", notes });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes });
   });
 
   test("links the release page only while an update is pending", async () => {
-    const { updates } = setup();
+    const { updates, status } = setup();
     expect(updates.releaseUrl()).toBeNull();
     await updates.check();
     expect(updates.releaseUrl()).toBe("https://github.com/codlume/voice/releases/tag/v0.0.2");
     await updates.download();
     expect(updates.releaseUrl()).toBe("https://github.com/codlume/voice/releases/tag/v0.0.2");
     await updates.restart();
-    expect(updates.snapshot.status.kind).toBe("installing");
+    expect(status().kind).toBe("installing");
     expect(updates.releaseUrl()).toBeNull();
   });
 
   test("rejects a wrong-channel feed before downloading", async () => {
-    const { updates, engine } = setup();
+    const { updates, engine, status } = setup();
     engine.checkForUpdates.mockResolvedValue(result("0.0.2-nightly.1"));
     await updates.check();
-    expect(updates.snapshot.status.kind).toBe("failed");
+    expect(status().kind).toBe("failed");
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
   });
 
   test("does not install during dictation", async () => {
-    const { updates, engine, canRestart, prepareRestart } = setup();
+    const { updates, engine, canRestart, prepareRestart, status } = setup();
     await updates.check();
     await updates.download();
     canRestart.mockReturnValue(false);
     await expect(updates.restart()).rejects.toThrow("Finish dictation");
     expect(prepareRestart).not.toHaveBeenCalled();
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
-    expect(updates.snapshot.status.kind).toBe("ready");
+    expect(status().kind).toBe("ready");
   });
 
   test("runs the pre-install step only once a restart is allowed", async () => {
@@ -421,7 +423,7 @@ describe("updates", () => {
   });
 
   test("install waits for native shutdown exactly once", async () => {
-    const { updates, engine, prepareRestart } = setup();
+    const { updates, engine, prepareRestart, status } = setup();
     await updates.check();
     await updates.download();
     const stopped = Promise.withResolvers<void>();
@@ -434,25 +436,25 @@ describe("updates", () => {
     stopped.resolve();
     await restarting;
     expect(engine.quitAndInstall).toHaveBeenCalledOnce();
-    expect(updates.snapshot.status.kind).toBe("installing");
+    expect(status().kind).toBe("installing");
   });
 
   test("failed shutdown and native installation errors remain visible", async () => {
-    const { updates, engine, prepareRestart, onRestartFailure } = setup();
+    const { updates, engine, prepareRestart, onRestartFailure, status } = setup();
     await updates.check();
     await updates.download();
     prepareRestart.mockRejectedValueOnce(new Error("timeout"));
     await expect(updates.restart()).rejects.toThrow("timeout");
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
-    expect(updates.snapshot.status.kind).toBe("failed");
+    expect(status().kind).toBe("failed");
     expect(onRestartFailure).toHaveBeenCalledOnce();
     await updates.check();
     await updates.download();
     await updates.restart();
     engine.emit("error", new Error("Squirrel failed"));
-    expect(updates.snapshot.status.kind).toBe("failed");
+    expect(status().kind).toBe("failed");
     expect(onRestartFailure).toHaveBeenCalledTimes(2);
     await updates.check();
-    expect(updates.snapshot.status.kind).toBe("available");
+    expect(status().kind).toBe("available");
   });
 });
