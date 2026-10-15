@@ -141,6 +141,16 @@ export class Page {
   }
 }
 
+export async function evaluateInMain(inspectPort, expression) {
+  const targets = await (await fetch(`http://127.0.0.1:${inspectPort}/json`)).json();
+  const main = await Page.open(targets[0].webSocketDebuggerUrl);
+  try {
+    return await main.evaluate(expression);
+  } finally {
+    main.close();
+  }
+}
+
 // Every process this script starts leads its own group, so shutdown can signal the tools a
 // child spawned too and a terminal Ctrl+C reaches only this script.
 const children = new Set();
@@ -154,17 +164,17 @@ export function start(command, args, options) {
 
 export async function stopChildren() {
   const exits = [...children].map((child) => new Promise((resolve) => child.once("exit", resolve)));
-  for (const child of children) signalGroup(child, "SIGTERM");
+  for (const child of children) signalGroup(child.pid, "SIGTERM");
   const force = setTimeout(() => {
-    for (const child of children) signalGroup(child, "SIGKILL");
+    for (const child of children) signalGroup(child.pid, "SIGKILL");
   }, 3000);
   await Promise.all(exits);
   clearTimeout(force);
 }
 
-function signalGroup(child, signal) {
+export function signalGroup(pid, signal) {
   try {
-    process.kill(-child.pid, signal);
+    process.kill(-pid, signal);
   } catch {}
 }
 

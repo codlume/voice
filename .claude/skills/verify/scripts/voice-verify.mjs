@@ -24,22 +24,24 @@ import {
   modelsDir,
   runningVoiceProcesses,
 } from "../../../../native/voice-helper/scripts/helper.mjs";
+import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import {
   announcedPorts,
   electronPath,
+  evaluateInMain,
   landedText,
   modelFiles,
   Page,
   prepareUserData,
+  repoDir,
+  signalGroup,
   snapshotStream,
   start,
   stopChildren,
 } from "../../../../scripts/voice-app.mjs";
 
-const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
-const fixturesDir = join(repoDir, "test-fixtures/audio");
 const worktree = resolve(repoDir);
 const worktreeId = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
 const scratchName = `voice-verify-${worktreeId}`;
@@ -104,28 +106,12 @@ function publishState(state, claim = false) {
   }
 }
 
-function signalGroup(pid, signal) {
-  try {
-    process.kill(-pid, signal);
-  } catch {}
-}
-
 function requireInstance() {
   const state = readState();
   if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
     fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
-}
-
-async function evaluateMain(state, expression) {
-  const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
-  const main = await Page.open(targets[0].webSocketDebuggerUrl);
-  try {
-    return await main.evaluate(expression);
-  } finally {
-    main.close();
-  }
 }
 
 async function connect(which) {
@@ -475,7 +461,7 @@ const commands = {
     const url = `com.codlume.voice://auth/callback#token=${code}`;
     // The landing page opens this URL. A development build cannot receive it from macOS, so the
     // main-process test hook emits the same open-url event the OS would.
-    await evaluateMain(state, `globalThis.voiceTest.openUrl(${show(url)})`);
+    await evaluateInMain(state.inspectPort, `globalThis.voiceTest.openUrl(${show(url)})`);
     out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
   },
 
@@ -483,7 +469,10 @@ const commands = {
     const [id] = args;
     if (!id) fail("usage: menu <menu item id>");
     // CDP key events never reach the native menu, so this chooses the item the way its shortcut does.
-    await evaluateMain(requireInstance(), `globalThis.voiceTest.clickMenuItem(${show(id)})`);
+    await evaluateInMain(
+      requireInstance().inspectPort,
+      `globalThis.voiceTest.clickMenuItem(${show(id)})`,
+    );
     out({ clicked: id });
   },
 

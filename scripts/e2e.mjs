@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "no
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { fixturesDir } from "./fixtures.mjs";
 import {
   assert,
   electronPath,
@@ -23,7 +24,6 @@ import {
 const execFileAsync = promisify(execFile);
 
 const helperDir = join(repoDir, "native/voice-helper");
-const fixturesDir = join(repoDir, "test-fixtures/audio");
 const ports = { voice: 9345, target: 9346 };
 
 const hasSpeech = (text) => text.includes("Anna") && text.includes("Thursday");
