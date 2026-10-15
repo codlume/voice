@@ -34,9 +34,11 @@ const styles = stylex.create({
 
 // The button styles sit on the default element, not in the props below, because Base UI joins
 // classNames as strings and would break a render element's className function, like Menu.Item's.
+const defaultRender = <button type="button" {...stylex.props(styles.button)} />;
+
 export function HiddenEmail({
   email,
-  render = <button type="button" {...stylex.props(styles.button)} />,
+  render = defaultRender,
 }: {
   email: string;
   render?: useRender.RenderProp;
