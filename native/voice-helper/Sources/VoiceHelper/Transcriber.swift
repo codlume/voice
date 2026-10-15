@@ -112,7 +112,7 @@ final class Transcriber {
     }
 
     func transcribe(
-        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription? = nil
+        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?
     ) async throws -> (text: String, asrMs: Double) {
         let started = DispatchTime.now()
         if let stream {
@@ -153,9 +153,8 @@ final class Transcriber {
 
 final class StreamingTranscription {
     private static let configuration = SlidingWindowAsrConfig.default
-    private static let sampleRate = 16_000.0
-    static let minimumSamples = Int(configuration.chunkSeconds * sampleRate)
-        + Int(configuration.rightContextSeconds * sampleRate)
+    static let minimumSamples = Int(configuration.chunkSeconds * asrSampleRate)
+        + Int(configuration.rightContextSeconds * asrSampleRate)
 
     private let input: AsyncStream<[Float]>.Continuation
     private let worker: Task<String?, Never>
@@ -166,7 +165,7 @@ final class StreamingTranscription {
         self.input = input
         let config = Self.configuration.applying(language: language)
         let coverage = OSAllocatedUnfairLock(initialState: StreamingCoverage(
-            chunkSamples: Int(config.chunkSeconds * Self.sampleRate), minimumSamples: Self.minimumSamples))
+            chunkSamples: Int(config.chunkSeconds * asrSampleRate), minimumSamples: Self.minimumSamples))
         self.coverage = coverage
         let manager = SlidingWindowAsrManager(config: config)
         worker = Task.detached(priority: .userInitiated) {
@@ -181,15 +180,14 @@ final class StreamingTranscription {
                     try Task.checkCancellation()
                     try await manager.startStreaming()
                     try Task.checkCancellation()
-                    let format = AVAudioFormat(
-                        commonFormat: .pcmFormatFloat32, sampleRate: Self.sampleRate, channels: 1, interleaved: false)!
+                    guard let targetFormat else { throw ASRError.notInitialized }
                     for await chunk in chunks {
                         try Task.checkCancellation()
                         guard !chunk.isEmpty else { continue }
                         guard coverage.withLock({ $0.feed(chunk.count) }) else {
                             throw TranscribeError(reason: .unknown, message: "streaming ASR fell behind capture")
                         }
-                        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(chunk.count)),
+                        guard let buffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: AVAudioFrameCount(chunk.count)),
                             let channel = buffer.floatChannelData?[0]
                         else { throw ASRError.notInitialized }
                         buffer.frameLength = AVAudioFrameCount(chunk.count)
