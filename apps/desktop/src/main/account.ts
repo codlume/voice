@@ -32,8 +32,8 @@ export const AUTH_SESSION_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 export const DELETE_ACCOUNT_FAILED_MESSAGE = "Could not delete your account. Try again.";
 export const DELETE_ACCOUNT_OFFLINE_MESSAGE =
   "Could not reach Voice. Check your connection and retry deleting your account.";
-export const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your account.";
-export const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
+const DELETE_ACCOUNT_REAUTH_MESSAGE = "Sign in again before deleting your account.";
+const REVOKE_AUTH_SESSION_FAILED_MESSAGE =
   "Could not end your previous sign-in. Retry before deleting your account.";
 export const NAME_SHAPE_MESSAGE = "The name was not in the expected format.";
 export const FIRST_NAME_REQUIRED_MESSAGE = "Enter a first name.";
@@ -787,5 +787,3 @@ export function createAccount({
     },
   };
 }
-
-export type Account = ReturnType<typeof createAccount>;
