@@ -52,7 +52,7 @@ export const styles = stylex.create({
 
 type Mode = "add" | "edit";
 
-export type Problem<F extends string> = { field: F; message: string };
+type Problem<F extends string> = { field: F; message: string };
 
 // Only one dialog can be open. The record outlives `open` so the dialog keeps its content through
 // the exit animation. `key` is new on every open, so the next add or edit, even of the same
@@ -73,7 +73,7 @@ export type Copy = {
 type RowText = { title: string; detail?: string; faded?: boolean };
 
 /** What the editor dialog hands the page to render its fields. */
-export type Editor<T, F extends string> = {
+type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
   // The problem to show, once a save was attempted.

@@ -4,13 +4,13 @@ import type { DayKey, Insights, Pace } from "../shared/insights.ts";
 export const TYPING_WPM = 51.56;
 
 export type Level = 0 | 1 | 2 | 3 | 4;
-export type HeatmapCell = { day: DayKey; words: number; level: Level } | null;
+type HeatmapCell = { day: DayKey; words: number; level: Level } | null;
 export type Heatmap = {
   weeks: readonly (readonly HeatmapCell[])[];
   months: readonly { column: number; label: string }[];
 };
 
-export type InsightsView = {
+type InsightsView = {
   pace: { wpm: number; sessions: number; fasterThanTyping: number | null } | null;
   totalWords: number;
   fixes: { total: number; corrected: number; dictionaryFixes: number };

@@ -1,7 +1,7 @@
 import { retentionMs, type HistoryEntry, type HistoryRetention } from "../shared/history.ts";
 import { dayKey, type DayKey } from "../shared/insights.ts";
 
-export type HistoryDay = { day: DayKey; label: string; entries: readonly HistoryEntry[] };
+type HistoryDay = { day: DayKey; label: string; entries: readonly HistoryEntry[] };
 
 function matches(entry: HistoryEntry, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
@@ -33,7 +33,7 @@ function formatterCache(options: Intl.DateTimeFormatOptions) {
 const longDate = formatterCache({ dateStyle: "long" });
 const shortTime = formatterCache({ timeStyle: "short" });
 
-export function dayLabel(day: DayKey, today: DayKey, locale?: string): string {
+function dayLabel(day: DayKey, today: DayKey, locale?: string): string {
   if (day === today) return "Today";
   if (day === dayKey(localDate(today, -1))) return "Yesterday";
   return longDate(locale).format(localDate(day));
