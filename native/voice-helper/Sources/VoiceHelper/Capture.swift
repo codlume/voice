@@ -221,10 +221,10 @@ final class Capture {
         state = .idle
     }
 
-    func takeLastTarget(id: String) -> (id: String, target: InsertTarget)? {
-        guard lastTarget?.id == id else { return nil }
-        defer { lastTarget = nil }
-        return lastTarget
+    func takeLastTarget(id: String) -> InsertTarget? {
+        guard let lastTarget, lastTarget.id == id else { return nil }
+        self.lastTarget = nil
+        return lastTarget.target
     }
 
     func startTest(id: String, microphone: Microphone?) {
