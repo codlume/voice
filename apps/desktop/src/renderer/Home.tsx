@@ -373,8 +373,8 @@ export function Home({
           Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
           {snapshot.settings.toggleHotkey && (
             <>
-              , or press <Keycap>{hotkeyKeycap(snapshot.settings.toggleHotkey)}</Keycap> to start
-              and again to stop
+              , or tap <Keycap>{hotkeyKeycap(snapshot.settings.toggleHotkey)}</Keycap> to start and
+              again to stop
             </>
           )}
           . Voice types it wherever your cursor is.

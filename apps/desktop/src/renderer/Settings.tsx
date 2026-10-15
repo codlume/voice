@@ -894,7 +894,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           </Row>
           <Row
             title="Toggle dictation"
-            detail="Press once to start, press again to stop and insert."
+            detail="Tap once to start, tap again to stop and insert."
             onReset={resetTo(toggleChoice, TOGGLE_OFF, changeToggle)}
           >
             <Select

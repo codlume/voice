@@ -28,9 +28,9 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"asr.remove"}"#, .asrRemove),
         (#"{"type":"test.audioFile","path":"/tmp/a.wav"}"#, .testAudioFile(path: "/tmp/a.wav")),
         (#"{"type":"test.audioFile","path":null}"#, .testAudioFile(path: nil)),
-        (#"{"type":"test.hotkey","action":"down"}"#, .testHotkey(action: .down, mode: .hold)),
-        (#"{"type":"test.hotkey","action":"down","mode":"toggle"}"#, .testHotkey(action: .down, mode: .toggle)),
-        (#"{"type":"test.hotkey","action":"cancel","mode":null}"#, .testHotkey(action: .cancel, mode: nil)),
+        (#"{"type":"test.hotkey","action":"down"}"#, .testHotkey(action: .down)),
+        (#"{"type":"test.hotkey","action":"toggle"}"#, .testHotkey(action: .toggle)),
+        (#"{"type":"test.hotkey","action":"cancel"}"#, .testHotkey(action: .cancel)),
     ]
     for (line, expected) in cases {
         #expect(HelperCommand.decode(line: line) == .success(expected), Comment(rawValue: line))
@@ -62,9 +62,10 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
         (.ready(version: 10), ["type": "ready", "version": 10]),
-        (.hotkey(action: .down, mode: .hold), ["type": "hotkey", "action": "down", "mode": "hold"]),
-        (.hotkey(action: .up, mode: .toggle), ["type": "hotkey", "action": "up", "mode": "toggle"]),
-        (.hotkey(action: .cancel, mode: nil), ["type": "hotkey", "action": "cancel", "mode": NSNull()]),
+        (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
+        (.hotkey(action: .chord), ["type": "hotkey", "action": "chord"]),
+        (.hotkey(action: .cancel), ["type": "hotkey", "action": "cancel"]),
+        (.hotkey(action: .toggle), ["type": "hotkey", "action": "toggle"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
         (.captureFailed(id: "s", reason: .device, message: "gone"),

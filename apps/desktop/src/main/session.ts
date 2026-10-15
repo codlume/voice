@@ -9,12 +9,12 @@ import {
   type Rewritten,
 } from "../shared/rewrite.ts";
 
-/** Which key started the session: held for its length, or pressed once to start and again to stop. */
+/** Which key started the session: held for its length, or tapped once to start and again to stop. */
 export type DictationMode = "hold" | "toggle";
 
 export type Session =
   | { phase: "idle" }
-  // `releasedAt` is when the user ended capture: the hold key's release or the second toggle press.
+  // `releasedAt` is when the user ended capture: the hold key's release or the second toggle tap.
   | {
       phase: "starting";
       id: string;
@@ -39,10 +39,11 @@ export type InsertMethod = "accessibility" | "paste" | "none";
 export type InsertFailure = "focusChanged" | "noFocusedField" | "secureInput" | "failed";
 
 export type SessionEvent =
-  | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"]; mode: DictationMode }
-  | { type: "hotkeyUp"; mode: DictationMode }
-  // A null mode is Escape, which cancels whichever key started the session.
-  | { type: "cancel"; mode: DictationMode | null }
+  | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
+  | { type: "hotkeyUp" }
+  | { type: "hotkeyChord" }
+  | { type: "cancel" }
+  | { type: "toggle"; id: string; asr: ModelStatus["state"] }
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
@@ -98,6 +99,28 @@ function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
   };
 }
 
+function start(id: string, asr: ModelStatus["state"], mode: DictationMode, now: number): Step {
+  if (asr === "missing" || asr === "failed") {
+    return finish(id, { kind: "failed", message: ASR_MISSING_MESSAGE });
+  }
+  if (asr === "downloading")
+    return finish(id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
+  return {
+    state: { phase: "starting", id, mode, pressedAt: now, releasedAt: null },
+    effects: [{ type: "startCapture", id }],
+  };
+}
+
+/** The user ended capture. Before capture has started, the end is stamped and applied once it does. */
+function endCapture(
+  state: Extract<Session, { phase: "starting" | "recording" }>,
+  now: number,
+): Step {
+  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, now);
+  if (state.releasedAt !== null) return { state, effects: [] };
+  return { state: { ...state, releasedAt: now }, effects: [] };
+}
+
 function insert(
   id: string,
   raw: string,
@@ -118,6 +141,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
   const same = { state, effects: [] };
   const stale =
     event.type !== "hotkeyDown" &&
+    event.type !== "toggle" &&
     event.type !== "transcript" &&
     "id" in event &&
     (state.phase === "idle" || state.id !== event.id);
@@ -125,39 +149,29 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
 
   switch (event.type) {
     case "hotkeyDown": {
-      if (state.phase === "starting" || state.phase === "recording") {
-        if (event.mode !== "toggle" || state.mode !== "toggle") return same;
-        if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, now);
-        if (state.releasedAt !== null) return same;
-        return { state: { ...state, releasedAt: now }, effects: [] };
-      }
       if (state.phase !== "idle" && state.phase !== "done") return same;
-      if (event.asr === "missing" || event.asr === "failed") {
-        return finish(event.id, { kind: "failed", message: ASR_MISSING_MESSAGE });
+      return start(event.id, event.asr, "hold", now);
+    }
+    case "toggle": {
+      if (state.phase === "idle" || state.phase === "done") {
+        return start(event.id, event.asr, "toggle", now);
       }
-      if (event.asr === "downloading") {
-        return finish(event.id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
-      }
-      return {
-        state: {
-          phase: "starting",
-          id: event.id,
-          mode: event.mode,
-          pressedAt: now,
-          releasedAt: null,
-        },
-        effects: [{ type: "startCapture", id: event.id }],
-      };
+      if (state.phase !== "starting" && state.phase !== "recording") return same;
+      if (state.mode !== "toggle") return same;
+      return endCapture(state, now);
     }
     case "hotkeyUp": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
-      if (event.mode !== "hold" || state.mode !== "hold") return same;
-      if (state.phase === "starting") return { state: { ...state, releasedAt: now }, effects: [] };
-      return stopOrCancel(state.id, state.pressedAt, now);
+      if (state.mode !== "hold") return same;
+      return endCapture(state, now);
+    }
+    case "hotkeyChord": {
+      if (state.phase !== "starting" && state.phase !== "recording") return same;
+      if (state.mode !== "hold") return same;
+      return { state: idle, effects: [{ type: "cancelCapture", id: state.id }] };
     }
     case "cancel": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
-      if (event.mode !== null && event.mode !== state.mode) return same;
       return { state: idle, effects: [{ type: "cancelCapture", id: state.id }] };
     }
     case "captureStarted": {

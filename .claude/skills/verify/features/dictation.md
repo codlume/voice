@@ -1,13 +1,13 @@
 # Dictation
 
-The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle key set, the user can instead press it once to start and again to stop. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape while holding cancels the session without inserting.
+The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle key set, the user can instead tap it once to start and again to stop. The Flow Bar shows listening, then processing. Voice transcribes on the Mac, optionally cleans up the text, inserts it into the app that had focus when the key went down, and shows the outcome on the Flow Bar. Escape while holding cancels the session without inserting.
 
 ## Sub-features
 
 - `dictate-insert`: speech becomes text in the focused field. Outcome `inserted` with method `accessibility`, or `paste` as the fallback.
 - `dictate-cleanup`: with cleanup on, the inserted text is the cleaned version, and the raw transcript is kept in `latest.raw`.
 - `dictate-raw`: with cleanup off, the inserted text equals the raw transcript.
-- `dictate-toggle`: a press of the toggle key starts listening, its release does nothing, and the next press stops and inserts.
+- `dictate-toggle`: a tap of the toggle key (press and release with no other key between) starts listening, and the next tap stops and inserts. The toggle key used in a shortcut, such as Right Option + a, does nothing.
 - `dictate-cancel`: Escape during listening returns to idle and inserts nothing.
 - `dictate-too-short`: a press-and-release with almost no audio ends as `tooShort` and inserts nothing.
 - `dictate-empty`: silence ends as `empty` and inserts nothing.
@@ -18,7 +18,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 
 - Hold the configured key (`fn`, Right Option, or Right Command) anywhere in macOS. Release to finish, or press Escape to cancel.
 - Choose the key under Settings > Shortcuts > `Hold to talk`.
-- Optionally choose a second key under Settings > Shortcuts > `Toggle dictation` (Off by default). Press it once to start and again to stop.
+- Optionally choose a second key under Settings > Shortcuts > `Toggle dictation` (Off by default). Tap it once to start and again to stop.
 
 ## Driving it with voice-verify
 

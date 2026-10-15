@@ -16,7 +16,6 @@ import {
   idle,
   step,
   toPillState,
-  type DictationMode,
   type Effect,
   type Session,
   type SessionEvent,
@@ -35,12 +34,13 @@ function run(events: [SessionEvent, number][], from: Session = idle) {
   return { state, effects, all };
 }
 
-const down = (now: number, asr: ModelStatus["state"] = "ready", mode: DictationMode = "hold") =>
-  [{ type: "hotkeyDown", id: ID, asr, mode }, now] as [SessionEvent, number];
-const up = (now: number, mode: DictationMode = "hold") =>
-  [{ type: "hotkeyUp", mode }, now] as [SessionEvent, number];
-const press = (now: number) => down(now, "ready", "toggle");
-const escape = (now: number) => [{ type: "cancel", mode: null }, now] as [SessionEvent, number];
+const down = (now: number, asr: ModelStatus["state"] = "ready") =>
+  [{ type: "hotkeyDown", id: ID, asr }, now] as [SessionEvent, number];
+const up = (now: number) => [{ type: "hotkeyUp" }, now] as [SessionEvent, number];
+const chord = (now: number) => [{ type: "hotkeyChord" }, now] as [SessionEvent, number];
+const tap = (now: number, asr: ModelStatus["state"] = "ready") =>
+  [{ type: "toggle", id: ID, asr }, now] as [SessionEvent, number];
+const escape = (now: number) => [{ type: "cancel" }, now] as [SessionEvent, number];
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
 const NONE: Rewrites = { dictionary: [], snippets: [] };
@@ -107,7 +107,7 @@ describe("starting a session", () => {
     const { state, effects } = run([
       ...toInserting,
       [{ type: "insertResult", id: ID, method: "paste", reason: null }, 2100],
-      [{ type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" }, 2200],
+      [{ type: "hotkeyDown", id: "s2", asr: "ready" }, 2200],
     ]);
     expect(state).toEqual({
       phase: "starting",
@@ -152,7 +152,7 @@ describe("starting a session", () => {
       const before = run(path).state;
       const { state, effects } = run([
         ...path,
-        [{ type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" }, 3000],
+        [{ type: "hotkeyDown", id: "s2", asr: "ready" }, 3000],
       ]);
       expect(state).toEqual(before);
       expect(effects).toEqual([]);
@@ -256,68 +256,73 @@ describe("hold and release", () => {
 });
 
 describe("toggle dictation", () => {
-  const chord = (now: number, mode: DictationMode) =>
-    [{ type: "cancel", mode }, now] as [SessionEvent, number];
-  const toToggleRecording: [SessionEvent, number][] = [press(0), up(100, "toggle"), started(150)];
+  const toToggleRecording: [SessionEvent, number][] = [tap(0), started(50)];
 
-  test("a press starts capture, releasing the key keeps recording, and a second press stops and transcribes", () => {
+  test("a tap starts capture and a second tap stops and transcribes", () => {
     const recording = run(toToggleRecording);
     expect(recording.state).toEqual({ phase: "recording", id: ID, mode: "toggle", pressedAt: 0 });
     expect(recording.all).toEqual([{ type: "startCapture", id: ID }]);
-    const { state, effects } = run([...toToggleRecording, press(4000)]);
+    const { state, effects } = run([...toToggleRecording, tap(4000)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 4000 }]);
   });
 
-  test("a second press before capture starts stops once capture starts", () => {
-    const pressedTwice = run([press(0), press(400)]);
-    expect(pressedTwice.state).toMatchObject({ phase: "starting", releasedAt: 400 });
-    expect(pressedTwice.effects).toEqual([]);
-    const { state, all } = run([press(0), press(400), press(450), started(500)]);
+  test("a second tap before capture starts stops once capture starts", () => {
+    const tappedTwice = run([tap(0), tap(400)]);
+    expect(tappedTwice.state).toMatchObject({ phase: "starting", releasedAt: 400 });
+    expect(tappedTwice.effects).toEqual([]);
+    const { state, all } = run([tap(0), tap(400), tap(450), started(500)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(all.filter((effect) => effect.type === "stopCapture")).toEqual([
       { type: "stopCapture", id: ID, releasedAt: 400 },
     ]);
   });
 
-  test("a double-tap under 250 ms cancels as tooShort", () => {
-    const { state, effects } = run([press(0), started(50), press(200)]);
+  test("a double tap under 250 ms cancels as tooShort", () => {
+    const { state, effects } = run([tap(0), started(50), tap(200)]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
     expect(types(effects)).toEqual(["cancelCapture", "scheduleIdle"]);
   });
 
-  test("a hold-key chord cancel and a hold press leave a toggle session recording", () => {
+  test("a tap with no usable model fails the way a hold press does", () => {
+    expect(run([tap(0, "missing")]).state).toEqual(run([down(0, "missing")]).state);
+    expect(run([tap(0, "downloading")]).state).toEqual(run([down(0, "downloading")]).state);
+  });
+
+  test("a tap after a finished session starts a new one", () => {
+    const done = run([...toToggleRecording, tap(100)]).state;
+    expect(done.phase).toBe("done");
+    expect(step(done, tap(5000)[0], 5000).effects).toEqual([{ type: "startCapture", id: ID }]);
+  });
+
+  test("the hold key's press, release, or chord leaves a toggle session recording", () => {
     const before = run(toToggleRecording).state;
-    for (const event of [chord(3000, "hold"), down(3000), up(3100)]) {
+    for (const event of [chord(3000), down(3000), up(3100)]) {
       const { state, effects } = run([...toToggleRecording, event]);
       expect(state).toEqual(before);
       expect(effects).toEqual([]);
     }
   });
 
-  test("a chord on the toggle key cancels its session", () => {
-    const { state, effects } = run([press(0), chord(100, "toggle")]);
-    expect(state).toEqual(idle);
-    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+  test("Escape cancels a toggle session, before or after capture starts", () => {
+    for (const events of [[tap(0)], toToggleRecording]) {
+      const { state, effects } = run([...events, escape(5000)]);
+      expect(state).toEqual(idle);
+      expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+    }
   });
 
-  test("Escape cancels a toggle session", () => {
-    const { state, effects } = run([...toToggleRecording, escape(5000)]);
-    expect(state).toEqual(idle);
-    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
-  });
-
-  test("a toggle press or a toggle-key chord leaves a hold session alone", () => {
-    const before = run(toRecording).state;
-    for (const event of [press(600), up(700, "toggle"), chord(600, "toggle")]) {
-      const { state, effects } = run([...toRecording, event]);
+  test("a tap during a hold session is ignored", () => {
+    for (const events of [[down(0)], toRecording]) {
+      const before = run(events).state;
+      const { state, effects } = run([...events, tap(600)]);
       expect(state).toEqual(before);
       expect(effects).toEqual([]);
     }
   });
 
   test("a chord on the hold key cancels a hold session", () => {
-    const { state, effects } = run([...toRecording, chord(600, "hold")]);
+    const { state, effects } = run([...toRecording, chord(600)]);
     expect(state).toEqual(idle);
     expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
   });
@@ -370,7 +375,7 @@ describe("transcript", () => {
       remembered("long dictation", "long dictation"),
       { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
-    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_100)).toEqual({
+    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({
       state,
       effects: [],
     });
@@ -410,7 +415,7 @@ describe("capture the helper stops on its own", () => {
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(toPillState(state)).toEqual({ kind: "processing", overdue: false });
     expect(effects).toEqual([]);
-    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_100)).toEqual({
+    expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({
       state,
       effects: [],
     });
@@ -434,7 +439,7 @@ describe("capture the helper stops on its own", () => {
       remembered("long dictation", "long dictation"),
       { type: "insert", id: ID, output: { text: "long dictation", html: null } },
     ]);
-    expect(step(state, { type: "hotkeyUp", mode: "hold" }, 600_600)).toEqual({
+    expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({
       state,
       effects: [],
     });
@@ -907,9 +912,11 @@ describe("idle and stale events", () => {
   test("the hotkey and Escape while overdue change nothing, so the busy helper is never asked", () => {
     const overdue = run(toOverdue).state;
     for (const event of [
-      { type: "hotkeyDown", id: "s2", asr: "ready", mode: "hold" },
-      { type: "hotkeyUp", mode: "hold" },
-      { type: "cancel", mode: null },
+      { type: "hotkeyDown", id: "s2", asr: "ready" },
+      { type: "hotkeyUp" },
+      { type: "hotkeyChord" },
+      { type: "toggle", id: "s2", asr: "ready" },
+      { type: "cancel" },
     ] satisfies SessionEvent[]) {
       expect(step(overdue, event, 50_000)).toEqual({ state: overdue, effects: [] });
     }

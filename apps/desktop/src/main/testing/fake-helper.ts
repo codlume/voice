@@ -50,7 +50,7 @@ function act(action: Action) {
   // Stops reading commands, so a large write from main is still in flight when a later exit
   // closes the pipe and the write fails with EPIPE.
   if (action === "stall") return process.stdin.pause();
-  emit({ type: "hotkey", action, mode: action === "cancel" ? null : "hold" });
+  emit({ type: "hotkey", action });
 }
 
 function handle(command: Record<string, unknown>) {

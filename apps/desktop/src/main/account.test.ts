@@ -619,7 +619,7 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     await startSignIn(h, "state2");
-    dictation.onHelperEvent({ type: "hotkey", action: "down", mode: "hold" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const session = h.store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const id = session.id;
@@ -632,7 +632,7 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     vi.advanceTimersByTime(800);
-    dictation.onHelperEvent({ type: "hotkey", action: "up", mode: "hold" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up" });
     dictation.onHelperEvent({
       type: "transcript",
       id,

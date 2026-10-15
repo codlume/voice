@@ -13,27 +13,16 @@ public struct KeyEvent: Equatable, Sendable {
     }
 }
 
-public struct HotkeySignal: Equatable, Sendable {
-    public var action: HotkeyAction
-    /// The configured key that produced the signal; nil for an Escape cancel, which ends any session.
-    public var mode: DictationMode?
-
-    public init(_ action: HotkeyAction, _ mode: DictationMode?) {
-        self.action = action
-        self.mode = mode
-    }
-}
-
 public struct HotkeyDecision: Equatable, Sendable {
-    public var signals: [HotkeySignal]
+    public var action: HotkeyAction?
     public var consume: Bool
 
-    public init(signals: [HotkeySignal], consume: Bool) {
-        self.signals = signals
+    public init(action: HotkeyAction?, consume: Bool) {
+        self.action = action
         self.consume = consume
     }
 
-    public static let none = HotkeyDecision(signals: [], consume: false)
+    public static let none = HotkeyDecision(action: nil, consume: false)
 }
 
 extension HotkeyKey {
@@ -67,8 +56,9 @@ extension HotkeyKey {
     }
 }
 
-/// Watches the hold key and the optional toggle key. Each key tracks its own hold; Escape is
-/// handled once here so it cancels a session exactly once whichever keys are configured.
+/// Watches the hold key and the optional toggle key. The hold key reports `down`, `up`, and
+/// `chord`; the toggle key reports only `toggle`, on a clean tap, so a shortcut that uses it
+/// (Right Option + a for "ą") never reaches the session. Escape is `cancel`.
 public struct Hotkeys: Sendable {
     private var hold: KeyHold
     private var toggle: KeyHold?
@@ -83,26 +73,25 @@ public struct Hotkeys: Sendable {
 
     /// Re-derives each hold from the live modifier state after events may have been missed: a
     /// tap disabled by timeout, or a release that never reached the tap. Emits `up` for a hold
-    /// that was live. Never emits `down`, since a press seen only through polling is not a
-    /// deliberate press.
-    public mutating func reconcile(flags: UInt64) -> [HotkeySignal] {
-        var signals: [HotkeySignal] = []
-        if let action = hold.reconcile(flags: flags) { signals.append(HotkeySignal(action, .hold)) }
-        if let action = toggle?.reconcile(flags: flags) { signals.append(HotkeySignal(action, .toggle)) }
-        return signals
+    /// key that was down. Never emits `down` or `toggle`: a press or release seen only through
+    /// polling is not a deliberate one.
+    public mutating func reconcile(flags: UInt64) -> HotkeyAction? {
+        _ = toggle?.reconcile(flags: flags)
+        return hold.reconcile(flags: flags)
     }
 
+    /// At most one action per event: settings keep the two keys distinct, so a flagsChanged
+    /// event belongs to one of them, and a keyDown chord speaks only for the hold key.
     public mutating func handle(_ event: KeyEvent, captureActive: Bool) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
             guard captureActive else { return .none }
             hold.cancel()
             toggle?.cancel()
-            return HotkeyDecision(signals: [HotkeySignal(.cancel, nil)], consume: true)
+            return HotkeyDecision(action: .cancel, consume: true)
         }
-        var signals: [HotkeySignal] = []
-        if let action = hold.handle(event) { signals.append(HotkeySignal(action, .hold)) }
-        if let action = toggle?.handle(event) { signals.append(HotkeySignal(action, .toggle)) }
-        return HotkeyDecision(signals: signals, consume: false)
+        let tapped = toggle?.handle(event) == .up
+        let action = hold.handle(event) ?? (tapped ? .toggle : nil)
+        return HotkeyDecision(action: action, consume: false)
     }
 }
 
@@ -154,7 +143,7 @@ private struct KeyHold: Sendable {
                 return nil
             }
             state = .heldCancelled
-            return .cancel
+            return .chord
         case .keyUp:
             return nil
         }

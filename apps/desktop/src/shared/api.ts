@@ -124,7 +124,7 @@ export type MicrophoneTest =
 export type Settings = {
   microphone: Microphone | null;
   hotkey: Hotkey;
-  /** Press once to start, press again to stop. Never equal to `hotkey`. */
+  /** Tap once to start, tap again to stop. Never equal to `hotkey`. */
   toggleHotkey: Hotkey | null;
   muteWhileDictating: boolean;
   copyToClipboard: boolean;

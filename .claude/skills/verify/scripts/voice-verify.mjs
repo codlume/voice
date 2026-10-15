@@ -716,7 +716,7 @@ const commands = {
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
     const key = mode === "toggle" ? settings.toggleHotkey : settings.hotkey;
     if (!key) fail("--key=toggle needs a toggle key: set Settings > Shortcuts > Toggle dictation");
-    // A toggle session starts and ends on a full press; a hold session spans the press.
+    // A toggle session starts and ends on a tap, a press and release; a hold session spans the press.
     const begin = () => (mode === "toggle" ? fnpost(key) : fnpost(key, "down"));
     const finish = () => (mode === "toggle" ? fnpost(key) : fnpost(key, "up"));
     const snapshots = await snapshotStream(hub);

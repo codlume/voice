@@ -33,7 +33,6 @@ export type HelperCommand =
   | { type: "asr.remove" };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
-const dictationMode = Schema.Literals(["hold", "toggle"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
 const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(
@@ -59,16 +58,10 @@ const HelperEventSchema = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("microphones.unavailable"), message: Schema.String }),
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
+  // down/up/chord come from the hold key, toggle from a clean tap of the toggle key, cancel from Escape.
   Schema.Struct({
     type: Schema.Literal("hotkey"),
-    action: Schema.Literals(["down", "up"]),
-    mode: dictationMode,
-  }),
-  // A null mode is Escape, which cancels a session whichever key started it.
-  Schema.Struct({
-    type: Schema.Literal("hotkey"),
-    action: Schema.Literal("cancel"),
-    mode: Schema.NullOr(dictationMode),
+    action: Schema.Literals(["down", "up", "chord", "cancel", "toggle"]),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.started"),

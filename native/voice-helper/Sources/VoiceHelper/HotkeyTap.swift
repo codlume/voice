@@ -126,7 +126,7 @@ final class HotkeyTap {
             flags: event.flags.rawValue
         )
         let decision = hotkeys.handle(keyEvent, captureActive: captureActive())
-        emit(decision.signals)
+        emit(decision.action)
         syncBackstop()
         return decision.consume
     }
@@ -136,10 +136,8 @@ final class HotkeyTap {
         syncBackstop()
     }
 
-    private func emit(_ signals: [HotkeySignal]) {
-        for signal in signals {
-            output.emit(.hotkey(action: signal.action, mode: signal.mode))
-        }
+    private func emit(_ action: HotkeyAction?) {
+        if let action { output.emit(.hotkey(action: action)) }
     }
 
     /// While a key may be down, a cheap poll of the live modifier state catches a release the
