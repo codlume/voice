@@ -9,9 +9,19 @@ import {
   type Snippet,
 } from "../shared/snippets.ts";
 import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
+import { styles as settings } from "./Settings.tsx";
 import { SnippetEditor } from "./SnippetEditor.tsx";
 import { Switch } from "./Switch.tsx";
+import { space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
+
+const local = stylex.create({
+  toggle: { display: "flex", alignItems: "center", gap: space.lg },
+  toggleLabel: { fontSize: 13 },
+});
+
+// Only one editor dialog is open at a time.
+const switchId = "snippet-enabled";
 
 const copy: Copy = {
   title: "Snippets",
@@ -50,21 +60,8 @@ export function Snippets({
       row={(snippet) => ({
         title: snippet.trigger,
         detail: snippet.expansion,
-        faded: !snippet.enabled,
+        off: !snippet.enabled,
       })}
-      renderControls={(snippet, change) => (
-        <Switch
-          id={`snippet-enabled-${snippet.id}`}
-          label={`Enable ${snippet.trigger}`}
-          checked={snippet.enabled}
-          onChange={(enabled) =>
-            change(
-              snippets.map((other) => (other.id === snippet.id ? { ...other, enabled } : other)),
-              "Could not change this snippet. Try again.",
-            )
-          }
-        />
-      )}
       normalize={(draft) => ({ ...draft, trigger: draft.trigger.trim() })}
       problem={(snippet, others) => snippetProblem(snippet, others, dictionary)}
       wide
@@ -100,6 +97,16 @@ export function Snippets({
               onSave={submit}
             />
           </CountedField>
+          <div {...stylex.props(local.toggle)}>
+            <label htmlFor={switchId} {...stylex.props(settings.rowText, local.toggleLabel)}>
+              Enabled
+            </label>
+            <Switch
+              id={switchId}
+              checked={draft.enabled}
+              onChange={(enabled) => edit({ enabled })}
+            />
+          </div>
         </>
       )}
     />

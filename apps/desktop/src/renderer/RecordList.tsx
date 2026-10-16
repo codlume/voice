@@ -71,7 +71,7 @@ export type Copy = {
   deleteFailed: string;
 };
 
-type RowText = { title: string; detail?: string; faded?: boolean };
+type RowText = { title: string; detail?: string; off?: boolean };
 
 /** What the editor dialog hands the page to render its fields. */
 type Editor<T, F extends string> = {
@@ -93,7 +93,6 @@ export function RecordList<T extends { id: string }, F extends string>({
   name,
   example,
   row,
-  renderControls,
   normalize,
   problem,
   renderFields,
@@ -108,8 +107,6 @@ export function RecordList<T extends { id: string }, F extends string>({
   // The one row shown while the list is empty.
   example: RowText;
   row: (record: T) => RowText;
-  // Extra controls before Edit and Delete. `change` saves a list unless a row action is pending.
-  renderControls?: (record: T, change: (next: readonly T[], failure: string) => void) => ReactNode;
   // The record as saved, from the draft: trimmed, with empty optional fields normalised.
   normalize: (draft: T) => T;
   // `others` never contains the record being checked.
@@ -128,13 +125,6 @@ export function RecordList<T extends { id: string }, F extends string>({
     if (!open) setModal(null);
   };
 
-  const change = (next: readonly T[], failure: string) => {
-    // Each save replaces the whole list, so a change built on the list before the previous save
-    // landed would undo that save.
-    if (rowAction.pending) return;
-    void rowAction.run(() => save(next), failure);
-  };
-
   const remove = (record: T) => {
     setModal((current) => current && { ...current, kind: "deleted" });
     void rowAction.run(
@@ -143,8 +133,8 @@ export function RecordList<T extends { id: string }, F extends string>({
     );
   };
 
-  const text = ({ title, detail, faded }: RowText, isExample = false) => (
-    <div {...stylex.props(settings.rowText, styles.rowText, faded && styles.off)}>
+  const text = ({ title, detail, off }: RowText, isExample = false) => (
+    <div {...stylex.props(settings.rowText, styles.rowText, off && styles.off)}>
       <span {...stylex.props(settings.rowTitle, isExample ? styles.example : styles.wrap)}>
         {title}
       </span>
@@ -186,7 +176,7 @@ export function RecordList<T extends { id: string }, F extends string>({
               <li key={record.id} {...stylex.props(settings.row)}>
                 {text(row(record))}
                 <div {...stylex.props(styles.rowActions)}>
-                  {renderControls?.(record, change)}
+                  {row(record).off && <span {...stylex.props(settings.hint)}>Off</span>}
                   <Button
                     variant="icon"
                     aria-label={`Edit ${name(record)}`}

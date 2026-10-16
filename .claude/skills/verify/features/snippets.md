@@ -4,12 +4,12 @@ Snippets let a user save a spoken trigger, such as "my email", and the exact tex
 
 ## Sub-features
 
-- `snippets-add`: `Add new` opens the `Add snippet` dialog with `Trigger` and `Expansion` fields and an n/max counter on each. Enter in `Trigger` and Cmd+Enter in `Expansion` save.
+- `snippets-add`: `Add new` opens the `Add snippet` dialog with `Trigger` and `Expansion` fields, an n/max counter on each, and an `Enabled` switch that starts on. Enter in `Trigger` and Cmd+Enter in `Expansion` save.
 - `snippets-format`: `Expansion` is a rich text editor with `Bold`, `Italic`, `Bulleted list`, `Numbered list`, and `Link` toolbar buttons, which show as pressed for the selection. Cmd+B, Cmd+I, and Markdown typed as `- `, `1. `, `**bold**`, `*italic*`, and `[text](url)` format too. `Link` or Cmd+K opens a `Link address` row with `Apply`, and `Remove` on an existing link. Escape closes only that row. A formatted snippet stores `expansionHtml` (only p, ul, ol, li, strong, em, a, br) next to the plain `expansion`, which marks list items `- ` and `1. ` and writes a link as `text (url)`. Unformatted text stores `expansionHtml: null`. The counter counts `expansion`.
 - `snippets-validate`: saving an empty, too long, or duplicate trigger, or an empty expansion, keeps the dialog open and shows the problem under the field. Duplicates ignore case, accents, and spacing; triggers that differ in punctuation, such as `e-mail` and `email`, are separate snippets. A trigger that is already a dictionary phrase, up to case, accents, and spacing, shows "This trigger is already in your dictionary."
 - `snippets-edit`: the pencil button on a row opens `Edit snippet`, and `Save changes` replaces that snippet in place.
 - `snippets-delete`: the trash button asks "Delete snippet?" with "‘<trigger>’ will be deleted permanently." (curly quotes) before it deletes.
-- `snippets-toggle`: the switch on a row, named `Enable <trigger>`, turns the snippet off or on. A switched-off snippet stays saved and editable, its text is faded, and dictation never expands it. Its trigger still counts as taken.
+- `snippets-toggle`: the `Enabled` switch in the add and edit dialog turns the snippet off or on when the dialog saves. Cancel discards the change. A switched-off snippet stays saved and editable, its row text is faded with an `Off` label, and dictation never expands it. Its trigger still counts as taken.
 - `snippets-save-failed`: a rejected save keeps the dialog open with the draft and shows "Could not save this snippet. Try again."
 - `snippets-dictation`: a dictation that contains a trigger inserts the expansion.
 
@@ -29,12 +29,12 @@ Preconditions: baseline. No snippets are saved.
 - **Duplicate.** `vv click "Add new"`, then type `THURSDAY` into the trigger and anything into the expansion, then `vv click "Add snippet"`. The dialog stays open and reads "This trigger is already used by another snippet." The stored list does not change. Click `Cancel`.
 - **Effect on dictation.** When `dictate` is available, run `vv dictate short.wav`. `inserted` contains "next Friday" in place of "Thursday", and still contains "Anna".
 - **Edit.** `vv click "Edit Thursday"`. `type` inserts at the caret like a paste, so select the old text first with `vv eval hub 'getSelection().selectAllChildren(document.querySelector("[role=dialog][data-open] [contenteditable]")), true'`, then `vv type 'css:[role="dialog"][data-open] [contenteditable]' "<new expansion>"`. Replacing everything keeps the first block's type, so a snippet that starts with a list stays a list. `vv click "Save changes"`, then wait for the new expansion in `s.settings.snippets`. The `id` stays the same.
-- **Toggle.** `vv click "Enable Thursday"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.snippets[0].enabled === false)'`. The row text fades. Click it again to switch it back on.
+- **Toggle.** `vv click "Edit Thursday"`, then `vv click Enabled`, then `vv click "Save changes"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.snippets[0].enabled === false)'`. The row text fades and the row shows `Off`. Repeat to switch it back on.
 - **Delete.** `vv click "Delete Thursday"`, then `vv click Delete`, then wait for `s.settings.snippets.length === 0`. The page shows the example row again.
 
 ## Gotchas
 
-- The row controls are named `Enable <trigger>`, `Edit <trigger>`, and `Delete <trigger>`. The dialog's confirm button is `Add snippet` or `Save changes`, not `Add new`.
+- The row controls are named `Edit <trigger>` and `Delete <trigger>`. The dialog's confirm button is `Add snippet` or `Save changes`, not `Add new`.
 - Problems show only after a save attempt, then update as you type. An empty dialog with no error is expected.
 - The verify window usually reports `document.hidden`, so a closed dialog can stay mounted at opacity 0 with `data-ending-style` and keep matching `[role=dialog]`. Scope selectors to `[role=dialog][data-open]`, or click another page and back to `Snippets` to unmount it.
 - Clicking outside the dialog does not close it. Escape and `Cancel` do, and both discard the draft.
