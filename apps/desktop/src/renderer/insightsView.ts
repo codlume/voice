@@ -1,13 +1,10 @@
-import type { InstalledApp } from "../shared/api.ts";
 import {
-  BUILT_IN_APPS,
   CATEGORIES,
   parseBundleId,
   type BundleId,
   type Category,
 } from "../shared/app-categories.ts";
 import type { DayKey, Insights, Pace, Usage } from "../shared/insights.ts";
-import type { Assignment } from "../shared/style.ts";
 
 /** The average typist, from Dhakal et al., CHI 2018, "Observations on Typing from 136M Keystrokes". */
 export const TYPING_WPM = 51.56;
@@ -193,16 +190,4 @@ export function usage(insights: Insights, name: (bundleId: BundleId) => string):
     })),
     empty: categories.every(({ words }) => words === 0),
   };
-}
-
-export function appNames(
-  assignments: readonly Assignment[],
-  installed: readonly InstalledApp[],
-): (bundleId: BundleId) => string {
-  const names = new Map(installed.map(({ bundleId, name }) => [bundleId, name]));
-  for (const { bundleId, name } of BUILT_IN_APPS) names.set(bundleId, name);
-  for (const assignment of assignments) {
-    if (assignment.kind === "app") names.set(assignment.bundleId, assignment.name);
-  }
-  return (bundleId) => names.get(bundleId) ?? bundleId;
 }

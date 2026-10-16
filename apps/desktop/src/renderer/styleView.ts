@@ -32,6 +32,21 @@ const catalogNames = new Map<BundleId, string>(
   BUILT_IN_APPS.map(({ bundleId, name }) => [bundleId, name]),
 );
 
+export function appNames(
+  assignments: readonly Assignment[],
+  installed: readonly InstalledApp[],
+): (bundleId: BundleId) => string {
+  const assigned = new Map(
+    assignments.flatMap((a) => (a.kind === "app" ? [[a.bundleId, a.name] as const] : [])),
+  );
+  const installedNames = new Map(installed.map(({ bundleId, name }) => [bundleId, name]));
+  return (bundleId) =>
+    assigned.get(bundleId) ??
+    catalogNames.get(bundleId) ??
+    installedNames.get(bundleId) ??
+    bundleId;
+}
+
 export function bannerApps(
   category: Category,
   installed: readonly InstalledApp[],
@@ -90,10 +105,11 @@ export function pickerRows(
   query: string,
 ): PickerRow[] {
   const q = query.trim().toLocaleLowerCase();
+  const nameOf = appNames([], installed);
   return installed
     .filter(assignable)
-    .flatMap(({ bundleId, name: installedName }) => {
-      const name = catalogNames.get(bundleId) ?? installedName;
+    .flatMap(({ bundleId }) => {
+      const name = nameOf(bundleId);
       const rank = searchRank(name, q);
       if (rank === null) return [];
       const current = assignedCategory({ bundleId, host: null }, assignments);

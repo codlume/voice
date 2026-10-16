@@ -1,11 +1,8 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 
-import type { InstalledApp } from "../shared/api.ts";
 import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
 import { EMPTY_INSIGHTS, type DayKey, type Insights } from "../shared/insights.ts";
-import type { Assignment } from "../shared/style.ts";
 import {
-  appNames,
   cellLabel,
   heatmap,
   insightsView,
@@ -216,9 +213,9 @@ const categories = (patch: Partial<Insights["categories"]>) => ({
   ...patch,
 });
 
-describe("usage", () => {
-  const noNames = appNames([], []);
+const noNames = (bundleId: BundleId) => bundleId;
 
+describe("usage", () => {
   test("shares go by words, not by how many dictations", () => {
     const view = usage(
       used({
@@ -284,28 +281,6 @@ describe("usage", () => {
       { bundleId: "com.example.app3", name: "com.example.app3", share: 20 },
       { bundleId: "com.example.app4", name: "com.example.app4", share: 9 },
       { bundleId: "com.example.app0", name: "com.example.app0", share: 5 },
-    ]);
-  });
-
-  test("names an app as the Style page does, then by catalog, then installed, then its id", () => {
-    const slack = id("com.tinyspeck.slackmacgap");
-    const mail = id("com.apple.mail");
-    const notes = id("com.example.notes");
-    const unknown = id("com.example.unknown");
-    const assignments: Assignment[] = [
-      { kind: "app", bundleId: slack, name: "Slack for work", category: "work" },
-    ];
-    const installed: InstalledApp[] = [
-      { bundleId: slack, name: "Slack.app", browser: false },
-      { bundleId: mail, name: "Mail.app", browser: false },
-      { bundleId: notes, name: "Notes Pro", browser: false },
-    ];
-    const name = appNames(assignments, installed);
-    expect([slack, mail, notes, unknown].map(name)).toEqual([
-      "Slack for work",
-      "Mail",
-      "Notes Pro",
-      "com.example.unknown",
     ]);
   });
 });

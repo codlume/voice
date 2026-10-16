@@ -246,12 +246,15 @@ function parseCategories(raw: unknown): Record<Category, Usage> {
   return categories;
 }
 
+// A Map, not an object: an id like "__proto__" must become a plain key, and two spellings of
+// one id in a hand-edited file add up instead of the last one winning.
 function parseApps(raw: unknown): Record<BundleId, number> {
-  const apps: Record<BundleId, number> = {};
-  if (typeof raw !== "object" || raw === null) return apps;
+  const apps = new Map<BundleId, number>();
+  if (typeof raw !== "object" || raw === null) return {};
   for (const [key, words] of Object.entries(raw)) {
     const bundleId = parseBundleId(key);
-    if (bundleId !== null && isCount(words) && words > 0) apps[bundleId] = words;
+    if (bundleId !== null && isCount(words) && words > 0)
+      apps.set(bundleId, (apps.get(bundleId) ?? 0) + words);
   }
-  return apps;
+  return Object.fromEntries(apps);
 }
