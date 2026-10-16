@@ -91,6 +91,65 @@ describe("icon loader", () => {
   });
 });
 
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("icon loader invalidated while a fetch is in flight", () => {
+  function held() {
+    const fetches: { ids: BundleId[]; settle: (result: AppIcons | Error) => void }[] = [];
+    const loader = createIconLoader(
+      (ids) =>
+        new Promise<AppIcons>((resolve, reject) =>
+          fetches.push({
+            ids,
+            settle: (result) => (result instanceof Error ? reject(result) : resolve(result)),
+          }),
+        ),
+    );
+    const mounted = () => void loader.load(MAIL);
+    loader.subscribe(mounted);
+    mounted();
+    return { loader, fetches };
+  }
+
+  test.each([
+    ["an obsolete icon", { [MAIL]: "v1" }],
+    ["no icon", {}],
+    ["a failure", new Error("helper down")],
+  ] as const)(
+    "asks again for the current list when the obsolete fetch returns %s",
+    async (_, obsolete) => {
+      const { loader, fetches } = held();
+      await settled();
+      loader.invalidate();
+      fetches[0]?.settle(obsolete);
+      await settled();
+      expect(fetches.map(({ ids }) => ids)).toEqual([[MAIL], [MAIL]]);
+      fetches[1]?.settle({ [MAIL]: "v2" });
+      await settled();
+      expect(loader.get(MAIL)).toBe("v2");
+      expect(fetches).toHaveLength(2);
+    },
+  );
+
+  test("shows an obsolete answer and replaces it with the answer for the current list", async () => {
+    const { loader, fetches } = held();
+    await settled();
+    fetches[0]?.settle({ [MAIL]: "v1" });
+    await settled();
+    loader.invalidate();
+    await settled();
+    expect(fetches).toHaveLength(2);
+    loader.invalidate();
+    fetches[1]?.settle({ [MAIL]: "v2" });
+    await settled();
+    expect(loader.get(MAIL)).toBe("v2");
+    fetches[2]?.settle({ [MAIL]: "v3" });
+    await settled();
+    expect(loader.get(MAIL)).toBe("v3");
+    expect(fetches).toHaveLength(3);
+  });
+});
+
 describe("icon loader over the installed apps service", () => {
   const MAIL_APP = {
     bundleId: "com.apple.mail",

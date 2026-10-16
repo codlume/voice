@@ -39,31 +39,41 @@ export function createIconLoader(fetch: (bundleIds: BundleId[]) => Promise<AppIc
     return batch.result;
   }
 
+  function load(bundleId: BundleId): Promise<string | null> {
+    const memo = icons.get(bundleId);
+    if (memo !== undefined && memo.generation === generation) return Promise.resolve(memo.icon);
+    let pending = inFlight.get(bundleId);
+    if (pending === undefined) {
+      const requested = generation;
+      pending = enqueue(bundleId).then(
+        (result) => settle(bundleId, requested, result[bundleId] ?? null),
+        () => settle(bundleId, requested, undefined),
+      );
+      inFlight.set(bundleId, pending);
+    }
+    return pending;
+  }
+
+  // `undefined` is a failed fetch, which keeps what is on show. An answer to a request made before
+  // the latest invalidation still shows, since it is never older than what it replaces, and the
+  // load goes on to ask for the current list.
+  function settle(
+    bundleId: BundleId,
+    requested: number,
+    icon: string | null | undefined,
+  ): string | null | Promise<string | null> {
+    inFlight.delete(bundleId);
+    const before = icons.get(bundleId)?.icon;
+    const current = requested === generation;
+    if (icon) icons.set(bundleId, { icon, generation: requested });
+    else if (icon === null && current) icons.delete(bundleId);
+    if (icons.get(bundleId)?.icon !== before) notify();
+    return current ? (icon ?? null) : load(bundleId);
+  }
+
   return {
     get: (bundleId) => icons.get(bundleId)?.icon ?? null,
-    load(bundleId) {
-      const memo = icons.get(bundleId);
-      if (memo !== undefined && memo.generation === generation) return Promise.resolve(memo.icon);
-      let pending = inFlight.get(bundleId);
-      if (pending === undefined) {
-        const requested = generation;
-        pending = enqueue(bundleId)
-          .then(
-            (result) => {
-              const icon = result[bundleId];
-              const changed = icon !== icons.get(bundleId)?.icon;
-              if (icon !== undefined) icons.set(bundleId, { icon, generation: requested });
-              else icons.delete(bundleId);
-              if (changed) notify();
-              return icon ?? null;
-            },
-            () => null,
-          )
-          .finally(() => inFlight.delete(bundleId));
-        inFlight.set(bundleId, pending);
-      }
-      return pending;
-    },
+    load,
     invalidate() {
       generation += 1;
       notify();
