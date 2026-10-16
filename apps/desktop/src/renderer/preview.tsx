@@ -718,7 +718,76 @@ function PillPreview() {
 function HubPreview() {
   const snapshot = useSnapshot();
   const history = useHistory();
-  return snapshot && history ? <HubShell snapshot={snapshot} history={history} /> : null;
+  return snapshot && history ? (
+    <>
+      <HubShell snapshot={snapshot} history={history} />
+      <MotionSwitcher />
+    </>
+  ) : null;
+}
+
+const motionIds = ["none", "fade", "crossfade", "directional", "motion"];
+
+// Prototype switcher for page-change motion. Each choice reloads, since HubShell reads the
+// params once at module load.
+function MotionSwitcher() {
+  const current = new URLSearchParams(location.search);
+  const motion = current.get("motion") ?? "none";
+  const indicator = current.get("indicator") === "1";
+  function reload(changes: Record<string, string | null>) {
+    const next = new URLSearchParams(location.search);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    location.search = next.toString();
+  }
+  const button = (active: boolean) => ({
+    padding: "4px 8px",
+    border: "1px solid #0003",
+    borderRadius: 6,
+    background: active ? "#111" : "#fff",
+    color: active ? "#fff" : "#111",
+    font: "12px system-ui",
+    cursor: "pointer",
+  });
+  return (
+    <div
+      data-motion-switcher
+      style={{
+        position: "fixed",
+        right: 16,
+        bottom: 16,
+        zIndex: 1000,
+        display: "flex",
+        gap: 4,
+        padding: 6,
+        borderRadius: 10,
+        background: "#ffffffe6",
+        boxShadow: "0 4px 16px #0002",
+      }}
+    >
+      {motionIds.map((id) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={motion === id}
+          onClick={() => reload({ motion: id === "none" ? null : id })}
+          style={button(motion === id)}
+        >
+          {id}
+        </button>
+      ))}
+      <button
+        type="button"
+        aria-pressed={indicator}
+        onClick={() => reload({ indicator: indicator ? null : "1" })}
+        style={button(indicator)}
+      >
+        indicator
+      </button>
+    </div>
+  );
 }
 
 function Gallery() {

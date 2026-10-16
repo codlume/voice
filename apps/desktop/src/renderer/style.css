@@ -50,3 +50,150 @@
     transition-duration: 0s;
   }
 }
+
+/* Page-change motion prototype (?motion=crossfade|directional). StyleX cannot express
+   ::view-transition-* pseudo-elements, so they live here. */
+html[data-motion="crossfade"],
+html[data-motion="directional"] {
+  /* The sidebar and titlebar stay live instead of crossfading as part of a root snapshot. */
+  view-transition-name: none;
+}
+
+/* The overlay would otherwise swallow clicks made while a transition runs. */
+::view-transition {
+  pointer-events: none;
+}
+
+/* The card clips the page snapshots the way it clips its scrolled content. */
+html[data-motion="crossfade"] [data-vt="card"],
+html[data-motion="directional"] [data-vt="card"] {
+  view-transition-name: hub-card;
+  view-transition-group: contain;
+}
+
+html[data-motion="crossfade"] [data-vt="page"],
+html[data-motion="directional"] [data-vt="page"] {
+  view-transition-name: hub-page;
+}
+
+html[data-motion="directional"]:active-view-transition-type(enter, exit) [data-vt="nav"] {
+  view-transition-name: hub-nav;
+}
+
+::view-transition-group-children(hub-card) {
+  overflow: clip;
+  border-radius: 13px;
+}
+
+/* Groups would animate width and height between the old and new boxes. Only images move. */
+::view-transition-group(*),
+::view-transition-old(hub-card),
+::view-transition-new(hub-card) {
+  animation: none;
+}
+
+::view-transition-old(hub-page) {
+  translate: 0 var(--hub-old-shift, 0);
+}
+
+@keyframes hub-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes hub-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+html[data-motion="crossfade"]::view-transition-old(hub-page) {
+  animation: hub-fade-out 90ms ease-out both;
+}
+
+html[data-motion="crossfade"]::view-transition-new(hub-page) {
+  animation: hub-rise-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes hub-out-up {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes hub-out-down {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes hub-in-from-below {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes hub-in-from-above {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@keyframes hub-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(var(--hub-slide-out));
+  }
+}
+@keyframes hub-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--hub-slide-in));
+  }
+}
+
+html:active-view-transition-type(down)::view-transition-old(hub-page) {
+  animation: hub-out-up 120ms ease-out both;
+}
+html:active-view-transition-type(down)::view-transition-new(hub-page) {
+  animation: hub-in-from-below 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+html:active-view-transition-type(up)::view-transition-old(hub-page) {
+  animation: hub-out-down 120ms ease-out both;
+}
+html:active-view-transition-type(up)::view-transition-new(hub-page) {
+  animation: hub-in-from-above 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* Entering Settings moves content in from the right, Back reverses it. The nav travels less
+   than the page because its snapshot is not clipped by the narrow sidebar. */
+html:active-view-transition-type(enter) {
+  --hub-page-out: -24px;
+  --hub-page-in: 24px;
+  --hub-nav-out: -12px;
+  --hub-nav-in: 12px;
+}
+html:active-view-transition-type(exit) {
+  --hub-page-out: 24px;
+  --hub-page-in: -24px;
+  --hub-nav-out: 12px;
+  --hub-nav-in: -12px;
+}
+html:active-view-transition-type(enter, exit)::view-transition-old(hub-page) {
+  --hub-slide-out: var(--hub-page-out);
+  animation: hub-slide-out 140ms ease-out both;
+}
+html:active-view-transition-type(enter, exit)::view-transition-new(hub-page) {
+  --hub-slide-in: var(--hub-page-in);
+  animation: hub-slide-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+html:active-view-transition-type(enter, exit)::view-transition-old(hub-nav) {
+  --hub-slide-out: var(--hub-nav-out);
+  animation: hub-slide-out 140ms ease-out both;
+}
+html:active-view-transition-type(enter, exit)::view-transition-new(hub-nav) {
+  --hub-slide-in: var(--hub-nav-in);
+  animation: hub-slide-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
