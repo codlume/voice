@@ -3,8 +3,13 @@ import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
-import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
+import {
+  supportsCleanup,
+  wantsCleanup,
+  type DictationLanguage,
+} from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
+import { classify, cleanupStyleFor } from "../shared/style.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
@@ -189,7 +194,7 @@ export function createDictation(options: DictationOptions): Dictation {
           language: started.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
           microphone: store.state.settings.microphone,
-          detectHost: true,
+          detectHost: wantsCleanup(store.state.settings),
         });
         return;
       case "stopCapture":
@@ -352,16 +357,20 @@ export function createDictation(options: DictationOptions): Dictation {
           speechMs: event.speechMs,
           asrMs: event.asrMs,
         });
+        const { settings } = store.state;
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
-            ? { style: store.state.settings.cleanup.style, layout: "general" }
+            ? cleanupStyleFor(
+                classify(event.target, settings.cleanup.assignments),
+                settings.cleanup.styles,
+              )
             : null,
           rewrites: {
-            dictionary: store.state.settings.dictionary,
-            snippets: store.state.settings.snippets,
+            dictionary: settings.dictionary,
+            snippets: settings.snippets,
           },
         });
         return;

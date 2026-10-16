@@ -17,6 +17,7 @@ import {
   Tray,
   type WebPreferences,
 } from "electron";
+import * as Option from "effect/Option";
 import type * as ElectronUpdater from "electron-updater";
 
 import {
@@ -59,7 +60,7 @@ import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
-import { isTranscriptTarget } from "./protocol.ts";
+import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
@@ -902,11 +903,12 @@ async function main() {
           if (!item) throw new Error(`no menu item ${id}`);
           item.click();
         },
-        setTarget: (target: unknown) => {
-          if (!isTranscriptTarget(target)) {
+        setTarget: (raw: unknown) => {
+          const target = decodeTarget(raw);
+          if (Option.isNone(target)) {
             throw new Error("setTarget takes null or { bundleId: string, host: string | null }");
           }
-          helper.send({ type: "test.target", target });
+          helper.send({ type: "test.target", target: target.value });
         },
       },
     });

@@ -1,7 +1,8 @@
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import { type CleanResult, type CleanupStyle, WRITING_STYLES } from "@voice/cleanup";
+import { type CleanResult, type CleanupStyle } from "@voice/cleanup";
+import * as Option from "effect/Option";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
@@ -9,6 +10,13 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Output } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
+import {
+  DEFAULT_STYLES,
+  parseAssignments,
+  type Assignment,
+  type CategoryStyles,
+  type Target,
+} from "../shared/style.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
   CLEANUP_BASE_MS,
@@ -26,7 +34,7 @@ import {
   type SessionReport,
 } from "./dictation.ts";
 import { createHistory } from "./history.ts";
-import type { HelperCommand, HelperEvent } from "./protocol.ts";
+import { decodeTarget, type HelperCommand, type HelperEvent } from "./protocol.ts";
 import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
@@ -42,7 +50,8 @@ type Options = {
   asrModel?: ModelStatus;
   cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
-  style?: CleanupStyle["style"];
+  styles?: Partial<CategoryStyles>;
+  assignments?: readonly Assignment[];
   cleanFails?: "rejects" | "throws";
   cleanHangs?: boolean;
   cleanPartial?: boolean;
@@ -82,7 +91,8 @@ function harness(opts: Options = {}) {
       dictionary: opts.dictionary ?? DEFAULT_SETTINGS.dictionary,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
-        style: opts.style ?? DEFAULT_SETTINGS.cleanup.style,
+        styles: { ...DEFAULT_STYLES, ...opts.styles },
+        assignments: opts.assignments ?? [],
       },
     },
     microphones: { kind: "loading" },
@@ -183,6 +193,7 @@ function harness(opts: Options = {}) {
     store,
     helper,
     latest: () => history.entries()[0] ?? null,
+    recorded: () => history.entries(),
     commands,
     cleans,
     gpu,
@@ -206,9 +217,12 @@ async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-type Target = Extract<HelperEvent, { type: "transcript" }>["target"];
+const target = (bundleId: string, host: string | null = null) =>
+  Option.getOrThrow(decodeTarget({ bundleId, host }));
+const mailApp = target("com.apple.mail");
+const chromeAt = (host: string) => target("com.google.Chrome", host);
 
-async function dictate(h: ReturnType<typeof harness>, text: string, target: Target = null) {
+async function dictate(h: ReturnType<typeof harness>, text: string, to: Target | null = null) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
   const id = h.id();
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
@@ -221,7 +235,7 @@ async function dictate(h: ReturnType<typeof harness>, text: string, target: Targ
     audioMs: 800,
     asrMs: 100,
     speechMs: 600,
-    target,
+    target: to,
   });
   await flush();
   return id;
@@ -271,9 +285,19 @@ describe("createDictation", () => {
         muteWhileDictating: false,
         language: value,
         microphone: null,
-        detectHost: true,
+        detectHost: expect.any(Boolean),
       },
     ]);
+  });
+
+  test.each<[string, Options, boolean]>([
+    ["cleanup runs", {}, true],
+    ["cleanup is off", { cleanupEnabled: false }, false],
+    ["the language has no cleanup", { dictationLanguage: "pl" }, false],
+  ])("asks the helper for the page host only when %s", (_, opts, detectHost) => {
+    const h = harness(opts);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands).toEqual([expect.objectContaining({ type: "capture.start", detectHost })]);
   });
 
   test("snapshots the microphone per session and applies a changed choice next time", () => {
@@ -487,11 +511,10 @@ describe("createDictation", () => {
     expect(json).not.toContain(id.slice(0, 8));
   });
 
-  test.each<Target>([{ bundleId: "com.google.Chrome", host: "mail.google.com" }, null])(
-    "inserts and records a transcript with target %j, and never logs or reports the target",
-    async (target) => {
-      const h = harness();
-      const id = await dictate(h, "hello world", target);
+  test("inserts and records dictations into Mail and Gmail, and never logs or reports the target", async () => {
+    const h = harness();
+    for (const to of [mailApp, chromeAt("mail.google.com")]) {
+      const id = await dictate(h, "hello world", to);
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
       h.dictation.onHelperEvent({
         type: "insert.result",
@@ -500,14 +523,25 @@ describe("createDictation", () => {
         reason: null,
       });
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
-      expect(h.latest()).toMatchObject({ id, text: "hello world.", status: "inserted" });
-      expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted"]);
-      expect(h.dictated).toHaveLength(1);
-      const recorded = JSON.stringify([h.logs, h.entries, h.reports, h.dictated, h.latest()]);
-      expect(recorded).not.toContain("com.google.Chrome");
-      expect(recorded).not.toContain("mail.google.com");
-    },
-  );
+    }
+    expect(h.styles.map(({ layout }) => layout)).toEqual(["email", "email"]);
+    expect(h.recorded()).toMatchObject([
+      { text: "hello world.", status: "inserted" },
+      { text: "hello world.", status: "inserted" },
+    ]);
+    expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted", "inserted"]);
+    expect(h.dictated).toHaveLength(2);
+    const recorded = JSON.stringify([
+      h.logs,
+      h.entries,
+      h.reports,
+      h.dictated,
+      h.recorded(),
+    ]).toLowerCase();
+    for (const key of ["com.apple.mail", "com.google.chrome", "mail.google.com"]) {
+      expect(recorded).not.toContain(key);
+    }
+  });
 
   test("releaseToInsertMs counts from the release even when capture caught up later", () => {
     const h = harness({ cleanupEnabled: false });
@@ -704,28 +738,49 @@ describe("createDictation", () => {
     expect(h.logs.filter((line) => line.startsWith("session "))).toHaveLength(2);
   });
 
-  test.each(WRITING_STYLES)(
-    "cleans with the user's %s style in the general layout",
-    async (style) => {
-      const h = harness({ style });
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-      const id = h.id();
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
-      vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-      h.dictation.onHelperEvent({
-        type: "transcript",
-        id,
-        text: "hey",
-        audioMs: 800,
-        asrMs: 120,
-        speechMs: 600,
-        target: null,
-      });
-      await flush();
-      expect(h.styles).toStrictEqual([{ style, layout: "general" }]);
-    },
-  );
+  const SPREAD: CategoryStyles = {
+    personal: "veryCasual",
+    work: "casual",
+    email: "formal",
+    other: "formal",
+  };
+
+  test.each<[string, Target | null, readonly Assignment[], CleanupStyle]>([
+    ["Mail", mailApp, [], { style: "formal", layout: "email" }],
+    ["Messages", target("com.apple.MobileSMS"), [], { style: "veryCasual", layout: "general" }],
+    ["Gmail in Chrome", chromeAt("mail.google.com"), [], { style: "formal", layout: "email" }],
+    [
+      "another site in Chrome",
+      chromeAt("duckduckgo.com"),
+      [],
+      { style: "formal", layout: "general" },
+    ],
+    ["an unknown target", null, [], { style: "formal", layout: "general" }],
+    [
+      "Mail with a host that does not parse",
+      target("com.apple.mail", "not a host"),
+      [],
+      { style: "formal", layout: "email" },
+    ],
+    [
+      "a site the user put in Work",
+      chromeAt("duckduckgo.com"),
+      parseAssignments([{ kind: "site", host: "duckduckgo.com", category: "work" }]),
+      { style: "casual", layout: "general" },
+    ],
+    [
+      "Mail moved to Personal",
+      mailApp,
+      parseAssignments([
+        { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "personal" },
+      ]),
+      { style: "veryCasual", layout: "general" },
+    ],
+  ])("cleans a dictation into %s with %j", async (_, to, assignments, expected) => {
+    const h = harness({ styles: SPREAD, assignments });
+    await dictate(h, "hey", to);
+    expect(h.styles).toStrictEqual([expected]);
+  });
 
   test("a release after the minimum hold keeps the GPU busy until the clean starts", async () => {
     const h = harness();
@@ -807,6 +862,31 @@ describe("createDictation", () => {
     expect(h.latest()).toMatchObject({ raw: "Sign off.", text: expansion });
   });
 
+  test.each<[string, Options, string, string]>([
+    ["the language has no cleanup", { dictationLanguage: "de" }, "hallo welt", "hallo welt"],
+    [
+      "the dictation is only a trigger",
+      {
+        snippets: [
+          {
+            id: "1",
+            trigger: "sign off",
+            expansion: "Best,\nAlex",
+            expansionHtml: null,
+            enabled: true,
+          },
+        ],
+      },
+      "Sign off.",
+      "Best,\nAlex",
+    ],
+  ])("a dictation into Mail skips cleanup when %s", async (_, opts, text, inserted) => {
+    const h = harness(opts);
+    const id = await dictate(h, text, mailApp);
+    expect(h.cleans).toEqual([]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: inserted, html: null });
+  });
+
   test("a formatted snippet sends its HTML to the helper and keeps history plain", async () => {
     const h = harness({ snippets: [formattedName] });
     const id = await dictate(h, "sign it my name");
@@ -865,7 +945,7 @@ describe("createDictation", () => {
           language: value,
           muteWhileDictating: false,
           microphone: null,
-          detectHost: true,
+          detectHost: false,
         },
       ]);
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
@@ -1021,6 +1101,17 @@ describe("createDictation", () => {
       ]);
     },
   );
+
+  test("a failed cleanup of a Mail dictation inserts the raw transcript with the dictionary applied", async () => {
+    const h = harness({
+      cleanFails: "rejects",
+      dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }],
+    });
+    const id = await dictate(h, "keep hadrys", mailApp);
+    expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep Hadryś", html: null });
+    expect(h.latest()).toMatchObject({ raw: "keep hadrys", text: "keep Hadryś" });
+  });
 
   test("a cleanup that never settles is aborted after the budget and a grace, inserts the raw text, and ignores the late result", async () => {
     const h = harness({ cleanHangs: true });

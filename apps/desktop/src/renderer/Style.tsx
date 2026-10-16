@@ -1,12 +1,14 @@
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
+import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import { finishText, type WritingStyle } from "@voice/cleanup/style";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
+import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { Switch } from "./Switch.tsx";
@@ -14,7 +16,28 @@ import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const SAMPLE = "I'll be there at 5. Don't worry, it's fine.";
+const SEMI_FORMAL_EXAMPLES: Record<Category, string> = {
+  personal: "Hey, are you free for lunch tomorrow? Let's do 12 if that works for you.",
+  work: "Hey Anna, can we move the sync to Thursday at 3pm? I'll send the notes to the team.",
+  email: "Hi John,\n\nThanks for the update. I will review it tomorrow.",
+  other: "The quarterly numbers look good, and churn is down.",
+};
+
+const CATEGORY_TABS: Record<Category, { label: string; caption: string }> = {
+  personal: {
+    label: "Personal messages",
+    caption: "Used in personal messengers like Messages and WhatsApp.",
+  },
+  work: { label: "Work messages", caption: "Used in workplace messengers like Slack and Teams." },
+  email: {
+    label: "Email",
+    caption: "Used in email apps like Mail and Outlook, and in webmail like Gmail.",
+  },
+  other: {
+    label: "Other",
+    caption: "Used everywhere else, including editors, terminals, and notes.",
+  },
+};
 
 const writingStyles: { value: WritingStyle; label: string; rule: string }[] = [
   { value: "formal", label: "Formal", rule: "Caps + punctuation" },
@@ -39,6 +62,43 @@ const styles = stylex.create({
     backgroundColor: color.card,
   },
   cleanupText: { flexGrow: 1, minWidth: 0 },
+  tabs: { display: "flex", flexDirection: "column", gap: space.md },
+  tabList: {
+    display: "grid",
+    gridAutoFlow: "column",
+    gridAutoColumns: "1fr",
+    gap: 2,
+    padding: 3,
+    borderRadius: radius.medium,
+    backgroundColor: color.segmentTrack,
+  },
+  tab: {
+    paddingBlock: 6,
+    paddingInline: space.md,
+    borderWidth: 0,
+    borderRadius: 7,
+    backgroundColor: "transparent",
+    color: color.mutedForeground,
+    fontFamily: "inherit",
+    fontSize: 13,
+    textAlign: "center",
+    cursor: "pointer",
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+  },
+  tabOn: {
+    backgroundColor: color.segmentSelected,
+    color: color.foreground,
+    fontWeight: 500,
+    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+  },
+  panel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.md,
+    borderRadius: radius.medium,
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+    outlineOffset: 3,
+  },
   title: { display: "block", fontWeight: 500 },
   detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   fieldset: { minWidth: 0, margin: 0, padding: 0, borderWidth: 0 },
@@ -102,6 +162,7 @@ const styles = stylex.create({
     fontSize: 18,
     lineHeight: 1.35,
     letterSpacing: "-0.01em",
+    whiteSpace: "pre-line",
   },
 });
 
@@ -111,6 +172,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
   const { error: saveError, run } = useAction();
   const cleanupSupported = supportsCleanup(settings.dictationLanguage);
   const cleanupEnabled = wantsCleanup(settings);
+  const [category, setCategory] = useState<Category>("personal");
 
   const changeCleanup = (cleanup: NonNullable<SettingsPatch["cleanup"]>) =>
     run(() => hubApi().updateSettings({ cleanup }), "Could not save your style settings.");
@@ -139,65 +201,45 @@ export function Style({ settings }: { settings: SettingsValue }) {
         />
       </div>
 
-      <fieldset disabled={!cleanupEnabled} {...stylex.props(styles.fieldset)}>
-        <legend id={`${name}-legend`} {...stylex.props(styles.legend)}>
-          Writing style
-        </legend>
-        <RadioGroup<WritingStyle>
-          aria-labelledby={`${name}-legend`}
-          value={settings.cleanup.style}
-          disabled={!cleanupEnabled}
-          onValueChange={(style) => void changeCleanup({ style })}
-          {...stylex.props(styles.grid)}
-        >
-          {writingStyles.map(({ value, label, rule }) => {
-            const selected = settings.cleanup.style === value;
-            const labelId = `${name}-${value}-label`;
-            const ruleId = `${name}-${value}-rule`;
-            const exampleId = `${name}-${value}-example`;
-            return (
-              <Radio.Root
-                key={value}
-                value={value}
-                aria-labelledby={labelId}
-                aria-describedby={`${ruleId} ${exampleId}`}
-                {...stylex.props(
-                  styles.card,
-                  selected && styles.selected,
-                  !cleanupEnabled && styles.disabled,
-                )}
-              >
-                <span>
-                  <span {...stylex.props(styles.cardHeader)}>
-                    <span id={labelId} {...stylex.props(styles.cardTitle)}>
-                      {label}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      {...stylex.props(styles.mark, selected && styles.markSelected)}
-                    >
-                      <CheckIcon size={12} strokeWidth={3} />
-                    </span>
-                  </span>
-                  <span id={ruleId} {...stylex.props(styles.detail)}>
-                    {rule}
-                  </span>
-                </span>
-                <span id={exampleId} {...stylex.props(styles.example)}>
-                  &ldquo;{finishText(value, SAMPLE)}&rdquo;
-                </span>
-              </Radio.Root>
-            );
-          })}
-        </RadioGroup>
-      </fieldset>
+      <Tabs.Root
+        value={category}
+        onValueChange={(value: unknown) => {
+          const next = CATEGORIES.find((c) => c === value);
+          if (next) setCategory(next);
+        }}
+        {...stylex.props(styles.tabs)}
+      >
+        <Tabs.List {...stylex.props(styles.tabList)}>
+          {CATEGORIES.map((value) => (
+            <Tabs.Tab
+              key={value}
+              value={value}
+              {...stylex.props(styles.tab, value === category && styles.tabOn)}
+            >
+              {CATEGORY_TABS[value].label}
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+        {CATEGORIES.map((value) => (
+          <Tabs.Panel key={value} value={value} {...stylex.props(styles.panel)}>
+            <p {...stylex.props(styles.detail)}>{CATEGORY_TABS[value].caption}</p>
+            <StyleCards
+              id={`${name}-${value}`}
+              category={value}
+              style={settings.cleanup.styles[value]}
+              enabled={cleanupEnabled}
+              onChange={(style) => void changeCleanup({ styles: { [value]: style } })}
+            />
+          </Tabs.Panel>
+        ))}
+      </Tabs.Root>
 
       <p {...stylex.props(styles.detail)}>
         {!cleanupSupported
           ? "Text cleanup is available for English only. Choose English in Settings to use your saved style."
           : !cleanupEnabled
             ? "Turn on cleanup to apply a style. Your transcript is currently inserted as recognized."
-            : "Applies to English dictation. Your meaning stays the same."}
+            : "Style applies to English dictation. Voice checks which app, and which website in a browser, you are dictating into, on this Mac only. Nothing is saved or sent."}
       </p>
       {saveError && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
@@ -205,5 +247,74 @@ export function Style({ settings }: { settings: SettingsValue }) {
         </p>
       )}
     </div>
+  );
+}
+
+function StyleCards({
+  id,
+  category,
+  style,
+  enabled,
+  onChange,
+}: {
+  id: string;
+  category: Category;
+  style: WritingStyle;
+  enabled: boolean;
+  onChange: (style: WritingStyle) => void;
+}) {
+  return (
+    <fieldset disabled={!enabled} {...stylex.props(styles.fieldset)}>
+      <legend id={`${id}-legend`} {...stylex.props(styles.legend)}>
+        Writing style
+      </legend>
+      <RadioGroup<WritingStyle>
+        aria-labelledby={`${id}-legend`}
+        value={style}
+        disabled={!enabled}
+        onValueChange={onChange}
+        {...stylex.props(styles.grid)}
+      >
+        {writingStyles.map(({ value, label, rule }) => {
+          const selected = style === value;
+          const labelId = `${id}-${value}-label`;
+          const ruleId = `${id}-${value}-rule`;
+          const exampleId = `${id}-${value}-example`;
+          return (
+            <Radio.Root
+              key={value}
+              value={value}
+              aria-labelledby={labelId}
+              aria-describedby={`${ruleId} ${exampleId}`}
+              {...stylex.props(
+                styles.card,
+                selected && styles.selected,
+                !enabled && styles.disabled,
+              )}
+            >
+              <span>
+                <span {...stylex.props(styles.cardHeader)}>
+                  <span id={labelId} {...stylex.props(styles.cardTitle)}>
+                    {label}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    {...stylex.props(styles.mark, selected && styles.markSelected)}
+                  >
+                    <CheckIcon size={12} strokeWidth={3} />
+                  </span>
+                </span>
+                <span id={ruleId} {...stylex.props(styles.detail)}>
+                  {rule}
+                </span>
+              </span>
+              <span id={exampleId} {...stylex.props(styles.example)}>
+                &ldquo;{finishText(value, SEMI_FORMAL_EXAMPLES[category])}&rdquo;
+              </span>
+            </Radio.Root>
+          );
+        })}
+      </RadioGroup>
+    </fieldset>
   );
 }

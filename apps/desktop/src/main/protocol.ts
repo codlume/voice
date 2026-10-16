@@ -3,11 +3,14 @@ import { clamp } from "effect/Number";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
+import * as SchemaIssue from "effect/SchemaIssue";
 
+import { parseBundleId, parseHost } from "../shared/app-categories.ts";
 import { MicrophoneSchema } from "../shared/microphone.ts";
 
 import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
+import type { Target } from "../shared/style.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
 export const HELPER_PROTOCOL_VERSION = 11;
@@ -33,7 +36,7 @@ export type HelperCommand =
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }
   | { type: "asr.remove" }
-  | { type: "test.target"; target: TranscriptTarget | null };
+  | { type: "test.target"; target: Target | null };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
@@ -46,13 +49,31 @@ const insertFailure = nullOnInvalid(
   Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "failed"]),
 );
 const statusMessage = nullOnInvalid(Schema.String);
-const TranscriptTargetSchema = Schema.Struct({
-  bundleId: Schema.String,
-  host: Schema.NullOr(Schema.String),
-});
-export type TranscriptTarget = typeof TranscriptTargetSchema.Type;
-export const isTranscriptTarget = Schema.is(Schema.NullOr(TranscriptTargetSchema));
-const target = nullOnInvalid(TranscriptTargetSchema);
+const parsedBy = <T extends string>(parse: (input: string) => T | null) =>
+  Schema.String.pipe(
+    Schema.decodeTo(
+      Schema.declare((u): u is T => typeof u === "string" && parse(u) === u),
+      {
+        decode: SchemaGetter.transformEffect((input: string) => {
+          const value = parse(input);
+          return value === null
+            ? Effect.fail(new SchemaIssue.InvalidValue())
+            : Effect.succeed(value);
+        }),
+        encode: SchemaGetter.passthroughSubtype(),
+      },
+    ),
+  );
+const TargetSchema = Schema.NullOr(
+  Schema.Struct({
+    bundleId: parsedBy(parseBundleId),
+    host: Schema.NullOr(parsedBy(parseHost)).pipe(
+      Schema.catchDecoding(() => Effect.succeedSome(null)),
+    ),
+  }),
+);
+export const decodeTarget = Schema.decodeUnknownOption(TargetSchema);
+const target = nullOnInvalid(TargetSchema);
 const level = Schema.Finite.pipe(
   Schema.decode({
     decode: SchemaGetter.transform(clamp({ minimum: 0, maximum: 1 })),

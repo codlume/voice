@@ -30,7 +30,7 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: 900,
-        target: { bundleId: "com.google.Chrome", host: "mail.google.com" },
+        target: { bundleId: "com.google.chrome", host: "mail.google.com" },
       },
       {
         type: "transcript",
@@ -39,7 +39,7 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: 900,
-        target: { bundleId: "com.apple.MobileSMS", host: null },
+        target: { bundleId: "com.apple.mobilesms", host: null },
       },
       {
         type: "transcript",
@@ -156,6 +156,19 @@ describe("parseHelperEvent", () => {
   );
 
   test.each([
+    [{ bundleId: " com.google.Chrome ", host: "Mail.Google.com" }, "mail.google.com"],
+    [{ bundleId: "com.google.Chrome", host: "127.0.0.1" }, null],
+    [{ bundleId: "com.google.Chrome", host: "not a host" }, null],
+    [{ bundleId: "com.google.Chrome", host: 7 }, null],
+  ])("decodes the target %j to a lowercase bundle id and the host %j", (target, host) => {
+    expect(
+      parseHelperEvent(
+        line({ type: "transcript", id: "a", text: "hi", audioMs: 1, asrMs: 1, target }),
+      ),
+    ).toMatchObject({ target: { bundleId: "com.google.chrome", host } });
+  });
+
+  test.each([
     undefined,
     "x",
     42,
@@ -165,6 +178,8 @@ describe("parseHelperEvent", () => {
     { bundleId: "a" },
     { bundleId: null, host: null },
     { bundleId: null, host: "mail.google.com" },
+    { bundleId: "com.apple/mail", host: null },
+    { bundleId: "com.google.Chrome" },
   ])("keeps a transcript whose target %j is missing or invalid, with a null target", (target) => {
     expect(
       parseHelperEvent(

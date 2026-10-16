@@ -2,10 +2,12 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
+import { WRITING_STYLES, type WritingStyle } from "@voice/cleanup/style";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
+import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import { applyPatch, loadSettings, parseSettings, saveSettings } from "./settings.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
@@ -30,6 +32,22 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     },
   };
 });
+
+const PERSONAL_CASUAL_REST_FORMAL = {
+  personal: "casual",
+  work: "formal",
+  email: "formal",
+  other: "formal",
+};
+
+const everywhere = (style: WritingStyle): CategoryStyles => ({
+  personal: style,
+  work: style,
+  email: style,
+  other: style,
+});
+
+const stylesOf = (cleanup: object) => parseSettings({ cleanup }).cleanup.styles;
 
 describe("parseSettings", () => {
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
@@ -96,7 +114,7 @@ describe("parseSettings", () => {
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",
-      cleanup: { enabled: false, style: "formal" },
+      cleanup: { enabled: false, styles: PERSONAL_CASUAL_REST_FORMAL, assignments: [] },
       diagnostics: "off",
       snippets: [],
       dictionary: [],
@@ -121,26 +139,59 @@ describe("parseSettings", () => {
     );
   });
 
+  test.each(WRITING_STYLES)("seeds every category from a saved %j style", (style) => {
+    expect(parseSettings({ cleanup: { enabled: false, style } }).cleanup).toEqual({
+      enabled: false,
+      styles: everywhere(style),
+      assignments: [],
+    });
+  });
+
   test.each([
     ["casual", "veryCasual"],
     ["semi-casual", "casual"],
     ["semi-formal", "formal"],
     ["formal", "formal"],
-  ])("migrates the legacy styling %j to the %j style", (styling, style) => {
+  ] as const)("seeds every category from the legacy styling %j as %j", (styling, style) => {
     expect(parseSettings({ cleanup: { enabled: false, styling } }).cleanup).toEqual({
       enabled: false,
-      style,
+      styles: everywhere(style),
+      assignments: [],
     });
   });
 
   test("a saved style wins over the legacy styling, which fills in for an invalid one", () => {
-    expect(parseSettings({ cleanup: { style: "casual", styling: "casual" } }).cleanup.style).toBe(
-      "casual",
-    );
+    expect(stylesOf({ style: "casual", styling: "casual" })).toEqual(everywhere("casual"));
+    expect(stylesOf({ style: "shouty", styling: "semi-casual" })).toEqual(everywhere("casual"));
+    expect(stylesOf({ style: "shouty", styling: "shouty" })).toEqual(PERSONAL_CASUAL_REST_FORMAL);
+  });
+
+  test("saved styles win over style and styling, and an invalid one takes its own default", () => {
+    const saved = { personal: "formal", work: "veryCasual", email: "casual", other: "casual" };
+    expect(stylesOf({ styles: saved, style: "formal", styling: "casual" })).toEqual(saved);
     expect(
-      parseSettings({ cleanup: { style: "shouty", styling: "semi-casual" } }).cleanup.style,
-    ).toBe("casual");
-    expect(parseSettings({ cleanup: { styling: "shouty" } }).cleanup.style).toBe("formal");
+      stylesOf({
+        styles: { personal: "shouty", work: 3, email: "veryCasual" },
+        style: "veryCasual",
+      }),
+    ).toEqual({ personal: "casual", work: "formal", email: "veryCasual", other: "formal" });
+  });
+
+  test("drops invalid assignments on load and keeps the last one for a key", () => {
+    const mail = { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "work" };
+    const assignments = [
+      mail,
+      { kind: "site", host: "github.com", category: "shouty" },
+      { kind: "site", host: "not a host", category: "work" },
+      { kind: "app", bundleId: "com.example.app", category: "work" },
+      "slack.com",
+      { kind: "site", host: "slack.com", category: "work" },
+      { kind: "site", host: "Slack.com", category: "personal" },
+    ];
+    expect(parseSettings({ cleanup: { assignments } }).cleanup.assignments).toEqual([
+      mail,
+      { kind: "site", host: "slack.com", category: "personal" },
+    ]);
   });
 
   test("keeps a saved theme and falls back to system for an unknown one", () => {
@@ -173,7 +224,9 @@ describe("applyPatch", () => {
     expect(applyPatch(polish, { dictationLanguage: "en" })).toEqual(DEFAULT_SETTINGS);
   });
   test("merges a partial cleanup patch and keeps other fields", () => {
-    const veryCasual = applyPatch(DEFAULT_SETTINGS, { cleanup: { style: "veryCasual" } });
+    const veryCasual = applyPatch(DEFAULT_SETTINGS, {
+      cleanup: { styles: { work: "veryCasual" } },
+    });
     const next = applyPatch(veryCasual, { cleanup: { enabled: false } });
     expect(next).toEqual({
       hotkey: "fn",
@@ -186,13 +239,49 @@ describe("applyPatch", () => {
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",
-      cleanup: { enabled: false, style: "veryCasual" },
+      cleanup: {
+        enabled: false,
+        styles: { personal: "casual", work: "veryCasual", email: "formal", other: "formal" },
+        assignments: [],
+      },
       diagnostics: "off",
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
     });
-    expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, style: "formal" });
+    expect(DEFAULT_SETTINGS.cleanup).toEqual({
+      enabled: true,
+      styles: PERSONAL_CASUAL_REST_FORMAL,
+      assignments: [],
+    });
+  });
+
+  const assignments = parseAssignments([
+    { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "work" },
+    { kind: "site", host: "slack.com", category: "personal" },
+  ]);
+
+  test("cleanup patches keep the saved assignments", () => {
+    const saved = parseSettings({ cleanup: { assignments } });
+    expect(saved.cleanup.assignments).toEqual(assignments);
+    const off = applyPatch(saved, { cleanup: { enabled: false } });
+    expect(off.cleanup).toEqual({
+      enabled: false,
+      styles: PERSONAL_CASUAL_REST_FORMAL,
+      assignments,
+    });
+    const styled = applyPatch(off, { cleanup: { styles: { email: "casual" } } });
+    expect(styled.cleanup).toEqual({
+      enabled: false,
+      styles: { ...PERSONAL_CASUAL_REST_FORMAL, email: "casual" },
+      assignments,
+    });
+  });
+
+  test("a patch cannot replace the assignments", () => {
+    const saved = parseSettings({ cleanup: { assignments } });
+    const patch = { cleanup: { assignments: [] } } as unknown as SettingsPatch;
+    expect(applyPatch(saved, patch).cleanup.assignments).toEqual(assignments);
   });
 
   test("answers diagnostics either way, keeps the answer across unrelated patches", () => {
@@ -398,17 +487,21 @@ describe("load and save", () => {
     await writeFile(file, JSON.stringify({ cleanup: { enabled: false, styling: "casual" } }));
     expect(loadSettings(file)).toMatchObject({
       dictationLanguage: "en",
-      cleanup: { enabled: false, style: "veryCasual" },
+      cleanup: { enabled: false, styles: everywhere("veryCasual"), assignments: [] },
     });
   });
 
-  test("the legacy styling is gone from the file after the next save", async () => {
+  test.each([
+    [{ styling: "casual" }, "veryCasual"],
+    [{ style: "casual" }, "casual"],
+  ] as const)("a file with %j saves %j styles and no legacy key", async (legacy, style) => {
     const file = NodePath.join(dir, "settings.json");
-    await writeFile(file, JSON.stringify({ cleanup: { enabled: true, styling: "semi-casual" } }));
+    await writeFile(file, JSON.stringify({ cleanup: { enabled: true, ...legacy } }));
     await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
     expect(JSON.parse(await readFile(file, "utf8")).cleanup).toEqual({
       enabled: true,
-      style: "casual",
+      styles: everywhere(style),
+      assignments: [],
     });
   });
 
@@ -501,11 +594,19 @@ describe("load and save", () => {
 
   test("save then load round-trips through a nested directory and leaves no temp file", async () => {
     const file = NodePath.join(dir, "nested", "settings.json");
-    const settings = applyPatch(DEFAULT_SETTINGS, {
+    const settings = parseSettings({
+      ...DEFAULT_SETTINGS,
       hotkey: "rightOption",
       updateChannel: "nightly",
       theme: "dark",
-      cleanup: { enabled: false },
+      cleanup: {
+        enabled: false,
+        styles: { personal: "veryCasual", work: "casual", email: "formal", other: "casual" },
+        assignments: [
+          { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "personal" },
+          { kind: "site", host: "mail.google.com", category: "work" },
+        ],
+      },
       snippets: [
         {
           id: "1",
@@ -521,6 +622,7 @@ describe("load and save", () => {
       ],
       zoomLevel: 1.5,
     });
+    expect(settings.cleanup.assignments).toHaveLength(2);
     await saveSettings(file, settings);
     expect(loadSettings(file)).toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);

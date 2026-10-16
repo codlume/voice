@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Snapshot } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
+import { DEFAULT_STYLES } from "../shared/style.ts";
 import { checklist } from "./checklist.ts";
 
 const fresh: Snapshot = {
@@ -26,7 +27,7 @@ const fresh: Snapshot = {
     showInDock: true,
     alwaysShowPill: true,
     dictationLanguage: "en",
-    cleanup: { enabled: true, style: "formal" },
+    cleanup: { enabled: true, styles: DEFAULT_STYLES, assignments: [] },
     diagnostics: "off",
     snippets: [],
     dictionary: [],

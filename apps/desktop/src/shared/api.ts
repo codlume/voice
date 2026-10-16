@@ -1,5 +1,3 @@
-import type { WritingStyle } from "@voice/cleanup/style";
-
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
@@ -7,6 +5,7 @@ import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { Snippet } from "./snippets.ts";
+import { DEFAULT_STYLES, type Assignment, type CategoryStyles } from "./style.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
@@ -137,7 +136,8 @@ export type Settings = {
   theme: Theme;
   cleanup: {
     enabled: boolean;
-    style: WritingStyle;
+    styles: CategoryStyles;
+    assignments: readonly Assignment[];
   };
   diagnostics: DiagnosticsConsent;
   snippets: readonly Snippet[];
@@ -157,7 +157,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
-  cleanup: { enabled: true, style: "formal" },
+  cleanup: { enabled: true, styles: DEFAULT_STYLES, assignments: [] },
   diagnostics: "off",
   snippets: [],
   dictionary: [],
@@ -175,7 +175,10 @@ export type SettingsPatch = {
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;
-  cleanup?: Partial<Settings["cleanup"]>;
+  cleanup?: {
+    enabled?: boolean;
+    styles?: Partial<CategoryStyles>;
+  };
   diagnostics?: DiagnosticsConsent;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];

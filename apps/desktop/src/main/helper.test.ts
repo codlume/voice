@@ -2,11 +2,12 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
+import * as Option from "effect/Option";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { RESTART_MIN_MS, startHelper, type Helper, type HelperExit } from "./helper.ts";
-import type { HelperEvent } from "./protocol.ts";
+import { decodeTarget, type HelperEvent } from "./protocol.ts";
 
 const FAKE = NodePath.join(import.meta.dirname, "testing/fake-helper.ts");
 
@@ -151,7 +152,9 @@ describe("startHelper", () => {
     const h = boot({ transcript: "hi" });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    const target = { bundleId: "com.google.Chrome", host: "mail.google.com" };
+    const target = Option.getOrThrow(
+      decodeTarget({ bundleId: "com.google.chrome", host: "mail.google.com" }),
+    );
     const start = async (id: string) => {
       h.helper.send({
         type: "capture.start",
