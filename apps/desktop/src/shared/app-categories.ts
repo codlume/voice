@@ -13,6 +13,11 @@ export function parseBundleId(input: string): BundleId | null {
     : null;
 }
 
+export function parseBundleIds(raw: unknown): BundleId[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => (typeof item === "string" ? (parseBundleId(item) ?? []) : []));
+}
+
 const LABEL = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
 
 // Hand-rolled rather than `new URL`, whose IDNA and per-scheme rules would accept hosts we refuse.

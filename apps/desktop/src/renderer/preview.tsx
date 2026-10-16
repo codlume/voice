@@ -12,6 +12,7 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
+import { parseBundleId } from "../shared/app-categories.ts";
 import type {
   HistoryEntry,
   HistoryRetention,
@@ -610,6 +611,24 @@ function fakeVoice(
       insights = EMPTY_INSIGHTS;
       for (const listener of insightsListeners) listener(insights);
     },
+    getInstalledApps: async () =>
+      (
+        [
+          ["com.apple.MobileSMS", "Messages"],
+          ["net.whatsapp.WhatsApp", "WhatsApp"],
+          ["ru.keepcoder.Telegram", "Telegram"],
+          ["org.whispersystems.signal-desktop", "Signal"],
+          ["com.hnc.Discord", "Discord"],
+          ["com.tencent.xinWeChat", "WeChat"],
+          ["com.tinyspeck.slackmacgap", "Slack"],
+          ["com.apple.mail", "Mail"],
+          ["com.apple.dt.Xcode", "Xcode"],
+        ] satisfies [string, string][]
+      ).flatMap(([id, name]) => {
+        const bundleId = parseBundleId(id);
+        return bundleId ? [{ bundleId, name, browser: false }] : [];
+      }),
+    getAppIcons: async () => ({}),
   };
 }
 

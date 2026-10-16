@@ -31,7 +31,7 @@ Each file has an H1, one paragraph on user-visible behavior, then exactly these 
 ## Features
 
 - [Dictation](./dictation.md): hold the hotkey, speak, release, and the text lands in the focused app. Covers cleanup on and off, Escape, too short, silence, and the Flow Bar states.
-- [Style](./style.md): turn cleanup on or off and choose a writing style for each of Personal messages, Work messages, Email, and Other, applied by the app or website you dictate into. The cleanup switch was proven end to end on 2026-10-03; the tabs and the `dictate --app` recipe are not yet run with `voice-verify`.
+- [Style](./style.md): turn cleanup on or off and choose a writing style for each of Personal messages, Work messages, Email, and Other, applied by the app or website you dictate into. The cleanup switch was proven end to end on 2026-10-03; the tabs and the `dictate --app` recipe are not yet run with `voice-verify`. The banners were proven on 2026-10-16.
 - [Snippets](./snippets.md): save a spoken trigger and the exact text Voice types in its place, then add, edit, validate, and delete snippets from the Snippets page. Add, validate, restart persistence, edit, and delete are proven with `voice-verify`; the dictation step is not yet run.
 - [Dictionary](./dictionary.md): save words Voice writes with their saved spelling, ignoring case and accents, and replacements that swap a phrase for saved text, from the Dictionary page. Add, validate, the snippet guard in both directions, edit, and delete are proven with `voice-verify`. The dictation step is not yet run.
 - [Insights](./insights.md): words, pace, fixes, streaks, and the daily heatmap from the Insights page, kept across restarts, and cleared from Settings > Data and Privacy. Not yet proven with `voice-verify`.

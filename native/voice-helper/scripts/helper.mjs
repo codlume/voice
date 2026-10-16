@@ -158,7 +158,7 @@ export async function withHelper(options, body) {
   const helper = new Helper(options);
   try {
     const ready = await helper.waitForType("ready");
-    assert(ready.version === 11, `ready.version is ${ready.version}`);
+    assert(ready.version === 12, `ready.version is ${ready.version}`);
     return await body(helper);
   } finally {
     await helper.close();

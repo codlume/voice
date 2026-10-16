@@ -36,6 +36,10 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"test.target","target":{"bundleId":"com.apple.TextEdit","host":null}}"#,
          .testTarget(TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil))),
         (#"{"type":"test.target","target":null}"#, .testTarget(nil)),
+        (#"{"type":"apps.list"}"#, .appsList),
+        (#"{"type":"icons.render","id":"7","paths":["/Applications/Slack.app","/System/Applications/Mail.app"]}"#,
+         .iconsRender(id: "7", paths: ["/Applications/Slack.app", "/System/Applications/Mail.app"])),
+        (#"{"type":"icons.render","id":"8","paths":[]}"#, .iconsRender(id: "8", paths: [])),
     ]
     for (line, expected) in cases {
         #expect(HelperCommand.decode(line: line) == .success(expected), Comment(rawValue: line))
@@ -64,6 +68,11 @@ private func json(_ line: String) throws -> [String: Any] {
 
     let appless = HelperCommand.decode(line: #"{"type":"test.target","target":{"bundleId":null,"host":null}}"#)
     #expect(try unknownDescription(appless).contains("field \"bundleId\" has the wrong type"))
+    let idless = HelperCommand.decode(line: #"{"type":"icons.render","paths":[]}"#)
+    #expect(try unknownDescription(idless).contains("missing field \"id\""))
+
+    let pathless = HelperCommand.decode(line: #"{"type":"icons.render","id":"1"}"#)
+    #expect(try unknownDescription(pathless).contains("missing field \"paths\""))
 }
 
 private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) throws -> String {
@@ -75,7 +84,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 11), ["type": "ready", "version": 11]),
+        (.ready(version: 12), ["type": "ready", "version": 12]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.hotkey(action: .chord), ["type": "hotkey", "action": "chord"]),
         (.hotkey(action: .cancel), ["type": "hotkey", "action": "cancel"]),
@@ -113,6 +122,14 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
          ["type": "permissions", "microphone": "granted", "accessibility": "notDetermined"]),
         (.asrStatus(state: .failed, message: "boom"), ["type": "asr.status", "state": "failed", "message": "boom"]),
         (.log(level: .error, message: "bad"), ["type": "log", "level": "error", "message": "bad"]),
+        (.appsListed(apps: [InstalledApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack", path: "/Applications/Slack.app", modifiedMs: 1_760_000_000_123, browser: false),
+                            InstalledApp(bundleId: "com.google.Chrome", name: "Google Chrome", path: "/Applications/Google Chrome.app", modifiedMs: 1, browser: true)]),
+         ["type": "apps.listed", "apps": [["bundleId": "com.tinyspeck.slackmacgap", "name": "Slack", "path": "/Applications/Slack.app", "modifiedMs": 1_760_000_000_123, "browser": false],
+                                          ["bundleId": "com.google.Chrome", "name": "Google Chrome", "path": "/Applications/Google Chrome.app", "modifiedMs": 1, "browser": true]]]),
+        (.appsListed(apps: []), ["type": "apps.listed", "apps": [Any]()]),
+        (.iconsRendered(id: "7", icons: [RenderedIcon(path: "/Applications/Slack.app", png: Data([0x89, 0x50, 0x4E, 0x47, 0xFF]))]),
+         ["type": "icons.rendered", "id": "7", "icons": [["path": "/Applications/Slack.app", "png": "iVBOR/8="]]]),
+        (.iconsRendered(id: "8", icons: []), ["type": "icons.rendered", "id": "8", "icons": [Any]()]),
     ]
     for (event, expected) in cases {
         let line = event.encodeLine()

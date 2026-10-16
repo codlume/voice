@@ -1,3 +1,4 @@
+import type { BundleId } from "./app-categories.ts";
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
@@ -230,6 +231,12 @@ export type PillApi = WindowApi & {
   onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
 };
 
+/** An app found in the standard application folders. `browser` marks the apps the helper reads a page host from. */
+export type InstalledApp = { bundleId: BundleId; name: string; browser: boolean };
+
+/** PNG data URLs by bundle id. */
+export type AppIcons = Partial<Record<BundleId, string>>;
+
 export type HubApi = WindowApi & {
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
@@ -272,6 +279,10 @@ export type HubApi = WindowApi & {
   onInsights(listener: (insights: Insights) => void): () => void;
   /** Rejects with a message for the user when the file could not be removed. */
   clearInsights(): Promise<void>;
+  /** Rejects when the helper does not answer in time. */
+  getInstalledApps(): Promise<InstalledApp[]>;
+  /** Icons of apps from the last installed-app list. Leaves out any it could not render. */
+  getAppIcons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -313,4 +324,6 @@ export const Channel = {
   getInsights: "voice:getInsights",
   insights: "voice:insights",
   clearInsights: "voice:clearInsights",
+  getInstalledApps: "voice:getInstalledApps",
+  getAppIcons: "voice:getAppIcons",
 } as const;

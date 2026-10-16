@@ -25,6 +25,30 @@ let recording: { since: number; levels: NodeJS.Timeout } | null = null;
 let target: unknown = null;
 let captured: unknown = null;
 
+const installedApps = [
+  {
+    bundleId: "com.apple.MobileSMS",
+    name: "Messages",
+    path: "/System/Applications/Messages.app",
+    modifiedMs: 1,
+    browser: false,
+  },
+  {
+    bundleId: "com.tinyspeck.slackmacgap",
+    name: "Slack",
+    path: "/Applications/Slack.app",
+    modifiedMs: 1,
+    browser: false,
+  },
+  {
+    bundleId: "com.google.Chrome",
+    name: "Google Chrome",
+    path: "/Applications/Google Chrome.app",
+    modifiedMs: 1,
+    browser: true,
+  },
+];
+
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
@@ -90,6 +114,12 @@ function handle(command: Record<string, unknown>) {
     case "insert":
       setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);
       return;
+    case "apps.list":
+      emit({ type: "apps.listed", apps: installedApps });
+      return;
+    case "icons.render":
+      emit({ type: "icons.rendered", id, icons: [] });
+      return;
     default:
       emit({ type: "log", level: "error", message: `unknown command ${String(command.type)}` });
   }
@@ -99,7 +129,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 11 });
+const ready = () => emit({ type: "ready", version: config.version ?? 12 });
 
 if (config.control) {
   const path = config.control;

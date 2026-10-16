@@ -13,7 +13,7 @@ import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { Target } from "../shared/style.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 11;
+export const HELPER_PROTOCOL_VERSION = 12;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey; toggleKey: Hotkey | null }
@@ -36,7 +36,9 @@ export type HelperCommand =
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }
   | { type: "asr.remove" }
-  | { type: "test.target"; target: Target | null };
+  | { type: "test.target"; target: Target | null }
+  | { type: "apps.list" }
+  | { type: "icons.render"; id: string; paths: string[] };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
@@ -74,6 +76,15 @@ const TargetSchema = Schema.NullOr(
 );
 export const decodeTarget = Schema.decodeUnknownOption(TargetSchema);
 const target = nullOnInvalid(TargetSchema);
+const validEntries = <S extends Schema.Top>(entry: S) =>
+  Schema.Array(
+    Schema.NullOr(entry).pipe(Schema.catchDecoding(() => Effect.succeedSome(null))),
+  ).pipe(
+    Schema.decodeTo(Schema.Array(Schema.toType(entry)), {
+      decode: SchemaGetter.transform((entries) => entries.filter((e) => e !== null)),
+      encode: SchemaGetter.transform((entries) => entries),
+    }),
+  );
 const level = Schema.Finite.pipe(
   Schema.decode({
     decode: SchemaGetter.transform(clamp({ minimum: 0, maximum: 1 })),
@@ -156,6 +167,23 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("asr.status"),
     state: Schema.Literals(["missing", "downloading", "loading", "ready", "failed"]),
     message: statusMessage,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("apps.listed"),
+    apps: validEntries(
+      Schema.Struct({
+        bundleId: Schema.String,
+        name: Schema.String,
+        path: Schema.String,
+        modifiedMs: Schema.Finite,
+        browser: Schema.Boolean,
+      }),
+    ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("icons.rendered"),
+    id: Schema.String,
+    icons: validEntries(Schema.Struct({ path: Schema.String, png: Schema.String })),
   }),
   Schema.Struct({
     type: Schema.Literal("log"),

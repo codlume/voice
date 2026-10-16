@@ -7,7 +7,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 11 },
+      { type: "ready", version: 12 },
       { type: "hotkey", action: "down" },
       { type: "hotkey", action: "up" },
       { type: "hotkey", action: "chord" },
@@ -56,6 +56,30 @@ describe("parseHelperEvent", () => {
       { type: "permissions", microphone: "granted", accessibility: "denied" },
       { type: "asr.status", state: "ready", message: null },
       { type: "log", level: "info", message: "hello" },
+      {
+        type: "apps.listed",
+        apps: [
+          {
+            bundleId: "com.apple.mail",
+            name: "Mail",
+            path: "/System/Applications/Mail.app",
+            modifiedMs: 1760000000123,
+            browser: false,
+          },
+          {
+            bundleId: "com.google.Chrome",
+            name: "Google Chrome",
+            path: "/Applications/Google Chrome.app",
+            modifiedMs: 1,
+            browser: true,
+          },
+        ],
+      },
+      {
+        type: "icons.rendered",
+        id: "7",
+        icons: [{ path: "/Applications/Slack.app", png: "iVBORw0KGgo=" }],
+      },
     ];
     for (const event of events) expect(parseHelperEvent(line(event))).toEqual(event);
   });
@@ -196,6 +220,70 @@ describe("parseHelperEvent", () => {
     });
   });
 
+  test("keeps the rest of an app list when one entry is malformed", () => {
+    const mail = {
+      bundleId: "com.apple.mail",
+      name: "Mail",
+      path: "/System/Applications/Mail.app",
+      modifiedMs: 1,
+      browser: false,
+    };
+    const slack = {
+      bundleId: "com.tinyspeck.slackmacgap",
+      name: "Slack",
+      path: "/Applications/Slack.app",
+      modifiedMs: 1,
+      browser: false,
+    };
+    expect(
+      parseHelperEvent(
+        line({
+          type: "apps.listed",
+          apps: [
+            mail,
+            {
+              bundleId: 7,
+              name: "Seven",
+              path: "/Applications/Seven.app",
+              modifiedMs: 1,
+              browser: false,
+            },
+            {
+              bundleId: "a.c",
+              name: "C",
+              path: "/Applications/C.app",
+              modifiedMs: "new",
+              browser: false,
+            },
+            {
+              bundleId: "a.d",
+              name: "D",
+              path: "/Applications/D.app",
+              modifiedMs: 1,
+              browser: "yes",
+            },
+            { bundleId: "a.b", name: "B" },
+            null,
+            slack,
+          ],
+        }),
+      ),
+    ).toEqual({ type: "apps.listed", apps: [mail, slack] });
+  });
+
+  test("keeps the rest of the icons when one entry is malformed", () => {
+    const slack = { path: "/Applications/Slack.app", png: "iVBORw0KGgo=" };
+    expect(
+      parseHelperEvent(
+        line({
+          type: "icons.rendered",
+          id: "7",
+          icons: [{ path: "/Applications/Mail.app" }, slack, { path: 3, png: "x" }],
+        }),
+      ),
+    ).toEqual({ type: "icons.rendered", id: "7", icons: [slack] });
+  });
+
   test.each([
     '{"type":"ready","version":1e400}',
     '{"type":"capture.started","id":"a","startMs":1e400}',
@@ -215,6 +303,8 @@ describe("parseHelperEvent", () => {
     ["a wrong field type", line({ type: "transcript", id: "a", text: 5, audioMs: 1, asrMs: 1 })],
     ["an unknown enum value", line({ type: "hotkey", action: "sideways" })],
     ["a NaN number", '{"type":"capture.level","id":"a","level":NaN}'],
+    ["an app list that is not a list", line({ type: "apps.listed", apps: "Mail" })],
+    ["icons without their request id", line({ type: "icons.rendered", icons: [] })],
     [
       "an unknown permission state",
       line({ type: "permissions", microphone: "maybe", accessibility: "granted" }),

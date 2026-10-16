@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 11 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 12 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -203,12 +203,12 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v11; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v12; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 11 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 12 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);
@@ -295,6 +295,27 @@ describe("startHelper", () => {
       attributes: { "error.code": "EPIPE" },
     });
     await expect.poll(() => h.exits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("lists fixture apps with a browser flag and answers an icon render by its id", async () => {
+    const h = boot();
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "asr.status");
+    h.helper.send({ type: "apps.list" });
+    await h.waitFor((e) => e.type === "apps.listed");
+    const apps = h.of("apps.listed")[0]?.event.apps ?? [];
+    expect(apps.map(({ bundleId, browser }) => [bundleId, browser])).toEqual([
+      ["com.apple.MobileSMS", false],
+      ["com.tinyspeck.slackmacgap", false],
+      ["com.google.Chrome", true],
+    ]);
+    h.helper.send({ type: "icons.render", id: "7", paths: apps.map(({ path }) => path) });
+    await h.waitFor((e) => e.type === "icons.rendered");
+    expect(h.of("icons.rendered")[0]?.event).toEqual({
+      type: "icons.rendered",
+      id: "7",
+      icons: [],
+    });
   });
 
   test("drops commands while the helper is down instead of throwing", async () => {
