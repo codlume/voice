@@ -334,18 +334,22 @@ export const Insights = memo(function Insights() {
                       <Info label="words corrected">
                         Filler words like "um," false starts, and other words cleanup corrected
                       </Info>
-                      <span {...stylex.props(styles.fixCount)}>
-                        {view.fixes.corrected.toLocaleString()}
-                      </span>
+                      {view.fixes.corrected < view.fixes.total && (
+                        <span {...stylex.props(styles.fixCount)}>
+                          {view.fixes.corrected.toLocaleString()}
+                        </span>
+                      )}
                     </li>
                   )}
                   {view.fixes.dictionaryFixes > 0 && (
                     <li {...stylex.props(styles.fix)}>
                       Dictionary fixes
                       <Info label="dictionary fixes">Corrections from your dictionary</Info>
-                      <span {...stylex.props(styles.fixCount)}>
-                        {view.fixes.dictionaryFixes.toLocaleString()}
-                      </span>
+                      {view.fixes.dictionaryFixes < view.fixes.total && (
+                        <span {...stylex.props(styles.fixCount)}>
+                          {view.fixes.dictionaryFixes.toLocaleString()}
+                        </span>
+                      )}
                     </li>
                   )}
                 </ul>
