@@ -160,7 +160,7 @@ const motionStyles = stylex.create({
       ":is([data-dragging])": "scale(0.94)",
     },
     transitionProperty: "transform, box-shadow",
-    transitionDuration: "120ms",
+    transitionDuration: { default: "120ms", "@media (prefers-reduced-motion: reduce)": "0s" },
     transitionTimingFunction: "ease",
     outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
     outlineOffset: 2,
