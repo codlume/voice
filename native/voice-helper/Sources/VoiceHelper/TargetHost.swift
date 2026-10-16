@@ -94,7 +94,3 @@ private struct AXNode: AccessibilityNode {
         return result
     }
 }
-
-func isBrowser(_ bundleId: String) -> Bool {
-    browserBundleIds.contains(bundleId)
-}
