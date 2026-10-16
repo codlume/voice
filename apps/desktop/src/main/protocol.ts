@@ -171,7 +171,12 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("apps.listed"),
     apps: validEntries(
-      Schema.Struct({ bundleId: Schema.String, name: Schema.String, path: Schema.String }),
+      Schema.Struct({
+        bundleId: Schema.String,
+        name: Schema.String,
+        path: Schema.String,
+        modifiedMs: Schema.Finite,
+      }),
     ),
   }),
   Schema.Struct({

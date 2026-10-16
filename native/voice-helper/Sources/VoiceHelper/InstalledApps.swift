@@ -55,7 +55,14 @@ private func readInstalledApp(path: String) -> InstalledApp? {
           let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
         return nil
     }
-    return installedApp(info: info, path: path)
+    return installedApp(info: info, path: path, modifiedMs: modifiedMs(path: path, plist: plist.path))
+}
+
+// Replacing a bundle changes the directory's date and an update rewrites its Info.plist, so the
+// later of the two tells main a cached icon may be stale.
+private func modifiedMs(path: String, plist: String) -> Double {
+    let dates = [path, plist].compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
+    return (dates.max()?.timeIntervalSince1970 ?? 0) * 1000
 }
 
 private let iconPixels = 64

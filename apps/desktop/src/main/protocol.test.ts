@@ -58,7 +58,14 @@ describe("parseHelperEvent", () => {
       { type: "log", level: "info", message: "hello" },
       {
         type: "apps.listed",
-        apps: [{ bundleId: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app" }],
+        apps: [
+          {
+            bundleId: "com.apple.mail",
+            name: "Mail",
+            path: "/System/Applications/Mail.app",
+            modifiedMs: 1760000000123,
+          },
+        ],
       },
       { type: "icons.rendered", icons: [{ path: "/Applications/Slack.app", png: "iVBORw0KGgo=" }] },
     ];
@@ -206,11 +213,13 @@ describe("parseHelperEvent", () => {
       bundleId: "com.apple.mail",
       name: "Mail",
       path: "/System/Applications/Mail.app",
+      modifiedMs: 1,
     };
     const slack = {
       bundleId: "com.tinyspeck.slackmacgap",
       name: "Slack",
       path: "/Applications/Slack.app",
+      modifiedMs: 1,
     };
     expect(
       parseHelperEvent(
@@ -218,7 +227,8 @@ describe("parseHelperEvent", () => {
           type: "apps.listed",
           apps: [
             mail,
-            { bundleId: 7, name: "Seven", path: "/Applications/Seven.app" },
+            { bundleId: 7, name: "Seven", path: "/Applications/Seven.app", modifiedMs: 1 },
+            { bundleId: "a.c", name: "C", path: "/Applications/C.app", modifiedMs: "new" },
             { bundleId: "a.b", name: "B" },
             null,
             slack,

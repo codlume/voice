@@ -3,18 +3,29 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { createInstalledApps } from "./installed-apps.ts";
 import type { HelperCommand } from "./protocol.ts";
 
-type Listed = { bundleId: string; name: string; path: string };
+type Listed = { bundleId: string; name: string; path: string; modifiedMs: number };
 
-const MAIL = { bundleId: "com.apple.mail", name: "Mail", path: "/System/Applications/Mail.app" };
+const MAIL = {
+  bundleId: "com.apple.mail",
+  name: "Mail",
+  path: "/System/Applications/Mail.app",
+  modifiedMs: 1,
+};
 const SLACK = {
   bundleId: "com.tinyspeck.slackmacgap",
   name: "Slack",
   path: "/Applications/Slack.app",
+  modifiedMs: 1,
 };
-const XCODE = { bundleId: "com.apple.dt.Xcode", name: "Xcode", path: "/Applications/Xcode.app" };
+const XCODE = {
+  bundleId: "com.apple.dt.Xcode",
+  name: "Xcode",
+  path: "/Applications/Xcode.app",
+  modifiedMs: 1,
+};
 
-const png = (path: string) => `png-of-${path}`;
-const dataUrl = (path: string) => `data:image/png;base64,${png(path)}`;
+const png = ({ path, modifiedMs }: Listed) => `png-of-${path}@${modifiedMs}`;
+const dataUrl = (app: Listed) => `data:image/png;base64,${png(app)}`;
 
 function setup(options: { apps: Listed[]; answer?: boolean }) {
   const sent: HelperCommand[] = [];
@@ -28,7 +39,9 @@ function setup(options: { apps: Listed[]; answer?: boolean }) {
         if (command.type === "apps.list") {
           installed.onHelperEvent({ type: "apps.listed", apps: state.apps });
         } else if (command.type === "icons.render") {
-          const icons = command.paths.map((path) => ({ path, png: png(path) }));
+          const icons = state.apps
+            .filter(({ path }) => command.paths.includes(path))
+            .map((app) => ({ path: app.path, png: png(app) }));
           installed.onHelperEvent({ type: "icons.rendered", icons });
         }
       });
@@ -47,9 +60,9 @@ describe("installed apps", () => {
   test("renders icons only for catalog apps", async () => {
     const { installed, renders } = setup({ apps: [MAIL, XCODE, SLACK] });
     expect(await installed.list()).toEqual([
-      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL.path) },
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
       { bundleId: "com.apple.dt.xcode", name: "Xcode", icon: null },
-      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(SLACK.path) },
+      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(SLACK) },
     ]);
     expect(renders()).toEqual([[MAIL.path, SLACK.path]]);
   });
@@ -69,17 +82,45 @@ describe("installed apps", () => {
       bundleId: "net.whatsapp.WhatsApp",
       name: "WhatsApp",
       path: "/Applications/WhatsApp.app",
+      modifiedMs: 1,
     };
     state.apps = [MAIL, movedSlack, whatsapp];
     expect(await installed.list()).toEqual([
-      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL.path) },
-      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(movedSlack.path) },
-      { bundleId: "net.whatsapp.whatsapp", name: "WhatsApp", icon: dataUrl(whatsapp.path) },
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
+      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(movedSlack) },
+      { bundleId: "net.whatsapp.whatsapp", name: "WhatsApp", icon: dataUrl(whatsapp) },
     ]);
     expect(renders()).toEqual([
       [MAIL.path, SLACK.path],
       [movedSlack.path, whatsapp.path],
     ]);
+  });
+
+  test("renders an app again when its bundle changed in place", async () => {
+    const { installed, state, renders } = setup({ apps: [MAIL, SLACK] });
+    await installed.list();
+    const updatedSlack = { ...SLACK, modifiedMs: 2 };
+    state.apps = [MAIL, updatedSlack];
+    expect(await installed.list()).toEqual([
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
+      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(updatedSlack) },
+    ]);
+    expect(renders()).toEqual([[MAIL.path, SLACK.path], [SLACK.path]]);
+  });
+
+  test("forgets a removed app's icon and renders it again after a reinstall", async () => {
+    const { installed, state, renders } = setup({ apps: [MAIL, SLACK] });
+    await installed.list();
+    state.apps = [MAIL];
+    expect(await installed.list()).toEqual([
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
+    ]);
+    state.apps = [MAIL, SLACK];
+    expect(await installed.list()).toEqual([
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
+      { bundleId: "com.tinyspeck.slackmacgap", name: "Slack", icon: dataUrl(SLACK) },
+    ]);
+    expect(renders()).toEqual([[MAIL.path, SLACK.path], [SLACK.path]]);
   });
 
   test("lowercases ids, keeps the first of a duplicate, and drops an invalid id", async () => {
@@ -89,20 +130,22 @@ describe("installed apps", () => {
           bundleId: "com.apple.MobileSMS",
           name: "Messages",
           path: "/System/Applications/Messages.app",
+          modifiedMs: 1,
         },
         {
           bundleId: "COM.APPLE.MOBILESMS",
           name: "Old Messages",
           path: "/Applications/Messages.app",
+          modifiedMs: 1,
         },
-        { bundleId: "com.apple/mail", name: "Bad", path: "/Applications/Bad.app" },
+        { bundleId: "com.apple/mail", name: "Bad", path: "/Applications/Bad.app", modifiedMs: 1 },
       ],
     });
     expect(await installed.list()).toEqual([
       {
         bundleId: "com.apple.mobilesms",
         name: "Messages",
-        icon: dataUrl("/System/Applications/Messages.app"),
+        icon: dataUrl({ ...MAIL, path: "/System/Applications/Messages.app" }),
       },
     ]);
   });
@@ -122,7 +165,7 @@ describe("installed apps", () => {
     await first;
     state.answer = true;
     expect(await installed.list()).toEqual([
-      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL.path) },
+      { bundleId: "com.apple.mail", name: "Mail", icon: dataUrl(MAIL) },
     ]);
   });
 

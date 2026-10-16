@@ -105,7 +105,7 @@ private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
-    case paths, apps, name, icons, png
+    case paths, apps, name, icons, png, modifiedMs
 }
 
 extension HelperCommand: Decodable {
@@ -295,6 +295,7 @@ extension InstalledApp: Encodable {
         try c.encode(bundleId, forKey: .bundleId)
         try c.encode(name, forKey: .name)
         try c.encode(path, forKey: .path)
+        try c.encode(finite(modifiedMs), forKey: .modifiedMs)
     }
 }
 

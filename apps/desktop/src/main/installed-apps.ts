@@ -14,7 +14,8 @@ export function createInstalledApps(options: {
   timeoutMs?: number;
 }): InstalledApps {
   const { send, timeoutMs = 5000 } = options;
-  const iconsByPath = new Map<string, string>();
+  const iconsByPath = new Map<string, { modifiedMs: number; icon: string }>();
+  let listedStamps = new Map<string, number>();
   let onListed: ((apps: Listed) => void) | null = null;
   let onRendered: (() => void) | null = null;
   let inFlight: Promise<InstalledApp[]> | null = null;
@@ -44,6 +45,10 @@ export function createInstalledApps(options: {
         const bundleId = parseBundleId(raw);
         if (bundleId !== null && !apps.has(bundleId)) apps.set(bundleId, { name, path });
       }
+      listedStamps = new Map(listed.map(({ path, modifiedMs }) => [path, modifiedMs]));
+      for (const [path, { modifiedMs }] of iconsByPath) {
+        if (listedStamps.get(path) !== modifiedMs) iconsByPath.delete(path);
+      }
       const paths = [...apps]
         .filter(([bundleId, { path }]) => APP_CATEGORIES.has(bundleId) && !iconsByPath.has(path))
         .map(([, { path }]) => path);
@@ -56,7 +61,7 @@ export function createInstalledApps(options: {
       return [...apps].map(([bundleId, { name, path }]) => ({
         bundleId,
         name,
-        icon: iconsByPath.get(path) ?? null,
+        icon: iconsByPath.get(path)?.icon ?? null,
       }));
     } finally {
       onListed = null;
@@ -77,8 +82,12 @@ export function createInstalledApps(options: {
           onListed?.(event.apps);
           return;
         case "icons.rendered":
-          for (const { path, png } of event.icons)
-            iconsByPath.set(path, `data:image/png;base64,${png}`);
+          for (const { path, png } of event.icons) {
+            const modifiedMs = listedStamps.get(path);
+            if (modifiedMs !== undefined) {
+              iconsByPath.set(path, { modifiedMs, icon: `data:image/png;base64,${png}` });
+            }
+          }
           onRendered?.();
           return;
       }
