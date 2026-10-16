@@ -150,6 +150,7 @@ const styles = stylex.create({
   siteRow: { display: "flex", gap: space.sm },
   status: { minHeight: 17, margin: 0, color: color.mutedForeground, fontSize: 12 },
   separator: { height: 1, margin: 0, borderWidth: 0, backgroundColor: color.border },
+  ownLine: { flexBasis: "100%" },
 });
 
 export function AssignmentChip({
@@ -190,40 +191,53 @@ export function AddToCategory({
 }: PickerProps & { triggerRef: RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const action = useAction();
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
-        ref={triggerRef}
-        aria-label={`Add an app or website to ${CATEGORY_LABELS[picker.category]}`}
-        title="Add an app or website"
-        {...stylex.props(styles.add)}
-      >
-        <PlusIcon size={14} strokeWidth={2.25} />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={6}
-          collisionPadding={8}
-          {...stylex.props(styles.positioner)}
+    <>
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger
+          ref={triggerRef}
+          aria-label={`Add an app or website to ${CATEGORY_LABELS[picker.category]}`}
+          title="Add an app or website"
+          {...stylex.props(styles.add)}
         >
-          <Popover.Popup
-            initialFocus={searchRef}
-            aria-label={`Add to ${CATEGORY_LABELS[picker.category]}`}
-            className={({ transitionStatus }) =>
-              stylex.props(
-                styles.popup,
-                (transitionStatus === "starting" || transitionStatus === "ending") &&
-                  styles.popupHidden,
-              ).className
-            }
+          <PlusIcon size={14} strokeWidth={2.25} />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            collisionPadding={8}
+            {...stylex.props(styles.positioner)}
           >
-            <Picker {...picker} searchRef={searchRef} onDone={() => setOpen(false)} />
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+            <Popover.Popup
+              initialFocus={searchRef}
+              aria-label={`Add to ${CATEGORY_LABELS[picker.category]}`}
+              className={({ transitionStatus }) =>
+                stylex.props(
+                  styles.popup,
+                  (transitionStatus === "starting" || transitionStatus === "ending") &&
+                    styles.popupHidden,
+                ).className
+              }
+            >
+              <Picker
+                {...picker}
+                action={action}
+                searchRef={searchRef}
+                onDone={() => setOpen(false)}
+              />
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+      {!open && action.error && (
+        <p role="alert" {...stylex.props(pageStyles.error, styles.ownLine)}>
+          {action.error}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -231,14 +245,18 @@ function Picker({
   category,
   assignments,
   installed,
+  action: { error, pending, run },
   searchRef,
   onDone,
-}: PickerProps & { searchRef: RefObject<HTMLInputElement | null>; onDone: () => void }) {
+}: PickerProps & {
+  action: ReturnType<typeof useAction>;
+  searchRef: RefObject<HTMLInputElement | null>;
+  onDone: () => void;
+}) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [site, setSite] = useState("");
-  const { error, pending, run } = useAction();
   const rows = pickerRows(category, installed, assignments, query);
   const activeIndex = Math.min(active, rows.length - 1);
   const optionId = (index: number) => `${id}-option-${index}`;
