@@ -37,8 +37,8 @@ export const styles = stylex.create({
   counter: { fontVariantNumeric: "tabular-nums" },
   switchField: { display: "flex", alignItems: "center", gap: space.lg },
   switchLabel: { flexGrow: 1, minWidth: 0, fontSize: 13 },
-  footerSwitch: { display: "flex", alignItems: "center", gap: space.sm, whiteSpace: "nowrap" },
-  footerSwitchLabel: { fontSize: 13, color: color.foreground, cursor: "pointer" },
+  footerSwitch: { display: "flex", alignItems: "center", gap: space.sm },
+  footerSwitchLabel: { fontSize: 13 },
   input: {
     width: "100%",
     paddingBlock: 6,

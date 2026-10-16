@@ -111,10 +111,10 @@ export function DialogFrame({
         <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
         {children}
         <div {...stylex.props(styles.footer)}>
-          {/* Precedes Cancel in tab order, so only pass it where a field takes initial focus. */}
+          {/* Precedes Cancel in tab order, so in a dialog without fields it would take initial focus. */}
           {footerStart}
           <div {...stylex.props(styles.actions)}>
-            {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
+            {/* Cancel comes first, so a dialog without fields opens on it and Enter cannot destroy anything. */}
             <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
             {actions}
           </div>
