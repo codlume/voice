@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import { createInstalledApps } from "../main/installed-apps.ts";
 import type { AppIcons } from "../shared/api.ts";
 import type { BundleId } from "../shared/app-categories.ts";
 import { createIconLoader } from "./appIcons.ts";
@@ -64,5 +65,90 @@ describe("icon loader", () => {
     fail = false;
     expect(await loader.load(MAIL)).toBe(`data:image/png;base64,${MAIL}`);
     expect(fetches).toEqual([[MAIL], [MAIL]]);
+  });
+
+  test("invalidating keeps the icon on show, tells subscribers once, and makes the next load ask again", async () => {
+    const { loader, fetches } = setup();
+    let notified = 0;
+    loader.subscribe(() => (notified += 1));
+    await loader.load(MAIL);
+    loader.invalidate();
+    expect(loader.get(MAIL)).toBe(`data:image/png;base64,${MAIL}`);
+    await Promise.all([loader.load(MAIL), loader.load(MAIL)]);
+    await loader.load(MAIL);
+    expect(fetches).toEqual([[MAIL], [MAIL]]);
+    expect(notified).toBe(2);
+  });
+
+  test("forgets a stale icon when the fetch after invalidating leaves the app out", async () => {
+    let gone = false;
+    const { loader } = setup((ids) => icons(gone ? ids.filter((id) => id !== MAIL) : ids));
+    await loader.load(MAIL);
+    gone = true;
+    loader.invalidate();
+    expect(await loader.load(MAIL)).toBeNull();
+    expect(loader.get(MAIL)).toBeNull();
+  });
+});
+
+describe("icon loader over the installed apps service", () => {
+  const MAIL_APP = {
+    bundleId: "com.apple.mail",
+    name: "Mail",
+    path: "/System/Applications/Mail.app",
+    modifiedMs: 1,
+    browser: false,
+  };
+
+  function helper() {
+    let app = MAIL_APP;
+    const renders: string[][] = [];
+    const installed = createInstalledApps({
+      send: (command) =>
+        queueMicrotask(() => {
+          if (command.type === "apps.list") {
+            installed.onHelperEvent({ type: "apps.listed", apps: [app] });
+          } else if (command.type === "icons.render") {
+            renders.push(command.paths);
+            installed.onHelperEvent({
+              type: "icons.rendered",
+              id: command.id,
+              icons: [{ path: app.path, png: `icon-v${app.modifiedMs}` }],
+            });
+          }
+        }),
+    });
+    return { installed, renders, update: () => (app = { ...app, modifiedMs: app.modifiedMs + 1 }) };
+  }
+
+  test("an app updated in place keeps its old icon on show until the new one arrives", async () => {
+    const { installed, renders, update } = helper();
+    const loader = createIconLoader((ids) => installed.icons(ids));
+    const shown: (string | null)[] = [];
+    loader.subscribe(() => shown.push(loader.get(MAIL)));
+    await installed.list();
+    expect(await loader.load(MAIL)).toBe("data:image/png;base64,icon-v1");
+    update();
+    await installed.list();
+    loader.invalidate();
+    expect(loader.get(MAIL)).toBe("data:image/png;base64,icon-v1");
+    expect(await loader.load(MAIL)).toBe("data:image/png;base64,icon-v2");
+    expect(shown).toEqual([
+      "data:image/png;base64,icon-v1",
+      "data:image/png;base64,icon-v1",
+      "data:image/png;base64,icon-v2",
+    ]);
+    expect(renders).toEqual([[MAIL_APP.path], [MAIL_APP.path]]);
+  });
+
+  test("a remount after a list that changed nothing asks main, which answers from memory", async () => {
+    const { installed, renders } = helper();
+    const loader = createIconLoader((ids) => installed.icons(ids));
+    await installed.list();
+    await loader.load(MAIL);
+    await installed.list();
+    loader.invalidate();
+    expect(await loader.load(MAIL)).toBe("data:image/png;base64,icon-v1");
+    expect(renders).toEqual([[MAIL_APP.path]]);
   });
 });

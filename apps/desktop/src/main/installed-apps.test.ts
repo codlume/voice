@@ -221,6 +221,27 @@ describe("installed apps", () => {
     ]);
   });
 
+  test("an icon asked for while the first list is in flight waits for that list", async () => {
+    const { installed, sent } = setup({ apps: [MAIL] });
+    const [, icons] = await Promise.all([installed.list(), installed.icons([id(MAIL)])]);
+    expect(icons).toEqual({ [id(MAIL)]: dataUrl(MAIL) });
+    expect(sent.filter((command) => command.type === "apps.list")).toHaveLength(1);
+  });
+
+  test("an icon asked for before any list runs the list first", async () => {
+    const { installed, sent } = setup({ apps: [MAIL] });
+    expect(await installed.icons([id(MAIL)])).toEqual({ [id(MAIL)]: dataUrl(MAIL) });
+    expect(sent.map((command) => command.type)).toEqual(["apps.list", "icons.render"]);
+  });
+
+  test("returns no icons when the first list never arrives", async () => {
+    vi.useFakeTimers();
+    const { installed } = setup({ apps: [MAIL], answer: false });
+    const icons = installed.icons([id(MAIL)]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await icons).toEqual({});
+  });
+
   test("leaves out an icon the helper could not render, and asks for it again next time", async () => {
     const sent: HelperCommand[] = [];
     const installed = createInstalledApps({
