@@ -28,17 +28,22 @@ const styles = stylex.create({
   },
 });
 
+// A composite control takes focus on the part a keyboard user acts on.
+const focusablePart: Record<string, string> = {
+  radiogroup: '[role="radio"][aria-checked="true"]',
+  group: 'input[type="range"]',
+};
+
 // A reset hides its own button, so focus moves to the control the title labels. Base UI labels
-// every control (Select trigger, Switch, RadioGroup) by the label's id through aria-labelledby.
+// every control (Select trigger, Switch, RadioGroup, Slider) by the label's id through
+// aria-labelledby.
 function focusLabelledControl(label: HTMLElement | null) {
   if (!label?.id) return;
   const control = label.ownerDocument.querySelector<HTMLElement>(
     `[role][aria-labelledby~="${CSS.escape(label.id)}"]`,
   );
-  const target =
-    control?.getAttribute("role") === "radiogroup"
-      ? control.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')
-      : control;
+  const part = focusablePart[control?.getAttribute("role") ?? ""];
+  const target = part ? control?.querySelector<HTMLElement>(part) : control;
   target?.focus();
 }
 
