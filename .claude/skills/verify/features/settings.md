@@ -11,6 +11,7 @@ Settings holds the controls that aren't about style. General has the microphone 
 - `settings-open-at-login`: unavailable in development builds by design.
 - `settings-mute`: `Mute all audio while dictating`.
 - `settings-theme`: System, Light, or Dark.
+- `settings-animation-speed`: Off, Fast, Normal, or Slow.
 - `settings-dock`: `Show in Dock`. When it's off, Voice leaves the Dock and Cmd-Tab.
 - `settings-flow-bar`: `Show Flow Bar at all times`.
 - `settings-hotkey`: `Hold to talk` is fn, Right Option, or Right Command.

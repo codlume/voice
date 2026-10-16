@@ -65,3 +65,6 @@ export const font = stylex.defineVars({
   sans: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
   serif: 'ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif',
 });
+
+// Literal name so useMotionScale can set it on the root element from the Animation speed setting.
+export const motion = stylex.defineVars({ "--motion-scale": "1" });

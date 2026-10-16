@@ -11,7 +11,7 @@ import { Card } from "./Card.tsx";
 import { excerpt, historyPage, timeLabel } from "./historyView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
-import { color, radius, space } from "./tokens.stylex.ts";
+import { color, motion, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -95,7 +95,10 @@ const styles = stylex.create({
       [stylex.when.ancestor(":focus-within")]: 1,
     },
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: {
+      default: `calc(150ms * ${motion["--motion-scale"]})`,
+      [reducedMotion]: "0s",
+    },
   },
   shown: { opacity: 1 },
   copied: {

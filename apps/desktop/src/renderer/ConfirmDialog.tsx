@@ -4,7 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { ReactNode, RefObject } from "react";
 
 import { Button } from "./Button.tsx";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, font, motion, radius, space } from "./tokens.stylex.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const dark = "@media (prefers-color-scheme: dark)";
@@ -18,7 +18,10 @@ const styles = stylex.create({
     backgroundColor: { default: "rgb(0 0 0 / 32%)", [dark]: "rgb(0 0 0 / 60%)" },
     opacity: 1,
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: {
+      default: `calc(150ms * ${motion["--motion-scale"]})`,
+      [reducedMotion]: "0s",
+    },
   },
   backdropHidden: { opacity: 0 },
   popup: {
@@ -40,7 +43,10 @@ const styles = stylex.create({
     opacity: 1,
     transform: centered,
     transitionProperty: "opacity, transform",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: {
+      default: `calc(150ms * ${motion["--motion-scale"]})`,
+      [reducedMotion]: "0s",
+    },
   },
   popupWide: { width: "min(600px, calc(100vw - 32px))" },
   popupHidden: { opacity: 0, transform: `${centered} scale(0.96)` },

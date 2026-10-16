@@ -20,7 +20,7 @@ import {
   updateStatusText,
 } from "./updateStatus.ts";
 import { useAction } from "./useAction.ts";
-import { color, radius } from "./tokens.stylex.ts";
+import { color, motion, radius } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const spin = stylex.keyframes({
@@ -48,7 +48,7 @@ const styles = stylex.create({
     color: { default: color.mutedForeground, [enabledHover]: color.foreground },
     cursor: "pointer",
     transitionProperty: "background-color, color",
-    transitionDuration: "150ms",
+    transitionDuration: `calc(150ms * ${motion["--motion-scale"]})`,
   },
   hasUpdate: {
     backgroundColor: {
@@ -71,7 +71,10 @@ const styles = stylex.create({
   ringTrack: { opacity: 0.22 },
   ringProgress: {
     transitionProperty: "stroke-dashoffset",
-    transitionDuration: { default: "300ms", [reducedMotion]: "0s" },
+    transitionDuration: {
+      default: `calc(300ms * ${motion["--motion-scale"]})`,
+      [reducedMotion]: "0s",
+    },
     transitionTimingFunction: "ease-out",
   },
   badge: {

@@ -17,7 +17,7 @@ import {
   type Chip,
   type PickerRow,
 } from "./styleView.ts";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, font, motion, radius, space } from "./tokens.stylex.ts";
 import type { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
@@ -91,7 +91,10 @@ const styles = stylex.create({
     WebkitFontSmoothing: "antialiased",
     opacity: 1,
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: {
+      default: `calc(150ms * ${motion["--motion-scale"]})`,
+      [reducedMotion]: "0s",
+    },
     outline: "none",
   },
   popupHidden: { opacity: 0 },

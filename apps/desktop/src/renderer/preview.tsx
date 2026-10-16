@@ -544,6 +544,7 @@ function fakeVoice(
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           dictationLanguage: patch.dictationLanguage ?? snapshot.settings.dictationLanguage,
           theme: patch.theme ?? snapshot.settings.theme,
+          animationSpeed: patch.animationSpeed ?? snapshot.settings.animationSpeed,
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
@@ -745,7 +746,12 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule session={session} alwaysShowPill copyToClipboard={false} />
+            <PillCapsule
+              session={session}
+              alwaysShowPill
+              copyToClipboard={false}
+              animationSpeed="normal"
+            />
           </div>
         </figure>
       ))}
