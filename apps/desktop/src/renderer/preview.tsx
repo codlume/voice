@@ -544,6 +544,7 @@ function fakeVoice(
           updateChannel: patch.updateChannel ?? snapshot.settings.updateChannel,
           dictationLanguage: patch.dictationLanguage ?? snapshot.settings.dictationLanguage,
           theme: patch.theme ?? snapshot.settings.theme,
+          pageAnimationMs: patch.pageAnimationMs ?? snapshot.settings.pageAnimationMs,
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
           muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
