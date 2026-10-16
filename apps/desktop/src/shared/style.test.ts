@@ -120,12 +120,28 @@ describe("parseBundleId", () => {
     expect(parseBundleId("  com.apple.MobileSMS ")).toBe("com.apple.mobilesms");
   });
 
-  test.each(["", "   ", "com.apple mail", "com.äpple.mail", "Kom.apple.mail"])(
-    "%j is not a bundle id",
+  test.each(["com.readdle.smartemail-Mac", "com.example.my_app", "a"])(
+    "%j is a bundle id",
     (input) => {
-      expect(parseBundleId(input)).toBeNull();
+      expect(parseBundleId(input)).toBe(input.toLowerCase());
     },
   );
+
+  test.each([
+    "",
+    "   ",
+    "com.apple mail",
+    "com.äpple.mail",
+    "Kom.apple.mail",
+    "com.apple/mail",
+    "com.apple.mail!",
+    "com..apple.mail",
+    ".com.apple.mail",
+    "com.apple.mail.",
+    "com:apple:mail",
+  ])("%j is not a bundle id", (input) => {
+    expect(parseBundleId(input)).toBeNull();
+  });
 });
 
 describe("parseAssignments", () => {

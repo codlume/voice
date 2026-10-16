@@ -4,10 +4,13 @@ export type Category = (typeof CATEGORIES)[number];
 export type BundleId = string & { readonly __brand: "BundleId" };
 export type Host = string & { readonly __brand: "Host" };
 
+// Apple allows letters, digits, `.` and `-`; some shipped apps also use `_`.
 // Validating before lowercasing keeps characters like the Kelvin sign from lowercasing into ASCII.
 export function parseBundleId(input: string): BundleId | null {
   const trimmed = input.trim();
-  return /^[\x21-\x7e]+$/.test(trimmed) ? (trimmed.toLowerCase() as BundleId) : null;
+  return /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(trimmed)
+    ? (trimmed.toLowerCase() as BundleId)
+    : null;
 }
 
 const LABEL = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
