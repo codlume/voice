@@ -68,6 +68,16 @@ const formattedName: Snippet = {
   enabled: true,
 };
 
+const transcriptEvent = (id: string, text: string, target: Target | null): HelperEvent => ({
+  type: "transcript",
+  id,
+  text,
+  audioMs: 800,
+  asrMs: 100,
+  speechMs: 600,
+  target,
+});
+
 function harness(opts: Options = {}) {
   const store = createStore({
     updates: {
@@ -178,15 +188,7 @@ function harness(opts: Options = {}) {
   const helper = {
     transcript(sessionId: string, text: string) {
       if (transcribing !== sessionId) return;
-      onHelperEvent({
-        type: "transcript",
-        id: sessionId,
-        text,
-        audioMs: 800,
-        asrMs: 100,
-        speechMs: 600,
-        target: null,
-      });
+      onHelperEvent(transcriptEvent(sessionId, text, null));
     },
   };
   return {
@@ -228,15 +230,7 @@ async function dictate(h: ReturnType<typeof harness>, text: string, to: Target |
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
   vi.advanceTimersByTime(800);
   h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-  h.dictation.onHelperEvent({
-    type: "transcript",
-    id,
-    text,
-    audioMs: 800,
-    asrMs: 100,
-    speechMs: 600,
-    target: to,
-  });
+  h.dictation.onHelperEvent(transcriptEvent(id, text, to));
   await flush();
   return id;
 }
@@ -552,15 +546,9 @@ describe("createDictation", () => {
   test("a duplicate transcript from another app leaves the session credited to the first", async () => {
     const h = harness();
     const id = await dictate(h, "hello world", mailApp);
-    h.dictation.onHelperEvent({
-      type: "transcript",
-      id,
-      text: "hello world",
-      audioMs: 800,
-      asrMs: 100,
-      speechMs: 600,
-      target: target("com.tinyspeck.slackmacgap"),
-    });
+    h.dictation.onHelperEvent(
+      transcriptEvent(id, "hello world", target("com.tinyspeck.slackmacgap")),
+    );
     await flush();
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
@@ -573,15 +561,7 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
     const transcript = (to: Target | null) =>
-      h.dictation.onHelperEvent({
-        type: "transcript",
-        id,
-        text: "hello world",
-        audioMs: 800,
-        asrMs: 100,
-        speechMs: 600,
-        target: to,
-      });
+      h.dictation.onHelperEvent(transcriptEvent(id, "hello world", to));
     transcript(mailApp);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     transcript(target("com.tinyspeck.slackmacgap"));
