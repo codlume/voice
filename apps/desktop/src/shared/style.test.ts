@@ -94,6 +94,10 @@ describe("parseHost", () => {
     ["localhost", "localhost"],
     ["http://localhost:5173/", "localhost"],
     ["http://slack.com\\@evil.com", "slack.com"],
+    ["https://Mail.Example.com/inbox?x=1", "mail.example.com"],
+    ["HTTPS://WWW.EXAMPLE.COM/a/b?c=d#e", "www.example.com"],
+    ["www.example.com", "www.example.com"],
+    ["http://ada@www.example.com:8443/", "www.example.com"],
   ])("%j is %j", (input, host) => {
     expect(parseHost(input)).toBe(host);
   });
@@ -102,6 +106,8 @@ describe("parseHost", () => {
     "",
     " ",
     "mail google.com",
+    "not a site",
+    "example.com/inbox",
     "a..b.com",
     ".com",
     "-a.com",
