@@ -16,7 +16,7 @@ import {
   UserIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
@@ -50,22 +50,31 @@ import { SidebarUpdates } from "./Updates.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
-const appPages = [
-  { id: "home", label: "Home", icon: HouseIcon },
-  { id: "insights", label: "Insights", icon: ChartColumnIcon },
-  { id: "style", label: "Style", icon: PenLineIcon },
-  { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
-  { id: "dictionary", label: "Dictionary", icon: BookAIcon },
+const appPageGroups = [
+  [
+    { id: "home", label: "Home", icon: HouseIcon },
+    { id: "insights", label: "Insights", icon: ChartColumnIcon },
+    { id: "style", label: "Style", icon: PenLineIcon },
+    { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
+    { id: "dictionary", label: "Dictionary", icon: BookAIcon },
+  ],
 ] as const;
 
-const settingsPages = [
-  { id: "general", label: "General", icon: SlidersHorizontalIcon },
-  { id: "account", label: "Account", icon: UserIcon },
-  { id: "system", label: "System", icon: MonitorIcon },
-  { id: "models", label: "Models", icon: BoxIcon },
-  { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon },
-  { id: "privacy", label: "Data and Privacy", icon: ShieldCheckIcon },
+const settingsPageGroups = [
+  [
+    { id: "general", label: "General", icon: SlidersHorizontalIcon },
+    { id: "system", label: "System", icon: MonitorIcon },
+    { id: "models", label: "Models", icon: BoxIcon },
+    { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon },
+  ],
+  [
+    { id: "account", label: "Account", icon: UserIcon },
+    { id: "privacy", label: "Data and Privacy", icon: ShieldCheckIcon },
+  ],
 ] as const;
+
+const appPages = appPageGroups.flat();
+const settingsPages = settingsPageGroups.flat();
 
 type AppPage = (typeof appPages)[number]["id"];
 type SettingsPage = (typeof settingsPages)[number]["id"];
@@ -186,6 +195,14 @@ const styles = stylex.create({
     margin: -(brandIconSize - brandIconVisibleSize) / 2,
   },
   nav: { display: "flex", flexDirection: "column", gap: 2 },
+  navDivider: {
+    flexShrink: 0,
+    height: 1,
+    borderWidth: 0,
+    marginBlock: space.sm,
+    marginInline: (navItemSize - navIconSize) / 2,
+    backgroundColor: color.border,
+  },
   navItem: {
     display: "flex",
     alignItems: "center",
@@ -362,29 +379,35 @@ function NavItem({
 }
 
 function NavItems<Id extends string>({
-  items,
+  groups,
   current,
   collapsed,
   showShortcut,
   onSelect,
 }: {
-  items: readonly { id: Id; label: string; icon: LucideIcon }[];
+  groups: readonly (readonly { id: Id; label: string; icon: LucideIcon }[])[];
   current: Id;
   collapsed: boolean;
   showShortcut: boolean;
   onSelect: (id: Id) => void;
 }) {
-  return items.map(({ id, label, icon }, index) => (
-    <NavItem
-      key={id}
-      label={label}
-      icon={icon}
-      shortcut={jumpShortcuts[index]}
-      current={current === id}
-      collapsed={collapsed}
-      showShortcut={showShortcut}
-      onClick={() => onSelect(id)}
-    />
+  let index = 0;
+  return groups.map((items, groupIndex) => (
+    <Fragment key={groupIndex}>
+      {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
+      {items.map(({ id, label, icon }) => (
+        <NavItem
+          key={id}
+          label={label}
+          icon={icon}
+          shortcut={jumpShortcuts[index++]}
+          current={current === id}
+          collapsed={collapsed}
+          showShortcut={showShortcut}
+          onClick={() => onSelect(id)}
+        />
+      ))}
+    </Fragment>
   ));
 }
 
@@ -492,7 +515,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
           {settingsPage === null ? (
             <nav aria-label="Voice" {...stylex.props(styles.nav)}>
               <NavItems
-                items={appPages}
+                groups={appPageGroups}
                 current={appPage}
                 collapsed={collapsed}
                 showShortcut={showShortcut}
@@ -502,7 +525,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
           ) : (
             <nav aria-label="Settings" {...stylex.props(styles.nav)}>
               <NavItems
-                items={settingsPages}
+                groups={settingsPageGroups}
                 current={settingsPage}
                 collapsed={collapsed}
                 showShortcut={showShortcut}
