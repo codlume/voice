@@ -9,15 +9,18 @@ public func pageHost(_ url: String) -> String? {
     if let at = authority.lastIndex(of: "@") {
         authority = authority[authority.index(after: at)...]
     }
-    var host: Substring
-    if authority.first == "[", let close = authority.firstIndex(of: "]") {
-        host = authority[...close]
-    } else if let colon = authority.firstIndex(of: ":") {
-        host = authority[..<colon]
-    } else {
-        host = authority
-    }
+    var host = authority[..<(authority.firstIndex(of: ":") ?? authority.endIndex)].lowercased()
     if host.last == "." { host.removeLast() }
-    guard !host.isEmpty, host.allSatisfy(\.isASCII) else { return nil }
-    return host.lowercased()
+    return isHostname(host) ? host : nil
+}
+
+/// A DNS hostname per RFC 1123: labels of letters, digits, and hyphens, 1 to 63 characters, no
+/// hyphen at either end, 253 characters in all. Anything else, including IP literals and
+/// percent-encoding, is not a host that classification can key on.
+private func isHostname(_ host: String) -> Bool {
+    guard !host.isEmpty, host.utf8.count <= 253 else { return false }
+    return host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { label in
+        (1...63).contains(label.count) && label.first != "-" && label.last != "-"
+            && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+    }
 }
