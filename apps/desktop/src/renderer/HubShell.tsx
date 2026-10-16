@@ -252,7 +252,7 @@ const styles = stylex.create({
   icon: { flexShrink: 0 },
   label: {
     transitionProperty: "opacity",
-    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
+    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
@@ -290,7 +290,7 @@ const styles = stylex.create({
   footerUpdates: {
     marginLeft: "auto",
     transitionProperty: "opacity, visibility",
-    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
+    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
