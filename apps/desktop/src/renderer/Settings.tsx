@@ -125,6 +125,9 @@ const motionStyles = stylex.create({
     textAlign: "center",
   },
   slider: { flexGrow: 1, minWidth: 0 },
+  reducedMotionHint: {
+    display: { default: "none", "@media (prefers-reduced-motion: reduce)": "block" },
+  },
   sliderControl: {
     display: "flex",
     alignItems: "center",
@@ -690,6 +693,9 @@ export function SystemSettings({
             </div>
           </Row>
         </Card>
+        <p {...stylex.props(styles.hint, motionStyles.reducedMotionHint)}>
+          Reduce motion is on in your system settings, so pages change without animation.
+        </p>
         {motionAction.error && (
           <p role="alert" {...stylex.props(pageStyles.error)}>
             {motionAction.error}
