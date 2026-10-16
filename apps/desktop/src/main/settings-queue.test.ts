@@ -85,6 +85,9 @@ describe("editAssignments", () => {
     await expect(editAssignments(queue, { op: "place", assignment: slackHome })).resolves.toBe(
       initial,
     );
+    await expect(editAssignments(queue, { op: "unassign", assignment: notes })).resolves.toBe(
+      initial,
+    );
 
     expect(saves).toEqual([]);
     expect(current()).toBe(initial);

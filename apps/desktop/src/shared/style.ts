@@ -116,11 +116,14 @@ export function place(
   return assignedCategory(lookup, rest) === assignment.category ? rest : [...rest, assignment];
 }
 
-export const unassign = (
+export function unassign(
   assignments: readonly Assignment[],
   assignment: Assignment,
-): readonly Assignment[] =>
-  assignments.filter((existing) => assignmentKey(existing) !== assignmentKey(assignment));
+): readonly Assignment[] {
+  const key = assignmentKey(assignment);
+  const rest = assignments.filter((existing) => assignmentKey(existing) !== key);
+  return rest.length === assignments.length ? assignments : rest;
+}
 
 /** One change to the assignments, applied by main to whatever list is current when it runs. */
 export type AssignmentEdit =
