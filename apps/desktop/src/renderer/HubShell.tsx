@@ -16,7 +16,7 @@ import {
   UserIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
@@ -138,6 +138,30 @@ const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
+
+type PageMotion = "rise" | "forward" | "back";
+
+const rise = stylex.keyframes({ from: { opacity: 0, transform: "translateY(8px)" } });
+const slideForward = stylex.keyframes({ from: { opacity: 0, transform: "translateX(16px)" } });
+const slideBack = stylex.keyframes({ from: { opacity: 0, transform: "translateX(-16px)" } });
+
+const pageMotion = stylex.create({
+  rise: {
+    animationName: { default: rise, [reducedMotion]: "none" },
+    animationDuration: "200ms",
+    animationTimingFunction: easing,
+  },
+  forward: {
+    animationName: { default: slideForward, [reducedMotion]: "none" },
+    animationDuration: "220ms",
+    animationTimingFunction: easing,
+  },
+  back: {
+    animationName: { default: slideBack, [reducedMotion]: "none" },
+    animationDuration: "220ms",
+    animationTimingFunction: easing,
+  },
+});
 
 const styles = stylex.create({
   shell: {
@@ -415,7 +439,21 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
   const [appPage, setAppPage] = useState<AppPage>("home");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const page = settingsPage ?? appPage;
+  const level = settingsPage === null ? "app" : "settings";
+  const [shown, setShown] = useState<{
+    page: typeof page;
+    level: typeof level;
+    motion: PageMotion | null;
+  }>({ page, level, motion: null });
+  if (shown.page !== page) {
+    const motion = shown.level === level ? "rise" : level === "settings" ? "forward" : "back";
+    setShown({ page, level, motion });
+  }
+  const levelMotion = shown.motion === "rise" ? null : shown.motion;
   const mainRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [page]);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
   useEffect(focusMain, []);
@@ -513,7 +551,11 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
           </p>
           {settingsPage === null ? (
-            <nav aria-label="Voice" {...stylex.props(styles.nav)}>
+            <nav
+              key="app"
+              aria-label="Voice"
+              {...stylex.props(styles.nav, levelMotion && pageMotion[levelMotion])}
+            >
               <NavItems
                 groups={appPageGroups}
                 current={appPage}
@@ -523,7 +565,11 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
               />
             </nav>
           ) : (
-            <nav aria-label="Settings" {...stylex.props(styles.nav)}>
+            <nav
+              key="settings"
+              aria-label="Settings"
+              {...stylex.props(styles.nav, levelMotion && pageMotion[levelMotion])}
+            >
               <NavItems
                 groups={settingsPageGroups}
                 current={settingsPage}
@@ -571,7 +617,14 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
         tabIndex={-1}
         {...stylex.props(styles.main, page === "style" && styles.styleMain)}
       >
-        <div {...stylex.props(styles.column, page === "home" && styles.homeColumn)}>
+        <div
+          key={page}
+          {...stylex.props(
+            styles.column,
+            page === "home" && styles.homeColumn,
+            shown.motion && pageMotion[shown.motion],
+          )}
+        >
           <Page snapshot={snapshot} history={history} openPage={selectAppPage} />
         </div>
       </main>
