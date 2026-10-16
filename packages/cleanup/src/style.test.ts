@@ -41,6 +41,10 @@ test.each([
   ["Set API_KEY and my_Var.", "set API_KEY and my_Var"],
   ["Read process.env.API from Example.com.", "read process.env.API from Example.com"],
   ["Use #General and Mode=Fast.", "use #General and Mode=Fast"],
+  ["Ship Voice.app built with Node.js.", "ship Voice.app built with Node.js"],
+  ["P.S. Bring snacks.", "p.s. bring snacks"],
+  ["E.g. the U.S. team, I.e. Anna.", "e.g. the u.s. team, i.e. anna"],
+  ["Meet at 10 A.M. Today.", "meet at 10 a.m. today"],
 ])("Very casual lowercases prose but not the case-sensitive tokens in %j", (text, expected) => {
   expect(finishText("veryCasual", text)).toBe(expected);
 });
