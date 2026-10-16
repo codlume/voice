@@ -11,14 +11,16 @@ export function useAction() {
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  async function run(action: () => Promise<void>, fallback: string) {
+  async function run(action: () => Promise<void>, fallback: string): Promise<boolean> {
     const id = ++latest.current;
     setError("");
     setPending(true);
     try {
       await action();
+      return true;
     } catch (caught) {
       if (id === latest.current) setError(actionErrorMessage(caught, fallback));
+      return false;
     } finally {
       if (id === latest.current) setPending(false);
     }

@@ -65,6 +65,7 @@ import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts"
 import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
+import { createSettingsQueue, editAssignments, type SettingsQueue } from "./settings-queue.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
@@ -265,7 +266,7 @@ async function main() {
   handleCallbackUrl = account.handleCallbackUrl;
   const settings = loadSettings(settingsFile, installedChannel);
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
-  let saving: Promise<void> = Promise.resolve();
+  let settingsQueue: SettingsQueue;
 
   const store = createStore({
     session: idle,
@@ -443,7 +444,7 @@ async function main() {
       store.state.settings.updateChannel === store.state.updates.channel,
     prepareRestart: async () => {
       lifecycle = "stopping";
-      await saving;
+      await settingsQueue.settled();
       stopPermissionPolling();
       try {
         await shutdown(true);
@@ -617,19 +618,17 @@ async function main() {
       throw new Error("Voice is restarting.");
   }
 
-  // Patches run one at a time, and each applies only once it is on disk, so a failed save leaves
-  // the app and the hub on the last saved settings.
-  async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
-    assertNotRestarting();
-    const saved = saving.then(async () => {
-      const previous = store.state.settings;
-      const next = applyPatch(previous, typeof patch === "function" ? patch(previous) : patch);
+  settingsQueue = createSettingsQueue({
+    current: () => store.state.settings,
+    save: async (next) => {
       try {
         await saveSettings(settingsFile, next);
       } catch (error) {
         log(`settings: save failed (${String(error)})`);
         throw new Error("Could not save this setting. Try again.", { cause: error });
       }
+    },
+    applied: (next, previous) => {
       store.update((s) => ({ ...s, settings: next }));
       if (next.hotkey !== previous.hotkey || next.toggleHotkey !== previous.toggleHotkey)
         helper.send({ type: "hotkey.configure", key: next.hotkey, toggleKey: next.toggleHotkey });
@@ -639,13 +638,14 @@ async function main() {
       if (next.showInDock !== previous.showInDock) void syncDock();
       if (next.zoomLevel !== previous.zoomLevel && hub && !hub.isDestroyed())
         applyZoom(hub, next.zoomLevel);
-      return next;
-    });
-    saving = saved.then(
-      () => {},
-      () => {},
+    },
+  });
+
+  async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
+    assertNotRestarting();
+    const next = await settingsQueue.run((previous) =>
+      applyPatch(previous, typeof patch === "function" ? patch(previous) : patch),
     );
-    const next = await saved;
     if (next.updateChannel === store.state.settings.updateChannel)
       await updates.setChannel(next.updateChannel);
   }
@@ -697,7 +697,7 @@ async function main() {
       restartRequested = true;
       try {
         // An accepted channel change must reach the updater before it installs.
-        await saving;
+        await settingsQueue.settled();
         await history.settled();
         const state = history.state();
         const refusal = restartRefusal(request, state);
@@ -810,6 +810,10 @@ async function main() {
     hubCommands.handle(Channel.getAppIcons, (_event, raw: unknown) =>
       installedApps.icons(parseBundleIds(raw)),
     );
+    hubCommands.handle(Channel.editAssignments, async (_event, raw: unknown) => {
+      assertNotRestarting();
+      await editAssignments(settingsQueue, raw);
+    });
     hubCommands.handle(Channel.clearInsights, async () => {
       try {
         await insights.clear();
@@ -853,7 +857,7 @@ async function main() {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
     const stopped = Promise.allSettled([
-      saving,
+      settingsQueue.settled(),
       insights.settled(),
       history.settled(),
       helper.stop(),

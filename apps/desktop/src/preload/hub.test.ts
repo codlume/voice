@@ -46,6 +46,7 @@ describe("hub preload", () => {
       "diagnosticsStartedAtLaunch",
       "dismissAccountError",
       "downloadUpdate",
+      "editAssignments",
       "getAppIcons",
       "getHistory",
       "getInsights",

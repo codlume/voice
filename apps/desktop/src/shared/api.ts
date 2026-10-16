@@ -6,7 +6,12 @@ import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { Snippet } from "./snippets.ts";
-import { DEFAULT_STYLES, type Assignment, type CategoryStyles } from "./style.ts";
+import {
+  DEFAULT_STYLES,
+  type Assignment,
+  type AssignmentEdit,
+  type CategoryStyles,
+} from "./style.ts";
 
 export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
@@ -283,6 +288,8 @@ export type HubApi = WindowApi & {
   getInstalledApps(): Promise<InstalledApp[]>;
   /** Icons of apps from the last installed-app list. Leaves out any it could not render. */
   getAppIcons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
+  /** Applies one assignment change to the saved settings. Rejects with a message for the user when the save failed. */
+  editAssignments(edit: AssignmentEdit): Promise<void>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -326,4 +333,5 @@ export const Channel = {
   clearInsights: "voice:clearInsights",
   getInstalledApps: "voice:getInstalledApps",
   getAppIcons: "voice:getAppIcons",
+  editAssignments: "voice:editAssignments",
 } as const;
