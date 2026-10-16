@@ -1,6 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
+import { Slider } from "@base-ui/react/slider";
 import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
@@ -20,7 +21,13 @@ import type {
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
-import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
+import {
+  DEFAULT_SETTINGS,
+  hotkeys,
+  MAX_PAGE_ANIMATION_MS,
+  MIN_PAGE_ANIMATION_MS,
+  PAGE_ANIMATION_STEP_MS,
+} from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import {
   historyRetentions,
@@ -37,6 +44,7 @@ import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
+import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
@@ -94,6 +102,70 @@ export const styles = stylex.create({
   keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+});
+
+const motionStyles = stylex.create({
+  control: {
+    display: "grid",
+    flexShrink: 0,
+    gridTemplateColumns: "7rem 13rem",
+    alignItems: "center",
+    gap: 16,
+  },
+  duration: { display: "flex", alignItems: "center", gap: space.md },
+  readout: {
+    minWidth: 64,
+    paddingBlock: 4,
+    paddingInline: space.sm,
+    borderRadius: radius.small,
+    backgroundColor: color.segmentTrack,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "center",
+  },
+  slider: { flexGrow: 1, minWidth: 0 },
+  sliderControl: {
+    display: "flex",
+    alignItems: "center",
+    height: 24,
+    cursor: "pointer",
+    touchAction: "none",
+  },
+  track: {
+    position: "relative",
+    width: "100%",
+    height: 6,
+    borderRadius: radius.round,
+    backgroundColor: `color-mix(in srgb, ${color.mutedForeground} 22%, transparent)`,
+    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color.border} 55%, transparent)`,
+  },
+  indicator: { borderRadius: radius.round, backgroundColor: color.primary },
+  thumb: {
+    width: 16,
+    height: 16,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: color.primary,
+    borderRadius: radius.round,
+    backgroundColor: color.background,
+    boxShadow: {
+      default: "0 1px 2px rgb(0 0 0 / 12%)",
+      ":hover": "0 1px 3px rgb(0 0 0 / 20%)",
+    },
+    transform: {
+      default: null,
+      ":hover": "scale(1.08)",
+      ":active": "scale(0.94)",
+      ":is([data-dragging])": "scale(0.94)",
+    },
+    transitionProperty: "transform, box-shadow",
+    transitionDuration: "120ms",
+    transitionTimingFunction: "ease",
+    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
+    outlineOffset: 2,
+  },
 });
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
@@ -445,8 +517,11 @@ export function SystemSettings({
   const loginAction = useAction();
   const audioAction = useAction();
   const appearanceAction = useAction();
+  const motionAction = useAction();
   const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
+  const changePageAnimation = (pageAnimationMs: number) =>
+    update(motionAction, { pageAnimationMs });
   const changeDock = (showInDock: boolean) => update(appearanceAction, { showInDock });
   const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
@@ -542,6 +617,53 @@ export function SystemSettings({
         {appearanceAction.error && (
           <p role="alert" {...stylex.props(pageStyles.error)}>
             {appearanceAction.error}
+          </p>
+        )}
+      </Section>
+
+      <Section label="Motion">
+        <Card>
+          <Row
+            title="Page animations"
+            detail="Set how fast pages and the sidebar move."
+            onReset={resetTo(
+              settings.pageAnimationMs,
+              DEFAULT_SETTINGS.pageAnimationMs,
+              changePageAnimation,
+            )}
+          >
+            <div {...stylex.props(motionStyles.control)}>
+              <PageAnimationPreview />
+              <div {...stylex.props(motionStyles.duration)}>
+                <output {...stylex.props(motionStyles.readout)}>
+                  {settings.pageAnimationMs} ms
+                </output>
+                <Slider.Root
+                  value={settings.pageAnimationMs}
+                  onValueChange={changePageAnimation}
+                  min={MIN_PAGE_ANIMATION_MS}
+                  max={MAX_PAGE_ANIMATION_MS}
+                  step={PAGE_ANIMATION_STEP_MS}
+                  {...stylex.props(motionStyles.slider)}
+                >
+                  <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
+                    <Slider.Track {...stylex.props(motionStyles.track)}>
+                      <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
+                      <Slider.Thumb
+                        aria-label="Page animation duration"
+                        getAriaValueText={(_, ms) => `${ms} milliseconds`}
+                        {...stylex.props(motionStyles.thumb)}
+                      />
+                    </Slider.Track>
+                  </Slider.Control>
+                </Slider.Root>
+              </div>
+            </div>
+          </Row>
+        </Card>
+        {motionAction.error && (
+          <p role="alert" {...stylex.props(pageStyles.error)}>
+            {motionAction.error}
           </p>
         )}
       </Section>
