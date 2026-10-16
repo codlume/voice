@@ -178,10 +178,12 @@ const styles = stylex.create({
 export function Style({ settings }: { settings: SettingsValue }) {
   const name = useId();
   const cleanupId = useId();
-  const { error: saveError, run } = useAction();
+  const action = useAction();
+  const { error: saveError, run } = action;
   const cleanupSupported = supportsCleanup(settings.dictationLanguage);
   const cleanupEnabled = wantsCleanup(settings);
   const [category, setCategory] = useState<Category>("personal");
+  const [openPicker, setOpenPicker] = useState<Category | null>(null);
   const installed = useInstalledApps();
   const { assignments } = settings.cleanup;
 
@@ -242,6 +244,11 @@ export function Style({ settings }: { settings: SettingsValue }) {
               category={value}
               installed={installed}
               assignments={assignments}
+              action={action}
+              pickerOpen={openPicker === value}
+              onPickerOpenChange={(open) =>
+                setOpenPicker((current) => (open ? value : current === value ? null : current))
+              }
               onRemove={removeAssignment}
             />
             <StyleCards
@@ -262,7 +269,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
             ? "Turn on cleanup to apply a style. Your transcript is currently inserted as recognized."
             : "Style applies to English dictation. Voice checks which app, and which website in a browser, you are dictating into, on this Mac only. Nothing is saved or sent."}
       </p>
-      {saveError && (
+      {saveError && openPicker !== category && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
           {saveError}
         </p>
@@ -275,11 +282,17 @@ function AppliesIn({
   category,
   installed,
   assignments,
+  action,
+  pickerOpen,
+  onPickerOpenChange,
   onRemove,
 }: {
   category: Category;
   installed: readonly InstalledApp[];
   assignments: readonly Assignment[];
+  action: ReturnType<typeof useAction>;
+  pickerOpen: boolean;
+  onPickerOpenChange: (open: boolean) => void;
   onRemove: (assignment: Assignment) => void;
 }) {
   const addRef = useRef<HTMLButtonElement>(null);
@@ -343,6 +356,9 @@ function AppliesIn({
         category={category}
         assignments={assignments}
         installed={installed}
+        action={action}
+        open={pickerOpen}
+        onOpenChange={onPickerOpenChange}
         triggerRef={addRef}
       />
     </div>

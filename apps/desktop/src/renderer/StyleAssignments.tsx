@@ -18,7 +18,7 @@ import {
   type PickerRow,
 } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
-import { useAction } from "./useAction.ts";
+import type { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
 const IME_COMPOSITION_KEY_CODE = 229;
@@ -150,7 +150,6 @@ const styles = stylex.create({
   siteRow: { display: "flex", gap: space.sm },
   status: { minHeight: 17, margin: 0, color: color.mutedForeground, fontSize: 12 },
   separator: { height: 1, margin: 0, borderWidth: 0, backgroundColor: color.border },
-  ownLine: { flexBasis: "100%" },
 });
 
 export function AssignmentChip({
@@ -179,65 +178,60 @@ export function AssignmentChip({
   );
 }
 
+type Action = ReturnType<typeof useAction>;
+
 type PickerProps = {
   category: Category;
   assignments: readonly Assignment[];
   installed: readonly InstalledApp[];
+  action: Action;
 };
 
 export function AddToCategory({
   triggerRef,
+  open,
+  onOpenChange,
   ...picker
-}: PickerProps & { triggerRef: RefObject<HTMLButtonElement | null> }) {
-  const [open, setOpen] = useState(false);
+}: PickerProps & {
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const action = useAction();
   return (
-    <>
-      <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger
-          ref={triggerRef}
-          aria-label={`Add an app or website to ${CATEGORY_LABELS[picker.category]}`}
-          title="Add an app or website"
-          {...stylex.props(styles.add)}
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
+      <Popover.Trigger
+        ref={triggerRef}
+        aria-label={`Add an app or website to ${CATEGORY_LABELS[picker.category]}`}
+        title="Add an app or website"
+        {...stylex.props(styles.add)}
+      >
+        <PlusIcon size={14} strokeWidth={2.25} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          collisionPadding={8}
+          {...stylex.props(styles.positioner)}
         >
-          <PlusIcon size={14} strokeWidth={2.25} />
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Positioner
-            side="bottom"
-            align="start"
-            sideOffset={6}
-            collisionPadding={8}
-            {...stylex.props(styles.positioner)}
+          <Popover.Popup
+            initialFocus={searchRef}
+            aria-label={`Add to ${CATEGORY_LABELS[picker.category]}`}
+            className={({ transitionStatus }) =>
+              stylex.props(
+                styles.popup,
+                (transitionStatus === "starting" || transitionStatus === "ending") &&
+                  styles.popupHidden,
+              ).className
+            }
           >
-            <Popover.Popup
-              initialFocus={searchRef}
-              aria-label={`Add to ${CATEGORY_LABELS[picker.category]}`}
-              className={({ transitionStatus }) =>
-                stylex.props(
-                  styles.popup,
-                  (transitionStatus === "starting" || transitionStatus === "ending") &&
-                    styles.popupHidden,
-                ).className
-              }
-            >
-              <Picker
-                {...picker}
-                action={action}
-                searchRef={searchRef}
-                onDone={() => setOpen(false)}
-              />
-            </Popover.Popup>
-          </Popover.Positioner>
-        </Popover.Portal>
-      </Popover.Root>
-      {!open && action.error && (
-        <p role="alert" {...stylex.props(pageStyles.error, styles.ownLine)}>
-          {action.error}
-        </p>
-      )}
-    </>
+            <Picker {...picker} searchRef={searchRef} onDone={() => onOpenChange(false)} />
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -249,7 +243,6 @@ function Picker({
   searchRef,
   onDone,
 }: PickerProps & {
-  action: ReturnType<typeof useAction>;
   searchRef: RefObject<HTMLInputElement | null>;
   onDone: () => void;
 }) {
