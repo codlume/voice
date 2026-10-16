@@ -20,7 +20,8 @@ export function parseHost(input: string): Host | null {
   let rest = input.trim();
   const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(rest);
   if (scheme) {
-    rest = rest.slice(scheme[0].length).split(/[/?#]/, 1)[0] ?? "";
+    // Browsers read `\` as `/` in web URLs, so it ends the authority too.
+    rest = rest.slice(scheme[0].length).split(/[/?#\\]/, 1)[0] ?? "";
     rest = rest.slice(rest.lastIndexOf("@") + 1);
   } else if (/[@/]/.test(rest)) {
     return null;
@@ -31,10 +32,13 @@ export function parseHost(input: string): Host | null {
     rest = rest.slice(0, colon);
   }
   if (rest.endsWith(".")) rest = rest.slice(0, -1);
+  const labels = rest.split(".");
+  // A last label that reads as a number makes browsers parse the host as IPv4 and rewrite it.
   const valid =
     rest.length >= 1 &&
     rest.length <= 253 &&
-    rest.split(".").every((label) => label.length <= 63 && LABEL.test(label));
+    labels.every((label) => label.length <= 63 && LABEL.test(label)) &&
+    !/^(0x[0-9a-f]*|[0-9]+)$/i.test(labels.at(-1) ?? "");
   return valid ? (rest.toLowerCase() as Host) : null;
 }
 

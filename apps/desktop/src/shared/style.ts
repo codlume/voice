@@ -37,7 +37,10 @@ function parseAssignment(item: unknown): Assignment | null {
     const { bundleId, name } = item;
     if (typeof bundleId !== "string" || typeof name !== "string") return null;
     const key = parseBundleId(bundleId);
-    return key === null ? null : { kind: "app", bundleId: key, name: name.trim(), category };
+    const label = name.trim();
+    return key === null || label === ""
+      ? null
+      : { kind: "app", bundleId: key, name: label, category };
   }
   if (item.kind === "site" && "host" in item && typeof item.host === "string") {
     const key = parseHost(item.host);

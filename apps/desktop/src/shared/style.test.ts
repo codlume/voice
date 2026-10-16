@@ -85,8 +85,8 @@ describe("parseHost", () => {
     ["slack.com:8080", "slack.com"],
     ["  slack.com  ", "slack.com"],
     ["localhost", "localhost"],
-    ["127.0.0.1", "127.0.0.1"],
     ["http://localhost:5173/", "localhost"],
+    ["http://slack.com\\@evil.com", "slack.com"],
   ])("%j is %j", (input, host) => {
     expect(parseHost(input)).toBe(host);
   });
@@ -105,6 +105,13 @@ describe("parseHost", () => {
     "http://",
     "slack.com:",
     "user@slack.com",
+    "127.0.0.1",
+    "http://127.1:5173/",
+    "2130706433",
+    "0x7f000001",
+    "0x7f.0x1",
+    "http://0X7F.1/",
+    "example.0x",
     `${"a".repeat(64)}.com`,
   ])("%j is not a host", (input) => {
     expect(parseHost(input)).toBeNull();
@@ -153,6 +160,7 @@ describe("parseAssignments", () => {
         { kind: "site", host: "not a host", category: "work" },
         { kind: "site", host: "github.com", category: "shouty" },
         { kind: "app", bundleId: "com.example.App", category: "work" },
+        { kind: "app", bundleId: "com.example.Blank", name: "   ", category: "work" },
         { kind: "window", host: "github.com", category: "work" },
         "slack.com",
         null,
