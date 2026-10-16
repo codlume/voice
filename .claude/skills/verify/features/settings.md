@@ -1,6 +1,6 @@
 # Settings
 
-Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, and the always-visible Flow Bar. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting, how long to keep history (see [History](./history.md)), clearing history, and clearing Insights.
+Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, the always-visible Flow Bar, and page animations under Motion. Shortcuts has the hold-to-talk key. Data and Privacy has crash reporting, how long to keep history (see [History](./history.md)), clearing history, and clearing Insights.
 
 ## Sub-features
 
@@ -11,9 +11,9 @@ Settings holds the controls that aren't about style. General has the microphone 
 - `settings-open-at-login`: unavailable in development builds by design.
 - `settings-mute`: `Mute all audio while dictating`.
 - `settings-theme`: System, Light, or Dark.
-- `settings-page-animations`: `Page animations`, 0 to 400 ms in 25 ms steps.
 - `settings-dock`: `Show in Dock`. When it's off, Voice leaves the Dock and Cmd-Tab.
 - `settings-flow-bar`: `Show Flow Bar at all times`.
+- `settings-page-animations`: `Page animations`, 0 to 400 ms in 25 ms steps.
 - `settings-hotkey`: `Hold to talk` is fn, Right Option, or Right Command.
 - `settings-diagnostics`: `Share crash reports`.
 
@@ -29,6 +29,7 @@ Preconditions: baseline.
 - **Toggle a switch.** `vv click "Show in Dock"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.showInDock === false)'`. `settings.json` shows `"showInDock": false`. Click it again to restore.
 - **Pick from a select.** `vv click css:#setting-hotkey`, then `vv click "Right Option"`, then wait for `s.settings.hotkey === "rightOption"`. Then `vv click Back` and `vv click Home`, and `vv text` reads "Hold Right Option and speak". Restore `fn` the same way.
 - **Language disables cleanup.** Pick a non-English option in `css:#setting-dictation-language`. Then `vv click Back` and `vv click Style`. The `Clean up text` switch is disabled.
+- **Set the Page animations slider.** voice-verify has no key command, so send the key from the page with `vv eval hub 'document.querySelector("input[type=range]").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))'`, then wait for `s.settings.pageAnimationMs === 400`. `vv click "Reset Page animations to default"` restores 200.
 - **Open at login.** On System, `#setting-open-at-login` is disabled, and the snapshot's `loginItem` is `unavailable`. That is correct for a development build.
 
 ## Gotchas
