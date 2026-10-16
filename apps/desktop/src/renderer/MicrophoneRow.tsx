@@ -13,12 +13,11 @@ import {
 } from "./microphoneTestView.ts";
 import { smoothLevel } from "./pillView.ts";
 import { SettingTitle } from "./SettingTitle.tsx";
-import { color, motion, radius, space } from "./tokens.stylex.ts";
+import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
 const reduceMotion = "@media (prefers-reduced-motion: reduce)";
-const liveLevel = "90ms";
 
 const styles = stylex.create({
   row: { paddingBlock: 14, paddingInline: space.lg },
@@ -58,10 +57,7 @@ const styles = stylex.create({
     display: "grid",
     gridTemplateRows: "0fr",
     transitionProperty: "grid-template-rows",
-    transitionDuration: {
-      default: `calc(160ms * ${motion["--motion-scale"]})`,
-      [reduceMotion]: "0s",
-    },
+    transitionDuration: { default: "160ms", [reduceMotion]: "0s" },
     transitionTimingFunction: "ease-out",
   },
   open: { gridTemplateRows: "1fr" },
@@ -80,7 +76,7 @@ const styles = stylex.create({
     borderRadius: radius.round,
     backgroundColor: color.primary,
     transitionProperty: "width",
-    transitionDuration: { default: liveLevel, [reduceMotion]: "0s" },
+    transitionDuration: { default: "90ms", [reduceMotion]: "0s" },
     transitionTimingFunction: "linear",
   },
 });

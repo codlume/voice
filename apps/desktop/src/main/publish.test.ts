@@ -46,7 +46,7 @@ function harness() {
 }
 
 describe("publish", () => {
-  test("the pill gets the session and its three settings, never the account", () => {
+  test("the pill gets the session and its two settings, never the account", () => {
     const { hub, pill, update } = harness();
     update({ session: { phase: "recording", id: "s1", mode: "hold", pressedAt: 0 } });
     update({
@@ -59,13 +59,11 @@ describe("publish", () => {
         session: { kind: "listening" },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
         copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
-        animationSpeed: DEFAULT_SETTINGS.animationSpeed,
       },
       {
         session: { kind: "done", outcome: { kind: "inserted", method: "paste" } },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
         copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
-        animationSpeed: DEFAULT_SETTINGS.animationSpeed,
       },
     ]);
     const sentToPill = JSON.stringify(pill.sent);
@@ -92,14 +90,7 @@ describe("publish", () => {
         session: { kind: "idle" },
         alwaysShowPill: !DEFAULT_SETTINGS.alwaysShowPill,
         copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
-        animationSpeed: DEFAULT_SETTINGS.animationSpeed,
       },
     ]);
-  });
-
-  test("the pill hears an animation speed change", () => {
-    const { pill, update } = harness();
-    update({ settings: { ...DEFAULT_SETTINGS, animationSpeed: "off" } });
-    expect(pill.sent.map(({ value }) => value)).toMatchObject([{ animationSpeed: "off" }]);
   });
 });

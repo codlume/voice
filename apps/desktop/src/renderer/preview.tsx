@@ -746,12 +746,7 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule
-              session={session}
-              alwaysShowPill
-              copyToClipboard={false}
-              animationSpeed="normal"
-            />
+            <PillCapsule session={session} alwaysShowPill copyToClipboard={false} />
           </div>
         </figure>
       ))}

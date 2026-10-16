@@ -5,7 +5,7 @@ import { useRef, useState, type ReactNode } from "react";
 
 import type { PendingUpdate } from "../shared/api.ts";
 import { releaseCardTitle, type UpdateCard } from "./updateStatus.ts";
-import { color, font, motion, radius, space } from "./tokens.stylex.ts";
+import { color, font, radius, space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
@@ -33,10 +33,7 @@ const styles = stylex.create({
     WebkitFontSmoothing: "antialiased",
     opacity: 1,
     transitionProperty: "opacity",
-    transitionDuration: {
-      default: `calc(150ms * ${motion["--motion-scale"]})`,
-      [reducedMotion]: "0s",
-    },
+    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
   cardHidden: { opacity: 0 },
   cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },

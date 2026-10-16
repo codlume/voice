@@ -214,14 +214,13 @@ export type Snapshot = {
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &
-  Pick<Settings, "alwaysShowPill" | "copyToClipboard" | "animationSpeed">;
+  Pick<Settings, "alwaysShowPill" | "copyToClipboard">;
 
 export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
   return {
     session,
     alwaysShowPill: settings.alwaysShowPill,
     copyToClipboard: settings.copyToClipboard,
-    animationSpeed: settings.animationSpeed,
   };
 }
 

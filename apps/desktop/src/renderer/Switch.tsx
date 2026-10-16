@@ -1,7 +1,7 @@
 import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
 import * as stylex from "@stylexjs/stylex";
 
-import { color, motion, radius } from "./tokens.stylex.ts";
+import { color, radius } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
   switch: {
@@ -15,10 +15,7 @@ const styles = stylex.create({
     backgroundColor: color.input,
     cursor: "pointer",
     transitionProperty: "background-color",
-    transitionDuration: {
-      default: `calc(160ms * ${motion["--motion-scale"]})`,
-      "@media (prefers-reduced-motion: reduce)": "0s",
-    },
+    transitionDuration: { default: "160ms", "@media (prefers-reduced-motion: reduce)": "0s" },
   },
   switchOn: { backgroundColor: color.primary },
   disabled: { opacity: 0.5, cursor: "default" },
@@ -32,10 +29,7 @@ const styles = stylex.create({
     backgroundColor: color.primaryForeground,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.2)",
     transitionProperty: "transform",
-    transitionDuration: {
-      default: `calc(160ms * ${motion["--motion-scale"]})`,
-      "@media (prefers-reduced-motion: reduce)": "0s",
-    },
+    transitionDuration: { default: "160ms", "@media (prefers-reduced-motion: reduce)": "0s" },
   },
   thumbOn: { transform: "translateX(14px)" },
 });

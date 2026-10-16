@@ -17,7 +17,7 @@ import { Keycap } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
-import { color, font, motion, radius, space } from "./tokens.stylex.ts";
+import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useInsights } from "./useInsights.ts";
 import { useToday } from "./useToday.ts";
@@ -96,7 +96,7 @@ const styles = stylex.create({
     height: "100%",
     backgroundColor: color.primary,
     transitionProperty: "width",
-    transitionDuration: `calc(300ms * ${motion["--motion-scale"]})`,
+    transitionDuration: "300ms",
   },
   mark: {
     display: "grid",

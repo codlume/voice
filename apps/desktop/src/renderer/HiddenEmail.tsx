@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 
 import { emailDecoy } from "./accountView.ts";
-import { motion, radius } from "./tokens.stylex.ts";
+import { radius } from "./tokens.stylex.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
@@ -27,10 +27,7 @@ const styles = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     transitionProperty: "filter",
-    transitionDuration: {
-      default: `calc(150ms * ${motion["--motion-scale"]})`,
-      [reducedMotion]: "0s",
-    },
+    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
   hidden: { filter: "blur(4px)", userSelect: "none" },
 });

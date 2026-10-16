@@ -4,11 +4,9 @@ import { useEffect, useState } from "react";
 
 import type { PillSnapshot } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
-import { useMotionScale } from "./motion.ts";
-import { font, darkPill, motion, radius } from "./tokens.stylex.ts";
+import { font, darkPill, radius } from "./tokens.stylex.ts";
 
 const spring = "cubic-bezier(0.34, 1.36, 0.64, 1)";
-const liveLevel = "120ms";
 const settle = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 const fadeIn = stylex.keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
@@ -36,7 +34,7 @@ const styles = stylex.create({
     borderRadius: radius.round,
     backgroundColor: darkPill.surface,
     transitionProperty: "width, height, opacity, box-shadow",
-    transitionDuration: `calc(420ms * ${motion["--motion-scale"]})`,
+    transitionDuration: "420ms",
     transitionTimingFunction: spring,
   },
   idle: {
@@ -44,7 +42,7 @@ const styles = stylex.create({
     height: 8,
     opacity: 0.55,
     boxShadow: "none",
-    transitionDuration: `calc(360ms * ${motion["--motion-scale"]})`,
+    transitionDuration: "360ms",
     transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
   },
   open: {
@@ -60,8 +58,8 @@ const styles = stylex.create({
     alignItems: "center",
     justifyContent: "center",
     animationName: fadeIn,
-    animationDuration: `calc(180ms * ${motion["--motion-scale"]})`,
-    animationDelay: `calc(90ms * ${motion["--motion-scale"]})`,
+    animationDuration: "180ms",
+    animationDelay: "90ms",
     animationFillMode: "both",
   },
   wave: { gap: 2.5, height: 16 },
@@ -71,7 +69,7 @@ const styles = stylex.create({
     borderRadius: 1.5,
     backgroundColor: darkPill.glyph,
     transitionProperty: "transform",
-    transitionDuration: liveLevel,
+    transitionDuration: "120ms",
     transitionTimingFunction: "ease-out",
   },
   barScale: (scale: number) => ({ transform: `scaleY(${scale})` }),
@@ -90,16 +88,16 @@ const styles = stylex.create({
   check: { gap: 6 },
   checkFade: {
     animationName: `${fadeIn}, ${fadeOut}`,
-    animationDuration: `calc(180ms * ${motion["--motion-scale"]}), calc(260ms * ${motion["--motion-scale"]})`,
-    animationDelay: `0ms, calc(950ms + 260ms * (1 - ${motion["--motion-scale"]}))`,
+    animationDuration: "180ms, 260ms",
+    animationDelay: "0ms, 950ms",
     animationFillMode: "both, forwards",
   },
   checkStroke: {
     stroke: darkPill.glyph,
     strokeDasharray: 23,
     animationName: draw,
-    animationDuration: `calc(280ms * ${motion["--motion-scale"]})`,
-    animationDelay: `calc(60ms * ${motion["--motion-scale"]})`,
+    animationDuration: "280ms",
+    animationDelay: "60ms",
     animationTimingFunction: settle,
     animationFillMode: "both",
   },
@@ -169,13 +167,7 @@ function Check({ pasted }: { pasted: boolean }) {
   );
 }
 
-export function PillCapsule({
-  session,
-  alwaysShowPill,
-  copyToClipboard,
-  animationSpeed,
-}: PillSnapshot) {
-  useMotionScale(animationSpeed);
+export function PillCapsule({ session, alwaysShowPill, copyToClipboard }: PillSnapshot) {
   const view = pillView(session, { copyToClipboard });
   return (
     <div {...stylex.props(styles.frame)}>
