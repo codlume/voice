@@ -189,6 +189,7 @@ export function createDictation(options: DictationOptions): Dictation {
           language: started.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
           microphone: store.state.settings.microphone,
+          detectHost: true,
         });
         return;
       case "stopCapture":

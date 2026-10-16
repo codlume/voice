@@ -7,7 +7,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 10 },
+      { type: "ready", version: 11 },
       { type: "hotkey", action: "down" },
       { type: "hotkey", action: "up" },
       { type: "hotkey", action: "chord" },
@@ -23,8 +23,33 @@ describe("parseHelperEvent", () => {
       { type: "microphone.test.level", id: "t", level: 0.3 },
       { type: "microphone.test.ended", id: "t" },
       { type: "microphone.test.failed", id: "t", message: "Finish dictating, then test again." },
-      { type: "transcript", id: "a", text: "hi", audioMs: 1200, asrMs: 300, speechMs: 900 },
-      { type: "transcript", id: "a", text: "", audioMs: 40, asrMs: 0, speechMs: null },
+      {
+        type: "transcript",
+        id: "a",
+        text: "hi",
+        audioMs: 1200,
+        asrMs: 300,
+        speechMs: 900,
+        target: { bundleId: "com.google.Chrome", host: "mail.google.com" },
+      },
+      {
+        type: "transcript",
+        id: "a",
+        text: "hi",
+        audioMs: 1200,
+        asrMs: 300,
+        speechMs: 900,
+        target: { bundleId: "com.apple.MobileSMS", host: null },
+      },
+      {
+        type: "transcript",
+        id: "a",
+        text: "",
+        audioMs: 40,
+        asrMs: 0,
+        speechMs: null,
+        target: null,
+      },
       { type: "transcript.failed", id: "a", message: "no model" },
       { type: "insert.result", id: "a", method: "accessibility", reason: null },
       { type: "insert.result", id: "a", method: "none", reason: "focusChanged" },
@@ -125,9 +150,36 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: null,
+        target: null,
       });
     },
   );
+
+  test.each([
+    undefined,
+    "x",
+    42,
+    [],
+    {},
+    { bundleId: 1, host: null },
+    { bundleId: "a" },
+    { bundleId: null, host: null },
+    { bundleId: null, host: "mail.google.com" },
+  ])("keeps a transcript whose target %j is missing or invalid, with a null target", (target) => {
+    expect(
+      parseHelperEvent(
+        line({ type: "transcript", id: "a", text: "hi", audioMs: 1, asrMs: 1, target }),
+      ),
+    ).toEqual({
+      type: "transcript",
+      id: "a",
+      text: "hi",
+      audioMs: 1,
+      asrMs: 1,
+      speechMs: null,
+      target: null,
+    });
+  });
 
   test.each([
     '{"type":"ready","version":1e400}',

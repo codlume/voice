@@ -87,7 +87,9 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
+    /// False when no session began, so the caller schedules nothing for it.
+    @discardableResult
+    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) -> Bool {
         // Dictation preempts a test. The mic keeps running so dictation gets audio without an
         // engine restart.
         if case .testing(let testId, _) = state {
@@ -98,7 +100,7 @@ final class Capture {
         }
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
-            return
+            return false
         }
         lastTarget = nil
         adopt(microphone)
@@ -113,7 +115,7 @@ final class Capture {
                 self.file = file
                 setOutputSilenced(muteWhileDictating)
                 file.start()
-                return
+                return true
             }
             guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "microphone access is not granted")
@@ -123,11 +125,13 @@ final class Capture {
             state = .starting(session)
             setOutputSilenced(muteWhileDictating)
             try mic.start(sink: sink)
+            return true
         } catch let error as CaptureError {
             fail(session, reason: error.reason, message: error.message)
         } catch {
             fail(session, reason: .unknown, message: "\(error)")
         }
+        return false
     }
 
     // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.
@@ -160,14 +164,14 @@ final class Capture {
         let speechMs = recording.speech.milliseconds(sampleRate: asrSampleRate)
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
-            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs))
+            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs, target: session.target.takeTranscriptTarget()))
             return
         }
         recording.transcription = Task { @MainActor in
             do {
                 let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs))
+                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs, target: session.target.takeTranscriptTarget()))
             } catch let error as TranscribeError {
                 finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
             } catch {
@@ -184,16 +188,19 @@ final class Capture {
         switch state {
         case .starting(let session) where session.id == id:
             _ = session.input.drain(closing: true)
+            session.target.settleHost()
             stopSource()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .recording(let recording) where recording.session.id == id:
             _ = recording.session.input.drain(closing: true)
+            recording.session.target.settleHost()
             stopSource()
             recording.stream?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .transcribing(let recording) where recording.session.id == id:
+            recording.session.target.settleHost()
             recording.stream?.cancel()
             recording.transcription?.cancel()
             state = .idle
@@ -211,10 +218,12 @@ final class Capture {
         switch state {
         case .recording(let recording), .transcribing(let recording):
             _ = recording.session.input.drain(closing: true)
+            recording.session.target.settleHost()
             recording.stream?.cancel()
             recording.transcription?.cancel()
         case .starting(let session):
             _ = session.input.drain(closing: true)
+            session.target.settleHost()
         case .idle, .testing:
             break
         }
@@ -432,7 +441,7 @@ final class Capture {
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
-        if case .transcript(_, let text, _, _, _) = event, !text.isEmpty {
+        if case .transcript(_, let text, _, _, _, _) = event, !text.isEmpty {
             lastTarget = (session.id, session.target)
         } else {
             lastTarget = nil

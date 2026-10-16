@@ -10,7 +10,7 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 10;
+export const HELPER_PROTOCOL_VERSION = 11;
 
 export type HelperCommand =
   | { type: "hotkey.configure"; key: Hotkey; toggleKey: Hotkey | null }
@@ -21,6 +21,8 @@ export type HelperCommand =
       language: DictationLanguage;
       muteWhileDictating: boolean;
       microphone: Microphone | null;
+      // False when the session cannot use a page host, so the helper never reads one.
+      detectHost: boolean;
     }
   | { type: "capture.stop"; id: string }
   | { type: "capture.cancel"; id: string }
@@ -30,7 +32,8 @@ export type HelperCommand =
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }
-  | { type: "asr.remove" };
+  | { type: "asr.remove" }
+  | { type: "test.target"; target: TranscriptTarget | null };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
@@ -43,6 +46,13 @@ const insertFailure = nullOnInvalid(
   Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "failed"]),
 );
 const statusMessage = nullOnInvalid(Schema.String);
+const TranscriptTargetSchema = Schema.Struct({
+  bundleId: Schema.String,
+  host: Schema.NullOr(Schema.String),
+});
+export type TranscriptTarget = typeof TranscriptTargetSchema.Type;
+export const isTranscriptTarget = Schema.is(Schema.NullOr(TranscriptTargetSchema));
+const target = nullOnInvalid(TranscriptTargetSchema);
 const level = Schema.Finite.pipe(
   Schema.decode({
     decode: SchemaGetter.transform(clamp({ minimum: 0, maximum: 1 })),
@@ -103,6 +113,7 @@ const HelperEventSchema = Schema.Union([
     audioMs: Schema.Finite,
     asrMs: Schema.Finite,
     speechMs: nullOnInvalid(Schema.Finite),
+    target,
   }),
   Schema.Struct({
     type: Schema.Literal("transcript.failed"),

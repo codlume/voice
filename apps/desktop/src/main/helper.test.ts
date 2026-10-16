@@ -99,7 +99,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 10 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 11 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -118,6 +118,7 @@ describe("startHelper", () => {
       id: "s1",
       language: "en",
       muteWhileDictating: false,
+      detectHost: true,
     });
     await h.waitFor((e) => e.type === "capture.started");
     expect(h.of("capture.started")[0]?.event).toEqual({
@@ -146,6 +147,43 @@ describe("startHelper", () => {
     expect(h.exits).toEqual([]);
   });
 
+  test("test.target rides on the next capture only, even one that is cancelled", async () => {
+    const h = boot({ transcript: "hi" });
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "asr.status");
+    const target = { bundleId: "com.google.Chrome", host: "mail.google.com" };
+    const start = async (id: string) => {
+      h.helper.send({
+        type: "capture.start",
+        microphone: null,
+        id,
+        language: "en",
+        muteWhileDictating: false,
+        detectHost: true,
+      });
+      await h.waitFor((e) => e.type === "capture.started" && e.id === id);
+    };
+    const capture = async (id: string) => {
+      await start(id);
+      h.helper.send({ type: "capture.stop", id });
+      await h.waitFor((e) => e.type === "transcript" && e.id === id);
+      return h.of("transcript").find(({ event }) => event.id === id)!.event.target;
+    };
+    h.helper.send({ type: "test.target", target });
+    expect(await capture("s1")).toEqual(target);
+    expect(await capture("s2")).toBeNull();
+
+    h.helper.send({ type: "test.target", target });
+    await start("s3");
+    h.helper.send({ type: "capture.cancel", id: "s3" });
+    await h.waitFor((e) => e.type === "capture.cancelled" && e.id === "s3");
+    expect(await capture("s4")).toBeNull();
+
+    h.helper.send({ type: "test.target", target });
+    h.helper.send({ type: "test.target", target: null });
+    expect(await capture("s5")).toBeNull();
+  });
+
   test("stop ends the child and does not restart it", async () => {
     const h = boot();
     helper = h.helper;
@@ -162,12 +200,12 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v10; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v11; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 10 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 11 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);

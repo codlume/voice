@@ -12,6 +12,7 @@ final class Helper {
     private let insertion: Insertion
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
+    private var testTarget: TranscriptTarget?
 
     @MainActor
     init(output: Output, modelsDir: URL, stateDir: URL, environment: [String: String]) {
@@ -55,9 +56,17 @@ final class Helper {
             hotkeyTap.configure(key: key, toggleKey: toggleKey)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
-        case .captureStart(let id, let language, let muteWhileDictating, let microphone):
-            let target = insertion.recordTarget(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)
-            capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
+        case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
+            let app = NSWorkspace.shared.frontmostApplication
+            let override = testTarget
+            testTarget = nil
+            let target = insertion.recordTarget(
+                pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
+                host: override.map { .read($0.host) } ?? (detectHost ? .pending : .read(nil)),
+                log: testMode ? { [output] in output.log(.info, $0) } : nil)
+            if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone) {
+                target.settleHost()
+            }
         case .captureStop(let id):
             capture.stop(id: id)
         case .captureCancel(let id):
@@ -79,6 +88,9 @@ final class Helper {
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path
+        case .testTarget(let target):
+            guard testMode else { return output.log(.error, "test hooks disabled") }
+            testTarget = target
         }
     }
 
@@ -104,7 +116,7 @@ guard let modelsDir = directoryArgument("--models-dir"), let stateDir = director
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 10))
+output.emit(.ready(version: 11))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, stateDir: stateDir, environment: ProcessInfo.processInfo.environment)

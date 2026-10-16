@@ -41,7 +41,8 @@ public struct Microphone: Codable, Equatable, Sendable {
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?)
     case microphoneConfigure(microphone: Microphone?)
-    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?)
+    /// `detectHost` is main's say on whether the session can use a page host at all.
+    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?, detectHost: Bool)
     case captureStop(id: String)
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
@@ -52,6 +53,21 @@ public enum HelperCommand: Equatable, Sendable {
     case asrPrepare(download: Bool)
     case asrRemove
     case testAudioFile(path: String?)
+    /// The next capture reports this target instead of the frontmost app; nil clears a pending one.
+    case testTarget(TranscriptTarget?)
+}
+
+/// What the user was dictating into: the frontmost app and, for a browser page, the page host.
+/// The whole target is nil when the app is unknown; the host is nil for a non-browser, a page
+/// without an http(s) host, or a read that had not finished when the transcript went out.
+public struct TranscriptTarget: Equatable, Sendable {
+    public let bundleId: String
+    public let host: String?
+
+    public init(bundleId: String, host: String?) {
+        self.bundleId = bundleId
+        self.host = host
+    }
 }
 
 public enum HelperEvent: Equatable, Sendable {
@@ -68,7 +84,7 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
     case microphoneTestFailed(id: String, message: String)
-    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?)
+    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, target: TranscriptTarget?)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
@@ -84,7 +100,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
-    case microphone, accessibility, state, devices, defaultUid, toggleKey
+    case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
 }
 
 extension HelperCommand: Decodable {
@@ -101,7 +117,8 @@ extension HelperCommand: Decodable {
             self = .captureStart(id: try c.decode(String.self, forKey: .id),
                                  language: try c.decode(DictationLanguage.self, forKey: .language),
                                  muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating),
-                                 microphone: try c.decode(Microphone?.self, forKey: .microphone))
+                                 microphone: try c.decode(Microphone?.self, forKey: .microphone),
+                                 detectHost: try c.decode(Bool.self, forKey: .detectHost))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
         case "microphone.test.start":
@@ -118,6 +135,7 @@ extension HelperCommand: Decodable {
         case "asr.prepare": self = .asrPrepare(download: try c.decode(Bool.self, forKey: .download))
         case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
+        case "test.target": self = .testTarget(try c.decode(TranscriptTarget?.self, forKey: .target))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -200,13 +218,14 @@ extension HelperEvent: Encodable {
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
-        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs):
+        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs, let target):
             try c.encode("transcript", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
             try c.encode(finite(audioMs), forKey: .audioMs)
             try c.encode(finite(asrMs), forKey: .asrMs)
             try c.encode(speechMs.map(finite), forKey: .speechMs)
+            try c.encode(target, forKey: .target)
         case .transcriptFailed(let id, let reason, let message):
             try c.encode("transcript.failed", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -240,6 +259,20 @@ extension HelperEvent: Encodable {
         } catch {
             return #"{"type":"log","level":"error","message":"event encoding failed"}"#
         }
+    }
+}
+
+extension TranscriptTarget: Codable {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        bundleId = try c.decode(String.self, forKey: .bundleId)
+        host = try c.decode(String?.self, forKey: .host)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(bundleId, forKey: .bundleId)
+        try c.encode(host, forKey: .host)
     }
 }
 

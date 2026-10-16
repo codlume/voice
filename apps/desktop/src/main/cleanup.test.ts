@@ -643,6 +643,7 @@ describe("followSettings", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
     };
     return { store, cleanup, commands, dictation, setLanguage, record, finish };
