@@ -7,6 +7,7 @@ import type { InstalledApp } from "../shared/api.ts";
 import { parseBundleId, type Category } from "../shared/app-categories.ts";
 import { parseAssignments } from "../shared/style.ts";
 import {
+  appNames,
   bannerApps,
   chips,
   pickerRows,
@@ -200,6 +201,32 @@ describe("pickerRows", () => {
         current: null,
       });
     }
+  });
+});
+
+describe("appNames", () => {
+  test("names an app as the Style page does, then by catalog, then installed, then its id", () => {
+    const apps = [
+      app("com.tinyspeck.slackmacgap", "Slack.app"),
+      app("com.apple.mail", "Mail.app"),
+      app("com.example.notes", "Notes Pro"),
+    ];
+    const name = appNames(
+      assigned({
+        kind: "app",
+        bundleId: "com.tinyspeck.slackmacgap",
+        name: "Slack for work",
+        category: "work",
+      }),
+      apps,
+    );
+    const notInstalled = app("com.example.unknown", "Unknown");
+    expect([...apps, notInstalled].map(({ bundleId }) => name(bundleId))).toEqual([
+      "Slack for work",
+      "Mail",
+      "Notes Pro",
+      "com.example.unknown",
+    ]);
   });
 });
 

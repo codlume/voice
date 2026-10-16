@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
+import type { BundleId } from "../shared/app-categories.ts";
 import { EMPTY_INSIGHTS, type DayKey, type Insights } from "../shared/insights.ts";
 import type { Dictated } from "./dictation.ts";
 import { add, createInsights, parseInsights, tally } from "./insights.ts";
@@ -33,6 +34,18 @@ const dictated = (patch: Partial<Dictated> = {}): Dictated => ({
 });
 
 const day = (key: string) => key as DayKey;
+const apps = (entries: Record<string, number>) => entries as Record<BundleId, number>;
+const zeros = EMPTY_INSIGHTS.categories;
+
+const where = (value: Insights) => ({
+  days: value.days,
+  categories: value.categories,
+  apps: value.apps,
+});
+const used: Pick<Insights, "categories" | "apps"> = {
+  categories: { ...zeros, work: { words: 120, sessions: 4 }, email: { words: 30, sessions: 1 } },
+  apps: apps({ "com.tinyspeck.slackmacgap": 120, "com.apple.mail": 30 }),
+};
 
 describe("tally", () => {
   test("counts the words that were said, not the text a snippet expanded into", () => {
@@ -113,6 +126,14 @@ describe("add", () => {
     };
     expect(add(EMPTY_INSIGHTS, tallied)).toEqual(EMPTY_INSIGHTS);
   });
+
+  test("keeps the words already counted per category and app", () => {
+    const counted = add(
+      { ...EMPTY_INSIGHTS, ...used },
+      { day: day("2026-10-13"), words: 5, corrected: 0, dictionaryFixes: 0, pace: null },
+    );
+    expect(counted).toMatchObject(used);
+  });
 });
 
 describe("parseInsights", () => {
@@ -136,8 +157,33 @@ describe("parseInsights", () => {
       corrected: 0,
       dictionaryFixes: 4,
       recent: [{ words: 10, ms: 4000 }],
+      categories: zeros,
+      apps: {},
     });
     for (const raw of [null, 7, "x", []]) expect(parseInsights(raw)).toEqual(EMPTY_INSIGHTS);
+  });
+
+  test("keeps well-formed usage and drops the rest", () => {
+    expect(
+      parseInsights({
+        version: 2,
+        categories: {
+          work: { words: 120, sessions: 4 },
+          email: { words: 30, sessions: 1 },
+          personal: { words: -3, sessions: 1 },
+          other: "lots",
+          gaming: { words: 9, sessions: 9 },
+        },
+        apps: {
+          "com.tinyspeck.slackmacgap": 120,
+          "com.apple.mail": 30,
+          "com.apple.notes": 0,
+          "com.apple.safari": -2,
+          "com.apple.textedit": 1.5,
+          "not a bundle id": 7,
+        },
+      }),
+    ).toEqual({ ...EMPTY_INSIGHTS, ...used });
   });
 
   test("keeps only the newest pace samples of a hand-edited file", () => {
@@ -203,10 +249,68 @@ describe("createInsights", () => {
       corrected: 0,
       dictionaryFixes: 0,
       recent: [{ words: 2, ms: 1000 }],
+      categories: zeros,
+      apps: {},
     };
-    expect(await saved()).toEqual({ version: 1, ...value });
+    expect(await saved()).toEqual({ version: 2, ...value });
     expect(changes).toEqual([value]);
     expect(await insights.get()).toEqual(value);
+  });
+
+  test("a version 1 file is read without a write, and saved as version 2 with every field", async () => {
+    const original = `${JSON.stringify({
+      version: 1,
+      days: { "2026-10-12": 500 },
+      corrected: 9,
+      dictionaryFixes: 3,
+      recent: [{ words: 40, ms: 12_000 }],
+    })}\n`;
+    await writeFile(file, original);
+    const insights = open();
+    const migrated = {
+      days: { "2026-10-12": 500 },
+      corrected: 9,
+      dictionaryFixes: 3,
+      recent: [{ words: 40, ms: 12_000 }],
+      categories: zeros,
+      apps: {},
+    };
+    expect(await insights.get()).toEqual(migrated);
+    await insights.settled();
+    expect(await readFile(file, "utf8")).toBe(original);
+
+    insights.record(dictated({ paceMs: null }));
+    await insights.settled();
+    const upgraded = { ...migrated, days: { "2026-10-12": 500, "2026-10-13": 2 } };
+    expect(await saved()).toEqual({ version: 2, ...upgraded });
+    expect(await open().get()).toEqual(upgraded);
+  });
+
+  test("a version 2 file keeps its usage through a session and a restart", async () => {
+    await writeFile(file, JSON.stringify({ version: 2, ...EMPTY_INSIGHTS, ...used }));
+    const insights = open();
+    expect(await insights.get()).toMatchObject(used);
+    insights.record(dictated());
+    await insights.settled();
+    expect(await saved()).toMatchObject({ version: 2, ...used });
+    expect(await open().get()).toMatchObject(used);
+  });
+
+  test("an app whose id is an Object.prototype name survives a load", async () => {
+    await writeFile(file, `{"version":2,"apps":{"__proto__":7}}`);
+    expect((await open().get()).apps).toEqual(apps({ ["__proto__"]: 7 }));
+  });
+
+  test("two spellings of one app id in a hand-edited file add up", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 2,
+        ...EMPTY_INSIGHTS,
+        apps: { "com.Apple.Mail": 7, "com.apple.mail": 11 },
+      }),
+    );
+    expect((await open().get()).apps).toEqual(apps({ "com.apple.mail": 18 }));
   });
 
   test("a session recorded while the file loads is added to what the file held", async () => {
@@ -224,16 +328,20 @@ describe("createInsights", () => {
   });
 
   test("a clear forgets a session not yet counted, and keeps the one after it", async () => {
+    await writeFile(file, JSON.stringify({ version: 2, ...EMPTY_INSIGHTS, ...used }));
     const insights = open();
     insights.record(dictated({ raw: "before the clear" }));
     await insights.clear();
     insights.record(dictated({ raw: "after" }));
     await insights.settled();
-    expect(await saved()).toMatchObject({ days: { "2026-10-13": 1 } });
-    expect(changes.map((value) => value.days)).toEqual([{}, { "2026-10-13": 1 }]);
+    const after = { days: { "2026-10-13": 1 }, categories: zeros, apps: {} };
+    expect(where((await saved()) as Insights)).toEqual(after);
+    expect(changes.map(where)).toEqual([{ days: {}, categories: zeros, apps: {} }, after]);
+    expect(where(await open().get())).toEqual(after);
   });
 
   test("a clear removes a session whose save was still in flight", async () => {
+    await writeFile(file, JSON.stringify({ version: 2, ...EMPTY_INSIGHTS, ...used }));
     const insights = open();
     let release!: () => void;
     saves.hold = new Promise((resolve) => (release = resolve));
@@ -246,6 +354,7 @@ describe("createInsights", () => {
     await Promise.all(saves.started);
     expect(await exists()).toBe(false);
     expect(await insights.get()).toEqual(EMPTY_INSIGHTS);
+    expect(await open().get()).toEqual(EMPTY_INSIGHTS);
   });
 
   test("the saved file holds no dictated words", async () => {
@@ -272,7 +381,7 @@ describe("createInsights", () => {
   });
 
   test("a file from a newer format is never written over", async () => {
-    const original = `${JSON.stringify({ version: 2, days: { "2026-10-12": 40 }, futureCounter: 9 })}\n`;
+    const original = `${JSON.stringify({ version: 3, days: { "2026-10-12": 40 }, futureCounter: 9 })}\n`;
     await writeFile(file, original);
     const insights = open();
     insights.record(dictated());

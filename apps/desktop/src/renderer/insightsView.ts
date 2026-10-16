@@ -1,4 +1,10 @@
-import type { DayKey, Insights, Pace } from "../shared/insights.ts";
+import {
+  CATEGORIES,
+  parseBundleId,
+  type BundleId,
+  type Category,
+} from "../shared/app-categories.ts";
+import type { DayKey, Insights, Pace, Usage } from "../shared/insights.ts";
 
 /** The average typist, from Dhakal et al., CHI 2018, "Observations on Typing from 136M Keystrokes". */
 export const TYPING_WPM = 51.56;
@@ -134,4 +140,54 @@ export function stepDay(map: Heatmap, from: DayKey, key: string): DayKey | null 
   const to =
     key === "Home" ? 0 : key === "End" ? days.length - 1 : step === undefined ? -1 : at + step;
   return days[to] ?? null;
+}
+
+const TOP_APPS = 5;
+
+export type UsageView = {
+  appsUsed: number;
+  categories: readonly ({ category: Category; share: number } & Usage)[];
+  topApps: readonly { bundleId: BundleId; name: string; share: number }[];
+  empty: boolean;
+};
+
+function wholePercents(parts: readonly number[]): number[] {
+  const total = parts.reduce((sum, part) => sum + part, 0);
+  if (total === 0) return parts.map(() => 0);
+  const result = parts.map((part) => Math.floor((part * 100) / total));
+  let left = 100 - result.reduce((sum, share) => sum + share, 0);
+  const byRemainder = parts
+    .map((part, index) => ({ index, remainder: (part * 100) % total }))
+    .toSorted((a, b) => b.remainder - a.remainder);
+  for (const { index } of byRemainder) {
+    if (left === 0) break;
+    result[index] = (result[index] ?? 0) + 1;
+    left -= 1;
+  }
+  return result;
+}
+
+export function usage(insights: Insights, name: (bundleId: BundleId) => string): UsageView {
+  const categories = CATEGORIES.map((category) => {
+    const { words, sessions } = insights.categories[category];
+    return { category, words, sessions };
+  }).toSorted((a, b) => b.words - a.words);
+  const categoryShares = wholePercents(categories.map(({ words }) => words));
+  const apps = Object.entries(insights.apps)
+    .flatMap(([key, words]) => {
+      const bundleId = parseBundleId(key);
+      return bundleId !== null && words > 0 ? [{ bundleId, words }] : [];
+    })
+    .toSorted((a, b) => b.words - a.words);
+  const appShares = wholePercents(apps.map(({ words }) => words));
+  return {
+    appsUsed: apps.length,
+    categories: categories.map((row, index) => ({ ...row, share: categoryShares[index] ?? 0 })),
+    topApps: apps.slice(0, TOP_APPS).map(({ bundleId }, index) => ({
+      bundleId,
+      name: name(bundleId),
+      share: appShares[index] ?? 0,
+    })),
+    empty: categories.every(({ words }) => words === 0),
+  };
 }

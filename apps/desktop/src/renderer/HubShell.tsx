@@ -80,7 +80,7 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
-  insights: () => <Insights />,
+  insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
   snippets: ({ snapshot }) => (
     <Snippets snippets={snapshot.settings.snippets} dictionary={snapshot.settings.dictionary} />

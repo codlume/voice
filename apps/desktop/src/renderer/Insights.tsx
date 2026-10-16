@@ -4,6 +4,7 @@ import { InfoIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { DayKey } from "../shared/insights.ts";
+import type { Assignment } from "../shared/style.ts";
 import { Card } from "./Card.tsx";
 import {
   cellLabel,
@@ -11,13 +12,17 @@ import {
   insightsView,
   stepDay,
   TYPING_WPM,
+  usage,
   type Heatmap,
   type Level,
+  type UsageView,
 } from "./insightsView.ts";
 import { pageStyles } from "./pageStyles.ts";
+import { appNames, CATEGORY_LABELS } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
+import { useInstalledApps } from "./useInstalledApps.ts";
 import { useToday } from "./useToday.ts";
 
 const CELL = 12;
@@ -123,6 +128,51 @@ const styles = stylex.create({
   },
   legendCell: { width: CELL, height: CELL },
   legendLabel: { marginInline: 4 },
+  usage: {
+    display: "flex",
+    flexWrap: "wrap",
+    columnGap: space.xl,
+    rowGap: space.lg,
+    marginTop: space.sm,
+  },
+  categories: { flexGrow: 3, flexShrink: 1, flexBasis: 400, minWidth: 0 },
+  topApps: { flexGrow: 2, flexShrink: 1, flexBasis: 200, minWidth: 0 },
+  rows: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.sm,
+    margin: 0,
+    padding: 0,
+    listStyle: "none",
+  },
+  row: {
+    display: "grid",
+    gridTemplateColumns: "9.5rem minmax(0, 1fr) 2.5rem 6.5rem",
+    alignItems: "center",
+    gap: space.md,
+    fontSize: 13,
+    fontVariantNumeric: "tabular-nums",
+  },
+  unused: { color: color.mutedForeground },
+  bar: { height: 6, overflow: "hidden", borderRadius: radius.round, backgroundColor: color.border },
+  fill: (share: number) => ({
+    display: "block",
+    width: `${share}%`,
+    height: "100%",
+    borderRadius: radius.round,
+    backgroundColor: color.primary,
+  }),
+  share: { textAlign: "right" },
+  sessions: { color: color.mutedForeground, fontSize: 12.5 },
+  subhead: { margin: 0, marginBottom: space.sm, fontSize: 12.5, fontWeight: 600 },
+  app: {
+    display: "flex",
+    gap: space.md,
+    color: color.mutedForeground,
+    fontSize: 12.5,
+    fontVariantNumeric: "tabular-nums",
+  },
+  appName: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 });
 
 const shades = stylex.create({
@@ -275,13 +325,73 @@ function Activity({
   );
 }
 
-export const Insights = memo(function Insights() {
+function WhereYouDictate({ where }: { where: UsageView }) {
+  return (
+    <Stat
+      label="Where you dictate"
+      info="Shares are by words, from dictations where Voice knew the app. Each dictation counts under the category it had when you dictated, so a website like Gmail can count as Email while its browser shows under Top apps. Websites are not kept."
+    >
+      {where.empty ? (
+        <p {...stylex.props(styles.detail)}>Dictate into an app to see where your words go.</p>
+      ) : (
+        <>
+          <p {...stylex.props(styles.value)}>
+            {where.appsUsed.toLocaleString()}{" "}
+            <span {...stylex.props(styles.unit)}>
+              {where.appsUsed === 1 ? "app used" : "apps used"}
+            </span>
+          </p>
+          <div {...stylex.props(styles.usage)}>
+            <ul {...stylex.props(styles.rows, styles.categories)}>
+              {where.categories.map(({ category, words, sessions, share }) => (
+                <li key={category} {...stylex.props(styles.row, words === 0 && styles.unused)}>
+                  <span>{CATEGORY_LABELS[category]}</span>
+                  <span aria-hidden="true" {...stylex.props(styles.bar)}>
+                    <span {...stylex.props(styles.fill(share))} />
+                  </span>
+                  <span {...stylex.props(styles.share)}>{share}%</span>
+                  <span {...stylex.props(styles.sessions)}>
+                    {count(sessions, "dictation", "dictations")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div {...stylex.props(styles.topApps)}>
+              <h3 {...stylex.props(styles.subhead)}>Top apps</h3>
+              <ol {...stylex.props(styles.rows)}>
+                {where.topApps.map(({ bundleId, name, share }) => (
+                  <li key={bundleId} {...stylex.props(styles.app)}>
+                    <span title={name} {...stylex.props(styles.appName)}>
+                      {name}
+                    </span>
+                    <span {...stylex.props(styles.fixCount)}>{share}%</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </>
+      )}
+    </Stat>
+  );
+}
+
+export const Insights = memo(function Insights({
+  assignments,
+}: {
+  assignments: readonly Assignment[];
+}) {
   const insights = useInsights();
   const today = useToday();
+  const installed = useInstalledApps();
   const [fit, weeks] = useWeeksThatFit();
   const view = useMemo(
     () => insights && insightsView(insights, today, weeks ?? 1),
     [insights, today, weeks],
+  );
+  const where = useMemo(
+    () => insights && usage(insights, appNames(assignments, installed)),
+    [insights, assignments, installed],
   );
 
   return (
@@ -373,6 +483,7 @@ export const Insights = memo(function Insights() {
             </div>
             <Activity heatmap={weeks === null ? null : view.heatmap} fit={fit} />
           </Stat>
+          {where && <WhereYouDictate where={where} />}
         </>
       )}
     </div>
