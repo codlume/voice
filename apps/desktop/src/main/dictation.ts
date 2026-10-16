@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import type { Outcome } from "../shared/api.ts";
 import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
+import { classify, cleanupStyleFor, parseTarget } from "../shared/style.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
@@ -352,16 +353,21 @@ export function createDictation(options: DictationOptions): Dictation {
           speechMs: event.speechMs,
           asrMs: event.asrMs,
         });
+        const { settings } = store.state;
+        const target = parseTarget(event.target);
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
-            ? { style: store.state.settings.cleanup.styles.other, layout: "general" }
+            ? cleanupStyleFor(
+                classify(target, settings.cleanup.assignments),
+                settings.cleanup.styles,
+              )
             : null,
           rewrites: {
-            dictionary: store.state.settings.dictionary,
-            snippets: store.state.settings.snippets,
+            dictionary: settings.dictionary,
+            snippets: settings.snippets,
           },
         });
         return;
