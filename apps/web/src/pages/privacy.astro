@@ -82,10 +82,10 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         to clipboard. A password you copied from a password manager is cleared instead of restored,
         so the manager's own auto-clear is not undone. Voice compares the focused field, window, and
         window title with the target captured when dictation starts. These details stay in memory
-        only for the session and are never stored or sent. Voice also notes which app has focus,
-        and in a browser which website, to pick the writing style and to count words per app for
-        Insights. The website stays in memory only for the session. Voice never captures your screen
-        or reads other windows.
+        only for the session and are never stored or sent. Voice also notes which app has focus, to
+        pick the writing style and to count words per app for Insights. When cleanup is on for
+        English, it also reads which website a browser shows, to pick the style and the Style
+        category Insights counts. The website stays in memory only for the session. Voice never captures your screen or reads other windows.
       </li>
       <li {...li}>
         <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear
