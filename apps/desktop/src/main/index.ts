@@ -359,7 +359,11 @@ async function main() {
       }
     },
     configure: () => [
-      { type: "hotkey.configure", key: store.state.settings.hotkey },
+      {
+        type: "hotkey.configure",
+        key: store.state.settings.hotkey,
+        toggleKey: store.state.settings.toggleHotkey,
+      },
       { type: "microphone.configure", microphone: store.state.settings.microphone },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
@@ -620,8 +624,8 @@ async function main() {
         throw new Error("Could not save this setting. Try again.", { cause: error });
       }
       store.update((s) => ({ ...s, settings: next }));
-      if (next.hotkey !== previous.hotkey)
-        helper.send({ type: "hotkey.configure", key: next.hotkey });
+      if (next.hotkey !== previous.hotkey || next.toggleHotkey !== previous.toggleHotkey)
+        helper.send({ type: "hotkey.configure", key: next.hotkey, toggleKey: next.toggleHotkey });
       if (next.microphone?.uid !== previous.microphone?.uid)
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;

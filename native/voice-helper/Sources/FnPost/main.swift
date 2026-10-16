@@ -7,10 +7,11 @@ let keys: [String: (keycode: CGKeyCode, flags: CGEventFlags)] = [
     "rightCommand": (54, CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x10)),
 ]
 let escapeKeycode: CGKeyCode = 53
+let aKeycode: CGKeyCode = 0
 
 func usage() -> Never {
     FileHandle.standardError.write(
-        Data("usage: fnpost [fn|rightOption|rightCommand] [down|up] | fnpost escape\n".utf8))
+        Data("usage: fnpost [fn|rightOption|rightCommand] [down|up|chord] | fnpost escape\n".utf8))
     exit(64)
 }
 
@@ -36,17 +37,32 @@ if name == "escape" {
 }
 
 guard let key = keys[name] else { usage() }
-let edges: [Bool]
-switch arguments.dropFirst().first {
-case nil: edges = [true, false]
-case "down": edges = [true]
-case "up": edges = [false]
-default: usage()
-}
-for down in edges {
+@MainActor func postKey(down: Bool) {
     let event = CGEvent(keyboardEventSource: source, virtualKey: key.keycode, keyDown: down)
     event?.type = .flagsChanged
     event?.flags = down ? key.flags : []
     post(event)
 }
-print("posted \(name) \(edges.map { $0 ? "down" : "up" }.joined(separator: "/"))")
+
+switch arguments.dropFirst().first {
+case nil:
+    postKey(down: true)
+    postKey(down: false)
+    print("posted \(name) down/up")
+case "down":
+    postKey(down: true)
+    print("posted \(name) down")
+case "up":
+    postKey(down: false)
+    print("posted \(name) up")
+case "chord":
+    postKey(down: true)
+    for down in [true, false] {
+        let letter = CGEvent(keyboardEventSource: source, virtualKey: aKeycode, keyDown: down)
+        letter?.flags = key.flags
+        post(letter)
+    }
+    postKey(down: false)
+    print("posted \(name) down, a, \(name) up")
+default: usage()
+}

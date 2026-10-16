@@ -3,7 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useId, useMemo } from "react";
 
-import type { Hotkey, Snapshot } from "../shared/api.ts";
+import type { Settings, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import type { DayKey } from "../shared/insights.ts";
 import { a11y } from "./a11y.ts";
@@ -11,7 +11,7 @@ import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { History } from "./History.tsx";
-import { hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
+import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { insightsView } from "./insightsView.ts";
 import { Keycap } from "./Keycap.tsx";
 import { GlobeHint } from "./Settings.tsx";
@@ -301,12 +301,12 @@ function Setup({ snapshot, rows }: { snapshot: Snapshot; rows: readonly Checklis
         </ul>
         <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
       </Card>
-      {snapshot.settings.hotkey === "fn" && <GlobeHint />}
+      {dictatesWithFn(snapshot.settings) && <GlobeHint />}
     </section>
   );
 }
 
-function TryIt({ hotkey }: { hotkey: Hotkey }) {
+function TryIt({ settings }: { settings: Settings }) {
   const id = useId();
   return (
     <Card style={styles.tryIt}>
@@ -315,10 +315,10 @@ function TryIt({ hotkey }: { hotkey: Hotkey }) {
       </label>
       <textarea
         id={id}
-        placeholder={`Click here, hold ${hotkeyLabel(hotkey)}, and say something.`}
+        placeholder={`Click here, hold ${hotkeyLabel(settings.hotkey)}, and say something.`}
         {...stylex.props(styles.textarea)}
       />
-      {hotkey === "fn" && <GlobeHint />}
+      {dictatesWithFn(settings) && <GlobeHint />}
     </Card>
   );
 }
@@ -370,14 +370,20 @@ export function Home({
       <header>
         <h1 {...stylex.props(styles.headline)}>{greeting(new Date().getHours())}</h1>
         <p {...stylex.props(styles.lede)}>
-          Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go. Voice
-          types it wherever your cursor is.
+          Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
+          {snapshot.settings.toggleHotkey && (
+            <>
+              , or tap <Keycap>{hotkeyKeycap(snapshot.settings.toggleHotkey)}</Keycap> to start and
+              again to stop
+            </>
+          )}
+          . Voice types it wherever your cursor is.
         </p>
       </header>
       <div {...stylex.props(styles.columns)}>
         <div {...stylex.props(styles.main)}>
           {ready ? (
-            <TryIt hotkey={snapshot.settings.hotkey} />
+            <TryIt settings={snapshot.settings} />
           ) : (
             <Setup snapshot={snapshot} rows={rows} />
           )}

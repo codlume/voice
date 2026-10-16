@@ -18,8 +18,11 @@ const THEMES = ["system", "light", "dark"] as const;
 const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
 const CONSENTS = ["on", "off"] as const;
 
-const pick = <const T extends readonly string[]>(values: T, v: unknown, fallback: T[number]) =>
-  typeof v === "string" && values.includes(v) ? (v as T[number]) : fallback;
+const pick = <const T extends readonly string[], F extends T[number] | null>(
+  values: T,
+  v: unknown,
+  fallback: F,
+): T[number] | F => (typeof v === "string" && values.includes(v) ? (v as T[number]) : fallback);
 
 const flag = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
 
@@ -30,9 +33,13 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   const r = record(raw);
   const c = record(r.cleanup);
   const d = DEFAULT_SETTINGS.cleanup;
+  const hotkey = pick(hotkeys, r.hotkey, DEFAULT_SETTINGS.hotkey);
+  const toggleHotkey = pick(hotkeys, r.toggleHotkey, null);
   return {
     microphone: Option.getOrNull(Schema.decodeUnknownOption(MicrophoneSchema)(r.microphone)),
-    hotkey: pick(hotkeys, r.hotkey, DEFAULT_SETTINGS.hotkey),
+    hotkey,
+    // One key cannot both hold and toggle, so taking it for holding turns toggling off.
+    toggleHotkey: toggleHotkey === hotkey ? null : toggleHotkey,
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
@@ -69,6 +76,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   return parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
     hotkey: patch.hotkey ?? settings.hotkey,
+    toggleHotkey: patch.toggleHotkey === undefined ? settings.toggleHotkey : patch.toggleHotkey,
     updateChannel: patch.updateChannel ?? settings.updateChannel,
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,

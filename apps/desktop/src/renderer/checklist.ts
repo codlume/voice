@@ -89,7 +89,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     {
       id: "microphone",
       title: "Microphone",
-      subtitle: "Hears you only while you hold the key",
+      subtitle: "Hears you only while you dictate",
       ...permissionState("microphone", permissions.microphone),
     },
     {

@@ -7,8 +7,12 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 9 },
+      { type: "ready", version: 10 },
       { type: "hotkey", action: "down" },
+      { type: "hotkey", action: "up" },
+      { type: "hotkey", action: "chord" },
+      { type: "hotkey", action: "cancel" },
+      { type: "hotkey", action: "toggle" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },

@@ -48,7 +48,7 @@ function harness() {
 describe("publish", () => {
   test("the pill gets the session and its two settings, never the account", () => {
     const { hub, pill, update } = harness();
-    update({ session: { phase: "recording", id: "s1", pressedAt: 0 } });
+    update({ session: { phase: "recording", id: "s1", mode: "hold", pressedAt: 0 } });
     update({
       session: { phase: "done", id: "s1", outcome: { kind: "inserted", method: "paste" } },
     });

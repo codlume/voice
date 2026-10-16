@@ -10,10 +10,10 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 9;
+export const HELPER_PROTOCOL_VERSION = 10;
 
 export type HelperCommand =
-  | { type: "hotkey.configure"; key: Hotkey }
+  | { type: "hotkey.configure"; key: Hotkey; toggleKey: Hotkey | null }
   | { type: "microphone.configure"; microphone: Microphone | null }
   | {
       type: "capture.start";
@@ -58,9 +58,10 @@ const HelperEventSchema = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("microphones.unavailable"), message: Schema.String }),
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
+  // down/up/chord come from the hold key, toggle from a clean tap of the toggle key, cancel from Escape.
   Schema.Struct({
     type: Schema.Literal("hotkey"),
-    action: Schema.Literals(["down", "up", "cancel"]),
+    action: Schema.Literals(["down", "up", "chord", "cancel", "toggle"]),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.started"),

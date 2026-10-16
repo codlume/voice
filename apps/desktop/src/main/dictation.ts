@@ -312,13 +312,22 @@ export function createDictation(options: DictationOptions): Dictation {
           attributes: { "helper.protocol_version": event.version },
         });
         return;
-      case "hotkey":
-        if (event.action === "down") {
-          dispatch({ type: "hotkeyDown", id: randomUUID(), asr: store.state.models.asr.state });
-        } else {
-          dispatch({ type: event.action === "up" ? "hotkeyUp" : "cancel" });
+      case "hotkey": {
+        const asr = store.state.models.asr.state;
+        switch (event.action) {
+          case "down":
+            return dispatch({ type: "hotkeyDown", id: randomUUID(), asr });
+          case "toggle":
+            return dispatch({ type: "toggle", id: randomUUID(), asr });
+          case "up":
+            return dispatch({ type: "hotkeyUp" });
+          case "chord":
+            return dispatch({ type: "hotkeyChord" });
+          case "cancel":
+            return dispatch({ type: "cancel" });
         }
         return;
+      }
       case "capture.started":
         track(event.id, { startMs: event.startMs });
         dispatch({ type: "captureStarted", id: event.id });

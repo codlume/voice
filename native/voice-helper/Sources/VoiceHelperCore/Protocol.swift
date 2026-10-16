@@ -1,7 +1,9 @@
 import Foundation
 
 public enum HotkeyKey: String, Codable, Sendable { case fn, rightOption, rightCommand }
-public enum HotkeyAction: String, Codable, Sendable { case down, up, cancel }
+/// `down`, `up`, and `chord` come from the hold key, `toggle` from a clean tap of the toggle key,
+/// and `cancel` from Escape.
+public enum HotkeyAction: String, Codable, Sendable { case down, up, chord, cancel, toggle }
 public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
@@ -37,7 +39,7 @@ public struct Microphone: Codable, Equatable, Sendable {
 }
 
 public enum HelperCommand: Equatable, Sendable {
-    case hotkeyConfigure(key: HotkeyKey)
+    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?)
     case microphoneConfigure(microphone: Microphone?)
     case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?)
     case captureStop(id: String)
@@ -83,7 +85,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
-    case microphone, accessibility, state, devices, defaultUid
+    case microphone, accessibility, state, devices, defaultUid, toggleKey
 }
 
 extension HelperCommand: Decodable {
@@ -91,7 +93,9 @@ extension HelperCommand: Decodable {
         let c = try decoder.container(keyedBy: Key.self)
         let type = try c.decode(String.self, forKey: .type)
         switch type {
-        case "hotkey.configure": self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key))
+        case "hotkey.configure":
+            self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key),
+                                    toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey))
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":

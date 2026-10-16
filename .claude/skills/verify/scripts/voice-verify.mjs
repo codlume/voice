@@ -698,6 +698,8 @@ const commands = {
     const end = flags.find((f) => f.startsWith("--end="))?.slice(6) ?? "audio";
     if (!["audio", "escape", "immediate"].includes(end))
       fail("--end must be audio, escape, or immediate");
+    const mode = flags.find((f) => f.startsWith("--key="))?.slice(6) ?? "hold";
+    if (!["hold", "toggle"].includes(mode)) fail("--key must be hold or toggle");
     const state = requireInstance();
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0) {
@@ -712,6 +714,11 @@ const commands = {
 
     const hub = await connect("hub");
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
+    const key = mode === "toggle" ? settings.toggleHotkey : settings.hotkey;
+    if (!key) fail("--key=toggle needs a toggle key: set Settings > Shortcuts > Toggle dictation");
+    // A toggle session starts and ends on a tap, a press and release; a hold session spans the press.
+    const begin = () => (mode === "toggle" ? fnpost(key) : fnpost(key, "down"));
+    const finish = () => (mode === "toggle" ? fnpost(key) : fnpost(key, "up"));
     const snapshots = await snapshotStream(hub);
     const logOffset = statSync(state.logPath).size;
     const logLine = (pattern) =>
@@ -759,7 +766,7 @@ const commands = {
       copyFileSync(fixture, state.fakeMicrophonePath);
       snapshots.skipToEnd();
 
-      fnpost(settings.hotkey, "down");
+      begin();
       const pressedAt = performance.now();
       const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {
         timeoutMs: 5000,
@@ -782,7 +789,7 @@ const commands = {
         session: earlyEnd.session.kind,
       };
       if (end === "escape") fnpost("escape");
-      else fnpost(settings.hotkey, "up");
+      else finish();
       const heldMs = Math.round(performance.now() - pressedAt);
       let finalState;
       if (end === "escape") {
@@ -790,7 +797,7 @@ const commands = {
           timeoutMs: 5000,
           label: "idle",
         });
-        fnpost(settings.hotkey, "up");
+        if (mode === "hold") fnpost(key, "up");
       } else {
         finalState = await snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
           timeoutMs: 90_000,
@@ -814,7 +821,8 @@ const commands = {
       const result = {
         fixture: wav,
         end,
-        hotkey: settings.hotkey,
+        mode,
+        hotkey: key,
         cleanup: settings.cleanup,
         heldMs,
         ...(captureEndedEarly && { captureEndedEarly }),
@@ -827,13 +835,13 @@ const commands = {
       targetPage.close();
       const path = join(
         evidenceDir(),
-        `dictate-${wav.replace(/\.wav$/, "")}-${end}-${Date.now()}.json`,
+        `dictate-${wav.replace(/\.wav$/, "")}-${mode}-${end}-${Date.now()}.json`,
       );
       writeFileSync(path, JSON.stringify(result, null, 2));
       out({ ...result, evidence: path });
       if (captureEndedEarly) {
         throw new Error(
-          `capture ended by ${captureEndedEarly.afterMs} ms after the press, before ${wav} finished, while dictate still held the hotkey`,
+          `capture ended by ${captureEndedEarly.afterMs} ms after the press, before ${wav} finished, before dictate ended it`,
         );
       }
     } finally {
@@ -864,7 +872,7 @@ const commands = {
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
   note <name> <text...>          append text evidence
-  dictate [fixture.wav] [--end=audio|escape|immediate]`);
+  dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle]`);
   },
 };
 

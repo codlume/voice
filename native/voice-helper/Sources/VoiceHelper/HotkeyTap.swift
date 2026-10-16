@@ -12,7 +12,8 @@ final class HotkeyTap {
     private let runLoop: CFRunLoop
     private let thread: Thread
     private var key: HotkeyKey = .fn
-    private var interpreter: HotkeyInterpreter
+    private var toggleKey: HotkeyKey?
+    private var hotkeys: Hotkeys
     private var tap: CFMachPort?
     private var retry: Timer?
     private var backstop: Timer?
@@ -21,7 +22,7 @@ final class HotkeyTap {
     init(output: Output, captureActive: @escaping () -> Bool) {
         self.output = output
         self.captureActive = captureActive
-        interpreter = HotkeyInterpreter(key: .fn, initialFlags: currentFlags())
+        hotkeys = Hotkeys(key: .fn, toggleKey: nil, initialFlags: currentFlags())
         let ready = DispatchSemaphore(value: 0)
         var loop: CFRunLoop?
         thread = Thread {
@@ -39,14 +40,12 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
-    func configure(_ key: HotkeyKey) {
+    func configure(key: HotkeyKey, toggleKey: HotkeyKey?) {
         perform {
-            let oldKeyRelease = self.interpreter.reconcile(flags: 0)
-            if let action = oldKeyRelease {
-                self.output.emit(.hotkey(action: action))
-            }
+            self.emit(self.hotkeys.reconcile(flags: 0))
             self.key = key
-            self.interpreter = HotkeyInterpreter(key: key, initialFlags: currentFlags())
+            self.toggleKey = toggleKey
+            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
             self.syncBackstop()
         }
     }
@@ -101,7 +100,7 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
-        interpreter = HotkeyInterpreter(key: key, initialFlags: currentFlags())
+        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
         syncBackstop()
         output.log(.info, "hotkey tap installed")
         return true
@@ -126,25 +125,25 @@ final class HotkeyTap {
             keycode: event.getIntegerValueField(.keyboardEventKeycode),
             flags: event.flags.rawValue
         )
-        let decision = interpreter.handle(keyEvent, captureActive: captureActive())
-        if let action = decision.action {
-            output.emit(.hotkey(action: action))
-        }
+        let decision = hotkeys.handle(keyEvent, captureActive: captureActive())
+        emit(decision.action)
         syncBackstop()
         return decision.consume
     }
 
     private func reconcile() {
-        if let action = interpreter.reconcile(flags: currentFlags()) {
-            output.emit(.hotkey(action: action))
-        }
+        emit(hotkeys.reconcile(flags: currentFlags()))
         syncBackstop()
     }
 
-    /// While the key may be down, a cheap poll of the live modifier state catches a release the
+    private func emit(_ action: HotkeyAction?) {
+        if let action { output.emit(.hotkey(action: action)) }
+    }
+
+    /// While a key may be down, a cheap poll of the live modifier state catches a release the
     /// tap never delivered, so a stuck hold cannot keep the microphone open.
     private func syncBackstop() {
-        if interpreter.awaitingRelease {
+        if hotkeys.awaitingRelease {
             guard backstop == nil else { return }
             backstop = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 self?.reconcile()

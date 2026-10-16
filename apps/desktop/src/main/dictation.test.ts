@@ -391,6 +391,33 @@ describe("createDictation", () => {
     expect(timing).not.toContain("hello");
   });
 
+  test("a toggle starts a session and the next toggle stops it, while the hold key's release and chord are ignored", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+    const id = h.id();
+    expect(h.commands).toEqual([
+      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
+    ]);
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    vi.advanceTimersByTime(5000);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "chord" });
+    expect(h.commands).toHaveLength(1);
+    expect(h.store.state.session).toMatchObject({ phase: "recording", id, mode: "toggle" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
+    expect(h.store.state.session).toMatchObject({ phase: "transcribing", id });
+  });
+
+  test("a chord on the hold key cancels its capture", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "chord" });
+    expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
+    expect(h.store.state.session).toEqual(idle);
+  });
+
   test("reports a finished session once, with the logged timings and no text or id", async () => {
     const h = harness({ dictationLanguage: "en" });
     const pressedAt = Date.now();
