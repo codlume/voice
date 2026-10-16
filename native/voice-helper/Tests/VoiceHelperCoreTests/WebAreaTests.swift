@@ -44,14 +44,14 @@ private struct Chain: AccessibilityNode {
         let bounded = outermostWebArea(above: chain, maxDepth: 4, giveUp: never)
         #expect(bounded.node == nil)
         #expect(bounded.hops == 4)
-        #expect(outermostWebArea(above: chain, maxDepth: 5, giveUp: never).node?.index == 5)
+        #expect(outermostWebArea(above: chain, maxDepth: 6, giveUp: never).node?.index == 5, "the ancestry ends before the bound")
     }
 
-    @Test func keepsTheWebAreaSeenWhenTheBoundStopsTheWalk() {
+    @Test func dropsAnInnerWebAreaWhenTheBoundStopsTheWalk() {
         let chain = Chain(roles: ["AXTextField", "AXWebArea", "AXGroup", "AXGroup", "AXWebArea", "AXWindow"])
         let found = outermostWebArea(above: chain, maxDepth: 2, giveUp: never)
-        #expect(found.node?.index == 1)
-        #expect(found.hops == 1)
+        #expect(found.node == nil)
+        #expect(found.hops == 2)
     }
 
     @Test func runsOutOfParentsBeforeTheBound() {

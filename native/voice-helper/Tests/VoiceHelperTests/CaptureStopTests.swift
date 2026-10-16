@@ -4,68 +4,6 @@ import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
 
-private final class EmittedLines: @unchecked Sendable {
-    let pipe = Pipe()
-    private let lock = NSLock()
-    private var buffer = Data()
-    private var lines: [[String: Any]] = []
-
-    init() {
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            self?.consume(handle.availableData)
-        }
-    }
-
-    private func consume(_ data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-        buffer.append(data)
-        guard let text = String(data: buffer, encoding: .utf8) else { return }
-        var parts = text.components(separatedBy: "\n")
-        buffer = Data(parts.removeLast().utf8)
-        for part in parts where !part.isEmpty {
-            if let object = try? JSONSerialization.jsonObject(with: Data(part.utf8)) as? [String: Any] {
-                lines.append(object)
-            }
-        }
-    }
-
-    func snapshot() -> [[String: Any]] {
-        lock.lock()
-        defer { lock.unlock() }
-        return lines
-    }
-
-    func wait(for type: String, timeout: Duration = .seconds(5)) async throws -> [[String: Any]] {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            let current = snapshot()
-            if current.contains(where: { $0["type"] as? String == type }) { return current }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        throw ProtocolError("no \(type) event within \(timeout)")
-    }
-}
-
-private func writeAudio(to url: URL, seconds: Double, silent: Bool) throws {
-    let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
-    let frames = AVAudioFrameCount(seconds * 16_000)
-    let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
-    buffer.frameLength = frames
-    if !silent, let channel = buffer.floatChannelData?[0] {
-        for i in 0..<Int(frames) { channel[i] = 0.3 * sin(Float(i) * 2 * .pi * 440 / 16_000) }
-    }
-    let file = try AVAudioFile(forWriting: url, settings: format.settings)
-    try file.write(from: buffer)
-}
-
-private func sessionEvents(_ events: [[String: Any]]) -> [[String: Any]] {
-    events.filter { event in
-        guard let type = event["type"] as? String else { return false }
-        return type != "capture.level" && (type.hasPrefix("capture.") || type.hasPrefix("transcript"))
-    }
-}
-
 @Suite(.serialized)
 struct CaptureStopTests {
     @Test(arguments: [(audio: "silence", terminal: "transcript"), (audio: "tone with no model", terminal: "transcript.failed")])
