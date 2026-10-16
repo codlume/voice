@@ -593,7 +593,7 @@ export function DataPrivacySettings({
         <Card>
           <Row
             title="Clear insights"
-            detail="Deletes your word counts, pace, fixes, and streaks from this Mac. Your dictionary and snippets stay."
+            detail="Deletes your word counts, pace, fixes, streaks, and app usage from this Mac. Your dictionary and snippets stay."
             onReset={undefined}
           >
             <Button
@@ -614,7 +614,7 @@ export function DataPrivacySettings({
           open={confirmingClear}
           onOpenChange={setConfirmingClear}
           title="Clear insights?"
-          description="Your words, pace, fixes, and streaks start again from zero. This cannot be undone."
+          description="Your words, pace, fixes, streaks, and app usage start again from zero. This cannot be undone."
           actions={[
             {
               label: "Clear",

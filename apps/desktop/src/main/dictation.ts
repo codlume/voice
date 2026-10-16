@@ -17,6 +17,7 @@ import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
   dictating,
   step,
+  type Destination,
   type Effect as SessionEffect,
   type Session,
   type SessionEvent,
@@ -96,6 +97,7 @@ export type Dictated = {
   language: DictationLanguage;
   paceMs: number | null;
   finishedAt: number;
+  destination: Destination | null;
 };
 
 const gaveTranscript = (outcome: Outcome) =>
@@ -302,6 +304,7 @@ export function createDictation(options: DictationOptions): Dictation {
         language: s?.language ?? "auto",
         paceMs: s?.speechMs ?? s?.audioMs ?? null,
         finishedAt,
+        destination: produced.destination,
       });
     }
   }
@@ -358,16 +361,15 @@ export function createDictation(options: DictationOptions): Dictation {
           asrMs: event.asrMs,
         });
         const { settings } = store.state;
+        const category = classify(event.target, settings.cleanup.assignments);
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
-            ? cleanupStyleFor(
-                classify(event.target, settings.cleanup.assignments),
-                settings.cleanup.styles,
-              )
+            ? cleanupStyleFor(category, settings.cleanup.styles)
             : null,
+          destination: event.target && { bundleId: event.target.bundleId, category },
           rewrites: {
             dictionary: settings.dictionary,
             snippets: settings.snippets,

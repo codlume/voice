@@ -68,6 +68,16 @@ const formattedName: Snippet = {
   enabled: true,
 };
 
+const transcriptEvent = (id: string, text: string, target: Target | null): HelperEvent => ({
+  type: "transcript",
+  id,
+  text,
+  audioMs: 800,
+  asrMs: 100,
+  speechMs: 600,
+  target,
+});
+
 function harness(opts: Options = {}) {
   const store = createStore({
     updates: {
@@ -178,15 +188,7 @@ function harness(opts: Options = {}) {
   const helper = {
     transcript(sessionId: string, text: string) {
       if (transcribing !== sessionId) return;
-      onHelperEvent({
-        type: "transcript",
-        id: sessionId,
-        text,
-        audioMs: 800,
-        asrMs: 100,
-        speechMs: 600,
-        target: null,
-      });
+      onHelperEvent(transcriptEvent(sessionId, text, null));
     },
   };
   return {
@@ -228,15 +230,7 @@ async function dictate(h: ReturnType<typeof harness>, text: string, to: Target |
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
   vi.advanceTimersByTime(800);
   h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-  h.dictation.onHelperEvent({
-    type: "transcript",
-    id,
-    text,
-    audioMs: 800,
-    asrMs: 100,
-    speechMs: 600,
-    target: to,
-  });
+  h.dictation.onHelperEvent(transcriptEvent(id, text, to));
   await flush();
   return id;
 }
@@ -511,7 +505,7 @@ describe("createDictation", () => {
     expect(json).not.toContain(id.slice(0, 8));
   });
 
-  test("inserts and records dictations into Mail and Gmail, and never logs or reports the target", async () => {
+  test("inserts and records dictations into Mail and Gmail, hands Insights only the app and category, and never logs or reports the target", async () => {
     const h = harness();
     for (const to of [mailApp, chromeAt("mail.google.com")]) {
       const id = await dictate(h, "hello world", to);
@@ -530,17 +524,75 @@ describe("createDictation", () => {
       { text: "hello world.", status: "inserted" },
     ]);
     expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted", "inserted"]);
-    expect(h.dictated).toHaveLength(2);
-    const recorded = JSON.stringify([
-      h.logs,
-      h.entries,
-      h.reports,
-      h.dictated,
-      h.recorded(),
-    ]).toLowerCase();
+    expect(h.dictated.map(({ destination }) => destination)).toEqual([
+      { bundleId: "com.apple.mail", category: "email" },
+      { bundleId: "com.google.chrome", category: "email" },
+    ]);
+    expect(JSON.stringify(h.dictated)).not.toContain("mail.google.com");
+    const diagnostics = JSON.stringify([h.logs, h.entries, h.reports, h.recorded()]).toLowerCase();
     for (const key of ["com.apple.mail", "com.google.chrome", "mail.google.com"]) {
-      expect(recorded).not.toContain(key);
+      expect(diagnostics).not.toContain(key);
     }
+  });
+
+  test("hands Insights the category of the app even with cleanup off", async () => {
+    const h = harness({ cleanupEnabled: false });
+    const id = await dictate(h, "hello world", mailApp);
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.styles).toEqual([]);
+    expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
+  });
+
+  test("a duplicate transcript from another app leaves the session credited to the first", async () => {
+    const h = harness();
+    const id = await dictate(h, "hello world", mailApp);
+    h.dictation.onHelperEvent(
+      transcriptEvent(id, "hello world", target("com.tinyspeck.slackmacgap")),
+    );
+    await flush();
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.dictated.map(({ destination }) => destination)).toEqual([
+      { bundleId: "com.apple.mail", category: "email" },
+    ]);
+  });
+
+  test("a transcript that arrives before capture starts does not decide where the session counts", async () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    const id = h.id();
+    const transcript = (to: Target | null) =>
+      h.dictation.onHelperEvent(transcriptEvent(id, "hello world", to));
+    transcript(mailApp);
+    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    transcript(target("com.tinyspeck.slackmacgap"));
+    await flush();
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.styles).toEqual([{ style: "formal", layout: "general" }]);
+    expect(h.dictated.map(({ destination }) => destination)).toEqual([
+      { bundleId: "com.tinyspeck.slackmacgap", category: "work" },
+    ]);
+  });
+
+  test("an app reassigned mid-session keeps the category its words were styled for", async () => {
+    const h = harness({ cleanHangs: true });
+    const id = await dictate(h, "hello world", mailApp);
+    h.store.update((s) => ({
+      ...s,
+      settings: {
+        ...s.settings,
+        cleanup: {
+          ...s.settings.cleanup,
+          assignments: parseAssignments([
+            { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "personal" },
+          ]),
+        },
+      },
+    }));
+    h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1 });
+    await flush();
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
+    expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
 
   test("releaseToInsertMs counts from the release even when capture caught up later", () => {
@@ -580,12 +632,12 @@ describe("createDictation", () => {
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBeUndefined();
   });
 
-  test("hands each session with a usable transcript to Insights, inserted or not", async () => {
+  test("hands each session with a usable transcript to Insights, inserted or not, with where it went when known", async () => {
     const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
     const first = await dictate(h, "ask hadrys");
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
     const firstAt = Date.now();
-    const second = await dictate(h, "hello there");
+    const second = await dictate(h, "hello there", mailApp);
     h.dictation.onHelperEvent({
       type: "insert.result",
       id: second,
@@ -600,6 +652,7 @@ describe("createDictation", () => {
         language: "en",
         paceMs: 600,
         finishedAt: firstAt,
+        destination: null,
       },
       {
         raw: "hello there",
@@ -608,6 +661,7 @@ describe("createDictation", () => {
         language: "en",
         paceMs: 600,
         finishedAt: Date.now(),
+        destination: { bundleId: "com.apple.mail", category: "email" },
       },
     ]);
     expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted", "notInserted"]);
