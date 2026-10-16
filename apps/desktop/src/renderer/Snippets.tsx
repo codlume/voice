@@ -1,5 +1,6 @@
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
+import { useId } from "react";
 
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import {
@@ -8,9 +9,16 @@ import {
   TRIGGER_MAX_LENGTH,
   type Snippet,
 } from "../shared/snippets.ts";
-import { CountedField, FooterSwitch, RecordList, styles, type Copy } from "./RecordList.tsx";
+import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
 import { SnippetEditor } from "./SnippetEditor.tsx";
+import { Switch } from "./Switch.tsx";
+import { space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
+
+const local = stylex.create({
+  footerSwitch: { display: "flex", alignItems: "center", gap: space.sm },
+  footerSwitchLabel: { fontSize: 13 },
+});
 
 const copy: Copy = {
   title: "Snippets",
@@ -96,5 +104,26 @@ export function Snippets({
         />
       )}
     />
+  );
+}
+
+/** A switch followed by the label that names it, for the start of the dialog's action row. */
+function FooterSwitch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div {...stylex.props(local.footerSwitch)}>
+      <Switch id={id} checked={checked} onChange={onChange} />
+      <label htmlFor={id} {...stylex.props(local.footerSwitchLabel)}>
+        {label}
+      </label>
+    </div>
   );
 }

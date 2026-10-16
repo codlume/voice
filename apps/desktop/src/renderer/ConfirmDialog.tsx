@@ -73,8 +73,8 @@ const styles = stylex.create({
 const hidden = (status: string | undefined) => status === "starting" || status === "ending";
 
 /**
- * Scrim, popup, title, and an action row of Cancel then `actions`, with optional `footerStart`
- * content at its left. Renders under Dialog.Root or AlertDialog.Root.
+ * Scrim, popup, title, and an action row of Cancel then `actions`, with optional `footerStart` at
+ * its left. Renders under Dialog.Root or AlertDialog.Root.
  */
 export function DialogFrame({
   title,
@@ -110,11 +110,12 @@ export function DialogFrame({
       >
         <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
         {children}
+        {/* Cancel is the first button, so a dialog without fields opens on it and Enter cannot
+            destroy anything. `footerStart` precedes Cancel in tab order and would take that focus,
+            so pass it only in a dialog with fields. */}
         <div {...stylex.props(styles.footer)}>
-          {/* Precedes Cancel in tab order, so in a dialog without fields it would take initial focus. */}
           {footerStart}
           <div {...stylex.props(styles.actions)}>
-            {/* Cancel comes first, so a dialog without fields opens on it and Enter cannot destroy anything. */}
             <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
             {actions}
           </div>

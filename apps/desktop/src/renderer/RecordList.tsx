@@ -9,7 +9,6 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./Settings.tsx";
-import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
@@ -35,10 +34,6 @@ export const styles = stylex.create({
   field: { display: "flex", flexDirection: "column", gap: 6 },
   fieldHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
   counter: { fontVariantNumeric: "tabular-nums" },
-  switchField: { display: "flex", alignItems: "center", gap: space.lg },
-  switchLabel: { flexGrow: 1, minWidth: 0, fontSize: 13 },
-  footerSwitch: { display: "flex", alignItems: "center", gap: space.sm },
-  footerSwitchLabel: { fontSize: 13 },
   input: {
     width: "100%",
     paddingBlock: 6,
@@ -76,9 +71,14 @@ export type Copy = {
   deleteFailed: string;
 };
 
-type RowText = { title: string; detail?: string; off?: boolean };
+type RowText = {
+  title: string;
+  detail?: string;
+  // Fades the row and adds an Off label.
+  off?: boolean;
+};
 
-/** What the editor dialog hands the page to render its fields. */
+/** What the editor dialog hands the page to render its fields and footer. */
 type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
@@ -124,6 +124,7 @@ export function RecordList<T extends { id: string }, F extends string>({
 }) {
   const [modal, setModal] = useState<Modal<T> | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
+  const baseId = useId();
   const rowAction = useAction();
 
   const show = (kind: Modal<T>["kind"], record: T) =>
@@ -182,14 +183,20 @@ export function RecordList<T extends { id: string }, F extends string>({
           <ul {...stylex.props(styles.list)}>
             {records.map((record) => {
               const rowText = row(record);
+              const offId = `${baseId}-${record.id}-off`;
               return (
                 <li key={record.id} {...stylex.props(settings.row)}>
                   {text(rowText)}
                   <div {...stylex.props(styles.rowActions)}>
-                    {rowText.off && <span {...stylex.props(settings.hint)}>Off</span>}
+                    {rowText.off && (
+                      <span id={offId} {...stylex.props(settings.hint)}>
+                        Off
+                      </span>
+                    )}
                     <Button
                       variant="icon"
                       aria-label={`Edit ${name(record)}`}
+                      aria-describedby={rowText.off ? offId : undefined}
                       title="Edit"
                       onClick={() => show("edit", record)}
                     >
@@ -393,47 +400,5 @@ export function CountedField({
         </Field.Error>
       )}
     </Field.Root>
-  );
-}
-
-/** A dialog row with a label and the switch it names. */
-export function SwitchField({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const id = useId();
-  return (
-    <div {...stylex.props(styles.switchField)}>
-      <label htmlFor={id} {...stylex.props(styles.switchLabel)}>
-        {label}
-      </label>
-      <Switch id={id} checked={checked} onChange={onChange} />
-    </div>
-  );
-}
-
-/** A switch followed by the label that names it, for the start of a dialog's action row. */
-export function FooterSwitch({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const id = useId();
-  return (
-    <div {...stylex.props(styles.footerSwitch)}>
-      <Switch id={id} checked={checked} onChange={onChange} />
-      <label htmlFor={id} {...stylex.props(styles.footerSwitchLabel)}>
-        {label}
-      </label>
-    </div>
   );
 }
