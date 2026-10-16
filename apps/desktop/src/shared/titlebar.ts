@@ -2,7 +2,7 @@ import { zoomFactor } from "./zoom.ts";
 
 // The native traffic lights do not scale with zoom.
 export const TITLEBAR_HEIGHT = 48;
-export const TRAFFIC_LIGHTS = { x: 16, y: 18 };
+const TRAFFIC_LIGHTS = { x: 16, y: 18 };
 const TRAFFIC_LIGHTS_INSET = 92;
 
 export function trafficLightPosition(zoomLevel: number) {

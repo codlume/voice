@@ -151,9 +151,9 @@ export function startDiagnostics(options: {
     sdk.logger[entry.level](entry.message, attributes);
   }
 
+  const reportedExits = new Set<string>();
   // Sharing off records nothing, not just sends nothing. The SDK buffers logs for seconds, and
   // consent can return before the buffer reaches the transport.
-  const reportedExits = new Set<string>();
   return {
     active: true,
     sessionDone(report) {

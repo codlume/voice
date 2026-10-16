@@ -2,13 +2,8 @@ import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import {
-  findS1Mini,
-  removeS1Mini,
-  S1_MINI_FILE,
-  type CleanRequest,
-  type CleanupStyle,
-} from "@voice/cleanup";
+import type { CleanRequest, CleanupStyle } from "@voice/cleanup";
+import { findS1Mini, removeS1Mini, S1_MINI_FILE } from "@voice/cleanup/download";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type ModelStatus, type Settings } from "../shared/api.ts";

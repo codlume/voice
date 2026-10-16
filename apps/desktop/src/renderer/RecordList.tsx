@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
+import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./Settings.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -52,7 +53,7 @@ export const styles = stylex.create({
 
 type Mode = "add" | "edit";
 
-export type Problem<F extends string> = { field: F; message: string };
+type Problem<F extends string> = { field: F; message: string };
 
 // Only one dialog can be open. The record outlives `open` so the dialog keeps its content through
 // the exit animation. `key` is new on every open, so the next add or edit, even of the same
@@ -73,7 +74,7 @@ export type Copy = {
 type RowText = { title: string; detail?: string; faded?: boolean };
 
 /** What the editor dialog hands the page to render its fields. */
-export type Editor<T, F extends string> = {
+type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
   // The problem to show, once a save was attempted.
@@ -165,7 +166,7 @@ export function RecordList<T extends { id: string }, F extends string>({
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.headerText)}>
-          <h1 {...stylex.props(settings.headline)}>{copy.title}</h1>
+          <h1 {...stylex.props(pageStyles.headline)}>{copy.title}</h1>
           <p {...stylex.props(styles.subtitle)}>{copy.subtitle}</p>
         </div>
         <Button ref={addRef} onClick={() => show("add", blank())}>
@@ -211,7 +212,7 @@ export function RecordList<T extends { id: string }, F extends string>({
 
       <p {...stylex.props(settings.hint)}>{copy.hint}</p>
       {rowAction.error && (
-        <p role="alert" {...stylex.props(settings.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error)}>
           {rowAction.error}
         </p>
       )}
@@ -349,7 +350,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
           {renderFields(editor)}
         </div>
         {error && (
-          <p role="alert" {...stylex.props(settings.error, styles.saveError)}>
+          <p role="alert" {...stylex.props(pageStyles.error, styles.saveError)}>
             {error}
           </p>
         )}
@@ -382,7 +383,7 @@ export function CountedField({
       </div>
       {children}
       {problem !== undefined && (
-        <Field.Error match {...stylex.props(settings.error)}>
+        <Field.Error match {...stylex.props(pageStyles.error)}>
           {problem}
         </Field.Error>
       )}

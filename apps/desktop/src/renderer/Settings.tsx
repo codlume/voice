@@ -37,25 +37,18 @@ import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
+import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { useAction } from "./useAction.ts";
 import { Switch } from "./Switch.tsx";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
 import { hubApi } from "./voice.ts";
 
 export const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl },
-  headline: {
-    margin: 0,
-    fontFamily: font.serif,
-    fontSize: 36,
-    fontWeight: 400,
-    lineHeight: 1.15,
-    letterSpacing: "-0.01em",
-  },
   section: { display: "flex", flexDirection: "column", gap: space.sm },
   sectionLabel: { margin: 0, fontSize: 13, fontWeight: 600 },
   row: {
@@ -101,7 +94,6 @@ export const styles = stylex.create({
   keys: { display: "flex", flexShrink: 0, gap: 6, fontFamily: "inherit" },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
 });
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
@@ -182,7 +174,7 @@ function Row({
   );
 }
 
-export function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
   return (
     <section aria-labelledby={id} {...stylex.props(styles.section)}>
@@ -197,22 +189,15 @@ export function Section({ label, children }: { label: string; children: ReactNod
 function Segmented<T extends string>({
   options,
   value,
-  disabled = false,
   onChange,
 }: {
   options: readonly { value: T; label: string }[];
   value: T;
-  disabled?: boolean;
   onChange: (value: T) => void;
 }) {
   const id = useId();
   return (
-    <RadioGroup<T>
-      value={value}
-      disabled={disabled}
-      onValueChange={onChange}
-      {...stylex.props(styles.segments)}
-    >
+    <RadioGroup<T> value={value} onValueChange={onChange} {...stylex.props(styles.segments)}>
       {options.map((option) => (
         // Inside a Field, Base UI labels each radio with the field's label, so each option points
         // at its own text to keep its name.
@@ -317,7 +302,7 @@ export function GeneralSettings({
 
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>General</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>General</h1>
 
       <Section label="Input">
         <Card>
@@ -340,7 +325,7 @@ export function GeneralSettings({
           </MicrophoneRow>
         </Card>
         {microphoneAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {microphoneAction.error}
           </p>
         )}
@@ -366,7 +351,7 @@ export function GeneralSettings({
           </Row>
         </Card>
         {languageAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {languageAction.error}
           </p>
         )}
@@ -392,7 +377,7 @@ export function GeneralSettings({
           </Row>
         </Card>
         {clipboardAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {clipboardAction.error}
           </p>
         )}
@@ -430,7 +415,7 @@ export function GeneralSettings({
                 {updateStatusText(updates.status)}
               </p>
               {channelAction.error && (
-                <p role="alert" {...stylex.props(styles.error)}>
+                <p role="alert" {...stylex.props(pageStyles.error)}>
                   {channelAction.error}
                 </p>
               )}
@@ -466,7 +451,7 @@ export function SystemSettings({
   const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>System</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>System</h1>
 
       <Section label="Startup">
         <Card>
@@ -492,7 +477,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {loginAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {loginAction.error}
           </p>
         )}
@@ -518,7 +503,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {audioAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {audioAction.error}
           </p>
         )}
@@ -555,7 +540,7 @@ export function SystemSettings({
           </Row>
         </Card>
         {appearanceAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {appearanceAction.error}
           </p>
         )}
@@ -578,7 +563,7 @@ export function DataPrivacySettings({
   const [confirmingClear, setConfirmingClear] = useState(false);
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>Data and Privacy</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>Data and Privacy</h1>
 
       <Section label="Diagnostics">
         <Card>
@@ -596,7 +581,7 @@ export function DataPrivacySettings({
           </Row>
         </Card>
         {diagnosticsAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {diagnosticsAction.error}
           </p>
         )}
@@ -621,7 +606,7 @@ export function DataPrivacySettings({
           </Row>
         </Card>
         {clearAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {clearAction.error}
           </p>
         )}
@@ -694,7 +679,7 @@ function HistorySection({ history: { entries, retention } }: { history: HistoryS
         </Row>
       </Card>
       {action.error && (
-        <p role="alert" {...stylex.props(styles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error)}>
           {action.error}
         </p>
       )}
@@ -772,7 +757,7 @@ function ModelSection({
             <p
               role="status"
               aria-live="polite"
-              {...stylex.props(styles.rowDetail, status.state === "failed" && styles.error)}
+              {...stylex.props(styles.rowDetail, status.state === "failed" && pageStyles.error)}
             >
               {view.text}
             </p>
@@ -797,7 +782,7 @@ function ModelSection({
         </div>
       </Card>
       {error && (
-        <p role="alert" {...stylex.props(styles.error)}>
+        <p role="alert" {...stylex.props(pageStyles.error)}>
           {error}
         </p>
       )}
@@ -826,7 +811,7 @@ export function ModelsSettings({
   const dictating = session.kind === "listening" || session.kind === "processing";
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>Models</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>Models</h1>
       {models.map((model) => (
         <ModelSection
           key={model.id}
@@ -876,7 +861,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
   ];
   return (
     <div {...stylex.props(styles.page)}>
-      <h1 {...stylex.props(styles.headline)}>Shortcuts</h1>
+      <h1 {...stylex.props(pageStyles.headline)}>Shortcuts</h1>
 
       <Section label="Dictation">
         <Card>
@@ -911,7 +896,7 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           />
         </Card>
         {hotkeyAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {hotkeyAction.error}
           </p>
         )}

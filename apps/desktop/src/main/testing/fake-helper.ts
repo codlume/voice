@@ -6,9 +6,6 @@ import { unlinkSync } from "node:fs";
 type Action = "down" | "up" | "cancel" | "exit" | "stall";
 type Config = {
   transcript?: string;
-  insert?: { method: string; reason?: string };
-  asr?: string;
-  permissions?: { microphone: string; accessibility: string };
   startMs?: number;
   script?: { at: number; action: Action }[];
   control?: string;
@@ -25,24 +22,9 @@ for (const flag of ["--models-dir", "--state-dir"]) {
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
-// Set from capture.start until the session's last event, so a test is refused for the same
-// window as the real helper's starting/recording/transcribing states.
-let dictating = false;
-let microphoneTest: { id: string; levels: NodeJS.Timeout } | null = null;
-
-function endMicrophoneTest() {
-  if (!microphoneTest) return;
-  clearInterval(microphoneTest.levels);
-  emit({ type: "microphone.test.ended", id: microphoneTest.id });
-  microphoneTest = null;
-}
 
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
-}
-
-function stopLevels() {
-  if (recording) clearInterval(recording.levels);
 }
 
 function act(action: Action) {
@@ -59,48 +41,13 @@ function handle(command: Record<string, unknown>) {
     case "hotkey.configure":
       emit({ type: "log", level: "info", message: `hotkey configured: ${String(command.key)}` });
       return;
-    case "microphone.configure":
-      emit({
-        type: "microphones.changed",
-        devices: [
-          { uid: "builtin", name: "Built-in microphone" },
-          { uid: "usb", name: "USB microphone" },
-        ],
-        defaultUid: "builtin",
-      });
-      return;
     case "permissions.check":
-    case "permissions.request":
-      emit({
-        type: "permissions",
-        microphone: "granted",
-        accessibility: "granted",
-        ...config.permissions,
-      });
+      emit({ type: "permissions", microphone: "granted", accessibility: "granted" });
       return;
     case "asr.prepare":
-      emit({ type: "asr.status", state: config.asr ?? "ready" });
-      return;
-    case "microphone.test.start": {
-      if (dictating) {
-        emit({ type: "microphone.test.failed", id, message: "Finish dictating, then test again." });
-        return;
-      }
-      endMicrophoneTest();
-      emit({ type: "microphone.test.started", id });
-      const levels = setInterval(
-        () => emit({ type: "microphone.test.level", id, level: Math.random() }),
-        33,
-      );
-      microphoneTest = { id, levels };
-      return;
-    }
-    case "microphone.test.stop":
-      if (microphoneTest?.id === id) endMicrophoneTest();
+      emit({ type: "asr.status", state: "ready" });
       return;
     case "capture.start":
-      dictating = true;
-      endMicrophoneTest();
       setTimeout(() => {
         const startMs = config.startMs ?? 30;
         emit({ type: "capture.started", id, startMs });
@@ -112,11 +59,10 @@ function handle(command: Record<string, unknown>) {
       }, config.startMs ?? 30);
       return;
     case "capture.stop": {
-      stopLevels();
+      if (recording) clearInterval(recording.levels);
       const audioMs = recording ? Date.now() - recording.since : 0;
       recording = null;
       setTimeout(() => {
-        dictating = false;
         emit({
           type: "transcript",
           id,
@@ -128,17 +74,8 @@ function handle(command: Record<string, unknown>) {
       }, 40);
       return;
     }
-    case "capture.cancel":
-      stopLevels();
-      recording = null;
-      dictating = false;
-      emit({ type: "capture.cancelled", id });
-      return;
     case "insert":
-      setTimeout(
-        () => emit({ type: "insert.result", id, method: "accessibility", ...config.insert }),
-        10,
-      );
+      setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);
       return;
     default:
       emit({ type: "log", level: "error", message: `unknown command ${String(command.type)}` });

@@ -4,12 +4,12 @@ import { Channel, type HubApi, type PillApi } from "../shared/api.ts";
 import type { Commands } from "./ipc.ts";
 
 const commands = <Api>(): Commands<Api> => ({ handle: () => {} });
+const listener = () => {};
 
 describe("Commands", () => {
   test("a channel registers only for the window whose bridge invokes it, checked by tsc", () => {
     const hub = commands<HubApi>();
     const pill = commands<PillApi>();
-    const listener = () => {};
     hub.handle(Channel.updateSettings, listener);
     pill.handle(Channel.getPillSnapshot, listener);
     // @ts-expect-error the Flow Bar owns getPillSnapshot

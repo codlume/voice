@@ -175,6 +175,13 @@ const deleteUser = (cookie: string) =>
     body: "{}",
   });
 
+const signOut = (cookie: string) =>
+  worker(`${base}/api/auth/sign-out`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: appOrigin, cookie },
+    body: "{}",
+  });
+
 const bucketsOf = (ip: string) =>
   env.DB.prepare("select key, count from rate_limit where key like ? order by key")
     .bind(`${ip}|%`)
@@ -373,13 +380,7 @@ describe("a user row with no account", () => {
     const signedIn = await exchange(await browserSignIn("cut-off-delete", { signOut: true }));
     const { user } = await signedIn.json<SignedIn>();
     const cookie = cookieHeader(storeCookies(signedIn));
-    const deletion = await whileWriteFails("delete on user", () =>
-      worker(`${base}/api/auth/delete-user`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: appOrigin, cookie },
-        body: "{}",
-      }),
-    );
+    const deletion = await whileWriteFails("delete on user", () => deleteUser(cookie));
     expect(deletion.status).toBe(500);
     expect(await rowsOf(user.id)).toEqual({ users: 1, accounts: 0, sessions: 0 });
 
@@ -842,30 +843,17 @@ describe("sign out", () => {
     const { user, token } = await response.json<SignedIn>();
     const cookie = cookieHeader(storeCookies(response));
     expect((await getSession(cookie))?.user.id).toBe(user.id);
-    const signOut = () =>
-      worker(`${base}/api/auth/sign-out`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: appOrigin, cookie },
-        body: "{}",
-      });
 
-    expect(await (await signOut()).json()).toEqual({ success: true });
+    expect(await (await signOut(cookie)).json()).toEqual({ success: true });
     expect(await count("select count(*) as n from session where token = ?", token)).toBe(0);
     expect(await getSession(cookie)).toBeNull();
     expect((await deleteUser(cookie)).status).toBe(401);
-    expect(await (await signOut()).json()).toEqual({ success: true });
+    expect(await (await signOut(cookie)).json()).toEqual({ success: true });
     expect(await getSession(cookie)).toBeNull();
   });
 });
 
 describe("account deletion", () => {
-  const deleteAccount = (cookie: string) =>
-    worker(`${base}/api/auth/delete-user`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: appOrigin, cookie },
-      body: "{}",
-    });
-
   it("refuses deletion at the ten-minute freshness boundary and preserves the account", async () => {
     const response = await exchange(await browserSignIn("stale-deletion", { signOut: true }));
     const { user } = await response.json<SignedIn>();
@@ -873,7 +861,7 @@ describe("account deletion", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 600_000);
 
-    const refused = await deleteAccount(cookie);
+    const refused = await deleteUser(cookie);
 
     expect(refused.status).toBe(400);
     expect(await refused.json()).toMatchObject({ code: "SESSION_EXPIRED" });
@@ -891,7 +879,7 @@ describe("account deletion", () => {
     const currentCookie = cookieHeader(storeCookies(second));
     expect(await count("select count(*) as n from session where user_id = ?", user.id)).toBe(2);
 
-    const deleted = await deleteAccount(currentCookie);
+    const deleted = await deleteUser(currentCookie);
 
     expect(deleted.status).toBe(200);
     expect(await deleted.json()).toMatchObject({ success: true, message: "User deleted" });
@@ -901,11 +889,7 @@ describe("account deletion", () => {
     expect(await getSession(oldCookie)).toBeNull();
     expect(await getSession(currentCookie)).toBeNull();
 
-    const queued = await worker(`${base}/api/auth/sign-out`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: appOrigin, cookie: oldCookie },
-      body: "{}",
-    });
+    const queued = await signOut(oldCookie);
     expect(queued.status).toBe(200);
     expect(await queued.json()).toEqual({ success: true });
     expect(await getSession(oldCookie)).toBeNull();
@@ -917,7 +901,7 @@ describe("account deletion", () => {
   it("creates a new user when the deleted Google account signs in again", async () => {
     const first = await exchange(await browserSignIn("new-after-deletion", { signOut: true }));
     const previous = await first.json<SignedIn>();
-    expect((await deleteAccount(cookieHeader(storeCookies(first)))).status).toBe(200);
+    expect((await deleteUser(cookieHeader(storeCookies(first)))).status).toBe(200);
 
     const next = await exchange(await browserSignIn("new-after-deletion", { signOut: true }));
     expect(next.status).toBe(200);
@@ -939,11 +923,7 @@ describe("account deletion", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 600_000);
 
-    const revoked = await worker(`${base}/api/auth/sign-out`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: appOrigin, cookie: oldCookie },
-      body: "{}",
-    });
+    const revoked = await signOut(oldCookie);
 
     expect(revoked.status).toBe(200);
     expect(await revoked.json()).toEqual({ success: true });

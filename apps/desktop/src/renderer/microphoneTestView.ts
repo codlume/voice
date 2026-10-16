@@ -4,7 +4,7 @@ import type { MicrophoneTest, PermissionState } from "../shared/api.ts";
 export const HEARD_LEVEL = 0.2;
 export const QUIET_AFTER_MS = 3000;
 
-export type MicrophoneTestStatus = { text: string; failed: boolean };
+type MicrophoneTestStatus = { text: string; failed: boolean };
 
 // Null means there is nothing to report, so the test region stays closed.
 export function microphoneTestStatus(

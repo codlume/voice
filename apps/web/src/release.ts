@@ -4,7 +4,7 @@ export const FEED_URL =
   "https://downloads.voice.codlume.com/channels/stable/mac-arm64/latest-mac.yml";
 export const RELEASES_URL = "https://github.com/codlume/voice/releases/latest";
 
-export type Release = { version: string; dmgUrl: string; size: number };
+type Release = { version: string; dmgUrl: string; size: number };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;

@@ -37,6 +37,13 @@ it("0002 lets a Google sign-in find its account by provider and account id throu
   ]);
 });
 
+const splitNameRows = async () =>
+  (
+    await env.DB.prepare(
+      "select id, name, first_name, last_name from user where id in ('two-words', 'one-word', 'three-words') order by id",
+    ).all()
+  ).results;
+
 it("0003 splits each existing name into first and last name at the first space, and a second run keeps names edited since (catches users left with an empty first name)", async () => {
   const migration = env.TEST_MIGRATIONS.find(
     ({ name }) => name === "0003_user_first_last_name.sql",
@@ -57,13 +64,6 @@ it("0003 splits each existing name into first and last name at the first space, 
       ),
     ),
   );
-  const rows = async () =>
-    (
-      await env.DB.prepare(
-        "select id, name, first_name, last_name from user where id in ('two-words', 'one-word', 'three-words') order by id",
-      ).all()
-    ).results;
-
   await run();
   const oneWord = { id: "one-word", name: "Plato", first_name: "Plato", last_name: "" };
   const threeWords = {
@@ -72,7 +72,7 @@ it("0003 splits each existing name into first and last name at the first space, 
     first_name: "Ada",
     last_name: "King  Lovelace",
   };
-  expect(await rows()).toEqual([
+  expect(await splitNameRows()).toEqual([
     oneWord,
     threeWords,
     { id: "two-words", name: "Mateusz Hadryś", first_name: "Mateusz", last_name: "Hadryś" },
@@ -82,7 +82,7 @@ it("0003 splits each existing name into first and last name at the first space, 
     "update user set first_name = 'Matt', last_name = '', name = 'Matt' where id = 'two-words'",
   ).run();
   await run();
-  expect(await rows()).toEqual([
+  expect(await splitNameRows()).toEqual([
     oneWord,
     threeWords,
     { id: "two-words", name: "Matt", first_name: "Matt", last_name: "" },

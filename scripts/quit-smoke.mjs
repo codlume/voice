@@ -5,9 +5,11 @@ import { parseArgs } from "node:util";
 
 import {
   electronPath,
+  evaluateInMain,
   Page,
   prepareUserData,
   repoDir,
+  signalGroup,
   snapshotStream,
   start,
   stopChildren,
@@ -68,28 +70,13 @@ function launch(userData) {
   return { child, exited, text: () => output.join("") };
 }
 
-function reapGroup(child) {
-  try {
-    process.kill(-child.pid, "SIGKILL");
-  } catch {}
-}
-
-async function evaluateInMain(expression) {
-  const targets = await (await fetch(`http://127.0.0.1:${ports.inspect}/json`)).json();
-  const inspector = await Page.open(targets[0].webSocketDebuggerUrl);
-  try {
-    return await inspector.evaluate(expression);
-  } finally {
-    inspector.close();
-  }
-}
-
 const quitMain = () =>
-  evaluateInMain("process.mainModule.require('electron').app.quit(); 'quit called'");
+  evaluateInMain(ports.inspect, "process.mainModule.require('electron').app.quit(); 'quit called'");
 
 // Starts a long cleanup and returns before it finishes, so the quit lands mid-generation.
 const startCleaning = () =>
   evaluateInMain(
+    ports.inspect,
     `globalThis.voiceTest.cleanup.clean(${JSON.stringify(LONG_DICTATION)},
       { styling: "semi-formal" },
       { budgetMs: 60_000, signal: new AbortController().signal }).catch(() => undefined); 'cleaning'`,
@@ -121,7 +108,7 @@ async function runTrial(mode, trial, userData) {
     quitAt = performance.now();
     await Promise.race([quitMain(), app.exited]);
   } catch (error) {
-    reapGroup(app.child);
+    signalGroup(app.child.pid, "SIGKILL");
     await app.exited;
     return {
       mode,
@@ -142,9 +129,9 @@ async function runTrial(mode, trial, userData) {
   const timedOut = (await Promise.race([app.exited, timeout])) === "timeout";
   clearTimeout(timer);
   const quitToExitMs = Math.round(performance.now() - quitAt);
-  if (timedOut) reapGroup(app.child);
+  if (timedOut) signalGroup(app.child.pid, "SIGKILL");
   const exit = await app.exited;
-  reapGroup(app.child);
+  signalGroup(app.child.pid, "SIGKILL");
   const crashed = app.text().includes(CRASH_SIGNATURE);
   const shutdownOverran = app.text().includes(SHUTDOWN_OVERRUN);
   const result = {

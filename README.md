@@ -83,7 +83,7 @@ The Deploy website workflow deploys the site when a push to `main` changes `apps
 
 `apps/api` is the Voice API. It is a Hono app on Cloudflare Workers with a D1 database. It serves `/health`, Better Auth under `/api/auth/*` with Google sign-in, and at `/` the page the browser lands on after sign-in.
 
-To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file. Until Google sign-in lands, nothing reads them, so placeholder values are enough.
+To run it locally against a local D1 database, create `apps/api/.dev.vars` with the three required secrets. Git ignores the file. Placeholder values are enough to start the Worker, but signing in with Google needs a real OAuth client.
 
 ```sh
 BETTER_AUTH_SECRET=...
@@ -101,7 +101,7 @@ curl -i http://localhost:8787/health
 
 The local base URL is `http://localhost:8787`.
 
-To sign in without Google, run the verify Worker instead. It is the same Worker with Google's token endpoint faked, its own local database and fake credentials, and it ignores `.dev.vars`. The Google code picks the user, so `scripts/play-browser.mjs --code ada-lovelace` signs in Ada Lovelace.
+To sign in without Google, run the verify Worker instead. It is the same Worker with Google's token endpoint faked, its own local database and fake credentials, and it ignores `.dev.vars`. The Google code picks the user, so `apps/api/scripts/play-browser.mjs --code ada-lovelace` signs in Ada Lovelace.
 
 ```sh
 pnpm --filter @voice/api db:migrate:verify

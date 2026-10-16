@@ -39,7 +39,7 @@ stopChildrenOnSignal();
 const cache = modelsDir();
 const userData = await prepareUserData("voice-models-smoke");
 const models = join(userData, "models");
-const { child } = launchVoice(userData, { port });
+launchVoice(userData, { port });
 
 try {
   const page = await Page.connect(port, "hub.html");

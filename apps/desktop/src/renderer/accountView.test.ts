@@ -3,6 +3,9 @@ import { describe, expect, test } from "vite-plus/test";
 import type { AccountState } from "../shared/api.ts";
 import { accountName, accountRow, emailDecoy, initials } from "./accountView.ts";
 
+const separators = (text: string) =>
+  [...text].flatMap((char, index) => ("@.-_".includes(char) ? [`${index}${char}`] : []));
+
 describe("account view", () => {
   test("initials take the first letters of the first and last name, else G for Google account", () => {
     expect(initials({ firstName: "Augusta Ada", lastName: "King" })).toBe("AK");
@@ -48,8 +51,6 @@ describe("account view", () => {
       ["ada.lovelace@example.com", ["ada"]],
       ["grace-hopper_1@navy.mil", ["grace", "navy"]],
     ];
-    const separators = (text: string) =>
-      [...text].flatMap((char, index) => ("@.-_".includes(char) ? [`${index}${char}`] : []));
     for (const [email, parts] of cases) {
       const decoy = emailDecoy(email);
       expect(decoy).toHaveLength(email.length);

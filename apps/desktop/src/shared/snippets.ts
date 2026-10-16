@@ -13,7 +13,7 @@ export const TRIGGER_MAX_LENGTH = 60;
 export const EXPANSION_MAX_LENGTH = 4000;
 export const EXPANSION_HTML_MAX_LENGTH = EXPANSION_MAX_LENGTH * 8;
 
-export type SnippetProblem = { field: "trigger" | "expansion"; message: string };
+type SnippetProblem = { field: "trigger" | "expansion"; message: string };
 
 // `others` never contains the snippet being checked; callers filter it out.
 export function snippetProblem(

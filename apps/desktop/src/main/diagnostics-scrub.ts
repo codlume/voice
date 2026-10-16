@@ -8,14 +8,14 @@ type EventItem = [{ type: "event" | "transaction" }, Event];
 
 export const HELPER_EXIT_MESSAGE = "Voice helper exited unexpectedly";
 export const SESSION_TRANSACTION = "dictation.session";
-export const SESSION_ATTRIBUTES = [
+const SESSION_ATTRIBUTES = [
   "outcome",
   "insert.method",
   "insert.reason",
   "dictation.language",
 ] as const;
 export type SessionAttribute = (typeof SESSION_ATTRIBUTES)[number];
-export const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as const;
+const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as const;
 export type HelperTag = (typeof HELPER_TAGS)[number];
 export const SESSION_MEASUREMENTS = [
   "startMs",
@@ -40,7 +40,7 @@ export const HELPER_LOGS = [
 type HelperLog = (typeof HELPER_LOGS)[number];
 
 // The only log messages that leave the machine, each with the attributes it may carry.
-export const LOGS = {
+const LOGS = {
   "dictation session finished": [...SESSION_ATTRIBUTES, ...SESSION_MEASUREMENTS],
   "helper ready": ["helper.protocol_version"],
   "helper protocol mismatch": ["helper.protocol_version", "helper.expected_version"],

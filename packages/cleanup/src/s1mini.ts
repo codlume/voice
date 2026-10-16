@@ -69,15 +69,18 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
   const withdrawal = (signal: AbortSignal | undefined) =>
     signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
 
+  const busyEngine = () => (Date.now() < busyUntil ? engine : undefined);
+
   // The GPU clocks down while the user speaks: a clean after 5 s of idle measured 216 ms against
   // 155 ms right after another. Without the gap the loop slowed the speech model by ~10 ms.
   async function busyLoop() {
     busy = true;
     try {
-      while (engine && Date.now() < busyUntil) {
+      while (busyEngine()) {
         await serialize(async () => {
-          if (!engine || Date.now() >= busyUntil) return;
-          const { model, completion } = await engine;
+          const current = busyEngine();
+          if (!current) return;
+          const { model, completion } = await current;
           await completion.generateCompletionWithMeta(
             model.tokenize(buildS1MiniPrompt("ok", BUSY_STYLE), true),
             { signal: disposal.signal, temperature: 0, maxTokens: 1 },

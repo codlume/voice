@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { AUTH_SESSION_CHECK_INTERVAL_MS } from "./account.ts";
 import {
   CODE,
+  GRACE,
   USER,
   expectNoSecrets,
   fakeClient,
@@ -182,31 +183,24 @@ describe("sign out", () => {
     expect(fake.stored).toBe(false);
     expect(fake.serverSignOuts).toBe(1);
     fake.signOuts[0]?.answer({ kind: "unreachable", error: new TypeError("offline") });
-    const nextUser = {
-      id: "grace-id",
-      name: "Grace Hopper",
-      firstName: "Grace",
-      lastName: "Hopper",
-      email: "grace@example.com",
-    };
-    fake.setUser(nextUser);
+    fake.setUser(GRACE);
     const submitted = h.account.submitSignInCode(CODE);
     await flush();
     fake.exchanges[0]?.resolve();
     await submitted;
-    expect(h.state).toEqual({ kind: "signedIn", ...nextUser });
+    expect(h.state).toEqual({ kind: "signedIn", ...GRACE });
     h.account.dispose();
 
     const relaunched = harness({ fake });
     const restored = relaunched.account.restore();
     await flush();
-    expect(relaunched.state).toEqual({ kind: "signedIn", ...nextUser });
+    expect(relaunched.state).toEqual({ kind: "signedIn", ...GRACE });
     fake.signOuts[1]?.answer({ kind: "ended", status: 200 });
-    fake.checks[1]?.answer({ kind: "active", user: nextUser });
+    fake.checks[1]?.answer({ kind: "active", user: GRACE });
     await restored;
     expect(fake.serverSignOuts).toBe(0);
     expect(fake.stored).toBe(true);
-    expect(fake.client.cachedUser()).toEqual(nextUser);
+    expect(fake.client.cachedUser()).toEqual(GRACE);
     expect(relaunched.states.every((state) => state.kind === "signedIn")).toBe(true);
     expectNoSecrets(relaunched);
   });

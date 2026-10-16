@@ -14,6 +14,7 @@ import { History } from "./History.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { insightsView } from "./insightsView.ts";
 import { Keycap } from "./Keycap.tsx";
+import { pageStyles } from "./pageStyles.ts";
 import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -46,14 +47,6 @@ const styles = stylex.create({
     width: { default: 250, [narrow]: "auto" },
     order: { default: 0, [narrow]: -1 },
   },
-  headline: {
-    margin: 0,
-    fontFamily: font.serif,
-    fontSize: 36,
-    fontWeight: 400,
-    lineHeight: 1.15,
-    letterSpacing: "-0.01em",
-  },
   lede: {
     margin: 0,
     marginTop: space.sm,
@@ -79,7 +72,6 @@ const styles = stylex.create({
   rowText: { flexGrow: 1, minWidth: 0 },
   rowTitle: { display: "block", margin: 0, fontWeight: 500 },
   rowSubtitle: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  error: { margin: 0, color: color.errorForeground, fontSize: 12.5 },
   status: {
     display: "flex",
     flexDirection: "column",
@@ -262,7 +254,7 @@ function CrashReportsRow({ on }: { on: boolean }) {
           Crashes, timings, and app events. Never your words or audio.
         </p>
         {diagnosticsAction.error && (
-          <p role="alert" {...stylex.props(styles.error)}>
+          <p role="alert" {...stylex.props(pageStyles.error)}>
             {diagnosticsAction.error}
           </p>
         )}
@@ -368,7 +360,7 @@ export function Home({
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(styles.headline)}>{greeting(new Date().getHours())}</h1>
+        <h1 {...stylex.props(pageStyles.headline)}>{greeting(new Date().getHours())}</h1>
         <p {...stylex.props(styles.lede)}>
           Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
           {snapshot.settings.toggleHotkey && (

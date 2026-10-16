@@ -51,7 +51,7 @@ final class Insertion {
         return target
     }
 
-    func insert(id: String, text: String, html: String?, target: (id: String, target: InsertTarget)?) {
+    func insert(id: String, text: String, html: String?, target: InsertTarget?) {
         let focused: AXUIElement?
         switch check(id: id, target: target) {
         case .refused(let reason):
@@ -96,12 +96,11 @@ final class Insertion {
         case refused(InsertFailure)
     }
 
-    private func check(id: String, target: (id: String, target: InsertTarget)?) -> TargetCheck {
-        guard let target, target.id == id else {
+    private func check(id: String, target destination: InsertTarget?) -> TargetCheck {
+        guard let destination else {
             output.log(.error, "insert \(id) refused: no finished capture with that id")
             return .refused(.failed)
         }
-        let destination = target.target
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.pid else {
             return .refused(.focusChanged)
         }

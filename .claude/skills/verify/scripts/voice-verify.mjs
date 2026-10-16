@@ -17,28 +17,31 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import {
   modelsDir,
   runningVoiceProcesses,
 } from "../../../../native/voice-helper/scripts/helper.mjs";
+import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import {
   announcedPorts,
   electronPath,
+  evaluateInMain,
   landedText,
   modelFiles,
   Page,
   prepareUserData,
+  repoDir,
+  signalGroup,
   snapshotStream,
   start,
   stopChildren,
 } from "../../../../scripts/voice-app.mjs";
 
-const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
-const fixturesDir = join(repoDir, "test-fixtures/audio");
 const worktree = resolve(repoDir);
 const worktreeId = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
 const scratchName = `voice-verify-${worktreeId}`;
@@ -103,28 +106,12 @@ function publishState(state, claim = false) {
   }
 }
 
-function signalGroup(pid, signal) {
-  try {
-    process.kill(-pid, signal);
-  } catch {}
-}
-
 function requireInstance() {
   const state = readState();
   if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
     fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
-}
-
-async function evaluateMain(state, expression) {
-  const targets = await (await fetch(`http://127.0.0.1:${state.inspectPort}/json`)).json();
-  const main = await Page.open(targets[0].webSocketDebuggerUrl);
-  try {
-    return await main.evaluate(expression);
-  } finally {
-    main.close();
-  }
 }
 
 async function connect(which) {
@@ -167,9 +154,19 @@ async function waitOn(page, expression, timeoutMs) {
   while (Date.now() < deadline) {
     last = await page.evaluate(`Promise.resolve(${expression}).catch(() => false)`);
     if (last) return last;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await sleep(100);
   }
   throw new Error(`timed out after ${timeoutMs} ms waiting for ${expression} (last ${show(last)})`);
+}
+
+async function poll(check, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = check();
+    if (result !== undefined) return result;
+    await sleep(50);
+  }
+  throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
 }
 
 const newest = (dir) => {
@@ -403,18 +400,18 @@ const commands = {
     if (sameProcess(state.ownerPid, state.ownerIdentity)) {
       process.kill(state.ownerPid, "SIGTERM");
       for (let i = 0; i < 100 && sameProcess(state.ownerPid, state.ownerIdentity); i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await sleep(100);
       }
     }
     if (sameProcess(state.ownerPid, state.ownerIdentity))
       throw new Error("verify owner did not stop; instance record and userData retained");
     if (sameProcess(state.electronPid, state.electronIdentity)) {
       signalGroup(state.electronPid, "SIGTERM");
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await sleep(3000);
       if (sameProcess(state.electronPid, state.electronIdentity))
         signalGroup(state.electronPid, "SIGKILL");
       for (let i = 0; i < 100 && sameProcess(state.electronPid, state.electronIdentity); i += 1)
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await sleep(50);
       if (sameProcess(state.electronPid, state.electronIdentity))
         throw new Error("verify Electron did not stop; instance record and userData retained");
     }
@@ -464,7 +461,7 @@ const commands = {
     const url = `com.codlume.voice://auth/callback#token=${code}`;
     // The landing page opens this URL. A development build cannot receive it from macOS, so the
     // main-process test hook emits the same open-url event the OS would.
-    await evaluateMain(state, `globalThis.voiceTest.openUrl(${show(url)})`);
+    await evaluateInMain(state.inspectPort, `globalThis.voiceTest.openUrl(${show(url)})`);
     out({ delivered: url.replace(/#token=.*/, "#token=<code>") });
   },
 
@@ -472,7 +469,10 @@ const commands = {
     const [id] = args;
     if (!id) fail("usage: menu <menu item id>");
     // CDP key events never reach the native menu, so this chooses the item the way its shortcut does.
-    await evaluateMain(requireInstance(), `globalThis.voiceTest.clickMenuItem(${show(id)})`);
+    await evaluateInMain(
+      requireInstance().inspectPort,
+      `globalThis.voiceTest.clickMenuItem(${show(id)})`,
+    );
     out({ clicked: id });
   },
 
@@ -486,14 +486,14 @@ const commands = {
     await hub.evaluate("window.close()").catch(() => {});
     hub.close();
     for (let i = 0; i < 50 && (await hubOpen()); i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await sleep(100);
     }
     if (await hubOpen()) fail("the Voice window did not close");
     // Opening Voice again starts a second copy, which hands over to the running one through the
     // single-instance lock. The running copy then shows its window, as for a user.
     const second = openSecondCopy(state);
     for (let i = 0; i < 100 && !(await hubOpen()); i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await sleep(100);
     }
     if (!(await hubOpen())) fail("the Voice window did not come back");
     out({ reopened: true, secondCopyExit: second.status });
@@ -624,16 +624,13 @@ const commands = {
       maxHeight: 640,
     });
     out({ recording: output, pid: process.pid, stop: `kill -TERM ${process.pid}` });
-    await new Promise((resolve) => {
-      process.once("SIGINT", resolve);
-      process.once("SIGTERM", resolve);
-      void page.closed.then(resolve);
+    await new Promise((stopRecording) => {
+      process.once("SIGINT", stopRecording);
+      process.once("SIGTERM", stopRecording);
+      void page.closed.then(stopRecording);
     });
     const stoppedAt = Date.now() / 1000;
-    await Promise.race([
-      page.call("Page.stopScreencast"),
-      new Promise((resolve) => setTimeout(resolve, 1000)),
-    ]).catch(() => {});
+    await Promise.race([page.call("Page.stopScreencast"), sleep(1000)]).catch(() => {});
     page.close();
     if (frames.length === 0) fail(`no frames captured; ${framesDir} is empty`);
 
@@ -726,15 +723,6 @@ const commands = {
         .slice(logOffset)
         .split("\n")
         .find((l) => pattern.test(l));
-    const poll = async (check, timeoutMs, label) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const result = check();
-        if (result !== undefined) return result;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
-    };
     const waitForLog = (pattern, timeoutMs, label) =>
       poll(() => logLine(pattern), timeoutMs, label);
 

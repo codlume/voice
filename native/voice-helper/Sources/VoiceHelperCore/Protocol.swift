@@ -52,7 +52,6 @@ public enum HelperCommand: Equatable, Sendable {
     case asrPrepare(download: Bool)
     case asrRemove
     case testAudioFile(path: String?)
-    case testHotkey(action: HotkeyAction)
 }
 
 public enum HelperEvent: Equatable, Sendable {
@@ -119,7 +118,6 @@ extension HelperCommand: Decodable {
         case "asr.prepare": self = .asrPrepare(download: try c.decode(Bool.self, forKey: .download))
         case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
-        case "test.hotkey": self = .testHotkey(action: try c.decode(HotkeyAction.self, forKey: .action))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }

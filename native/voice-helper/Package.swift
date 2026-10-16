@@ -8,7 +8,6 @@ let package = Package(
         .executable(name: "voice-helper", targets: ["VoiceHelper"]),
         .executable(name: "fnpost", targets: ["FnPost"]),
         .executable(name: "disclaim", targets: ["Disclaim"]),
-        .library(name: "VoiceHelperCore", targets: ["VoiceHelperCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.4"),

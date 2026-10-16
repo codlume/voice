@@ -177,9 +177,8 @@ export function createVoiceAuthClient({
     );
   };
 
-  const signOutsKey = keys.serverSignOuts;
   let serverSignOuts: string[] = [];
-  const storedSignOuts = store.getItem(signOutsKey);
+  const storedSignOuts = store.getItem(keys.serverSignOuts);
   if (typeof storedSignOuts === "string" && safeStorage.isEncryptionAvailable()) {
     try {
       const parsed: unknown = JSON.parse(
@@ -190,7 +189,7 @@ export function createVoiceAuthClient({
       }
       serverSignOuts = parsed;
     } catch {
-      store.setItem(signOutsKey, null);
+      store.setItem(keys.serverSignOuts, null);
       log("account server sign-out queue discarded", {
         message: "account server sign-out queue discarded",
         level: "warn",
@@ -201,7 +200,7 @@ export function createVoiceAuthClient({
   function saveServerSignOuts(next: string[]) {
     if (!safeStorage.isEncryptionAvailable()) return;
     store.setItem(
-      signOutsKey,
+      keys.serverSignOuts,
       next.length ? safeStorage.encryptString(JSON.stringify(next)).toString("base64") : null,
     );
   }
@@ -268,10 +267,7 @@ export function createVoiceAuthClient({
         return { kind: "unknown", status: response.status };
       // Better Auth catches a failed database deletion and still returns success. Confirm it.
       const checked = await request("get-session");
-      if (authSessionEnded(checked.status)) {
-        return { kind: "ended", status: checked.status };
-      }
-      if (checked.ok && (await checked.json()) === null) {
+      if (authSessionEnded(checked.status) || (checked.ok && (await checked.json()) === null)) {
         return { kind: "ended", status: checked.status };
       }
       return { kind: "unknown", status: checked.status };

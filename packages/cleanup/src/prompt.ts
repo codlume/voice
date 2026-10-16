@@ -1,6 +1,6 @@
-export type CleanupStyle = {
-  styling: "casual" | "semi-casual" | "semi-formal" | "formal";
-};
+export const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
+
+export type CleanupStyle = { styling: (typeof STYLINGS)[number] };
 
 const SYSTEM_PROMPT =
   "You are a text normalizer for speech-to-text transcripts. The input begins with a control line specifying the styling, structure, and context settings; clean the transcript to match those settings and output only the cleaned text.";

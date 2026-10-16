@@ -14,6 +14,7 @@ import {
   parseAccountName,
 } from "./account.ts";
 import {
+  GRACE,
   SECOND_CODE,
   USER,
   expectNoSecrets,
@@ -91,13 +92,6 @@ describe("updateName", () => {
   });
 
   test("a sign-in as another account while the update is in flight keeps that account's identity", async () => {
-    const grace = {
-      id: "grace-id",
-      name: "Grace Hopper",
-      firstName: "Grace",
-      lastName: "Hopper",
-      email: "grace@example.com",
-    };
     const h = await signedIn();
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
     await flush();
@@ -105,17 +99,17 @@ describe("updateName", () => {
     await flush();
     h.fake.signOuts[0]?.answer({ kind: "ended", status: 200 });
     await signingOut;
-    h.setUser(grace);
+    h.setUser(GRACE);
     await startSignIn(h, "state2");
     const submitted = h.account.submitSignInCode(SECOND_CODE);
     await flush();
     h.exchanges[1]?.resolve();
     await submitted;
-    expect(h.state).toEqual({ kind: "signedIn", ...grace });
+    expect(h.state).toEqual({ kind: "signedIn", ...GRACE });
     h.fake.nameUpdates[0]?.answer({ kind: "updated" });
     await saving;
-    expect(h.state).toEqual({ kind: "signedIn", ...grace });
-    expect(h.fake.client.cachedUser()).toEqual(grace);
+    expect(h.state).toEqual({ kind: "signedIn", ...GRACE });
+    expect(h.fake.client.cachedUser()).toEqual(GRACE);
   });
 
   test.each([

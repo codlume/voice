@@ -470,9 +470,8 @@ async function main() {
         () => helper.send({ type: "permissions.check" }),
         PERMISSION_POLL_MS,
       );
-    } else if (!wanted && permissionPoll) {
-      clearInterval(permissionPoll);
-      permissionPoll = null;
+    } else if (!wanted) {
+      stopPermissionPolling();
     }
   }
 

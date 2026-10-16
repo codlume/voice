@@ -19,7 +19,7 @@ export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
-export class Stream {
+class Stream {
   items = [];
   #cursor = 0;
   #waiters = [];
@@ -141,6 +141,16 @@ export class Page {
   }
 }
 
+export async function evaluateInMain(inspectPort, expression) {
+  const targets = await (await fetch(`http://127.0.0.1:${inspectPort}/json`)).json();
+  const main = await Page.open(targets[0].webSocketDebuggerUrl);
+  try {
+    return await main.evaluate(expression);
+  } finally {
+    main.close();
+  }
+}
+
 // Every process this script starts leads its own group, so shutdown can signal the tools a
 // child spawned too and a terminal Ctrl+C reaches only this script.
 const children = new Set();
@@ -154,35 +164,30 @@ export function start(command, args, options) {
 
 export async function stopChildren() {
   const exits = [...children].map((child) => new Promise((resolve) => child.once("exit", resolve)));
-  for (const child of children) signalGroup(child, "SIGTERM");
+  for (const child of children) signalGroup(child.pid, "SIGTERM");
   const force = setTimeout(() => {
-    for (const child of children) signalGroup(child, "SIGKILL");
+    for (const child of children) signalGroup(child.pid, "SIGKILL");
   }, 3000);
   await Promise.all(exits);
   clearTimeout(force);
 }
 
-function signalGroup(child, signal) {
+export function signalGroup(pid, signal) {
   try {
-    process.kill(-child.pid, signal);
+    process.kill(-pid, signal);
   } catch {}
-}
-
-export async function prepareTestModels() {
-  const dir = modelsDir();
-  console.error(`preparing test models in ${dir}`);
-  await Promise.all([
-    downloadS1Mini({ dir }),
-    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
-  ]);
-  return dir;
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
-  const cache = await prepareTestModels();
+  const cache = modelsDir();
+  console.error(`preparing test models in ${cache}`);
+  await Promise.all([
+    downloadS1Mini({ dir: cache }),
+    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
+  ]);
   const userData = join(tmpdir(), name);
   rmSync(userData, { recursive: true, force: true });
   const models = join(userData, "models");

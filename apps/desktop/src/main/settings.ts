@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { STYLINGS } from "@voice/cleanup/prompt";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -15,7 +16,6 @@ import { parseZoomLevel } from "../shared/zoom.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
 
 const THEMES = ["system", "light", "dark"] as const;
-const STYLINGS = ["casual", "semi-casual", "semi-formal", "formal"] as const;
 const CONSENTS = ["on", "off"] as const;
 
 const pick = <const T extends readonly string[], F extends T[number] | null>(

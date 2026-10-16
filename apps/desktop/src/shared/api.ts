@@ -1,3 +1,5 @@
+import type { CleanupStyle } from "@voice/cleanup/prompt";
+
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
@@ -135,7 +137,7 @@ export type Settings = {
   theme: Theme;
   cleanup: {
     enabled: boolean;
-    styling: "casual" | "semi-casual" | "semi-formal" | "formal";
+    styling: CleanupStyle["styling"];
   };
   diagnostics: DiagnosticsConsent;
   snippets: readonly Snippet[];

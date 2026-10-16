@@ -190,7 +190,7 @@ export function MicrophoneRow({
         <div {...stylex.props(styles.clip)}>
           <div {...stylex.props(styles.body)}>
             {running && (
-              <div aria-hidden="true" data-level={level.toFixed(2)} {...stylex.props(styles.track)}>
+              <div aria-hidden="true" {...stylex.props(styles.track)}>
                 <div {...stylex.props(styles.fill)} style={{ width: `${level * 100}%` }} />
               </div>
             )}

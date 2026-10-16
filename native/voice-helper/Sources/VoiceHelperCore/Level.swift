@@ -1,13 +1,8 @@
 import Accelerate
 import Foundation
 
-public func rms(_ samples: UnsafeBufferPointer<Float>) -> Float {
-    guard !samples.isEmpty else { return 0 }
-    return vDSP.rootMeanSquare(samples)
-}
-
 public func rms(_ samples: [Float]) -> Float {
-    samples.withUnsafeBufferPointer(rms)
+    samples.isEmpty ? 0 : vDSP.rootMeanSquare(samples)
 }
 
 /// Maps RMS to a 0...1 meter on a dBFS scale: silence is 0, normal speech

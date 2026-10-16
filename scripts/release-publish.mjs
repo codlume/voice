@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { compareVersions, parseVersion } from "./release-version.mjs";
 
@@ -41,27 +41,25 @@ export function releaseBaseUrl(value) {
   }
 }
 
-function requireInstallerFiles(names) {
+function requireInstallerFiles(subject, names) {
   if (
     !names.some((name) => name.endsWith(".zip")) ||
     !names.some((name) => name.endsWith(".dmg"))
   ) {
-    throw new Error("Release feed requires ZIP and DMG artifacts");
+    throw new Error(`${subject} requires ZIP and DMG artifacts`);
   }
 }
 
-export function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
+function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
   const feed = readFeed(source);
   if (feed.version !== version)
     throw new Error("Builder feed version differs from artifact version");
-  if (
-    ![...artifacts.keys()].some((name) => name.endsWith(".zip")) ||
-    ![...artifacts.keys()].some((name) => name.endsWith(".dmg"))
-  ) {
-    throw new Error("Release requires ZIP, DMG, and an updater URL");
-  }
+  requireInstallerFiles("Release", [...artifacts.keys()]);
   for (const name of artifacts.keys()) artifactName(name);
-  requireInstallerFiles(feed.files.map((item) => artifactName(item?.url)));
+  requireInstallerFiles(
+    "Release feed",
+    feed.files.map((item) => artifactName(item?.url)),
+  );
   for (const item of feed.files) {
     if (!item || typeof item !== "object") throw new Error("Invalid builder feed file");
     const name = artifactName(item.url);
@@ -127,7 +125,7 @@ export async function preflightRelease({ store, channel, version, baseUrl }) {
     if (item.url !== expected) throw new Error(`Unexpected published artifact URL: ${item.url}`);
     return name;
   });
-  requireInstallerFiles(names);
+  requireInstallerFiles("Release feed", names);
   for (let index = 0; index < feed.files.length; index += 1) {
     const item = feed.files[index];
     const name = names[index];
@@ -200,20 +198,23 @@ function aws(args, input) {
   });
 }
 
+const tempPath = () =>
+  join(
+    process.env.RUNNER_TEMP || "/tmp",
+    `voice-r2-${process.pid}-${Math.random().toString(16).slice(2)}`,
+  );
+
 export function r2Store(bucket) {
   return {
     async get(key) {
       try {
         // get-object writes to a file. Use a unique file to avoid stdout protocol quirks.
-        const path = join(
-          process.env.RUNNER_TEMP || "/tmp",
-          `voice-r2-${process.pid}-${Math.random().toString(16).slice(2)}`,
-        );
+        const path = tempPath();
         try {
           aws(["get-object", "--bucket", bucket, "--key", key, path]);
           return readFileSync(path);
         } finally {
-          await import("node:fs/promises").then(({ rm }) => rm(path, { force: true }));
+          rmSync(path, { force: true });
         }
       } catch (error) {
         if (/NoSuchKey|404|Not Found/.test(String(error.stderr || error))) return null;
@@ -221,12 +222,8 @@ export function r2Store(bucket) {
       }
     },
     async put(key, bytes, { cache, contentType = "application/octet-stream" }) {
-      const path = join(
-        process.env.RUNNER_TEMP || "/tmp",
-        `voice-r2-${process.pid}-${Math.random().toString(16).slice(2)}`,
-      );
+      const path = tempPath();
       try {
-        const { writeFileSync } = await import("node:fs");
         writeFileSync(path, bytes);
         aws([
           "put-object",
@@ -242,7 +239,7 @@ export function r2Store(bucket) {
           contentType,
         ]);
       } finally {
-        await import("node:fs/promises").then(({ rm }) => rm(path, { force: true }));
+        rmSync(path, { force: true });
       }
     },
   };
@@ -262,7 +259,7 @@ if (process.argv[1]?.endsWith("/release-publish.mjs")) {
   }
   const dir = "apps/desktop/release";
   const names = readdirSync(dir).filter((name) => /\.(zip|dmg|blockmap)$/.test(name));
-  const artifacts = new Map(names.map((name) => [basename(name), readFileSync(join(dir, name))]));
+  const artifacts = new Map(names.map((name) => [name, readFileSync(join(dir, name))]));
   const builderFeed = readFileSync(join(dir, "latest-mac.yml"), "utf8");
   const releaseNotes = notesFile ? readFileSync(notesFile, "utf8") : "";
   console.log(

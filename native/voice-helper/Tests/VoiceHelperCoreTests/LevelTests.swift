@@ -19,14 +19,10 @@ import Testing
     #expect(rms([Float](repeating: 0, count: 100)) == 0)
 }
 
-@Test func rmsOfSignedSamplesAndBufferSlice() {
+@Test func rmsOfSignedSamples() {
     #expect(rms([-0.25]) == 0.25)
     #expect(rms([0.5, -0.5, 0.5]) == 0.5)
-    let samples: [Float] = [100, 0.25, -0.5, 0.75, -1, 0, 100]
-    samples.withUnsafeBufferPointer { buffer in
-        let slice = UnsafeBufferPointer(rebasing: buffer[1..<6])
-        #expect(abs(rms(slice) - Float(0.375).squareRoot()) < 1e-6)
-    }
+    #expect(abs(rms([0.25, -0.5, 0.75, -1, 0]) - Float(0.375).squareRoot()) < 1e-6)
 }
 
 @Test func rmsOfLongQuietRecording() {

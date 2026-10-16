@@ -5,7 +5,7 @@ import { storage } from "@better-auth/electron/storage";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vite-plus/test";
 import type { UpdateChannel } from "../shared/api.ts";
 import { createVoiceAuthClient } from "./account-client.ts";
-import { harness } from "./account.test-harness.ts";
+import { USER, harness } from "./account.test-harness.ts";
 import { authSessionStored, authStorageKeys, authStored } from "./account-storage.ts";
 
 // The real plugin and its Conf storage run against a fake Electron. safeStorage is a reversible
@@ -31,24 +31,11 @@ const electron = vi.hoisted(() => {
 });
 vi.mock("electron", () => ({ default: electron.api, ...electron.api }));
 export { electron };
+export { GRACE, USER } from "./account.test-harness.ts";
 
 export const API = {
   stable: "https://api.example.com",
   nightly: "https://api-nightly.example.com",
-};
-export const USER = {
-  id: "ada-id",
-  name: "Ada Lovelace",
-  firstName: "Ada",
-  lastName: "Lovelace",
-  email: "ada@example.com",
-};
-export const GRACE = {
-  id: "grace-id",
-  name: "Grace Hopper",
-  firstName: "Grace",
-  lastName: "Hopper",
-  email: "grace@example.com",
 };
 export const PICTURED = { ...USER, image: "https://lh3.googleusercontent.com/a/ada-picture=s96-c" };
 
@@ -71,6 +58,8 @@ export const signedIn = (token: string, user: Record<string, unknown> = USER) =>
     { token, session: { token }, user },
     { headers: { "set-cookie": `better-auth.session_token=${token}; Max-Age=3600; Path=/` } },
   );
+export const confirmsSignOut = (url: string) =>
+  url.endsWith("/sign-out") ? json({ success: true }) : json(null);
 export const client = (channel: UpdateChannel) =>
   createVoiceAuthClient({ apiUrl: API[channel], installedChannel: channel, log });
 

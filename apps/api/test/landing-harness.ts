@@ -5,13 +5,13 @@ import { landingPage } from "../src/landing.ts";
 
 const script = landingPage.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
 
-export type Device = {
+type Device = {
   platform?: string;
   userAgentData?: { platform: string };
   maxTouchPoints?: number;
 };
 
-export type PageCall = { fetch: string; init: unknown } | { replace: string } | { copy: string };
+type PageCall = { fetch: string; init: unknown } | { replace: string } | { copy: string };
 
 export function openLanding(
   cookie: string,
