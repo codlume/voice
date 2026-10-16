@@ -53,6 +53,38 @@ export function restartRefusal(request: RestartRequest, history: HistoryState): 
   return null;
 }
 
+type CheckOutcome =
+  | { kind: "offer"; version: string; notes: readonly string[] }
+  | { kind: "none" }
+  | { kind: "error" };
+
+function reconcile(status: UpdateStatus, outcome: CheckOutcome): UpdateStatus {
+  const standing = pendingUpdate(status);
+  switch (outcome.kind) {
+    case "offer": {
+      const { version, notes } = outcome;
+      if (standing?.version === version) return status;
+      return standing && standing.kind !== "available"
+        ? { kind: "downloading", version, notes, percent: 0 }
+        : { kind: "available", version, notes };
+    }
+    case "none":
+      return status.kind === "ready" ? status : { kind: "current" };
+    case "error":
+      if (status.kind === "downloading")
+        return {
+          kind: "failed",
+          message: "The update could not be downloaded. Check your connection and try again.",
+        };
+      return standing
+        ? status
+        : {
+            kind: "failed",
+            message: "Could not check for updates. Check your connection and try again.",
+          };
+  }
+}
+
 type Engine = Pick<
   AppUpdater,
   | "autoDownload"
@@ -124,11 +156,12 @@ export function createUpdates({
     return engine;
   }
 
-  async function performCheck(expectedGeneration: number, channel: UpdateChannel) {
-    if (!loadEngine || !release) return;
-    const current = () => !disposed && generation === expectedGeneration;
-    publish({ kind: "checking" });
+  const stillApplies = (expectedGeneration: number) =>
+    !disposed && !restarting && generation === expectedGeneration;
+
+  async function readFeed(channel: UpdateChannel): Promise<CheckOutcome> {
     try {
+      if (!loadEngine || !release) throw new Error("Updates are disabled");
       const updater = loadedEngine(loadEngine);
       updater.setFeedURL({
         provider: "generic",
@@ -141,41 +174,33 @@ export function createUpdates({
       // The library's channel setter enables downgrades, even for ordinary checks.
       updater.allowDowngrade = channel !== snapshot.installedChannel;
       const result = await updater.checkForUpdates();
-      if (!current()) return;
       if (!result) throw new Error("Updater did not return a result");
-      if (!result.isUpdateAvailable) {
-        publish({ kind: "current" });
-        return;
-      }
+      if (!result.isUpdateAvailable) return { kind: "none" };
       const version = result.updateInfo.version;
       if ((channel === "nightly") !== version.includes("-nightly.")) {
         throw new Error("The update feed contains a different release channel");
       }
-      publish({
-        kind: "available",
-        version,
-        notes: releaseNoteItems(result.updateInfo.releaseNotes),
-      });
+      return { kind: "offer", version, notes: releaseNoteItems(result.updateInfo.releaseNotes) };
     } catch {
-      if (current())
-        publish({
-          kind: "failed",
-          message: "Could not check for updates. Check your connection and try again.",
-        });
+      return { kind: "error" };
     }
   }
 
-  // The engine downloads the release its last check found. No check runs while an update
-  // is available, so that is the release the user chose.
+  async function performCheck(expectedGeneration: number) {
+    const outcome = await readFeed(snapshot.channel);
+    if (!stillApplies(expectedGeneration)) return;
+    const next = reconcile(snapshot.status, outcome);
+    if (next !== snapshot.status) publish(next);
+    if (next.kind === "downloading") await performDownload(expectedGeneration, next);
+  }
+
   async function performDownload(
     expectedGeneration: number,
-    { version, notes }: Extract<UpdateStatus, { kind: "available" }>,
+    { version, notes }: Extract<UpdateStatus, { kind: "downloading" }>,
   ) {
     if (!engine) return;
-    const current = () => !disposed && generation === expectedGeneration;
-    publish({ kind: "downloading", version, notes, percent: 0 });
     const progress = ({ percent }: { percent: number }) => {
-      if (current())
+      if (stillApplies(expectedGeneration))
         publish({
           kind: "downloading",
           version,
@@ -187,7 +212,7 @@ export function createUpdates({
     try {
       await engine.downloadUpdate();
     } catch {
-      if (current())
+      if (stillApplies(expectedGeneration))
         publish({
           kind: "failed",
           message: "The update could not be downloaded. Check your connection and try again.",
@@ -196,7 +221,7 @@ export function createUpdates({
     } finally {
       engine.removeListener("download-progress", progress);
     }
-    if (current()) publish({ kind: "ready", version, notes });
+    if (stillApplies(expectedGeneration)) publish({ kind: "ready", version, notes });
   }
 
   function run(task: (expectedGeneration: number) => Promise<void>): Promise<void> {
@@ -209,15 +234,21 @@ export function createUpdates({
   }
 
   function check(): Promise<void> {
-    const { kind } = snapshot.status;
-    if (kind === "available" || kind === "ready") return Promise.resolve();
-    return run((expectedGeneration) => performCheck(expectedGeneration, snapshot.channel));
+    return run((expectedGeneration) => {
+      if (!pendingUpdate(snapshot.status)) publish({ kind: "checking" });
+      return performCheck(expectedGeneration);
+    });
   }
 
   function download(): Promise<void> {
     const update = snapshot.status;
     if (update.kind !== "available") return Promise.resolve();
-    return run((expectedGeneration) => performDownload(expectedGeneration, update));
+    return run((expectedGeneration) => {
+      // The engine downloads whatever its last check found, and the feed may have moved since
+      // the user saw this offer. Re-read it first; a newer release replaces the offer.
+      publish({ kind: "downloading", version: update.version, notes: update.notes, percent: 0 });
+      return performCheck(expectedGeneration);
+    });
   }
 
   return {
@@ -230,7 +261,7 @@ export function createUpdates({
         () => {
           void check();
         },
-        4 * 60 * 60 * 1000,
+        60 * 60 * 1000,
       );
       startupTimer.unref();
       pollTimer.unref();

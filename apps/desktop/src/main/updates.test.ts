@@ -1,9 +1,9 @@
 import { EventEmitter } from "node:events";
 
-import type { UpdateCheckResult } from "electron-updater";
+import type { UpdateCheckResult, UpdateInfo } from "electron-updater";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { UpdatesSnapshot } from "../shared/api.ts";
+import type { UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
 import {
   createUpdates,
@@ -12,43 +12,58 @@ import {
   restartRefusal,
 } from "./updates.ts";
 
-function result(
-  version = "0.0.2",
-  isUpdateAvailable = true,
-  releaseNotes: string | null = null,
-): UpdateCheckResult {
-  const updateInfo = {
-    version,
-    releaseNotes,
-    files: [],
-    path: "Voice.zip",
-    sha512: "hash",
-    releaseDate: "2026-09-26",
-  };
-  return { updateInfo, versionInfo: updateInfo, isUpdateAvailable };
-}
+type Feed = { version: string; releaseNotes?: string };
 
+/**
+ * Models electron-updater 6.8.9: a check compares the feed with the installed version, an
+ * available check stores what it found, and downloadUpdate stages that stored release.
+ */
 class FakeUpdater extends EventEmitter {
   autoDownload = true;
   autoInstallOnAppQuit = true;
   allowPrerelease = false;
   allowDowngrade = true;
   channel = "latest";
+  installed = "0.0.1";
+  feed: Feed = { version: "0.0.2" };
+  found: UpdateInfo | null = null;
+  staged: string | null = null;
   setFeedURL = vi.fn();
-  checkForUpdates = vi.fn(async () => result());
-  downloadUpdate = vi.fn(async () => ["Voice.zip"]);
+  checkForUpdates = vi.fn(() => this.read());
+  downloadUpdate = vi.fn(() => this.fetch());
   quitAndInstall = vi.fn();
+
+  async read(): Promise<UpdateCheckResult> {
+    const updateInfo: UpdateInfo = {
+      version: this.feed.version,
+      releaseNotes: this.feed.releaseNotes ?? null,
+      files: [],
+      path: "Voice.zip",
+      sha512: "hash",
+      releaseDate: "2026-09-26",
+    };
+    const isUpdateAvailable = updateInfo.version !== this.installed;
+    if (isUpdateAvailable) this.found = updateInfo;
+    return { updateInfo, versionInfo: updateInfo, isUpdateAvailable };
+  }
+
+  async fetch(): Promise<string[]> {
+    if (!this.found) throw new Error("Please check update first");
+    this.staged = this.found.version;
+    return ["Voice.zip"];
+  }
 }
 
 function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   const engine = new FakeUpdater();
+  if (options.nightly) engine.installed = "0.0.3-nightly.8";
   const loadEngine = vi.fn(() => engine);
   const snapshots: UpdatesSnapshot[] = [];
   const canRestart = vi.fn(() => true);
   const prepareRestart = vi.fn(async () => {});
   const onRestartFailure = vi.fn();
   const initial: UpdatesSnapshot = {
-    version: options.nightly ? "0.0.3-nightly.8" : "0.0.1",
+    version: engine.installed,
     installedChannel: options.nightly ? "nightly" : "stable",
     channel: options.nightly ? "nightly" : "stable",
     status: options.disabled ? { kind: "disabled", reason: "Development" } : { kind: "idle" },
@@ -173,13 +188,11 @@ describe("updates", () => {
   test("automatically checks, downloads only when asked, and never installs on normal quit", async () => {
     vi.useFakeTimers();
     const { updates, engine, status } = setup();
-    engine.checkForUpdates.mockResolvedValue(
-      result(
-        "0.0.2",
-        true,
+    engine.feed = {
+      version: "0.0.2",
+      releaseNotes:
         "## What's Changed\n* fix: one by @someone in https://github.com/codlume/voice/pull/7",
-      ),
-    );
+    };
     const notes = ["fix: one by @someone in #7"];
     updates.start();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
@@ -211,11 +224,11 @@ describe("updates", () => {
   test("keeps one error listener across every kind of check and none after dispose", async () => {
     vi.useFakeTimers();
     const { updates, engine } = setup();
-    engine.checkForUpdates.mockResolvedValue(result("0.0.1", false));
+    engine.feed = { version: "0.0.1" };
     updates.start();
     await vi.advanceTimersByTimeAsync(15_000);
     await updates.check();
-    await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     await updates.setChannel("nightly");
     expect(engine.checkForUpdates).toHaveBeenCalledTimes(4);
     expect(engine.listenerCount("error")).toBe(1);
@@ -234,36 +247,151 @@ describe("updates", () => {
     expect(status().kind).toBe("available");
   });
 
-  test("an available update waits for the user and download acts only on it", async () => {
+  test("re-checks a standing offer silently and downloads only when asked", async () => {
     vi.useFakeTimers();
-    const { updates, engine, status } = setup();
+    const { updates, engine, snapshots, status } = setup();
     await updates.download();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     updates.start();
     await vi.advanceTimersByTimeAsync(15_000);
-    await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
-    await updates.check();
-    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
-    expect(engine.downloadUpdate).not.toHaveBeenCalled();
     expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    const offered = snapshots.length;
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    await updates.check();
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(3);
+    expect(snapshots.length).toBe(offered);
+    expect(engine.downloadUpdate).not.toHaveBeenCalled();
     await updates.download();
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    const ready = snapshots.length;
     await updates.download();
-    await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
-    expect(status().kind).toBe("ready");
-    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    await updates.check();
+    expect(snapshots.length).toBe(ready);
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
     updates.dispose();
   });
 
-  test("download fetches the update the user saw without checking the feed again", async () => {
+  test("moves a standing offer to the release the feed now carries", async () => {
+    const { updates, engine, snapshots } = setup();
+    await updates.check();
+    engine.feed = {
+      version: "0.0.3",
+      releaseNotes:
+        "## What's Changed\n* feat: three by @someone in https://github.com/codlume/voice/pull/9",
+    };
+    const before = snapshots.length;
+    await updates.check();
+    expect(snapshots.slice(before).map((s) => s.status)).toEqual([
+      { kind: "available", version: "0.0.3", notes: ["feat: three by @someone in #9"] },
+    ]);
+    expect(engine.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  test("withdraws an offer the feed no longer makes", async () => {
+    const { updates, engine, snapshots } = setup();
+    await updates.check();
+    engine.feed = { version: engine.installed };
+    const before = snapshots.length;
+    await updates.check();
+    expect(snapshots.slice(before).map((s) => s.status)).toEqual([{ kind: "current" }]);
+  });
+
+  test("keeps an offer through a failed check and a ready download through any check", async () => {
     const { updates, engine, snapshots, status } = setup();
     await updates.check();
-    engine.checkForUpdates.mockResolvedValue(result("0.0.3"));
+    engine.checkForUpdates.mockRejectedValueOnce(new Error("offline"));
+    const offered = snapshots.length;
+    await updates.check();
+    expect(snapshots.length).toBe(offered);
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    await updates.download();
+    const ready = snapshots.length;
+    engine.checkForUpdates.mockRejectedValueOnce(new Error("offline"));
+    await updates.check();
+    engine.feed = { version: engine.installed };
+    await updates.check();
+    engine.feed = { version: "0.0.3-nightly.1" };
+    await updates.check();
+    expect(snapshots.length).toBe(ready);
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(engine.downloadUpdate).toHaveBeenCalledOnce();
+  });
+
+  test("download re-reads the feed and fetches the release it now offers", async () => {
+    const { updates, engine, snapshots } = setup();
+    await updates.check();
+    engine.feed = {
+      version: "0.0.3",
+      releaseNotes:
+        "## What's Changed\n* feat: three by @someone in https://github.com/codlume/voice/pull/9",
+    };
+    const notes = ["feat: three by @someone in #9"];
     const before = snapshots.length;
     await updates.download();
-    expect(snapshots.slice(before).map((s) => s.status.kind)).toEqual(["downloading", "ready"]);
-    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
-    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
+    expect(snapshots.slice(before).map((s) => s.status)).toEqual([
+      { kind: "downloading", version: "0.0.2", notes: [], percent: 0 },
+      { kind: "downloading", version: "0.0.3", notes, percent: 0 },
+      { kind: "ready", version: "0.0.3", notes },
+    ]);
+    expect(engine.staged).toBe("0.0.3");
+  });
+
+  test("download fetches nothing when the re-read fails or the feed withdrew the offer", async () => {
+    for (const [disturb, end] of [
+      [
+        (engine: FakeUpdater) => engine.checkForUpdates.mockRejectedValueOnce(new Error("offline")),
+        {
+          kind: "failed",
+          message: "The update could not be downloaded. Check your connection and try again.",
+        },
+      ],
+      [
+        (engine: FakeUpdater) => {
+          engine.feed = { version: engine.installed };
+        },
+        { kind: "current" },
+      ],
+      [
+        (engine: FakeUpdater) => {
+          engine.feed = { version: "0.0.3-nightly.1" };
+        },
+        {
+          kind: "failed",
+          message: "The update could not be downloaded. Check your connection and try again.",
+        },
+      ],
+    ] as const) {
+      const { updates, engine, snapshots } = setup();
+      await updates.check();
+      disturb(engine);
+      const before = snapshots.length;
+      await updates.download();
+      expect(snapshots.slice(before).map((s) => s.status)).toEqual([
+        { kind: "downloading", version: "0.0.2", notes: [], percent: 0 },
+        end,
+      ]);
+      expect(engine.downloadUpdate).not.toHaveBeenCalled();
+      expect(engine.staged).toBeNull();
+    }
+  });
+
+  test("a check in flight when the restart begins publishes nothing and fetches nothing", async () => {
+    const { updates, engine, snapshots, status } = setup();
+    await updates.check();
+    await updates.download();
+    const gate = Promise.withResolvers<void>();
+    engine.checkForUpdates.mockImplementationOnce(() => gate.promise.then(() => engine.read()));
+    engine.feed = { version: "0.0.3" };
+    const inFlight = updates.check();
+    await updates.restart();
+    expect(status()).toEqual({ kind: "installing", version: "0.0.2" });
+    const before = snapshots.length;
+    gate.resolve();
+    await inFlight;
+    expect(snapshots.length).toBe(before);
+    expect(engine.downloadUpdate).toHaveBeenCalledOnce();
+    expect(engine.staged).toBe("0.0.2");
   });
 
   test("development never contacts a feed, even on manual actions", async () => {
@@ -306,12 +434,12 @@ describe("updates", () => {
     const first = updates.download();
     await vi.waitFor(() => expect(engine.downloadUpdate).toHaveBeenCalledOnce());
     const duplicate = updates.check();
-    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
-    engine.checkForUpdates.mockResolvedValue(result("0.0.3-nightly.9"));
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+    engine.feed = { version: "0.0.3-nightly.9" };
     const switching = updates.setChannel("nightly");
     engine.emit("download-progress", { percent: 99 });
     expect(status().kind).toBe("checking");
-    expect(engine.setFeedURL).toHaveBeenCalledOnce();
+    expect(engine.setFeedURL.mock.lastCall?.[0].url).toContain("/channels/stable/");
     download.resolve(["Voice.zip"]);
     await Promise.all([first, duplicate, switching]);
     expect(status()).toEqual({
@@ -337,7 +465,7 @@ describe("updates", () => {
   });
 
   test("a failed download can be retried and a ready update survives duplicate checks", async () => {
-    const { updates, engine, status } = setup();
+    const { updates, engine, snapshots, status } = setup();
     engine.downloadUpdate.mockRejectedValueOnce(new Error("offline"));
     await updates.check();
     await updates.download();
@@ -348,22 +476,51 @@ describe("updates", () => {
     await updates.check();
     expect(status().kind).toBe("available");
     await updates.download();
+    const ready = snapshots.length;
     await updates.check();
     await updates.download();
+    expect(snapshots.length).toBe(ready);
     expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
-    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
     expect(engine.downloadUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  test("re-downloads when the feed moves past a ready update, so the user restarts once", async () => {
+    vi.useFakeTimers();
+    const { updates, engine, snapshots, status } = setup({ nightly: true });
+    engine.feed = { version: "0.0.3-nightly.9" };
+    await updates.check();
+    await updates.download();
+    expect(status()).toEqual({ kind: "ready", version: "0.0.3-nightly.9", notes: [] });
+    engine.feed = {
+      version: "0.0.3-nightly.10",
+      releaseNotes:
+        "## What's Changed\n* fix: two by @someone in https://github.com/codlume/voice/pull/8",
+    };
+    const notes = ["fix: two by @someone in #8"];
+    let statusWhenFetchStarted: UpdateStatus | undefined;
+    engine.downloadUpdate.mockImplementationOnce(() => {
+      statusWhenFetchStarted = status();
+      return engine.fetch();
+    });
+    const before = snapshots.length;
+    updates.start();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(snapshots.slice(before).map((s) => s.status)).toEqual([
+      { kind: "downloading", version: "0.0.3-nightly.10", notes, percent: 0 },
+      { kind: "ready", version: "0.0.3-nightly.10", notes },
+    ]);
+    expect(statusWhenFetchStarted?.kind).toBe("downloading");
+    expect(engine.staged).toBe("0.0.3-nightly.10");
+    updates.dispose();
   });
 
   test("carries the feed's release notes from the available update to the ready one", async () => {
     const { updates, engine, snapshots, status } = setup();
-    engine.checkForUpdates.mockResolvedValue(
-      result(
-        "0.0.2",
-        true,
+    engine.feed = {
+      version: "0.0.2",
+      releaseNotes:
         "## What's Changed\n* feat: add a setting by @someone in https://github.com/codlume/voice/pull/120\n\n**Full Changelog**: https://github.com/codlume/voice/compare/v0.0.1...v0.0.2",
-      ),
-    );
+    };
     await updates.check();
     const notes = ["feat: add a setting by @someone in #120"];
     expect(status()).toEqual({ kind: "available", version: "0.0.2", notes });
@@ -391,7 +548,7 @@ describe("updates", () => {
 
   test("rejects a wrong-channel feed before downloading", async () => {
     const { updates, engine, status } = setup();
-    engine.checkForUpdates.mockResolvedValue(result("0.0.2-nightly.1"));
+    engine.feed = { version: "0.0.2-nightly.1" };
     await updates.check();
     expect(status().kind).toBe("failed");
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
