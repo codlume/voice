@@ -257,7 +257,7 @@ final class Insertion {
     }
 }
 
-private let axMessagingTimeout: Float = 0.3
+let axMessagingTimeout: Float = 0.3
 
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
 /// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
