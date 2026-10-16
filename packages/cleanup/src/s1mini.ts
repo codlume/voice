@@ -138,8 +138,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         const { chunks, countTokens, run } = await prepare(raw, withdraw);
         const control = s1Control(style, raw, chunks.length);
         const stop = AbortSignal.any([withdraw, deadline.signal]);
-        const outputs: (string | undefined)[] = [];
-        for (const chunk of chunks) {
+        const outputs: (string | undefined)[] = chunks.map(() => undefined);
+        for (const [index, chunk] of chunks.entries()) {
           withdraw.throwIfAborted();
           const tokens = countTokens(chunk.text);
           const predictedMs = msPerToken === undefined ? 0 : msPerToken * tokens;
@@ -154,10 +154,10 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           }
           if (tokens >= MIN_TOKENS_FOR_RATE_ESTIMATE)
             msPerToken = (Date.now() - startedAt) / tokens;
-          outputs.push(guarded(chunk.text, generation));
+          outputs[index] = guarded(chunk.text, generation);
         }
         return {
-          text: stitch(raw, chunks, finishOutputs(style.style, outputs, chunks.length)),
+          text: stitch(raw, chunks, finishOutputs(style.style, outputs)),
           chunks: chunks.length,
           cleaned: outputs.filter((output) => output !== undefined).length,
         };

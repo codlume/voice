@@ -17,24 +17,22 @@ const FINISHES: Record<WritingStyle, Finish> = {
   veryCasual: { chunk: lowercase, last: dropFinalPeriod },
 };
 
-// `undefined` is a chunk the guard rejected, and chunks past `outputs` were never cleaned. Both
-// keep the user's exact words, so the ending is restyled only when the last chunk with text
-// came from the model.
 export function finishOutputs(
   style: WritingStyle,
   outputs: readonly (string | undefined)[],
-  chunks: number,
 ): (string | undefined)[] {
   const { chunk, last } = FINISHES[style];
   const finished = outputs.map((output) => (output === undefined ? undefined : chunk(output)));
   const end = finished.findLastIndex((output) => output !== "");
   const ending = finished[end];
-  if (outputs.length === chunks && ending !== undefined) finished[end] = last(ending);
+  if (ending !== undefined) finished[end] = last(ending);
   return finished;
 }
 
-export const finishText = (style: WritingStyle, text: string) =>
-  finishOutputs(style, [text], 1)[0] ?? text;
+export function finishText(style: WritingStyle, text: string): string {
+  const { chunk, last } = FINISHES[style];
+  return last(chunk(text));
+}
 
 const ABBREVIATION_END =
   /(?:^|[^\p{L}\p{N}.])(?:(?:\p{L}\.){2,}|(?:etc|vs|dr|mr|mrs|ms|jr|sr|inc|ltd)\.)$/iu;

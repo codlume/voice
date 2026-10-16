@@ -249,6 +249,22 @@ test("the budget ends the clean with the finished chunks cleaned and the rest ve
   expect(generations()).toHaveLength(2);
 });
 
+test("under Casual, a budget cut keeps the last cleaned chunk's period because raw words follow it", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  const raw = Array.from({ length: lineCount }, (_, i) => line(i)).join("\n");
+  const [cleaned, cut] = chunkTranscript(raw, CHUNK_TOKENS, (t) => t.length);
+  native.delayMs = (chunk) => (chunk === cut!.text ? Infinity : 0);
+
+  const clean = s1.clean(raw, { style: "casual", layout: "general" }, { budgetMs: 5000 });
+  await vi.advanceTimersByTimeAsync(5000);
+
+  await expect(clean).resolves.toMatchObject({
+    text: cleaned!.text.toUpperCase() + raw.slice(cleaned!.end),
+    cleaned: 1,
+  });
+});
+
 test("the budget counts from the call, so a clean queued behind a long one gets less", async () => {
   vi.useFakeTimers();
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });

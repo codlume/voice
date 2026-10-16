@@ -57,13 +57,10 @@ test.each([
     ["Let's go.", undefined, ""],
     ["let's go.", undefined, ""],
   ],
+  ["the deadline skipped the last chunk", ["Let's go.", undefined], ["let's go.", undefined]],
 ] as const)(
   "when %s, only the ending of the model's text is restyled",
   (_name, outputs, expected) => {
-    expect(finishOutputs("veryCasual", outputs, outputs.length)).toEqual(expected);
+    expect(finishOutputs("veryCasual", outputs)).toEqual(expected);
   },
 );
-
-test("the ending stays when chunks were left uncleaned", () => {
-  expect(finishOutputs("casual", ["Let's go."], 2)).toEqual(["Let's go."]);
-});
