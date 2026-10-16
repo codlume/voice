@@ -44,17 +44,22 @@ private final class SilentCapture {
 
 @Suite(.serialized)
 struct TranscriptTargetTests {
-    @Test @MainActor func aTestOverrideKeepsItsHostOnTheTranscript() async throws {
+    @Test(arguments: [
+        (seed: .read("mail.google.com"), host: "mail.google.com"),
+        (seed: .read(nil), host: nil),
+        (seed: .pending, host: nil),
+    ] as [(seed: HostRead, host: String?)])
+    @MainActor func reportsTheHostTheSessionStartedWith(seed: HostRead, host: String?) async throws {
         let harness = try SilentCapture()
         defer { harness.close() }
-        let target = harness.insertion.recordTarget(pid: nil, bundleId: "com.google.Chrome", detectHost: false, log: nil)
-        target.host.withLock { $0.publish("mail.google.com", inputUnchanged: true) }
+        let target = harness.insertion.recordTarget(pid: nil, bundleId: "com.google.Chrome", host: seed, log: nil)
 
         harness.start(target)
         let reported = try #require(try await harness.transcript()["target"] as? [String: Any])
 
         #expect(reported["bundleId"] as? String == "com.google.Chrome")
-        #expect(reported["host"] as? String == "mail.google.com")
+        #expect(reported["host"] as? String == host)
+        #expect(reported["host"] != nil, "the host key is on the wire as null, not missing")
     }
 
     @Test(arguments: [nil, "capture.started"])

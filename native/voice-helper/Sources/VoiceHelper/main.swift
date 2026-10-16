@@ -62,8 +62,8 @@ final class Helper {
             testTarget = nil
             let target = insertion.recordTarget(
                 pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
-                detectHost: detectHost && override == nil, log: testMode ? { [output] in output.log(.info, $0) } : nil)
-            if let override { target.host.withLock { $0.publish(override.host, inputUnchanged: true) } }
+                host: override.map { .read($0.host) } ?? (detectHost ? .pending : .read(nil)),
+                log: testMode ? { [output] in output.log(.info, $0) } : nil)
             if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone) {
                 target.settleHost()
             }

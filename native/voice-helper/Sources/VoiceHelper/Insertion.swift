@@ -14,11 +14,12 @@ final class InsertTarget {
     let pid: pid_t?
     let bundleId: String?
     var focus = CapturedFocus<FocusElement>.pending
-    let host = OSAllocatedUnfairLock<HostRead>(initialState: .pending)
+    let host: OSAllocatedUnfairLock<HostRead>
 
-    init(pid: pid_t?, bundleId: String?) {
+    init(pid: pid_t?, bundleId: String?, host: HostRead = .pending) {
         self.pid = pid
         self.bundleId = bundleId
+        self.host = OSAllocatedUnfairLock(initialState: host)
     }
 
     func settleHost() {
@@ -43,14 +44,16 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
-    func recordTarget(pid: pid_t?, bundleId: String?, detectHost: Bool, log: ((String) -> Void)?) -> InsertTarget {
-        let target = InsertTarget(pid: pid, bundleId: bundleId)
+    /// `host` is what the session knows when it starts: `.pending` asks for a read when the app is
+    /// a browser, and a `.read` host (a test override, or none wanted) goes out as given.
+    func recordTarget(pid: pid_t?, bundleId: String?, host: HostRead, log: ((String) -> Void)?) -> InsertTarget {
+        let target = InsertTarget(pid: pid, bundleId: bundleId, host: host)
         guard let pid, AXIsProcessTrusted() else {
             target.focus = .unavailable
             target.settleHost()
             return target
         }
-        let readHost = detectHost && isBrowser(bundleId)
+        let readHost = host == .pending && isBrowser(bundleId)
         if !readHost { target.settleHost() }
         let input = focusInputStamp()
         let inputUnchanged = { focusInputStamp() == input }
