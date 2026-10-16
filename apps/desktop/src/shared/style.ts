@@ -25,7 +25,7 @@ export const DEFAULT_STYLES: CategoryStyles = {
 };
 
 /** Where one session's text goes. Never stored, logged, or sent. */
-export type Target = { bundleId: BundleId | null; host: Host | null };
+export type Target = { bundleId: BundleId; host: Host | null };
 
 function parseAssignment(item: unknown): Assignment | null {
   if (typeof item !== "object" || item === null || !("kind" in item) || !("category" in item)) {
@@ -63,16 +63,6 @@ export function parseAssignments(raw: unknown): Assignment[] {
   return [...byKey.values()];
 }
 
-export function parseTarget(
-  raw: { bundleId: string | null; host: string | null } | null,
-): Target | null {
-  if (raw === null) return null;
-  return {
-    bundleId: raw.bundleId === null ? null : parseBundleId(raw.bundleId),
-    host: raw.host === null ? null : parseHost(raw.host),
-  };
-}
-
 function categoryBySuffix(
   host: string | null,
   sites: ReadonlyMap<string, Category>,
@@ -91,13 +81,11 @@ export function classify(target: Target | null, assignments: readonly Assignment
     if (assignment.kind === "site") userSites.set(assignment.host, assignment.category);
     else userApps.set(assignment.bundleId, assignment.category);
   }
-  const app = (apps: ReadonlyMap<string, Category>) =>
-    bundleId === null ? undefined : apps.get(bundleId);
   return (
     categoryBySuffix(host, userSites) ??
-    app(userApps) ??
+    userApps.get(bundleId) ??
     categoryBySuffix(host, SITE_CATEGORIES) ??
-    app(APP_CATEGORIES) ??
+    APP_CATEGORIES.get(bundleId) ??
     "other"
   );
 }

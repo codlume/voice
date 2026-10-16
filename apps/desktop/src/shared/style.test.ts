@@ -14,23 +14,30 @@ import {
   classify,
   cleanupStyleFor,
   parseAssignments,
-  parseTarget,
   type CategoryStyles,
+  type Target,
 } from "./style.ts";
 
-const target = (bundleId: string | null, host: string | null = null) =>
-  parseTarget({ bundleId, host });
+const target = (bundleId: string, host: string | null = null): Target => {
+  const app = parseBundleId(bundleId);
+  if (app === null) throw new Error(`not a bundle id: ${bundleId}`);
+  return { bundleId: app, host: host === null ? null : parseHost(host) };
+};
 
 describe("classify", () => {
-  test.each<[string, ReturnType<typeof target>, Category]>([
+  test.each<[string, Target | null, Category]>([
     ["no target", null, "other"],
     ["a known app with no host", target("com.apple.mail"), "email"],
     ["a browser at a known site", target("com.google.Chrome", "mail.google.com"), "email"],
     ["a subdomain of a known site", target("com.google.Chrome", "app.slack.com"), "work"],
     ["a lookalike domain", target("com.google.Chrome", "notslack.com"), "other"],
-    ["a domain that only ends in a known one's letters", target(null, "box.com"), "other"],
-    ["a short known site", target(null, "x.com"), "personal"],
-    ["a subdomain of a short known site", target(null, "mobile.x.com"), "personal"],
+    [
+      "a domain that only ends in a known one's letters",
+      target("com.google.Chrome", "box.com"),
+      "other",
+    ],
+    ["a short known site", target("com.google.Chrome", "x.com"), "personal"],
+    ["a subdomain of a short known site", target("com.google.Chrome", "mobile.x.com"), "personal"],
     ["an uppercase bundle id", target("COM.APPLE.MAIL"), "email"],
     ["an unknown app", target("com.example.Editor"), "other"],
   ])("%s", (_, given, category) => {

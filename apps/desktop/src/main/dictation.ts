@@ -9,7 +9,7 @@ import {
   type DictationLanguage,
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
-import { classify, cleanupStyleFor, parseTarget } from "../shared/style.ts";
+import { classify, cleanupStyleFor } from "../shared/style.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
@@ -358,14 +358,13 @@ export function createDictation(options: DictationOptions): Dictation {
           asrMs: event.asrMs,
         });
         const { settings } = store.state;
-        const target = parseTarget(event.target);
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
             ? cleanupStyleFor(
-                classify(target, settings.cleanup.assignments),
+                classify(event.target, settings.cleanup.assignments),
                 settings.cleanup.styles,
               )
             : null,

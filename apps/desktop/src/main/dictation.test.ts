@@ -2,6 +2,7 @@ import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
 import { type CleanResult, type CleanupStyle } from "@voice/cleanup";
+import * as Option from "effect/Option";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
@@ -14,6 +15,7 @@ import {
   parseAssignments,
   type Assignment,
   type CategoryStyles,
+  type Target,
 } from "../shared/style.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
@@ -32,7 +34,7 @@ import {
   type SessionReport,
 } from "./dictation.ts";
 import { createHistory } from "./history.ts";
-import type { HelperCommand, HelperEvent } from "./protocol.ts";
+import { decodeTarget, type HelperCommand, type HelperEvent } from "./protocol.ts";
 import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
@@ -215,12 +217,12 @@ async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-type Target = Extract<HelperEvent, { type: "transcript" }>["target"];
+const target = (bundleId: string, host: string | null = null) =>
+  Option.getOrThrow(decodeTarget({ bundleId, host }));
+const mailApp = target("com.apple.mail");
+const chromeAt = (host: string) => target("com.google.Chrome", host);
 
-const mailApp: Target = { bundleId: "com.apple.mail", host: null };
-const chromeAt = (host: string): Target => ({ bundleId: "com.google.Chrome", host });
-
-async function dictate(h: ReturnType<typeof harness>, text: string, target: Target = null) {
+async function dictate(h: ReturnType<typeof harness>, text: string, to: Target | null = null) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
   const id = h.id();
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
@@ -233,7 +235,7 @@ async function dictate(h: ReturnType<typeof harness>, text: string, target: Targ
     audioMs: 800,
     asrMs: 100,
     speechMs: 600,
-    target,
+    target: to,
   });
   await flush();
   return id;
@@ -511,8 +513,8 @@ describe("createDictation", () => {
 
   test("inserts and records dictations into Mail and Gmail, and never logs or reports the target", async () => {
     const h = harness();
-    for (const target of [mailApp, chromeAt("mail.google.com")]) {
-      const id = await dictate(h, "hello world", target);
+    for (const to of [mailApp, chromeAt("mail.google.com")]) {
+      const id = await dictate(h, "hello world", to);
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
       h.dictation.onHelperEvent({
         type: "insert.result",
@@ -743,14 +745,9 @@ describe("createDictation", () => {
     other: "formal",
   };
 
-  test.each<[string, Target, readonly Assignment[], CleanupStyle]>([
+  test.each<[string, Target | null, readonly Assignment[], CleanupStyle]>([
     ["Mail", mailApp, [], { style: "formal", layout: "email" }],
-    [
-      "Messages",
-      { bundleId: "com.apple.MobileSMS", host: null },
-      [],
-      { style: "veryCasual", layout: "general" },
-    ],
+    ["Messages", target("com.apple.MobileSMS"), [], { style: "veryCasual", layout: "general" }],
     ["Gmail in Chrome", chromeAt("mail.google.com"), [], { style: "formal", layout: "email" }],
     [
       "another site in Chrome",
@@ -761,7 +758,7 @@ describe("createDictation", () => {
     ["an unknown target", null, [], { style: "formal", layout: "general" }],
     [
       "Mail with a host that does not parse",
-      { bundleId: "com.apple.mail", host: "not a host" },
+      target("com.apple.mail", "not a host"),
       [],
       { style: "formal", layout: "email" },
     ],
@@ -779,9 +776,9 @@ describe("createDictation", () => {
       ]),
       { style: "veryCasual", layout: "general" },
     ],
-  ])("cleans a dictation into %s with %j", async (_, target, assignments, expected) => {
+  ])("cleans a dictation into %s with %j", async (_, to, assignments, expected) => {
     const h = harness({ styles: SPREAD, assignments });
-    await dictate(h, "hey", target);
+    await dictate(h, "hey", to);
     expect(h.styles).toStrictEqual([expected]);
   });
 
