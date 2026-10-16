@@ -174,7 +174,7 @@ function PageAnimationSlider({
   onCommit,
 }: {
   saved: number;
-  onCommit: (ms: number) => void;
+  onCommit: (ms: number) => Promise<boolean>;
 }) {
   const [ms, setMs] = useState(saved);
   const [shownSaved, setShownSaved] = useState(saved);
@@ -190,7 +190,12 @@ function PageAnimationSlider({
       <Slider.Root
         value={ms}
         onValueChange={setMs}
-        onValueCommitted={(committed) => committed !== saved && onCommit(committed)}
+        onValueCommitted={(committed) => {
+          if (committed === saved) return;
+          void onCommit(committed).then((ok) => {
+            if (!ok) setMs(saved);
+          });
+        }}
         min={MIN_PAGE_ANIMATION_MS}
         max={MAX_PAGE_ANIMATION_MS}
         step={PAGE_ANIMATION_STEP_MS}
@@ -238,7 +243,7 @@ const updateChannels = [
 type Action = ReturnType<typeof useAction>;
 
 function update(action: Action, patch: SettingsPatch) {
-  void action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
+  return action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
 }
 
 export function GlobeHint() {
