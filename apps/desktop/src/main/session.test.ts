@@ -48,7 +48,10 @@ const started = (now: number) =>
 const NONE: Rewrites = { dictionary: [], snippets: [] };
 const STYLE: CleanupStyle = { style: "casual", layout: "general" };
 const transcript = (text: string, cleanup: CleanupStyle | null, now = 2000, rewrites = NONE) =>
-  [{ type: "transcript", id: ID, text, cleanup, rewrites }, now] as [SessionEvent, number];
+  [{ type: "transcript", id: ID, text, cleanup, rewrites, destination: null }, now] as [
+    SessionEvent,
+    number,
+  ];
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
 const toTranscribing: [SessionEvent, number][] = [...toRecording, up(1000)];
@@ -357,6 +360,7 @@ describe("transcript", () => {
       output: { text: "hello world", html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toEqual([
       remembered("hello world", "hello world"),
@@ -373,6 +377,7 @@ describe("transcript", () => {
       output: { text: "long dictation", html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
@@ -437,6 +442,7 @@ describe("capture the helper stops on its own", () => {
       output: { text: "long dictation", html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
@@ -471,6 +477,7 @@ describe("cleanup", () => {
       output: { text: "Hello, world.", html: null },
       insertedCleanup: "Hello, world.",
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toEqual([
       remembered("hello um world", "Hello, world."),
@@ -487,6 +494,7 @@ describe("cleanup", () => {
       output: { text: "hello um world", html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toContainEqual({
       type: "insert",
@@ -531,6 +539,7 @@ describe("snippets", () => {
       output: { text: EMAIL, html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(effects).toEqual([
       remembered("My email.", EMAIL),
@@ -647,6 +656,7 @@ describe("snippets", () => {
       output: { text: "Ana", html: "<em>Ana</em>" },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(whole.effects).toEqual([
       remembered("My name.", "Ana"),
@@ -839,6 +849,7 @@ describe("idle and stale events", () => {
       id: "old",
       text: "late words",
       cleanup: STYLE,
+      destination: null,
       rewrites: {
         dictionary: [{ id: "1", phrase: "late", replacement: "never typed" }],
         snippets: [
@@ -858,7 +869,18 @@ describe("idle and stale events", () => {
     expect(state).toEqual({ phase: "recording", id: ID, mode: "hold", pressedAt: 0 });
     expect(effects).toEqual([remember]);
     expect(
-      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: null, rewrites: NONE }, 0),
+      step(
+        idle,
+        {
+          type: "transcript",
+          id: "old",
+          text: "  ",
+          cleanup: null,
+          rewrites: NONE,
+          destination: null,
+        },
+        0,
+      ),
     ).toEqual({
       state: idle,
       effects: [],
@@ -903,6 +925,7 @@ describe("idle and stale events", () => {
       output: { text: "late words", html: null },
       insertedCleanup: null,
       dictionaryFixes: 0,
+      destination: null,
     });
     expect(
       run([...toOverdue, [{ type: "transcriptFailed", id: ID, message: "asr broke" }, 50_000]])
@@ -937,7 +960,14 @@ describe("idle and stale events", () => {
     expect(
       step(
         timedOut,
-        { type: "transcript", id: "s2", text: "x", cleanup: null, rewrites: NONE },
+        {
+          type: "transcript",
+          id: "s2",
+          text: "x",
+          cleanup: null,
+          rewrites: NONE,
+          destination: null,
+        },
         41_000,
       ),
     ).toEqual({ state: timedOut, effects: [rememberedLate("x", "s2")] });

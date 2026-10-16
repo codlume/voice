@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
-import type { BundleId, Category } from "../shared/app-categories.ts";
 import {
   supportsCleanup,
   wantsCleanup,
@@ -16,9 +15,9 @@ import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnost
 import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
-  awaitsTranscript,
   dictating,
   step,
+  type Destination,
   type Effect as SessionEffect,
   type Session,
   type SessionEvent,
@@ -62,13 +61,10 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
-export type Destination = { bundleId: BundleId; category: Category };
-
 type Started = {
   id: string;
   language: DictationLanguage;
   pressedAt: number;
-  destination: Destination | null;
   startMs?: number;
   releasedAt?: number;
   audioMs?: number;
@@ -193,7 +189,6 @@ export function createDictation(options: DictationOptions): Dictation {
           id: effect.id,
           language: store.state.settings.dictationLanguage,
           pressedAt: now(),
-          destination: null,
         };
         send({
           type: "capture.start",
@@ -309,7 +304,7 @@ export function createDictation(options: DictationOptions): Dictation {
         language: s?.language ?? "auto",
         paceMs: s?.speechMs ?? s?.audioMs ?? null,
         finishedAt,
-        destination: s?.destination ?? null,
+        destination: produced.destination,
       });
     }
   }
@@ -367,11 +362,6 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);
-        if (awaitsTranscript(store.state.session, event.id)) {
-          track(event.id, {
-            destination: event.target && { bundleId: event.target.bundleId, category },
-          });
-        }
         dispatch({
           type: "transcript",
           id: event.id,
@@ -379,6 +369,7 @@ export function createDictation(options: DictationOptions): Dictation {
           cleanup: willCleanup(event.id)
             ? cleanupStyleFor(category, settings.cleanup.styles)
             : null,
+          destination: event.target && { bundleId: event.target.bundleId, category },
           rewrites: {
             dictionary: settings.dictionary,
             snippets: settings.snippets,

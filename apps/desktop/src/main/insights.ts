@@ -18,7 +18,8 @@ import {
 } from "../shared/insights.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
-import type { Destination, Dictated } from "./dictation.ts";
+import type { Dictated } from "./dictation.ts";
+import type { Destination } from "./session.ts";
 
 export type InsightsStore = {
   record(dictated: Dictated): void;

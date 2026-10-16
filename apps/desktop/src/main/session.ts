@@ -1,7 +1,7 @@
 import type { CleanupStyle } from "@voice/cleanup/style";
 
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
-
+import type { BundleId, Category } from "../shared/app-categories.ts";
 import type { Transcript } from "../shared/history.ts";
 import {
   finalRewrite,
@@ -13,6 +13,9 @@ import {
 
 /** Which key started the session: held for its length, or tapped once to start and again to stop. */
 export type DictationMode = "hold" | "toggle";
+
+/** The app a session's words went into, as Insights counts it. Never the website. */
+export type Destination = { bundleId: BundleId; category: Category };
 
 export type Session =
   | { phase: "idle" }
@@ -26,7 +29,13 @@ export type Session =
     }
   | { phase: "recording"; id: string; mode: DictationMode; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
-  | { phase: "cleaning"; id: string; raw: string; rewrites: Rewrites }
+  | {
+      phase: "cleaning";
+      id: string;
+      raw: string;
+      rewrites: Rewrites;
+      destination: Destination | null;
+    }
   | {
       phase: "inserting";
       id: string;
@@ -34,6 +43,7 @@ export type Session =
       output: Output;
       insertedCleanup: string | null;
       dictionaryFixes: number;
+      destination: Destination | null;
     }
   | { phase: "done"; id: string; outcome: Outcome };
 
@@ -55,6 +65,7 @@ export type SessionEvent =
       text: string;
       cleanup: CleanupStyle | null;
       rewrites: Rewrites;
+      destination: Destination | null;
     }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
@@ -88,9 +99,6 @@ export const idle: Session = { phase: "idle" };
 
 /** A session between the hotkey and its outcome, while the target app must keep focus. */
 export const dictating = (session: Session) => session.phase !== "idle" && session.phase !== "done";
-
-export const awaitsTranscript = (session: Session, id: string) =>
-  (session.phase === "recording" || session.phase === "transcribing") && session.id === id;
 
 function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   const ms = outcome.kind === "inserted" ? IDLE_AFTER_INSERTED_MS : IDLE_AFTER_OTHER_MS;
@@ -137,10 +145,11 @@ function insert(
   raw: string,
   { text, html, dictionaryFixes }: Rewritten,
   insertedCleanup: string | null,
+  destination: Destination | null,
 ): Step {
   const output = { text, html };
   return {
-    state: { phase: "inserting", id, raw, output, insertedCleanup, dictionaryFixes },
+    state: { phase: "inserting", id, raw, output, insertedCleanup, dictionaryFixes, destination },
     effects: [
       { type: "remember", id, raw, text, status: "pending" },
       { type: "insert", id, output },
@@ -205,10 +214,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "transcript": {
       const raw = event.text.trim();
-      if (!awaitsTranscript(state, event.id)) {
-        const duplicate =
-          (state.phase === "cleaning" || state.phase === "inserting") && state.id === event.id;
-        if (duplicate) return same;
+      const current = state.phase !== "idle" && state.id === event.id;
+      // A second transcript for the session already being cleaned or inserted is a duplicate.
+      if (current && (state.phase === "cleaning" || state.phase === "inserting")) return same;
+      const sessionOver =
+        !current || (state.phase !== "transcribing" && state.phase !== "recording");
+      if (sessionOver) {
         const remember: Effect = {
           type: "remember",
           id: event.id,
@@ -218,17 +229,23 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         };
         return { state, effects: raw === "" ? [] : [remember] };
       }
-      if (raw === "") return finish(event.id, { kind: "empty" });
+      if (raw === "") return finish(state.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
       // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
       if (event.cleanup === null || rewritten.entireDictation) {
-        return insert(event.id, raw, rewritten, null);
+        return insert(state.id, raw, rewritten, null, event.destination);
       }
       return {
-        state: { phase: "cleaning", id: event.id, raw, rewrites: event.rewrites },
+        state: {
+          phase: "cleaning",
+          id: state.id,
+          raw,
+          rewrites: event.rewrites,
+          destination: event.destination,
+        },
         effects: [
-          { type: "remember", id: event.id, raw, text: rewritten.text, status: "pending" },
-          { type: "cleanup", id: event.id, raw, style: event.cleanup },
+          { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
+          { type: "cleanup", id: state.id, raw, style: event.cleanup },
         ],
       };
     }
@@ -243,11 +260,23 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (final.text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
-      return insert(state.id, state.raw, final, final.source === "cleaned" ? cleaned : null);
+      return insert(
+        state.id,
+        state.raw,
+        final,
+        final.source === "cleaned" ? cleaned : null,
+        state.destination,
+      );
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
-      return insert(state.id, state.raw, rewrite(state.raw, state.rewrites), null);
+      return insert(
+        state.id,
+        state.raw,
+        rewrite(state.raw, state.rewrites),
+        null,
+        state.destination,
+      );
     }
     case "insertResult": {
       if (state.phase !== "inserting") return same;
