@@ -2,7 +2,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
@@ -71,9 +71,14 @@ export type Copy = {
   deleteFailed: string;
 };
 
-type RowText = { title: string; detail?: string; faded?: boolean };
+type RowText = {
+  title: string;
+  detail?: string;
+  // Fades the row and adds an Off label.
+  off?: boolean;
+};
 
-/** What the editor dialog hands the page to render its fields. */
+/** What the editor dialog hands the page to render its fields and footer. */
 type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
@@ -93,10 +98,10 @@ export function RecordList<T extends { id: string }, F extends string>({
   name,
   example,
   row,
-  renderControls,
   normalize,
   problem,
   renderFields,
+  renderFooter,
   wide = false,
 }: {
   copy: Copy;
@@ -108,17 +113,18 @@ export function RecordList<T extends { id: string }, F extends string>({
   // The one row shown while the list is empty.
   example: RowText;
   row: (record: T) => RowText;
-  // Extra controls before Edit and Delete. `change` saves a list unless a row action is pending.
-  renderControls?: (record: T, change: (next: readonly T[], failure: string) => void) => ReactNode;
   // The record as saved, from the draft: trimmed, with empty optional fields normalised.
   normalize: (draft: T) => T;
   // `others` never contains the record being checked.
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  // Rendered at the left of the editor's Cancel and Save buttons.
+  renderFooter?: (editor: Editor<T, F>) => ReactNode;
   wide?: boolean;
 }) {
   const [modal, setModal] = useState<Modal<T> | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
+  const baseId = useId();
   const rowAction = useAction();
 
   const show = (kind: Modal<T>["kind"], record: T) =>
@@ -126,13 +132,6 @@ export function RecordList<T extends { id: string }, F extends string>({
   const setOpen = (open: boolean) => setModal((current) => current && { ...current, open });
   const clearOnClose = (open: boolean) => {
     if (!open) setModal(null);
-  };
-
-  const change = (next: readonly T[], failure: string) => {
-    // Each save replaces the whole list, so a change built on the list before the previous save
-    // landed would undo that save.
-    if (rowAction.pending) return;
-    void rowAction.run(() => save(next), failure);
   };
 
   const remove = (record: T) => {
@@ -143,8 +142,8 @@ export function RecordList<T extends { id: string }, F extends string>({
     );
   };
 
-  const text = ({ title, detail, faded }: RowText, isExample = false) => (
-    <div {...stylex.props(settings.rowText, styles.rowText, faded && styles.off)}>
+  const text = ({ title, detail, off }: RowText, isExample = false) => (
+    <div {...stylex.props(settings.rowText, styles.rowText, off && styles.off)}>
       <span {...stylex.props(settings.rowTitle, isExample ? styles.example : styles.wrap)}>
         {title}
       </span>
@@ -182,30 +181,39 @@ export function RecordList<T extends { id: string }, F extends string>({
           </div>
         ) : (
           <ul {...stylex.props(styles.list)}>
-            {records.map((record) => (
-              <li key={record.id} {...stylex.props(settings.row)}>
-                {text(row(record))}
-                <div {...stylex.props(styles.rowActions)}>
-                  {renderControls?.(record, change)}
-                  <Button
-                    variant="icon"
-                    aria-label={`Edit ${name(record)}`}
-                    title="Edit"
-                    onClick={() => show("edit", record)}
-                  >
-                    <PencilIcon size={16} />
-                  </Button>
-                  <Button
-                    variant="icon"
-                    aria-label={`Delete ${name(record)}`}
-                    title="Delete"
-                    onClick={() => show("delete", record)}
-                  >
-                    <Trash2Icon size={16} />
-                  </Button>
-                </div>
-              </li>
-            ))}
+            {records.map((record) => {
+              const rowText = row(record);
+              const offId = `${baseId}-${record.id}-off`;
+              return (
+                <li key={record.id} {...stylex.props(settings.row)}>
+                  {text(rowText)}
+                  <div {...stylex.props(styles.rowActions)}>
+                    {rowText.off && (
+                      <span id={offId} {...stylex.props(settings.hint)}>
+                        Off
+                      </span>
+                    )}
+                    <Button
+                      variant="icon"
+                      aria-label={`Edit ${name(record)}`}
+                      aria-describedby={rowText.off ? offId : undefined}
+                      title="Edit"
+                      onClick={() => show("edit", record)}
+                    >
+                      <PencilIcon size={16} />
+                    </Button>
+                    <Button
+                      variant="icon"
+                      aria-label={`Delete ${name(record)}`}
+                      title="Delete"
+                      onClick={() => show("delete", record)}
+                    >
+                      <Trash2Icon size={16} />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -231,6 +239,7 @@ export function RecordList<T extends { id: string }, F extends string>({
           normalize={normalize}
           problem={problem}
           renderFields={renderFields}
+          renderFooter={renderFooter}
           wide={wide}
         />
       )}
@@ -261,6 +270,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize,
   problem,
   renderFields,
+  renderFooter,
   wide,
   open,
   onOpenChange,
@@ -274,6 +284,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize: (draft: T) => T;
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  renderFooter: ((editor: Editor<T, F>) => ReactNode) | undefined;
   wide: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -340,6 +351,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
       <DialogFrame
         title={text.title}
         wide={wide}
+        footerStart={renderFooter?.(editor)}
         actions={
           <Button disabled={pending} onClick={submit}>
             {text.save}
