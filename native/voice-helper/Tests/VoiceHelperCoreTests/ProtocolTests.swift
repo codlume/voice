@@ -28,6 +28,11 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"asr.remove"}"#, .asrRemove),
         (#"{"type":"test.audioFile","path":"/tmp/a.wav"}"#, .testAudioFile(path: "/tmp/a.wav")),
         (#"{"type":"test.audioFile","path":null}"#, .testAudioFile(path: nil)),
+        (#"{"type":"test.target","bundleId":"com.apple.Safari","host":"mail.google.com"}"#,
+         .testTarget(bundleId: "com.apple.Safari", host: "mail.google.com")),
+        (#"{"type":"test.target","bundleId":"com.apple.TextEdit","host":null}"#,
+         .testTarget(bundleId: "com.apple.TextEdit", host: nil)),
+        (#"{"type":"test.target","bundleId":null,"host":null}"#, .testTarget(bundleId: nil, host: nil)),
     ]
     for (line, expected) in cases {
         #expect(HelperCommand.decode(line: line) == .success(expected), Comment(rawValue: line))
@@ -47,6 +52,9 @@ private func json(_ line: String) throws -> [String: Any] {
 
     let invalid = HelperCommand.decode(line: "not json")
     #expect(try unknownDescription(invalid).contains("invalid JSON"))
+
+    let hostless = HelperCommand.decode(line: #"{"type":"test.target","bundleId":"com.apple.Safari"}"#)
+    #expect(try unknownDescription(hostless).contains("missing field \"host\""))
 }
 
 private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) throws -> String {
@@ -58,7 +66,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 10), ["type": "ready", "version": 10]),
+        (.ready(version: 11), ["type": "ready", "version": 11]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.hotkey(action: .chord), ["type": "hotkey", "action": "chord"]),
         (.hotkey(action: .cancel), ["type": "hotkey", "action": "cancel"]),
@@ -78,10 +86,20 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.microphoneTestEnded(id: "t"), ["type": "microphone.test.ended", "id": "t"]),
         (.microphoneTestFailed(id: "t", message: "Finish dictating, then test again."),
          ["type": "microphone.test.failed", "id": "t", "message": "Finish dictating, then test again."]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640),
-         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640]),
-        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil),
-         ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull()]),
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640,
+                     target: TranscriptTarget(bundleId: "com.apple.Safari", host: "mail.google.com")),
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640,
+          "target": ["bundleId": "com.apple.Safari", "host": "mail.google.com"]]),
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640,
+                     target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil)),
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640,
+          "target": ["bundleId": "com.apple.TextEdit", "host": NSNull()]]),
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640,
+                     target: TranscriptTarget(bundleId: nil, host: nil)),
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640,
+          "target": ["bundleId": NSNull(), "host": NSNull()]]),
+        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil, target: nil),
+         ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull(), "target": NSNull()]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
         (.insertResult(id: "s", method: .none, reason: .focusChanged),
@@ -106,7 +124,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 }
 
 @Test func keepsFilePathsAndUnicodeReadable() throws {
-    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil).encodeLine()
+    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil, target: nil).encodeLine()
     #expect(line.contains("/tmp/x"))
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
 }

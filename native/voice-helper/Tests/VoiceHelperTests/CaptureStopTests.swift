@@ -85,7 +85,7 @@ struct CaptureStopTests {
             outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800)
         capture.testAudioPath = file.path
 
-        let target = InsertTarget(pid: nil)
+        let target = InsertTarget(pid: nil, bundleId: nil)
         capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
         let events = sessionEvents(try await lines.wait(for: terminal))
 

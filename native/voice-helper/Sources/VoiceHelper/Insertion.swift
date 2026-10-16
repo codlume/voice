@@ -9,11 +9,27 @@ struct FocusElement: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { CFEqual(lhs.value, rhs.value) }
 }
 
+enum HostRead {
+    case pending
+    case read(String?)
+}
+
 final class InsertTarget {
     let pid: pid_t?
+    let bundleId: String?
     var focus = CapturedFocus<FocusElement>.pending
+    var host = HostRead.pending
 
-    init(pid: pid_t?) { self.pid = pid }
+    init(pid: pid_t?, bundleId: String?) {
+        self.pid = pid
+        self.bundleId = bundleId
+    }
+
+    var transcriptTarget: TranscriptTarget? {
+        guard let bundleId else { return nil }
+        guard case .read(let host) = host else { return TranscriptTarget(bundleId: bundleId, host: nil) }
+        return TranscriptTarget(bundleId: bundleId, host: host)
+    }
 }
 
 final class Insertion {
@@ -27,8 +43,8 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
-    func recordTarget(pid: pid_t?) -> InsertTarget {
-        let target = InsertTarget(pid: pid)
+    func recordTarget(pid: pid_t?, bundleId: String?) -> InsertTarget {
+        let target = InsertTarget(pid: pid, bundleId: bundleId)
         guard let pid, AXIsProcessTrusted() else {
             target.focus = .unavailable
             return target
