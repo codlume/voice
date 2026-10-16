@@ -2,13 +2,14 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./Settings.tsx";
+import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 
@@ -34,6 +35,8 @@ export const styles = stylex.create({
   field: { display: "flex", flexDirection: "column", gap: 6 },
   fieldHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between" },
   counter: { fontVariantNumeric: "tabular-nums" },
+  switchField: { display: "flex", alignItems: "center", gap: space.lg },
+  switchLabel: { flexGrow: 1, minWidth: 0, fontSize: 13 },
   input: {
     width: "100%",
     paddingBlock: 6,
@@ -172,30 +175,33 @@ export function RecordList<T extends { id: string }, F extends string>({
           </div>
         ) : (
           <ul {...stylex.props(styles.list)}>
-            {records.map((record) => (
-              <li key={record.id} {...stylex.props(settings.row)}>
-                {text(row(record))}
-                <div {...stylex.props(styles.rowActions)}>
-                  {row(record).off && <span {...stylex.props(settings.hint)}>Off</span>}
-                  <Button
-                    variant="icon"
-                    aria-label={`Edit ${name(record)}`}
-                    title="Edit"
-                    onClick={() => show("edit", record)}
-                  >
-                    <PencilIcon size={16} />
-                  </Button>
-                  <Button
-                    variant="icon"
-                    aria-label={`Delete ${name(record)}`}
-                    title="Delete"
-                    onClick={() => show("delete", record)}
-                  >
-                    <Trash2Icon size={16} />
-                  </Button>
-                </div>
-              </li>
-            ))}
+            {records.map((record) => {
+              const rowText = row(record);
+              return (
+                <li key={record.id} {...stylex.props(settings.row)}>
+                  {text(rowText)}
+                  <div {...stylex.props(styles.rowActions)}>
+                    {rowText.off && <span {...stylex.props(settings.hint)}>Off</span>}
+                    <Button
+                      variant="icon"
+                      aria-label={`Edit ${name(record)}`}
+                      title="Edit"
+                      onClick={() => show("edit", record)}
+                    >
+                      <PencilIcon size={16} />
+                    </Button>
+                    <Button
+                      variant="icon"
+                      aria-label={`Delete ${name(record)}`}
+                      title="Delete"
+                      onClick={() => show("delete", record)}
+                    >
+                      <Trash2Icon size={16} />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -378,5 +384,26 @@ export function CountedField({
         </Field.Error>
       )}
     </Field.Root>
+  );
+}
+
+/** A dialog row with a label and the switch it names. */
+export function SwitchField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div {...stylex.props(styles.switchField)}>
+      <label htmlFor={id} {...stylex.props(styles.switchLabel)}>
+        {label}
+      </label>
+      <Switch id={id} checked={checked} onChange={onChange} />
+    </div>
   );
 }

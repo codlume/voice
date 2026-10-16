@@ -8,20 +8,9 @@ import {
   TRIGGER_MAX_LENGTH,
   type Snippet,
 } from "../shared/snippets.ts";
-import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
-import { styles as settings } from "./Settings.tsx";
+import { CountedField, RecordList, styles, SwitchField, type Copy } from "./RecordList.tsx";
 import { SnippetEditor } from "./SnippetEditor.tsx";
-import { Switch } from "./Switch.tsx";
-import { space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
-
-const local = stylex.create({
-  toggle: { display: "flex", alignItems: "center", gap: space.lg },
-  toggleLabel: { fontSize: 13 },
-});
-
-// Only one editor dialog is open at a time.
-const switchId = "snippet-enabled";
 
 const copy: Copy = {
   title: "Snippets",
@@ -97,16 +86,11 @@ export function Snippets({
               onSave={submit}
             />
           </CountedField>
-          <div {...stylex.props(local.toggle)}>
-            <label htmlFor={switchId} {...stylex.props(settings.rowText, local.toggleLabel)}>
-              Enabled
-            </label>
-            <Switch
-              id={switchId}
-              checked={draft.enabled}
-              onChange={(enabled) => edit({ enabled })}
-            />
-          </div>
+          <SwitchField
+            label="Enabled"
+            checked={draft.enabled}
+            onChange={(enabled) => edit({ enabled })}
+          />
         </>
       )}
     />

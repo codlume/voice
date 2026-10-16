@@ -11,22 +11,17 @@ import {
 } from "../shared/dictionary.ts";
 import type { Snippet } from "../shared/snippets.ts";
 import { pageStyles } from "./pageStyles.ts";
-import { RecordList, styles, type Copy } from "./RecordList.tsx";
-import { styles as settings } from "./Settings.tsx";
-import { Switch } from "./Switch.tsx";
+import { RecordList, styles, SwitchField, type Copy } from "./RecordList.tsx";
 import { color, space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
 
 const local = stylex.create({
-  toggle: { display: "flex", alignItems: "center", gap: space.lg, marginBottom: space.sm },
-  toggleLabel: { fontSize: 13 },
   inputs: { display: "flex", alignItems: "center", gap: space.sm },
   cell: { flexBasis: 0, flexGrow: 1, minWidth: 0 },
   arrow: { flexShrink: 0, color: color.mutedForeground },
 });
 
 // Only one editor dialog is open at a time.
-const switchId = "dictionary-replace";
 const problemId = "dictionary-problem";
 
 const copy: Copy = {
@@ -78,16 +73,11 @@ export function Dictionary({
         });
         return (
           <>
-            <div {...stylex.props(local.toggle)}>
-              <label htmlFor={switchId} {...stylex.props(settings.rowText, local.toggleLabel)}>
-                Replace with other text
-              </label>
-              <Switch
-                id={switchId}
-                checked={replacing}
-                onChange={(on) => edit({ replacement: on ? "" : null })}
-              />
-            </div>
+            <SwitchField
+              label="Replace with other text"
+              checked={replacing}
+              onChange={(on) => edit({ replacement: on ? "" : null })}
+            />
             <div {...stylex.props(styles.field)}>
               <div {...stylex.props(local.inputs)}>
                 <Field.Root invalid={invalid("phrase")} {...stylex.props(local.cell)}>
