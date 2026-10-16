@@ -415,19 +415,22 @@ function NavItems<Id extends string>({
 
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
   const [appPage, setAppPage] = useState<AppPage>("home");
-  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(() =>
+    snapshot.account.kind === "error" ? "account" : null,
+  );
   const page = settingsPage ?? appPage;
   const level = settingsPage === null ? "app" : "settings";
   const [shown, setShown] = useState<{
     page: typeof page;
     level: typeof level;
     motion: PageMotion | null;
-  }>({ page, level, motion: null });
+    navMotion: PageMotion | null;
+  }>({ page, level, motion: null, navMotion: null });
   if (shown.page !== page) {
-    const motion = shown.level === level ? "rise" : level === "settings" ? "forward" : "back";
-    setShown({ page, level, motion });
+    const sameLevel = shown.level === level;
+    const navMotion = sameLevel ? shown.navMotion : level === "settings" ? "forward" : "back";
+    setShown({ page, level, motion: sameLevel ? "rise" : navMotion, navMotion });
   }
-  const levelMotion = shown.motion === "rise" ? null : shown.motion;
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
@@ -532,7 +535,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <nav
               key="app"
               aria-label="Voice"
-              {...stylex.props(styles.nav, levelMotion && pageMotion[levelMotion])}
+              {...stylex.props(styles.nav, shown.navMotion && pageMotion[shown.navMotion])}
             >
               <NavItems
                 groups={appPageGroups}
@@ -546,7 +549,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <nav
               key="settings"
               aria-label="Settings"
-              {...stylex.props(styles.nav, levelMotion && pageMotion[levelMotion])}
+              {...stylex.props(styles.nav, shown.navMotion && pageMotion[shown.navMotion])}
             >
               <NavItems
                 groups={settingsPageGroups}
