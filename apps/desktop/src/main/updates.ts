@@ -59,6 +59,16 @@ type CheckOutcome =
   | { kind: "none" }
   | { kind: "error" };
 
+const CHECK_FAILED: UpdateStatus = {
+  kind: "failed",
+  message: "Could not check for updates. Check your connection and try again.",
+};
+const DOWNLOAD_FAILED: UpdateStatus = {
+  kind: "failed",
+  message: "The update could not be downloaded. Check your connection and try again.",
+};
+
+/** Returns `status` itself when the outcome changes nothing, so publish() can skip it. */
 function reconcile(status: UpdateStatus, outcome: CheckOutcome): UpdateStatus {
   const standing = pendingUpdate(status);
   switch (outcome.kind) {
@@ -72,17 +82,8 @@ function reconcile(status: UpdateStatus, outcome: CheckOutcome): UpdateStatus {
     case "none":
       return status.kind === "ready" ? status : { kind: "current" };
     case "error":
-      if (status.kind === "downloading")
-        return {
-          kind: "failed",
-          message: "The update could not be downloaded. Check your connection and try again.",
-        };
-      return standing
-        ? status
-        : {
-            kind: "failed",
-            message: "Could not check for updates. Check your connection and try again.",
-          };
+      if (status.kind === "downloading") return DOWNLOAD_FAILED;
+      return standing ? status : CHECK_FAILED;
   }
 }
 
@@ -119,28 +120,33 @@ export function createUpdates({
   prepareRestart: () => Promise<void>;
   onRestartFailure: () => void;
 }) {
+  type Feed = { loadEngine: () => Engine; release: ReleaseConfig };
+  const enabled: Feed | null =
+    loadEngine && release && initial.status.kind !== "disabled" ? { loadEngine, release } : null;
   let snapshot = initial;
   let engine: Engine | undefined;
+  // Bumped whenever the world moves on (channel switch, restart, dispose) so that whatever an
+  // in-flight check or download reports afterwards is discarded.
   let generation = 0;
   let running: Promise<void> | null = null;
-  let restarting = false;
   let disposed = false;
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
-  const enabled = loadEngine !== null && release !== null && initial.status.kind !== "disabled";
   const installing = () => snapshot.status.kind === "installing";
+  const stillApplies = (expectedGeneration: number) => generation === expectedGeneration;
 
-  function publish(status: UpdateStatus) {
-    if (disposed) return;
-    snapshot = { ...snapshot, status };
+  // Publishing the status object that already stands would reopen a card the user dismissed.
+  function publish(status: UpdateStatus, channel = snapshot.channel) {
+    if (disposed || (status === snapshot.status && channel === snapshot.channel)) return;
+    snapshot = { ...snapshot, channel, status };
     onChange(snapshot);
   }
 
   // electron-updater emits errors as well as rejecting operations. Keep a listener for errors
-  // raised by Squirrel after quitAndInstall has returned.
+  // raised by Squirrel after quitAndInstall has returned; one raised by a check or download that
+  // is still in flight belongs to that operation.
   const onError = () => {
-    if (installing()) {
-      restarting = false;
+    if (installing() && running === null) {
       publish({
         kind: "failed",
         message: "The update could not be installed. Quit and reopen Voice, then try again.",
@@ -157,16 +163,12 @@ export function createUpdates({
     return engine;
   }
 
-  const stillApplies = (expectedGeneration: number) =>
-    !disposed && !restarting && generation === expectedGeneration;
-
-  async function readFeed(channel: UpdateChannel): Promise<CheckOutcome> {
+  async function readFeed(feed: Feed, channel: UpdateChannel): Promise<CheckOutcome> {
     try {
-      if (!loadEngine || !release) throw new Error("Updates are disabled");
-      const updater = loadedEngine(loadEngine);
+      const updater = loadedEngine(feed.loadEngine);
       updater.setFeedURL({
         provider: "generic",
-        url: `${release.updateUrl}/channels/${channel}/mac-arm64/`,
+        url: `${feed.release.updateUrl}/channels/${channel}/mac-arm64/`,
         channel: "latest",
         useMultipleRangeRequest: false,
       });
@@ -191,11 +193,11 @@ export function createUpdates({
     }
   }
 
-  async function performCheck(expectedGeneration: number) {
-    const outcome = await readFeed(snapshot.channel);
+  async function performCheck(feed: Feed, expectedGeneration: number) {
+    const outcome = await readFeed(feed, snapshot.channel);
     if (!stillApplies(expectedGeneration)) return;
     const next = reconcile(snapshot.status, outcome);
-    if (next !== snapshot.status) publish(next);
+    publish(next);
     if (next.kind === "downloading") await performDownload(expectedGeneration, next);
   }
 
@@ -217,11 +219,7 @@ export function createUpdates({
     try {
       await engine.downloadUpdate();
     } catch {
-      if (stillApplies(expectedGeneration))
-        publish({
-          kind: "failed",
-          message: "The update could not be downloaded. Check your connection and try again.",
-        });
+      if (stillApplies(expectedGeneration)) publish(DOWNLOAD_FAILED);
       return;
     } finally {
       engine.removeListener("download-progress", progress);
@@ -229,30 +227,34 @@ export function createUpdates({
     if (stillApplies(expectedGeneration)) publish({ kind: "ready", version, notes });
   }
 
-  function run(task: (expectedGeneration: number) => Promise<void>): Promise<void> {
-    if (!enabled || disposed || restarting) return Promise.resolve();
+  function run(task: (feed: Feed, expectedGeneration: number) => Promise<void>): Promise<void> {
+    if (!enabled || disposed || installing()) return Promise.resolve();
     if (running) return running;
-    running = task(generation).finally(() => {
+    running = task(enabled, generation).finally(() => {
       running = null;
     });
     return running;
   }
 
   function check(): Promise<void> {
-    return run((expectedGeneration) => {
+    return run((feed, expectedGeneration) => {
       if (!pendingUpdate(snapshot.status)) publish({ kind: "checking" });
-      return performCheck(expectedGeneration);
+      return performCheck(feed, expectedGeneration);
     });
   }
 
-  function download(): Promise<void> {
+  async function download(): Promise<void> {
+    if (snapshot.status.kind !== "available") return;
+    // A background check re-reads the feed without changing the status, so the Download button
+    // stays live while it runs. The click must wait for it rather than be coalesced into it.
+    await running;
     const update = snapshot.status;
-    if (update.kind !== "available") return Promise.resolve();
-    return run((expectedGeneration) => {
+    if (update.kind !== "available") return;
+    await run((feed, expectedGeneration) => {
       // The engine downloads whatever its last check found, and the feed may have moved since
       // the user saw this offer. Re-read it first; a newer release replaces the offer.
       publish({ kind: "downloading", version: update.version, notes: update.notes, percent: 0 });
-      return performCheck(expectedGeneration);
+      return performCheck(feed, expectedGeneration);
     });
   }
 
@@ -281,26 +283,28 @@ export function createUpdates({
       );
     },
     async setChannel(channel: UpdateChannel) {
-      if (restarting) throw new Error("Voice is restarting for an update.");
+      if (installing()) throw new Error("Voice is restarting for an update.");
       if (snapshot.channel === channel || disposed) return;
       generation += 1;
       const expectedGeneration = generation;
-      snapshot = { ...snapshot, channel };
-      publish(enabled ? { kind: "checking" } : snapshot.status);
+      publish(enabled ? { kind: "checking" } : snapshot.status, channel);
       // The updater has one feed and one staged download. Drain the old operation
       // before changing it, and discard its progress and completion above.
       await running;
       if (expectedGeneration === generation) await check();
     },
     async restart(beforeInstall?: () => void) {
-      if (!enabled || !engine || restarting || disposed || snapshot.status.kind !== "ready") return;
+      if (!enabled || !engine || disposed || snapshot.status.kind !== "ready") return;
       if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
-      const version = snapshot.status.version;
-      restarting = true;
+      const { version } = snapshot.status;
+      beforeInstall?.();
+      generation += 1;
+      publish({ kind: "installing", version });
       try {
-        beforeInstall?.();
-        publish({ kind: "installing", version });
         await prepareRestart();
+        // A check may still be in flight from the hourly poll. Let it settle so that nothing of
+        // ours touches the engine during the install and a later error can only be Squirrel's.
+        await running;
         engine.quitAndInstall();
       } catch (error) {
         if (installing()) {
@@ -312,8 +316,6 @@ export function createUpdates({
           onRestartFailure();
         }
         throw error;
-      } finally {
-        if (!installing()) restarting = false;
       }
     },
     dispose() {
