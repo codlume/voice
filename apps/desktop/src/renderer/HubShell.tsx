@@ -46,9 +46,8 @@ import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
-import { useMotionScale } from "./motion.ts";
 import { SidebarUpdates } from "./Updates.tsx";
-import { color, font, motion, radius, space } from "./tokens.stylex.ts";
+import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const appPageGroups = [
@@ -149,17 +148,17 @@ const slideBack = stylex.keyframes({ from: { opacity: 0, transform: "translateX(
 const pageMotion = stylex.create({
   rise: {
     animationName: { default: rise, [reducedMotion]: "none" },
-    animationDuration: `calc(200ms * ${motion["--motion-scale"]})`,
+    animationDuration: "var(--page-animation)",
     animationTimingFunction: easing,
   },
   forward: {
     animationName: { default: slideForward, [reducedMotion]: "none" },
-    animationDuration: `calc(220ms * ${motion["--motion-scale"]})`,
+    animationDuration: "var(--page-animation)",
     animationTimingFunction: easing,
   },
   back: {
     animationName: { default: slideBack, [reducedMotion]: "none" },
-    animationDuration: `calc(220ms * ${motion["--motion-scale"]})`,
+    animationDuration: "var(--page-animation)",
     animationTimingFunction: easing,
   },
 });
@@ -185,6 +184,7 @@ const styles = stylex.create({
     paddingRight: 12,
     WebkitAppRegion: "drag",
   },
+  pageAnimation: (ms: number) => ({ "--page-animation": `${ms}ms` }),
   titlebarGeometry: (zoomLevel: number) => ({
     height: TITLEBAR_HEIGHT,
     paddingLeft: trafficLightsInset(zoomLevel),
@@ -198,10 +198,7 @@ const styles = stylex.create({
     display: "flex",
     flexDirection: "column",
     transitionProperty: "width",
-    transitionDuration: {
-      default: `calc(220ms * ${motion["--motion-scale"]})`,
-      [reducedMotion]: "0s",
-    },
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   sidebarCollapsed: { width: railWidth },
@@ -255,10 +252,7 @@ const styles = stylex.create({
   icon: { flexShrink: 0 },
   label: {
     transitionProperty: "opacity",
-    transitionDuration: {
-      default: `calc(150ms * ${motion["--motion-scale"]})`,
-      [reducedMotion]: "0s",
-    },
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
@@ -296,10 +290,7 @@ const styles = stylex.create({
   footerUpdates: {
     marginLeft: "auto",
     transitionProperty: "opacity, visibility",
-    transitionDuration: {
-      default: `calc(150ms * ${motion["--motion-scale"]})`,
-      [reducedMotion]: "0s",
-    },
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
@@ -446,7 +437,6 @@ function NavItems<Id extends string>({
 }
 
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
-  useMotionScale(snapshot.settings.animationSpeed);
   const [appPage, setAppPage] = useState<AppPage>("home");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const page = settingsPage ?? appPage;
@@ -457,11 +447,8 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
     motion: PageMotion | null;
   }>({ page, level, motion: null });
   if (shown.page !== page) {
-    setShown({
-      page,
-      level,
-      motion: shown.level === level ? "rise" : level === "settings" ? "forward" : "back",
-    });
+    const motion = shown.level === level ? "rise" : level === "settings" ? "forward" : "back";
+    setShown({ page, level, motion });
   }
   const levelMotion = shown.motion === "rise" ? null : shown.motion;
   const mainRef = useRef<HTMLElement>(null);
@@ -533,7 +520,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   const Page = pageViews[page];
   return (
-    <div {...stylex.props(styles.shell)}>
+    <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
       <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
         <button
           type="button"

@@ -108,7 +108,7 @@ describe("parseSettings", () => {
       toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
-      animationSpeed: "normal",
+      pageAnimationMs: 200,
       microphone: null,
       muteWhileDictating: false,
       copyToClipboard: false,
@@ -200,11 +200,13 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
-  test("defaults animation speed to normal, keeps a saved one, and rejects an unknown one", () => {
-    expect(parseSettings({}).animationSpeed).toBe("normal");
-    expect(parseSettings({ animationSpeed: "off" }).animationSpeed).toBe("off");
-    for (const raw of ["turbo", "Off", 2, null]) {
-      expect(parseSettings({ animationSpeed: raw }).animationSpeed).toBe("normal");
+  test("defaults page animations to 200 ms, keeps a saved whole duration up to 400 ms, and rejects anything else", () => {
+    expect(parseSettings({}).pageAnimationMs).toBe(200);
+    for (const ms of [0, 25, 400]) {
+      expect(parseSettings({ pageAnimationMs: ms }).pageAnimationMs).toBe(ms);
+    }
+    for (const raw of [401, -1, 150.5, "200", null]) {
+      expect(parseSettings({ pageAnimationMs: raw }).pageAnimationMs).toBe(200);
     }
   });
 
@@ -242,7 +244,7 @@ describe("applyPatch", () => {
       toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
-      animationSpeed: "normal",
+      pageAnimationMs: 200,
       microphone: null,
       muteWhileDictating: false,
       copyToClipboard: false,
@@ -361,11 +363,11 @@ describe("applyPatch", () => {
     });
   });
 
-  test("changes animation speed alone, keeps it across unrelated patches, and can set it back", () => {
-    const slow = applyPatch(DEFAULT_SETTINGS, { animationSpeed: "slow" });
-    expect(slow).toEqual({ ...DEFAULT_SETTINGS, animationSpeed: "slow" });
-    expect(applyPatch(slow, { theme: "dark" }).animationSpeed).toBe("slow");
-    expect(applyPatch(slow, { animationSpeed: "normal" })).toEqual(DEFAULT_SETTINGS);
+  test("changes page animations alone, keeps them across unrelated patches, and can set them back", () => {
+    const off = applyPatch(DEFAULT_SETTINGS, { pageAnimationMs: 0 });
+    expect(off).toEqual({ ...DEFAULT_SETTINGS, pageAnimationMs: 0 });
+    expect(applyPatch(off, { theme: "dark" }).pageAnimationMs).toBe(0);
+    expect(applyPatch(off, { pageAnimationMs: 200 })).toEqual(DEFAULT_SETTINGS);
   });
 
   test("changes the theme alone and keeps other fields", () => {

@@ -5,7 +5,6 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
 import type {
-  AnimationSpeed,
   DiagnosticsConsent,
   Hotkey,
   LoginItem,
@@ -220,13 +219,6 @@ const themes = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ] as const satisfies readonly { value: Theme; label: string }[];
-
-const animationSpeeds = [
-  { value: "off", label: "Off" },
-  { value: "fast", label: "Fast" },
-  { value: "normal", label: "Normal" },
-  { value: "slow", label: "Slow" },
-] as const satisfies readonly { value: AnimationSpeed; label: string }[];
 
 export function GeneralSettings({
   settings,
@@ -455,8 +447,6 @@ export function SystemSettings({
   const appearanceAction = useAction();
   const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
-  const changeAnimationSpeed = (animationSpeed: AnimationSpeed) =>
-    update(appearanceAction, { animationSpeed });
   const changeDock = (showInDock: boolean) => update(appearanceAction, { showInDock });
   const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
@@ -527,21 +517,6 @@ export function SystemSettings({
             onReset={resetTo(settings.theme, DEFAULT_SETTINGS.theme, changeTheme)}
           >
             <Segmented options={themes} value={settings.theme} onChange={changeTheme} />
-          </Row>
-          <Row
-            title="Animation speed"
-            detail="Speed up, slow down, or turn off motion in Voice and the Flow Bar."
-            onReset={resetTo(
-              settings.animationSpeed,
-              DEFAULT_SETTINGS.animationSpeed,
-              changeAnimationSpeed,
-            )}
-          >
-            <Segmented
-              options={animationSpeeds}
-              value={settings.animationSpeed}
-              onChange={changeAnimationSpeed}
-            />
           </Row>
           <Row
             nativeLabel

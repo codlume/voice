@@ -19,8 +19,9 @@ export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
-export const ANIMATION_SPEEDS = ["off", "fast", "normal", "slow"] as const;
-export type AnimationSpeed = (typeof ANIMATION_SPEEDS)[number];
+export const MIN_PAGE_ANIMATION_MS = 0;
+export const MAX_PAGE_ANIMATION_MS = 400;
+export const PAGE_ANIMATION_STEP_MS = 25;
 export type DiagnosticsConsent = "on" | "off";
 // "unavailable" is a development build, which never registers a login item.
 export type LoginItem = "on" | "off" | "needsApproval" | "unavailable";
@@ -147,7 +148,7 @@ export type Settings = {
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
-  animationSpeed: AnimationSpeed;
+  pageAnimationMs: number;
   cleanup: {
     enabled: boolean;
     styles: CategoryStyles;
@@ -171,7 +172,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
-  animationSpeed: "normal",
+  pageAnimationMs: 200,
   cleanup: { enabled: true, styles: DEFAULT_STYLES, assignments: [] },
   diagnostics: "off",
   snippets: [],
@@ -190,7 +191,7 @@ export type SettingsPatch = {
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;
-  animationSpeed?: AnimationSpeed;
+  pageAnimationMs?: number;
   cleanup?: {
     enabled?: boolean;
     styles?: Partial<CategoryStyles>;
