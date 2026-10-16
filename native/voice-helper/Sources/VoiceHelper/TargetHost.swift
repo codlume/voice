@@ -13,6 +13,9 @@ private let browserBundleIds: Set<String> = [
 private let webAreaMaxDepth = 25
 private let windowSearchMaxDepth = 3
 private let windowSearchMaxNodes = 64
+/// Warm reads finish in under 50 ms and a fresh Chrome in about 25 ms, so a read still running
+/// after this has met a stalled browser and must not keep sending it requests after the session.
+private let hostReadBudget: TimeInterval = 1
 
 func readPageHost(of target: InsertTarget, log: ((String) -> Void)?) {
     guard let pid = target.pid, let bundleId = target.bundleId, browserBundleIds.contains(bundleId),
@@ -21,9 +24,10 @@ func readPageHost(of target: InsertTarget, log: ((String) -> Void)?) {
         target.host = .read(nil)
         return
     }
+    let started = DispatchTime.now()
+    let deadline = started + hostReadBudget
     DispatchQueue.global(qos: .utility).async {
-        let started = DispatchTime.now()
-        let (host, outcome) = browserPageHost(pid: pid)
+        let (host, outcome) = browserPageHost(pid: pid, deadline: deadline)
         let elapsed = Int(started.millisecondsToNow().rounded())
         DispatchQueue.main.async {
             target.host = .read(host)
@@ -32,22 +36,26 @@ func readPageHost(of target: InsertTarget, log: ((String) -> Void)?) {
     }
 }
 
-private func browserPageHost(pid: pid_t) -> (host: String?, outcome: String) {
+private func browserPageHost(pid: pid_t, deadline: DispatchTime) -> (host: String?, outcome: String) {
+    let expired = { DispatchTime.now() >= deadline }
     let app = AXNode(AXUIElementCreateApplication(pid))
-    if let focused = app.element(kAXFocusedUIElementAttribute) { return host(above: focused) }
+    guard !expired() else { return (nil, "gave up at the deadline") }
+    if let focused = app.element(kAXFocusedUIElementAttribute) {
+        let walk = webArea(above: focused, maxDepth: webAreaMaxDepth, giveUp: expired)
+        guard let area = walk.node else {
+            return (nil, "\(expired() ? "gave up at the deadline" : "no web area") after \(walk.hops) hops")
+        }
+        return host(of: area, "after \(walk.hops) hops")
+    }
     // Chromium reports no focused element until an assistive client switches its web accessibility
     // on, but the view hosting the page still answers for the URL, so this finds the page without
     // turning that tree on.
-    guard let window = app.element(kAXFocusedWindowAttribute) else { return (nil, "no focused window") }
-    let search = pageNode(below: window, maxDepth: windowSearchMaxDepth, maxNodes: windowSearchMaxNodes)
-    guard let page = search.node else { return (nil, "no page below the window after \(search.visited) nodes") }
+    guard !expired(), let window = app.element(kAXFocusedWindowAttribute) else { return (nil, "no focused window") }
+    let search = pageNode(below: window, maxDepth: windowSearchMaxDepth, maxNodes: windowSearchMaxNodes, giveUp: expired)
+    guard let page = search.node else {
+        return (nil, "\(expired() ? "gave up at the deadline" : "no page below the window") after \(search.visited) nodes")
+    }
     return host(of: page, "below the window after \(search.visited) nodes")
-}
-
-private func host(above focused: AXNode) -> (host: String?, outcome: String) {
-    let walk = webArea(above: focused, maxDepth: webAreaMaxDepth)
-    guard let area = walk.node else { return (nil, "no web area after \(walk.hops) hops") }
-    return host(of: area, "after \(walk.hops) hops")
 }
 
 private func host(of page: AXNode, _ location: String) -> (host: String?, outcome: String) {
@@ -64,12 +72,19 @@ private struct AXNode: AccessibilityNode {
     }
 
     var parent: AXNode? { element(kAXParentAttribute) }
-    var children: [AXNode] { (attribute(kAXChildrenAttribute) as? [AXUIElement])?.map(AXNode.init) ?? [] }
     var role: String? { attribute(kAXRoleAttribute) as? String }
 
     var url: String? {
         guard let value = attribute(kAXURLAttribute) else { return nil }
         return (value as? URL)?.absoluteString ?? value as? String
+    }
+
+    func children(limit: Int) -> [AXNode] {
+        var values: CFArray?
+        guard limit > 0,
+            AXUIElementCopyAttributeValues(value, kAXChildrenAttribute as CFString, 0, limit, &values) == .success
+        else { return [] }
+        return ((values as? [AXUIElement]) ?? []).map(AXNode.init)
     }
 
     func element(_ name: String) -> AXNode? {
