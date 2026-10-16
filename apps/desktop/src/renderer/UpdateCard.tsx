@@ -45,12 +45,14 @@ const styles = stylex.create({
     minHeight: 0,
     maxHeight: "15rem",
     overflowY: "auto",
-    margin: 0,
-    paddingLeft: 16,
     color: color.mutedForeground,
     overflowWrap: "anywhere",
   },
+  release: { marginTop: { default: 6, ":first-child": 0 } },
+  releaseVersion: { margin: 0, color: color.foreground, fontSize: 12, fontWeight: 500 },
+  noteList: { margin: 0, paddingLeft: 16 },
   note: { marginBlock: 2 },
+  omitted: { margin: 0, marginTop: 6 },
   releaseLink: {
     display: "inline-flex",
     alignItems: "center",
@@ -181,19 +183,32 @@ function ErrorCard({ message }: { message: string }) {
 }
 
 function ReleaseCard({ update }: { update: PendingUpdate }) {
+  const { releases, omitted } = update.notes;
   return (
     <>
       <Popover.Title {...stylex.props(styles.cardTitle)}>{releaseCardTitle(update)}</Popover.Title>
-      {update.notes.length > 0 && (
+      {releases.length > 0 && (
         <>
           <h3 {...stylex.props(styles.notesHeading)}>What's changed</h3>
-          <ul {...stylex.props(styles.notes)}>
-            {update.notes.map((note) => (
-              <li key={note} {...stylex.props(styles.note)}>
-                {note}
-              </li>
+          <div {...stylex.props(styles.notes)}>
+            {releases.map(({ version, items }) => (
+              <section key={version} {...stylex.props(styles.release)}>
+                {releases.length > 1 && <h4 {...stylex.props(styles.releaseVersion)}>{version}</h4>}
+                <ul {...stylex.props(styles.noteList)}>
+                  {items.map((item) => (
+                    <li key={item} {...stylex.props(styles.note)}>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+            {omitted > 0 && (
+              <p {...stylex.props(styles.omitted)}>
+                And {omitted} earlier {omitted === 1 ? "release" : "releases"}
+              </p>
+            )}
+          </div>
         </>
       )}
       <button

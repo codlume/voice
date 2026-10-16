@@ -24,14 +24,19 @@ export type DiagnosticsConsent = "on" | "off";
 export type LoginItem = "on" | "off" | "needsApproval" | "unavailable";
 export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
+export type ReleaseNotes = {
+  releases: readonly { version: string; items: readonly string[] }[];
+  omitted: number;
+};
+
 export type UpdateStatus =
   | { kind: "disabled"; reason: string }
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "current" }
-  | { kind: "available"; version: string; notes: readonly string[] }
-  | { kind: "downloading"; version: string; notes: readonly string[]; percent: number }
-  | { kind: "ready"; version: string; notes: readonly string[] }
+  | { kind: "available"; version: string; notes: ReleaseNotes }
+  | { kind: "downloading"; version: string; notes: ReleaseNotes; percent: number }
+  | { kind: "ready"; version: string; notes: ReleaseNotes }
   | { kind: "installing"; version: string }
   | { kind: "failed"; message: string };
 

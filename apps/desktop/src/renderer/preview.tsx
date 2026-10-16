@@ -10,6 +10,7 @@ import {
   type Snapshot,
   type HubApi,
   type PillApi,
+  type ReleaseNotes,
   type UpdateStatus,
 } from "../shared/api.ts";
 import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
@@ -87,7 +88,7 @@ const pillScenes: Record<string, PillState> = {
   }),
 };
 
-const releaseNotes = [
+const releaseItems = [
   "feat(desktop): add keyboard shortcuts and a Shortcuts settings page by @mhadrys in #119",
   "feat(desktop): add a Show Flow Bar at all times setting by @mhadrys in #120",
   "feat(desktop): add Open at login and Show in Dock settings by @mhadrys in #118",
@@ -98,13 +99,46 @@ const releaseNotes = [
   "fix(insertion): fall back to paste in terminals that reject accessibility writes by @mhadrys in #113",
 ];
 
+const releaseNotes: ReleaseNotes = {
+  releases: [{ version: "1.5.0", items: releaseItems }],
+  omitted: 0,
+};
+
+const skippedReleaseNotes: ReleaseNotes = {
+  releases: [
+    { version: "1.5.0", items: releaseItems.slice(0, 2) },
+    {
+      version: "1.4.2",
+      items: ["fix(insertion): keep the clipboard when paste fallback fails by @mhadrys in #111"],
+    },
+    {
+      version: "1.4.1",
+      items: [
+        "fix(asr): stop dropping the last word of short dictations by @mhadrys in #108",
+        "fix(desktop): show the right shortcut on keyboards without fn by @mhadrys in #107",
+      ],
+    },
+    {
+      version: "1.4.0",
+      items: ["feat(desktop): add a dictionary for names and acronyms by @mhadrys in #102"],
+    },
+    {
+      version: "1.3.1",
+      items: ["fix(desktop): reopen the Voice window from the Dock by @mhadrys in #98"],
+    },
+    { version: "1.3.0", items: ["feat(desktop): add Insights by @mhadrys in #95"] },
+  ],
+  omitted: 2,
+};
+
 const updateScenes: Record<string, UpdateStatus> = {
   checking: { kind: "checking" },
   current: { kind: "current" },
   available: { kind: "available", version: "1.5.0", notes: releaseNotes },
   downloading: { kind: "downloading", version: "1.5.0", notes: releaseNotes, percent: 48 },
   ready: { kind: "ready", version: "1.5.0", notes: releaseNotes },
-  "ready-no-notes": { kind: "ready", version: "1.5.0", notes: [] },
+  "ready-skipped-releases": { kind: "ready", version: "1.5.0", notes: skippedReleaseNotes },
+  "ready-no-notes": { kind: "ready", version: "1.5.0", notes: { releases: [], omitted: 0 } },
   failed: { kind: "failed", message: "Could not check for updates. Try again." },
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };

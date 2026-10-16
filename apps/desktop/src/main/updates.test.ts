@@ -14,6 +14,12 @@ import {
 
 type Feed = { version: string; releaseNotes?: string };
 
+const noNotes = { releases: [], omitted: 0 };
+const notesFor = (version: string, item: string) => ({
+  releases: [{ version, items: [item] }],
+  omitted: 0,
+});
+
 /**
  * Models electron-updater 6.8.9: a check compares the feed with the installed version, an
  * available check stores what it found, and downloadUpdate stages that stored release.
@@ -193,7 +199,7 @@ describe("updates", () => {
       releaseNotes:
         "## What's Changed\n* fix: one by @someone in https://github.com/codlume/voice/pull/7",
     };
-    const notes = ["fix: one by @someone in #7"];
+    const notes = notesFor("0.0.2", "fix: one by @someone in #7");
     updates.start();
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(15_000);
@@ -254,7 +260,7 @@ describe("updates", () => {
     expect(engine.checkForUpdates).not.toHaveBeenCalled();
     updates.start();
     await vi.advanceTimersByTimeAsync(15_000);
-    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: noNotes });
     const offered = snapshots.length;
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     await updates.check();
@@ -262,7 +268,7 @@ describe("updates", () => {
     expect(snapshots.length).toBe(offered);
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
     await updates.download();
-    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: noNotes });
     const ready = snapshots.length;
     await updates.download();
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
@@ -283,7 +289,11 @@ describe("updates", () => {
     const before = snapshots.length;
     await updates.check();
     expect(snapshots.slice(before).map((s) => s.status)).toEqual([
-      { kind: "available", version: "0.0.3", notes: ["feat: three by @someone in #9"] },
+      {
+        kind: "available",
+        version: "0.0.3",
+        notes: notesFor("0.0.3", "feat: three by @someone in #9"),
+      },
     ]);
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
   });
@@ -304,7 +314,7 @@ describe("updates", () => {
     const offered = snapshots.length;
     await updates.check();
     expect(snapshots.length).toBe(offered);
-    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: noNotes });
     await updates.download();
     const ready = snapshots.length;
     engine.checkForUpdates.mockRejectedValueOnce(new Error("offline"));
@@ -314,7 +324,7 @@ describe("updates", () => {
     engine.feed = { version: "0.0.3-nightly.1" };
     await updates.check();
     expect(snapshots.length).toBe(ready);
-    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: noNotes });
     expect(engine.downloadUpdate).toHaveBeenCalledOnce();
   });
 
@@ -326,11 +336,11 @@ describe("updates", () => {
       releaseNotes:
         "## What's Changed\n* feat: three by @someone in https://github.com/codlume/voice/pull/9",
     };
-    const notes = ["feat: three by @someone in #9"];
+    const notes = notesFor("0.0.3", "feat: three by @someone in #9");
     const before = snapshots.length;
     await updates.download();
     expect(snapshots.slice(before).map((s) => s.status)).toEqual([
-      { kind: "downloading", version: "0.0.2", notes: [], percent: 0 },
+      { kind: "downloading", version: "0.0.2", notes: noNotes, percent: 0 },
       { kind: "downloading", version: "0.0.3", notes, percent: 0 },
       { kind: "ready", version: "0.0.3", notes },
     ]);
@@ -368,7 +378,7 @@ describe("updates", () => {
       const before = snapshots.length;
       await updates.download();
       expect(snapshots.slice(before).map((s) => s.status)).toEqual([
-        { kind: "downloading", version: "0.0.2", notes: [], percent: 0 },
+        { kind: "downloading", version: "0.0.2", notes: noNotes, percent: 0 },
         end,
       ]);
       expect(engine.downloadUpdate).not.toHaveBeenCalled();
@@ -422,7 +432,7 @@ describe("updates", () => {
       channel: "latest",
       useMultipleRangeRequest: false,
     });
-    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "available", version: "0.0.2", notes: noNotes });
     expect(engine.downloadUpdate).not.toHaveBeenCalled();
   });
 
@@ -445,13 +455,13 @@ describe("updates", () => {
     expect(status()).toEqual({
       kind: "available",
       version: "0.0.3-nightly.9",
-      notes: [],
+      notes: noNotes,
     });
     await updates.download();
     expect(status()).toEqual({
       kind: "ready",
       version: "0.0.3-nightly.9",
-      notes: [],
+      notes: noNotes,
     });
     expect(
       snapshots.some(
@@ -480,7 +490,7 @@ describe("updates", () => {
     await updates.check();
     await updates.download();
     expect(snapshots.length).toBe(ready);
-    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.2", notes: noNotes });
     expect(engine.downloadUpdate).toHaveBeenCalledTimes(2);
   });
 
@@ -490,13 +500,13 @@ describe("updates", () => {
     engine.feed = { version: "0.0.3-nightly.9" };
     await updates.check();
     await updates.download();
-    expect(status()).toEqual({ kind: "ready", version: "0.0.3-nightly.9", notes: [] });
+    expect(status()).toEqual({ kind: "ready", version: "0.0.3-nightly.9", notes: noNotes });
     engine.feed = {
       version: "0.0.3-nightly.10",
       releaseNotes:
         "## What's Changed\n* fix: two by @someone in https://github.com/codlume/voice/pull/8",
     };
-    const notes = ["fix: two by @someone in #8"];
+    const notes = notesFor("0.0.3-nightly.10", "fix: two by @someone in #8");
     let statusWhenFetchStarted: UpdateStatus | undefined;
     engine.downloadUpdate.mockImplementationOnce(() => {
       statusWhenFetchStarted = status();
@@ -522,7 +532,7 @@ describe("updates", () => {
         "## What's Changed\n* feat: add a setting by @someone in https://github.com/codlume/voice/pull/120\n\n**Full Changelog**: https://github.com/codlume/voice/compare/v0.0.1...v0.0.2",
     };
     await updates.check();
-    const notes = ["feat: add a setting by @someone in #120"];
+    const notes = notesFor("0.0.2", "feat: add a setting by @someone in #120");
     expect(status()).toEqual({ kind: "available", version: "0.0.2", notes });
     await updates.download();
     expect(snapshots.find((s) => s.status.kind === "downloading")?.status).toEqual({

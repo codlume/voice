@@ -84,11 +84,22 @@ function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
     feed.path = `${baseUrl}/releases/${version}/mac-arm64/${encodeURIComponent(name)}`;
   }
   if (releaseNotes.trim()) feed.releaseNotes = releaseNotes;
-  return stringify(feed);
+  return feed;
 }
 
-function feedIdentity(source) {
-  const feed = readFeed(source);
+const HISTORY_LIMIT = 10;
+
+function releaseHistory(prior, feed) {
+  const carried = Array.isArray(prior?.releaseHistory)
+    ? prior.releaseHistory
+    : [{ version: prior?.version, notes: prior?.releaseNotes }];
+  return [{ version: feed.version, notes: feed.releaseNotes }, ...carried]
+    .filter((entry) => typeof entry?.version === "string")
+    .map(({ version, notes }) => ({ version, notes: typeof notes === "string" ? notes : "" }))
+    .slice(0, HISTORY_LIMIT);
+}
+
+function feedIdentity(feed) {
   const files = feed.files
     .map((item) => {
       if (
@@ -155,18 +166,18 @@ export async function publishRelease({
     throw new Error("Invalid release channel and version");
   }
   const url = releaseBaseUrl(baseUrl);
-  const feed = prepareFeed(builderFeed, version, url, artifacts, releaseNotes);
+  const next = prepareFeed(builderFeed, version, url, artifacts, releaseNotes);
   const feedKey = `channels/${channel}/mac-arm64/latest-mac.yml`;
   // GitHub Actions serializes promotion per channel. Re-read under that lock.
-  const prior = await store.get(feedKey);
+  const priorSource = await store.get(feedKey);
+  const prior = priorSource ? readFeed(priorSource.toString()) : null;
   let alreadyPublished = false;
   if (prior) {
-    const old = feedIdentity(prior.toString());
-    const next = feedIdentity(feed);
+    const old = feedIdentity(prior);
     const order = compareVersions(version, old.version);
     if (order < 0) return "skipped-older";
     if (order === 0) {
-      if (old.hashes !== next.hashes)
+      if (old.hashes !== feedIdentity(next).hashes)
         throw new Error("Same release version has different artifact checksums");
       alreadyPublished = true;
     }
@@ -183,6 +194,8 @@ export async function publishRelease({
     }
   }
   if (alreadyPublished) return "already-published";
+  next.releaseHistory = releaseHistory(prior, next);
+  const feed = stringify(next);
   await store.put(feedKey, Buffer.from(feed), { cache: "no-store", contentType: "text/yaml" });
   const promoted = await store.get(feedKey);
   if (!promoted?.equals(Buffer.from(feed))) throw new Error("Feed verification failed");

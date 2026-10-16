@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { releaseNoteItems } from "./release-notes.ts";
+import { notesSinceInstalled, releaseNoteItems } from "./release-notes.ts";
 
 const generated = `## What's Changed
 * feat(desktop): add a **Show Flow Bar** at all times setting by @mhadrys in https://github.com/codlume/voice/pull/120
@@ -37,5 +37,91 @@ describe("release note items", () => {
     for (const value of [undefined, null, 42, [{ version: "0.2.0", note: "* change" }], {}]) {
       expect(releaseNoteItems(value)).toEqual([]);
     }
+  });
+});
+
+const feed = (releaseHistory: unknown) => ({
+  version: "0.5.0",
+  releaseNotes: "* five",
+  releaseHistory,
+});
+
+describe("release notes for an update", () => {
+  const history = [
+    { version: "0.5.0", notes: "* five" },
+    { version: "0.4.0", notes: "* four" },
+    { version: "0.3.0", notes: "* three" },
+    { version: "0.2.0", notes: "* two" },
+  ];
+
+  test("lists each release newer than the installed version, newest first", () => {
+    expect(notesSinceInstalled(feed(history), "0.3.0")).toEqual({
+      releases: [
+        { version: "0.5.0", items: ["five"] },
+        { version: "0.4.0", items: ["four"] },
+      ],
+      omitted: 0,
+    });
+  });
+
+  test("stops at an installed release that shipped without notes", () => {
+    const withBlank = [history[0], history[1], { version: "0.3.0", notes: "" }, history[3]];
+    expect(
+      notesSinceInstalled(feed(withBlank), "0.3.0").releases.map(({ version }) => version),
+    ).toEqual(["0.5.0", "0.4.0"]);
+  });
+
+  test("lists the whole history when the installed version is older than all of it", () => {
+    expect(
+      notesSinceInstalled(feed(history), "0.1.0").releases.map(({ version }) => version),
+    ).toEqual(["0.5.0", "0.4.0", "0.3.0", "0.2.0"]);
+  });
+
+  test("falls back to the feed's own notes when it has no usable history", () => {
+    const single = { releases: [{ version: "0.5.0", items: ["five"] }], omitted: 0 };
+    for (const malformed of [
+      undefined,
+      [],
+      "* four",
+      [{ version: "0.4.0", notes: "* four" }, { version: 4 }],
+      [{ version: "0.4.0" }],
+      [null],
+    ]) {
+      expect(notesSinceInstalled(feed(malformed), "0.1.0")).toEqual(single);
+    }
+    expect(notesSinceInstalled({ version: "0.5.0" }, "0.1.0")).toEqual({
+      releases: [],
+      omitted: 0,
+    });
+    expect(notesSinceInstalled(null, "0.1.0")).toEqual({ releases: [], omitted: 0 });
+  });
+
+  test("shows the six newest releases and counts the rest", () => {
+    const long = Array.from({ length: 9 }, (_, index) => ({
+      version: `0.${9 - index}.0`,
+      notes: `* change ${9 - index}`,
+    }));
+    const notes = notesSinceInstalled(feed(long), "0.0.1");
+    expect(notes.releases.map(({ version }) => version)).toEqual([
+      "0.9.0",
+      "0.8.0",
+      "0.7.0",
+      "0.6.0",
+      "0.5.0",
+      "0.4.0",
+    ]);
+    expect(notes.omitted).toBe(3);
+  });
+
+  test("drops releases whose notes have no items, without counting them", () => {
+    const sparse = [
+      { version: "0.5.0", notes: "**Full Changelog**: https://example.test" },
+      { version: "0.4.0", notes: "* four" },
+      { version: "0.3.0", notes: "" },
+    ];
+    expect(notesSinceInstalled(feed(sparse), "0.2.0")).toEqual({
+      releases: [{ version: "0.4.0", items: ["four"] }],
+      omitted: 0,
+    });
   });
 });
