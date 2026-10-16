@@ -178,7 +178,6 @@ export type SettingsPatch = {
   cleanup?: {
     enabled?: boolean;
     styles?: Partial<CategoryStyles>;
-    assignments?: readonly Assignment[];
   };
   diagnostics?: DiagnosticsConsent;
   snippets?: readonly Snippet[];

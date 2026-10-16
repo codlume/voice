@@ -90,7 +90,6 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
 
 export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   const { snippets, dictionary } = patch;
-  const assignments = patch.cleanup?.assignments;
   // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
   if (
     snippets !== undefined &&
@@ -103,12 +102,6 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     (!Array.isArray(dictionary) || parseDictionary(dictionary).length !== dictionary.length)
   ) {
     throw new Error("Could not save this dictionary.");
-  }
-  if (
-    assignments !== undefined &&
-    (!Array.isArray(assignments) || parseAssignments(assignments).length !== assignments.length)
-  ) {
-    throw new Error("Could not save these app assignments.");
   }
   return parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
@@ -124,7 +117,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     cleanup: {
       enabled: patch.cleanup?.enabled ?? settings.cleanup.enabled,
       styles: { ...settings.cleanup.styles, ...patch.cleanup?.styles },
-      assignments: assignments ?? settings.cleanup.assignments,
+      assignments: settings.cleanup.assignments,
     },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
     snippets: snippets ?? settings.snippets,

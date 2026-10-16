@@ -261,12 +261,10 @@ describe("applyPatch", () => {
     { kind: "site", host: "slack.com", category: "personal" },
   ]);
 
-  test("a list of assignments replaces the whole list, and other cleanup patches keep it", () => {
-    const first = applyPatch(DEFAULT_SETTINGS, { cleanup: { assignments } });
-    expect(first.cleanup.assignments).toEqual(assignments);
-    const replaced = applyPatch(first, { cleanup: { assignments: assignments.slice(1) } });
-    expect(replaced.cleanup.assignments).toEqual(assignments.slice(1));
-    const off = applyPatch(first, { cleanup: { enabled: false } });
+  test("cleanup patches keep the saved assignments", () => {
+    const saved = parseSettings({ cleanup: { assignments } });
+    expect(saved.cleanup.assignments).toEqual(assignments);
+    const off = applyPatch(saved, { cleanup: { enabled: false } });
     expect(off.cleanup).toEqual({
       enabled: false,
       styles: PERSONAL_CASUAL_REST_FORMAL,
@@ -280,23 +278,10 @@ describe("applyPatch", () => {
     });
   });
 
-  test.each([
-    ["a bad category", [{ kind: "site", host: "slack.com", category: "shouty" }]],
-    ["a bad host", [{ kind: "site", host: "not a host", category: "work" }]],
-    ["an app without a name", [{ kind: "app", bundleId: "com.apple.mail", category: "work" }]],
-    ["an item that is not an object", ["slack.com"]],
-    [
-      "the same site twice",
-      [
-        { kind: "site", host: "slack.com", category: "work" },
-        { kind: "site", host: "Slack.com", category: "personal" },
-      ],
-    ],
-    ["a list that is not an array", { 0: { kind: "site", host: "slack.com", category: "work" } }],
-  ])("refuses to save assignments with %s instead of dropping any", (_, assignments) => {
-    const saved = applyPatch(DEFAULT_SETTINGS, { cleanup: { assignments: [] } });
-    const patch = { cleanup: { assignments } } as unknown as SettingsPatch;
-    expect(() => applyPatch(saved, patch)).toThrow("Could not save these app assignments.");
+  test("a patch cannot replace the assignments", () => {
+    const saved = parseSettings({ cleanup: { assignments } });
+    const patch = { cleanup: { assignments: [] } } as unknown as SettingsPatch;
+    expect(applyPatch(saved, patch).cleanup.assignments).toEqual(assignments);
   });
 
   test("answers diagnostics either way, keeps the answer across unrelated patches", () => {
@@ -609,17 +594,18 @@ describe("load and save", () => {
 
   test("save then load round-trips through a nested directory and leaves no temp file", async () => {
     const file = NodePath.join(dir, "nested", "settings.json");
-    const settings = applyPatch(DEFAULT_SETTINGS, {
+    const settings = parseSettings({
+      ...DEFAULT_SETTINGS,
       hotkey: "rightOption",
       updateChannel: "nightly",
       theme: "dark",
       cleanup: {
         enabled: false,
         styles: { personal: "veryCasual", work: "casual", email: "formal", other: "casual" },
-        assignments: parseAssignments([
+        assignments: [
           { kind: "app", bundleId: "com.apple.mail", name: "Mail", category: "personal" },
           { kind: "site", host: "mail.google.com", category: "work" },
-        ]),
+        ],
       },
       snippets: [
         {
@@ -636,6 +622,7 @@ describe("load and save", () => {
       ],
       zoomLevel: 1.5,
     });
+    expect(settings.cleanup.assignments).toHaveLength(2);
     await saveSettings(file, settings);
     expect(loadSettings(file)).toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);

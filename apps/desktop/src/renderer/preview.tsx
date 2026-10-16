@@ -486,7 +486,7 @@ function fakeVoice(
           cleanup: {
             enabled: patch.cleanup?.enabled ?? snapshot.settings.cleanup.enabled,
             styles: { ...snapshot.settings.cleanup.styles, ...patch.cleanup?.styles },
-            assignments: patch.cleanup?.assignments ?? snapshot.settings.cleanup.assignments,
+            assignments: snapshot.settings.cleanup.assignments,
           },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
           snippets: patch.snippets ?? snapshot.settings.snippets,
