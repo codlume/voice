@@ -12,6 +12,7 @@ final class Helper {
     private let insertion: Insertion
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
+    private let installedApps: InstalledApps
     private var testTarget: TranscriptTarget?
 
     @MainActor
@@ -33,6 +34,7 @@ final class Helper {
         let hotkeyTap = HotkeyTap(output: output) { capture.isActive }
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
+        installedApps = InstalledApps(output: output)
     }
 
     func installHotkeyTap() {
@@ -91,6 +93,10 @@ final class Helper {
         case .testTarget(let target):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             testTarget = target
+        case .appsList:
+            installedApps.list()
+        case .iconsRender(let paths):
+            installedApps.renderIcons(paths: paths)
         }
     }
 
@@ -116,7 +122,7 @@ guard let modelsDir = directoryArgument("--models-dir"), let stateDir = director
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
-output.emit(.ready(version: 11))
+output.emit(.ready(version: 12))
 
 let helper = MainActor.assumeIsolated {
     Helper(output: output, modelsDir: modelsDir, stateDir: stateDir, environment: ProcessInfo.processInfo.environment)

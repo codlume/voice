@@ -48,6 +48,7 @@ describe("hub preload", () => {
       "downloadUpdate",
       "getHistory",
       "getInsights",
+      "getInstalledApps",
       "getSnapshot",
       "installModel",
       "onHistory",

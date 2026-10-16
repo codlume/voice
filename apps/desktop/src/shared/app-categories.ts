@@ -152,3 +152,20 @@ export const APP_CATEGORIES: ReadonlyMap<BundleId, Category> = new Map(
 export const SITE_CATEGORIES: ReadonlyMap<Host, Category> = new Map(
   BUILT_IN_SITES.map(({ host, category }) => [host, category]),
 );
+
+export const BROWSER_BUNDLE_IDS: ReadonlySet<BundleId> = new Set(
+  [
+    "com.apple.Safari",
+    "com.apple.SafariTechnologyPreview",
+    "com.google.Chrome",
+    "com.google.Chrome.canary",
+    "org.chromium.Chromium",
+    "net.imput.helium",
+    "company.thebrowser.Browser",
+    "com.brave.Browser",
+    "com.microsoft.edgemac",
+    "org.mozilla.firefox",
+    "com.operasoftware.Opera",
+    "com.vivaldi.Vivaldi",
+  ].map((key) => parsed(parseBundleId, key)),
+);

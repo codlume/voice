@@ -1,3 +1,4 @@
+import type { BundleId } from "./app-categories.ts";
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
@@ -230,6 +231,9 @@ export type PillApi = WindowApi & {
   onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
 };
 
+/** An app found in the standard application folders. `icon` is a PNG data URL, for built-in catalog apps only. */
+export type InstalledApp = { bundleId: BundleId; name: string; icon: string | null };
+
 export type HubApi = WindowApi & {
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
@@ -272,6 +276,8 @@ export type HubApi = WindowApi & {
   onInsights(listener: (insights: Insights) => void): () => void;
   /** Rejects with a message for the user when the file could not be removed. */
   clearInsights(): Promise<void>;
+  /** Rejects when the helper does not answer in time. */
+  getInstalledApps(): Promise<InstalledApp[]>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -313,4 +319,5 @@ export const Channel = {
   getInsights: "voice:getInsights",
   insights: "voice:insights",
   clearInsights: "voice:clearInsights",
+  getInstalledApps: "voice:getInstalledApps",
 } as const;

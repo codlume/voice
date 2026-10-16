@@ -55,6 +55,8 @@ public enum HelperCommand: Equatable, Sendable {
     case testAudioFile(path: String?)
     /// The next capture reports this target instead of the frontmost app; nil clears a pending one.
     case testTarget(TranscriptTarget?)
+    case appsList
+    case iconsRender(paths: [String])
 }
 
 /// What the user was dictating into: the frontmost app and, for a browser page, the page host.
@@ -90,6 +92,8 @@ public enum HelperEvent: Equatable, Sendable {
     case permissions(microphone: PermissionState, accessibility: PermissionState)
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
+    case appsListed(apps: [InstalledApp])
+    case iconsRendered(icons: [RenderedIcon])
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -101,6 +105,7 @@ private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
+    case paths, apps, name, icons, png
 }
 
 extension HelperCommand: Decodable {
@@ -136,6 +141,8 @@ extension HelperCommand: Decodable {
         case "asr.remove": self = .asrRemove
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
         case "test.target": self = .testTarget(try c.decode(TranscriptTarget?.self, forKey: .target))
+        case "apps.list": self = .appsList
+        case "icons.render": self = .iconsRender(paths: try c.decode([String].self, forKey: .paths))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -248,6 +255,12 @@ extension HelperEvent: Encodable {
             try c.encode("log", forKey: .type)
             try c.encode(level, forKey: .level)
             try c.encode(message, forKey: .message)
+        case .appsListed(let apps):
+            try c.encode("apps.listed", forKey: .type)
+            try c.encode(apps, forKey: .apps)
+        case .iconsRendered(let icons):
+            try c.encode("icons.rendered", forKey: .type)
+            try c.encode(icons, forKey: .icons)
         }
     }
 
@@ -273,6 +286,23 @@ extension TranscriptTarget: Codable {
         var c = encoder.container(keyedBy: Key.self)
         try c.encode(bundleId, forKey: .bundleId)
         try c.encode(host, forKey: .host)
+    }
+}
+
+extension InstalledApp: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(bundleId, forKey: .bundleId)
+        try c.encode(name, forKey: .name)
+        try c.encode(path, forKey: .path)
+    }
+}
+
+extension RenderedIcon: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(path, forKey: .path)
+        try c.encode(png.base64EncodedString(), forKey: .png)
     }
 }
 
