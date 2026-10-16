@@ -21,6 +21,7 @@ const fresh: Snapshot = {
     toggleHotkey: null,
     updateChannel: "stable",
     theme: "system",
+    animationSpeed: "normal",
     microphone: null,
     muteWhileDictating: false,
     copyToClipboard: false,

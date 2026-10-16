@@ -108,6 +108,7 @@ describe("parseSettings", () => {
       toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
+      animationSpeed: "normal",
       microphone: null,
       muteWhileDictating: false,
       copyToClipboard: false,
@@ -199,6 +200,14 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
+  test("defaults animation speed to normal, keeps a saved one, and rejects an unknown one", () => {
+    expect(parseSettings({}).animationSpeed).toBe("normal");
+    expect(parseSettings({ animationSpeed: "off" }).animationSpeed).toBe("off");
+    for (const raw of ["turbo", "Off", 2, null]) {
+      expect(parseSettings({ animationSpeed: raw }).animationSpeed).toBe("normal");
+    }
+  });
+
   test.each([null, "text", 42, [], { cleanup: "no" }])("falls back to defaults for %j", (raw) => {
     expect(parseSettings(raw)).toEqual(DEFAULT_SETTINGS);
   });
@@ -233,6 +242,7 @@ describe("applyPatch", () => {
       toggleHotkey: null,
       updateChannel: "stable",
       theme: "system",
+      animationSpeed: "normal",
       microphone: null,
       muteWhileDictating: false,
       copyToClipboard: false,
@@ -349,6 +359,13 @@ describe("applyPatch", () => {
       hotkey: "rightOption",
       toggleHotkey: null,
     });
+  });
+
+  test("changes animation speed alone, keeps it across unrelated patches, and can set it back", () => {
+    const slow = applyPatch(DEFAULT_SETTINGS, { animationSpeed: "slow" });
+    expect(slow).toEqual({ ...DEFAULT_SETTINGS, animationSpeed: "slow" });
+    expect(applyPatch(slow, { theme: "dark" }).animationSpeed).toBe("slow");
+    expect(applyPatch(slow, { animationSpeed: "normal" })).toEqual(DEFAULT_SETTINGS);
   });
 
   test("changes the theme alone and keeps other fields", () => {

@@ -8,7 +8,7 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 
 import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
-import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
+import { ANIMATION_SPEEDS, DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
@@ -72,6 +72,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
+    animationSpeed: pick(ANIMATION_SPEEDS, r.animationSpeed, DEFAULT_SETTINGS.animationSpeed),
     muteWhileDictating: flag(r.muteWhileDictating, DEFAULT_SETTINGS.muteWhileDictating),
     copyToClipboard: flag(r.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
     showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
@@ -110,6 +111,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     updateChannel: patch.updateChannel ?? settings.updateChannel,
     dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
     theme: patch.theme ?? settings.theme,
+    animationSpeed: patch.animationSpeed ?? settings.animationSpeed,
     muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
     copyToClipboard: patch.copyToClipboard ?? settings.copyToClipboard,
     showInDock: patch.showInDock ?? settings.showInDock,

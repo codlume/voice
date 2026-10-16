@@ -19,6 +19,8 @@ export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export type UpdateChannel = "stable" | "nightly";
 export type Theme = "system" | "light" | "dark";
+export const ANIMATION_SPEEDS = ["off", "fast", "normal", "slow"] as const;
+export type AnimationSpeed = (typeof ANIMATION_SPEEDS)[number];
 export type DiagnosticsConsent = "on" | "off";
 // "unavailable" is a development build, which never registers a login item.
 export type LoginItem = "on" | "off" | "needsApproval" | "unavailable";
@@ -145,6 +147,7 @@ export type Settings = {
   dictationLanguage: DictationLanguage;
   updateChannel: UpdateChannel;
   theme: Theme;
+  animationSpeed: AnimationSpeed;
   cleanup: {
     enabled: boolean;
     styles: CategoryStyles;
@@ -168,6 +171,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
+  animationSpeed: "normal",
   cleanup: { enabled: true, styles: DEFAULT_STYLES, assignments: [] },
   diagnostics: "off",
   snippets: [],
@@ -186,6 +190,7 @@ export type SettingsPatch = {
   dictationLanguage?: DictationLanguage;
   updateChannel?: UpdateChannel;
   theme?: Theme;
+  animationSpeed?: AnimationSpeed;
   cleanup?: {
     enabled?: boolean;
     styles?: Partial<CategoryStyles>;
@@ -209,13 +214,14 @@ export type Snapshot = {
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &
-  Pick<Settings, "alwaysShowPill" | "copyToClipboard">;
+  Pick<Settings, "alwaysShowPill" | "copyToClipboard" | "animationSpeed">;
 
 export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
   return {
     session,
     alwaysShowPill: settings.alwaysShowPill,
     copyToClipboard: settings.copyToClipboard,
+    animationSpeed: settings.animationSpeed,
   };
 }
 
