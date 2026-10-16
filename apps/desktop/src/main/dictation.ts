@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
-import { supportsCleanup, type DictationLanguage } from "../shared/dictation-language.ts";
+import {
+  supportsCleanup,
+  wantsCleanup,
+  type DictationLanguage,
+} from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor, parseTarget } from "../shared/style.ts";
 import type { Cleanup } from "./cleanup.ts";
@@ -190,7 +194,7 @@ export function createDictation(options: DictationOptions): Dictation {
           language: started.language,
           muteWhileDictating: store.state.settings.muteWhileDictating,
           microphone: store.state.settings.microphone,
-          detectHost: true,
+          detectHost: wantsCleanup(store.state.settings),
         });
         return;
       case "stopCapture":

@@ -283,9 +283,19 @@ describe("createDictation", () => {
         muteWhileDictating: false,
         language: value,
         microphone: null,
-        detectHost: true,
+        detectHost: expect.any(Boolean),
       },
     ]);
+  });
+
+  test.each<[string, Options, boolean]>([
+    ["cleanup runs", {}, true],
+    ["cleanup is off", { cleanupEnabled: false }, false],
+    ["the language has no cleanup", { dictationLanguage: "pl" }, false],
+  ])("asks the helper for the page host only when %s", (_, opts, detectHost) => {
+    const h = harness(opts);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands).toEqual([expect.objectContaining({ type: "capture.start", detectHost })]);
   });
 
   test("snapshots the microphone per session and applies a changed choice next time", () => {
@@ -938,7 +948,7 @@ describe("createDictation", () => {
           language: value,
           muteWhileDictating: false,
           microphone: null,
-          detectHost: true,
+          detectHost: false,
         },
       ]);
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
