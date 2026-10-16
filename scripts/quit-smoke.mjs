@@ -78,7 +78,7 @@ const startCleaning = () =>
   evaluateInMain(
     ports.inspect,
     `globalThis.voiceTest.cleanup.clean(${JSON.stringify(LONG_DICTATION)},
-      { styling: "semi-formal" },
+      { style: "formal", layout: "general" },
       { budgetMs: 60_000, signal: new AbortController().signal }).catch(() => undefined); 'cleaning'`,
   );
 

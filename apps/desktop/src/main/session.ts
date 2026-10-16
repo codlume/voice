@@ -1,3 +1,5 @@
+import type { CleanupStyle } from "@voice/cleanup/style";
+
 import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
 
 import type { Transcript } from "../shared/history.ts";
@@ -47,7 +49,13 @@ export type SessionEvent =
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
-  | { type: "transcript"; id: string; text: string; cleanup: boolean; rewrites: Rewrites }
+  | {
+      type: "transcript";
+      id: string;
+      text: string;
+      cleanup: CleanupStyle | null;
+      rewrites: Rewrites;
+    }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
   | { type: "cleanupFailed"; id: string }
@@ -60,7 +68,7 @@ export type Effect =
   | { type: "startCapture"; id: string }
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
-  | { type: "cleanup"; id: string; raw: string }
+  | { type: "cleanup"; id: string; raw: string; style: CleanupStyle }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
   | { type: "scheduleIdle"; id: string; ms: number };
@@ -212,14 +220,14 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (raw === "") return finish(state.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
       // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
-      if (!event.cleanup || rewritten.entireDictation) {
+      if (event.cleanup === null || rewritten.entireDictation) {
         return insert(state.id, raw, rewritten, null);
       }
       return {
         state: { phase: "cleaning", id: state.id, raw, rewrites: event.rewrites },
         effects: [
           { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
-          { type: "cleanup", id: state.id, raw },
+          { type: "cleanup", id: state.id, raw, style: event.cleanup },
         ],
       };
     }

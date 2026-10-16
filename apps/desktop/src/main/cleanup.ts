@@ -68,7 +68,7 @@ async function importModule(log: (message: string) => void): Promise<CleanupModu
 }
 
 const WARM_UP_TEXT = "um so this is a quick warm up";
-const WARM_UP_STYLE: CleanupStyle = { styling: "semi-formal" };
+const WARM_UP_STYLE: CleanupStyle = { style: "formal", layout: "general" };
 // Typical transcription takes 150-250 ms. A longer one outlasts the cap and its clean starts cold.
 const GPU_BUSY_MS = 1000;
 

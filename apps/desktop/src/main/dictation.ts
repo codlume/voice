@@ -200,11 +200,10 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "cleanup": {
         const startedAt = now();
-        const { styling } = store.state.settings.cleanup;
         const budgetMs = cleanupBudgetMs(effect.raw);
         Effect.runFork(
           Effect.tryPromise({
-            try: (signal) => cleanup.clean(effect.raw, { styling }, { budgetMs, signal }),
+            try: (signal) => cleanup.clean(effect.raw, effect.style, { budgetMs, signal }),
             catch: (error): CleanupFailure => ({
               message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
               entry: {
@@ -356,7 +355,9 @@ export function createDictation(options: DictationOptions): Dictation {
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup: willCleanup(event.id),
+          cleanup: willCleanup(event.id)
+            ? { style: store.state.settings.cleanup.style, layout: "general" }
+            : null,
           rewrites: {
             dictionary: store.state.settings.dictionary,
             snippets: store.state.settings.snippets,

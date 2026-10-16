@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import type { CleanResult, CleanupStyle } from "@voice/cleanup";
+import { type CleanResult, type CleanupStyle, WRITING_STYLES } from "@voice/cleanup";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type ModelStatus } from "../shared/api.ts";
@@ -42,7 +42,7 @@ type Options = {
   asrModel?: ModelStatus;
   cleanupLoaded?: boolean;
   cleanupEnabled?: boolean;
-  styling?: CleanupStyle["styling"];
+  style?: CleanupStyle["style"];
   cleanFails?: "rejects" | "throws";
   cleanHangs?: boolean;
   cleanPartial?: boolean;
@@ -82,7 +82,7 @@ function harness(opts: Options = {}) {
       dictionary: opts.dictionary ?? DEFAULT_SETTINGS.dictionary,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
-        styling: opts.styling ?? DEFAULT_SETTINGS.cleanup.styling,
+        style: opts.style ?? DEFAULT_SETTINGS.cleanup.style,
       },
     },
     microphones: { kind: "loading" },
@@ -656,24 +656,27 @@ describe("createDictation", () => {
     expect(h.logs.filter((line) => line.startsWith("session "))).toHaveLength(2);
   });
 
-  test("cleans with the user's styling and no other settings", async () => {
-    const h = harness({ styling: "casual" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
-    vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({
-      type: "transcript",
-      id,
-      text: "hey",
-      audioMs: 800,
-      asrMs: 120,
-      speechMs: 600,
-    });
-    await flush();
-    expect(h.styles).toStrictEqual([{ styling: "casual" }]);
-  });
+  test.each(WRITING_STYLES)(
+    "cleans with the user's %s style in the general layout",
+    async (style) => {
+      const h = harness({ style });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      const id = h.id();
+      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+      vi.advanceTimersByTime(800);
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({
+        type: "transcript",
+        id,
+        text: "hey",
+        audioMs: 800,
+        asrMs: 120,
+        speechMs: 600,
+      });
+      await flush();
+      expect(h.styles).toStrictEqual([{ style, layout: "general" }]);
+    },
+  );
 
   test("a release after the minimum hold keeps the GPU busy until the clean starts", async () => {
     const h = harness();
@@ -928,9 +931,12 @@ describe("createDictation", () => {
   });
 
   test.each(["rejects", "throws"] as const)(
-    "a cleanup that %s inserts the raw transcript",
+    "a cleanup that %s inserts the raw transcript with the dictionary applied",
     async (cleanFails) => {
-      const h = harness({ cleanFails });
+      const h = harness({
+        cleanFails,
+        dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }],
+      });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const id = h.id();
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
@@ -939,14 +945,14 @@ describe("createDictation", () => {
       h.dictation.onHelperEvent({
         type: "transcript",
         id,
-        text: "keep me",
+        text: "keep hadrys",
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
       });
       await flush();
-      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep me", html: null });
-      expect(h.latest()).toMatchObject({ raw: "keep me", text: "keep me" });
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep Hadryś", html: null });
+      expect(h.latest()).toMatchObject({ raw: "keep hadrys", text: "keep Hadryś" });
       expect(h.logs).toContain("cleanup failed: model crashed");
       expect(h.entries).toEqual([
         { message: "cleanup failed", level: "warn", attributes: { "error.type": "Error" } },

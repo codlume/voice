@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 
 import { chunkTranscript } from "./chunk.ts";
-import type { CleanupStyle } from "./prompt.ts";
+import type { S1Control } from "./prompt.ts";
 import { CHUNK_TOKENS, createS1Mini, type CleanResult } from "./s1mini.ts";
+import type { CleanupStyle } from "./style.ts";
 
 type Reply = { response: string; stopReason?: string };
 
@@ -13,6 +14,7 @@ const native = vi.hoisted(() => ({
   active: 0,
   maxActive: 0,
   events: [] as string[],
+  controls: [] as string[],
   reply: (raw: string): Reply => ({ response: ` ${raw.toUpperCase()} ` }),
 }));
 
@@ -36,7 +38,9 @@ vi.mock("node-llama-cpp", () => {
     },
     LlamaCompletion: class {
       async generateCompletionWithMeta(tokens: string[], { signal }: { signal?: AbortSignal }) {
-        const raw = /\]\n([\s\S]*)<\|im_end\|>\n<\|im_start\|>assistant/.exec(tokens.join(""))![1]!;
+        const prompt = tokens.join("");
+        const raw = /\]\n([\s\S]*)<\|im_end\|>\n<\|im_start\|>assistant/.exec(prompt)![1]!;
+        native.controls.push(/\[Styling.*\]/.exec(prompt)![0]);
         native.active++;
         native.maxActive = Math.max(native.maxActive, native.active);
         native.events.push(`generate ${raw.slice(0, 12)}`);
@@ -67,7 +71,8 @@ vi.mock("node-llama-cpp", () => {
   };
 });
 
-const style: CleanupStyle = { styling: "semi-formal" };
+const style: CleanupStyle = { style: "formal", layout: "general" };
+const control: S1Control = { styling: "semi-formal", context: "general" };
 const whole = (text: string): CleanResult => ({ text, chunks: 1, cleaned: 1 });
 const generations = () => native.events.filter((e) => e.startsWith("generate"));
 
@@ -86,6 +91,7 @@ beforeEach(() => {
     active: 0,
     maxActive: 0,
     events: [],
+    controls: [],
   });
   native.delayMs = () => 0;
   native.reply = (raw) => ({ response: ` ${raw.toUpperCase()} ` });
@@ -200,7 +206,7 @@ test("generate returns what the model said even when the guard rejects it", asyn
     chunks: 1,
     cleaned: 0,
   });
-  await expect(s1.generate("test test", style)).resolves.toEqual([
+  await expect(s1.generate("test test", control)).resolves.toEqual([
     { chunk: "test test", output: "", truncated: false },
   ]);
 });
@@ -379,7 +385,7 @@ test("generate ends the busy loop", async () => {
 
   s1.keepGpuBusy(1000);
   await vi.advanceTimersByTimeAsync(40);
-  const generating = s1.generate("call ada", style);
+  const generating = s1.generate("call ada", control);
   await vi.advanceTimersByTimeAsync(1000);
 
   await expect(generating).resolves.toHaveLength(1);
@@ -435,4 +441,54 @@ test("the model reloads after dispose", async () => {
 
   await expect(s1.clean("call ada", style)).resolves.toEqual(whole("CALL ADA"));
   expect(native.getLlamaCalls).toBe(2);
+});
+
+const capitalized = [first, second, third].map(capitalizeLikeS1Mini).join(" ");
+
+test.each([
+  ["formal", capitalized],
+  ["casual", capitalized.slice(0, -1)],
+  ["veryCasual", threeChunkRaw.slice(0, -1)],
+] as const)(
+  "%s finishes the accepted chunks of a long dictation",
+  async (writingStyle, expected) => {
+    const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+    native.reply = (chunk) => ({ response: capitalizeLikeS1Mini(chunk) });
+
+    const { text } = await s1.clean(threeChunkRaw, { style: writingStyle, layout: "general" });
+
+    expect(text).toBe(expected);
+  },
+);
+
+test.each(["casual", "veryCasual"] as const)(
+  "%s leaves a rejected last chunk as the user's exact words, period included",
+  async (writingStyle) => {
+    const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+    native.reply = (chunk) => ({ response: chunk === third ? "" : capitalizeLikeS1Mini(chunk) });
+
+    const { text } = await s1.clean(threeChunkRaw, { style: writingStyle, layout: "general" });
+
+    const cleaned = [first, second].map(capitalizeLikeS1Mini).join(" ");
+    expect(text).toBe(
+      `${writingStyle === "veryCasual" ? cleaned.toLowerCase() : cleaned} ${third}`,
+    );
+  },
+);
+
+test("an email dictation that needs two chunks is cleaned in the general layout", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+
+  await s1.clean(threeChunkRaw, { style: "formal", layout: "email" });
+  await s1.clean("hi maria thanks for sending the deck i will send my notes tomorrow", {
+    style: "formal",
+    layout: "email",
+  });
+
+  expect(native.controls).toEqual([
+    "[Styling: semi-formal] [Structure: prose] [Context: general]",
+    "[Styling: semi-formal] [Structure: prose] [Context: general]",
+    "[Styling: semi-formal] [Structure: prose] [Context: general]",
+    "[Styling: semi-formal] [Structure: prose] [Context: email]",
+  ]);
 });

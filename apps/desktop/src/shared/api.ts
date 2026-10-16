@@ -1,4 +1,4 @@
-import type { CleanupStyle } from "@voice/cleanup/prompt";
+import type { WritingStyle } from "@voice/cleanup/style";
 
 import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
@@ -137,7 +137,7 @@ export type Settings = {
   theme: Theme;
   cleanup: {
     enabled: boolean;
-    styling: CleanupStyle["styling"];
+    style: WritingStyle;
   };
   diagnostics: DiagnosticsConsent;
   snippets: readonly Snippet[];
@@ -157,7 +157,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictationLanguage: "en",
   updateChannel: "stable",
   theme: "system",
-  cleanup: { enabled: true, styling: "semi-formal" },
+  cleanup: { enabled: true, style: "formal" },
   diagnostics: "off",
   snippets: [],
   dictionary: [],

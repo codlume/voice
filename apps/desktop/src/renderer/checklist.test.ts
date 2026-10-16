@@ -26,7 +26,7 @@ const fresh: Snapshot = {
     showInDock: true,
     alwaysShowPill: true,
     dictationLanguage: "en",
-    cleanup: { enabled: true, styling: "semi-formal" },
+    cleanup: { enabled: true, style: "formal" },
     diagnostics: "off",
     snippets: [],
     dictionary: [],

@@ -69,7 +69,7 @@ async function runTrial(trial) {
   const userData = await prepareUserData("voice-cleanup-lag-smoke");
   writeFileSync(
     join(userData, "settings.json"),
-    JSON.stringify({ cleanup: { enabled: false, styling: "semi-formal" } }),
+    JSON.stringify({ cleanup: { enabled: false, style: "formal" } }),
   );
   const env = { ...process.env, VOICE_HELPER_TEST: "1", VOICE_USER_DATA_DIR: userData };
   delete env.ELECTRON_RUN_AS_NODE;

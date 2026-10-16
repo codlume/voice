@@ -12,7 +12,7 @@ import {
   type ForkEngine,
 } from "./cleanup-engine.ts";
 
-const style: CleanupStyle = { styling: "formal" };
+const style: CleanupStyle = { style: "veryCasual", layout: "email" };
 const modelPath = "/models/s1-mini.gguf";
 
 function deferred<T = void>() {
