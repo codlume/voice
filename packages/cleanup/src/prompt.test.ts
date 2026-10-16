@@ -18,3 +18,14 @@ test("builds the exact S1-mini Qwen3 template from the model card", () => {
       "\n",
   );
 });
+
+test("asks for email layout only when the style names it", () => {
+  const prompt = buildS1MiniPrompt("hi maria best tom", {
+    styling: "semi-formal",
+    context: "email",
+  });
+
+  expect(prompt).toContain(
+    "<|im_start|>user\n[Styling: semi-formal] [Structure: prose] [Context: email]\nhi maria best tom<|im_end|>",
+  );
+});
