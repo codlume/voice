@@ -23,8 +23,8 @@ function choices(prompt: RestartPrompt) {
 }
 
 const idle: PillState = { kind: "idle" };
-const noNotes = { releases: [], omitted: 0 };
-const oneNote = { releases: [{ version: "1.5.0", items: ["fix: one"] }], omitted: 0 };
+const noNotes = { releases: [], more: false };
+const oneNote = { releases: [{ version: "1.5.0", items: ["fix: one"] }], more: false };
 const latest = (status: HistoryStatus): HistoryEntry => ({
   id: "s1",
   at: 0,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { parse, stringify } from "yaml";
+import { notesSinceInstalled } from "../apps/desktop/src/main/release-notes.ts";
 import { compareVersions, nightlyVersion } from "./release-version.mjs";
 import { preflightRelease, publishRelease } from "./release-publish.mjs";
 
@@ -144,7 +145,7 @@ test("the history starts from a feed published before it existed", async () => {
   ]);
 });
 
-test("releases without notes stay in the history so clients can find their version", async () => {
+test("releases without notes stay in the history", async () => {
   const store = memoryStore();
   await publishStable(store, "0.0.2", "");
   await publishStable(store, "0.0.3", "* three\n");
@@ -154,6 +155,54 @@ test("releases without notes stay in the history so clients can find their versi
     { version: "0.0.3", notes: "* three\n" },
     { version: "0.0.2", notes: "" },
   ]);
+});
+
+test("the history drops carried releases that are not older than the new one, or repeat", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.3", "* three\n");
+  const key = "channels/stable/mac-arm64/latest-mac.yml";
+  const edited = stableFeed(store);
+  edited.releaseHistory = [
+    { version: "0.0.5", notes: "* rolled back\n" },
+    { version: "0.0.4", notes: "* same as new\n" },
+    { version: "0.0.1", notes: "* one\n" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.3", notes: "* three again\n" },
+    { version: "three", notes: "* bogus\n" },
+    { version: "0.0.2", notes: "* two\n" },
+  ];
+  store.objects.set(key, Buffer.from(stringify(edited)));
+  await publishStable(store, "0.0.4", "* four\n");
+  assert.deepEqual(stableFeed(store).releaseHistory, [
+    { version: "0.0.4", notes: "* four\n" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.2", notes: "* two\n" },
+    { version: "0.0.1", notes: "* one\n" },
+  ]);
+});
+
+test("the desktop app reads the notes the publisher writes", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "* two\n");
+  await publishStable(store, "0.0.3", "");
+  await publishStable(store, "0.0.4", "* four\n");
+  await publishStable(store, "0.0.5", "* five\n");
+  const feed = stableFeed(store);
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.2"), {
+    releases: [
+      { version: "0.0.5", items: ["five"] },
+      { version: "0.0.4", items: ["four"] },
+    ],
+    more: false,
+  });
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.3"), {
+    releases: [
+      { version: "0.0.5", items: ["five"] },
+      { version: "0.0.4", items: ["four"] },
+    ],
+    more: false,
+  });
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.5"), { releases: [], more: false });
 });
 
 test("the history keeps the ten newest releases", async () => {

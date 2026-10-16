@@ -14,10 +14,10 @@ import {
 
 type Feed = { version: string; releaseNotes?: string };
 
-const noNotes = { releases: [], omitted: 0 };
+const noNotes = { releases: [], more: false };
 const notesFor = (version: string, item: string) => ({
   releases: [{ version, items: [item] }],
-  omitted: 0,
+  more: false,
 });
 
 /**

@@ -26,7 +26,7 @@ export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
 
 export type ReleaseNotes = {
   releases: readonly { version: string; items: readonly string[] }[];
-  omitted: number;
+  more: boolean;
 };
 
 export type UpdateStatus =

@@ -90,13 +90,26 @@ function prepareFeed(source, version, baseUrl, artifacts, releaseNotes) {
 const HISTORY_LIMIT = 10;
 
 function releaseHistory(prior, feed) {
-  const carried = Array.isArray(prior?.releaseHistory)
-    ? prior.releaseHistory
-    : [{ version: prior?.version, notes: prior?.releaseNotes }];
-  return [{ version: feed.version, notes: feed.releaseNotes }, ...carried]
-    .filter((entry) => typeof entry?.version === "string")
+  const carried = !prior
+    ? []
+    : Array.isArray(prior.releaseHistory)
+      ? prior.releaseHistory
+      : [{ version: prior.version, notes: prior.releaseNotes }];
+  const older = carried
+    .filter((entry) => isOlder(entry?.version, feed.version))
+    .toSorted((left, right) => compareVersions(right.version, left.version))
+    .filter((entry, index, sorted) => entry.version !== sorted[index - 1]?.version);
+  return [{ version: feed.version, notes: feed.releaseNotes }, ...older]
     .map(({ version, notes }) => ({ version, notes: typeof notes === "string" ? notes : "" }))
     .slice(0, HISTORY_LIMIT);
+}
+
+function isOlder(version, than) {
+  try {
+    return compareVersions(version, than) < 0;
+  } catch {
+    return false;
+  }
 }
 
 function feedIdentity(feed) {

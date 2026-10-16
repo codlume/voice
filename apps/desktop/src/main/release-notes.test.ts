@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import type { ReleaseNotes } from "../shared/api.ts";
 import { notesSinceInstalled, releaseNoteItems } from "./release-notes.ts";
 
 const generated = `## What's Changed
@@ -40,88 +41,115 @@ describe("release note items", () => {
   });
 });
 
-const feed = (releaseHistory: unknown) => ({
-  version: "0.5.0",
-  releaseNotes: "* five",
-  releaseHistory,
+const release = (version: string) => ({ version, notes: `* ${version}` });
+const notesFor = (versions: readonly string[], installedVersion: string) =>
+  notesSinceInstalled(
+    {
+      version: versions[0] ?? "",
+      releaseNotes: `* ${versions[0]}`,
+      releaseHistory: versions.map(release),
+    },
+    installedVersion,
+  );
+const shown = ({ releases, more }: ReleaseNotes) => ({
+  versions: releases.map(({ version }) => version),
+  more,
 });
+const stable = (count: number) =>
+  Array.from({ length: count }, (_, index) => `0.${count - index}.0`);
 
 describe("release notes for an update", () => {
-  const history = [
-    { version: "0.5.0", notes: "* five" },
-    { version: "0.4.0", notes: "* four" },
-    { version: "0.3.0", notes: "* three" },
-    { version: "0.2.0", notes: "* two" },
-  ];
-
   test("lists each release newer than the installed version, newest first", () => {
-    expect(notesSinceInstalled(feed(history), "0.3.0")).toEqual({
+    expect(notesFor(["0.5.0", "0.4.0", "0.3.0", "0.2.0"], "0.3.0")).toEqual({
       releases: [
-        { version: "0.5.0", items: ["five"] },
-        { version: "0.4.0", items: ["four"] },
+        { version: "0.5.0", items: ["0.5.0"] },
+        { version: "0.4.0", items: ["0.4.0"] },
       ],
-      omitted: 0,
+      more: false,
     });
   });
 
-  test("stops at an installed release that shipped without notes", () => {
-    const withBlank = [history[0], history[1], { version: "0.3.0", notes: "" }, history[3]];
-    expect(
-      notesSinceInstalled(feed(withBlank), "0.3.0").releases.map(({ version }) => version),
-    ).toEqual(["0.5.0", "0.4.0"]);
+  test("leaves out nightlies built before the stable release a user switches from", () => {
+    const nightly = [
+      "0.5.1-nightly.20261005.1",
+      "0.5.1-nightly.20261004.1",
+      "0.5.0-nightly.20261003.1",
+      "0.5.0-nightly.20261002.1",
+    ];
+    expect(shown(notesFor(nightly, "0.5.0"))).toEqual({
+      versions: ["0.5.1-nightly.20261005.1", "0.5.1-nightly.20261004.1"],
+      more: false,
+    });
   });
 
-  test("lists the whole history when the installed version is older than all of it", () => {
+  test("lists nothing the installed version already has when stable is a downgrade", () => {
+    const history = ["0.5.0", "0.4.0", "0.3.0"];
+    expect(shown(notesFor(history, "0.5.1-nightly.20261005.1"))).toEqual({
+      versions: [],
+      more: false,
+    });
+    expect(shown(notesFor(history, "0.4.1-nightly.20261001.3"))).toEqual({
+      versions: ["0.5.0"],
+      more: false,
+    });
+    expect(shown(notesFor(history, "0.9.0"))).toEqual({ versions: [], more: false });
+  });
+
+  test("shows the six newest releases and says when more were left out", () => {
+    const six = ["0.8.0", "0.7.0", "0.6.0", "0.5.0", "0.4.0", "0.3.0"];
+    expect(shown(notesFor(stable(8), "0.1.0"))).toEqual({ versions: six, more: true });
+    expect(shown(notesFor(stable(8), "0.2.0"))).toEqual({ versions: six, more: false });
+  });
+
+  test("says more were left out when the history never reaches the installed version", () => {
+    const newest = ["0.14.0", "0.13.0", "0.12.0", "0.11.0", "0.10.0", "0.9.0"];
+    expect(shown(notesFor(newest, "0.1.0"))).toEqual({ versions: newest, more: true });
+    expect(shown(notesFor(stable(14).slice(0, 10), "0.8.0"))).toEqual({
+      versions: newest,
+      more: false,
+    });
+  });
+
+  test("keeps the readable entries of a history with malformed ones", () => {
+    const history = [
+      release("0.5.0"),
+      { version: 4, notes: "* four" },
+      { version: "0.4.5", notes: new Date(0) },
+      null,
+      "* four",
+      { version: "four", notes: "* four" },
+      release("0.3.0"),
+      release("0.2.0"),
+    ];
     expect(
-      notesSinceInstalled(feed(history), "0.1.0").releases.map(({ version }) => version),
-    ).toEqual(["0.5.0", "0.4.0", "0.3.0", "0.2.0"]);
+      shown(notesSinceInstalled({ version: "0.5.0", releaseHistory: history }, "0.2.0")),
+    ).toEqual({ versions: ["0.5.0", "0.3.0"], more: false });
   });
 
   test("falls back to the feed's own notes when it has no usable history", () => {
-    const single = { releases: [{ version: "0.5.0", items: ["five"] }], omitted: 0 };
-    for (const malformed of [
-      undefined,
-      [],
-      "* four",
-      [{ version: "0.4.0", notes: "* four" }, { version: 4 }],
-      [{ version: "0.4.0" }],
-      [null],
-    ]) {
-      expect(notesSinceInstalled(feed(malformed), "0.1.0")).toEqual(single);
+    for (const releaseHistory of [undefined, [], "* four", [null], [{ version: 4 }]]) {
+      const own = { version: "0.5.0", releaseNotes: "* five", releaseHistory };
+      expect(notesSinceInstalled(own, "0.1.0")).toEqual({
+        releases: [{ version: "0.5.0", items: ["five"] }],
+        more: false,
+      });
+      expect(notesSinceInstalled(own, "0.5.1-nightly.20261005.1")).toEqual({
+        releases: [],
+        more: false,
+      });
     }
-    expect(notesSinceInstalled({ version: "0.5.0" }, "0.1.0")).toEqual({
-      releases: [],
-      omitted: 0,
-    });
-    expect(notesSinceInstalled(null, "0.1.0")).toEqual({ releases: [], omitted: 0 });
   });
 
-  test("shows the six newest releases and counts the rest", () => {
-    const long = Array.from({ length: 9 }, (_, index) => ({
-      version: `0.${9 - index}.0`,
-      notes: `* change ${9 - index}`,
-    }));
-    const notes = notesSinceInstalled(feed(long), "0.0.1");
-    expect(notes.releases.map(({ version }) => version)).toEqual([
-      "0.9.0",
-      "0.8.0",
-      "0.7.0",
-      "0.6.0",
-      "0.5.0",
-      "0.4.0",
-    ]);
-    expect(notes.omitted).toBe(3);
-  });
-
-  test("drops releases whose notes have no items, without counting them", () => {
+  test("drops releases whose notes have no items", () => {
     const sparse = [
       { version: "0.5.0", notes: "**Full Changelog**: https://example.test" },
       { version: "0.4.0", notes: "* four" },
       { version: "0.3.0", notes: "" },
+      release("0.2.0"),
     ];
-    expect(notesSinceInstalled(feed(sparse), "0.2.0")).toEqual({
+    expect(notesSinceInstalled({ version: "0.5.0", releaseHistory: sparse }, "0.2.0")).toEqual({
       releases: [{ version: "0.4.0", items: ["four"] }],
-      omitted: 0,
+      more: false,
     });
   });
 });

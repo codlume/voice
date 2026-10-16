@@ -1,45 +1,40 @@
+import { gt, valid } from "semver";
+
 import type { ReleaseNotes } from "../shared/api.ts";
 
 const MAX_RELEASES = 6;
 const MAX_ITEMS = 30;
 const MAX_ITEM_LENGTH = 240;
 
-type FeedRelease = { version: string; notes: unknown };
+// electron-updater's UpdateInfo fits this. releaseHistory is ours, so the library leaves it untyped.
+type Feed = { version: string; releaseNotes?: unknown; releaseHistory?: unknown };
+type Entry = { version: string; notes?: unknown };
 
-export function notesSinceInstalled(updateInfo: unknown, installedVersion: string): ReleaseNotes {
-  const releases = [];
-  for (const { version, notes } of feedReleases(updateInfo)) {
-    if (version === installedVersion) break;
-    const items = releaseNoteItems(notes);
-    if (items.length > 0) releases.push({ version, items });
-  }
+/** Notes for every release newer than the installed one, the rule electron-updater's GitHub changelog uses. */
+export function notesSinceInstalled(feed: Feed, installedVersion: string): ReleaseNotes {
+  const recorded = Array.isArray(feed.releaseHistory) ? feed.releaseHistory.filter(isEntry) : [];
+  const history =
+    recorded.length > 0 ? recorded : [{ version: feed.version, notes: feed.releaseNotes }];
+  const releases = history
+    .filter(({ version }) => gt(version, installedVersion))
+    .map(({ version, notes }) => ({ version, items: releaseNoteItems(notes) }))
+    .filter(({ items }) => items.length > 0);
+  // The publisher caps the history, so one that never reaches the installed version may be cut short.
+  const truncated =
+    recorded.length > 0 && recorded.every(({ version }) => gt(version, installedVersion));
   return {
     releases: releases.slice(0, MAX_RELEASES),
-    omitted: Math.max(0, releases.length - MAX_RELEASES),
+    more: releases.length > MAX_RELEASES || truncated,
   };
 }
 
-function feedReleases(updateInfo: unknown): readonly FeedRelease[] {
-  if (typeof updateInfo !== "object" || updateInfo === null) return [];
-  const history = "releaseHistory" in updateInfo ? updateInfo.releaseHistory : undefined;
-  if (Array.isArray(history) && history.length > 0 && history.every(isFeedRelease)) return history;
-  return feedWithoutHistory(updateInfo);
-}
-
-function feedWithoutHistory(updateInfo: object): readonly FeedRelease[] {
-  const version = "version" in updateInfo ? updateInfo.version : undefined;
-  if (typeof version !== "string") return [];
-  return [{ version, notes: "releaseNotes" in updateInfo ? updateInfo.releaseNotes : undefined }];
-}
-
-function isFeedRelease(value: unknown): value is FeedRelease {
+function isEntry(value: unknown): value is Entry {
   return (
     typeof value === "object" &&
     value !== null &&
     "version" in value &&
     typeof value.version === "string" &&
-    "notes" in value &&
-    typeof value.notes === "string"
+    valid(value.version) !== null
   );
 }
 

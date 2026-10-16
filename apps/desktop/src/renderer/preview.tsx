@@ -101,7 +101,7 @@ const releaseItems = [
 
 const releaseNotes: ReleaseNotes = {
   releases: [{ version: "1.5.0", items: releaseItems }],
-  omitted: 0,
+  more: false,
 };
 
 const skippedReleaseNotes: ReleaseNotes = {
@@ -128,7 +128,7 @@ const skippedReleaseNotes: ReleaseNotes = {
     },
     { version: "1.3.0", items: ["feat(desktop): add Insights by @mhadrys in #95"] },
   ],
-  omitted: 2,
+  more: true,
 };
 
 const updateScenes: Record<string, UpdateStatus> = {
@@ -138,7 +138,7 @@ const updateScenes: Record<string, UpdateStatus> = {
   downloading: { kind: "downloading", version: "1.5.0", notes: releaseNotes, percent: 48 },
   ready: { kind: "ready", version: "1.5.0", notes: releaseNotes },
   "ready-skipped-releases": { kind: "ready", version: "1.5.0", notes: skippedReleaseNotes },
-  "ready-no-notes": { kind: "ready", version: "1.5.0", notes: { releases: [], omitted: 0 } },
+  "ready-no-notes": { kind: "ready", version: "1.5.0", notes: { releases: [], more: false } },
   failed: { kind: "failed", message: "Could not check for updates. Try again." },
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };

@@ -52,7 +52,7 @@ const styles = stylex.create({
   releaseVersion: { margin: 0, color: color.foreground, fontSize: 12, fontWeight: 500 },
   noteList: { margin: 0, paddingLeft: 16 },
   note: { marginBlock: 2 },
-  omitted: { margin: 0, marginTop: 6 },
+  more: { margin: 0, marginTop: 6 },
   releaseLink: {
     display: "inline-flex",
     alignItems: "center",
@@ -183,7 +183,7 @@ function ErrorCard({ message }: { message: string }) {
 }
 
 function ReleaseCard({ update }: { update: PendingUpdate }) {
-  const { releases, omitted } = update.notes;
+  const { releases, more } = update.notes;
   return (
     <>
       <Popover.Title {...stylex.props(styles.cardTitle)}>{releaseCardTitle(update)}</Popover.Title>
@@ -203,11 +203,7 @@ function ReleaseCard({ update }: { update: PendingUpdate }) {
                 </ul>
               </section>
             ))}
-            {omitted > 0 && (
-              <p {...stylex.props(styles.omitted)}>
-                And {omitted} earlier {omitted === 1 ? "release" : "releases"}
-              </p>
-            )}
+            {more && <p {...stylex.props(styles.more)}>And earlier releases</p>}
           </div>
         </>
       )}
