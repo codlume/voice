@@ -25,6 +25,7 @@ import {
   runningVoiceProcesses,
 } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
+import { parseDictateFlags } from "./dictate-flags.mjs";
 import {
   announcedPorts,
   electronPath,
@@ -692,11 +693,13 @@ const commands = {
 
   async dictate() {
     const [wav = "short.wav", ...flags] = args;
-    const end = flags.find((f) => f.startsWith("--end="))?.slice(6) ?? "audio";
-    if (!["audio", "escape", "immediate"].includes(end))
-      fail("--end must be audio, escape, or immediate");
-    const mode = flags.find((f) => f.startsWith("--key="))?.slice(6) ?? "hold";
-    if (!["hold", "toggle"].includes(mode)) fail("--key must be hold or toggle");
+    let parsed;
+    try {
+      parsed = parseDictateFlags(flags);
+    } catch (error) {
+      fail(error.message);
+    }
+    const { end, mode, app } = parsed;
     const state = requireInstance();
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0) {
@@ -754,6 +757,12 @@ const commands = {
       copyFileSync(fixture, state.fakeMicrophonePath);
       snapshots.skipToEnd();
 
+      if (app) {
+        await evaluateInMain(
+          state.inspectPort,
+          `globalThis.voiceTest.setTarget(${show(app.bundleId)}, ${show(app.host)})`,
+        );
+      }
       begin();
       const pressedAt = performance.now();
       const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {
@@ -811,6 +820,7 @@ const commands = {
         end,
         mode,
         hotkey: key,
+        ...(app && { app }),
         cleanup: settings.cleanup,
         heldMs,
         ...(captureEndedEarly && { captureEndedEarly }),
@@ -860,7 +870,8 @@ const commands = {
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
   note <name> <text...>          append text evidence
-  dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle]`);
+  dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]
+                                 --app makes the helper report that target app for the session`);
   },
 };
 

@@ -8,6 +8,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { parseDictateFlags } from "./dictate-flags.mjs";
+
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
 const worktree = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 const id = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
@@ -113,4 +115,31 @@ test("stop accepts an exited owner before its parent reaps it", { timeout: 3000 
   assert.equal(existsSync(f.statePath), false);
   assert.equal(existsSync(f.userData), false);
   await once(proc, "exit");
+});
+
+test("dictate --app parses a bundle id with an optional host, and the defaults stay", () => {
+  assert.deepEqual(parseDictateFlags([]), { end: "audio", mode: "hold", app: null });
+  assert.deepEqual(parseDictateFlags(["--end=escape", "--key=toggle"]), {
+    end: "escape",
+    mode: "toggle",
+    app: null,
+  });
+  assert.deepEqual(parseDictateFlags(["--app=com.apple.MobileSMS"]).app, {
+    bundleId: "com.apple.MobileSMS",
+    host: null,
+  });
+  assert.deepEqual(parseDictateFlags(["--app=com.google.Chrome@mail.google.com"]).app, {
+    bundleId: "com.google.Chrome",
+    host: "mail.google.com",
+  });
+  for (const bad of [
+    "--app=",
+    "--app=@mail.google.com",
+    "--app=com.google.Chrome@",
+    "--app=a@b@c",
+  ]) {
+    assert.throws(() => parseDictateFlags([bad]), /--app must be/, bad);
+  }
+  assert.throws(() => parseDictateFlags(["--end=later"]), /--end must be/);
+  assert.throws(() => parseDictateFlags(["--key=tap"]), /--key must be/);
 });
