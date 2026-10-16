@@ -155,24 +155,31 @@ describe("parseHelperEvent", () => {
     },
   );
 
-  test.each([undefined, "x", 42, [], {}, { bundleId: 1, host: null }, { bundleId: "a" }])(
-    "keeps a transcript whose target %j is missing or invalid, with a null target",
-    (target) => {
-      expect(
-        parseHelperEvent(
-          line({ type: "transcript", id: "a", text: "hi", audioMs: 1, asrMs: 1, target }),
-        ),
-      ).toEqual({
-        type: "transcript",
-        id: "a",
-        text: "hi",
-        audioMs: 1,
-        asrMs: 1,
-        speechMs: null,
-        target: null,
-      });
-    },
-  );
+  test.each([
+    undefined,
+    "x",
+    42,
+    [],
+    {},
+    { bundleId: 1, host: null },
+    { bundleId: "a" },
+    { bundleId: null, host: null },
+    { bundleId: null, host: "mail.google.com" },
+  ])("keeps a transcript whose target %j is missing or invalid, with a null target", (target) => {
+    expect(
+      parseHelperEvent(
+        line({ type: "transcript", id: "a", text: "hi", audioMs: 1, asrMs: 1, target }),
+      ),
+    ).toEqual({
+      type: "transcript",
+      id: "a",
+      text: "hi",
+      audioMs: 1,
+      asrMs: 1,
+      speechMs: null,
+      target: null,
+    });
+  });
 
   test.each([
     '{"type":"ready","version":1e400}',

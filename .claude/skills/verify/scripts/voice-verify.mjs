@@ -757,12 +757,7 @@ const commands = {
       copyFileSync(fixture, state.fakeMicrophonePath);
       snapshots.skipToEnd();
 
-      if (app) {
-        await evaluateInMain(
-          state.inspectPort,
-          `globalThis.voiceTest.setTarget(${show(app.bundleId)}, ${show(app.host)})`,
-        );
-      }
+      await evaluateInMain(state.inspectPort, `globalThis.voiceTest.setTarget(${show(app)})`);
       begin();
       const pressedAt = performance.now();
       const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {

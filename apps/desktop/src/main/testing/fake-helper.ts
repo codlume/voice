@@ -22,7 +22,8 @@ for (const flag of ["--models-dir", "--state-dir"]) {
 const config: Config = JSON.parse(process.env.VOICE_FAKE_HELPER ?? "{}");
 const startedAt = Date.now();
 let recording: { since: number; levels: NodeJS.Timeout } | null = null;
-let target: { bundleId: unknown; host: unknown } | null = null;
+let target: unknown = null;
+let captured: unknown = null;
 
 function emit(event: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -49,6 +50,8 @@ function handle(command: Record<string, unknown>) {
       emit({ type: "asr.status", state: "ready" });
       return;
     case "capture.start":
+      captured = target;
+      target = null;
       setTimeout(() => {
         const startMs = config.startMs ?? 30;
         emit({ type: "capture.started", id, startMs });
@@ -63,8 +66,6 @@ function handle(command: Record<string, unknown>) {
       if (recording) clearInterval(recording.levels);
       const audioMs = recording ? Date.now() - recording.since : 0;
       recording = null;
-      const captured = target;
-      target = null;
       setTimeout(() => {
         emit({
           type: "transcript",
@@ -78,8 +79,13 @@ function handle(command: Record<string, unknown>) {
       }, 40);
       return;
     }
+    case "capture.cancel":
+      if (recording) clearInterval(recording.levels);
+      recording = null;
+      emit({ type: "capture.cancelled", id });
+      return;
     case "test.target":
-      target = { bundleId: command.bundleId, host: command.host };
+      target = command.target;
       return;
     case "insert":
       setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);

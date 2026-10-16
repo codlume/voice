@@ -56,7 +56,7 @@ final class Helper {
             hotkeyTap.configure(key: key, toggleKey: toggleKey)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
-        case .captureStart(let id, let language, let muteWhileDictating, let microphone):
+        case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
             let app = NSWorkspace.shared.frontmostApplication
             let target: InsertTarget
             if let override = testTarget {
@@ -67,7 +67,7 @@ final class Helper {
                 target = insertion.recordTarget(pid: app?.processIdentifier, bundleId: app?.bundleIdentifier)
             }
             let started = capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
-            if started, case .pending = target.host {
+            if started, detectHost, case .pending = target.host {
                 readPageHost(of: target, log: testMode ? { [output] in output.log(.info, $0) } : nil)
             }
         case .captureStop(let id):
@@ -91,9 +91,9 @@ final class Helper {
         case .testAudioFile(let path):
             guard testMode else { return output.log(.error, "test hooks disabled") }
             capture.testAudioPath = path
-        case .testTarget(let bundleId, let host):
+        case .testTarget(let target):
             guard testMode else { return output.log(.error, "test hooks disabled") }
-            testTarget = TranscriptTarget(bundleId: bundleId, host: host)
+            testTarget = target
         }
     }
 

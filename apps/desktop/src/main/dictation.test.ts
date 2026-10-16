@@ -271,6 +271,7 @@ describe("createDictation", () => {
         muteWhileDictating: false,
         language: value,
         microphone: null,
+        detectHost: true,
       },
     ]);
   });
@@ -326,6 +327,7 @@ describe("createDictation", () => {
         language: "en",
         muteWhileDictating: true,
         microphone: null,
+        detectHost: true,
       },
     ]);
     h.store.update((state) => ({
@@ -341,6 +343,7 @@ describe("createDictation", () => {
       id: h.id(),
       language: "en",
       muteWhileDictating: false,
+      detectHost: true,
     });
   });
 
@@ -349,7 +352,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const id = h.id();
     expect(h.commands).toEqual([
-      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
+      {
+        type: "capture.start",
+        id,
+        language: "en",
+        muteWhileDictating: false,
+        microphone: null,
+        detectHost: true,
+      },
     ]);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     h.dictation.onHelperEvent({ type: "capture.level", id, level: 0.4 });
@@ -401,7 +411,14 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
     const id = h.id();
     expect(h.commands).toEqual([
-      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
+      {
+        type: "capture.start",
+        id,
+        language: "en",
+        muteWhileDictating: false,
+        microphone: null,
+        detectHost: true,
+      },
     ]);
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
     vi.advanceTimersByTime(5000);
@@ -842,7 +859,14 @@ describe("createDictation", () => {
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       const id = h.id();
       expect(h.commands).toEqual([
-        { type: "capture.start", id, language: value, muteWhileDictating: false, microphone: null },
+        {
+          type: "capture.start",
+          id,
+          language: value,
+          muteWhileDictating: false,
+          microphone: null,
+          detectHost: true,
+        },
       ]);
       h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
       vi.advanceTimersByTime(800);
@@ -1359,7 +1383,14 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(1);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
     expect(h.commands).toEqual([
-      { type: "capture.start", id, language: "en", muteWhileDictating: false, microphone: null },
+      {
+        type: "capture.start",
+        id,
+        language: "en",
+        muteWhileDictating: false,
+        microphone: null,
+        detectHost: true,
+      },
       { type: "capture.cancel", id },
     ]);
   });

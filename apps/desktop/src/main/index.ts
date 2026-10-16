@@ -59,6 +59,7 @@ import type { Commands } from "./ipc.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
+import { isTranscriptTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
 import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
@@ -901,14 +902,11 @@ async function main() {
           if (!item) throw new Error(`no menu item ${id}`);
           item.click();
         },
-        setTarget: (bundleId: unknown, host: unknown) => {
-          if (
-            (bundleId !== null && typeof bundleId !== "string") ||
-            (host !== null && typeof host !== "string")
-          ) {
-            throw new Error("setTarget takes a bundle id and host, each a string or null");
+        setTarget: (target: unknown) => {
+          if (!isTranscriptTarget(target)) {
+            throw new Error("setTarget takes null or { bundleId: string, host: string | null }");
           }
-          helper.send({ type: "test.target", bundleId, host });
+          helper.send({ type: "test.target", target });
         },
       },
     });

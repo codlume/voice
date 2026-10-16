@@ -179,7 +179,14 @@ export async function prepareAsr(helper, { download = false } = {}) {
 export async function dictateFixture(helper, name, id, language = "en") {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;
-  helper.send({ type: "capture.start", microphone: null, id, language, muteWhileDictating: false });
+  helper.send({
+    type: "capture.start",
+    microphone: null,
+    id,
+    language,
+    muteWhileDictating: false,
+    detectHost: true,
+  });
   const started = await helper.waitFor(
     (event) => event.type === "capture.started" && event.id === id,
     {
