@@ -1,19 +1,23 @@
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import { Tabs } from "@base-ui/react/tabs";
+import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useId, useState } from "react";
 
 import { finishText, type WritingStyle } from "@voice/cleanup/style";
 
-import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
+import type { InstalledApp, Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import { pageStyles } from "./pageStyles.ts";
+import { bannerApps, type BannerApp } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
+import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
+import { useInstalledApps } from "./useInstalledApps.ts";
 import { hubApi } from "./voice.ts";
 
 const SEMI_FORMAL_EXAMPLES: Record<Category, string> = {
@@ -23,20 +27,11 @@ const SEMI_FORMAL_EXAMPLES: Record<Category, string> = {
   other: "The quarterly numbers look good, and churn is down.",
 };
 
-const CATEGORY_TABS: Record<Category, { label: string; caption: string }> = {
-  personal: {
-    label: "Personal messages",
-    caption: "Used in personal messengers like Messages and WhatsApp.",
-  },
-  work: { label: "Work messages", caption: "Used in workplace messengers like Slack and Teams." },
-  email: {
-    label: "Email",
-    caption: "Used in email apps like Mail and Outlook, and in webmail like Gmail.",
-  },
-  other: {
-    label: "Other",
-    caption: "Used everywhere else, including editors, terminals, and notes.",
-  },
+const CATEGORY_TABS: Record<Category, { label: string; appliesIn: string }> = {
+  personal: { label: "Personal messages", appliesIn: "personal messengers" },
+  work: { label: "Work messages", appliesIn: "workplace messengers" },
+  email: { label: "Email", appliesIn: "all major email apps" },
+  other: { label: "Other", appliesIn: "all other apps" },
 };
 
 const writingStyles: { value: WritingStyle; label: string; rule: string }[] = [
@@ -99,6 +94,30 @@ const styles = stylex.create({
     outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
     outlineOffset: 3,
   },
+  banner: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: space.sm,
+    rowGap: 4,
+    minHeight: 24,
+  },
+  apps: { display: "flex", alignItems: "center", gap: 4 },
+  appCell: { display: "grid", placeItems: "center", width: 24, height: 24 },
+  appImage: { display: "block", width: 24, height: 24 },
+  // macOS icons leave a margin inside their canvas, so a letter tile is drawn smaller to match.
+  monogram: {
+    display: "grid",
+    placeItems: "center",
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    backgroundColor: color.segmentTrack,
+    color: color.mutedForeground,
+    fontSize: 11,
+    fontWeight: 600,
+  },
+  more: { paddingInline: 2, color: color.mutedForeground, fontSize: 12, fontWeight: 500 },
   title: { display: "block", fontWeight: 500 },
   detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   fieldset: { minWidth: 0, margin: 0, padding: 0, borderWidth: 0 },
@@ -173,6 +192,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
   const cleanupSupported = supportsCleanup(settings.dictationLanguage);
   const cleanupEnabled = wantsCleanup(settings);
   const [category, setCategory] = useState<Category>("personal");
+  const installed = useInstalledApps();
 
   const changeCleanup = (cleanup: NonNullable<SettingsPatch["cleanup"]>) =>
     run(() => hubApi().updateSettings({ cleanup }), "Could not save your style settings.");
@@ -222,7 +242,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
         </Tabs.List>
         {CATEGORIES.map((value) => (
           <Tabs.Panel key={value} value={value} {...stylex.props(styles.panel)}>
-            <p {...stylex.props(styles.detail)}>{CATEGORY_TABS[value].caption}</p>
+            <AppliesIn category={value} installed={installed} />
             <StyleCards
               id={`${name}-${value}`}
               category={value}
@@ -247,6 +267,85 @@ export function Style({ settings }: { settings: SettingsValue }) {
         </p>
       )}
     </div>
+  );
+}
+
+function AppliesIn({
+  category,
+  installed,
+}: {
+  category: Category;
+  installed: readonly InstalledApp[];
+}) {
+  const { shown, overflow } = bannerApps(category, installed);
+  const hidden = overflow.join(", ");
+  return (
+    <div {...stylex.props(styles.banner)}>
+      <p {...stylex.props(styles.detail)}>
+        This style applies in {CATEGORY_TABS[category].appliesIn}
+      </p>
+      {shown.length > 0 && (
+        <Tooltip.Provider delay={150} closeDelay={0}>
+          <Tooltip.Root<string>>
+            {({ payload }) => (
+              <>
+                <span {...stylex.props(styles.apps)}>
+                  {shown.map((app) => (
+                    <Tooltip.Trigger
+                      key={app.bundleId}
+                      payload={app.name}
+                      render={<span />}
+                      {...stylex.props(styles.appCell)}
+                    >
+                      <AppIcon app={app} />
+                    </Tooltip.Trigger>
+                  ))}
+                  {overflow.length > 0 && (
+                    <Tooltip.Trigger
+                      payload={hidden}
+                      render={<span role="img" aria-label={`${overflow.length} more: ${hidden}`} />}
+                      {...stylex.props(styles.more)}
+                    >
+                      +{overflow.length}
+                    </Tooltip.Trigger>
+                  )}
+                </span>
+                <Tooltip.Portal>
+                  <Tooltip.Positioner
+                    side="top"
+                    sideOffset={6}
+                    className={tooltipPositionerClass()}
+                  >
+                    <Tooltip.Popup className={tooltipPopupClass()}>{payload}</Tooltip.Popup>
+                  </Tooltip.Positioner>
+                </Tooltip.Portal>
+              </>
+            )}
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      )}
+    </div>
+  );
+}
+
+function AppIcon({ app }: { app: BannerApp }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (app.icon !== null && app.icon !== failed) {
+    const { icon } = app;
+    return (
+      <img
+        src={icon}
+        alt={app.name}
+        draggable={false}
+        onError={() => setFailed(icon)}
+        {...stylex.props(styles.appImage)}
+      />
+    );
+  }
+  return (
+    <span role="img" aria-label={app.name} {...stylex.props(styles.monogram)}>
+      {app.letter}
+    </span>
   );
 }
 
