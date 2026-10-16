@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertPlausibleCleanup, wordSurvival } from "../src/plausibility.ts";
-import { CONTEXTS, STYLINGS, type CleanupStyle } from "../src/prompt.ts";
+import { CONTEXTS, STYLINGS, type S1Control } from "../src/prompt.ts";
 import { createS1Mini, type Generation } from "../src/s1mini.ts";
 
 const [modelPath, recordingPath] = process.argv.slice(2);
@@ -38,7 +38,7 @@ const generated = {
 };
 
 type Fixture = { name: string } & ({ text: string } | { generate: keyof typeof generated });
-type Row = Required<CleanupStyle> & { name: string; ms: number; generations: Generation[] };
+type Row = S1Control & { name: string; ms: number; generations: Generation[] };
 
 const fixtures: Fixture[] = JSON.parse(
   readFileSync(join(here, "../fixtures/dictations.json"), "utf8"),

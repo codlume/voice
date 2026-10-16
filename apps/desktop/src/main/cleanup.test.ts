@@ -14,7 +14,7 @@ import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
 import { createStore } from "./store.ts";
 
-const style: CleanupStyle = { styling: "formal" };
+const style: CleanupStyle = { style: "veryCasual", layout: "email" };
 const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
 const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import type { CleanupStyle } from "@voice/cleanup/style";
+
 import type { ModelStatus } from "../shared/api.ts";
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Rewrites } from "../shared/rewrite.ts";
@@ -44,7 +46,8 @@ const escape = (now: number) => [{ type: "cancel" }, now] as [SessionEvent, numb
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
 const NONE: Rewrites = { dictionary: [], snippets: [] };
-const transcript = (text: string, cleanup: boolean, now = 2000, rewrites = NONE) =>
+const STYLE: CleanupStyle = { style: "casual", layout: "general" };
+const transcript = (text: string, cleanup: CleanupStyle | null, now = 2000, rewrites = NONE) =>
   [{ type: "transcript", id: ID, text, cleanup, rewrites }, now] as [SessionEvent, number];
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
@@ -56,9 +59,9 @@ const toOverdue: [SessionEvent, number][] = [
 const toGaveUp: [SessionEvent, number][] = [...toOverdue, [{ type: "timedOut", id: ID }, 61_000]];
 const toCleaning: [SessionEvent, number][] = [
   ...toTranscribing,
-  transcript("hello um world", true),
+  transcript("hello um world", STYLE),
 ];
-const toInserting: [SessionEvent, number][] = [...toTranscribing, transcript("hello world", false)];
+const toInserting: [SessionEvent, number][] = [...toTranscribing, transcript("hello world", null)];
 
 const types = (effects: Effect[]) => effects.map((effect) => effect.type);
 const remembered = (raw: string, text: string, id = ID): Effect => ({
@@ -78,13 +81,13 @@ const rememberedLate = (raw: string, id: string): Effect => ({
 
 describe("a second transcript for the same session", () => {
   test("changes nothing while the first is being cleaned", () => {
-    const { state, effects } = run([...toCleaning, transcript("hello um world", true, 2500)]);
+    const { state, effects } = run([...toCleaning, transcript("hello um world", STYLE, 2500)]);
     expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([]);
   });
 
   test("changes nothing while the first is being inserted", () => {
-    const { state, effects } = run([...toInserting, transcript("hello world", false, 2500)]);
+    const { state, effects } = run([...toInserting, transcript("hello world", null, 2500)]);
     expect(state.phase).toBe("inserting");
     expect(effects).toEqual([]);
   });
@@ -330,7 +333,7 @@ describe("toggle dictation", () => {
 
 describe("transcript", () => {
   test("an empty transcript ends empty without inserting", () => {
-    const { state, all } = run([...toTranscribing, transcript("  ", true)]);
+    const { state, all } = run([...toTranscribing, transcript("  ", STYLE)]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "empty" } });
     expect(types(all)).not.toContain("insert");
     expect(types(all)).not.toContain("cleanup");
@@ -341,7 +344,7 @@ describe("transcript", () => {
     expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       remembered("hello um world", "hello um world"),
-      { type: "cleanup", id: ID, raw: "hello um world" },
+      { type: "cleanup", id: ID, raw: "hello um world", style: STYLE },
     ]);
   });
 
@@ -362,7 +365,7 @@ describe("transcript", () => {
   });
 
   test("a transcript while still recording proceeds like a normal stop and the later release is ignored", () => {
-    const { state, effects } = run([...toRecording, transcript("long dictation", false, 600_000)]);
+    const { state, effects } = run([...toRecording, transcript("long dictation", null, 600_000)]);
     expect(state).toEqual({
       phase: "inserting",
       id: ID,
@@ -425,7 +428,7 @@ describe("capture the helper stops on its own", () => {
     const { state, effects } = run([
       ...toRecording,
       stopped(600_000),
-      transcript("long dictation", false, 600_500),
+      transcript("long dictation", null, 600_500),
     ]);
     expect(state).toEqual({
       phase: "inserting",
@@ -513,13 +516,13 @@ describe("snippets", () => {
     [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
   const cleaningSentence = [
     ...toTranscribing,
-    transcript("send it to my email", true, 2000, { ...NONE, snippets }),
+    transcript("send it to my email", STYLE, 2000, { ...NONE, snippets }),
   ];
 
   test("a dictation that is only a trigger types the expansion and skips cleanup", () => {
     const { state, effects } = run([
       ...toTranscribing,
-      transcript("My email.", true, 2000, { ...NONE, snippets }),
+      transcript("My email.", STYLE, 2000, { ...NONE, snippets }),
     ]);
     expect(state).toEqual({
       phase: "inserting",
@@ -538,7 +541,7 @@ describe("snippets", () => {
   test("without cleanup a trigger inside the sentence is expanded", () => {
     const { effects } = run([
       ...toTranscribing,
-      transcript("send it to my email", false, 2000, { ...NONE, snippets }),
+      transcript("send it to my email", null, 2000, { ...NONE, snippets }),
     ]);
     expect(effects).toContainEqual({
       type: "insert",
@@ -552,7 +555,7 @@ describe("snippets", () => {
     expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       remembered("send it to my email", `send it to ${EMAIL}`),
-      { type: "cleanup", id: ID, raw: "send it to my email" },
+      { type: "cleanup", id: ID, raw: "send it to my email", style: STYLE },
     ]);
   });
 
@@ -577,7 +580,7 @@ describe("snippets", () => {
   test("a cleanup that turned a sentence into only the trigger types the expansion alone", () => {
     const { effects } = run([
       ...toTranscribing,
-      transcript("um my email", true, 2000, { ...NONE, snippets }),
+      transcript("um my email", STYLE, 2000, { ...NONE, snippets }),
       cleaned("My email."),
     ]);
     expect(effects).toContainEqual({ type: "insert", id: ID, output: { text: EMAIL, html: null } });
@@ -614,7 +617,7 @@ describe("snippets", () => {
     ];
     const { effects } = run([
       ...toTranscribing,
-      transcript("Sign off.", false, 2000, { ...NONE, snippets: signature }),
+      transcript("Sign off.", null, 2000, { ...NONE, snippets: signature }),
     ]);
     expect(effects).toContainEqual({
       type: "insert",
@@ -635,7 +638,7 @@ describe("snippets", () => {
     ];
     const whole = run([
       ...toTranscribing,
-      transcript("My name.", true, 2000, { ...NONE, snippets: name }),
+      transcript("My name.", STYLE, 2000, { ...NONE, snippets: name }),
     ]);
     expect(whole.state).toEqual({
       phase: "inserting",
@@ -651,7 +654,7 @@ describe("snippets", () => {
     ]);
     const cleanedSentence = run([
       ...toTranscribing,
-      transcript("sign it my name", true, 2000, { ...NONE, snippets: name }),
+      transcript("sign it my name", STYLE, 2000, { ...NONE, snippets: name }),
       cleaned("Sign it, my name."),
     ]);
     expect(cleanedSentence.effects).toEqual([
@@ -681,12 +684,12 @@ describe("dictionary", () => {
   const FIXED = "by the way ask Hadryś about Wispr Flow";
   const cleaned = (text: string) =>
     [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
-  const said = (text: string, cleanup: boolean) =>
+  const said = (text: string, cleanup: CleanupStyle | null) =>
     transcript(text, cleanup, 2000, { dictionary, snippets });
-  const cleaning = [...toTranscribing, said(RAW, true)];
+  const cleaning = [...toTranscribing, said(RAW, STYLE)];
 
   test("without cleanup the transcript is fixed while the raw text is remembered untouched", () => {
-    const { effects } = run([...toTranscribing, said(RAW, false)]);
+    const { effects } = run([...toTranscribing, said(RAW, null)]);
     expect(effects).toEqual([
       remembered(RAW, FIXED),
       { type: "insert", id: ID, output: { text: FIXED, html: null } },
@@ -695,7 +698,10 @@ describe("dictionary", () => {
 
   test("cleanup gets the raw transcript and its result is fixed", () => {
     const { effects: sent } = run(cleaning);
-    expect(sent).toEqual([remembered(RAW, FIXED), { type: "cleanup", id: ID, raw: RAW }]);
+    expect(sent).toEqual([
+      remembered(RAW, FIXED),
+      { type: "cleanup", id: ID, raw: RAW, style: STYLE },
+    ]);
     const { effects } = run([...cleaning, cleaned("BTW, ask hadrys about wispr  flow.")]);
     expect(effects).toEqual([
       remembered(RAW, "by the way, ask Hadryś about Wispr Flow."),
@@ -708,7 +714,7 @@ describe("dictionary", () => {
   });
 
   test("the inserting session counts the fixes of the branch it inserts", () => {
-    expect(run([...toTranscribing, said(RAW, false)]).state).toMatchObject({
+    expect(run([...toTranscribing, said(RAW, null)]).state).toMatchObject({
       insertedCleanup: null,
       dictionaryFixes: 3,
     });
@@ -717,7 +723,7 @@ describe("dictionary", () => {
       dictionaryFixes: 0,
     });
     expect(
-      run([...toTranscribing, said("hadrys wants my signature", true), cleaned("Hadryś left.")])
+      run([...toTranscribing, said("hadrys wants my signature", STYLE), cleaned("Hadryś left.")])
         .state,
     ).toMatchObject({
       output: { text: "Hadryś wants wispr flow, btw, hadrys" },
@@ -737,7 +743,7 @@ describe("dictionary", () => {
   test("a cleanup that dropped a trigger falls back to the fixed, expanded raw transcript", () => {
     const { effects } = run([
       ...toTranscribing,
-      said("hadrys wants my signature", true),
+      said("hadrys wants my signature", STYLE),
       cleaned("Hadrys wants it."),
     ]);
     expect(effects).toContainEqual({
@@ -748,7 +754,7 @@ describe("dictionary", () => {
   });
 
   test("a dictation that is only a trigger types the expansion untouched", () => {
-    const { effects } = run([...toTranscribing, said("My signature.", true)]);
+    const { effects } = run([...toTranscribing, said("My signature.", STYLE)]);
     expect(effects).toEqual([
       remembered("My signature.", "wispr flow, btw, hadrys"),
       { type: "insert", id: ID, output: { text: "wispr flow, btw, hadrys", html: null } },
@@ -759,12 +765,12 @@ describe("dictionary", () => {
     const inserts = (events: [SessionEvent, number][]) =>
       run(events).all.filter((effect) => effect.type === "insert");
     const typed = [{ type: "insert", id: ID, output: { text: "see my signature", html: null } }];
-    expect(inserts([...toTranscribing, said("idk", false)])).toEqual(typed);
-    expect(inserts([...toTranscribing, said("idk", true), cleaned("Idk.")])).toEqual([
+    expect(inserts([...toTranscribing, said("idk", null)])).toEqual(typed);
+    expect(inserts([...toTranscribing, said("idk", STYLE), cleaned("Idk.")])).toEqual([
       { type: "insert", id: ID, output: { text: "see my signature.", html: null } },
     ]);
     expect(
-      inserts([...toTranscribing, said("idk", true), [{ type: "cleanupFailed", id: ID }, 2300]]),
+      inserts([...toTranscribing, said("idk", STYLE), [{ type: "cleanupFailed", id: ID }, 2300]]),
     ).toEqual(typed);
   });
 });
@@ -832,7 +838,7 @@ describe("idle and stale events", () => {
       type: "transcript",
       id: "old",
       text: "late words",
-      cleanup: true,
+      cleanup: STYLE,
       rewrites: {
         dictionary: [{ id: "1", phrase: "late", replacement: "never typed" }],
         snippets: [
@@ -852,7 +858,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({ phase: "recording", id: ID, mode: "hold", pressedAt: 0 });
     expect(effects).toEqual([remember]);
     expect(
-      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: false, rewrites: NONE }, 0),
+      step(idle, { type: "transcript", id: "old", text: "  ", cleanup: null, rewrites: NONE }, 0),
     ).toEqual({
       state: idle,
       effects: [],
@@ -890,7 +896,7 @@ describe("idle and stale events", () => {
   });
 
   test("an overdue transcription still inserts, fails, or ends with the helper as usual", () => {
-    expect(run([...toOverdue, transcript("late words", false, 50_000)]).state).toEqual({
+    expect(run([...toOverdue, transcript("late words", null, 50_000)]).state).toEqual({
       phase: "inserting",
       id: ID,
       raw: "late words",
@@ -924,14 +930,14 @@ describe("idle and stale events", () => {
 
   test("a transcript that lands after main gave up is remembered but not inserted", () => {
     const timedOut = run(toGaveUp).state;
-    const { state, effects } = run([transcript("late words", true, 41_000)], timedOut);
+    const { state, effects } = run([transcript("late words", STYLE, 41_000)], timedOut);
     expect(state).toBe(timedOut);
     expect(effects).toEqual([rememberedLate("late words", ID)]);
-    expect(run([transcript("   ", true, 41_000)], timedOut).effects).toEqual([]);
+    expect(run([transcript("   ", STYLE, 41_000)], timedOut).effects).toEqual([]);
     expect(
       step(
         timedOut,
-        { type: "transcript", id: "s2", text: "x", cleanup: false, rewrites: NONE },
+        { type: "transcript", id: "s2", text: "x", cleanup: null, rewrites: NONE },
         41_000,
       ),
     ).toEqual({ state: timedOut, effects: [rememberedLate("x", "s2")] });
@@ -963,7 +969,7 @@ describe("idle and stale events", () => {
 
   test("helper exit while idle or done changes nothing", () => {
     expect(step(idle, { type: "helperExited" }, 0)).toEqual({ state: idle, effects: [] });
-    const done = run([...toTranscribing, transcript("", true)]).state;
+    const done = run([...toTranscribing, transcript("", STYLE)]).state;
     expect(step(done, { type: "helperExited" }, 0)).toEqual({ state: done, effects: [] });
   });
 });

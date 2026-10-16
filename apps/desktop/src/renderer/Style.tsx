@@ -4,6 +4,8 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useId } from "react";
 
+import { finishText, type WritingStyle } from "@voice/cleanup/style";
+
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import { pageStyles } from "./pageStyles.ts";
@@ -12,36 +14,12 @@ import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
 
-const stylings: {
-  value: SettingsValue["cleanup"]["styling"];
-  label: string;
-  description: string;
-  example: string;
-}[] = [
-  {
-    value: "casual",
-    label: "Casual",
-    description: "Relaxed and conversational",
-    example: "yeah sounds good, see you at 3",
-  },
-  {
-    value: "semi-casual",
-    label: "Semi-casual",
-    description: "Easygoing, with a little polish",
-    example: "Yeah, sounds good. See you at 3.",
-  },
-  {
-    value: "semi-formal",
-    label: "Semi-formal",
-    description: "Clear and composed",
-    example: "Sounds good. I'll see you at 3.",
-  },
-  {
-    value: "formal",
-    label: "Formal",
-    description: "Polished and professional",
-    example: "That sounds good. I will see you at 3:00.",
-  },
+const SAMPLE = "I'll be there at 5. Don't worry, it's fine.";
+
+const writingStyles: { value: WritingStyle; label: string; rule: string }[] = [
+  { value: "formal", label: "Formal", rule: "Caps + punctuation" },
+  { value: "casual", label: "Casual", rule: "Caps, no period at the end" },
+  { value: "veryCasual", label: "Very casual", rule: "No caps, no period at the end" },
 ];
 
 const styles = stylex.create({
@@ -68,7 +46,7 @@ const styles = stylex.create({
   grid: {
     display: "grid",
     gridTemplateColumns: {
-      default: "repeat(2, minmax(0, 1fr))",
+      default: "repeat(3, minmax(0, 1fr))",
       "@media (max-width: 780px)": "minmax(0, 1fr)",
     },
     gap: space.md,
@@ -165,24 +143,24 @@ export function Style({ settings }: { settings: SettingsValue }) {
         <legend id={`${name}-legend`} {...stylex.props(styles.legend)}>
           Writing style
         </legend>
-        <RadioGroup<SettingsValue["cleanup"]["styling"]>
+        <RadioGroup<WritingStyle>
           aria-labelledby={`${name}-legend`}
-          value={settings.cleanup.styling}
+          value={settings.cleanup.style}
           disabled={!cleanupEnabled}
-          onValueChange={(styling) => void changeCleanup({ styling })}
+          onValueChange={(style) => void changeCleanup({ style })}
           {...stylex.props(styles.grid)}
         >
-          {stylings.map(({ value, label, description, example }) => {
-            const selected = settings.cleanup.styling === value;
+          {writingStyles.map(({ value, label, rule }) => {
+            const selected = settings.cleanup.style === value;
             const labelId = `${name}-${value}-label`;
-            const descriptionId = `${name}-${value}-description`;
+            const ruleId = `${name}-${value}-rule`;
             const exampleId = `${name}-${value}-example`;
             return (
               <Radio.Root
                 key={value}
                 value={value}
                 aria-labelledby={labelId}
-                aria-describedby={`${descriptionId} ${exampleId}`}
+                aria-describedby={`${ruleId} ${exampleId}`}
                 {...stylex.props(
                   styles.card,
                   selected && styles.selected,
@@ -201,12 +179,12 @@ export function Style({ settings }: { settings: SettingsValue }) {
                       <CheckIcon size={12} strokeWidth={3} />
                     </span>
                   </span>
-                  <span id={descriptionId} {...stylex.props(styles.detail)}>
-                    {description}
+                  <span id={ruleId} {...stylex.props(styles.detail)}>
+                    {rule}
                   </span>
                 </span>
                 <span id={exampleId} {...stylex.props(styles.example)}>
-                  &ldquo;{example}&rdquo;
+                  &ldquo;{finishText(value, SAMPLE)}&rdquo;
                 </span>
               </Radio.Root>
             );

@@ -11,9 +11,9 @@
       "types": "./src/download.ts",
       "import": "./src/download.ts"
     },
-    "./prompt": {
-      "types": "./src/prompt.ts",
-      "import": "./src/prompt.ts"
+    "./style": {
+      "types": "./src/style.ts",
+      "import": "./src/style.ts"
     }
   },
   "scripts": {

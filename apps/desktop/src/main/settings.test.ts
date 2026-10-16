@@ -83,7 +83,7 @@ describe("parseSettings", () => {
     expect(
       parseSettings({
         hotkey: "rightOption",
-        cleanup: { enabled: false, styling: "shouty" },
+        cleanup: { enabled: false, style: "shouty" },
       }),
     ).toEqual({
       hotkey: "rightOption",
@@ -96,7 +96,7 @@ describe("parseSettings", () => {
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",
-      cleanup: { enabled: false, styling: "semi-formal" },
+      cleanup: { enabled: false, style: "formal" },
       diagnostics: "off",
       snippets: [],
       dictionary: [],
@@ -121,10 +121,26 @@ describe("parseSettings", () => {
     );
   });
 
-  test("keeps a saved styling that differs from the default", () => {
-    expect(parseSettings({ cleanup: { styling: "semi-casual" } }).cleanup.styling).toBe(
-      "semi-casual",
+  test.each([
+    ["casual", "veryCasual"],
+    ["semi-casual", "casual"],
+    ["semi-formal", "formal"],
+    ["formal", "formal"],
+  ])("migrates the legacy styling %j to the %j style", (styling, style) => {
+    expect(parseSettings({ cleanup: { enabled: false, styling } }).cleanup).toEqual({
+      enabled: false,
+      style,
+    });
+  });
+
+  test("a saved style wins over the legacy styling, which fills in for an invalid one", () => {
+    expect(parseSettings({ cleanup: { style: "casual", styling: "casual" } }).cleanup.style).toBe(
+      "casual",
     );
+    expect(
+      parseSettings({ cleanup: { style: "shouty", styling: "semi-casual" } }).cleanup.style,
+    ).toBe("casual");
+    expect(parseSettings({ cleanup: { styling: "shouty" } }).cleanup.style).toBe("formal");
   });
 
   test("keeps a saved theme and falls back to system for an unknown one", () => {
@@ -157,8 +173,8 @@ describe("applyPatch", () => {
     expect(applyPatch(polish, { dictationLanguage: "en" })).toEqual(DEFAULT_SETTINGS);
   });
   test("merges a partial cleanup patch and keeps other fields", () => {
-    const formal = applyPatch(DEFAULT_SETTINGS, { cleanup: { styling: "formal" } });
-    const next = applyPatch(formal, { cleanup: { enabled: false } });
+    const veryCasual = applyPatch(DEFAULT_SETTINGS, { cleanup: { style: "veryCasual" } });
+    const next = applyPatch(veryCasual, { cleanup: { enabled: false } });
     expect(next).toEqual({
       hotkey: "fn",
       toggleHotkey: null,
@@ -170,13 +186,13 @@ describe("applyPatch", () => {
       showInDock: true,
       alwaysShowPill: true,
       dictationLanguage: "en",
-      cleanup: { enabled: false, styling: "formal" },
+      cleanup: { enabled: false, style: "veryCasual" },
       diagnostics: "off",
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
     });
-    expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, styling: "semi-formal" });
+    expect(DEFAULT_SETTINGS.cleanup).toEqual({ enabled: true, style: "formal" });
   });
 
   test("answers diagnostics either way, keeps the answer across unrelated patches", () => {
@@ -382,7 +398,17 @@ describe("load and save", () => {
     await writeFile(file, JSON.stringify({ cleanup: { enabled: false, styling: "casual" } }));
     expect(loadSettings(file)).toMatchObject({
       dictationLanguage: "en",
-      cleanup: { enabled: false, styling: "casual" },
+      cleanup: { enabled: false, style: "veryCasual" },
+    });
+  });
+
+  test("the legacy styling is gone from the file after the next save", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, JSON.stringify({ cleanup: { enabled: true, styling: "semi-casual" } }));
+    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    expect(JSON.parse(await readFile(file, "utf8")).cleanup).toEqual({
+      enabled: true,
+      style: "casual",
     });
   });
 

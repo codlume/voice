@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
 import { chunkTranscript } from "./chunk.ts";
-import type { CleanupStyle } from "./prompt.ts";
+import type { CleanupStyle } from "./style.ts";
 import { CHUNK_TOKENS, createS1Mini, type S1Mini } from "./s1mini.ts";
 
 const modelPath = process.env.VOICE_S1_MODEL ?? "";
-const semiFormal: CleanupStyle = { styling: "semi-formal" };
+const formal: CleanupStyle = { style: "formal", layout: "general" };
 
 describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   let s1: S1Mini;
@@ -32,7 +32,7 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     const { text } = await timed(
       "plain",
       "hey anna can we move the sync to thursday at three pm ill send the notes to the team",
-      semiFormal,
+      formal,
     );
     expect(text).toMatch(/^Hey Anna,/);
     expect(text).toContain("Thursday");
@@ -41,7 +41,7 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   });
 
   test("returns an empty string for filler-only speech", async () => {
-    expect(await timed("filler", "um uh", semiFormal)).toEqual({ text: "", chunks: 1, cleaned: 1 });
+    expect(await timed("filler", "um uh", formal)).toEqual({ text: "", chunks: 1, cleaned: 1 });
   });
 
   test("cleans a transcript long enough to chunk, keeps both ends and every rejected chunk verbatim", async () => {
@@ -69,7 +69,7 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     await llama.dispose();
     expect(chunks.length).toBeGreaterThan(1);
 
-    const result = await timed("chunked", raw, semiFormal);
+    const result = await timed("chunked", raw, formal);
 
     expect(result.chunks).toBe(chunks.length);
     expect(result.cleaned).toBeGreaterThan(0);

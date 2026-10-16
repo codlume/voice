@@ -7,7 +7,7 @@ This directory is the maintained list of what a user can do in Voice and how to 
 - Fresh builds: `swift build --package-path native/voice-helper`, `node scripts/fixtures.mjs`, `pnpm build`.
 - One instance started by `voice-verify.mjs launch`, with `doctor` reporting `built` everywhere, both pages on CDP, both models `ready`, and Accessibility `granted`.
 - Scratch userData only. Never drive the user's Voice.app or a `pnpm dev` session.
-- The default settings apply: hotkey `fn`, cleanup on, styling `semi-formal`, language `en`.
+- The default settings apply: hotkey `fn`, cleanup on, style `formal`, language `en`.
 
 ## Driving conventions
 

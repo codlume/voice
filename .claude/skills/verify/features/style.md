@@ -1,6 +1,6 @@
 # Style
 
-Style lets a user turn text cleanup on or off and choose how cleaned-up dictation reads: Casual, Semi-casual, Semi-formal, or Formal. With cleanup off, the style cards are disabled, and dictation is inserted exactly as recognized.
+Style lets a user turn text cleanup on or off and choose how cleaned-up dictation reads: Formal (caps and punctuation), Casual (caps, no period at the end), or Very casual (no caps, no period at the end). With cleanup off, the style cards are disabled, and dictation is inserted exactly as recognized.
 
 ## Sub-features
 
@@ -15,12 +15,12 @@ Style lets a user turn text cleanup on or off and choose how cleaned-up dictatio
 
 ## Driving it with voice-verify
 
-Preconditions: baseline. Cleanup is on and styling is `semi-formal`.
+Preconditions: baseline. Cleanup is on and the style is `formal`.
 
 - **Open Style.** `vv click Style`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Style"'`. Then `vv shot style-before`.
-- **Pick a style.** `vv click Formal`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.cleanup.styling === "formal")'`. The Formal card shows the check mark.
+- **Pick a style.** `vv click "Very casual"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.cleanup.style === "veryCasual")'`. The Very casual card shows the check mark.
 - **Turn cleanup off.** `vv click "Clean up text"`, then `vv wait hub 'window.voice.getSnapshot().then(s => !s.settings.cleanup.enabled && s.models.cleanup.state === "installed")' 15000`, then `vv wait hub 'document.querySelector("fieldset").disabled'`. Then `vv shot style-cleanup-off`. The page reads "Turn on cleanup to apply a style. Your transcript is currently inserted as recognized."
-- **Stored value.** `cat "<userData>/settings.json"` shows `"cleanup": { "enabled": false, "styling": "formal" }`.
+- **Stored value.** `cat "<userData>/settings.json"` shows `"cleanup": { "enabled": false, "style": "veryCasual" }`.
 - **Turn cleanup on.** `vv click "Clean up text"`, then wait for `s.models.cleanup.state === "ready"` with a 60000 ms timeout.
 - **Effect on dictation.** When `dictate` is available, run `vv dictate short.wav` once with cleanup off. Check that `latest.raw === latest.text`, that `inserted` equals the raw text, and that the timing line has no `cleanupMs`.
 

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { STYLINGS } from "@voice/cleanup/prompt";
+import { WRITING_STYLES, type WritingStyle } from "@voice/cleanup/style";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -17,6 +17,12 @@ import { writeFileAtomic } from "./atomic-file.ts";
 
 const THEMES = ["system", "light", "dark"] as const;
 const CONSENTS = ["on", "off"] as const;
+const STYLE_BY_LEGACY_STYLING = new Map<unknown, WritingStyle>([
+  ["casual", "veryCasual"],
+  ["semi-casual", "casual"],
+  ["semi-formal", "formal"],
+  ["formal", "formal"],
+]);
 
 const pick = <const T extends readonly string[], F extends T[number] | null>(
   values: T,
@@ -49,7 +55,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     alwaysShowPill: flag(r.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill),
     cleanup: {
       enabled: flag(c.enabled, d.enabled),
-      styling: pick(STYLINGS, c.styling, d.styling),
+      style: pick(WRITING_STYLES, c.style, STYLE_BY_LEGACY_STYLING.get(c.styling) ?? d.style),
     },
     diagnostics: pick(CONSENTS, r.diagnostics, DEFAULT_SETTINGS.diagnostics),
     snippets: parseSnippets(r.snippets),
