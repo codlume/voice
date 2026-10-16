@@ -3,7 +3,8 @@ import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
 
-/// A file-fed capture whose silent second of audio ends at the duration cap and goes out as a transcript.
+private let fileSamples = 16_000
+
 @MainActor
 private final class SilentCapture {
     let lines = EmittedLines()
@@ -18,11 +19,11 @@ private final class SilentCapture {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("capture.caf")
-        try writeAudio(to: file, seconds: 1, silent: true)
+        try writeAudio(to: file, seconds: Double(fileSamples) / asrSampleRate, silent: true)
         devices = AudioInputDevices(output: output)
         capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
-            devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800)
+            devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: fileSamples / 4)
         capture.testAudioPath = file.path
         insertion = Insertion(output: output, forcePaste: false)
     }

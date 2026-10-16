@@ -44,8 +44,6 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
-    /// `host` is what the session knows when it starts: `.pending` asks for a read when the app is
-    /// a browser, and a `.read` host (a test override, or none wanted) goes out as given.
     func recordTarget(pid: pid_t?, bundleId: String?, host: HostRead, log: ((String) -> Void)?) -> InsertTarget {
         let target = InsertTarget(pid: pid, bundleId: bundleId, host: host)
         guard let pid, AXIsProcessTrusted() else {
