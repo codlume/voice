@@ -297,6 +297,27 @@ describe("startHelper", () => {
     await expect.poll(() => h.exits.length).toBeGreaterThanOrEqual(1);
   });
 
+  test("lists fixture apps with a browser flag and answers an icon render by its id", async () => {
+    const h = boot();
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "asr.status");
+    h.helper.send({ type: "apps.list" });
+    await h.waitFor((e) => e.type === "apps.listed");
+    const apps = h.of("apps.listed")[0]?.event.apps ?? [];
+    expect(apps.map(({ bundleId, browser }) => [bundleId, browser])).toEqual([
+      ["com.apple.MobileSMS", false],
+      ["com.tinyspeck.slackmacgap", false],
+      ["com.google.Chrome", true],
+    ]);
+    h.helper.send({ type: "icons.render", id: "7", paths: apps.map(({ path }) => path) });
+    await h.waitFor((e) => e.type === "icons.rendered");
+    expect(h.of("icons.rendered")[0]?.event).toEqual({
+      type: "icons.rendered",
+      id: "7",
+      icons: [],
+    });
+  });
+
   test("drops commands while the helper is down instead of throwing", async () => {
     const h = boot({ script: [{ at: 10, action: "exit" }] });
     helper = h.helper;
