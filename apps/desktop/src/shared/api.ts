@@ -231,8 +231,11 @@ export type PillApi = WindowApi & {
   onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
 };
 
-/** An app found in the standard application folders. `icon` is a PNG data URL, for built-in catalog apps only. */
-export type InstalledApp = { bundleId: BundleId; name: string; icon: string | null };
+/** An app found in the standard application folders. `browser` marks the apps the helper reads a page host from. */
+export type InstalledApp = { bundleId: BundleId; name: string; browser: boolean };
+
+/** PNG data URLs by bundle id. */
+export type AppIcons = Partial<Record<BundleId, string>>;
 
 export type HubApi = WindowApi & {
   checkForUpdates(): Promise<void>;
@@ -278,6 +281,8 @@ export type HubApi = WindowApi & {
   clearInsights(): Promise<void>;
   /** Rejects when the helper does not answer in time. */
   getInstalledApps(): Promise<InstalledApp[]>;
+  /** Icons of apps from the last installed-app list. Leaves out any it could not render. */
+  getAppIcons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -320,4 +325,5 @@ export const Channel = {
   insights: "voice:insights",
   clearInsights: "voice:clearInsights",
   getInstalledApps: "voice:getInstalledApps",
+  getAppIcons: "voice:getAppIcons",
 } as const;

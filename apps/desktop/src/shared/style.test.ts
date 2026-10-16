@@ -7,6 +7,7 @@ import {
   BUILT_IN_SITES,
   SITE_CATEGORIES,
   parseBundleId,
+  parseBundleIds,
   parseHost,
   type Category,
 } from "./app-categories.ts";
@@ -162,6 +163,22 @@ describe("parseBundleId", () => {
   ])("%j is not a bundle id", (input) => {
     expect(parseBundleId(input)).toBeNull();
   });
+});
+
+describe("parseBundleIds", () => {
+  test("keeps the bundle ids of an untrusted list and drops the rest", () => {
+    expect(parseBundleIds(["com.apple.Mail", 7, "com.apple/mail", null, " a.b "])).toEqual([
+      "com.apple.mail",
+      "a.b",
+    ]);
+  });
+
+  test.each([undefined, null, "com.apple.mail", { 0: "com.apple.mail" }])(
+    "%j is not a list",
+    (raw) => {
+      expect(parseBundleIds(raw)).toEqual([]);
+    },
+  );
 });
 
 describe("parseAssignments", () => {

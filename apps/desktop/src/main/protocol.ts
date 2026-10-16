@@ -38,7 +38,7 @@ export type HelperCommand =
   | { type: "asr.remove" }
   | { type: "test.target"; target: Target | null }
   | { type: "apps.list" }
-  | { type: "icons.render"; paths: string[] };
+  | { type: "icons.render"; id: string; paths: string[] };
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
@@ -176,11 +176,13 @@ const HelperEventSchema = Schema.Union([
         name: Schema.String,
         path: Schema.String,
         modifiedMs: Schema.Finite,
+        browser: Schema.Boolean,
       }),
     ),
   }),
   Schema.Struct({
     type: Schema.Literal("icons.rendered"),
+    id: Schema.String,
     icons: validEntries(Schema.Struct({ path: Schema.String, png: Schema.String })),
   }),
   Schema.Struct({

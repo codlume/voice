@@ -11,8 +11,9 @@ import { finishText, type WritingStyle } from "@voice/cleanup/style";
 import type { InstalledApp, Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
+import { AppIcon } from "./AppIcon.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { bannerApps, type BannerApp } from "./styleView.ts";
+import { bannerApps } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
@@ -104,19 +105,6 @@ const styles = stylex.create({
   },
   apps: { display: "flex", alignItems: "center", gap: 4 },
   appCell: { display: "grid", placeItems: "center", width: 24, height: 24 },
-  appImage: { display: "block", width: 24, height: 24 },
-  // macOS icons leave a margin inside their canvas, so a letter tile is drawn smaller to match.
-  monogram: {
-    display: "grid",
-    placeItems: "center",
-    width: 20,
-    height: 20,
-    borderRadius: 5,
-    backgroundColor: color.segmentTrack,
-    color: color.mutedForeground,
-    fontSize: 11,
-    fontWeight: 600,
-  },
   more: { paddingInline: 2, color: color.mutedForeground, fontSize: 12, fontWeight: 500 },
   title: { display: "block", fontWeight: 500 },
   detail: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
@@ -297,7 +285,7 @@ function AppliesIn({
                       render={<span />}
                       {...stylex.props(styles.appCell)}
                     >
-                      <AppIcon app={app} />
+                      <AppIcon bundleId={app.bundleId} name={app.name} />
                     </Tooltip.Trigger>
                   ))}
                   {overflow.length > 0 && (
@@ -325,27 +313,6 @@ function AppliesIn({
         </Tooltip.Provider>
       )}
     </div>
-  );
-}
-
-function AppIcon({ app }: { app: BannerApp }) {
-  const [failed, setFailed] = useState<string | null>(null);
-  if (app.icon !== null && app.icon !== failed) {
-    const { icon } = app;
-    return (
-      <img
-        src={icon}
-        alt={app.name}
-        draggable={false}
-        onError={() => setFailed(icon)}
-        {...stylex.props(styles.appImage)}
-      />
-    );
-  }
-  return (
-    <span role="img" aria-label={app.name} {...stylex.props(styles.monogram)}>
-      {app.letter}
-    </span>
   );
 }
 

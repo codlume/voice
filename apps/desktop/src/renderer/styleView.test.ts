@@ -4,22 +4,17 @@ import type { InstalledApp } from "../shared/api.ts";
 import { parseBundleId } from "../shared/app-categories.ts";
 import { bannerApps } from "./styleView.ts";
 
-function app(id: string, name: string, icon: string | null = `data:image/png;base64,${name}`) {
+function app(id: string, name: string, browser = false) {
   const bundleId = parseBundleId(id);
   if (bundleId === null) throw new Error(`bad fixture id ${id}`);
-  return { bundleId, name, icon } satisfies InstalledApp;
+  return { bundleId, name, browser } satisfies InstalledApp;
 }
 
-const image = (id: string, name: string, catalogName = name) => ({
-  bundleId: id.toLowerCase(),
-  name: catalogName,
-  icon: `data:image/png;base64,${name}`,
-  letter: catalogName.slice(0, 1),
-});
+const tile = (id: string, name: string) => ({ bundleId: id.toLowerCase(), name });
 
 const installed = [
   app("com.apple.dt.Xcode", "Xcode"),
-  app("com.google.Chrome", "Google Chrome"),
+  app("com.google.Chrome", "Google Chrome", true),
   app("com.apple.mail", "Mail"),
   app("com.tinyspeck.slackmacgap", "Slack"),
   app("net.whatsapp.WhatsApp", "WhatsApp"),
@@ -30,18 +25,15 @@ const installed = [
 describe("bannerApps", () => {
   test("shows each category's installed apps in catalog order, without browsers or unknown apps", () => {
     expect(bannerApps("personal", installed)).toEqual({
-      shown: [image("com.apple.MobileSMS", "Messages"), image("net.whatsapp.WhatsApp", "WhatsApp")],
+      shown: [tile("com.apple.MobileSMS", "Messages"), tile("net.whatsapp.WhatsApp", "WhatsApp")],
       overflow: [],
     });
     expect(bannerApps("work", installed)).toEqual({
-      shown: [image("com.tinyspeck.slackmacgap", "Slack")],
+      shown: [tile("com.tinyspeck.slackmacgap", "Slack")],
       overflow: [],
     });
     expect(bannerApps("email", installed)).toEqual({
-      shown: [
-        image("com.apple.mail", "Mail"),
-        image("com.microsoft.Outlook", "Microsoft Outlook", "Outlook"),
-      ],
+      shown: [tile("com.apple.mail", "Mail"), tile("com.microsoft.Outlook", "Outlook")],
       overflow: [],
     });
   });
@@ -57,18 +49,26 @@ describe("bannerApps", () => {
     ];
     expect(bannerApps("personal", personal)).toEqual({
       shown: [
-        image("com.apple.MobileSMS", "Messages"),
-        image("net.whatsapp.WhatsApp", "WhatsApp"),
-        image("ru.keepcoder.Telegram", "Telegram"),
-        image("org.whispersystems.signal-desktop", "Signal"),
+        tile("com.apple.MobileSMS", "Messages"),
+        tile("net.whatsapp.WhatsApp", "WhatsApp"),
+        tile("ru.keepcoder.Telegram", "Telegram"),
+        tile("org.whispersystems.signal-desktop", "Signal"),
       ],
       overflow: ["WeChat", "Discord"],
     });
   });
 
-  test("shows a monogram for an app without an icon", () => {
-    expect(bannerApps("work", [app("us.zoom.xos", "zoom.us", null)])).toEqual({
-      shown: [{ bundleId: "us.zoom.xos", name: "Zoom", icon: null, letter: "Z" }],
+  test("shows an app installed under two catalog ids once, by its first catalog id", () => {
+    const work = [
+      app("com.microsoft.teams2", "Microsoft Teams"),
+      app("com.microsoft.teams", "Microsoft Teams classic"),
+      app("com.tinyspeck.slackmacgap", "Slack"),
+    ];
+    expect(bannerApps("work", work)).toEqual({
+      shown: [
+        tile("com.tinyspeck.slackmacgap", "Slack"),
+        tile("com.microsoft.teams", "Microsoft Teams"),
+      ],
       overflow: [],
     });
   });

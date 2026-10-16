@@ -59,6 +59,7 @@ const voice: HubApi = {
   onInsights: (listener) => subscribe<Insights>(Channel.insights, listener),
   clearInsights: () => ipcRenderer.invoke(Channel.clearInsights),
   getInstalledApps: () => ipcRenderer.invoke(Channel.getInstalledApps),
+  getAppIcons: (bundleIds) => ipcRenderer.invoke(Channel.getAppIcons, bundleIds),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

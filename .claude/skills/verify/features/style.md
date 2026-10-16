@@ -6,7 +6,7 @@ Style lets a user turn text cleanup on or off and choose how cleaned-up dictatio
 
 - `style-cleanup-toggle`: the `Clean up text` switch turns cleanup on and off. Turning it off unloads the cleanup model, which then reports `installed`. Turning it on loads the model again.
 - `style-tabs`: four tabs, `Personal messages`, `Work messages`, `Email`, and `Other`. Each tab shows a banner and three cards with an example for that category.
-- `style-banners`: each banner reads "This style applies in personal messengers" (workplace messengers, all major email apps, all other apps), then the real icons of the installed built-in apps of that category, up to four, then "+N". Other shows no icons. The list comes from the helper each time the page opens.
+- `style-banners`: each banner reads "This style applies in personal messengers" (workplace messengers, all major email apps, all other apps), then the real icons of the installed built-in apps of that category, up to four, then "+N". Other shows no icons. The list comes from the helper each time the page opens; each icon is rendered the first time a tile shows it, and the tile shows the app's first letter until it arrives.
 - `style-pick`: choosing a card on a tab sets that category's style for the next dictation. The other categories keep theirs.
 - `style-by-target`: a dictation into Messages uses the Personal style, Slack the Work style, Mail or Gmail in a browser the Email style with the email layout, and anything else the Other style.
 - `style-disabled`: with cleanup off, the cards are disabled on every tab and the page explains that the transcript is inserted as recognized.

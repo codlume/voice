@@ -626,8 +626,9 @@ function fakeVoice(
         ] satisfies [string, string][]
       ).flatMap(([id, name]) => {
         const bundleId = parseBundleId(id);
-        return bundleId ? [{ bundleId, name, icon: null }] : [];
+        return bundleId ? [{ bundleId, name, browser: false }] : [];
       }),
+    getAppIcons: async () => ({}),
   };
 }
 
