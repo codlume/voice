@@ -13,6 +13,7 @@ import {
   type UpdateStatus,
 } from "../shared/api.ts";
 import { parseBundleId } from "../shared/app-categories.ts";
+import { applyAssignmentEdit } from "../shared/style.ts";
 import type {
   HistoryEntry,
   HistoryRetention,
@@ -623,12 +624,24 @@ function fakeVoice(
           ["com.tinyspeck.slackmacgap", "Slack"],
           ["com.apple.mail", "Mail"],
           ["com.apple.dt.Xcode", "Xcode"],
-        ] satisfies [string, string][]
-      ).flatMap(([id, name]) => {
+          ["com.apple.TextEdit", "TextEdit"],
+          ["com.google.Chrome", "Google Chrome", true],
+        ] satisfies [string, string, boolean?][]
+      ).flatMap(([id, name, browser = false]) => {
         const bundleId = parseBundleId(id);
-        return bundleId ? [{ bundleId, name, browser: false }] : [];
+        return bundleId ? [{ bundleId, name, browser }] : [];
       }),
     getAppIcons: async () => ({}),
+    editAssignments: async (edit) => {
+      const { cleanup } = snapshot.settings;
+      set({
+        ...snapshot,
+        settings: {
+          ...snapshot.settings,
+          cleanup: { ...cleanup, assignments: applyAssignmentEdit(cleanup.assignments, edit) },
+        },
+      });
+    },
   };
 }
 

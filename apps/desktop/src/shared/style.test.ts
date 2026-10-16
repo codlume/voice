@@ -12,9 +12,14 @@ import {
   type Category,
 } from "./app-categories.ts";
 import {
+  applyAssignmentEdit,
   classify,
   cleanupStyleFor,
+  parseAssignmentEdit,
   parseAssignments,
+  place,
+  unassign,
+  type Assignment,
   type CategoryStyles,
   type Target,
 } from "./style.ts";
@@ -237,5 +242,145 @@ describe("cleanupStyleFor", () => {
     ["other", { style: "casual", layout: "general" }],
   ])("%s cleans with %j", (category, expected) => {
     expect(cleanupStyleFor(category, styles)).toEqual(expected);
+  });
+});
+
+const list = (...items: unknown[]) => parseAssignments(items);
+
+describe("place and unassign", () => {
+  const textEdit = (category: Category) =>
+    list({
+      kind: "app",
+      bundleId: "com.apple.TextEdit",
+      name: "TextEdit",
+      category,
+    })[0] as Assignment;
+  const slack = (category: Category) =>
+    list({
+      kind: "app",
+      bundleId: "com.tinyspeck.slackmacgap",
+      name: "Slack",
+      category,
+    })[0] as Assignment;
+  const site = (host: string, category: Category) =>
+    list({ kind: "site", host, category })[0] as Assignment;
+
+  test.each<[string, Assignment[], Assignment, Assignment[]]>([
+    ["adds an unknown app", [], textEdit("personal"), [textEdit("personal")]],
+    ["adds an unknown app to Other", [], textEdit("other"), [textEdit("other")]],
+    [
+      "moves an assigned app, keeping one entry",
+      [site("linear.app", "work"), textEdit("personal")],
+      textEdit("email"),
+      [site("linear.app", "work"), textEdit("email")],
+    ],
+    ["moves a built-in app to another category", [], slack("personal"), [slack("personal")]],
+    ["adds nothing for a built-in app picked into its own category", [], slack("work"), []],
+    [
+      "sends a moved built-in app back by dropping its entry",
+      [slack("personal")],
+      slack("work"),
+      [],
+    ],
+    ["adds a site", [], site("mail.example.com", "email"), [site("mail.example.com", "email")]],
+    [
+      "moves an assigned site",
+      [site("mail.example.com", "work")],
+      site("mail.example.com", "email"),
+      [site("mail.example.com", "email")],
+    ],
+    [
+      "adds nothing for a built-in site in its own category",
+      [],
+      site("mail.google.com", "email"),
+      [],
+    ],
+    ["adds nothing for a subdomain of a built-in site", [], site("app.slack.com", "work"), []],
+    [
+      "moves a built-in site",
+      [],
+      site("app.slack.com", "personal"),
+      [site("app.slack.com", "personal")],
+    ],
+    [
+      "adds a subdomain the user's own parent site would send elsewhere",
+      [site("slack.com", "personal")],
+      site("app.slack.com", "work"),
+      [site("slack.com", "personal"), site("app.slack.com", "work")],
+    ],
+  ])("%s", (_, before, assignment, after) => {
+    expect(place(before, assignment)).toEqual(after);
+  });
+
+  test("returns the same list when nothing changes", () => {
+    const before = [textEdit("personal")];
+    expect(place(before, textEdit("personal"))).toBe(before);
+    expect(place([], slack("work"))).toEqual([]);
+  });
+
+  test("an app and a site never collide, and unassign removes only its own key", () => {
+    const both = place([textEdit("personal")], site("textedit.example", "personal"));
+    expect(both).toEqual([textEdit("personal"), site("textedit.example", "personal")]);
+    expect(unassign(both, textEdit("work"))).toEqual([site("textedit.example", "personal")]);
+    expect(
+      classify(
+        target("com.tinyspeck.slackmacgap"),
+        unassign([slack("personal")], slack("personal")),
+      ),
+    ).toBe("work");
+  });
+
+  test("a pick that looks redundant against an old list still applies to the current one", () => {
+    const inWork = { ...textEdit("personal"), category: "work" as const };
+    const seenByPage = [textEdit("personal")];
+    expect(place(seenByPage, textEdit("personal"))).toBe(seenByPage);
+    const onDisk = applyAssignmentEdit(seenByPage, { op: "place", assignment: inWork });
+    expect(applyAssignmentEdit(onDisk, { op: "place", assignment: textEdit("personal") })).toEqual([
+      textEdit("personal"),
+    ]);
+  });
+});
+
+describe("parseAssignmentEdit", () => {
+  test.each<[string, unknown]>([
+    ["no op", { assignment: { kind: "site", host: "slack.com", category: "work" } }],
+    [
+      "an unknown op",
+      { op: "replace", assignment: { kind: "site", host: "slack.com", category: "work" } },
+    ],
+    [
+      "a bad host",
+      { op: "place", assignment: { kind: "site", host: "not a site", category: "work" } },
+    ],
+    [
+      "a bad category",
+      { op: "place", assignment: { kind: "site", host: "slack.com", category: "shouty" } },
+    ],
+    ["not an object", "slack.com"],
+    ["null", null],
+  ])("refuses an edit with %s", (_, raw) => {
+    expect(parseAssignmentEdit(raw)).toBeNull();
+  });
+
+  test("parses a valid edit into branded keys", () => {
+    expect(
+      parseAssignmentEdit({
+        op: "unassign",
+        assignment: {
+          kind: "app",
+          bundleId: "com.apple.TextEdit",
+          name: " TextEdit ",
+          category: "personal",
+        },
+      }),
+    ).toEqual({
+      op: "unassign",
+      assignment: {
+        kind: "app",
+        bundleId: "com.apple.textedit",
+        name: "TextEdit",
+        category: "personal",
+      },
+    });
   });
 });

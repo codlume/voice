@@ -49,14 +49,16 @@ function parseAssignment(item: unknown): Assignment | null {
   return null;
 }
 
+export const assignmentKey = (assignment: Assignment): string =>
+  assignment.kind === "app" ? `app:${assignment.bundleId}` : `site:${assignment.host}`;
+
 export function parseAssignments(raw: unknown): Assignment[] {
   if (!Array.isArray(raw)) return [];
   const byKey = new Map<string, Assignment>();
   for (const item of raw) {
     const assignment = parseAssignment(item);
     if (assignment === null) continue;
-    const key =
-      assignment.kind === "app" ? `app:${assignment.bundleId}` : `site:${assignment.host}`;
+    const key = assignmentKey(assignment);
     byKey.delete(key);
     byKey.set(key, assignment);
   }
@@ -72,22 +74,74 @@ function categoryBySuffix(
   return sites.get(host) ?? (dot === -1 ? undefined : categoryBySuffix(host.slice(dot + 1), sites));
 }
 
-export function classify(target: Target | null, assignments: readonly Assignment[]): Category {
-  if (target === null) return "other";
-  const { bundleId, host } = target;
+type Lookup = { bundleId: BundleId | null; host: Host | null };
+
+export function assignedCategory(
+  { bundleId, host }: Lookup,
+  assignments: readonly Assignment[],
+): Category | null {
   const userSites = new Map<string, Category>();
   const userApps = new Map<string, Category>();
   for (const assignment of assignments) {
     if (assignment.kind === "site") userSites.set(assignment.host, assignment.category);
     else userApps.set(assignment.bundleId, assignment.category);
   }
+  const app = (apps: ReadonlyMap<string, Category>) =>
+    bundleId === null ? undefined : apps.get(bundleId);
   return (
     categoryBySuffix(host, userSites) ??
-    userApps.get(bundleId) ??
+    app(userApps) ??
     categoryBySuffix(host, SITE_CATEGORIES) ??
-    APP_CATEGORIES.get(bundleId) ??
-    "other"
+    app(APP_CATEGORIES) ??
+    null
   );
+}
+
+export const classify = (target: Target | null, assignments: readonly Assignment[]): Category =>
+  target === null ? "other" : (assignedCategory(target, assignments) ?? "other");
+
+const lookupOf = (assignment: Assignment): Lookup =>
+  assignment.kind === "app"
+    ? { bundleId: assignment.bundleId, host: null }
+    : { bundleId: null, host: assignment.host };
+
+export function place(
+  assignments: readonly Assignment[],
+  assignment: Assignment,
+): readonly Assignment[] {
+  const lookup = lookupOf(assignment);
+  if (assignedCategory(lookup, assignments) === assignment.category) return assignments;
+  const key = assignmentKey(assignment);
+  const rest = assignments.filter((existing) => assignmentKey(existing) !== key);
+  return assignedCategory(lookup, rest) === assignment.category ? rest : [...rest, assignment];
+}
+
+export const unassign = (
+  assignments: readonly Assignment[],
+  assignment: Assignment,
+): readonly Assignment[] =>
+  assignments.filter((existing) => assignmentKey(existing) !== assignmentKey(assignment));
+
+/** One change to the assignments, applied by main to whatever list is current when it runs. */
+export type AssignmentEdit =
+  | { op: "place"; assignment: Assignment }
+  | { op: "unassign"; assignment: Assignment };
+
+export const applyAssignmentEdit = (
+  assignments: readonly Assignment[],
+  edit: AssignmentEdit,
+): readonly Assignment[] =>
+  edit.op === "place"
+    ? place(assignments, edit.assignment)
+    : unassign(assignments, edit.assignment);
+
+export function parseAssignmentEdit(raw: unknown): AssignmentEdit | null {
+  if (typeof raw !== "object" || raw === null || !("op" in raw) || !("assignment" in raw)) {
+    return null;
+  }
+  const [assignment] = parseAssignments([raw.assignment]);
+  if (assignment === undefined) return null;
+  return raw.op === "place" || raw.op === "unassign" ? { op: raw.op, assignment } : null;
 }
 
 export const cleanupStyleFor = (category: Category, styles: CategoryStyles): CleanupStyle => ({

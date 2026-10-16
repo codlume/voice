@@ -4,16 +4,18 @@ import { Tabs } from "@base-ui/react/tabs";
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { finishText, type WritingStyle } from "@voice/cleanup/style";
 
 import type { InstalledApp, Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
+import type { Assignment } from "../shared/style.ts";
 import { AppIcon } from "./AppIcon.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { bannerApps } from "./styleView.ts";
+import { AddToCategory, AssignmentChip } from "./StyleAssignments.tsx";
+import { bannerApps, CATEGORY_LABELS, chips } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
@@ -28,11 +30,11 @@ const SEMI_FORMAL_EXAMPLES: Record<Category, string> = {
   other: "The quarterly numbers look good, and churn is down.",
 };
 
-const CATEGORY_TABS: Record<Category, { label: string; appliesIn: string }> = {
-  personal: { label: "Personal messages", appliesIn: "personal messengers" },
-  work: { label: "Work messages", appliesIn: "workplace messengers" },
-  email: { label: "Email", appliesIn: "all major email apps" },
-  other: { label: "Other", appliesIn: "all other apps" },
+const APPLIES_IN: Record<Category, string> = {
+  personal: "personal messengers",
+  work: "workplace messengers",
+  email: "all major email apps",
+  other: "all other apps",
 };
 
 const writingStyles: { value: WritingStyle; label: string; rule: string }[] = [
@@ -181,9 +183,15 @@ export function Style({ settings }: { settings: SettingsValue }) {
   const cleanupEnabled = wantsCleanup(settings);
   const [category, setCategory] = useState<Category>("personal");
   const installed = useInstalledApps();
+  const { assignments } = settings.cleanup;
 
   const changeCleanup = (cleanup: NonNullable<SettingsPatch["cleanup"]>) =>
     run(() => hubApi().updateSettings({ cleanup }), "Could not save your style settings.");
+  const removeAssignment = (assignment: Assignment) =>
+    run(
+      () => hubApi().editAssignments({ op: "unassign", assignment }),
+      "Could not save your style settings.",
+    );
 
   return (
     <div {...stylex.props(styles.page)}>
@@ -224,13 +232,18 @@ export function Style({ settings }: { settings: SettingsValue }) {
               value={value}
               {...stylex.props(styles.tab, value === category && styles.tabOn)}
             >
-              {CATEGORY_TABS[value].label}
+              {CATEGORY_LABELS[value]}
             </Tabs.Tab>
           ))}
         </Tabs.List>
         {CATEGORIES.map((value) => (
           <Tabs.Panel key={value} value={value} {...stylex.props(styles.panel)}>
-            <AppliesIn category={value} installed={installed} />
+            <AppliesIn
+              category={value}
+              installed={installed}
+              assignments={assignments}
+              onRemove={removeAssignment}
+            />
             <StyleCards
               id={`${name}-${value}`}
               category={value}
@@ -261,17 +274,20 @@ export function Style({ settings }: { settings: SettingsValue }) {
 function AppliesIn({
   category,
   installed,
+  assignments,
+  onRemove,
 }: {
   category: Category;
   installed: readonly InstalledApp[];
+  assignments: readonly Assignment[];
+  onRemove: (assignment: Assignment) => void;
 }) {
-  const { shown, overflow } = bannerApps(category, installed);
+  const addRef = useRef<HTMLButtonElement>(null);
+  const { shown, overflow } = bannerApps(category, installed, assignments);
   const hidden = overflow.join(", ");
   return (
     <div {...stylex.props(styles.banner)}>
-      <p {...stylex.props(styles.detail)}>
-        This style applies in {CATEGORY_TABS[category].appliesIn}
-      </p>
+      <p {...stylex.props(styles.detail)}>This style applies in {APPLIES_IN[category]}</p>
       {shown.length > 0 && (
         <Tooltip.Provider delay={150} closeDelay={0}>
           <Tooltip.Root<string>>
@@ -312,6 +328,23 @@ function AppliesIn({
           </Tooltip.Root>
         </Tooltip.Provider>
       )}
+      {chips(category, assignments).map((chip) => (
+        <AssignmentChip
+          key={chip.key}
+          chip={chip}
+          category={category}
+          onRemove={(assignment) => {
+            addRef.current?.focus();
+            onRemove(assignment);
+          }}
+        />
+      ))}
+      <AddToCategory
+        category={category}
+        assignments={assignments}
+        installed={installed}
+        triggerRef={addRef}
+      />
     </div>
   );
 }
