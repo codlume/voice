@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
+import { notesSinceInstalled } from "../apps/desktop/src/main/release-notes.ts";
 import { compareVersions, nightlyVersion } from "./release-version.mjs";
 import { preflightRelease, publishRelease } from "./release-publish.mjs";
 
@@ -107,6 +108,120 @@ test("the feed carries release notes, and a rerun with edited notes is already p
     "already-published",
   );
   assert.equal(store.objects.get(key), published);
+});
+
+const stableFeed = (store) =>
+  parse(store.objects.get("channels/stable/mac-arm64/latest-mac.yml").toString());
+
+async function publishStable(store, version, releaseNotes) {
+  return publishRelease({ store, channel: "stable", baseUrl, ...fixture(version), releaseNotes });
+}
+
+test("the feed carries the notes of earlier releases, newest first", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "* two\n");
+  await publishStable(store, "0.0.3", "* three\n");
+  await publishStable(store, "0.0.4", "* four\n");
+  const feed = stableFeed(store);
+  assert.equal(feed.releaseNotes, "* four\n");
+  assert.deepEqual(feed.releaseHistory, [
+    { version: "0.0.4", notes: "* four\n" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.2", notes: "* two\n" },
+  ]);
+});
+
+test("the history starts from a feed published before it existed", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "* two\n");
+  const key = "channels/stable/mac-arm64/latest-mac.yml";
+  const legacy = stableFeed(store);
+  delete legacy.releaseHistory;
+  store.objects.set(key, Buffer.from(stringify(legacy)));
+  await publishStable(store, "0.0.3", "* three\n");
+  assert.deepEqual(stableFeed(store).releaseHistory, [
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.2", notes: "* two\n" },
+  ]);
+});
+
+test("releases without notes stay in the history", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "");
+  await publishStable(store, "0.0.3", "* three\n");
+  await publishStable(store, "0.0.4", "  \n");
+  assert.deepEqual(stableFeed(store).releaseHistory, [
+    { version: "0.0.4", notes: "" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.2", notes: "" },
+  ]);
+});
+
+test("the history drops carried releases that are not older than the new one, or repeat", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.3", "* three\n");
+  const key = "channels/stable/mac-arm64/latest-mac.yml";
+  const edited = stableFeed(store);
+  edited.releaseHistory = [
+    { version: "0.0.5", notes: "* rolled back\n" },
+    { version: "0.0.4", notes: "* same as new\n" },
+    { version: "0.0.1", notes: "* one\n" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.3", notes: "* three again\n" },
+    { version: "three", notes: "* bogus\n" },
+    { version: "0.0.2", notes: "* two\n" },
+  ];
+  store.objects.set(key, Buffer.from(stringify(edited)));
+  await publishStable(store, "0.0.4", "* four\n");
+  assert.deepEqual(stableFeed(store).releaseHistory, [
+    { version: "0.0.4", notes: "* four\n" },
+    { version: "0.0.3", notes: "* three\n" },
+    { version: "0.0.2", notes: "* two\n" },
+    { version: "0.0.1", notes: "* one\n" },
+  ]);
+});
+
+test("the desktop app reads the notes the publisher writes", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "* two\n");
+  await publishStable(store, "0.0.3", "");
+  await publishStable(store, "0.0.4", "* four\n");
+  await publishStable(store, "0.0.5", "* five\n");
+  const feed = stableFeed(store);
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.2"), {
+    releases: [
+      { version: "0.0.5", items: ["five"] },
+      { version: "0.0.4", items: ["four"] },
+    ],
+    more: false,
+  });
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.3"), {
+    releases: [
+      { version: "0.0.5", items: ["five"] },
+      { version: "0.0.4", items: ["four"] },
+    ],
+    more: false,
+  });
+  assert.deepEqual(notesSinceInstalled(feed, "0.0.5"), { releases: [], more: false });
+});
+
+test("the history keeps the ten newest releases", async () => {
+  const store = memoryStore();
+  for (let patch = 1; patch <= 12; patch += 1)
+    await publishStable(store, `0.0.${patch}`, `* ${patch}\n`);
+  const history = stableFeed(store).releaseHistory;
+  assert.equal(history.length, 10);
+  assert.equal(history[0].version, "0.0.12");
+  assert.equal(history.at(-1).version, "0.0.3");
+});
+
+test("republishing the current version leaves its history alone", async () => {
+  const store = memoryStore();
+  await publishStable(store, "0.0.2", "* two\n");
+  await publishStable(store, "0.0.3", "* three\n");
+  const published = store.objects.get("channels/stable/mac-arm64/latest-mac.yml");
+  assert.equal(await publishStable(store, "0.0.3", "* three, edited\n"), "already-published");
+  assert.equal(store.objects.get("channels/stable/mac-arm64/latest-mac.yml"), published);
 });
 
 test("blank release notes leave the feed without a releaseNotes key", async () => {

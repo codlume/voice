@@ -2,13 +2,14 @@ import type { AppUpdater } from "electron-updater";
 
 import {
   pendingUpdate,
+  type ReleaseNotes,
   type RestartRequest,
   type UpdateChannel,
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
 import { atRiskOnQuit, type HistoryState } from "../shared/history.ts";
-import { releaseNoteItems } from "./release-notes.ts";
+import { notesSinceInstalled } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
 
@@ -54,7 +55,7 @@ export function restartRefusal(request: RestartRequest, history: HistoryState): 
 }
 
 type CheckOutcome =
-  | { kind: "offer"; version: string; notes: readonly string[] }
+  | { kind: "offer"; version: string; notes: ReleaseNotes }
   | { kind: "none" }
   | { kind: "error" };
 
@@ -182,7 +183,11 @@ export function createUpdates({
       if ((channel === "nightly") !== version.includes("-nightly.")) {
         throw new Error("The update feed contains a different release channel");
       }
-      return { kind: "offer", version, notes: releaseNoteItems(result.updateInfo.releaseNotes) };
+      return {
+        kind: "offer",
+        version,
+        notes: notesSinceInstalled(result.updateInfo, snapshot.version),
+      };
     } catch {
       return { kind: "error" };
     }

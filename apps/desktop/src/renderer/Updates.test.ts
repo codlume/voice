@@ -23,6 +23,8 @@ function choices(prompt: RestartPrompt) {
 }
 
 const idle: PillState = { kind: "idle" };
+const noNotes = { releases: [], more: false };
+const oneNote = { releases: [{ version: "1.5.0", items: ["fix: one"] }], more: false };
 const latest = (status: HistoryStatus): HistoryEntry => ({
   id: "s1",
   at: 0,
@@ -38,8 +40,8 @@ const history = (
 
 describe("update controls", () => {
   test("dictation blocks restart but not download", () => {
-    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: [] };
-    const available: UpdateStatus = { kind: "available", version: "1.5.0", notes: [] };
+    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: noNotes };
+    const available: UpdateStatus = { kind: "available", version: "1.5.0", notes: noNotes };
     const sessions: PillState[] = [
       idle,
       { kind: "listening" },
@@ -69,9 +71,9 @@ describe("update controls", () => {
       { kind: "idle" },
       { kind: "current" },
       { kind: "failed", message: "Connection timed out" },
-      { kind: "available", version: "1.5.0", notes: [] },
+      { kind: "available", version: "1.5.0", notes: noNotes },
       { kind: "checking" },
-      { kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 },
+      { kind: "downloading", version: "1.5.0", notes: noNotes, percent: 48.4 },
       { kind: "installing", version: "1.5.0" },
       { kind: "disabled", reason: "Only packaged builds update" },
     ];
@@ -97,11 +99,11 @@ describe("update controls", () => {
     expect(updateStatusText({ kind: "disabled", reason: "Only packaged builds update" })).toBe(
       "Only packaged builds update",
     );
-    expect(updateStatusText({ kind: "available", version: "1.5.0", notes: [] })).toBe(
+    expect(updateStatusText({ kind: "available", version: "1.5.0", notes: noNotes })).toBe(
       "Version 1.5.0 is available",
     );
     expect(
-      updateStatusText({ kind: "downloading", version: "1.5.0", notes: [], percent: 48.4 }),
+      updateStatusText({ kind: "downloading", version: "1.5.0", notes: noNotes, percent: 48.4 }),
     ).toBe("Downloading 1.5.0 · 48%");
   });
 
@@ -110,9 +112,9 @@ describe("update controls", () => {
       { kind: "idle" },
       { kind: "checking" },
       { kind: "current" },
-      { kind: "available", version: "1.5.0", notes: ["fix: one"] },
-      { kind: "downloading", version: "1.5.0", notes: ["fix: one"], percent: 48.4 },
-      { kind: "ready", version: "1.5.0", notes: ["fix: one"] },
+      { kind: "available", version: "1.5.0", notes: oneNote },
+      { kind: "downloading", version: "1.5.0", notes: oneNote, percent: 48.4 },
+      { kind: "ready", version: "1.5.0", notes: oneNote },
       { kind: "installing", version: "1.5.0" },
       { kind: "failed", message: "Connection timed out" },
       { kind: "disabled", reason: "Only packaged builds update" },
@@ -131,7 +133,7 @@ describe("update controls", () => {
   });
 
   test("a rejected update action shows its error over the release it acted on", () => {
-    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: [] };
+    const ready: UpdateStatus = { kind: "ready", version: "1.5.0", notes: noNotes };
     expect(cardText(updateCard(ready, "Voice could not restart."))).toBe(
       "error: Voice could not restart.",
     );
