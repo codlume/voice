@@ -7,7 +7,6 @@ import type { DayKey } from "../shared/insights.ts";
 import type { Assignment } from "../shared/style.ts";
 import { Card } from "./Card.tsx";
 import {
-  appNames,
   cellLabel,
   DAY_MS,
   insightsView,
@@ -19,7 +18,7 @@ import {
   type UsageView,
 } from "./insightsView.ts";
 import { pageStyles } from "./pageStyles.ts";
-import { CATEGORY_LABELS } from "./styleView.ts";
+import { appNames, CATEGORY_LABELS } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useInsights } from "./useInsights.ts";
@@ -330,7 +329,7 @@ function WhereYouDictate({ where }: { where: UsageView }) {
   return (
     <Stat
       label="Where you dictate"
-      info="Shares are by words, from dictations where Voice knew the app. Grouped by each app's category at the time you dictated. Websites are not kept, so dictation in a browser counts under the browser."
+      info="Shares are by words, from dictations where Voice knew the app. Each dictation counts under the category it had when you dictated, so a website like Gmail can count as Email while its browser shows under Top apps. Websites are not kept."
     >
       {where.empty ? (
         <p {...stylex.props(styles.detail)}>Dictate into an app to see where your words go.</p>
@@ -362,7 +361,9 @@ function WhereYouDictate({ where }: { where: UsageView }) {
               <ol {...stylex.props(styles.rows)}>
                 {where.topApps.map(({ bundleId, name, share }) => (
                   <li key={bundleId} {...stylex.props(styles.app)}>
-                    <span {...stylex.props(styles.appName)}>{name}</span>
+                    <span title={name} {...stylex.props(styles.appName)}>
+                      {name}
+                    </span>
                     <span {...stylex.props(styles.fixCount)}>{share}%</span>
                   </li>
                 ))}

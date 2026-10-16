@@ -296,6 +296,23 @@ describe("createInsights", () => {
     expect(await open().get()).toMatchObject(used);
   });
 
+  test("an app whose id is an Object.prototype name survives a load", async () => {
+    await writeFile(file, `{"version":2,"apps":{"__proto__":7}}`);
+    expect((await open().get()).apps).toEqual(apps({ ["__proto__"]: 7 }));
+  });
+
+  test("two spellings of one app id in a hand-edited file add up", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 2,
+        ...EMPTY_INSIGHTS,
+        apps: { "com.Apple.Mail": 7, "com.apple.mail": 11 },
+      }),
+    );
+    expect((await open().get()).apps).toEqual(apps({ "com.apple.mail": 18 }));
+  });
+
   test("a session recorded while the file loads is added to what the file held", async () => {
     await writeFile(
       file,
