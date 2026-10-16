@@ -33,7 +33,7 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - **Silence.** `vv dictate silence.wav`. The output has `outcome.kind` `empty` and an empty `inserted`.
 - **Flow Bar.** During a session, `vv shot flow-bar pill` captures the pill. `vv eval pill 'document.body.innerText'` reads its text.
 - **Proof.** Each `dictate` writes `dictate-<fixture>-<end>-<ts>.json` to the evidence dir with the outcome, the inserted text, `latest` (the history entry this session added, or `null`), and the timing line.
-- **Target app.** `vv dictate short.wav --app=com.apple.MobileSMS` and `vv dictate short.wav --app=com.google.Chrome@mail.google.com` both end with `outcome.kind` `inserted`, and the output records `app` with the bundle id and host you passed. The helper reports that target instead of the scratch window for this one session. Main ignores the target until per-app styles land, so today the proof is only that the run still inserts and the JSON records `app`.
+- **Target app.** `vv dictate short.wav --app=com.apple.MobileSMS` and `vv dictate short.wav --app=com.google.Chrome@mail.google.com` both end with `outcome.kind` `inserted`, and the output records `app` with the bundle id and host you passed. The helper reports that target instead of the scratch window for this one session, and main uses it only to pick the category style. [Style](./style.md) has the recipe that proves each target gets its category's style.
 - **TextEdit target.** `dictate` covers only the Electron textarea. For a native Cocoa target, `stop` the instance and run `pnpm e2e`.
 
 ## Gotchas
