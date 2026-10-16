@@ -188,16 +188,19 @@ final class Capture {
         switch state {
         case .starting(let session) where session.id == id:
             _ = session.input.drain(closing: true)
+            session.target.settleHost()
             stopSource()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .recording(let recording) where recording.session.id == id:
             _ = recording.session.input.drain(closing: true)
+            recording.session.target.settleHost()
             stopSource()
             recording.stream?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .transcribing(let recording) where recording.session.id == id:
+            recording.session.target.settleHost()
             recording.stream?.cancel()
             recording.transcription?.cancel()
             state = .idle
@@ -215,10 +218,12 @@ final class Capture {
         switch state {
         case .recording(let recording), .transcribing(let recording):
             _ = recording.session.input.drain(closing: true)
+            recording.session.target.settleHost()
             recording.stream?.cancel()
             recording.transcription?.cancel()
         case .starting(let session):
             _ = session.input.drain(closing: true)
+            session.target.settleHost()
         case .idle, .testing:
             break
         }
