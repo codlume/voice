@@ -185,7 +185,9 @@ function PageAnimationSlider({
   }
   return (
     <div {...stylex.props(motionStyles.duration)}>
-      <output {...stylex.props(motionStyles.readout)}>{ms} ms</output>
+      <span aria-hidden {...stylex.props(motionStyles.readout)}>
+        {ms} ms
+      </span>
       <Slider.Root
         value={ms}
         onValueChange={setMs}
