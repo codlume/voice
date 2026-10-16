@@ -901,6 +901,15 @@ async function main() {
           if (!item) throw new Error(`no menu item ${id}`);
           item.click();
         },
+        setTarget: (bundleId: unknown, host: unknown) => {
+          if (
+            (bundleId !== null && typeof bundleId !== "string") ||
+            (host !== null && typeof host !== "string")
+          ) {
+            throw new Error("setTarget takes a bundle id and host, each a string or null");
+          }
+          helper.send({ type: "test.target", bundleId, host });
+        },
       },
     });
   }

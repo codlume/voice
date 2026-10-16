@@ -191,6 +191,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      target: null,
     });
     await expect.poll(() => store.state.session.phase).toBe("inserting");
     clock += 30;

@@ -640,6 +640,7 @@ describe("createAccount", () => {
       audioMs: 800,
       asrMs: 1,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(shownDuring).toEqual([]);

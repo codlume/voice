@@ -175,6 +175,7 @@ function harness(opts: Options = {}) {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
     },
   };
@@ -205,7 +206,9 @@ async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-async function dictate(h: ReturnType<typeof harness>, text: string) {
+type Target = Extract<HelperEvent, { type: "transcript" }>["target"];
+
+async function dictate(h: ReturnType<typeof harness>, text: string, target: Target = null) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
   const id = h.id();
   h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
@@ -218,6 +221,7 @@ async function dictate(h: ReturnType<typeof harness>, text: string) {
     audioMs: 800,
     asrMs: 100,
     speechMs: 600,
+    target,
   });
   await flush();
   return id;
@@ -359,6 +363,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(h.cleans).toEqual(["hello world"]);
@@ -433,6 +438,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      target: null,
     });
     await flush();
     vi.advanceTimersByTime(30);
@@ -464,6 +470,28 @@ describe("createDictation", () => {
     expect(json).not.toContain(id.slice(0, 8));
   });
 
+  test.each<Target>([{ bundleId: "com.google.Chrome", host: "mail.google.com" }, null])(
+    "inserts and records a transcript with target %j, and never logs or reports the target",
+    async (target) => {
+      const h = harness();
+      const id = await dictate(h, "hello world", target);
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "accessibility",
+        reason: null,
+      });
+      vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
+      expect(h.latest()).toMatchObject({ id, text: "hello world.", status: "inserted" });
+      expect(h.reports.map((report) => report.outcome.kind)).toEqual(["inserted"]);
+      expect(h.dictated).toHaveLength(1);
+      const recorded = JSON.stringify([h.logs, h.entries, h.reports, h.dictated, h.latest()]);
+      expect(recorded).not.toContain("com.google.Chrome");
+      expect(recorded).not.toContain("mail.google.com");
+    },
+  );
+
   test("releaseToInsertMs counts from the release even when capture caught up later", () => {
     const h = harness({ cleanupEnabled: false });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
@@ -480,6 +508,7 @@ describe("createDictation", () => {
       audioMs: 0,
       asrMs: 10,
       speechMs: 600,
+      target: null,
     });
     vi.advanceTimersByTime(100);
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
@@ -550,6 +579,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(h.reports.map((report) => report.outcome.kind)).toEqual([
@@ -613,6 +643,7 @@ describe("createDictation", () => {
       audioMs: 900,
       asrMs: 100,
       speechMs: null,
+      target: null,
     });
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.dictated[0]?.paceMs).toBe(900);
@@ -672,6 +703,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 120,
         speechMs: 600,
+        target: null,
       });
       await flush();
       expect(h.styles).toStrictEqual([{ style, layout: "general" }]);
@@ -795,6 +827,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(h.cleans).toEqual([]);
@@ -821,6 +854,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
       await flush();
       expect(h.cleans).toEqual([]);
@@ -866,6 +900,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({
@@ -897,6 +932,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({
@@ -924,6 +960,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(h.cleans).toEqual(["hi"]);
@@ -949,6 +986,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        target: null,
       });
       await flush();
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep Hadryś", html: null });
@@ -974,6 +1012,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await flush();
     const budgetMs = cleanupBudgetMs("one two three");
@@ -1037,6 +1076,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one") + CLEANUP_GRACE_MS);
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
@@ -1054,6 +1094,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     await flush();
     expect(h.cleans).toEqual(["one", "two"]);
@@ -1160,6 +1201,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
     expect(h.store.state.session.phase).toBe("inserting");
@@ -1243,6 +1285,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     expect(h.latest()).toMatchObject({ raw: "late", text: "late" });
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
@@ -1289,6 +1332,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.store.state.session).toMatchObject({
@@ -1380,6 +1424,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      target: null,
     });
     h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS - 100);
