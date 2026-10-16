@@ -168,6 +168,48 @@ const motionStyles = stylex.create({
   },
 });
 
+// Saving every drag tick would write settings.json and broadcast a snapshot per tick, so the thumb
+// holds its own value and saves once the gesture or key press commits.
+function PageAnimationSlider({
+  saved,
+  onCommit,
+}: {
+  saved: number;
+  onCommit: (ms: number) => void;
+}) {
+  const [ms, setMs] = useState(saved);
+  const [shownSaved, setShownSaved] = useState(saved);
+  if (saved !== shownSaved) {
+    setShownSaved(saved);
+    setMs(saved);
+  }
+  return (
+    <div {...stylex.props(motionStyles.duration)}>
+      <output {...stylex.props(motionStyles.readout)}>{ms} ms</output>
+      <Slider.Root
+        value={ms}
+        onValueChange={setMs}
+        onValueCommitted={(committed) => committed !== saved && onCommit(committed)}
+        min={MIN_PAGE_ANIMATION_MS}
+        max={MAX_PAGE_ANIMATION_MS}
+        step={PAGE_ANIMATION_STEP_MS}
+        {...stylex.props(motionStyles.slider)}
+      >
+        <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
+          <Slider.Track {...stylex.props(motionStyles.track)}>
+            <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
+            <Slider.Thumb
+              aria-label="Page animation duration"
+              getAriaValueText={(_, value) => `${value} milliseconds`}
+              {...stylex.props(motionStyles.thumb)}
+            />
+          </Slider.Track>
+        </Slider.Control>
+      </Slider.Root>
+    </div>
+  );
+}
+
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
 const TOGGLE_OFF = "off";
 type ToggleChoice = Hotkey | typeof TOGGLE_OFF;
@@ -634,30 +676,10 @@ export function SystemSettings({
           >
             <div {...stylex.props(motionStyles.control)}>
               <PageAnimationPreview />
-              <div {...stylex.props(motionStyles.duration)}>
-                <output {...stylex.props(motionStyles.readout)}>
-                  {settings.pageAnimationMs} ms
-                </output>
-                <Slider.Root
-                  value={settings.pageAnimationMs}
-                  onValueChange={changePageAnimation}
-                  min={MIN_PAGE_ANIMATION_MS}
-                  max={MAX_PAGE_ANIMATION_MS}
-                  step={PAGE_ANIMATION_STEP_MS}
-                  {...stylex.props(motionStyles.slider)}
-                >
-                  <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
-                    <Slider.Track {...stylex.props(motionStyles.track)}>
-                      <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
-                      <Slider.Thumb
-                        aria-label="Page animation duration"
-                        getAriaValueText={(_, ms) => `${ms} milliseconds`}
-                        {...stylex.props(motionStyles.thumb)}
-                      />
-                    </Slider.Track>
-                  </Slider.Control>
-                </Slider.Root>
-              </div>
+              <PageAnimationSlider
+                saved={settings.pageAnimationMs}
+                onCommit={changePageAnimation}
+              />
             </div>
           </Row>
         </Card>
