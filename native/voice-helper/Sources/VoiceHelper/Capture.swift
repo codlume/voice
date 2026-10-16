@@ -87,7 +87,9 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) {
+    /// False when no session began, so the caller schedules nothing for it.
+    @discardableResult
+    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, muteWhileDictating: Bool, microphone: Microphone?) -> Bool {
         // Dictation preempts a test. The mic keeps running so dictation gets audio without an
         // engine restart.
         if case .testing(let testId, _) = state {
@@ -98,7 +100,7 @@ final class Capture {
         }
         guard case .idle = state else {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
-            return
+            return false
         }
         lastTarget = nil
         adopt(microphone)
@@ -113,7 +115,7 @@ final class Capture {
                 self.file = file
                 setOutputSilenced(muteWhileDictating)
                 file.start()
-                return
+                return true
             }
             guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "microphone access is not granted")
@@ -123,11 +125,13 @@ final class Capture {
             state = .starting(session)
             setOutputSilenced(muteWhileDictating)
             try mic.start(sink: sink)
+            return true
         } catch let error as CaptureError {
             fail(session, reason: error.reason, message: error.message)
         } catch {
             fail(session, reason: .unknown, message: "\(error)")
         }
+        return false
     }
 
     // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.

@@ -66,8 +66,8 @@ final class Helper {
             } else {
                 target = insertion.recordTarget(pid: app?.processIdentifier, bundleId: app?.bundleIdentifier)
             }
-            capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
-            if case .pending = target.host {
+            let started = capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
+            if started, case .pending = target.host {
                 readPageHost(of: target, log: testMode ? { [output] in output.log(.info, $0) } : nil)
             }
         case .captureStop(let id):
