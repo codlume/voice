@@ -396,11 +396,91 @@
     "text": "okay so for the quarterly planning doc i want to start with the goals section we have three goals this quarter the first one is to reduce onboarding time from twelve minutes to under five minutes and the way we plan to do that is by cutting the permissions screen in half and moving the microphone test later in the flow the second goal is to ship windows support by the end of november which means we need to finish the insertion adapter and the shortcut handling and get at least twenty beta testers on it before we call it done the third goal is reliability we had about four hundred crash reports last month most of them from the audio device switching path so priya is going to own that and lukas will help her with the test fixtures then in the risks section mention that the cleanup model might be too slow on older intel macs and that we have not tested it on machines with eight gigabytes of memory also mention that the legal review for the new privacy policy is still pending and could slip into december finally in the next steps section say that we will meet again on the fourteenth to review progress and that everyone should update their tickets before then"
   },
   {
+    "name": "chat-coming-tonight",
+    "text": "hey are you coming tonight um i was thinking we could grab pizza first let me know"
+  },
+  {
+    "name": "chat-lunch",
+    "text": "hey are you free for lunch tomorrow lets do twelve if that works for you"
+  },
+  {
+    "name": "chat-running-late",
+    "text": "omg im so sorry im running like ten minutes late save me a seat"
+  },
+  {
+    "name": "work-status-update",
+    "text": "hey team quick update um the api migration is done and i deployed it to staging this morning can someone review the pr before friday"
+  },
+  {
+    "name": "work-ask",
+    "text": "hi tom do you have a few minutes today to go over the q four roadmap i want to make sure we are aligned before the all hands"
+  },
+  {
+    "name": "email-deck",
+    "text": "hi maria thanks for sending the deck um i went through it last night and the pricing section looks great i have a couple of small notes on the timeline which i will send over tomorrow best mateusz"
+  },
+  {
+    "name": "email-intro",
+    "text": "hello priya i hope you are doing well i wanted to introduce you to lukas who leads our design team he has some great ideas for the onboarding flow and i think you two should talk thanks again kind regards mateusz"
+  },
+  {
+    "name": "email-reply-see-you",
+    "text": "sounds good see you then"
+  },
+  {
+    "name": "email-reply-works",
+    "text": "thanks that works for me"
+  },
+  {
+    "name": "email-reply-attached",
+    "text": "sure i attached the updated contract let me know if you have any questions"
+  },
+  {
+    "name": "ending-pm-dotted",
+    "text": "can we move the call to tomorrow at 3 p.m."
+  },
+  {
+    "name": "ending-pm-spoken",
+    "text": "ill be home around five pm"
+  },
+  {
+    "name": "ending-url-spoken",
+    "text": "the new build is up check voice dot app"
+  },
+  {
+    "name": "ending-url-written",
+    "text": "for the docs go to example.com"
+  },
+  {
+    "name": "ending-trailing-off",
+    "text": "i was going to say something but um i dont know..."
+  },
+  {
+    "name": "ending-question",
+    "text": "did you get a chance to look at the proposal"
+  },
+  {
+    "name": "names-github-api",
+    "text": "can you ask kenji to push the fix to github before the api review with nasa"
+  },
+  {
+    "name": "note-reminder",
+    "text": "remember to um buy milk and call the dentist on thursday about the appointment"
+  },
+  {
+    "name": "note-idea",
+    "text": "idea for the blog post we could write about how we cut startup time in half and what we learned"
+  },
+  {
     "name": "long-varied-50",
     "generate": "varied"
   },
   {
     "name": "long-repetitive-50",
     "generate": "repetitive"
+  },
+  {
+    "name": "long-email",
+    "generate": "email"
   }
 ]
