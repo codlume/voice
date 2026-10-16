@@ -10,7 +10,8 @@ private let browserBundleIds: Set<String> = [
     "org.mozilla.firefox", "com.operasoftware.Opera", "com.vivaldi.Vivaldi",
 ]
 
-private let webAreaMaxDepth = 25
+/// Measured walks reach the window in 10 to 11 hops; the bound only stops a runaway ancestry.
+private let webAreaMaxDepth = 64
 private let windowSearchMaxDepth = 3
 private let windowSearchMaxNodes = 64
 /// Warm reads measured under 50 ms, so a read still running after this has met a stalled browser.

@@ -11,9 +11,10 @@ private let windowRole = "AXWindow"
 
 /// The outermost web area is the document whose URL is in the address bar. An iframe (an editor
 /// frame at about:blank, a third-party widget) is a web area of its own below it, so the walk
-/// keeps going to the window and reports the last one seen. `giveUp` is asked before every node
-/// access, so a deadline can end the walk between two accessibility round trips, and a walk that
-/// ends early reports nothing rather than an inner frame.
+/// keeps going to the window, or to the top of the ancestry, and reports the last one seen.
+/// `giveUp` is asked before every node access, so a deadline can end the walk between two
+/// accessibility round trips. A walk that the deadline or `maxDepth` ends before the window
+/// reports nothing rather than an inner frame.
 public func outermostWebArea<N: AccessibilityNode>(above node: N, maxDepth: Int, giveUp: () -> Bool) -> (node: N?, hops: Int) {
     var current = node
     var hops = 0
@@ -21,8 +22,8 @@ public func outermostWebArea<N: AccessibilityNode>(above node: N, maxDepth: Int,
     while !giveUp() {
         let role = current.role
         if role == webAreaRole { found = (current, hops) }
-        if role == windowRole || hops == maxDepth { return found ?? (nil, hops) }
-        if giveUp() { return (nil, hops) }
+        if role == windowRole { return found ?? (nil, hops) }
+        if hops == maxDepth || giveUp() { return (nil, hops) }
         guard let parent = current.parent else { return found ?? (nil, hops) }
         current = parent
         hops += 1
