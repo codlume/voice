@@ -267,7 +267,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
           ? "Text cleanup is available for English only. Choose English in Settings to use your saved style."
           : !cleanupEnabled
             ? "Turn on cleanup to apply a style. Your transcript is currently inserted as recognized."
-            : "Style applies to English dictation. Voice checks which app, and which website in a browser, you are dictating into, on this Mac only. Nothing is saved or sent."}
+            : "Style applies to English dictation. Voice checks which app, and which website in a browser, you are dictating into, on this Mac only. Nothing is sent. Insights counts your words per app."}
       </p>
       {saveError && openPicker !== category && (
         <p role="alert" {...stylex.props(pageStyles.error)}>

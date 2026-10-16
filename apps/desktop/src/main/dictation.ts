@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
+import type { BundleId, Category } from "../shared/app-categories.ts";
 import {
   supportsCleanup,
   wantsCleanup,
@@ -15,6 +16,7 @@ import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnost
 import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
+  awaitsTranscript,
   dictating,
   step,
   type Effect as SessionEffect,
@@ -60,10 +62,13 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
+export type Destination = { bundleId: BundleId; category: Category };
+
 type Started = {
   id: string;
   language: DictationLanguage;
   pressedAt: number;
+  destination: Destination | null;
   startMs?: number;
   releasedAt?: number;
   audioMs?: number;
@@ -96,6 +101,7 @@ export type Dictated = {
   language: DictationLanguage;
   paceMs: number | null;
   finishedAt: number;
+  destination: Destination | null;
 };
 
 const gaveTranscript = (outcome: Outcome) =>
@@ -187,6 +193,7 @@ export function createDictation(options: DictationOptions): Dictation {
           id: effect.id,
           language: store.state.settings.dictationLanguage,
           pressedAt: now(),
+          destination: null,
         };
         send({
           type: "capture.start",
@@ -302,6 +309,7 @@ export function createDictation(options: DictationOptions): Dictation {
         language: s?.language ?? "auto",
         paceMs: s?.speechMs ?? s?.audioMs ?? null,
         finishedAt,
+        destination: s?.destination ?? null,
       });
     }
   }
@@ -358,15 +366,18 @@ export function createDictation(options: DictationOptions): Dictation {
           asrMs: event.asrMs,
         });
         const { settings } = store.state;
+        const category = classify(event.target, settings.cleanup.assignments);
+        if (awaitsTranscript(store.state.session, event.id)) {
+          track(event.id, {
+            destination: event.target && { bundleId: event.target.bundleId, category },
+          });
+        }
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
-            ? cleanupStyleFor(
-                classify(event.target, settings.cleanup.assignments),
-                settings.cleanup.styles,
-              )
+            ? cleanupStyleFor(category, settings.cleanup.styles)
             : null,
           rewrites: {
             dictionary: settings.dictionary,

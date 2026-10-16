@@ -89,6 +89,9 @@ export const idle: Session = { phase: "idle" };
 /** A session between the hotkey and its outcome, while the target app must keep focus. */
 export const dictating = (session: Session) => session.phase !== "idle" && session.phase !== "done";
 
+export const awaitsTranscript = (session: Session, id: string) =>
+  (session.phase === "recording" || session.phase === "transcribing") && session.id === id;
+
 function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   const ms = outcome.kind === "inserted" ? IDLE_AFTER_INSERTED_MS : IDLE_AFTER_OTHER_MS;
   return {
@@ -202,12 +205,10 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "transcript": {
       const raw = event.text.trim();
-      const current = state.phase !== "idle" && state.id === event.id;
-      // A second transcript for the session already being cleaned or inserted is a duplicate.
-      if (current && (state.phase === "cleaning" || state.phase === "inserting")) return same;
-      const sessionOver =
-        !current || (state.phase !== "transcribing" && state.phase !== "recording");
-      if (sessionOver) {
+      if (!awaitsTranscript(state, event.id)) {
+        const duplicate =
+          (state.phase === "cleaning" || state.phase === "inserting") && state.id === event.id;
+        if (duplicate) return same;
         const remember: Effect = {
           type: "remember",
           id: event.id,
@@ -217,17 +218,17 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         };
         return { state, effects: raw === "" ? [] : [remember] };
       }
-      if (raw === "") return finish(state.id, { kind: "empty" });
+      if (raw === "") return finish(event.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
       // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
       if (event.cleanup === null || rewritten.entireDictation) {
-        return insert(state.id, raw, rewritten, null);
+        return insert(event.id, raw, rewritten, null);
       }
       return {
-        state: { phase: "cleaning", id: state.id, raw, rewrites: event.rewrites },
+        state: { phase: "cleaning", id: event.id, raw, rewrites: event.rewrites },
         effects: [
-          { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
-          { type: "cleanup", id: state.id, raw, style: event.cleanup },
+          { type: "remember", id: event.id, raw, text: rewritten.text, status: "pending" },
+          { type: "cleanup", id: event.id, raw, style: event.cleanup },
         ],
       };
     }

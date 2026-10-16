@@ -24,7 +24,10 @@ export const DEFAULT_STYLES: CategoryStyles = {
   other: "formal",
 };
 
-/** Where one session's text goes. Never stored, logged, or sent. */
+/**
+ * Where one session's text goes. Insights counts words under the bundle id and never stores the
+ * host. Neither is logged or sent.
+ */
 export type Target = { bundleId: BundleId; host: Host | null };
 
 function parseAssignment(item: unknown): Assignment | null {

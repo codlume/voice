@@ -18,7 +18,7 @@ import {
 } from "../shared/insights.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
-import type { Dictated } from "./dictation.ts";
+import type { Destination, Dictated } from "./dictation.ts";
 
 export type InsightsStore = {
   record(dictated: Dictated): void;
@@ -122,6 +122,7 @@ export type Tally = {
   corrected: number;
   dictionaryFixes: number;
   pace: Pace | null;
+  destination: Destination | null;
 };
 
 export function tally(dictated: Dictated): Tally {
@@ -140,23 +141,34 @@ export function tally(dictated: Dictated): Tally {
       said.length > 0 && paceMs !== null && paceMs > 0
         ? { words: said.length, ms: Math.round(paceMs) }
         : null,
+    destination: dictated.destination,
   };
 }
 
 export function add(insights: Insights, session: Tally): Insights {
-  const { days } = insights;
-  return {
+  const { day, words, destination } = session;
+  const counted: Insights = {
     ...insights,
-    days:
-      session.words === 0
-        ? days
-        : { ...days, [session.day]: (days[session.day] ?? 0) + session.words },
     corrected: insights.corrected + session.corrected,
     dictionaryFixes: insights.dictionaryFixes + session.dictionaryFixes,
     recent:
       session.pace === null
         ? insights.recent
         : [...insights.recent, session.pace].slice(-RECENT_SESSIONS),
+  };
+  if (words === 0) return counted;
+  const days = { ...insights.days, [day]: (insights.days[day] ?? 0) + words };
+  if (destination === null) return { ...counted, days };
+  const { bundleId, category } = destination;
+  const usage = insights.categories[category];
+  return {
+    ...counted,
+    days,
+    categories: {
+      ...insights.categories,
+      [category]: { words: usage.words + words, sessions: usage.sessions + 1 },
+    },
+    apps: { ...insights.apps, [bundleId]: (insights.apps[bundleId] ?? 0) + words },
   };
 }
 

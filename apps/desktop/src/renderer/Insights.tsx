@@ -398,7 +398,8 @@ export const Insights = memo(function Insights({
       <header>
         <h1 {...stylex.props(pageStyles.headline)}>Insights</h1>
         <p {...stylex.props(styles.lede)}>
-          Counted on this Mac from your dictations. Voice keeps the numbers, never your words.
+          Counted on this Mac from your dictations. Voice keeps the numbers and the apps, never your
+          words.
         </p>
       </header>
       {view && (

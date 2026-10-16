@@ -4,10 +4,10 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { BundleId } from "../shared/app-categories.ts";
+import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
 import { EMPTY_INSIGHTS, type DayKey, type Insights } from "../shared/insights.ts";
 import type { Dictated } from "./dictation.ts";
-import { add, createInsights, parseInsights, tally } from "./insights.ts";
+import { add, createInsights, parseInsights, tally, type Tally } from "./insights.ts";
 
 const saves = vi.hoisted(() => ({ hold: Promise.resolve(), started: [] as Promise<void>[] }));
 vi.mock("./atomic-file.ts", async (importOriginal) => {
@@ -30,12 +30,23 @@ const dictated = (patch: Partial<Dictated> = {}): Dictated => ({
   language: "en",
   paceMs: 1000,
   finishedAt: at("2026-10-13"),
+  destination: null,
   ...patch,
 });
 
 const day = (key: string) => key as DayKey;
 const apps = (entries: Record<string, number>) => entries as Record<BundleId, number>;
 const zeros = EMPTY_INSIGHTS.categories;
+const mail = { bundleId: parseBundleId("com.apple.mail")!, category: "email" } as const;
+const tallied = (patch: Partial<Tally> = {}): Tally => ({
+  day: day("2026-10-13"),
+  words: 5,
+  corrected: 0,
+  dictionaryFixes: 0,
+  pace: null,
+  destination: null,
+  ...patch,
+});
 
 const where = (value: Insights) => ({
   days: value.days,
@@ -106,6 +117,7 @@ describe("add", () => {
         corrected: 1,
         dictionaryFixes: 2,
         pace: { words, ms: 1000 },
+        destination: null,
       });
     }
     expect(insights.days).toEqual({ "2026-10-12": 1275, "2026-10-13": 3876 });
@@ -116,23 +128,21 @@ describe("add", () => {
     expect(insights.recent.at(-1)).toEqual({ words: 101, ms: 1000 });
   });
 
-  test("a session with no words adds no active day", () => {
-    const tallied = {
-      day: day("2026-10-13"),
-      words: 0,
-      corrected: 0,
-      dictionaryFixes: 0,
-      pace: null,
-    };
-    expect(add(EMPTY_INSIGHTS, tallied)).toEqual(EMPTY_INSIGHTS);
+  test("a session with no words adds no active day, category, or app", () => {
+    expect(add(EMPTY_INSIGHTS, tallied({ words: 0, destination: mail }))).toEqual(EMPTY_INSIGHTS);
   });
 
-  test("keeps the words already counted per category and app", () => {
-    const counted = add(
-      { ...EMPTY_INSIGHTS, ...used },
-      { day: day("2026-10-13"), words: 5, corrected: 0, dictionaryFixes: 0, pace: null },
-    );
-    expect(counted).toMatchObject(used);
+  test("adds a session's words to its category and app, and one dictation to the category", () => {
+    const counted = add({ ...EMPTY_INSIGHTS, ...used }, tallied({ destination: mail }));
+    expect(counted.categories).toEqual({ ...used.categories, email: { words: 35, sessions: 2 } });
+    expect(counted.apps).toEqual({ ...used.apps, "com.apple.mail": 35 });
+  });
+
+  test("a session with no known app counts toward the day but not toward any category or app", () => {
+    const counted = add({ ...EMPTY_INSIGHTS, ...used }, tallied());
+    expect(counted.days).toEqual({ "2026-10-13": 5 });
+    expect(counted.categories).toEqual(used.categories);
+    expect(counted.apps).toEqual(used.apps);
   });
 });
 
@@ -348,6 +358,18 @@ describe("createInsights", () => {
     await insights.settled();
     const text = await readFile(file, "utf8");
     expect(text).not.toMatch(/zanzibar|quokka/i);
+  });
+
+  test("the saved file counts the browser a website was dictated into, never the website", async () => {
+    const insights = open();
+    const chrome = { bundleId: parseBundleId("com.google.Chrome")!, host: "mail.google.com" };
+    insights.record(dictated({ destination: { ...chrome, category: "email" } }));
+    await insights.settled();
+    expect(await saved()).toMatchObject({
+      categories: { email: { words: 2, sessions: 1 } },
+      apps: { "com.google.chrome": 2 },
+    });
+    expect(await readFile(file, "utf8")).not.toContain("mail.google.com");
   });
 
   test("a file Voice could not read is never written over", async () => {
