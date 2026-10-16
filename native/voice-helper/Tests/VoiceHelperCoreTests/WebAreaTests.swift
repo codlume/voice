@@ -26,39 +26,53 @@ private struct Chain: AccessibilityNode {
 }
 
 @Suite struct WebAreaTests {
-    @Test func stopsAtTheFirstWebArea() {
+    @Test func reportsTheOutermostWebAreaAboveAFocusedIframe() {
         let chain = Chain(roles: ["AXTextField", "AXGroup", "AXWebArea", "AXGroup", "AXWebArea", "AXWindow"])
-        let found = webArea(above: chain, maxDepth: 40, giveUp: never)
-        #expect(found.node?.index == 2)
-        #expect(found.hops == 2)
+        let found = outermostWebArea(above: chain, maxDepth: 40, giveUp: never)
+        #expect(found.node?.index == 4)
+        #expect(found.hops == 4)
     }
 
     @Test func aFocusedWebAreaCountsWithoutHopping() {
-        let found = webArea(above: Chain(roles: ["AXWebArea", "AXWindow"]), maxDepth: 40, giveUp: never)
+        let found = outermostWebArea(above: Chain(roles: ["AXWebArea", "AXWindow"]), maxDepth: 40, giveUp: never)
         #expect(found.node?.index == 0)
         #expect(found.hops == 0)
     }
 
     @Test func givesUpAtTheDepthBound() {
         let chain = Chain(roles: Array(repeating: "AXGroup", count: 5) + ["AXWebArea"])
-        let bounded = webArea(above: chain, maxDepth: 4, giveUp: never)
+        let bounded = outermostWebArea(above: chain, maxDepth: 4, giveUp: never)
         #expect(bounded.node == nil)
         #expect(bounded.hops == 4)
-        #expect(webArea(above: chain, maxDepth: 5, giveUp: never).node?.index == 5)
+        #expect(outermostWebArea(above: chain, maxDepth: 5, giveUp: never).node?.index == 5)
+    }
+
+    @Test func keepsTheWebAreaSeenWhenTheBoundStopsTheWalk() {
+        let chain = Chain(roles: ["AXTextField", "AXWebArea", "AXGroup", "AXGroup", "AXWebArea", "AXWindow"])
+        let found = outermostWebArea(above: chain, maxDepth: 2, giveUp: never)
+        #expect(found.node?.index == 1)
+        #expect(found.hops == 1)
     }
 
     @Test func runsOutOfParentsBeforeTheBound() {
         let chain = Chain(roles: ["AXTextArea", nil, "AXWindow"])
-        let found = webArea(above: chain, maxDepth: 40, giveUp: never)
+        let found = outermostWebArea(above: chain, maxDepth: 40, giveUp: never)
         #expect(found.node == nil)
         #expect(found.hops == 2)
     }
 
     @Test func givesUpWhenTheDeadlinePassesMidWalk() {
         let chain = Chain(roles: ["AXTextField", "AXGroup", "AXGroup", "AXWebArea"])
-        let found = webArea(above: chain, maxDepth: 40, giveUp: expiring(after: 3))
+        let found = outermostWebArea(above: chain, maxDepth: 40, giveUp: expiring(after: 3))
         #expect(found.node == nil)
         #expect(found.hops < 3)
+    }
+
+    @Test func dropsAnInnerWebAreaWhenTheDeadlinePassesBeforeTheWindow() {
+        let chain = Chain(roles: ["AXTextField", "AXWebArea", "AXGroup", "AXGroup", "AXWebArea", "AXWindow"])
+        let found = outermostWebArea(above: chain, maxDepth: 40, giveUp: expiring(after: 4))
+        #expect(found.node == nil)
+        #expect(found.hops == 2)
     }
 }
 

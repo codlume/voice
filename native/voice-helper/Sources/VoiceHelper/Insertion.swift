@@ -3,31 +3,31 @@ import ApplicationServices
 import Carbon
 import Foundation
 import VoiceHelperCore
+import os
 
 struct FocusElement: Equatable {
     let value: AXUIElement
     static func == (lhs: Self, rhs: Self) -> Bool { CFEqual(lhs.value, rhs.value) }
 }
 
-enum HostRead {
-    case pending
-    case read(String?)
-}
-
 final class InsertTarget {
     let pid: pid_t?
     let bundleId: String?
     var focus = CapturedFocus<FocusElement>.pending
-    var host = HostRead.pending
+    let host = OSAllocatedUnfairLock<HostRead>(initialState: .pending)
 
     init(pid: pid_t?, bundleId: String?) {
         self.pid = pid
         self.bundleId = bundleId
     }
 
-    var transcriptTarget: TranscriptTarget? {
+    func settleHost() {
+        host.withLock { $0.settle() }
+    }
+
+    func takeTranscriptTarget() -> TranscriptTarget? {
+        let host = host.withLock { $0.take() }
         guard let bundleId else { return nil }
-        guard case .read(let host) = host else { return TranscriptTarget(bundleId: bundleId, host: nil) }
         return TranscriptTarget(bundleId: bundleId, host: host)
     }
 }
@@ -43,26 +43,34 @@ final class Insertion {
         self.forcePaste = forcePaste
     }
 
-    func recordTarget(pid: pid_t?, bundleId: String?) -> InsertTarget {
+    func recordTarget(pid: pid_t?, bundleId: String?, detectHost: Bool, log: ((String) -> Void)?) -> InsertTarget {
         let target = InsertTarget(pid: pid, bundleId: bundleId)
         guard let pid, AXIsProcessTrusted() else {
             target.focus = .unavailable
+            target.settleHost()
             return target
         }
+        let readHost = detectHost && isBrowser(bundleId)
+        if !readHost { target.settleHost() }
         let input = focusInputStamp()
+        let inputUnchanged = { focusInputStamp() == input }
         DispatchQueue.global(qos: .userInitiated).async {
-            guard focusInputStamp() == input else {
+            guard inputUnchanged() else {
+                target.settleHost()
                 DispatchQueue.main.async { target.focus = .unavailable }
                 return
             }
             let first = readTargetFocus(pid: pid)
             let second = readTargetFocus(pid: pid)
-            let inputUnchanged = focusInputStamp() == input
+            let unchanged = inputUnchanged()
             DispatchQueue.main.async {
-                target.focus.resolve(first: first, second: second, inputUnchanged: inputUnchanged
-                    && focusInputStamp() == input
+                target.focus.resolve(first: first, second: second, inputUnchanged: unchanged
+                    && inputUnchanged()
                     && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
             }
+            guard readHost else { return }
+            guard unchanged, case .focused(let focus) = first, first == second else { return target.settleHost() }
+            readPageHost(of: target, from: focus, inputUnchanged: inputUnchanged, log: log)
         }
         return target
     }

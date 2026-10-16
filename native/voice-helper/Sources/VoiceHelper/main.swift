@@ -58,17 +58,14 @@ final class Helper {
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
             let app = NSWorkspace.shared.frontmostApplication
-            let target: InsertTarget
-            if let override = testTarget {
-                testTarget = nil
-                target = insertion.recordTarget(pid: app?.processIdentifier, bundleId: override.bundleId)
-                target.host = .read(override.host)
-            } else {
-                target = insertion.recordTarget(pid: app?.processIdentifier, bundleId: app?.bundleIdentifier)
-            }
-            let started = capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone)
-            if started, detectHost, case .pending = target.host {
-                readPageHost(of: target, log: testMode ? { [output] in output.log(.info, $0) } : nil)
+            let override = testTarget
+            testTarget = nil
+            let target = insertion.recordTarget(
+                pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
+                detectHost: detectHost && override == nil, log: testMode ? { [output] in output.log(.info, $0) } : nil)
+            if let override { target.host.withLock { $0.publish(override.host, inputUnchanged: true) } }
+            if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone) {
+                target.settleHost()
             }
         case .captureStop(let id):
             capture.stop(id: id)

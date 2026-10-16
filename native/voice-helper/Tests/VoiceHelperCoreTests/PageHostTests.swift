@@ -47,3 +47,43 @@ private let longestHost = ([String](repeating: String(repeating: "a", count: 61)
         #expect(pageHost(url) == nil)
     }
 }
+
+@Suite struct HostReadTests {
+    @Test func publishesAHostReadOnUnchangedInput() {
+        var read = HostRead.pending
+        read.publish("docs.google.com", inputUnchanged: true)
+        #expect(read == .read("docs.google.com"))
+        #expect(read.take() == "docs.google.com")
+    }
+
+    @Test func dropsAHostReadAfterInputChanged() {
+        var read = HostRead.pending
+        read.publish("other.example", inputUnchanged: false)
+        #expect(read == .read(nil))
+    }
+
+    @Test func aReadLandingAfterTheTranscriptChangesNothing() {
+        var read = HostRead.pending
+        #expect(read.take() == nil)
+        read.publish("late.example", inputUnchanged: true)
+        #expect(read == .read(nil))
+        #expect(read.take() == nil)
+    }
+
+    @Test func settlingKeepsAPublishedHostAndEndsAPendingRead() {
+        var published = HostRead.read("docs.google.com")
+        published.settle()
+        #expect(published == .read("docs.google.com"))
+        var pending = HostRead.pending
+        pending.settle()
+        pending.publish("late.example", inputUnchanged: true)
+        #expect(pending == .read(nil))
+    }
+
+    @Test func publishesOnce() {
+        var read = HostRead.pending
+        read.publish("first.example", inputUnchanged: true)
+        read.publish("second.example", inputUnchanged: true)
+        #expect(read.take() == "first.example")
+    }
+}
