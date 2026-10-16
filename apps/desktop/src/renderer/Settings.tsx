@@ -91,7 +91,7 @@ export const styles = stylex.create({
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
-  keys: { display: "flex", flexShrink: 0, gap: 6, fontFamily: "inherit" },
+  keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
 });
