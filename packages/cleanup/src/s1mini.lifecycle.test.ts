@@ -465,16 +465,28 @@ test.each(["casual", "veryCasual"] as const)(
   "%s leaves a rejected last chunk as the user's exact words, period included",
   async (writingStyle) => {
     const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
-    native.reply = (chunk) => ({ response: chunk === third ? "" : capitalizeLikeS1Mini(chunk) });
+    const rejected = third.replace("ship the beta", "ship the GitHub API");
+    const raw = `${first} ${second} ${rejected}`;
+    expect(chunkTranscript(raw, CHUNK_TOKENS, (t) => t.length).at(-1)?.text).toBe(rejected);
+    native.reply = (chunk) => ({ response: chunk === rejected ? "" : capitalizeLikeS1Mini(chunk) });
 
-    const { text } = await s1.clean(threeChunkRaw, { style: writingStyle, layout: "general" });
+    const { text } = await s1.clean(raw, { style: writingStyle, layout: "general" });
 
     const cleaned = [first, second].map(capitalizeLikeS1Mini).join(" ");
     expect(text).toBe(
-      `${writingStyle === "veryCasual" ? cleaned.toLowerCase() : cleaned} ${third}`,
+      `${writingStyle === "veryCasual" ? cleaned.toLowerCase() : cleaned} ${rejected}`,
     );
   },
 );
+
+test("a last chunk of only fillers that cleans to nothing still lets Casual drop the period", async () => {
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  native.reply = (chunk) => ({ response: chunk === "um uh" ? "" : capitalizeLikeS1Mini(chunk) });
+
+  await expect(
+    s1.clean("let's do that.\num uh", { style: "casual", layout: "general" }),
+  ).resolves.toEqual({ text: "Let's do that", chunks: 2, cleaned: 2 });
+});
 
 test("an email dictation that needs two chunks is cleaned in the general layout", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });

@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import { dropFinalPeriod, finishChunk } from "./style.ts";
+import { dropFinalPeriod, finishOutputs, finishText } from "./style.ts";
 
 test.each([
   ["Let's do 12 if that works for you.", "Let's do 12 if that works for you"],
@@ -26,12 +26,40 @@ test.each([
 });
 
 test.each([
-  ["formal", false, "Hey Anna, I'll send it at 3pm."],
-  ["formal", true, "Hey Anna, I'll send it at 3pm."],
-  ["casual", false, "Hey Anna, I'll send it at 3pm."],
-  ["casual", true, "Hey Anna, I'll send it at 3pm"],
-  ["veryCasual", false, "hey anna, i'll send it at 3pm."],
-  ["veryCasual", true, "hey anna, i'll send it at 3pm"],
-] as const)("%s finishes a chunk (last: %s) as %j", (style, last, expected) => {
-  expect(finishChunk(style, "Hey Anna, I'll send it at 3pm.", last)).toBe(expected);
+  ["formal", "Hey Anna, I'll send it at 3pm."],
+  ["casual", "Hey Anna, I'll send it at 3pm"],
+  ["veryCasual", "hey anna, i'll send it at 3pm"],
+] as const)("%s finishes a whole text as %j", (style, expected) => {
+  expect(finishText(style, "Hey Anna, I'll send it at 3pm.")).toBe(expected);
+});
+
+test.each([
+  ["Hi Anna, I'm on it.", "hi anna, i'm on it"],
+  ["Send https://example.com/AbC?token=XyZ.", "send https://example.com/AbC?token=XyZ"],
+  ["Open Docs/Setup.md now.", "open Docs/Setup.md now"],
+  ["Mail Anna@Example.com today.", "mail Anna@Example.com today"],
+  ["Set API_KEY and my_Var.", "set API_KEY and my_Var"],
+  ["Read process.env.API from Example.com.", "read process.env.API from Example.com"],
+  ["Use #General and Mode=Fast.", "use #General and Mode=Fast"],
+])("Very casual lowercases prose but not the case-sensitive tokens in %j", (text, expected) => {
+  expect(finishText("veryCasual", text)).toBe(expected);
+});
+
+test.each([
+  ["the last chunk has text", ["Let's go.", "Bring snacks."], ["let's go.", "bring snacks"]],
+  ["the last chunk cleaned to nothing", ["Let's do that.", ""], ["let's do that", ""]],
+  [
+    "the last chunk with text was rejected",
+    ["Let's go.", undefined, ""],
+    ["let's go.", undefined, ""],
+  ],
+] as const)(
+  "when %s, only the ending of the model's text is restyled",
+  (_name, outputs, expected) => {
+    expect(finishOutputs("veryCasual", outputs, outputs.length)).toEqual(expected);
+  },
+);
+
+test("the ending stays when chunks were left uncleaned", () => {
+  expect(finishOutputs("casual", ["Let's go."], 2)).toEqual(["Let's go."]);
 });

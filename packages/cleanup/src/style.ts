@@ -5,8 +5,12 @@ export type CleanupStyle = { style: WritingStyle; layout: (typeof LAYOUTS)[numbe
 
 type Finish = { chunk(text: string): string; last(text: string): string };
 
+// URLs, paths, emails and code identifiers break when their case changes.
+const CASE_SENSITIVE = /:\/\/|[/@_=#]|\.[\p{L}\p{N}]/u;
+
 const same = (text: string) => text;
-const lowercase = (text: string) => text.toLowerCase();
+const lowercase = (text: string) =>
+  text.replace(/\S+/gu, (token) => (CASE_SENSITIVE.test(token) ? token : token.toLowerCase()));
 
 const FINISHES: Record<WritingStyle, Finish> = {
   formal: { chunk: same, last: same },
@@ -14,10 +18,24 @@ const FINISHES: Record<WritingStyle, Finish> = {
   veryCasual: { chunk: lowercase, last: dropFinalPeriod },
 };
 
-export function finishChunk(style: WritingStyle, text: string, last: boolean): string {
-  const { chunk, last: ending } = FINISHES[style];
-  return last ? ending(chunk(text)) : chunk(text);
+// `undefined` is a chunk the guard rejected, and chunks past `outputs` were never cleaned. Both
+// keep the user's exact words, so the ending is restyled only when the last chunk with text
+// came from the model.
+export function finishOutputs(
+  style: WritingStyle,
+  outputs: readonly (string | undefined)[],
+  chunks: number,
+): (string | undefined)[] {
+  const { chunk, last } = FINISHES[style];
+  const finished = outputs.map((output) => (output === undefined ? undefined : chunk(output)));
+  const end = finished.findLastIndex((output) => output !== "");
+  const ending = finished[end];
+  if (outputs.length === chunks && ending !== undefined) finished[end] = last(ending);
+  return finished;
 }
+
+export const finishText = (style: WritingStyle, text: string) =>
+  finishOutputs(style, [text], 1)[0] ?? text;
 
 const ABBREVIATION_END =
   /(?:^|[^\p{L}\p{N}.])(?:(?:\p{L}\.){2,}|(?:etc|vs|dr|mr|mrs|ms|jr|sr|inc|ltd)\.)$/iu;

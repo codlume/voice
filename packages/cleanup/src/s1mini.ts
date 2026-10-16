@@ -3,7 +3,7 @@ import type { Llama, LlamaCompletion, LlamaModel } from "node-llama-cpp";
 import { type Chunk, chunkTranscript, stitch } from "./chunk.ts";
 import { assertPlausibleCleanup, MAX_OUTPUT_RATIO } from "./plausibility.ts";
 import { buildS1MiniPrompt, s1Control, type S1Control } from "./prompt.ts";
-import { type CleanupStyle, finishChunk } from "./style.ts";
+import { type CleanupStyle, finishOutputs } from "./style.ts";
 
 const CONTEXT_SIZE = 4096;
 // Longer chunks make S1-mini skip or loop over lines, so the guard rejects them and the user gets raw text.
@@ -154,12 +154,10 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           }
           if (tokens >= MIN_TOKENS_FOR_RATE_ESTIMATE)
             msPerToken = (Date.now() - startedAt) / tokens;
-          const output = guarded(chunk.text, generation);
-          const last = outputs.length === chunks.length - 1;
-          outputs.push(output === undefined ? undefined : finishChunk(style.style, output, last));
+          outputs.push(guarded(chunk.text, generation));
         }
         return {
-          text: stitch(raw, chunks, outputs),
+          text: stitch(raw, chunks, finishOutputs(style.style, outputs, chunks.length)),
           chunks: chunks.length,
           cleaned: outputs.filter((output) => output !== undefined).length,
         };

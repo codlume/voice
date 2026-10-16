@@ -4,7 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
 import { useId } from "react";
 
-import { finishChunk, type WritingStyle } from "@voice/cleanup/style";
+import { finishText, type WritingStyle } from "@voice/cleanup/style";
 
 import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
@@ -184,7 +184,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
                   </span>
                 </span>
                 <span id={exampleId} {...stylex.props(styles.example)}>
-                  &ldquo;{finishChunk(value, SAMPLE, true)}&rdquo;
+                  &ldquo;{finishText(value, SAMPLE)}&rdquo;
                 </span>
               </Radio.Root>
             );
