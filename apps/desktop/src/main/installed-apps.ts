@@ -7,7 +7,7 @@ type Rendered = Extract<HelperEvent, { type: "icons.rendered" }>["icons"];
 
 export type InstalledApps = {
   list(): Promise<InstalledApp[]>;
-  /** Icons of apps from the latest list. Leaves out any the helper could not render. */
+  /** Icons of apps from the latest list; callers need not list first. Leaves out any the helper could not render. */
   icons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
   onHelperEvent(event: HelperEvent): void;
 };
@@ -20,7 +20,7 @@ export function createInstalledApps(options: {
 }): InstalledApps {
   const { send, timeoutMs = 5000 } = options;
   const iconsByPath = new Map<string, { modifiedMs: number; icon: string }>();
-  let latest = { pathsById: new Map<BundleId, string>(), stamps: new Map<string, number>() };
+  let latest: { pathsById: Map<BundleId, string>; stamps: Map<string, number> } | null = null;
   let onListed: ((apps: Listed) => void) | null = null;
   const onRendered = new Map<string, (icons: Rendered) => void>();
   let renderId = 0;
@@ -81,14 +81,18 @@ export function createInstalledApps(options: {
     }
   }
 
+  function list() {
+    inFlight ??= load().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  }
+
   return {
-    list() {
-      inFlight ??= load().finally(() => {
-        inFlight = null;
-      });
-      return inFlight;
-    },
+    list,
     async icons(bundleIds) {
+      if (latest === null || inFlight !== null) await list().catch(() => null);
+      if (latest === null) return {};
       const { pathsById, stamps } = latest;
       const paths = new Map<BundleId, string>();
       for (const bundleId of bundleIds) {
