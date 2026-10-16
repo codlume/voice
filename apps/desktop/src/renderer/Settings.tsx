@@ -179,12 +179,9 @@ function PageAnimationSlider({
   saved: number;
   onCommit: (ms: number) => Promise<boolean>;
 }) {
-  const [ms, setMs] = useState(saved);
-  const [shownSaved, setShownSaved] = useState(saved);
-  if (saved !== shownSaved) {
-    setShownSaved(saved);
-    setMs(saved);
-  }
+  const [slider, setSlider] = useState({ ms: saved, saved });
+  if (saved !== slider.saved) setSlider({ ms: saved, saved });
+  const { ms } = slider;
   return (
     <div {...stylex.props(motionStyles.duration)}>
       <span aria-hidden {...stylex.props(motionStyles.readout)}>
@@ -192,11 +189,11 @@ function PageAnimationSlider({
       </span>
       <Slider.Root
         value={ms}
-        onValueChange={setMs}
+        onValueChange={(next) => setSlider((current) => ({ ...current, ms: next }))}
         onValueCommitted={(committed) => {
-          if (committed === saved) return;
           void onCommit(committed).then((ok) => {
-            if (!ok) setMs(saved);
+            // The updater reads the newest saved value, which another save may have changed since.
+            if (!ok) setSlider((current) => ({ ...current, ms: current.saved }));
           });
         }}
         min={MIN_PAGE_ANIMATION_MS}
