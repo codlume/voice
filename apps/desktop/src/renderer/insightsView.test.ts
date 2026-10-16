@@ -1,7 +1,20 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 
-import { EMPTY_INSIGHTS, type DayKey } from "../shared/insights.ts";
-import { cellLabel, heatmap, insightsView, level, pace, stepDay, streaks } from "./insightsView.ts";
+import type { InstalledApp } from "../shared/api.ts";
+import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
+import { EMPTY_INSIGHTS, type DayKey, type Insights } from "../shared/insights.ts";
+import type { Assignment } from "../shared/style.ts";
+import {
+  appNames,
+  cellLabel,
+  heatmap,
+  insightsView,
+  level,
+  pace,
+  stepDay,
+  streaks,
+  usage,
+} from "./insightsView.ts";
 
 // West of UTC, a local-time slip moves every cell a day early. CI runs in UTC, so pin the zone
 // before the module builds its date formatters.
@@ -134,10 +147,10 @@ describe("insightsView", () => {
   test("totals words over every day and fixes over both kinds", () => {
     const view = insightsView(
       {
+        ...EMPTY_INSIGHTS,
         days: byDay({ "2026-01-02": 1200, "2026-10-13": 34 }),
         corrected: 300,
         dictionaryFixes: 41,
-        recent: [],
       },
       day("2026-10-13"),
       53,
@@ -189,5 +202,110 @@ describe("stepDay", () => {
     expect(step("2026-10-13", "ArrowDown")).toBeNull();
     expect(step("2026-10-07", "Enter")).toBeNull();
     expect(step("2026-01-01", "ArrowDown")).toBeNull();
+  });
+});
+
+const id = (raw: string): BundleId => {
+  const bundleId = parseBundleId(raw);
+  if (bundleId === null) throw new Error(`not a bundle id: ${raw}`);
+  return bundleId;
+};
+const used = (patch: Partial<Insights>): Insights => ({ ...EMPTY_INSIGHTS, ...patch });
+const categories = (patch: Partial<Insights["categories"]>) => ({
+  ...EMPTY_INSIGHTS.categories,
+  ...patch,
+});
+
+describe("usage", () => {
+  const noNames = appNames([], []);
+
+  test("shares go by words, not by how many dictations", () => {
+    const view = usage(
+      used({
+        categories: categories({
+          personal: { words: 10, sessions: 9 },
+          work: { words: 90, sessions: 1 },
+        }),
+      }),
+      noNames,
+    );
+    expect(view.empty).toBe(false);
+    expect(view.categories).toEqual([
+      { category: "work", words: 90, sessions: 1, share: 90 },
+      { category: "personal", words: 10, sessions: 9, share: 10 },
+      { category: "email", words: 0, sessions: 0, share: 0 },
+      { category: "other", words: 0, sessions: 0, share: 0 },
+    ]);
+  });
+
+  test("shares always add up to 100, with ties broken in category order", () => {
+    const third = { words: 1, sessions: 1 };
+    const view = usage(
+      used({ categories: categories({ email: third, work: third, personal: third }) }),
+      noNames,
+    );
+    expect(view.categories.map(({ category, share }) => [category, share])).toEqual([
+      ["personal", 34],
+      ["work", 33],
+      ["email", 33],
+      ["other", 0],
+    ]);
+  });
+
+  test("nothing attributed shows the empty state with every share at zero", () => {
+    for (const insights of [
+      EMPTY_INSIGHTS,
+      used({ days: { [day("2026-10-12")]: 500 }, recent: [{ words: 40, ms: 12_000 }] }),
+    ]) {
+      const view = usage(insights, noNames);
+      expect(view.empty).toBe(true);
+      expect(view.appsUsed).toBe(0);
+      expect(view.topApps).toEqual([]);
+      expect(view.categories.map(({ category, share }) => [category, share])).toEqual([
+        ["personal", 0],
+        ["work", 0],
+        ["email", 0],
+        ["other", 0],
+      ]);
+    }
+  });
+
+  test("counts every app used and lists the five with the most words", () => {
+    const words = [5, 40, 1, 20, 9, 25];
+    const apps = Object.fromEntries(words.map((n, i) => [id(`com.example.app${i}`), n]));
+    const view = usage(
+      used({ categories: categories({ other: { words: 100, sessions: 6 } }), apps }),
+      noNames,
+    );
+    expect(view.appsUsed).toBe(6);
+    expect(view.topApps).toEqual([
+      { bundleId: "com.example.app1", name: "com.example.app1", share: 40 },
+      { bundleId: "com.example.app5", name: "com.example.app5", share: 25 },
+      { bundleId: "com.example.app3", name: "com.example.app3", share: 20 },
+      { bundleId: "com.example.app4", name: "com.example.app4", share: 9 },
+      { bundleId: "com.example.app0", name: "com.example.app0", share: 5 },
+    ]);
+  });
+
+  test("names an app as the Style page does, then by catalog, then installed, then its id", () => {
+    const slack = id("com.tinyspeck.slackmacgap");
+    const mail = id("com.apple.mail");
+    const notes = id("com.example.notes");
+    const unknown = id("com.example.unknown");
+    const assignments: Assignment[] = [
+      { kind: "app", bundleId: slack, name: "Slack for work", category: "work" },
+    ];
+    const installed: InstalledApp[] = [
+      { bundleId: slack, name: "Slack.app", browser: false },
+      { bundleId: mail, name: "Mail.app", browser: false },
+      { bundleId: notes, name: "Notes Pro", browser: false },
+    ];
+    const name = appNames(assignments, installed);
+    expect([slack, mail, notes, unknown].map(name)).toEqual([
+      "Slack for work",
+      "Mail",
+      "Notes Pro",
+      "com.example.unknown",
+    ]);
   });
 });

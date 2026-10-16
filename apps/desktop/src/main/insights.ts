@@ -1,6 +1,12 @@
 import { readFile, rm } from "node:fs/promises";
 
 import {
+  CATEGORIES,
+  parseBundleId,
+  type BundleId,
+  type Category,
+} from "../shared/app-categories.ts";
+import {
   EMPTY_INSIGHTS,
   RECENT_SESSIONS,
   dayKey,
@@ -8,6 +14,7 @@ import {
   type DayKey,
   type Insights,
   type Pace,
+  type Usage,
 } from "../shared/insights.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
@@ -50,7 +57,7 @@ export function createInsights(options: {
   async function save() {
     const value = await current;
     if (value === "unreadable") return;
-    await writeFileAtomic(file, `${JSON.stringify({ version: 1, ...value })}\n`).catch(
+    await writeFileAtomic(file, `${JSON.stringify({ version: 2, ...value })}\n`).catch(
       (error: unknown) => log(`insights: save failed (${String(error)})`),
     );
   }
@@ -101,7 +108,8 @@ async function load(file: string, log: Log): Promise<Insights | "unreadable"> {
     log("insights: the file is not JSON, so counting starts over");
     return EMPTY_INSIGHTS;
   }
-  if (typeof json === "object" && json !== null && "version" in json && json.version !== 1) {
+  const version = typeof json === "object" && json !== null && "version" in json ? json.version : 1;
+  if (version !== 1 && version !== 2) {
     log("insights: the file is from another version, so nothing is recorded");
     return "unreadable";
   }
@@ -138,6 +146,7 @@ export function tally(dictated: Dictated): Tally {
 export function add(insights: Insights, session: Tally): Insights {
   const { days } = insights;
   return {
+    ...insights,
     days:
       session.words === 0
         ? days
@@ -207,5 +216,30 @@ export function parseInsights(raw: unknown): Insights {
     corrected: isCount(r.corrected) ? r.corrected : 0,
     dictionaryFixes: isCount(r.dictionaryFixes) ? r.dictionaryFixes : 0,
     recent: recent.slice(-RECENT_SESSIONS),
+    categories: parseCategories(r.categories),
+    apps: parseApps(r.apps),
   };
+}
+
+function parseCategories(raw: unknown): Record<Category, Usage> {
+  const categories = { ...EMPTY_INSIGHTS.categories };
+  if (typeof raw !== "object" || raw === null) return categories;
+  const r = raw as Record<string, unknown>;
+  for (const category of CATEGORIES) {
+    const usage = r[category];
+    if (typeof usage !== "object" || usage === null) continue;
+    const { words, sessions } = usage as Record<string, unknown>;
+    if (isCount(words) && isCount(sessions)) categories[category] = { words, sessions };
+  }
+  return categories;
+}
+
+function parseApps(raw: unknown): Record<BundleId, number> {
+  const apps: Record<BundleId, number> = {};
+  if (typeof raw !== "object" || raw === null) return apps;
+  for (const [key, words] of Object.entries(raw)) {
+    const bundleId = parseBundleId(key);
+    if (bundleId !== null && isCount(words) && words > 0) apps[bundleId] = words;
+  }
+  return apps;
 }

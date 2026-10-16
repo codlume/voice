@@ -12,7 +12,7 @@ import {
   type PillApi,
   type UpdateStatus,
 } from "../shared/api.ts";
-import { parseBundleId } from "../shared/app-categories.ts";
+import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
 import { applyAssignmentEdit } from "../shared/style.ts";
 import type {
   HistoryEntry,
@@ -113,6 +113,7 @@ const updateScenes: Record<string, UpdateStatus> = {
 // sampleHistory() with saving working.
 type HubScene = Snapshot & {
   history?: readonly HistoryEntry[];
+  insights?: Insights;
   retention?: HistoryRetention;
   saveFailed?: boolean;
 };
@@ -190,6 +191,10 @@ const hubScenes: Record<string, HubScene> = {
   "history-saved": historySaved,
   "history-long": { ...historySaved, history: longHistory() },
   "history-save-failed": { ...historySaved, saveFailed: true },
+  "insights-usage-empty": {
+    ...ready,
+    insights: { ...sampleInsights(), categories: EMPTY_INSIGHTS.categories, apps: {} },
+  },
   "ready-dictating": {
     ...ready,
     session: { kind: "listening" },
@@ -364,12 +369,38 @@ function sampleInsights(): Insights {
     words: 20 + ((i * 37) % 90),
     ms: 9000 + ((i * 53) % 30) * 1000,
   }));
-  return { days, corrected: 1843, dictionaryFixes: 212, recent };
+  const apps: Record<BundleId, number> = {};
+  for (const [id, words] of [
+    ["com.tinyspeck.slackmacgap", 15_900],
+    ["com.apple.MobileSMS", 6400],
+    ["com.apple.mail", 6210],
+    ["net.whatsapp.WhatsApp", 3470],
+    ["com.example.ledger", 2900],
+    ["com.google.Chrome", 2520],
+    ["com.apple.TextEdit", 850],
+  ] as const) {
+    const bundleId = parseBundleId(id);
+    if (bundleId) apps[bundleId] = words;
+  }
+  return {
+    days,
+    corrected: 1843,
+    dictionaryFixes: 212,
+    recent,
+    categories: {
+      personal: { words: 9870, sessions: 540 },
+      work: { words: 22_170, sessions: 709 },
+      email: { words: 6210, sessions: 88 },
+      other: { words: 0, sessions: 0 },
+    },
+    apps,
+  };
 }
 
 function fakeVoice(
   {
     history: initialHistory = sampleHistory(),
+    insights: initialInsights = sampleInsights(),
     retention: initialRetention = "memory",
     saveFailed = false,
     ...initial
@@ -394,7 +425,7 @@ function fakeVoice(
   };
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const installs = new Map<ModelId, ReturnType<typeof setInterval>>();
-  let insights = sampleInsights();
+  let insights = initialInsights;
   const insightsListeners = new Set<(insights: Insights) => void>();
   const set = (next: Snapshot) => {
     snapshot = next;
