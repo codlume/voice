@@ -483,7 +483,11 @@ function fakeVoice(
           copyToClipboard: patch.copyToClipboard ?? snapshot.settings.copyToClipboard,
           showInDock: patch.showInDock ?? snapshot.settings.showInDock,
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,
-          cleanup: { ...snapshot.settings.cleanup, ...patch.cleanup },
+          cleanup: {
+            enabled: patch.cleanup?.enabled ?? snapshot.settings.cleanup.enabled,
+            styles: { ...snapshot.settings.cleanup.styles, ...patch.cleanup?.styles },
+            assignments: patch.cleanup?.assignments ?? snapshot.settings.cleanup.assignments,
+          },
           diagnostics: patch.diagnostics ?? snapshot.settings.diagnostics,
           snippets: patch.snippets ?? snapshot.settings.snippets,
           dictionary: patch.dictionary ?? snapshot.settings.dictionary,

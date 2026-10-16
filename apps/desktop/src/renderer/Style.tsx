@@ -145,13 +145,13 @@ export function Style({ settings }: { settings: SettingsValue }) {
         </legend>
         <RadioGroup<WritingStyle>
           aria-labelledby={`${name}-legend`}
-          value={settings.cleanup.style}
+          value={settings.cleanup.styles.other}
           disabled={!cleanupEnabled}
-          onValueChange={(style) => void changeCleanup({ style })}
+          onValueChange={(style) => void changeCleanup({ styles: { other: style } })}
           {...stylex.props(styles.grid)}
         >
           {writingStyles.map(({ value, label, rule }) => {
-            const selected = settings.cleanup.style === value;
+            const selected = settings.cleanup.styles.other === value;
             const labelId = `${name}-${value}-label`;
             const ruleId = `${name}-${value}-rule`;
             const exampleId = `${name}-${value}-example`;

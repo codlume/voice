@@ -357,7 +357,7 @@ export function createDictation(options: DictationOptions): Dictation {
           id: event.id,
           text: event.text,
           cleanup: willCleanup(event.id)
-            ? { style: store.state.settings.cleanup.style, layout: "general" }
+            ? { style: store.state.settings.cleanup.styles.other, layout: "general" }
             : null,
           rewrites: {
             dictionary: store.state.settings.dictionary,

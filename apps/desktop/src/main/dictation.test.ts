@@ -82,7 +82,8 @@ function harness(opts: Options = {}) {
       dictionary: opts.dictionary ?? DEFAULT_SETTINGS.dictionary,
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
-        style: opts.style ?? DEFAULT_SETTINGS.cleanup.style,
+        styles: { ...DEFAULT_SETTINGS.cleanup.styles, other: opts.style ?? "formal" },
+        assignments: [],
       },
     },
     microphones: { kind: "loading" },
