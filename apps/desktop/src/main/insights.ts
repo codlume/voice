@@ -161,6 +161,8 @@ export function add(insights: Insights, session: Tally): Insights {
   if (destination === null) return { ...counted, days };
   const { bundleId, category } = destination;
   const usage = insights.categories[category];
+  // "__proto__" and "constructor" are valid bundle ids; a plain read would reach Object.prototype.
+  const appWords = Object.hasOwn(insights.apps, bundleId) ? insights.apps[bundleId] : undefined;
   return {
     ...counted,
     days,
@@ -168,7 +170,7 @@ export function add(insights: Insights, session: Tally): Insights {
       ...insights.categories,
       [category]: { words: usage.words + words, sessions: usage.sessions + 1 },
     },
-    apps: { ...insights.apps, [bundleId]: (insights.apps[bundleId] ?? 0) + words },
+    apps: { ...insights.apps, [bundleId]: (appWords ?? 0) + words },
   };
 }
 

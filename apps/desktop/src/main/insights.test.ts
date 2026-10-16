@@ -389,6 +389,15 @@ describe("createInsights", () => {
     expect(await readFile(file, "utf8")).not.toContain("mail.google.com");
   });
 
+  test("an app whose id is an Object.prototype name is counted as a number", async () => {
+    const insights = open();
+    const proto = { bundleId: parseBundleId("__proto__")!, category: "other" } as const;
+    insights.record(dictated({ destination: proto }));
+    await insights.settled();
+    expect(await saved()).toMatchObject({ apps: apps({ ["__proto__"]: 2 }) });
+    expect((await open().get()).apps).toEqual(apps({ ["__proto__"]: 2 }));
+  });
+
   test("a file Voice could not read is never written over", async () => {
     const original = JSON.stringify({ days: { "2026-10-01": 900 } });
     await writeFile(file, original);
