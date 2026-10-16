@@ -52,28 +52,41 @@ const styles = stylex.create({
     lineHeight: 1.45,
     color: color.mutedForeground,
   },
+  // Buttons do not shrink, so a row wider than the popup must wrap rather than spill out. The
+  // buttons wrap as a group, so a narrow row puts them under `footerStart` instead of splitting them.
+  footer: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: space.sm,
+    marginTop: space.lg,
+  },
   actions: {
     display: "flex",
-    // Buttons do not shrink, so a row wider than the popup must wrap rather than spill out.
     flexWrap: "wrap",
     justifyContent: "flex-end",
     gap: space.sm,
-    marginTop: space.lg,
+    marginInlineStart: "auto",
   },
 });
 
 const hidden = (status: string | undefined) => status === "starting" || status === "ending";
 
-/** Scrim, popup, title, and a Cancel-first action row. Renders under Dialog.Root or AlertDialog.Root. */
+/**
+ * Scrim, popup, title, and an action row of Cancel then `actions`, with optional `footerStart`
+ * content at its left. Renders under Dialog.Root or AlertDialog.Root.
+ */
 export function DialogFrame({
   title,
   actions,
+  footerStart,
   finalFocus,
   wide = false,
   children,
 }: {
   title: string;
   actions: ReactNode;
+  footerStart?: ReactNode;
   finalFocus?: RefObject<HTMLElement | null> | undefined;
   wide?: boolean;
   children?: ReactNode;
@@ -97,10 +110,14 @@ export function DialogFrame({
       >
         <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
         {children}
-        <div {...stylex.props(styles.actions)}>
-          {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
-          <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
-          {actions}
+        <div {...stylex.props(styles.footer)}>
+          {/* Precedes Cancel in tab order, so only pass it where a field takes initial focus. */}
+          {footerStart}
+          <div {...stylex.props(styles.actions)}>
+            {/* Cancel comes first so it takes initial focus and Enter cannot destroy anything. */}
+            <Dialog.Close render={<Button variant="secondary" />}>Cancel</Dialog.Close>
+            {actions}
+          </div>
         </div>
       </Dialog.Popup>
     </Dialog.Portal>

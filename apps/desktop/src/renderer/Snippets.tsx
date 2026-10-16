@@ -8,7 +8,7 @@ import {
   TRIGGER_MAX_LENGTH,
   type Snippet,
 } from "../shared/snippets.ts";
-import { CountedField, RecordList, styles, SwitchField, type Copy } from "./RecordList.tsx";
+import { CountedField, FooterSwitch, RecordList, styles, type Copy } from "./RecordList.tsx";
 import { SnippetEditor } from "./SnippetEditor.tsx";
 import { hubApi } from "./voice.ts";
 
@@ -86,12 +86,14 @@ export function Snippets({
               onSave={submit}
             />
           </CountedField>
-          <SwitchField
-            label="Enabled"
-            checked={draft.enabled}
-            onChange={(enabled) => edit({ enabled })}
-          />
         </>
+      )}
+      renderFooter={({ draft, edit }) => (
+        <FooterSwitch
+          label="Enabled"
+          checked={draft.enabled}
+          onChange={(enabled) => edit({ enabled })}
+        />
       )}
     />
   );

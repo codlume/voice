@@ -37,6 +37,8 @@ export const styles = stylex.create({
   counter: { fontVariantNumeric: "tabular-nums" },
   switchField: { display: "flex", alignItems: "center", gap: space.lg },
   switchLabel: { flexGrow: 1, minWidth: 0, fontSize: 13 },
+  footerSwitch: { display: "flex", alignItems: "center", gap: space.sm, whiteSpace: "nowrap" },
+  footerSwitchLabel: { fontSize: 13, color: color.foreground, cursor: "pointer" },
   input: {
     width: "100%",
     paddingBlock: 6,
@@ -99,6 +101,7 @@ export function RecordList<T extends { id: string }, F extends string>({
   normalize,
   problem,
   renderFields,
+  renderFooter,
   wide = false,
 }: {
   copy: Copy;
@@ -115,6 +118,8 @@ export function RecordList<T extends { id: string }, F extends string>({
   // `others` never contains the record being checked.
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  // Rendered at the left of the editor's Cancel and Save buttons.
+  renderFooter?: (editor: Editor<T, F>) => ReactNode;
   wide?: boolean;
 }) {
   const [modal, setModal] = useState<Modal<T> | null>(null);
@@ -227,6 +232,7 @@ export function RecordList<T extends { id: string }, F extends string>({
           normalize={normalize}
           problem={problem}
           renderFields={renderFields}
+          renderFooter={renderFooter}
           wide={wide}
         />
       )}
@@ -257,6 +263,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize,
   problem,
   renderFields,
+  renderFooter,
   wide,
   open,
   onOpenChange,
@@ -270,6 +277,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   normalize: (draft: T) => T;
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
+  renderFooter: ((editor: Editor<T, F>) => ReactNode) | undefined;
   wide: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -336,6 +344,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
       <DialogFrame
         title={text.title}
         wide={wide}
+        footerStart={renderFooter?.(editor)}
         actions={
           <Button disabled={pending} onClick={submit}>
             {text.save}
@@ -404,6 +413,27 @@ export function SwitchField({
         {label}
       </label>
       <Switch id={id} checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+/** A switch followed by the label that names it, for the start of a dialog's action row. */
+export function FooterSwitch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div {...stylex.props(styles.footerSwitch)}>
+      <Switch id={id} checked={checked} onChange={onChange} />
+      <label htmlFor={id} {...stylex.props(styles.footerSwitchLabel)}>
+        {label}
+      </label>
     </div>
   );
 }
