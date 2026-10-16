@@ -95,8 +95,8 @@ final class Helper {
             testTarget = target
         case .appsList:
             installedApps.list()
-        case .iconsRender(let paths):
-            installedApps.renderIcons(paths: paths)
+        case .iconsRender(let id, let paths):
+            installedApps.renderIcons(id: id, paths: paths)
         }
     }
 

@@ -16,12 +16,12 @@ final class InstalledApps {
         }
     }
 
-    func renderIcons(paths: [String]) {
+    func renderIcons(id: String, paths: [String]) {
         queue.async { [output] in
             let icons = paths.compactMap { path in
                 autoreleasepool { renderIcon(path: path).map { RenderedIcon(path: path, png: $0) } }
             }
-            output.emit(.iconsRendered(icons: icons))
+            output.emit(.iconsRendered(id: id, icons: icons))
         }
     }
 }
@@ -55,7 +55,7 @@ private func readInstalledApp(path: String) -> InstalledApp? {
           let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
         return nil
     }
-    return installedApp(info: info, path: path, modifiedMs: modifiedMs(path: path, plist: plist.path))
+    return installedApp(info: info, path: path, modifiedMs: modifiedMs(path: path, plist: plist.path), isBrowser: isBrowser)
 }
 
 // Replacing a bundle changes the directory's date and an update rewrites its Info.plist, so the

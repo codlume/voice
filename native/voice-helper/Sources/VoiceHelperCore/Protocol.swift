@@ -56,7 +56,7 @@ public enum HelperCommand: Equatable, Sendable {
     /// The next capture reports this target instead of the frontmost app; nil clears a pending one.
     case testTarget(TranscriptTarget?)
     case appsList
-    case iconsRender(paths: [String])
+    case iconsRender(id: String, paths: [String])
 }
 
 /// What the user was dictating into: the frontmost app and, for a browser page, the page host.
@@ -93,7 +93,7 @@ public enum HelperEvent: Equatable, Sendable {
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
     case appsListed(apps: [InstalledApp])
-    case iconsRendered(icons: [RenderedIcon])
+    case iconsRendered(id: String, icons: [RenderedIcon])
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -105,7 +105,7 @@ private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, muteWhileDictating, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
-    case paths, apps, name, icons, png, modifiedMs
+    case paths, apps, name, icons, png, modifiedMs, browser
 }
 
 extension HelperCommand: Decodable {
@@ -142,7 +142,9 @@ extension HelperCommand: Decodable {
         case "test.audioFile": self = .testAudioFile(path: try c.decodeIfPresent(String.self, forKey: .path))
         case "test.target": self = .testTarget(try c.decode(TranscriptTarget?.self, forKey: .target))
         case "apps.list": self = .appsList
-        case "icons.render": self = .iconsRender(paths: try c.decode([String].self, forKey: .paths))
+        case "icons.render":
+            self = .iconsRender(id: try c.decode(String.self, forKey: .id),
+                                paths: try c.decode([String].self, forKey: .paths))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -258,8 +260,9 @@ extension HelperEvent: Encodable {
         case .appsListed(let apps):
             try c.encode("apps.listed", forKey: .type)
             try c.encode(apps, forKey: .apps)
-        case .iconsRendered(let icons):
+        case .iconsRendered(let id, let icons):
             try c.encode("icons.rendered", forKey: .type)
+            try c.encode(id, forKey: .id)
             try c.encode(icons, forKey: .icons)
         }
     }
@@ -296,6 +299,7 @@ extension InstalledApp: Encodable {
         try c.encode(name, forKey: .name)
         try c.encode(path, forKey: .path)
         try c.encode(finite(modifiedMs), forKey: .modifiedMs)
+        try c.encode(browser, forKey: .browser)
     }
 }
 
