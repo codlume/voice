@@ -1,26 +1,17 @@
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import type { BundleId } from "../shared/app-categories.ts";
-import { createIconLoader } from "./appIcons.ts";
+import { iconLoader } from "./appIcons.ts";
 import { color } from "./tokens.stylex.ts";
-import { hubApi } from "./voice.ts";
-
-const loader = createIconLoader((bundleIds) => hubApi().getAppIcons(bundleIds));
 
 export function useAppIcon(bundleId: BundleId): string | null {
-  const [, arrived] = useReducer((count: number) => count + 1, 0);
   useEffect(() => {
-    if (loader.get(bundleId) !== null) return;
-    let mounted = true;
-    void loader.load(bundleId).then((icon) => {
-      if (mounted && icon !== null) arrived();
-    });
-    return () => {
-      mounted = false;
-    };
+    const load = () => void iconLoader.load(bundleId);
+    load();
+    return iconLoader.subscribe(load);
   }, [bundleId]);
-  return loader.get(bundleId);
+  return useSyncExternalStore(iconLoader.subscribe, () => iconLoader.get(bundleId));
 }
 
 const styles = stylex.create({

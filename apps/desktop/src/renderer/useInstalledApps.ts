@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 
 import type { InstalledApp } from "../shared/api.ts";
-import { hubApi } from "./voice.ts";
+import { listInstalledApps } from "./appIcons.ts";
 
 export function useInstalledApps(): readonly InstalledApp[] {
   const [apps, setApps] = useState<readonly InstalledApp[]>([]);
   useEffect(() => {
     let mounted = true;
-    hubApi()
-      .getInstalledApps()
-      .catch((): InstalledApp[] => [])
-      .then((next) => {
+    listInstalledApps().then(
+      (next) => {
         if (mounted) setApps(next);
-      });
+      },
+      () => {},
+    );
     return () => {
       mounted = false;
     };
