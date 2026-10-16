@@ -107,8 +107,7 @@ export const styles = stylex.create({
 const motionStyles = stylex.create({
   control: {
     display: "grid",
-    flexShrink: 0,
-    gridTemplateColumns: "7rem 13rem",
+    gridTemplateColumns: "minmax(0, 7rem) minmax(8rem, 13rem)",
     alignItems: "center",
     gap: 16,
   },
