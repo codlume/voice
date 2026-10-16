@@ -26,6 +26,7 @@ import { AccountSettings } from "./Account.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { pageMotion, type PageMotion } from "./pageMotion.ts";
 import {
   DataPrivacySettings,
   GeneralSettings,
@@ -138,30 +139,6 @@ const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
-
-type PageMotion = "rise" | "forward" | "back";
-
-const rise = stylex.keyframes({ from: { opacity: 0, transform: "translateY(8px)" } });
-const slideForward = stylex.keyframes({ from: { opacity: 0, transform: "translateX(16px)" } });
-const slideBack = stylex.keyframes({ from: { opacity: 0, transform: "translateX(-16px)" } });
-
-const pageMotion = stylex.create({
-  rise: {
-    animationName: { default: rise, [reducedMotion]: "none" },
-    animationDuration: "var(--page-animation)",
-    animationTimingFunction: easing,
-  },
-  forward: {
-    animationName: { default: slideForward, [reducedMotion]: "none" },
-    animationDuration: "var(--page-animation)",
-    animationTimingFunction: easing,
-  },
-  back: {
-    animationName: { default: slideBack, [reducedMotion]: "none" },
-    animationDuration: "var(--page-animation)",
-    animationTimingFunction: easing,
-  },
-});
 
 const styles = stylex.create({
   shell: {

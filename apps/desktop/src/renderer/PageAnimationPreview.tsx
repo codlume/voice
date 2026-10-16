@@ -1,12 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
 import { useState } from "react";
 
+import { pageMotion } from "./pageMotion.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
-// The same frames as HubShell's page rise, so StyleX emits one keyframe for both.
-const rise = stylex.keyframes({ from: { opacity: 0, transform: "translateY(8px)" } });
 
 const styles = stylex.create({
   window: {
@@ -43,11 +42,6 @@ const styles = stylex.create({
     paddingTop: 4,
     paddingInline: 4,
   },
-  replay: {
-    animationName: { default: rise, [reducedMotion]: "none" },
-    animationDuration: "var(--page-animation)",
-    animationTimingFunction: easing,
-  },
   line: (width: string) => ({
     width,
     height: 2,
@@ -69,7 +63,7 @@ export function PageAnimationPreview() {
         aria-hidden
         {...stylex.props(styles.sidebar, plays % 2 === 1 && styles.sidebarCollapsed)}
       />
-      <span key={plays} aria-hidden {...stylex.props(styles.content, plays > 0 && styles.replay)}>
+      <span key={plays} aria-hidden {...stylex.props(styles.content, plays > 0 && pageMotion.rise)}>
         {["100%", "80%", "60%"].map((width) => (
           <span key={width} {...stylex.props(styles.line(width))} />
         ))}
