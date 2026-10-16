@@ -193,6 +193,7 @@ function PageAnimationSlider({
         min={MIN_PAGE_ANIMATION_MS}
         max={MAX_PAGE_ANIMATION_MS}
         step={PAGE_ANIMATION_STEP_MS}
+        largeStep={4 * PAGE_ANIMATION_STEP_MS}
         {...stylex.props(motionStyles.slider)}
       >
         <Slider.Control {...stylex.props(motionStyles.sliderControl)}>

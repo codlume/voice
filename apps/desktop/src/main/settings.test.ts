@@ -200,12 +200,12 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
-  test("defaults page animations to 200 ms, keeps a saved whole duration up to 400 ms, and rejects anything else", () => {
+  test("defaults page animations to 200 ms, keeps a saved duration on the 25 ms grid up to 400 ms, and rejects anything else", () => {
     expect(parseSettings({}).pageAnimationMs).toBe(200);
     for (const ms of [0, 25, 400]) {
       expect(parseSettings({ pageAnimationMs: ms }).pageAnimationMs).toBe(ms);
     }
-    for (const raw of [401, -1, 150.5, "200", null]) {
+    for (const raw of [401, -1, 150.5, 210, "200", null]) {
       expect(parseSettings({ pageAnimationMs: raw }).pageAnimationMs).toBe(200);
     }
   });

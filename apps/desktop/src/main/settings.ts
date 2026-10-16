@@ -13,6 +13,7 @@ import {
   hotkeys,
   MAX_PAGE_ANIMATION_MS,
   MIN_PAGE_ANIMATION_MS,
+  PAGE_ANIMATION_STEP_MS,
 } from "../shared/api.ts";
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
@@ -41,7 +42,7 @@ const flag = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fa
 
 const pageAnimationMs = (v: unknown) =>
   typeof v === "number" &&
-  Number.isInteger(v) &&
+  v % PAGE_ANIMATION_STEP_MS === 0 &&
   v >= MIN_PAGE_ANIMATION_MS &&
   v <= MAX_PAGE_ANIMATION_MS
     ? v
