@@ -26,6 +26,7 @@ import { AccountSettings } from "./Account.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { pageMotion, type PageMotion } from "./pageMotion.ts";
 import {
   DataPrivacySettings,
   GeneralSettings,
@@ -139,30 +140,6 @@ const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
 
-type PageMotion = "rise" | "forward" | "back";
-
-const rise = stylex.keyframes({ from: { opacity: 0, transform: "translateY(8px)" } });
-const slideForward = stylex.keyframes({ from: { opacity: 0, transform: "translateX(16px)" } });
-const slideBack = stylex.keyframes({ from: { opacity: 0, transform: "translateX(-16px)" } });
-
-const pageMotion = stylex.create({
-  rise: {
-    animationName: { default: rise, [reducedMotion]: "none" },
-    animationDuration: "200ms",
-    animationTimingFunction: easing,
-  },
-  forward: {
-    animationName: { default: slideForward, [reducedMotion]: "none" },
-    animationDuration: "220ms",
-    animationTimingFunction: easing,
-  },
-  back: {
-    animationName: { default: slideBack, [reducedMotion]: "none" },
-    animationDuration: "220ms",
-    animationTimingFunction: easing,
-  },
-});
-
 const styles = stylex.create({
   shell: {
     display: "grid",
@@ -184,6 +161,7 @@ const styles = stylex.create({
     paddingRight: 12,
     WebkitAppRegion: "drag",
   },
+  pageAnimation: (ms: number) => ({ "--page-animation": `${ms}ms` }),
   titlebarGeometry: (zoomLevel: number) => ({
     height: TITLEBAR_HEIGHT,
     paddingLeft: trafficLightsInset(zoomLevel),
@@ -197,7 +175,7 @@ const styles = stylex.create({
     display: "flex",
     flexDirection: "column",
     transitionProperty: "width",
-    transitionDuration: { default: "220ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   sidebarCollapsed: { width: railWidth },
@@ -251,7 +229,7 @@ const styles = stylex.create({
   icon: { flexShrink: 0 },
   label: {
     transitionProperty: "opacity",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
@@ -289,7 +267,7 @@ const styles = stylex.create({
   footerUpdates: {
     marginLeft: "auto",
     transitionProperty: "opacity, visibility",
-    transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
+    transitionDuration: { default: "calc(var(--page-animation) * 0.75)", [reducedMotion]: "0s" },
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
@@ -522,7 +500,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
   const Page = pageViews[page];
   return (
-    <div {...stylex.props(styles.shell)}>
+    <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
       <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
         <button
           type="button"

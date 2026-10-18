@@ -1,6 +1,7 @@
 import { Field } from "@base-ui/react/field";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
+import { Slider } from "@base-ui/react/slider";
 import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
@@ -20,7 +21,13 @@ import type {
   UpdateChannel,
   UpdatesSnapshot,
 } from "../shared/api.ts";
-import { DEFAULT_SETTINGS, hotkeys } from "../shared/api.ts";
+import {
+  DEFAULT_SETTINGS,
+  hotkeys,
+  MAX_PAGE_ANIMATION_MS,
+  MIN_PAGE_ANIMATION_MS,
+  PAGE_ANIMATION_STEP_MS,
+} from "../shared/api.ts";
 import { dictationLanguages, type DictationLanguage } from "../shared/dictation-language.ts";
 import {
   historyRetentions,
@@ -37,6 +44,7 @@ import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { modelView, type ModelAction } from "./modelView.ts";
+import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
@@ -96,6 +104,119 @@ export const styles = stylex.create({
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
 });
 
+const motionStyles = stylex.create({
+  control: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 7rem) minmax(8rem, 13rem)",
+    alignItems: "center",
+    gap: 16,
+  },
+  duration: { display: "flex", alignItems: "center", gap: space.md },
+  readout: {
+    minWidth: 64,
+    paddingBlock: 4,
+    paddingInline: space.sm,
+    borderRadius: radius.small,
+    backgroundColor: color.segmentTrack,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "center",
+  },
+  slider: { flexGrow: 1, minWidth: 0 },
+  reducedMotionHint: {
+    display: { default: "none", "@media (prefers-reduced-motion: reduce)": "block" },
+  },
+  sliderControl: {
+    display: "flex",
+    alignItems: "center",
+    height: 24,
+    cursor: "pointer",
+    touchAction: "none",
+  },
+  track: {
+    position: "relative",
+    width: "100%",
+    height: 6,
+    borderRadius: radius.round,
+    backgroundColor: `color-mix(in srgb, ${color.mutedForeground} 22%, transparent)`,
+    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color.border} 55%, transparent)`,
+  },
+  indicator: { borderRadius: radius.round, backgroundColor: color.primary },
+  thumb: {
+    width: 16,
+    height: 16,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: color.primary,
+    borderRadius: radius.round,
+    backgroundColor: color.background,
+    boxShadow: {
+      default: "0 1px 2px rgb(0 0 0 / 12%)",
+      ":hover": "0 1px 3px rgb(0 0 0 / 20%)",
+    },
+    transform: {
+      default: null,
+      ":hover": "scale(1.08)",
+      ":active": "scale(0.94)",
+      ":is([data-dragging])": "scale(0.94)",
+    },
+    transitionProperty: "transform, box-shadow",
+    transitionDuration: { default: "120ms", "@media (prefers-reduced-motion: reduce)": "0s" },
+    transitionTimingFunction: "ease",
+    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
+    outlineOffset: 2,
+  },
+});
+
+// Saving every drag tick would write settings.json and broadcast a snapshot per tick, so the thumb
+// holds its own value and saves once the gesture or key press commits.
+function PageAnimationSlider({
+  saved,
+  onCommit,
+}: {
+  saved: number;
+  onCommit: (ms: number) => Promise<boolean>;
+}) {
+  const [slider, setSlider] = useState({ ms: saved, saved });
+  if (saved !== slider.saved) setSlider({ ms: saved, saved });
+  const { ms } = slider;
+  return (
+    <div {...stylex.props(motionStyles.duration)}>
+      <span aria-hidden {...stylex.props(motionStyles.readout)}>
+        {ms} ms
+      </span>
+      <Slider.Root
+        value={ms}
+        onValueChange={(next) => setSlider((current) => ({ ...current, ms: next }))}
+        onValueCommitted={(committed) => {
+          void onCommit(committed).then((ok) => {
+            // The updater reads the newest saved value, which another save may have changed since.
+            if (!ok) setSlider((current) => ({ ...current, ms: current.saved }));
+          });
+        }}
+        min={MIN_PAGE_ANIMATION_MS}
+        max={MAX_PAGE_ANIMATION_MS}
+        step={PAGE_ANIMATION_STEP_MS}
+        largeStep={4 * PAGE_ANIMATION_STEP_MS}
+        {...stylex.props(motionStyles.slider)}
+      >
+        <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
+          <Slider.Track {...stylex.props(motionStyles.track)}>
+            <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
+            <Slider.Thumb
+              aria-label="Page animation duration"
+              getAriaValueText={(_, value) => `${value} milliseconds`}
+              {...stylex.props(motionStyles.thumb)}
+            />
+          </Slider.Track>
+        </Slider.Control>
+      </Slider.Root>
+    </div>
+  );
+}
+
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
 const TOGGLE_OFF = "off";
 type ToggleChoice = Hotkey | typeof TOGGLE_OFF;
@@ -122,7 +243,7 @@ const updateChannels = [
 type Action = ReturnType<typeof useAction>;
 
 function update(action: Action, patch: SettingsPatch) {
-  void action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
+  return action.run(() => hubApi().updateSettings(patch), "Could not save settings.");
 }
 
 export function GlobeHint() {
@@ -445,8 +566,11 @@ export function SystemSettings({
   const loginAction = useAction();
   const audioAction = useAction();
   const appearanceAction = useAction();
+  const motionAction = useAction();
   const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
+  const changePageAnimation = (pageAnimationMs: number) =>
+    update(motionAction, { pageAnimationMs });
   const changeDock = (showInDock: boolean) => update(appearanceAction, { showInDock });
   const changePill = (alwaysShowPill: boolean) => update(appearanceAction, { alwaysShowPill });
   return (
@@ -542,6 +666,36 @@ export function SystemSettings({
         {appearanceAction.error && (
           <p role="alert" {...stylex.props(pageStyles.error)}>
             {appearanceAction.error}
+          </p>
+        )}
+      </Section>
+
+      <Section label="Motion">
+        <Card>
+          <Row
+            title="Page animations"
+            detail="Set how fast pages and the sidebar move."
+            onReset={resetTo(
+              settings.pageAnimationMs,
+              DEFAULT_SETTINGS.pageAnimationMs,
+              changePageAnimation,
+            )}
+          >
+            <div {...stylex.props(motionStyles.control)}>
+              <PageAnimationPreview />
+              <PageAnimationSlider
+                saved={settings.pageAnimationMs}
+                onCommit={changePageAnimation}
+              />
+            </div>
+          </Row>
+        </Card>
+        <p {...stylex.props(styles.hint, motionStyles.reducedMotionHint)}>
+          Reduce motion is on in your system settings, so pages change without animation.
+        </p>
+        {motionAction.error && (
+          <p role="alert" {...stylex.props(pageStyles.error)}>
+            {motionAction.error}
           </p>
         )}
       </Section>
