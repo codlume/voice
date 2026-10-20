@@ -125,7 +125,7 @@ function wavDurationMs(buffer) {
   assert(tag(0) === "RIFF" && tag(8) === "WAVE", "fixture is not a RIFF WAVE file");
   let byteRate;
   let dataBytes;
-  for (let at = 12; at + 8 <= buffer.length; ) {
+  for (let at = 12; at + 8 <= buffer.length;) {
     const size = buffer.readUInt32LE(at + 4);
     if (tag(at) === "fmt ") byteRate = buffer.readUInt32LE(at + 16);
     if (tag(at) === "data") dataBytes = size;

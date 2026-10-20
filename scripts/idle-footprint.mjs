@@ -57,7 +57,7 @@ function tree(rootPid) {
       };
     });
   const inTree = new Set([rootPid]);
-  for (let grew = true; grew; ) {
+  for (let grew = true; grew;) {
     grew = false;
     for (const row of rows) {
       if (inTree.has(row.ppid) && !inTree.has(row.pid)) {
