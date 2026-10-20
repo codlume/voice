@@ -6,13 +6,12 @@ import XCTest
 
 @Suite(.serialized)
 struct CaptureSourceTests {
-    @Test func environmentRequiresExplicitHardwareOptInDuringTests() {
+    @Test func testModeNeverResolvesToTheMicrophone() {
         #expect(CaptureSource.resolve(environment: [:]) == .microphone)
         #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST_AUDIO": "/fixture.wav"]) == .microphone)
         #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1"]) == .disabled)
         #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_AUDIO": ""]) == .disabled)
-        #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_ALLOW_MICROPHONE": "1"]) == .microphone)
-        #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_AUDIO": "/missing.wav", "VOICE_HELPER_ALLOW_MICROPHONE": "1"]) == .fixture("/missing.wav"))
+        #expect(CaptureSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_AUDIO": "/missing.wav"]) == .fixture("/missing.wav"))
     }
 
     @Test(arguments: [CaptureSource.disabled, .fixture("/nonexistent/voice-test.wav")])

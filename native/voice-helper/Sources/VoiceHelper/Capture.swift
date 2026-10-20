@@ -89,7 +89,7 @@ final class Capture {
     init(
         output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputSilencer: OutputSilencer,
         maxSamples: Int = 600 * 16_000,
-        source: CaptureSource = .resolve(environment: ProcessInfo.processInfo.environment),
+        source: CaptureSource,
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
     ) {
         self.devices = devices

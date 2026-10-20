@@ -130,7 +130,7 @@ private func eventCases() -> [String: HelperEvent] {
         "microphones.changed": .microphonesChanged(devices: [microphone], defaultUid: "usb"),
         "microphones.changed.empty": .microphonesChanged(devices: [], defaultUid: nil),
         "microphones.unavailable": .microphonesUnavailable(message: "Synthetic device unavailable"),
-        "ready": .ready(version: 12),
+        "ready": .ready(version: helperProtocolVersion),
         "hotkey": .hotkey(action: .down),
         "hotkey.up": .hotkey(action: .up),
         "hotkey.chord": .hotkey(action: .chord),
@@ -302,6 +302,7 @@ private func eventType(_ event: HelperEvent) -> String {
     @Test func sharesReadyVersionExpectations() throws {
         let corpus = try readCorpus()
         let ready = try #require(corpus.events.first { $0.name == "ready" })
+        #expect(corpus.protocolVersion == helperProtocolVersion, "bump the shared fixture together with helperProtocolVersion")
         #expect(ready.wire["version"] == .number(Double(corpus.protocolVersion)))
         #expect(corpus.versions.contains { $0.compatible })
         #expect(corpus.versions.contains { !$0.compatible })

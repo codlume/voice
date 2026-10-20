@@ -20,8 +20,7 @@ struct CaptureStopTests {
         let noModels = dir.appendingPathComponent("no-models")
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: noModels, output: output), devices: devices,
-            outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800)
-        capture.testAudioPath = file.path
+            outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800, source: .fixture(file.path))
 
         let target = InsertTarget(pid: nil, bundleId: nil)
         capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
