@@ -24,11 +24,9 @@ final class Helper {
         self.devices = devices
         let outputSilencer = OutputSilencer(output: output, stateDir: stateDir)
         outputSilencer.recover()
-        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputSilencer: outputSilencer)
+        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputSilencer: outputSilencer,
+                              source: .resolve(environment: environment))
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
-        if testMode {
-            capture.testAudioPath = environment["VOICE_HELPER_TEST_AUDIO"]
-        }
         self.capture = capture
         insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
         let hotkeyTap = HotkeyTap(output: output) { capture.isActive }

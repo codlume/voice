@@ -69,16 +69,32 @@ final class Capture {
     private var microphoneAuthorized = false
     private let authorizationStatus: @Sendable () -> AVAuthorizationStatus
     private(set) var lastTarget: (id: String, target: InsertTarget)?
-    var testAudioPath: String?
+    private(set) var source: CaptureSource
+    var testAudioPath: String? {
+        get {
+            if case .fixture(let path) = source { return path }
+            return nil
+        }
+        set {
+            guard case .idle = state else {
+                output.log(.error, "test.audioFile ignored: capture is busy")
+                return
+            }
+            disposeMic()
+            source = newValue.map(CaptureSource.fixture) ?? .disabled
+        }
+    }
     private let maxSamples: Int
 
     init(
         output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputSilencer: OutputSilencer,
         maxSamples: Int = 600 * 16_000,
+        source: CaptureSource = .resolve(environment: ProcessInfo.processInfo.environment),
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
     ) {
         self.devices = devices
         self.maxSamples = maxSamples
+        self.source = source
         self.output = output
         self.transcriber = transcriber
         self.authorizationStatus = authorizationStatus
@@ -107,8 +123,11 @@ final class Capture {
         let session = CaptureSession(id: id, language: language, target: target, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
-            if let testAudioPath {
-                let file = try FileSource(path: testAudioPath, sink: sink) { [weak self] in
+            switch source {
+            case .disabled:
+                throw CaptureError(reason: .device, message: "capture disabled in test mode; select a test audio fixture")
+            case .fixture(let path):
+                let file = try FileSource(path: path, sink: sink) { [weak self] in
                     self?.output.log(.info, "test.audioFile ended")
                 }
                 state = .starting(session)
@@ -116,6 +135,8 @@ final class Capture {
                 setOutputSilenced(muteWhileDictating)
                 file.start()
                 return true
+            case .microphone:
+                break
             }
             guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "microphone access is not granted")
@@ -287,14 +308,14 @@ final class Capture {
     }
 
     func prepareIdleMic() {
-        guard case .idle = state, testAudioPath == nil else { return }
+        guard case .idle = state, source == .microphone else { return }
         let probe = authorizationStatus
         DispatchQueue.global(qos: .utility).async {
             let authorized = probe() == .authorized
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 microphoneAuthorized = authorized
-                guard authorized, case .idle = state, testAudioPath == nil else { return }
+                guard authorized, case .idle = state, source == .microphone else { return }
                 do throws(CaptureError) {
                     adopt(microphone)
                     if let mic { mic.prepare() } else { mic = try makeMic() }
@@ -312,12 +333,17 @@ final class Capture {
             DispatchQueue.main.async { self?.meter(level, for: id) }
         }
         do {
-            if let testAudioPath {
-                let file = try FileSource(path: testAudioPath, sink: sink) { [weak self] in self?.stopTest(id: id) }
+            switch source {
+            case .disabled:
+                throw CaptureError(reason: .device, message: "microphone test disabled in test mode; select a test audio fixture")
+            case .fixture(let path):
+                let file = try FileSource(path: path, sink: sink) { [weak self] in self?.stopTest(id: id) }
                 state = .testing(id: id, started: false)
                 self.file = file
                 file.start()
                 return
+            case .microphone:
+                break
             }
             guard microphoneAuthorized || refreshMicrophoneAuthorization() else {
                 throw CaptureError(reason: .permission, message: "Allow microphone access for Voice, then test again.")
