@@ -9,6 +9,7 @@ import { DEFAULT_SETTINGS, type SettingsPatch } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import { applyPatch, loadSettings, parseSettings, saveSettings } from "./settings.ts";
+import { createSettingsQueue } from "./settings-queue.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -216,6 +217,70 @@ describe("parseSettings", () => {
 });
 
 describe("applyPatch", () => {
+  test.each([
+    { patch: null },
+    { patch: [] },
+    { patch: { theme: 42 } },
+    { patch: { hotkey: "bogus" } },
+    { patch: { toggleHotkey: "bogus" } },
+    { patch: { updateChannel: 1 } },
+    { patch: { dictationLanguage: "bogus" } },
+    { patch: { muteWhileDictating: "false" } },
+    { patch: { copyToClipboard: 1 } },
+    { patch: { showInDock: null } },
+    { patch: { alwaysShowPill: [] } },
+    { patch: { diagnostics: true } },
+    { patch: { pageAnimationMs: 73 } },
+    { patch: { zoomLevel: "1" } },
+    { patch: { microphone: { uid: "" } } },
+    { patch: { cleanup: null } },
+    { patch: { cleanup: { enabled: "false" } } },
+    { patch: { cleanup: { styles: [] } } },
+    { patch: { cleanup: { styles: { personal: "bogus" } } } },
+  ])("rejects malformed wire patch $patch without replacing saved settings", async ({ patch }) => {
+    const dir = await mkdtemp(NodePath.join(tmpdir(), "voice-settings-patch-"));
+    const file = NodePath.join(dir, "settings.json");
+    let current = parseSettings({
+      theme: "dark",
+      hotkey: "rightOption",
+      updateChannel: "nightly",
+      cleanup: { styles: { personal: "formal" } },
+      snippets: [
+        {
+          id: "s",
+          trigger: "signature",
+          expansion: "Synthetic signature",
+          expansionHtml: null,
+          enabled: true,
+        },
+      ],
+      dictionary: [{ id: "d", phrase: "Voice", replacement: null }],
+    });
+    try {
+      await saveSettings(file, current);
+      const saved = await readFile(file, "utf8");
+      const savedSettings = current;
+      const queue = createSettingsQueue({
+        current: () => current,
+        save: (next) => saveSettings(file, next),
+        applied: (next) => {
+          current = next;
+        },
+      });
+      await expect(queue.run((previous) => applyPatch(previous, patch))).rejects.toThrow(
+        "Could not save these settings.",
+      );
+      expect(await readFile(file, "utf8")).toBe(saved);
+      expect(current).toBe(savedSettings);
+      expect(loadSettings(file)).toEqual(savedSettings);
+      const next = await queue.run((previous) => applyPatch(previous, { copyToClipboard: true }));
+      expect(next).toEqual({ ...savedSettings, copyToClipboard: true });
+      expect(loadSettings(file)).toEqual(next);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("mute preference survives unrelated patches and can be turned back off", () => {
     const enabled = applyPatch(DEFAULT_SETTINGS, { muteWhileDictating: true });
     expect(applyPatch(enabled, { theme: "dark" }).muteWhileDictating).toBe(true);
@@ -325,6 +390,7 @@ describe("applyPatch", () => {
     expect(zoomed).toEqual({ ...DEFAULT_SETTINGS, zoomLevel: -1 });
     expect(applyPatch(zoomed, { theme: "dark" })).toEqual({ ...zoomed, theme: "dark" });
     expect(applyPatch(zoomed, { zoomLevel: 0 })).toEqual(DEFAULT_SETTINGS);
+    expect(applyPatch(zoomed, { zoomLevel: 0.7 }).zoomLevel).toBe(0.5);
   });
 
   test("changes the hotkey alone", () => {

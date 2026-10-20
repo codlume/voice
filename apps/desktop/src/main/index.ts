@@ -30,7 +30,6 @@ import {
   type PermissionKind,
   type PillApi,
   type Settings,
-  type SettingsPatch,
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { parseBundleIds } from "../shared/app-categories.ts";
@@ -641,11 +640,9 @@ async function main() {
     },
   });
 
-  async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
+  async function updateSettings(change: (settings: Settings) => Settings) {
     assertNotRestarting();
-    const next = await settingsQueue.run((previous) =>
-      applyPatch(previous, typeof patch === "function" ? patch(previous) : patch),
-    );
+    const next = await settingsQueue.run(change);
     if (next.updateChannel === store.state.settings.updateChannel)
       await updates.setChannel(next.updateChannel);
   }
@@ -716,13 +713,13 @@ async function main() {
       const url = updates.releaseUrl();
       if (url) void shell.openExternal(url);
     });
-    hubCommands.handle(Channel.updateSettings, (_event, patch: SettingsPatch) =>
-      updateSettings(patch),
+    hubCommands.handle(Channel.updateSettings, (_event, patch: unknown) =>
+      updateSettings((previous) => applyPatch(previous, patch)),
     );
-    hubCommands.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
-      if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
+    hubCommands.handle(Channel.requestPermission, (_event, kind: unknown) => {
+      if (kind === "microphone" || kind === "accessibility") requestPermission(kind);
     });
-    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: boolean) => {
+    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
       if (development) return;
       const openAtLogin = on === true;
       // Registering again does not approve the item. Only the user can, in Login Items.
@@ -840,9 +837,9 @@ async function main() {
   app.on("activate", showHub);
   Menu.setApplicationMenu(
     createApplicationMenu((step) => {
-      updateSettings(({ zoomLevel }) => ({ zoomLevel: nextZoomLevel(zoomLevel, step) })).catch(
-        () => {},
-      );
+      updateSettings((current) =>
+        applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
+      ).catch(() => {});
     }),
   );
   // The tray keeps the app alive after the hub window closes.

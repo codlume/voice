@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import { MicrophoneSchema } from "../shared/microphone.ts";
 
-import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
+import type { Settings, UpdateChannel } from "../shared/api.ts";
 
 import {
   DEFAULT_SETTINGS,
@@ -103,8 +103,24 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   };
 }
 
-export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
+export function applyPatch(settings: Settings, patch: unknown): Settings {
+  if (!isRecord(patch)) throw new Error("Could not save these settings.");
   const { snippets, dictionary } = patch;
+  if (
+    (patch.cleanup !== undefined && !isRecord(patch.cleanup)) ||
+    (patch.microphone !== undefined &&
+      patch.microphone !== null &&
+      Option.isNone(Schema.decodeUnknownOption(MicrophoneSchema)(patch.microphone))) ||
+    (patch.toggleHotkey !== undefined &&
+      pick(hotkeys, patch.toggleHotkey, null) !== patch.toggleHotkey) ||
+    (patch.zoomLevel !== undefined &&
+      (typeof patch.zoomLevel !== "number" || !Number.isFinite(patch.zoomLevel)))
+  ) {
+    throw new Error("Could not save these settings.");
+  }
+  const cleanup = record(patch.cleanup);
+  if (cleanup.styles !== undefined && !isRecord(cleanup.styles))
+    throw new Error("Could not save these settings.");
   // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
   if (
     snippets !== undefined &&
@@ -118,7 +134,7 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
   ) {
     throw new Error("Could not save this dictionary.");
   }
-  return parseSettings({
+  const next = parseSettings({
     microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
     hotkey: patch.hotkey ?? settings.hotkey,
     toggleHotkey: patch.toggleHotkey === undefined ? settings.toggleHotkey : patch.toggleHotkey,
@@ -131,8 +147,8 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     showInDock: patch.showInDock ?? settings.showInDock,
     alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
     cleanup: {
-      enabled: patch.cleanup?.enabled ?? settings.cleanup.enabled,
-      styles: { ...settings.cleanup.styles, ...patch.cleanup?.styles },
+      enabled: cleanup.enabled ?? settings.cleanup.enabled,
+      styles: { ...settings.cleanup.styles, ...record(cleanup.styles) },
       assignments: settings.cleanup.assignments,
     },
     diagnostics: patch.diagnostics ?? settings.diagnostics,
@@ -140,6 +156,29 @@ export function applyPatch(settings: Settings, patch: SettingsPatch): Settings {
     dictionary: dictionary ?? settings.dictionary,
     zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
   });
+  for (const key of [
+    "hotkey",
+    "updateChannel",
+    "dictationLanguage",
+    "theme",
+    "pageAnimationMs",
+    "muteWhileDictating",
+    "copyToClipboard",
+    "showInDock",
+    "alwaysShowPill",
+    "diagnostics",
+  ] as const) {
+    if (patch[key] !== undefined && patch[key] !== next[key])
+      throw new Error("Could not save these settings.");
+  }
+  if (cleanup.enabled !== undefined && cleanup.enabled !== next.cleanup.enabled)
+    throw new Error("Could not save these settings.");
+  const styles = record(cleanup.styles);
+  for (const category of ["personal", "work", "email", "other"] as const) {
+    if (styles[category] !== undefined && styles[category] !== next.cleanup.styles[category])
+      throw new Error("Could not save these settings.");
+  }
+  return next;
 }
 
 // Synchronous because launch reads the diagnostics choice before Electron's ready event.
