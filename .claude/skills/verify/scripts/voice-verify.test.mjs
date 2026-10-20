@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -28,6 +29,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const paths = [
     ".claude/skills/verify/scripts/voice-verify.mjs",
     ".claude/skills/verify/scripts/dictate-flags.mjs",
+    ".claude/skills/verify/scripts/scenarios.mjs",
     "scripts/voice-app.mjs",
     "scripts/smoke-resources.mjs",
     "scripts/fixtures.mjs",
@@ -66,6 +68,20 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const launch = run("launch");
   assert.notEqual(launch.status, 0);
   assert.match(launch.stderr, /Electron missing: run pnpm install/);
+  const scenario = spawnSync(
+    process.execPath,
+    [join(checkout, paths[0]), "scenario", "short-dictation"],
+    {
+      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+      encoding: "utf8",
+      timeout: 5000,
+    },
+  );
+  assert.equal(scenario.status, 1, scenario.stderr);
+  const blocked = JSON.parse(scenario.stdout);
+  assert.equal(blocked.status, "BLOCKED");
+  assert.ok(blocked.prerequisites.builds.length > 0);
+  assert.ok(blocked.prerequisites.models.length > 0);
   assert.deepEqual(readdirSync(temp), []);
 });
 
@@ -94,6 +110,26 @@ function fixture(t) {
       }),
   };
 }
+
+test("scenario teardown refuses another run's recorded instance", async (t) => {
+  const f = fixture(t);
+  const proc = await child(t, process.execPath, [
+    "-e",
+    'process.stdout.write("ready"); process.stdin.resume()',
+  ]);
+  const state = { ownerPid: proc.pid, scenarioOwner: "interactive-owner" };
+  f.write(state);
+  const original = readFileSync(f.statePath, "utf8");
+  const result = spawnSync(process.execPath, [script, "stop", "--scenario-owner=scenario-owner"], {
+    env: { ...process.env, TMPDIR: dirname(f.statePath) },
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /refusing to stop an instance owned by another run/);
+  assert.equal(readFileSync(f.statePath, "utf8"), original);
+  assert.doesNotThrow(() => process.kill(proc.pid, 0));
+});
 
 async function child(t, command, args) {
   const proc = spawn(command, args, { detached: true, stdio: ["pipe", "pipe", "pipe"] });

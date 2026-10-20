@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
 import {
   announcedPorts,
   claimScratch,
@@ -61,9 +62,42 @@ const show = (value) => JSON.stringify(value);
 const out = (value) =>
   console.log(typeof value === "string" ? value : JSON.stringify(value, null, 2));
 const fail = (message) => {
-  console.error(`voice-verify: ${message}`);
-  process.exit(1);
+  throw new Error(message);
 };
+
+const scenarioOwner = args.find((arg) => arg.startsWith("--scenario-owner="))?.split("=")[1];
+
+class VerificationBlocked extends Error {
+  constructor(message, prerequisites) {
+    super(message);
+    this.prerequisites = prerequisites;
+  }
+}
+
+function runVerifier(argv, { signal, timeout = 180_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      [fileURLToPath(import.meta.url), ...argv],
+      { timeout, detached: true, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        try {
+          const result = JSON.parse(stdout);
+          if (error && result.status === "BLOCKED")
+            return reject(new VerificationBlocked(result.error, result.prerequisites));
+          if (!error) return resolve(result);
+        } catch (parseError) {
+          if (!error) return reject(parseError);
+        }
+        reject(new Error(`${argv[0]} failed: ${stderr || error.message}`));
+      },
+    );
+    const interrupt = () => child.kill("SIGTERM");
+    signal?.addEventListener("abort", interrupt, { once: true });
+    child.once("close", () => signal?.removeEventListener("abort", interrupt));
+    if (signal?.aborted) interrupt();
+  });
+}
 
 function readState() {
   try {
@@ -94,9 +128,14 @@ function publishState(state, claim = false) {
   }
 }
 
-function requireInstance() {
+function requireInstance(owner = scenarioOwner) {
   const state = readState();
-  if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
+  const ready = state?.port && sameProcess(state.electronPid, state.electronIdentity);
+  if (owner && (!ready || state.scenarioOwner !== owner))
+    throw new VerificationBlocked("scenario lost ownership of its instance", {
+      instance: [state ?? "none"],
+    });
+  if (!ready) {
     fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
   }
   return state;
@@ -178,7 +217,7 @@ function openSecondCopy(state, ...extraArgs) {
 }
 
 const commands = {
-  async doctor() {
+  async doctor({ print = true } = {}) {
     const state = readState();
     const instance = state && sameProcess(state.electronPid, state.electronIdentity) ? state : null;
     let cdp = null;
@@ -243,7 +282,8 @@ const commands = {
       hub.close();
       report.snapshot = { session: s.session, permissions: s.permissions, models: s.models };
     }
-    out(report);
+    if (print) out(report);
+    return report;
   },
 
   async launch() {
@@ -269,6 +309,7 @@ const commands = {
       ownerIdentity: processIdentity(process.pid),
       worktree,
       userData: keptUserData,
+      ...(scenarioOwner && { scenarioOwner }),
     };
     const save = () => publishState(state);
     try {
@@ -384,6 +425,8 @@ const commands = {
   async _stop() {
     const state = readState();
     if (!state) return out("no verify instance recorded");
+    if (scenarioOwner && state.scenarioOwner !== scenarioOwner)
+      fail("refusing to stop an instance owned by another run");
     const keep = args.includes("--keep-user-data");
     if (sameProcess(state.ownerPid, state.ownerIdentity)) {
       process.kill(state.ownerPid, "SIGTERM");
@@ -413,6 +456,208 @@ const commands = {
       evidence: state.evidence && existsSync(state.evidence) ? state.evidence : "none captured",
       ...(keep && { keptUserData: state.userData }),
     });
+  },
+
+  async scenario() {
+    const [name] = args;
+    const scenario = scenarioNamed(name);
+    if (args.length !== 1) fail("usage: scenario <name>");
+    const prerequisites = scenarioPrerequisites(await commands.doctor({ print: false }));
+    const blocked = () => Object.values(prerequisites).some((items) => items.length > 0);
+    if (blocked()) {
+      out({ scenario: name, status: "BLOCKED", prerequisites });
+      fail("BLOCKED: resolve the reported scenario prerequisites first");
+    }
+
+    const token = randomUUID();
+    const ownershipFlag = `--scenario-owner=${token}`;
+    const abort = new AbortController();
+    let rejectInterrupt;
+    const interrupted = new Promise((_, reject) => {
+      rejectInterrupt = reject;
+    });
+    const wait = (promise) => Promise.race([promise, interrupted]);
+    const interrupt = () => {
+      const error = new Error("scenario interrupted");
+      abort.abort(error);
+      rejectInterrupt(error);
+    };
+    process.once("SIGINT", interrupt);
+    process.once("SIGTERM", interrupt);
+    let state;
+    let readiness;
+    let hub;
+    let cleanupWrapped = false;
+    let failure;
+    const sessions = [];
+    try {
+      const launcher = start(
+        process.execPath,
+        [fileURLToPath(import.meta.url), "launch", ownershipFlag],
+        {
+          stdio: ["ignore", "pipe", "inherit"],
+        },
+      );
+      let output = "";
+      launcher.stdout.on("data", (chunk) => {
+        output += chunk;
+      });
+      let launchError;
+      launcher.on("error", (error) => {
+        launchError = error;
+      });
+      state = await wait(
+        poll(
+          () => {
+            abort.signal.throwIfAborted();
+            if (launchError) throw launchError;
+            if (launcher.exitCode !== null || launcher.signalCode !== null)
+              throw new Error("scenario launch exited before readiness");
+            let ready;
+            try {
+              ready = JSON.parse(output);
+            } catch {
+              return undefined;
+            }
+            return ready.ready ? ready : undefined;
+          },
+          240_000,
+          "scenario launch readiness",
+        ),
+      );
+      if (state.scenarioOwner !== token) fail("scenario launch returned another run's instance");
+      requireInstance(token);
+
+      hub = await wait(Page.connect(state.port, "hub.html"));
+      const snapshot = await wait(hub.evaluate("window.voice.getSnapshot()"));
+      readiness = { models: snapshot.models, permissions: snapshot.permissions };
+      prerequisites.models = Object.entries(snapshot.models).filter(
+        ([, model]) => model.state !== "ready",
+      );
+      prerequisites.permissions =
+        snapshot.permissions.accessibility === "granted"
+          ? []
+          : [["accessibility", snapshot.permissions.accessibility]];
+      prerequisites.desktop = otherVoiceProcesses(state.userData);
+      if (blocked())
+        throw new VerificationBlocked(
+          "models, Accessibility, or exclusive desktop access unavailable",
+          prerequisites,
+        );
+      requireInstance(token);
+      await wait(hub.evaluate(`window.voice.updateSettings(${show(scenarioSettings(name))})`));
+
+      if (name === "cleanup-failure") {
+        requireInstance(token);
+        cleanupWrapped = true;
+        await wait(
+          evaluateInMain(
+            state.inspectPort,
+            `(() => {
+          const test = globalThis.voiceTest;
+          if (test.__verifyCleanup) throw new Error("cleanup probe already installed");
+          const original = test.cleanup.clean;
+          const counts = { failures: 0, successes: 0 };
+          test.__verifyCleanup = {
+            read: () => ({ ...counts }),
+            restore: () => { test.cleanup.clean = original; delete test.__verifyCleanup; },
+          };
+          test.cleanup.clean = async (...args) => {
+            if (counts.failures === 0) {
+              counts.failures++;
+              throw new Error("Synthetic cleanup rejection");
+            }
+            const result = await original.apply(test.cleanup, args);
+            counts.successes++;
+            return result;
+          };
+          return true;
+        })()`,
+          ),
+        );
+      }
+
+      const dictate = async (check) => {
+        abort.signal.throwIfAborted();
+        requireInstance(token);
+        const previousIds = await wait(
+          hub.evaluate("window.voice.getHistory().then(h => h.entries.map(e => e.id))"),
+        );
+        const result = await runVerifier(["dictate", "short.wav", "--key=toggle", ownershipFlag], {
+          signal: abort.signal,
+        });
+        abort.signal.throwIfAborted();
+        requireInstance(token);
+        const probe = cleanupWrapped
+          ? await wait(
+              evaluateInMain(state.inspectPort, "globalThis.voiceTest.__verifyCleanup.read()"),
+            )
+          : undefined;
+        sessions.push({ ...result, previousIds, ...(probe && { probe }) });
+        check(result, previousIds, probe);
+      };
+      await dictate(scenario.assert);
+      if (scenario.assertRecovery) await dictate(scenario.assertRecovery);
+    } catch (error) {
+      failure = error;
+      if (error instanceof VerificationBlocked) Object.assign(prerequisites, error.prerequisites);
+    } finally {
+      let restoreTimer;
+      try {
+        if (cleanupWrapped && sameProcess(state.electronPid, state.electronIdentity)) {
+          const restored = await wait(
+            Promise.race([
+              evaluateInMain(
+                state.inspectPort,
+                "(() => { globalThis.voiceTest.__verifyCleanup?.restore(); return !globalThis.voiceTest.__verifyCleanup; })()",
+              ),
+              new Promise((_, reject) => {
+                restoreTimer = setTimeout(
+                  () => reject(new Error("cleanup probe restoration timed out after 5000 ms")),
+                  5000,
+                );
+              }),
+            ]),
+          );
+          if (!restored) fail("cleanup probe remains installed");
+        }
+      } catch (error) {
+        failure = new AggregateError(
+          [failure, error].filter(Boolean),
+          `cleanup probe restoration failed: ${error.message}`,
+        );
+      } finally {
+        clearTimeout(restoreTimer);
+      }
+      try {
+        try {
+          hub?.close();
+        } finally {
+          await stopChildren();
+          if (readState()?.scenarioOwner === token) await runVerifier(["stop", ownershipFlag]);
+        }
+      } catch (error) {
+        failure = new AggregateError([failure, error].filter(Boolean), "scenario teardown failed");
+      }
+      process.removeListener("SIGINT", interrupt);
+      process.removeListener("SIGTERM", interrupt);
+    }
+    const report = {
+      scenario: name,
+      status: failure ? (failure instanceof VerificationBlocked ? "BLOCKED" : "FAIL") : "PASS",
+      worktree,
+      prerequisites,
+      readiness,
+      sessions,
+      ...(failure && { error: failure.stack }),
+    };
+    if (state?.evidence) {
+      mkdirSync(state.evidence, { recursive: true });
+      report.evidence = join(state.evidence, `scenario-${name}.json`);
+      writeFileSync(report.evidence, JSON.stringify(report, null, 2));
+    }
+    out(report);
+    if (failure) throw failure;
   },
 
   async snapshot() {
@@ -679,7 +924,9 @@ const commands = {
   },
 
   async dictate() {
-    const [wav = "short.wav", ...flags] = args;
+    const [wav = "short.wav", ...flags] = args.filter(
+      (arg) => !arg.startsWith("--scenario-owner="),
+    );
     let parsed;
     try {
       parsed = parseDictateFlags(flags);
@@ -688,16 +935,22 @@ const commands = {
     }
     const { end, mode, app } = parsed;
     const state = requireInstance();
-    const others = otherVoiceProcesses(state.userData);
-    if (others.length > 0) {
-      fail(
-        `refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.\n${others.join("\n")}`,
-      );
-    }
+    const checkAccess = () => {
+      if (scenarioOwner) requireInstance();
+      const others = otherVoiceProcesses(state.userData);
+      if (others.length > 0)
+        throw new VerificationBlocked(
+          "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.",
+          { desktop: others },
+        );
+    };
+    checkAccess();
     const fixture = join(fixturesDir, wav);
     if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
-    const fnpost = (...keys) =>
+    const fnpost = (...keys) => {
+      checkAccess();
       execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
+    };
 
     const hub = await connect("hub");
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
@@ -719,46 +972,63 @@ const commands = {
     const targetEnv = smokeEnvironment(state.userData, {
       VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
     });
+    checkAccess();
     const target = start(
       electronPath(),
       [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
       { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );
+    let interrupt;
+    const interrupted = new Promise((_, reject) => {
+      interrupt = () => reject(new Error("dictation interrupted"));
+    });
+    const wait = (promise) => Promise.race([promise, interrupted]);
+    process.once("SIGINT", interrupt);
+    process.once("SIGTERM", interrupt);
+    let targetPage;
     try {
       const field = 'document.getElementById("field")';
-      const { DevTools: targetPort } = await announcedPorts(target, ["DevTools"]);
-      const targetPage = await Page.connect(targetPort, "index.html");
+      const { DevTools: targetPort } = await wait(announcedPorts(target, ["DevTools"]));
+      targetPage = await wait(Page.connect(targetPort, "index.html"));
+      checkAccess();
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
       );
-      await waitOn(
-        targetPage,
-        `${field}.focus() || (document.hasFocus() && document.activeElement.id === "field")`,
-        5000,
+      await wait(
+        waitOn(
+          targetPage,
+          `${field}.focus() || (document.hasFocus() && document.activeElement.id === "field")`,
+          5000,
+        ),
       );
       const newestEntry = () =>
         hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
-      const previous = await newestEntry();
+      const previous = await wait(newestEntry());
+      checkAccess();
       copyFileSync(fixture, state.fakeMicrophonePath);
       snapshots.skipToEnd();
 
-      await evaluateInMain(state.inspectPort, `globalThis.voiceTest.setTarget(${show(app)})`);
+      await wait(evaluateInMain(state.inspectPort, `globalThis.voiceTest.setTarget(${show(app)})`));
       begin();
       const pressedAt = performance.now();
-      const listening = await snapshots.waitFor((s) => s.session.kind === "listening", {
-        timeoutMs: 5000,
-        label: "listening",
-      });
+      const listening = await wait(
+        snapshots.waitFor((s) => s.session.kind === "listening", {
+          timeoutMs: 5000,
+          label: "listening",
+        }),
+      );
       const after = snapshots.items.indexOf(listening) + 1;
       const earlyEnd =
         end === "audio"
-          ? await poll(
-              () =>
-                logLine(/helper info: test\.audioFile ended$/)
-                  ? null
-                  : snapshots.items.slice(after).find((s) => s.session.kind !== "listening"),
-              60_000,
-              "fixture to finish",
+          ? await wait(
+              poll(
+                () =>
+                  logLine(/helper info: test\.audioFile ended$/)
+                    ? null
+                    : snapshots.items.slice(after).find((s) => s.session.kind !== "listening"),
+                60_000,
+                "fixture to finish",
+              ),
             )
           : null;
       const captureEndedEarly = earlyEnd && {
@@ -770,31 +1040,37 @@ const commands = {
       const heldMs = Math.round(performance.now() - pressedAt);
       let finalState;
       if (end === "escape") {
-        finalState = await snapshots.waitFor((s) => s.session.kind === "idle", {
-          timeoutMs: 5000,
-          label: "idle",
-        });
+        finalState = await wait(
+          snapshots.waitFor((s) => s.session.kind === "idle", {
+            timeoutMs: 5000,
+            label: "idle",
+          }),
+        );
         if (mode === "hold") fnpost(key, "up");
       } else {
-        finalState = await snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
-          timeoutMs: 90_000,
-          label: "done",
-        });
+        finalState = await wait(
+          snapshots.waitFor((s) => ["done", "idle"].includes(s.session.kind), {
+            timeoutMs: 90_000,
+            label: "done",
+          }),
+        );
       }
       const read = () => targetPage.evaluate(`${field}.value`);
       // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
-      const current = await newestEntry();
+      const current = await wait(newestEntry());
       const latest = current?.id === previous?.id ? null : current;
       const landing =
         finalState.session.outcome?.kind === "inserted" && latest
           ? landedText(read, latest.text)
           : Promise.resolve({ text: await read(), landedMs: null });
-      const [{ text: inserted, landedMs }, timing] = await Promise.all([
-        landing,
-        end === "escape"
-          ? null
-          : waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(() => null),
-      ]);
+      const [{ text: inserted, landedMs }, timing] = await wait(
+        Promise.all([
+          landing,
+          end === "escape"
+            ? null
+            : waitForLog(/\[voice\] session \w+ outcome=/, 5000, "timing line").catch(() => null),
+        ]),
+      );
       const result = {
         fixture: wav,
         end,
@@ -810,7 +1086,6 @@ const commands = {
         latest,
         timing: timing?.replace(/^.*\[voice\] /, "") ?? null,
       };
-      targetPage.close();
       const path = join(
         evidenceDir(),
         `dictate-${wav.replace(/\.wav$/, "")}-${mode}-${end}-${Date.now()}.json`,
@@ -823,15 +1098,21 @@ const commands = {
         );
       }
     } finally {
-      rmSync(state.fakeMicrophonePath, { force: true });
+      if (!scenarioOwner || readState()?.scenarioOwner === scenarioOwner)
+        rmSync(state.fakeMicrophonePath, { force: true });
+      targetPage?.close();
       hub.close();
       await stopChildren();
+      process.removeListener("SIGINT", interrupt);
+      process.removeListener("SIGTERM", interrupt);
     }
   },
 
   help() {
     out(`usage: node .claude/skills/verify/scripts/voice-verify.mjs <command>
   doctor                         read-only health report
+  scenario <short-dictation|cleanup-failure|dictionary-word|snippet-expansion>
+                                 launch, assert synthetic dictation, and tear down an owned instance
   launch [--keep-user-data]      start this worktree's disposable instance (foreground; run in background);
                                  the flag reuses the userData a stop --keep-user-data left
   stop [--keep-user-data]        tear down this worktree's instance; evidence survives,
@@ -855,6 +1136,13 @@ const commands = {
   },
 };
 
-if (!commands[command]) fail(`unknown command ${command}; try help`);
-await commands[command]();
-if (command !== "launch") process.exit(0);
+try {
+  if (!Object.hasOwn(commands, command)) fail(`unknown command ${command}; try help`);
+  await commands[command]();
+} catch (error) {
+  if (command === "dictate" && error instanceof VerificationBlocked)
+    out({ status: "BLOCKED", prerequisites: error.prerequisites, error: error.message });
+  console.error(`voice-verify: ${error.stack}`);
+  process.exitCode = 1;
+}
+if (command !== "launch") process.exit(process.exitCode ?? 0);

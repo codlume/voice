@@ -17,6 +17,30 @@ It reuses the repo's own harness (`scripts/voice-app.mjs`, the same code `pnpm e
 
 Before driving a feature, read [features/README.md](features/README.md) and the feature's file. The map lists every entry point. A proof that covers only one of several entry points is incomplete.
 
+## Asserted scenarios
+
+Run `doctor` first. With fresh builds, generated fixtures, cached test models, and an exclusive desktop, choose one command:
+
+```sh
+node .claude/skills/verify/scripts/voice-verify.mjs scenario short-dictation
+node .claude/skills/verify/scripts/voice-verify.mjs scenario cleanup-failure
+node .claude/skills/verify/scripts/voice-verify.mjs scenario dictionary-word
+node .claude/skills/verify/scripts/voice-verify.mjs scenario snippet-expansion
+```
+
+Each command owns a fresh disposable launch and teardown. Run it with no worktree verifier already recorded. Stop an interactive verifier yourself first. A scenario refuses existing instances and other Voice processes, and stops only the instance it launched, including failed attempts.
+
+Scenarios report unmet builds, model readiness, or Accessibility as `BLOCKED` and exit nonzero. Missing cached models require a normal `launch` to prepare them, followed by `stop`. A blocked run is not a pass.
+
+The scratch settings use hold `fn`, toggle `rightOption`, English, and cleanup on. The driver runs `dictate short.wav --key=toggle` through a real synthetic shortcut, file capture, ASR, cleanup, and insertion into the scratch textarea. It checks a new history ID, inserted status and outcome, exact target/history equality, and the fixture's Anna, meeting, time, and Thursday anchors. Model punctuation can vary.
+
+- `short-dictation` checks the complete insertion path.
+- `cleanup-failure` rejects the next cleanup call through the existing unpackaged adapter. It checks exact raw/history/target equality and the consumed rejection, then dictates again and checks normal cleanup succeeds with a new history ID. The temporary probe is restored during teardown.
+- `dictionary-word` saves `THURSDAY` through the settings API and checks the saved spelling reaches the target while raw retains `Thursday`.
+- `snippet-expansion` clears dictionary entries and saves `Thursday` expanding to `Friday at noon`. It checks that exact expansion reaches the target while raw retains `Thursday`.
+
+Settings API calls establish preconditions. These scenarios prove dictation effects, not the Dictionary or Snippets creation dialogs. The command reports `PASS` only after its assertions and teardown succeed. Per-session `dictate` JSON and the scenario report stay in the existing temporary evidence directory. Run history in the feature map remains a separate record of completed checks.
+
 ## Launch
 
 1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server:
@@ -115,7 +139,7 @@ node .claude/skills/verify/scripts/voice-verify.mjs stop
 
 ## Repo checks that drive the same app
 
-These are scripts the repo already has. Run them when the change is in their area. Each launches its own instance and refuses while any other Voice helper runs, so `stop` the verify instance first and wait for other worktrees' sessions to finish.
+These scripts launch their own instances with per-worktree scratch resources. The global-hotkey drivers `pnpm e2e`, `dictate`, and `scenario` require an exclusive desktop and refuse other Voice processes. Stop the verify instance before `pnpm e2e`, and wait for other worktrees' hotkey sessions to finish. Non-hotkey smoke scripts use isolated resources and do not impose that blanket refusal. Test mode without a fixture disables hardware capture.
 
 - `pnpm e2e` runs six hotkey cases into TextEdit and an Electron textarea: cleanup on and off, silence, Escape, too short.
 - `node scripts/models-smoke.mjs` covers model uninstall and reinstall from the Models page.
