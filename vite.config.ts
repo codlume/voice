@@ -1,3 +1,5 @@
+import { builtinModules } from "node:module";
+
 import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 
@@ -54,6 +56,45 @@ export default defineConfig({
                 message:
                   "Register IPC handlers on the owning window's webContents.ipc, so no other window can invoke them.",
               })),
+            },
+          ],
+        },
+      },
+      {
+        files: ["apps/desktop/src/renderer/**", "apps/desktop/src/shared/**"],
+        excludeFiles: ["**/*.{test,spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}", "**/__tests__/**"],
+        rules: {
+          "typescript/no-require-imports": "error",
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: builtinModules
+                .filter((name) => !name.startsWith("node:"))
+                .map((name) => ({
+                  name,
+                  message:
+                    "Renderer and shared modules must use the window API for privileged work.",
+                })),
+              patterns: [
+                {
+                  group: [
+                    "node:*",
+                    "electron",
+                    "electron/**",
+                    "@voice/cleanup",
+                    "@voice/cleanup/download",
+                    "node-llama-cpp",
+                    "node-llama-cpp/**",
+                  ],
+                  message:
+                    "Renderer and shared modules must use the window API for privileged work.",
+                },
+                {
+                  regex: "(?i)(^|[/\\\\])[@~#]?(main|preload)([/\\\\]|$)",
+                  message:
+                    "Renderer and shared modules must import shared contracts instead of main or preload code.",
+                },
+              ],
             },
           ],
         },
