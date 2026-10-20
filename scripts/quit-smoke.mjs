@@ -1,22 +1,18 @@
 #!/usr/bin/env node
-import { rmSync } from "node:fs";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import {
-  electronPath,
   evaluateInMain,
+  launchVoice,
   Page,
   prepareUserData,
-  repoDir,
+  releaseUserData,
   signalGroup,
   snapshotStream,
-  start,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
 
-const ports = { cdp: 9446, inspect: 9447 };
 const EXIT_TIMEOUT_MS = 10_000;
 const MODEL_TIMEOUT_MS = 120_000;
 const CRASH_SIGNATURE = "terminating due to uncaught exception";
@@ -44,39 +40,24 @@ const LONG_DICTATION = Array.from(
 
 const note = (message) => console.error(`[quit-smoke] ${message}`);
 
-// After two unclean exits AppKit blocks the next launch of the same bundle id behind a modal
-// "restore windows?" alert, before Electron's ready. The argument-domain default below is
-// process-local, so it keeps a failing run going without touching the developer's own Electron.
 function launch(userData) {
-  const env = { ...process.env, VOICE_HELPER_TEST: "1", VOICE_USER_DATA_DIR: userData };
-  delete env.ELECTRON_RUN_AS_NODE;
-  const child = start(
-    electronPath,
-    [
-      `--inspect=${ports.inspect}`,
-      ".",
-      `--remote-debugging-port=${ports.cdp}`,
-      "-ApplePersistenceIgnoreState",
-      "YES",
-    ],
-    { cwd: join(repoDir, "apps/desktop"), env, stdio: ["ignore", "pipe", "pipe"] },
-  );
+  const { child, ports } = launchVoice(userData, { inspect: true });
   const output = [];
   child.stdout.on("data", (chunk) => output.push(String(chunk)));
   child.stderr.on("data", (chunk) => output.push(String(chunk)));
   const exited = new Promise((resolve) =>
     child.on("exit", (code, signal) => resolve({ code, signal })),
   );
-  return { child, exited, text: () => output.join("") };
+  return { child, ports, exited, text: () => output.join("") };
 }
 
-const quitMain = () =>
-  evaluateInMain(ports.inspect, "process.mainModule.require('electron').app.quit(); 'quit called'");
+const quitMain = (inspectPort) =>
+  evaluateInMain(inspectPort, "process.mainModule.require('electron').app.quit(); 'quit called'");
 
 // Starts a long cleanup and returns before it finishes, so the quit lands mid-generation.
-const startCleaning = () =>
+const startCleaning = (inspectPort) =>
   evaluateInMain(
-    ports.inspect,
+    inspectPort,
     `globalThis.voiceTest.cleanup.clean(${JSON.stringify(LONG_DICTATION)},
       { style: "formal", layout: "general" },
       { budgetMs: 60_000, signal: new AbortController().signal }).catch(() => undefined); 'cleaning'`,
@@ -88,7 +69,8 @@ async function runTrial(mode, trial, userData) {
   let stateAtQuit;
   let quitAt;
   try {
-    hub = await Page.connect(ports.cdp, "hub.html");
+    const { DevTools: port, Debugger: inspectPort } = await app.ports;
+    hub = await Page.connect(port, "hub.html");
     const snapshots = await snapshotStream(hub);
     const wanted = mode === "cleaning" ? "ready" : mode;
     const snapshot = await snapshots.waitFor(
@@ -102,11 +84,11 @@ async function runTrial(mode, trial, userData) {
     hub.close();
     hub = undefined;
     if (mode === "cleaning") {
-      await startCleaning();
+      await startCleaning(inspectPort);
       await new Promise((resolve) => setTimeout(resolve, CLEANING_START_MS));
     }
     quitAt = performance.now();
-    await Promise.race([quitMain(), app.exited]);
+    await Promise.race([quitMain(inspectPort), app.exited]);
   } catch (error) {
     signalGroup(app.child.pid, "SIGKILL");
     await app.exited;
@@ -165,7 +147,7 @@ async function main() {
     }
   } finally {
     await stopChildren();
-    rmSync(userData, { recursive: true, force: true });
+    await releaseUserData(userData, { remove: true });
   }
   const failed = results.filter((result) => !result.ok);
   note(`${results.length - failed.length}/${results.length} trials exited cleanly`);

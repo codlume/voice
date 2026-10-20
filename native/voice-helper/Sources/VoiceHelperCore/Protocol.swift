@@ -72,6 +72,10 @@ public struct TranscriptTarget: Equatable, Sendable {
     }
 }
 
+/// Wire version the helper announces in `ready`. The desktop rejects any other value, and
+/// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
+public let helperProtocolVersion = 12
+
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
     case microphonesUnavailable(message: String)

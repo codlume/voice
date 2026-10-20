@@ -23,8 +23,8 @@ private final class SilentCapture {
         devices = AudioInputDevices(output: output)
         capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
-            devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: fileSamples / 4)
-        capture.testAudioPath = file.path
+            devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: fileSamples / 4,
+            source: .fixture(file.path))
         insertion = Insertion(output: output, forcePaste: false)
     }
 

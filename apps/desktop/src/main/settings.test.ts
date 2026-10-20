@@ -5,10 +5,17 @@ import * as NodePath from "node:path";
 import { WRITING_STYLES, type WritingStyle } from "@voice/cleanup/style";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import { DEFAULT_SETTINGS, type SettingsPatch } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type Settings } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
-import { applyPatch, loadSettings, parseSettings, saveSettings } from "./settings.ts";
+import {
+  applyPatch,
+  loadSettings,
+  parseSettings,
+  parseSettingsPatch,
+  saveSettings,
+} from "./settings.ts";
+import { createSettingsQueue } from "./settings-queue.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -216,6 +223,108 @@ describe("parseSettings", () => {
 });
 
 describe("applyPatch", () => {
+  test.each([
+    { patch: null },
+    { patch: [] },
+    { patch: { theme: 42 } },
+    { patch: { hotkey: "bogus" } },
+    { patch: { toggleHotkey: "bogus" } },
+    { patch: { updateChannel: 1 } },
+    { patch: { dictationLanguage: "bogus" } },
+    { patch: { muteWhileDictating: "false" } },
+    { patch: { copyToClipboard: 1 } },
+    { patch: { showInDock: null } },
+    { patch: { alwaysShowPill: [] } },
+    { patch: { diagnostics: true } },
+    { patch: { pageAnimationMs: 73 } },
+    { patch: { zoomLevel: "1" } },
+    { patch: { microphone: { uid: "" } } },
+    { patch: { cleanup: null } },
+    { patch: { cleanup: { enabled: "false" } } },
+    { patch: { cleanup: { styles: [] } } },
+    { patch: { cleanup: { styles: { personal: "bogus" } } } },
+    { patch: { volume: 11 } },
+    { patch: { theme: "dark", volume: 11 } },
+    { patch: { cleanup: { assignments: [] } } },
+    { patch: { cleanup: { styles: { chat: "casual" } } } },
+  ])("rejects malformed wire patch $patch without replacing saved settings", async ({ patch }) => {
+    const dir = await mkdtemp(NodePath.join(tmpdir(), "voice-settings-patch-"));
+    const file = NodePath.join(dir, "settings.json");
+    let current = parseSettings({
+      theme: "dark",
+      hotkey: "rightOption",
+      updateChannel: "nightly",
+      cleanup: { styles: { personal: "formal" } },
+      snippets: [
+        {
+          id: "s",
+          trigger: "signature",
+          expansion: "Synthetic signature",
+          expansionHtml: null,
+          enabled: true,
+        },
+      ],
+      dictionary: [{ id: "d", phrase: "Voice", replacement: null }],
+    });
+    try {
+      await saveSettings(file, current);
+      const saved = await readFile(file, "utf8");
+      const savedSettings = current;
+      const queue = createSettingsQueue({
+        current: () => current,
+        save: (next) => saveSettings(file, next),
+        applied: (next) => {
+          current = next;
+        },
+      });
+      await expect(
+        queue.run((previous) => applyPatch(previous, parseSettingsPatch(patch))),
+      ).rejects.toThrow("Could not save these settings.");
+      expect(await readFile(file, "utf8")).toBe(saved);
+      expect(current).toBe(savedSettings);
+      expect(loadSettings(file)).toEqual(savedSettings);
+      const next = await queue.run((previous) =>
+        applyPatch(previous, parseSettingsPatch({ copyToClipboard: true })),
+      );
+      expect(next).toEqual({ ...savedSettings, copyToClipboard: true });
+      expect(loadSettings(file)).toEqual(next);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a wire patch can change every setting a patch owns", () => {
+    const changed: Settings = {
+      microphone: { uid: "synthetic-usb", name: "Synthetic USB Mic" },
+      hotkey: "rightCommand",
+      toggleHotkey: "rightOption",
+      muteWhileDictating: true,
+      copyToClipboard: true,
+      showInDock: false,
+      alwaysShowPill: false,
+      dictationLanguage: "pl",
+      updateChannel: "nightly",
+      theme: "dark",
+      pageAnimationMs: 0,
+      cleanup: { enabled: false, styles: everywhere("veryCasual"), assignments: [] },
+      diagnostics: "on",
+      snippets: [
+        {
+          id: "s",
+          trigger: "my email",
+          expansion: "name@example.com",
+          expansionHtml: null,
+          enabled: false,
+        },
+      ],
+      dictionary: [{ id: "d", phrase: "btw", replacement: "by the way" }],
+      zoomLevel: 1.5,
+    };
+    const { assignments: _, ...cleanup } = changed.cleanup;
+    const wire: unknown = JSON.parse(JSON.stringify({ ...changed, cleanup }));
+    expect(applyPatch(DEFAULT_SETTINGS, parseSettingsPatch(wire))).toEqual(changed);
+  });
+
   test("mute preference survives unrelated patches and can be turned back off", () => {
     const enabled = applyPatch(DEFAULT_SETTINGS, { muteWhileDictating: true });
     expect(applyPatch(enabled, { theme: "dark" }).muteWhileDictating).toBe(true);
@@ -290,12 +399,6 @@ describe("applyPatch", () => {
     });
   });
 
-  test("a patch cannot replace the assignments", () => {
-    const saved = parseSettings({ cleanup: { assignments } });
-    const patch = { cleanup: { assignments: [] } } as unknown as SettingsPatch;
-    expect(applyPatch(saved, patch).cleanup.assignments).toEqual(assignments);
-  });
-
   test("answers diagnostics either way, keeps the answer across unrelated patches", () => {
     const on = applyPatch(DEFAULT_SETTINGS, { diagnostics: "on" });
     expect(on).toEqual({ ...DEFAULT_SETTINGS, diagnostics: "on" });
@@ -325,6 +428,7 @@ describe("applyPatch", () => {
     expect(zoomed).toEqual({ ...DEFAULT_SETTINGS, zoomLevel: -1 });
     expect(applyPatch(zoomed, { theme: "dark" })).toEqual({ ...zoomed, theme: "dark" });
     expect(applyPatch(zoomed, { zoomLevel: 0 })).toEqual(DEFAULT_SETTINGS);
+    expect(applyPatch(zoomed, { zoomLevel: 0.7 }).zoomLevel).toBe(0.5);
   });
 
   test("changes the hotkey alone", () => {
@@ -407,8 +511,7 @@ describe("applyPatch", () => {
     ["a record missing its expansion", [VALID_SNIPPET, { id: "2", trigger: "address" }]],
     ["a list that is not an array", { 0: VALID_SNIPPET }],
   ])("refuses to save snippets with %s instead of dropping any", (_, snippets) => {
-    const patch = { snippets } as unknown as SettingsPatch;
-    expect(() => applyPatch(DEFAULT_SETTINGS, patch)).toThrow("Could not save these snippets.");
+    expect(() => parseSettingsPatch({ snippets })).toThrow("Could not save these settings.");
   });
 
   const WORD = { id: "1", phrase: "Wispr Flow", replacement: null };
@@ -428,13 +531,11 @@ describe("applyPatch", () => {
     ["a replacement that is not text", [WORD, { ...REPLACEMENT, replacement: 42 }]],
     ["a list that is not an array", { 0: WORD }],
   ])("refuses to save a dictionary with %s instead of dropping any", (_, dictionary) => {
-    const saved = applyPatch(DEFAULT_SETTINGS, { snippets: [VALID_SNIPPET], dictionary: [WORD] });
-    const patch = { dictionary } as unknown as SettingsPatch;
-    expect(() => applyPatch(saved, patch)).toThrow("Could not save this dictionary.");
+    expect(() => parseSettingsPatch({ dictionary })).toThrow("Could not save these settings.");
   });
 
   test("saves a hand-written word that leaves out its replacement", () => {
-    const patch = { dictionary: [{ id: "2", phrase: "Hadryś" }] } as unknown as SettingsPatch;
+    const patch = parseSettingsPatch({ dictionary: [{ id: "2", phrase: "Hadryś" }] });
     expect(applyPatch(DEFAULT_SETTINGS, patch).dictionary).toEqual([
       { id: "2", phrase: "Hadryś", replacement: null },
     ]);

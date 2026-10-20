@@ -1,6 +1,25 @@
-import { describe, expect, test } from "vite-plus/test";
+import { ChildProcess, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { PassThrough } from "node:stream";
 
-import { parseHelperEvent } from "./protocol.ts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { describe, expect, test, vi } from "vite-plus/test";
+
+import { dictationLanguages } from "../shared/dictation-language.ts";
+import { startHelper } from "./helper.ts";
+import {
+  decodeTarget,
+  HELPER_PROTOCOL_VERSION,
+  parseHelperEvent,
+  type HelperCommand,
+  type HelperEvent,
+} from "./protocol.ts";
+
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: vi.fn(),
+}));
 
 const line = (value: unknown) => JSON.stringify(value);
 
@@ -341,5 +360,244 @@ describe("microphone catalog", () => {
   test("decodes enumeration failure", () => {
     const event = { type: "microphones.unavailable", message: "Unavailable" };
     expect(parseHelperEvent(JSON.stringify(event))).toEqual(event);
+  });
+});
+
+const WireSchema = Schema.Record(Schema.String, Schema.Unknown);
+const WireCaseSchema = Schema.Struct({ name: Schema.String, wire: WireSchema });
+const RequiredCaseSchema = Schema.Struct({
+  ...WireCaseSchema.fields,
+  required: Schema.Array(Schema.String),
+});
+const ParsedCaseSchema = Schema.Struct({ ...WireCaseSchema.fields, parsed: Schema.Unknown });
+const InvalidCaseSchema = Schema.Struct({ name: Schema.String, line: Schema.String });
+const CorpusSchema = Schema.Struct({
+  protocolVersion: Schema.Int,
+  languages: Schema.Array(Schema.String),
+  versions: Schema.Array(Schema.Struct({ version: Schema.Int, compatible: Schema.Boolean })),
+  commands: Schema.Array(RequiredCaseSchema),
+  nativeCommands: Schema.Array(RequiredCaseSchema),
+  optionalCommands: Schema.Array(WireCaseSchema),
+  invalidCommands: Schema.Array(InvalidCaseSchema),
+  events: Schema.Array(Schema.Struct({ ...RequiredCaseSchema.fields, parsed: Schema.Unknown })),
+  normalizedEvents: Schema.Array(ParsedCaseSchema),
+  invalidEvents: Schema.Array(InvalidCaseSchema),
+});
+const rawCorpus: unknown = JSON.parse(
+  readFileSync(new URL("../../../../test-fixtures/helper-protocol.json", import.meta.url), "utf8"),
+);
+const corpus = Schema.decodeUnknownSync(CorpusSchema)(rawCorpus);
+const decodeWire = Schema.decodeUnknownSync(Schema.fromJsonString(WireSchema));
+
+const microphone = { uid: "usb", name: "Synthetic USB" };
+const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
+  type: "capture.start",
+  id: "s1",
+  language: "en",
+  muteWhileDictating: false,
+  microphone: null,
+  detectHost: true,
+};
+const commandCases = {
+  "hotkey.configure": { type: "hotkey.configure", key: "fn", toggleKey: null },
+  "hotkey.configure.toggle": {
+    type: "hotkey.configure",
+    key: "rightOption",
+    toggleKey: "rightCommand",
+  },
+  "microphone.configure": { type: "microphone.configure", microphone },
+  "microphone.configure.default": { type: "microphone.configure", microphone: null },
+  "capture.start": captureStart,
+  "capture.start.pinned": {
+    ...captureStart,
+    language: "pl",
+    muteWhileDictating: true,
+    microphone,
+    detectHost: false,
+  },
+  "capture.stop": { type: "capture.stop", id: "s1" },
+  "capture.cancel": { type: "capture.cancel", id: "s1" },
+  "microphone.test.start": { type: "microphone.test.start", id: "t1", microphone: null },
+  "microphone.test.start.pinned": { type: "microphone.test.start", id: "t1", microphone },
+  "microphone.test.stop": { type: "microphone.test.stop", id: "t1" },
+  insert: { type: "insert", id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", html: null },
+  "insert.html": { type: "insert", id: "s1", text: "Hi Ada", html: "Hi <strong>Ada</strong>" },
+  "permissions.check": { type: "permissions.check" },
+  "permissions.request": { type: "permissions.request", kind: "accessibility" },
+  "permissions.request.microphone": { type: "permissions.request", kind: "microphone" },
+  "asr.prepare": { type: "asr.prepare", download: true },
+  "asr.prepare.cached": { type: "asr.prepare", download: false },
+  "asr.remove": { type: "asr.remove" },
+  "test.target": {
+    type: "test.target",
+    target: Option.getOrThrow(
+      decodeTarget({ bundleId: "com.apple.safari", host: "mail.example.com" }),
+    ),
+  },
+  "test.target.app": {
+    type: "test.target",
+    target: Option.getOrThrow(decodeTarget({ bundleId: "com.apple.textedit", host: null })),
+  },
+  "test.target.clear": { type: "test.target", target: null },
+  "apps.list": { type: "apps.list" },
+  "icons.render": { type: "icons.render", id: "icons-1", paths: ["/Applications/Synthetic.app"] },
+  "icons.render.empty": { type: "icons.render", id: "icons-1", paths: [] },
+} satisfies Record<HelperCommand["type"], HelperCommand> & Record<string, HelperCommand>;
+
+const eventTypes = {
+  "microphones.changed": true,
+  "microphones.unavailable": true,
+  ready: true,
+  hotkey: true,
+  "capture.started": true,
+  "capture.level": true,
+  "capture.failed": true,
+  "capture.cancelled": true,
+  "capture.stopped": true,
+  "microphone.test.started": true,
+  "microphone.test.level": true,
+  "microphone.test.ended": true,
+  "microphone.test.failed": true,
+  transcript: true,
+  "transcript.failed": true,
+  "insert.result": true,
+  permissions: true,
+  "asr.status": true,
+  log: true,
+  "apps.listed": true,
+  "icons.rendered": true,
+} satisfies Record<HelperEvent["type"], true>;
+
+function startContractHelper(configure: () => HelperCommand[] = () => []) {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const child = Object.assign(new ChildProcess(), { stdin, stdout, stderr });
+  const lines: string[] = [];
+  const events: HelperEvent[] = [];
+  stdin.on("data", (chunk: Buffer) => lines.push(chunk.toString("utf8")));
+  stdin.once("finish", () => {
+    Object.defineProperty(child, "exitCode", { value: 0 });
+    stdout.end();
+    stderr.end();
+    child.emit("close", 0, null);
+  });
+  vi.mocked(spawn).mockReturnValue(child);
+  const helper = startHelper({
+    binary: "synthetic-helper",
+    modelsDir: "/synthetic/models",
+    stateDir: "/synthetic/state",
+    env: {},
+    configure,
+    onEvent: (event) => events.push(event),
+    onExit: () => {},
+    log: () => {},
+  });
+  return { helper, stdout, lines, events };
+}
+
+describe("shared helper protocol corpus", () => {
+  test("covers every command, event and language without duplicate cases", () => {
+    expect(corpus.protocolVersion).toBe(HELPER_PROTOCOL_VERSION);
+    expect(corpus.languages.toSorted()).toEqual(
+      dictationLanguages.map(({ value }) => value).toSorted(),
+    );
+    expect(corpus.commands.map(({ name }) => name).toSorted()).toEqual(
+      Object.keys(commandCases).toSorted(),
+    );
+    expect(new Set(corpus.events.map(({ wire }) => wire.type))).toEqual(
+      new Set(Object.keys(eventTypes)),
+    );
+    for (const cases of [
+      corpus.commands,
+      corpus.nativeCommands,
+      corpus.events,
+      corpus.normalizedEvents,
+      corpus.invalidCommands,
+      corpus.invalidEvents,
+      corpus.optionalCommands,
+    ]) {
+      expect(new Set(cases.map(({ name }) => name)).size).toBe(cases.length);
+    }
+  });
+
+  test("sends concrete typed commands through the real helper transport", async () => {
+    const h = startContractHelper();
+    const entries = Object.entries(commandCases);
+    try {
+      for (const [, command] of entries) h.helper.send(command);
+      expect(h.lines).toHaveLength(entries.length);
+      const emitted = new Map<string, unknown>();
+      entries.forEach(([name], index) => {
+        const sent = h.lines[index] ?? "";
+        expect(sent.endsWith("\n")).toBe(true);
+        expect(sent.trimEnd()).not.toContain("\n");
+        emitted.set(name, decodeWire(sent));
+      });
+      for (const { name, wire } of corpus.commands) expect(emitted.get(name), name).toEqual(wire);
+    } finally {
+      await h.helper.stop();
+    }
+  });
+
+  test("sends every supported language with the shared capture shape", async () => {
+    const expected = corpus.commands.find(({ name }) => name === "capture.start");
+    expect(expected).toBeDefined();
+    const h = startContractHelper();
+    try {
+      dictationLanguages.forEach(({ value }) =>
+        h.helper.send({ ...captureStart, language: value }),
+      );
+      expect(h.lines).toHaveLength(corpus.languages.length);
+      dictationLanguages.forEach(({ value }, index) => {
+        expect(decodeWire(h.lines[index] ?? "")).toEqual({ ...expected?.wire, language: value });
+      });
+    } finally {
+      await h.helper.stop();
+    }
+  });
+
+  test.each(corpus.versions)(
+    "only accepts ready version $version when compatible=$compatible",
+    async ({ version, compatible }) => {
+      const configure = vi.fn((): HelperCommand[] => []);
+      const h = startContractHelper(configure);
+      try {
+        h.stdout.write(`${JSON.stringify({ type: "ready", version })}\n`);
+        expect(configure).toHaveBeenCalledTimes(compatible ? 1 : 0);
+        expect(h.events).toEqual(compatible ? [{ type: "ready", version }] : []);
+      } finally {
+        await h.helper.stop();
+      }
+    },
+  );
+
+  test.each(corpus.events)("parses the Swift serialization for $name", ({ wire, parsed }) => {
+    expect(parseHelperEvent(line(wire))).toEqual(parsed);
+  });
+
+  test.each(corpus.events)(
+    "rejects missing and mistyped required fields for $name",
+    ({ name, wire, required }) => {
+      expect(required).toContain("type");
+      for (const field of required) {
+        expect(Object.hasOwn(wire, field), `${name}.${field}`).toBe(true);
+        const missing = { ...wire };
+        delete missing[field];
+        expect(parseHelperEvent(line(missing)), `${name} without ${field}`).toBeNull();
+        expect(
+          parseHelperEvent(line({ ...wire, [field]: { invalid: true } })),
+          `${name} with mistyped ${field}`,
+        ).toBeNull();
+      }
+    },
+  );
+
+  test.each(corpus.normalizedEvents)("normalizes optional data for $name", ({ wire, parsed }) => {
+    expect(parseHelperEvent(line(wire))).toEqual(parsed);
+  });
+
+  test.each(corpus.invalidEvents)("rejects invalid event $name", ({ line: input }) => {
+    expect(parseHelperEvent(input)).toBeNull();
   });
 });

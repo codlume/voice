@@ -1,23 +1,94 @@
 import assert from "node:assert/strict";
-import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
 const worktree = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const id = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
+
+test("cold doctor and help run without dependencies and leave caches untouched", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "voice-verify-cold-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const checkout = join(dir, "checkout");
+  const paths = [
+    ".claude/skills/verify/scripts/voice-verify.mjs",
+    ".claude/skills/verify/scripts/dictate-flags.mjs",
+    ".claude/skills/verify/scripts/scenarios.mjs",
+    "scripts/voice-app.mjs",
+    "scripts/smoke-resources.mjs",
+    "scripts/fixtures.mjs",
+    "native/voice-helper/scripts/helper.mjs",
+    "packages/cleanup/src/download.ts",
+  ];
+  for (const path of paths) {
+    mkdirSync(dirname(join(checkout, path)), { recursive: true });
+    copyFileSync(join(worktree, path), join(checkout, path));
+  }
+  for (const path of ["apps/desktop/src", "native/voice-helper/Sources"])
+    mkdirSync(join(checkout, path), { recursive: true });
+  writeFileSync(join(checkout, "package.json"), '{"type":"module"}');
+  const cache = join(dir, "models-must-not-be-created");
+  const temp = join(dir, "temp");
+  mkdirSync(temp);
+  const run = (command) =>
+    spawnSync(process.execPath, [join(checkout, paths[0]), command], {
+      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+  const doctor = run("doctor");
+  assert.equal(doctor.status, 0, doctor.stderr);
+  const report = JSON.parse(doctor.stdout);
+  assert.deepEqual(report.dependencies, {
+    workspace: "missing: run pnpm install",
+    electron: "missing: run pnpm install",
+  });
+  assert.equal(report.instance, "none");
+  assert.equal(existsSync(cache), false);
+  assert.deepEqual(readdirSync(temp), []);
+  const help = run("help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /read-only health report/);
+  const launch = run("launch");
+  assert.notEqual(launch.status, 0);
+  assert.match(launch.stderr, /Electron missing: run pnpm install/);
+  const scenario = spawnSync(
+    process.execPath,
+    [join(checkout, paths[0]), "scenario", "short-dictation"],
+    {
+      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+      encoding: "utf8",
+      timeout: 5000,
+    },
+  );
+  assert.equal(scenario.status, 1, scenario.stderr);
+  const blocked = JSON.parse(scenario.stdout);
+  assert.equal(blocked.status, "BLOCKED");
+  assert.ok(blocked.prerequisites.builds.length > 0);
+  assert.ok(blocked.prerequisites.models.length > 0);
+  assert.deepEqual(readdirSync(temp), []);
+});
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), "voice-verify-stop-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const userData = join(dir, `voice-verify-${id}`);
+  const userData = scratchPath("voice-verify", worktree, dir);
   const statePath = `${userData}.json`;
   mkdirSync(userData);
   return {
@@ -39,6 +110,26 @@ function fixture(t) {
       }),
   };
 }
+
+test("scenario teardown refuses another run's recorded instance", async (t) => {
+  const f = fixture(t);
+  const proc = await child(t, process.execPath, [
+    "-e",
+    'process.stdout.write("ready"); process.stdin.resume()',
+  ]);
+  const state = { ownerPid: proc.pid, scenarioOwner: "interactive-owner" };
+  f.write(state);
+  const original = readFileSync(f.statePath, "utf8");
+  const result = spawnSync(process.execPath, [script, "stop", "--scenario-owner=scenario-owner"], {
+    env: { ...process.env, TMPDIR: dirname(f.statePath) },
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /refusing to stop an instance owned by another run/);
+  assert.equal(readFileSync(f.statePath, "utf8"), original);
+  assert.doesNotThrow(() => process.kill(proc.pid, 0));
+});
 
 async function child(t, command, args) {
   const proc = spawn(command, args, { detached: true, stdio: ["pipe", "pipe", "pipe"] });
@@ -102,10 +193,7 @@ test("stop accepts an exited owner before its parent reaps it", { timeout: 3000 
     "-e",
     'process.stdout.write("ready"); process.stdin.resume()',
   ]);
-  const identity = execFileSync("ps", ["-p", String(proc.pid), "-o", "lstart=", "-o", "ucomm="], {
-    encoding: "utf8",
-  }).trim();
-  f.write({ ownerPid: proc.pid, ownerIdentity: identity });
+  f.write({ ownerPid: proc.pid, ownerIdentity: processIdentity(proc.pid) });
   const result = spawnSync(process.execPath, [script, "stop"], {
     env: { ...process.env, TMPDIR: dirname(f.statePath) },
     encoding: "utf8",

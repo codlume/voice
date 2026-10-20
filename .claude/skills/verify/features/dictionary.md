@@ -19,6 +19,8 @@ The Dictionary lets a user save words and replacements. A word, such as "Worcest
 
 ## Driving it with voice-verify
 
+`vv scenario dictionary-word` asserts the rewrite in a dictation, not the add dialog; see [Asserted scenarios](../SKILL.md#asserted-scenarios).
+
 Preconditions: baseline. No dictionary entries or snippets are saved. With the switch off, the one input has the placeholder `Add a new word`. With it on, the inputs have the placeholders `Phrase` and `Replace with`, which tell them apart.
 
 - **Open Dictionary.** `vv click Dictionary`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Dictionary"'`. Then `vv shot dictionary-empty`. The card shows the `Worcestershire` example.

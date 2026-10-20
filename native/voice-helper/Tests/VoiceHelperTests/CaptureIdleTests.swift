@@ -21,7 +21,8 @@ struct CaptureIdleTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: AudioInputDevices(output: output),
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            source: .microphone
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
             probing.fulfill()
@@ -56,12 +57,12 @@ struct CaptureIdleTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: AudioInputDevices(output: output),
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            source: .fixture(try silentFixture())
         ) {
             probes.withLock { $0 += 1 }
             return .denied
         }
-        capture.testAudioPath = try silentFixture()
 
         #expect(capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil))
         #expect(capture.isActive)

@@ -30,7 +30,6 @@ import {
   type PermissionKind,
   type PillApi,
   type Settings,
-  type SettingsPatch,
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
 import { parseBundleIds } from "../shared/app-categories.ts";
@@ -66,7 +65,7 @@ import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
 import { createSettingsQueue, editAssignments, type SettingsQueue } from "./settings-queue.ts";
-import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
+import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import {
@@ -88,6 +87,8 @@ const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 };
+const isPermissionKind = (kind: unknown): kind is PermissionKind =>
+  typeof kind === "string" && Object.hasOwn(PERMISSION_PANES, kind);
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
 // only. A packaged app ignores them and never hands them to its helper.
@@ -641,11 +642,9 @@ async function main() {
     },
   });
 
-  async function updateSettings(patch: SettingsPatch | ((settings: Settings) => SettingsPatch)) {
+  async function updateSettings(change: (settings: Settings) => Settings) {
     assertNotRestarting();
-    const next = await settingsQueue.run((previous) =>
-      applyPatch(previous, typeof patch === "function" ? patch(previous) : patch),
-    );
+    const next = await settingsQueue.run(change);
     if (next.updateChannel === store.state.settings.updateChannel)
       await updates.setChannel(next.updateChannel);
   }
@@ -716,13 +715,14 @@ async function main() {
       const url = updates.releaseUrl();
       if (url) void shell.openExternal(url);
     });
-    hubCommands.handle(Channel.updateSettings, (_event, patch: SettingsPatch) =>
-      updateSettings(patch),
-    );
-    hubCommands.handle(Channel.requestPermission, (_event, kind: PermissionKind) => {
-      if (Object.hasOwn(PERMISSION_PANES, kind)) requestPermission(kind);
+    hubCommands.handle(Channel.updateSettings, (_event, raw) => {
+      const patch = parseSettingsPatch(raw);
+      return updateSettings((previous) => applyPatch(previous, patch));
     });
-    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: boolean) => {
+    hubCommands.handle(Channel.requestPermission, (_event, kind) => {
+      if (isPermissionKind(kind)) requestPermission(kind);
+    });
+    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
       if (development) return;
       const openAtLogin = on === true;
       // Registering again does not approve the item. Only the user can, in Login Items.
@@ -840,9 +840,9 @@ async function main() {
   app.on("activate", showHub);
   Menu.setApplicationMenu(
     createApplicationMenu((step) => {
-      updateSettings(({ zoomLevel }) => ({ zoomLevel: nextZoomLevel(zoomLevel, step) })).catch(
-        () => {},
-      );
+      updateSettings((current) =>
+        applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
+      ).catch(() => {});
     }),
   );
   // The tray keeps the app alive after the hub window closes.

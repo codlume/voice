@@ -6,6 +6,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 
 - `dictate-insert`: speech becomes text in the focused field. Outcome `inserted` with method `accessibility`, or `paste` as the fallback.
 - `dictate-cleanup`: with cleanup on, the inserted text is the cleaned version, and the raw transcript is kept in `latest.raw`.
+- `dictate-cleanup-failure`: a rejected cleanup preserves and inserts the raw transcript. A subsequent session can clean up normally.
 - `dictate-raw`: with cleanup off, the inserted text equals the raw transcript.
 - `dictate-toggle`: a tap of the toggle key (press and release with no other key between) starts listening, and the next tap stops and inserts. The toggle key used in a shortcut, such as Right Option + a, does nothing.
 - `dictate-cancel`: Escape during listening returns to idle and inserts nothing.
@@ -21,6 +22,8 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 - Optionally choose a second key under Settings > Shortcuts > `Toggle dictation` (Off by default). Tap it once to start and again to stop.
 
 ## Driving it with voice-verify
+
+`vv scenario short-dictation` and `vv scenario cleanup-failure` assert the toggle path and the raw fallback in their own instance; see [Asserted scenarios](../SKILL.md#asserted-scenarios). They do not cover every entry point below.
 
 Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user has quit Voice.app and no `pnpm dev` is running), and Accessibility is `granted`.
 
@@ -42,4 +45,5 @@ Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user h
 - The fixture replaces only the microphone. Microphone selection, device changes, and output muting need a real device and a human.
 - `VOICE_HELPER_FORCE_PASTE=1` exercises the paste fallback, but `launch` doesn't set it. The paste fallback writes the real clipboard. `node native/voice-helper/scripts/insert-smoke.mjs paste` checks that it inserts and restores the clipboard, and `node native/voice-helper/scripts/focus-smoke.mjs paste` checks that a window switch refuses it.
 - `dictate` fails with "capture ended … before <fixture> finished" when the session stops before the whole fixture has streamed, and the JSON records `captureEndedEarly`. Such a run proves nothing about the fixture. Scripted hotkey presses can lose the key's flag state and end the session this way, so rerun it.
+- Scenarios use hold `fn` and toggle `rightOption` in scratch settings, then drive the toggle. Synthetic `fn` holds can end early on macOS. Interactive `dictate` continues to use the instance's configured shortcut.
 - The first dictation after launch may be slower while the models warm up. Don't treat its timings as representative.

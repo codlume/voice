@@ -14,6 +14,10 @@ Use the default triage labels and the additional `spec` label. Before labeling i
 
 Use a single-context layout. Before exploring the codebase, read `docs/agents/domain.md`.
 
+### Verification
+
+Before changing user-visible desktop behavior, running native smoke scripts, or measuring desktop performance, read [Verify Voice](.claude/skills/verify/SKILL.md). It owns synthetic fixtures, isolated app instances, observable proof, and teardown. Start with its read-only `doctor` command.
+
 Voice is a minimal system-wide voice-to-text app. It captures speech, transcribes it, optionally cleans it up, and inserts the result into whatever app currently owns text focus.
 
 Think of it as a fast dictation layer for the desktop: press a shortcut, speak, release, and keep typing.
@@ -121,6 +125,14 @@ Use the smallest proof that the change works.
 - Backend or native behavior changes should ship with focused tests where practical.
 - Do not run repo-wide checks unless requested; CI owns the broad sweep.
 - For user-visible dictation changes, the meaningful integrated flow is `shortcut -> speak -> transcript -> insert`.
+
+Run a focused check from the repository root, replacing the file or test filter with the area you changed:
+
+```sh
+pnpm --filter @voice/desktop exec vp test run src/main/session.test.ts
+node --test scripts/voice-app.test.mjs
+swift test --package-path native/voice-helper --filter ProtocolTests
+```
 
 ## Pull requests
 

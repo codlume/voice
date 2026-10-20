@@ -20,6 +20,8 @@ Snippets let a user save a spoken trigger, such as "my email", and the exact tex
 
 ## Driving it with voice-verify
 
+`vv scenario snippet-expansion` asserts the expansion in a dictation, not the add dialog; see [Asserted scenarios](../SKILL.md#asserted-scenarios).
+
 Preconditions: baseline. No snippets are saved.
 
 - **Open Snippets.** `vv click Snippets`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "Snippets"'`. Then `vv shot snippets-empty`. The card shows the `my email` example.
