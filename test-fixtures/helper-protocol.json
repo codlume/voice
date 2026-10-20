@@ -1,0 +1,1158 @@
+{
+  "protocolVersion": 12,
+  "languages": [
+    "auto",
+    "en",
+    "bg",
+    "hr",
+    "cs",
+    "da",
+    "nl",
+    "et",
+    "fi",
+    "fr",
+    "de",
+    "el",
+    "hu",
+    "it",
+    "lv",
+    "lt",
+    "mt",
+    "pl",
+    "pt",
+    "ro",
+    "ru",
+    "sk",
+    "sl",
+    "es",
+    "sv",
+    "uk"
+  ],
+  "versions": [
+    {
+      "version": 11,
+      "compatible": false
+    },
+    {
+      "version": 12,
+      "compatible": true
+    },
+    {
+      "version": 13,
+      "compatible": false
+    }
+  ],
+  "commands": [
+    {
+      "name": "hotkey.configure",
+      "wire": {
+        "type": "hotkey.configure",
+        "key": "fn",
+        "toggleKey": null
+      },
+      "required": ["type", "key", "toggleKey"]
+    },
+    {
+      "name": "hotkey.configure.toggle",
+      "wire": {
+        "type": "hotkey.configure",
+        "key": "rightOption",
+        "toggleKey": "rightCommand"
+      },
+      "required": ["type", "key", "toggleKey"]
+    },
+    {
+      "name": "microphone.configure",
+      "wire": {
+        "type": "microphone.configure",
+        "microphone": {
+          "uid": "usb",
+          "name": "Synthetic USB"
+        }
+      },
+      "required": ["type", "microphone"]
+    },
+    {
+      "name": "microphone.configure.default",
+      "wire": {
+        "type": "microphone.configure",
+        "microphone": null
+      },
+      "required": ["type", "microphone"]
+    },
+    {
+      "name": "capture.start",
+      "wire": {
+        "type": "capture.start",
+        "id": "s1",
+        "language": "en",
+        "muteWhileDictating": false,
+        "microphone": null,
+        "detectHost": true
+      },
+      "required": ["type", "id", "language", "muteWhileDictating", "microphone", "detectHost"]
+    },
+    {
+      "name": "capture.start.pinned",
+      "wire": {
+        "type": "capture.start",
+        "id": "s1",
+        "language": "pl",
+        "muteWhileDictating": true,
+        "microphone": {
+          "uid": "usb",
+          "name": "Synthetic USB"
+        },
+        "detectHost": false
+      },
+      "required": ["type", "id", "language", "muteWhileDictating", "microphone", "detectHost"]
+    },
+    {
+      "name": "capture.stop",
+      "wire": {
+        "type": "capture.stop",
+        "id": "s1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "capture.cancel",
+      "wire": {
+        "type": "capture.cancel",
+        "id": "s1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "microphone.test.start",
+      "wire": {
+        "type": "microphone.test.start",
+        "id": "t1",
+        "microphone": null
+      },
+      "required": ["type", "id", "microphone"]
+    },
+    {
+      "name": "microphone.test.start.pinned",
+      "wire": {
+        "type": "microphone.test.start",
+        "id": "t1",
+        "microphone": {
+          "uid": "usb",
+          "name": "Synthetic USB"
+        }
+      },
+      "required": ["type", "id", "microphone"]
+    },
+    {
+      "name": "microphone.test.stop",
+      "wire": {
+        "type": "microphone.test.stop",
+        "id": "t1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "insert",
+      "wire": {
+        "type": "insert",
+        "id": "s1",
+        "text": "Zażółć /tmp/synthetic\nAda 42",
+        "html": null
+      },
+      "required": ["type", "id", "text"]
+    },
+    {
+      "name": "insert.html",
+      "wire": {
+        "type": "insert",
+        "id": "s1",
+        "text": "Hi Ada",
+        "html": "Hi <strong>Ada</strong>"
+      },
+      "required": ["type", "id", "text"]
+    },
+    {
+      "name": "permissions.check",
+      "wire": {
+        "type": "permissions.check"
+      },
+      "required": ["type"]
+    },
+    {
+      "name": "permissions.request",
+      "wire": {
+        "type": "permissions.request",
+        "kind": "accessibility"
+      },
+      "required": ["type", "kind"]
+    },
+    {
+      "name": "permissions.request.microphone",
+      "wire": {
+        "type": "permissions.request",
+        "kind": "microphone"
+      },
+      "required": ["type", "kind"]
+    },
+    {
+      "name": "asr.prepare",
+      "wire": {
+        "type": "asr.prepare",
+        "download": true
+      },
+      "required": ["type", "download"]
+    },
+    {
+      "name": "asr.prepare.cached",
+      "wire": {
+        "type": "asr.prepare",
+        "download": false
+      },
+      "required": ["type", "download"]
+    },
+    {
+      "name": "asr.remove",
+      "wire": {
+        "type": "asr.remove"
+      },
+      "required": ["type"]
+    },
+    {
+      "name": "test.target",
+      "wire": {
+        "type": "test.target",
+        "target": {
+          "bundleId": "com.apple.safari",
+          "host": "mail.example.com"
+        }
+      },
+      "required": ["type", "target"]
+    },
+    {
+      "name": "test.target.app",
+      "wire": {
+        "type": "test.target",
+        "target": {
+          "bundleId": "com.apple.textedit",
+          "host": null
+        }
+      },
+      "required": ["type", "target"]
+    },
+    {
+      "name": "test.target.clear",
+      "wire": {
+        "type": "test.target",
+        "target": null
+      },
+      "required": ["type", "target"]
+    },
+    {
+      "name": "apps.list",
+      "wire": {
+        "type": "apps.list"
+      },
+      "required": ["type"]
+    },
+    {
+      "name": "icons.render",
+      "wire": {
+        "type": "icons.render",
+        "id": "icons-1",
+        "paths": ["/Applications/Synthetic.app"]
+      },
+      "required": ["type", "id", "paths"]
+    },
+    {
+      "name": "icons.render.empty",
+      "wire": {
+        "type": "icons.render",
+        "id": "icons-1",
+        "paths": []
+      },
+      "required": ["type", "id", "paths"]
+    }
+  ],
+  "nativeCommands": [
+    {
+      "name": "test.audioFile",
+      "wire": {
+        "type": "test.audioFile",
+        "path": "/tmp/synthetic.wav"
+      },
+      "required": ["type"]
+    },
+    {
+      "name": "test.audioFile.clear",
+      "wire": {
+        "type": "test.audioFile",
+        "path": null
+      },
+      "required": ["type"]
+    }
+  ],
+  "optionalCommands": [
+    {
+      "name": "insert.html.missing",
+      "wire": {
+        "type": "insert",
+        "id": "s1",
+        "text": "Synthetic text"
+      }
+    },
+    {
+      "name": "test.audioFile.missing",
+      "wire": {
+        "type": "test.audioFile"
+      }
+    }
+  ],
+  "invalidCommands": [
+    {
+      "name": "invalid-json",
+      "line": "{broken"
+    },
+    {
+      "name": "array",
+      "line": "[]"
+    },
+    {
+      "name": "unknown-type",
+      "line": "{\"type\":\"future.command\"}"
+    },
+    {
+      "name": "unknown-hotkey",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null}"
+    },
+    {
+      "name": "unknown-toggle",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\"}"
+    },
+    {
+      "name": "unknown-permission",
+      "line": "{\"type\":\"permissions.request\",\"kind\":\"screen\"}"
+    },
+    {
+      "name": "unknown-language",
+      "line": "{\"type\":\"capture.start\",\"id\":\"s1\",\"language\":\"xx\",\"muteWhileDictating\":false,\"microphone\":null,\"detectHost\":true}"
+    },
+    {
+      "name": "empty-microphone",
+      "line": "{\"type\":\"microphone.configure\",\"microphone\":{\"uid\":\"\",\"name\":\"Synthetic USB\"}}"
+    },
+    {
+      "name": "missing-target-host",
+      "line": "{\"type\":\"test.target\",\"target\":{\"bundleId\":\"com.apple.safari\"}}"
+    },
+    {
+      "name": "wrong-html",
+      "line": "{\"type\":\"insert\",\"id\":\"s1\",\"text\":\"Synthetic text\",\"html\":42}"
+    }
+  ],
+  "events": [
+    {
+      "name": "microphones.changed",
+      "wire": {
+        "type": "microphones.changed",
+        "devices": [
+          {
+            "uid": "usb",
+            "name": "Synthetic USB"
+          }
+        ],
+        "defaultUid": "usb"
+      },
+      "parsed": {
+        "type": "microphones.changed",
+        "devices": [
+          {
+            "uid": "usb",
+            "name": "Synthetic USB"
+          }
+        ],
+        "defaultUid": "usb"
+      },
+      "required": ["type", "devices", "defaultUid"]
+    },
+    {
+      "name": "microphones.changed.empty",
+      "wire": {
+        "type": "microphones.changed",
+        "devices": [],
+        "defaultUid": null
+      },
+      "parsed": {
+        "type": "microphones.changed",
+        "devices": [],
+        "defaultUid": null
+      },
+      "required": ["type", "devices", "defaultUid"]
+    },
+    {
+      "name": "microphones.unavailable",
+      "wire": {
+        "type": "microphones.unavailable",
+        "message": "Synthetic device unavailable"
+      },
+      "parsed": {
+        "type": "microphones.unavailable",
+        "message": "Synthetic device unavailable"
+      },
+      "required": ["type", "message"]
+    },
+    {
+      "name": "ready",
+      "wire": {
+        "type": "ready",
+        "version": 12
+      },
+      "parsed": {
+        "type": "ready",
+        "version": 12
+      },
+      "required": ["type", "version"]
+    },
+    {
+      "name": "hotkey",
+      "wire": {
+        "type": "hotkey",
+        "action": "down"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "down"
+      },
+      "required": ["type", "action"]
+    },
+    {
+      "name": "hotkey.up",
+      "wire": {
+        "type": "hotkey",
+        "action": "up"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "up"
+      },
+      "required": ["type", "action"]
+    },
+    {
+      "name": "hotkey.chord",
+      "wire": {
+        "type": "hotkey",
+        "action": "chord"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "chord"
+      },
+      "required": ["type", "action"]
+    },
+    {
+      "name": "hotkey.cancel",
+      "wire": {
+        "type": "hotkey",
+        "action": "cancel"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "cancel"
+      },
+      "required": ["type", "action"]
+    },
+    {
+      "name": "hotkey.toggle",
+      "wire": {
+        "type": "hotkey",
+        "action": "toggle"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "toggle"
+      },
+      "required": ["type", "action"]
+    },
+    {
+      "name": "capture.started",
+      "wire": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5
+      },
+      "parsed": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5
+      },
+      "required": ["type", "id", "startMs"]
+    },
+    {
+      "name": "capture.level",
+      "wire": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 0.4
+      },
+      "parsed": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 0.4
+      },
+      "required": ["type", "id", "level"]
+    },
+    {
+      "name": "capture.level.clamped",
+      "wire": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 2
+      },
+      "parsed": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 1
+      },
+      "required": ["type", "id", "level"]
+    },
+    {
+      "name": "capture.level.nonfinite",
+      "wire": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 0
+      },
+      "parsed": {
+        "type": "capture.level",
+        "id": "s1",
+        "level": 0
+      },
+      "required": ["type", "id", "level"]
+    },
+    {
+      "name": "capture.failed",
+      "wire": {
+        "type": "capture.failed",
+        "id": "s1",
+        "reason": "device",
+        "message": "Synthetic device gone"
+      },
+      "parsed": {
+        "type": "capture.failed",
+        "id": "s1",
+        "message": "Synthetic device gone"
+      },
+      "required": ["type", "id", "message"]
+    },
+    {
+      "name": "capture.cancelled",
+      "wire": {
+        "type": "capture.cancelled",
+        "id": "s1"
+      },
+      "parsed": {
+        "type": "capture.cancelled",
+        "id": "s1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "capture.stopped",
+      "wire": {
+        "type": "capture.stopped",
+        "id": "s1",
+        "reason": "deviceChanged"
+      },
+      "parsed": {
+        "type": "capture.stopped",
+        "id": "s1",
+        "reason": "deviceChanged"
+      },
+      "required": ["type", "id", "reason"]
+    },
+    {
+      "name": "capture.stopped.duration",
+      "wire": {
+        "type": "capture.stopped",
+        "id": "s1",
+        "reason": "maxDuration"
+      },
+      "parsed": {
+        "type": "capture.stopped",
+        "id": "s1",
+        "reason": "maxDuration"
+      },
+      "required": ["type", "id", "reason"]
+    },
+    {
+      "name": "microphone.test.started",
+      "wire": {
+        "type": "microphone.test.started",
+        "id": "t1"
+      },
+      "parsed": {
+        "type": "microphone.test.started",
+        "id": "t1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "microphone.test.level",
+      "wire": {
+        "type": "microphone.test.level",
+        "id": "t1",
+        "level": 0.25
+      },
+      "parsed": {
+        "type": "microphone.test.level",
+        "id": "t1",
+        "level": 0.25
+      },
+      "required": ["type", "id", "level"]
+    },
+    {
+      "name": "microphone.test.ended",
+      "wire": {
+        "type": "microphone.test.ended",
+        "id": "t1"
+      },
+      "parsed": {
+        "type": "microphone.test.ended",
+        "id": "t1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "microphone.test.failed",
+      "wire": {
+        "type": "microphone.test.failed",
+        "id": "t1",
+        "message": "Synthetic test failed"
+      },
+      "parsed": {
+        "type": "microphone.test.failed",
+        "id": "t1",
+        "message": "Synthetic test failed"
+      },
+      "required": ["type", "id", "message"]
+    },
+    {
+      "name": "transcript",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Zażółć /tmp/synthetic\nAda 42",
+        "audioMs": 1000,
+        "asrMs": 80,
+        "speechMs": 640,
+        "target": {
+          "bundleId": "com.apple.Safari",
+          "host": "MAIL.EXAMPLE.COM"
+        }
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Zażółć /tmp/synthetic\nAda 42",
+        "audioMs": 1000,
+        "asrMs": 80,
+        "speechMs": 640,
+        "target": {
+          "bundleId": "com.apple.safari",
+          "host": "mail.example.com"
+        }
+      },
+      "required": ["type", "id", "text", "audioMs", "asrMs"]
+    },
+    {
+      "name": "transcript.empty",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "",
+        "audioMs": 40,
+        "asrMs": 0,
+        "speechMs": null,
+        "target": null
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "",
+        "audioMs": 40,
+        "asrMs": 0,
+        "speechMs": null,
+        "target": null
+      },
+      "required": ["type", "id", "text", "audioMs", "asrMs"]
+    },
+    {
+      "name": "transcript.app",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": 300,
+        "target": {
+          "bundleId": "com.apple.TextEdit",
+          "host": null
+        }
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": 300,
+        "target": {
+          "bundleId": "com.apple.textedit",
+          "host": null
+        }
+      },
+      "required": ["type", "id", "text", "audioMs", "asrMs"]
+    },
+    {
+      "name": "transcript.failed",
+      "wire": {
+        "type": "transcript.failed",
+        "id": "s1",
+        "reason": "asrUnavailable",
+        "message": "Synthetic ASR failure"
+      },
+      "parsed": {
+        "type": "transcript.failed",
+        "id": "s1",
+        "message": "Synthetic ASR failure"
+      },
+      "required": ["type", "id", "message"]
+    },
+    {
+      "name": "insert.result",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": "focusChanged"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": "focusChanged"
+      },
+      "required": ["type", "id", "method"]
+    },
+    {
+      "name": "insert.result.paste",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "reason": null
+      },
+      "required": ["type", "id", "method"]
+    },
+    {
+      "name": "insert.result.accessibility",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "accessibility"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "accessibility",
+        "reason": null
+      },
+      "required": ["type", "id", "method"]
+    },
+    {
+      "name": "permissions",
+      "wire": {
+        "type": "permissions",
+        "microphone": "granted",
+        "accessibility": "notDetermined"
+      },
+      "parsed": {
+        "type": "permissions",
+        "microphone": "granted",
+        "accessibility": "notDetermined"
+      },
+      "required": ["type", "microphone", "accessibility"]
+    },
+    {
+      "name": "permissions.denied",
+      "wire": {
+        "type": "permissions",
+        "microphone": "denied",
+        "accessibility": "granted"
+      },
+      "parsed": {
+        "type": "permissions",
+        "microphone": "denied",
+        "accessibility": "granted"
+      },
+      "required": ["type", "microphone", "accessibility"]
+    },
+    {
+      "name": "asr.status",
+      "wire": {
+        "type": "asr.status",
+        "state": "failed",
+        "message": "Synthetic model failure"
+      },
+      "parsed": {
+        "type": "asr.status",
+        "state": "failed",
+        "message": "Synthetic model failure"
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "asr.status.ready",
+      "wire": {
+        "type": "asr.status",
+        "state": "ready"
+      },
+      "parsed": {
+        "type": "asr.status",
+        "state": "ready",
+        "message": null
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "log",
+      "wire": {
+        "type": "log",
+        "level": "info",
+        "message": "Synthetic protocol log"
+      },
+      "parsed": {
+        "type": "log",
+        "level": "info",
+        "message": "Synthetic protocol log"
+      },
+      "required": ["type", "level", "message"]
+    },
+    {
+      "name": "log.error",
+      "wire": {
+        "type": "log",
+        "level": "error",
+        "message": "Synthetic protocol error"
+      },
+      "parsed": {
+        "type": "log",
+        "level": "error",
+        "message": "Synthetic protocol error"
+      },
+      "required": ["type", "level", "message"]
+    },
+    {
+      "name": "apps.listed",
+      "wire": {
+        "type": "apps.listed",
+        "apps": [
+          {
+            "bundleId": "com.example.synthetic",
+            "name": "Synthetic",
+            "path": "/Applications/Synthetic.app",
+            "modifiedMs": 1760000000123,
+            "browser": false
+          }
+        ]
+      },
+      "parsed": {
+        "type": "apps.listed",
+        "apps": [
+          {
+            "bundleId": "com.example.synthetic",
+            "name": "Synthetic",
+            "path": "/Applications/Synthetic.app",
+            "modifiedMs": 1760000000123,
+            "browser": false
+          }
+        ]
+      },
+      "required": ["type", "apps"]
+    },
+    {
+      "name": "apps.listed.empty",
+      "wire": {
+        "type": "apps.listed",
+        "apps": []
+      },
+      "parsed": {
+        "type": "apps.listed",
+        "apps": []
+      },
+      "required": ["type", "apps"]
+    },
+    {
+      "name": "icons.rendered",
+      "wire": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": [
+          {
+            "path": "/Applications/Synthetic.app",
+            "png": "iVBOR/8="
+          }
+        ]
+      },
+      "parsed": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": [
+          {
+            "path": "/Applications/Synthetic.app",
+            "png": "iVBOR/8="
+          }
+        ]
+      },
+      "required": ["type", "id", "icons"]
+    },
+    {
+      "name": "icons.rendered.empty",
+      "wire": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": []
+      },
+      "parsed": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": []
+      },
+      "required": ["type", "id", "icons"]
+    }
+  ],
+  "normalizedEvents": [
+    {
+      "name": "insert.reason.missing",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": null
+      }
+    },
+    {
+      "name": "insert.reason.wrongType",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": 42
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": null
+      }
+    },
+    {
+      "name": "insert.reason.unknown",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": "future"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "none",
+        "reason": null
+      }
+    },
+    {
+      "name": "asr.message.wrongType",
+      "wire": {
+        "type": "asr.status",
+        "state": "ready",
+        "message": 42
+      },
+      "parsed": {
+        "type": "asr.status",
+        "state": "ready",
+        "message": null
+      }
+    },
+    {
+      "name": "transcript.optional.missing",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": null,
+        "target": null
+      }
+    },
+    {
+      "name": "transcript.optional.wrongType",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": "300",
+        "target": {
+          "bundleId": 42,
+          "host": null
+        }
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": null,
+        "target": null
+      }
+    },
+    {
+      "name": "transcript.host.wrongType",
+      "wire": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "target": {
+          "bundleId": "com.apple.Safari",
+          "host": 42
+        }
+      },
+      "parsed": {
+        "type": "transcript",
+        "id": "s1",
+        "text": "Synthetic text",
+        "audioMs": 500,
+        "asrMs": 20,
+        "speechMs": null,
+        "target": {
+          "bundleId": "com.apple.safari",
+          "host": null
+        }
+      }
+    },
+    {
+      "name": "apps.invalid.entry",
+      "wire": {
+        "type": "apps.listed",
+        "apps": [
+          {},
+          {
+            "bundleId": "com.example.synthetic",
+            "name": "Synthetic",
+            "path": "/Applications/Synthetic.app",
+            "modifiedMs": 1760000000123,
+            "browser": false
+          }
+        ]
+      },
+      "parsed": {
+        "type": "apps.listed",
+        "apps": [
+          {
+            "bundleId": "com.example.synthetic",
+            "name": "Synthetic",
+            "path": "/Applications/Synthetic.app",
+            "modifiedMs": 1760000000123,
+            "browser": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "icons.invalid.entry",
+      "wire": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": [
+          {},
+          {
+            "path": "/Applications/Synthetic.app",
+            "png": "iVBOR/8="
+          }
+        ]
+      },
+      "parsed": {
+        "type": "icons.rendered",
+        "id": "icons-1",
+        "icons": [
+          {
+            "path": "/Applications/Synthetic.app",
+            "png": "iVBOR/8="
+          }
+        ]
+      }
+    }
+  ],
+  "invalidEvents": [
+    {
+      "name": "invalid-json",
+      "line": "{broken"
+    },
+    {
+      "name": "array",
+      "line": "[]"
+    },
+    {
+      "name": "unknown-type",
+      "line": "{\"type\":\"future.event\"}"
+    },
+    {
+      "name": "unknown-hotkey",
+      "line": "{\"type\":\"hotkey\",\"action\":\"sideways\"}"
+    },
+    {
+      "name": "unknown-permission",
+      "line": "{\"type\":\"permissions\",\"microphone\":\"maybe\",\"accessibility\":\"granted\"}"
+    },
+    {
+      "name": "unknown-asr-state",
+      "line": "{\"type\":\"asr.status\",\"state\":\"sleeping\"}"
+    },
+    {
+      "name": "nonfinite-version",
+      "line": "{\"type\":\"ready\",\"version\":1e400}"
+    },
+    {
+      "name": "nonfinite-level",
+      "line": "{\"type\":\"capture.level\",\"id\":\"s1\",\"level\":1e400}"
+    },
+    {
+      "name": "invalid-device",
+      "line": "{\"type\":\"microphones.changed\",\"devices\":[{\"uid\":\"\",\"name\":\"Synthetic USB\"}],\"defaultUid\":null}"
+    }
+  ]
+}
