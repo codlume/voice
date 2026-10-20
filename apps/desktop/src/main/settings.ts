@@ -6,25 +6,27 @@ import * as Schema from "effect/Schema";
 
 import { MicrophoneSchema } from "../shared/microphone.ts";
 
-import type { Settings, UpdateChannel } from "../shared/api.ts";
+import type { Settings, SettingsPatch, UpdateChannel } from "../shared/api.ts";
 
 import {
+  CONSENTS,
   DEFAULT_SETTINGS,
   hotkeys,
   MAX_PAGE_ANIMATION_MS,
   MIN_PAGE_ANIMATION_MS,
   PAGE_ANIMATION_STEP_MS,
+  THEMES,
+  UPDATE_CHANNELS,
 } from "../shared/api.ts";
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
 import type { Category } from "../shared/app-categories.ts";
 import { DEFAULT_STYLES, parseAssignments, type CategoryStyles } from "../shared/style.ts";
+import { SettingsPatchSchema } from "../shared/settings-patch.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
 
-const THEMES = ["system", "light", "dark"] as const;
-const CONSENTS = ["on", "off"] as const;
 const STYLE_BY_LEGACY_STYLING = new Map<unknown, WritingStyle>([
   ["casual", "veryCasual"],
   ["semi-casual", "casual"],
@@ -83,7 +85,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     hotkey,
     // One key cannot both hold and toggle, so taking it for holding turns toggling off.
     toggleHotkey: toggleHotkey === hotkey ? null : toggleHotkey,
-    updateChannel: pick(["stable", "nightly"], r.updateChannel, defaultChannel),
+    updateChannel: pick(UPDATE_CHANNELS, r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     pageAnimationMs: pageAnimationMs(r.pageAnimationMs),
@@ -103,82 +105,26 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   };
 }
 
-export function applyPatch(settings: Settings, patch: unknown): Settings {
-  if (!isRecord(patch)) throw new Error("Could not save these settings.");
-  const { snippets, dictionary } = patch;
-  if (
-    (patch.cleanup !== undefined && !isRecord(patch.cleanup)) ||
-    (patch.microphone !== undefined &&
-      patch.microphone !== null &&
-      Option.isNone(Schema.decodeUnknownOption(MicrophoneSchema)(patch.microphone))) ||
-    (patch.toggleHotkey !== undefined &&
-      pick(hotkeys, patch.toggleHotkey, null) !== patch.toggleHotkey) ||
-    (patch.zoomLevel !== undefined &&
-      (typeof patch.zoomLevel !== "number" || !Number.isFinite(patch.zoomLevel)))
-  ) {
-    throw new Error("Could not save these settings.");
-  }
-  const cleanup = record(patch.cleanup);
-  if (cleanup.styles !== undefined && !isRecord(cleanup.styles))
-    throw new Error("Could not save these settings.");
-  // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
-  if (
-    snippets !== undefined &&
-    (!Array.isArray(snippets) || parseSnippets(snippets).length !== snippets.length)
-  ) {
-    throw new Error("Could not save these snippets.");
-  }
-  if (
-    dictionary !== undefined &&
-    (!Array.isArray(dictionary) || parseDictionary(dictionary).length !== dictionary.length)
-  ) {
-    throw new Error("Could not save this dictionary.");
-  }
-  const next = parseSettings({
-    microphone: patch.microphone === undefined ? settings.microphone : patch.microphone,
-    hotkey: patch.hotkey ?? settings.hotkey,
-    toggleHotkey: patch.toggleHotkey === undefined ? settings.toggleHotkey : patch.toggleHotkey,
-    updateChannel: patch.updateChannel ?? settings.updateChannel,
-    dictationLanguage: patch.dictationLanguage ?? settings.dictationLanguage,
-    theme: patch.theme ?? settings.theme,
-    pageAnimationMs: patch.pageAnimationMs ?? settings.pageAnimationMs,
-    muteWhileDictating: patch.muteWhileDictating ?? settings.muteWhileDictating,
-    copyToClipboard: patch.copyToClipboard ?? settings.copyToClipboard,
-    showInDock: patch.showInDock ?? settings.showInDock,
-    alwaysShowPill: patch.alwaysShowPill ?? settings.alwaysShowPill,
+const decodePatch = Schema.decodeUnknownOption(SettingsPatchSchema, { onExcessProperty: "error" });
+
+/** Parses a patch from the renderer, refusing the save rather than dropping what it cannot read. */
+export function parseSettingsPatch(raw: unknown): SettingsPatch {
+  return Option.getOrThrowWith(decodePatch(raw), () => new Error("Could not save these settings."));
+}
+
+export function applyPatch(settings: Settings, { cleanup, ...patch }: SettingsPatch): Settings {
+  const next: Settings = {
+    ...settings,
+    ...patch,
     cleanup: {
-      enabled: cleanup.enabled ?? settings.cleanup.enabled,
-      styles: { ...settings.cleanup.styles, ...record(cleanup.styles) },
-      assignments: settings.cleanup.assignments,
+      ...settings.cleanup,
+      ...cleanup,
+      styles: { ...settings.cleanup.styles, ...cleanup?.styles },
     },
-    diagnostics: patch.diagnostics ?? settings.diagnostics,
-    snippets: snippets ?? settings.snippets,
-    dictionary: dictionary ?? settings.dictionary,
-    zoomLevel: patch.zoomLevel ?? settings.zoomLevel,
-  });
-  for (const key of [
-    "hotkey",
-    "updateChannel",
-    "dictationLanguage",
-    "theme",
-    "pageAnimationMs",
-    "muteWhileDictating",
-    "copyToClipboard",
-    "showInDock",
-    "alwaysShowPill",
-    "diagnostics",
-  ] as const) {
-    if (patch[key] !== undefined && patch[key] !== next[key])
-      throw new Error("Could not save these settings.");
-  }
-  if (cleanup.enabled !== undefined && cleanup.enabled !== next.cleanup.enabled)
-    throw new Error("Could not save these settings.");
-  const styles = record(cleanup.styles);
-  for (const category of ["personal", "work", "email", "other"] as const) {
-    if (styles[category] !== undefined && styles[category] !== next.cleanup.styles[category])
-      throw new Error("Could not save these settings.");
-  }
-  return next;
+  };
+  // Parsing again settles what one field cannot check alone, like a toggle key that is also the
+  // hold key.
+  return parseSettings(next);
 }
 
 // Synchronous because launch reads the diagnostics choice before Electron's ready event.

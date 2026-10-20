@@ -5,6 +5,7 @@ import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
+import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
 import {
   DEFAULT_STYLES,
@@ -17,12 +18,15 @@ export type PermissionKind = "microphone" | "accessibility";
 export type PermissionState = "granted" | "denied" | "notDetermined";
 export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
-export type UpdateChannel = "stable" | "nightly";
-export type Theme = "system" | "light" | "dark";
+export const UPDATE_CHANNELS = ["stable", "nightly"] as const;
+export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
+export const THEMES = ["system", "light", "dark"] as const;
+export type Theme = (typeof THEMES)[number];
 export const MIN_PAGE_ANIMATION_MS = 0;
 export const MAX_PAGE_ANIMATION_MS = 400;
 export const PAGE_ANIMATION_STEP_MS = 25;
-export type DiagnosticsConsent = "on" | "off";
+export const CONSENTS = ["on", "off"] as const;
+export type DiagnosticsConsent = (typeof CONSENTS)[number];
 // "unavailable" is a development build, which never registers a login item.
 export type LoginItem = "on" | "off" | "needsApproval" | "unavailable";
 export const DIAGNOSTICS_ARGUMENT = "--voice-diagnostics";
@@ -180,27 +184,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zoomLevel: 0,
 };
 
-export type SettingsPatch = {
-  microphone?: Microphone | null;
-  hotkey?: Hotkey;
-  toggleHotkey?: Hotkey | null;
-  muteWhileDictating?: boolean;
-  copyToClipboard?: boolean;
-  showInDock?: boolean;
-  alwaysShowPill?: boolean;
-  dictationLanguage?: DictationLanguage;
-  updateChannel?: UpdateChannel;
-  theme?: Theme;
-  pageAnimationMs?: number;
-  cleanup?: {
-    enabled?: boolean;
-    styles?: Partial<CategoryStyles>;
-  };
-  diagnostics?: DiagnosticsConsent;
-  snippets?: readonly Snippet[];
-  dictionary?: readonly DictionaryEntry[];
-  zoomLevel?: number;
-};
+export type { SettingsPatch } from "./settings-patch.ts";
 
 export type Snapshot = {
   microphones: MicrophoneCatalog;

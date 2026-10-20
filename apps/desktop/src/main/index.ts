@@ -65,7 +65,7 @@ import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { dictating, idle } from "./session.ts";
 import { createSettingsQueue, editAssignments, type SettingsQueue } from "./settings-queue.ts";
-import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
+import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import {
@@ -87,6 +87,8 @@ const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 };
+const isPermissionKind = (kind: unknown): kind is PermissionKind =>
+  typeof kind === "string" && Object.hasOwn(PERMISSION_PANES, kind);
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
 // only. A packaged app ignores them and never hands them to its helper.
@@ -713,11 +715,12 @@ async function main() {
       const url = updates.releaseUrl();
       if (url) void shell.openExternal(url);
     });
-    hubCommands.handle(Channel.updateSettings, (_event, patch: unknown) =>
-      updateSettings((previous) => applyPatch(previous, patch)),
-    );
-    hubCommands.handle(Channel.requestPermission, (_event, kind: unknown) => {
-      if (kind === "microphone" || kind === "accessibility") requestPermission(kind);
+    hubCommands.handle(Channel.updateSettings, (_event, raw) => {
+      const patch = parseSettingsPatch(raw);
+      return updateSettings((previous) => applyPatch(previous, patch));
+    });
+    hubCommands.handle(Channel.requestPermission, (_event, kind) => {
+      if (isPermissionKind(kind)) requestPermission(kind);
     });
     hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
       if (development) return;
