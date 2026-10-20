@@ -128,15 +128,19 @@ function publishState(state, claim = false) {
   }
 }
 
+// An instance another run now owns blocks a scenario; one this run owns that is gone fails it.
 function requireInstance(owner = scenarioOwner) {
   const state = readState();
-  const ready = state?.port && sameProcess(state.electronPid, state.electronIdentity);
-  if (owner && (!ready || state.scenarioOwner !== owner))
+  if (owner && state?.scenarioOwner !== owner)
     throw new VerificationBlocked("scenario lost ownership of its instance", {
       instance: [state ?? "none"],
     });
-  if (!ready) {
-    fail("no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready");
+  if (!state?.port || !sameProcess(state.electronPid, state.electronIdentity)) {
+    fail(
+      owner
+        ? `the scenario's Voice instance exited; see ${state.logPath}`
+        : "no ready verify instance; start one with `voice-verify.mjs launch` and wait for ready",
+    );
   }
   return state;
 }
@@ -477,13 +481,18 @@ const commands = {
       rejectInterrupt = reject;
     });
     const wait = (promise) => Promise.race([promise, interrupted]);
-    const interrupt = () => {
+    // The handlers stay for the whole teardown: a second Ctrl+C must not leave the instance running.
+    const interrupt = (signal) => {
+      if (abort.signal.aborted) {
+        console.error(`voice-verify: ${signal} ignored; the scenario is tearing down its instance`);
+        return;
+      }
       const error = new Error("scenario interrupted");
       abort.abort(error);
       rejectInterrupt(error);
     };
-    process.once("SIGINT", interrupt);
-    process.once("SIGTERM", interrupt);
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", interrupt);
     let state;
     let readiness;
     let hub;
@@ -558,10 +567,7 @@ const commands = {
           if (test.__verifyCleanup) throw new Error("cleanup probe already installed");
           const original = test.cleanup.clean;
           const counts = { failures: 0, successes: 0 };
-          test.__verifyCleanup = {
-            read: () => ({ ...counts }),
-            restore: () => { test.cleanup.clean = original; delete test.__verifyCleanup; },
-          };
+          test.__verifyCleanup = { read: () => ({ ...counts }) };
           test.cleanup.clean = async (...args) => {
             if (counts.failures === 0) {
               counts.failures++;
@@ -602,33 +608,6 @@ const commands = {
       failure = error;
       if (error instanceof VerificationBlocked) Object.assign(prerequisites, error.prerequisites);
     } finally {
-      let restoreTimer;
-      try {
-        if (cleanupWrapped && sameProcess(state.electronPid, state.electronIdentity)) {
-          const restored = await wait(
-            Promise.race([
-              evaluateInMain(
-                state.inspectPort,
-                "(() => { globalThis.voiceTest.__verifyCleanup?.restore(); return !globalThis.voiceTest.__verifyCleanup; })()",
-              ),
-              new Promise((_, reject) => {
-                restoreTimer = setTimeout(
-                  () => reject(new Error("cleanup probe restoration timed out after 5000 ms")),
-                  5000,
-                );
-              }),
-            ]),
-          );
-          if (!restored) fail("cleanup probe remains installed");
-        }
-      } catch (error) {
-        failure = new AggregateError(
-          [failure, error].filter(Boolean),
-          `cleanup probe restoration failed: ${error.message}`,
-        );
-      } finally {
-        clearTimeout(restoreTimer);
-      }
       try {
         try {
           hub?.close();
@@ -983,8 +962,8 @@ const commands = {
       interrupt = () => reject(new Error("dictation interrupted"));
     });
     const wait = (promise) => Promise.race([promise, interrupted]);
-    process.once("SIGINT", interrupt);
-    process.once("SIGTERM", interrupt);
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", interrupt);
     let targetPage;
     try {
       const field = 'document.getElementById("field")';

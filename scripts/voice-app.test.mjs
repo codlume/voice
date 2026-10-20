@@ -1,14 +1,34 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 
 import { withHelper } from "../native/voice-helper/scripts/helper.mjs";
-import { announcedPorts, electronDependency, landedText, smokeEnvironment } from "./voice-app.mjs";
+import {
+  announcedPorts,
+  claimScratch,
+  electronDependency,
+  landedText,
+  launchVoice,
+  Page,
+  processIdentity,
+  smokeEnvironment,
+  stopChildren,
+} from "./voice-app.mjs";
 
 const child = () => ({ stderr: new PassThrough() });
 
@@ -41,26 +61,18 @@ test("dependency inspection never executes Electron's installer or entry point",
   assert.equal(existsSync(marker), false);
 });
 
-test("smoke environment clears inherited fixture and hardware opt-ins", (t) => {
-  const inherited = {
-    ELECTRON_RUN_AS_NODE: "1",
-    VOICE_HELPER_ALLOW_MICROPHONE: "1",
-    VOICE_HELPER_TEST_AUDIO: "/private.wav",
-    VOICE_MICROPHONE_SMOKE: "1",
-    VOICE_MICROPHONE_CAPTURE_SMOKE: "1",
-  };
+test("smoke environment clears an inherited fixture path and Electron's node mode", (t) => {
   const previous = { ...process.env };
-  Object.assign(process.env, inherited);
+  Object.assign(process.env, {
+    ELECTRON_RUN_AS_NODE: "1",
+    VOICE_HELPER_TEST_AUDIO: "/private.wav",
+  });
   t.after(() => {
     process.env = previous;
   });
-  const env = smokeEnvironment("/scratch", {
-    VOICE_HELPER_ALLOW_MICROPHONE: "1",
-    VOICE_HELPER_TEST: "0",
-  });
+  const env = smokeEnvironment("/scratch", { VOICE_HELPER_TEST: "0" });
   assert.equal("ELECTRON_RUN_AS_NODE" in env, false);
-  for (const name of Object.keys(inherited).filter((name) => name !== "ELECTRON_RUN_AS_NODE"))
-    assert.equal(env[name], "", name);
+  assert.equal(env.VOICE_HELPER_TEST_AUDIO, "");
   assert.equal(env.VOICE_HELPER_TEST, "1");
   assert.equal(env.VOICE_USER_DATA_DIR, "/scratch");
   assert.equal(
@@ -70,15 +82,69 @@ test("smoke environment clears inherited fixture and hardware opt-ins", (t) => {
   );
 });
 
-test("preparation helpers cannot restore inherited capture opt-ins", async (t) => {
+test("the launcher runs Electron in the smoke environment and tracks it for the scratch claim", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "voice-launch-test-"));
+  const previous = { ...process.env };
+  t.after(() => {
+    process.env = previous;
+    rmSync(dir, { recursive: true, force: true });
+  });
+  // A stand-in Electron that reports what it was started with, then waits to be stopped.
+  const electron = join(dir, "electron");
+  writeFileSync(
+    electron,
+    `#!${process.execPath}
+console.log(JSON.stringify({ args: process.argv.slice(2), env: process.env }));
+setInterval(() => {}, 1000);
+`,
+    { mode: 0o755 },
+  );
+  Object.assign(process.env, {
+    ELECTRON_RUN_AS_NODE: "1",
+    VOICE_HELPER_TEST_AUDIO: "/private.wav",
+  });
+  const userData = join(dir, "user-data");
+  const claim = await claimScratch(userData);
+  claim.reset();
+  try {
+    const capture = join(userData, "capture.wav");
+    const launched = launchVoice(userData, {
+      inspect: true,
+      env: { VOICE_HELPER_TEST_AUDIO: capture },
+      electron,
+    });
+    launched.ports.catch(() => {});
+    const started = JSON.parse(
+      await launched.logs.waitFor((line) => line.startsWith("{"), {
+        timeoutMs: 5000,
+        label: "report",
+      }),
+    );
+    assert.deepEqual(started.args, [
+      ".",
+      "--remote-debugging-port=0",
+      "--inspect=0",
+      "-ApplePersistenceIgnoreState",
+      "YES",
+    ]);
+    assert.equal(started.env.VOICE_HELPER_TEST, "1");
+    assert.equal(started.env.VOICE_USER_DATA_DIR, userData);
+    assert.equal(started.env.VOICE_HELPER_TEST_AUDIO, capture);
+    assert.equal("ELECTRON_RUN_AS_NODE" in started.env, false);
+    const record = JSON.parse(readFileSync(`${userData}.owner.json`, "utf8"));
+    assert.deepEqual(record.processes, [
+      { pid: launched.child.pid, identity: processIdentity(launched.child.pid) },
+    ]);
+  } finally {
+    await stopChildren();
+    await claim.release({ remove: true });
+  }
+});
+
+test("preparation helpers cannot restore an inherited fixture path", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "voice-helper-environment-test-"));
   const binary = join(dir, "helper.mjs");
-  const names = [
-    "VOICE_HELPER_ALLOW_MICROPHONE",
-    "VOICE_HELPER_TEST_AUDIO",
-    "VOICE_MICROPHONE_SMOKE",
-    "VOICE_MICROPHONE_CAPTURE_SMOKE",
-  ];
+  const names = ["VOICE_HELPER_TEST_AUDIO"];
   const previous = { ...process.env };
   t.after(() => {
     process.env = previous;
@@ -103,6 +169,33 @@ process.stdin.resume();
     for (const name of names) assert.ok(!event.env[name], `${name} reached the helper`);
   });
 });
+
+test(
+  "calls waiting on a closed CDP socket fail instead of hanging",
+  { timeout: 5000 },
+  async (t) => {
+    const server = createServer();
+    server.on("upgrade", (request, socket) => {
+      const accept = createHash("sha1")
+        .update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest("base64");
+      socket.write(
+        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+      );
+      // The first request ends the connection unanswered, as when the app exits mid-call.
+      socket.once("data", () => socket.destroy());
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(() => server.close());
+    const page = await Page.open(`ws://127.0.0.1:${server.address().port}`);
+    await assert.rejects(
+      page.call("Runtime.evaluate", { expression: "1" }),
+      /CDP socket (closed|failed) before Runtime\.evaluate answered/,
+    );
+    await page.closed;
+    await assert.rejects(page.call("Runtime.enable"), /cannot call Runtime\.enable/);
+  },
+);
 
 test("reads the ports Chromium and Node announce, in either order", async () => {
   const electron = child();
@@ -153,14 +246,15 @@ test("reads the target until the expected text lands", async () => {
   assert.ok(landed.landedMs >= 0, `landedMs ${landed.landedMs}`);
 });
 
-test("does not expose unexpected target text when the paste never lands", async () => {
-  assert.deepEqual(
-    await landedText(() => "Synthetic restored clipboard.", "Hi Anna.", { timeoutMs: 30 }),
-    {
-      text: "",
-      landedMs: null,
-    },
-  );
+test("reports what the target holds when the expected text never lands", async () => {
+  assert.deepEqual(await landedText(() => "Hi Anna.Hi Anna.", "Hi Anna.", { timeoutMs: 30 }), {
+    text: "Hi Anna.Hi Anna.",
+    landedMs: null,
+  });
+  assert.deepEqual(await landedText(() => "", "Hi Anna.", { timeoutMs: 30 }), {
+    text: "",
+    landedMs: null,
+  });
 });
 
 test("times out independently of a slow read and does not read again", async () => {

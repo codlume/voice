@@ -20,7 +20,7 @@ Snippets let a user save a spoken trigger, such as "my email", and the exact tex
 
 ## Driving it with voice-verify
 
-For the automated dictation assertion, run `vv scenario snippet-expansion` with no verifier running. It launches a disposable instance, clears dictionary entries, and saves `Thursday` expanding to `Friday at noon` through the settings API. It dictates `short.wav` with Right Option toggle and requires that exact expansion in the target, `Thursday` in raw, a new inserted history entry, and exact target/history equality. It tears down after success or failure. This checks expansion, not the add dialog. See [Asserted scenarios](../SKILL.md#asserted-scenarios).
+`vv scenario snippet-expansion` asserts the expansion in a dictation, not the add dialog; see [Asserted scenarios](../SKILL.md#asserted-scenarios).
 
 Preconditions: baseline. No snippets are saved.
 

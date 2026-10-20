@@ -44,7 +44,8 @@ test("short dictation accepts model punctuation and time variants", () => {
 });
 
 for (const [name, change, pattern] of [
-  ["wrong target", { inserted: "some other text" }, /target differs/],
+  ["doubled target", { inserted: text + text }, /target differs/],
+  ["truncated target", { inserted: text.slice(0, -12) }, /target differs/],
   ["empty target", { inserted: "" }, /target is empty/],
   ["no history entry", { latest: null }, /no history entry/],
   [
@@ -137,6 +138,11 @@ test("snippet expansion must match saved text and replace only the final trigger
         [],
       ),
     /saved snippet expansion/,
+  );
+  const appended = text.replace("Thursday", "Thursday Friday at noon");
+  assert.throws(
+    () => check(session({ inserted: appended, latest: { ...result.latest, text: appended } }), []),
+    /trigger was not replaced/,
   );
   assert.throws(
     () => check({ ...result, latest: { ...result.latest, raw: rewritten } }, []),

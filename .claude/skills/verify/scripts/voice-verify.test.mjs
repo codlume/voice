@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import {
   copyFileSync,
@@ -17,7 +17,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseDictateFlags } from "./dictate-flags.mjs";
-import { scratchPath } from "../../../../scripts/voice-app.mjs";
+import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
 const worktree = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
@@ -193,10 +193,7 @@ test("stop accepts an exited owner before its parent reaps it", { timeout: 3000 
     "-e",
     'process.stdout.write("ready"); process.stdin.resume()',
   ]);
-  const identity = execFileSync("ps", ["-p", String(proc.pid), "-o", "lstart=", "-o", "ucomm="], {
-    encoding: "utf8",
-  }).trim();
-  f.write({ ownerPid: proc.pid, ownerIdentity: identity });
+  f.write({ ownerPid: proc.pid, ownerIdentity: processIdentity(proc.pid) });
   const result = spawnSync(process.execPath, [script, "stop"], {
     env: { ...process.env, TMPDIR: dirname(f.statePath) },
     encoding: "utf8",

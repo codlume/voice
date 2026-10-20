@@ -23,7 +23,7 @@ The user holds the hotkey (`fn` by default), speaks, and releases. With a toggle
 
 ## Driving it with voice-verify
 
-For automated assertions, run `vv scenario short-dictation` or `vv scenario cleanup-failure` with no verifier running. Each owns its scratch instance and uses Right Option toggle for the whole synthetic fixture. The first checks fixture content and exact target/history equality. The second rejects one cleanup call, checks exact raw/history/target equality and a consumed rejection, then checks normal cleanup on a new session. Both require inserted status and outcome. See [Asserted scenarios](../SKILL.md#asserted-scenarios) for prerequisites and evidence. These commands do not cover every entry point below.
+`vv scenario short-dictation` and `vv scenario cleanup-failure` assert the toggle path and the raw fallback in their own instance; see [Asserted scenarios](../SKILL.md#asserted-scenarios). They do not cover every entry point below.
 
 Preconditions: baseline, `vv doctor` shows `otherVoiceProcesses: []` (the user has quit Voice.app and no `pnpm dev` is running), and Accessibility is `granted`.
 

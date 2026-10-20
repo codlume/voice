@@ -57,7 +57,7 @@ function checkout(t, mode) {
   put(
     "native/voice-helper/scripts/helper.mjs",
     `export const runningVoiceProcesses = () =>
-    process.argv[2] === "dictate" && !${JSON.stringify(["dictate-signal", "replace-history", "replace-snapshot", "replace-key"])}.includes(${JSON.stringify(mode)})
+    process.argv[2] === "dictate" && !${JSON.stringify(["dictate-signal", "replace-history", "replace-snapshot", "replace-key", "crash"])}.includes(${JSON.stringify(mode)})
       ? ["synthetic contending helper"] : [];`,
   );
   for (const [path, marker] of [
@@ -80,7 +80,7 @@ function checkout(t, mode) {
     `
     export * from ${JSON.stringify(runtime)};
     import { claimScratch, processIdentity, scratchPath, start as startOwned } from ${JSON.stringify(runtime)};
-    import { existsSync, writeFileSync } from "node:fs";
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
     import { setTimeout as sleep } from "node:timers/promises";
     import { createContext, runInContext } from "node:vm";
     export const repoDir = ${JSON.stringify(repo)};
@@ -125,8 +125,8 @@ function checkout(t, mode) {
             if (expression.startsWith("window.voice.updateSettings")) {
               writeFileSync(${JSON.stringify(join(dir, "setup"))}, "ready");
               if (${JSON.stringify(mode)} === "signal") return new Promise(() => {});
-              if (["cleanup", "dictate-signal", "restore-timeout", "restore-signal",
-                   "replace-history", "replace-snapshot", "replace-key"].includes(${JSON.stringify(mode)})) return;
+              if (["cleanup", "dictate-signal", "replace-history", "replace-snapshot",
+                   "replace-key", "crash"].includes(${JSON.stringify(mode)})) return;
               throw new Error("synthetic settings failure");
             }
             throw new Error("unexpected evaluation " + expression);
@@ -140,17 +140,14 @@ function checkout(t, mode) {
       setTarget: () => writeFileSync(${JSON.stringify(join(dir, "set-target"))}, "called"),
     } });
     export async function evaluateInMain(_port, expression) {
-      if (expression.includes("restore()") && ${JSON.stringify(mode)}.startsWith("restore-")) {
-        writeFileSync(${JSON.stringify(join(dir, "restoring"))}, "waiting");
-        return new Promise(() => {});
-      }
       const result = await runInContext(expression, context);
       if (expression.includes(".setTarget(") && ${JSON.stringify(mode)} === "replace-key")
         await pause();
-      if (expression.includes("restore()")) {
-        if (context.voiceTest.cleanup.clean !== original || context.voiceTest.__verifyCleanup)
-          throw new Error("cleanup probe was not restored");
-        writeFileSync(${JSON.stringify(join(dir, "restored"))}, "restored");
+      if (expression.includes(".setTarget(") && ${JSON.stringify(mode)} === "crash") {
+        // The app dies mid-session, before the key press that would start dictation.
+        const { childPid } = JSON.parse(readFileSync(${JSON.stringify(trace)}, "utf8"));
+        process.kill(childPid, "SIGKILL");
+        while (processIdentity(childPid)) await sleep(10);
       }
       return result;
     }
@@ -163,7 +160,7 @@ function checkout(t, mode) {
       return child;
     }
     export function announcedPorts() {
-      return ${JSON.stringify(mode)} === "replace-key"
+      return ["replace-key", "crash"].includes(${JSON.stringify(mode)})
         ? Promise.resolve({ DevTools: 3 }) : new Promise(() => {});
     }
     export function launchVoice(userData) {
@@ -273,7 +270,6 @@ for (const mode of ["launch", "settings", "permission", "model", "cleanup"]) {
       assert.equal(processIdentity(ownerPid), null);
       assert.equal(processIdentity(childPid), null);
       if (mode === "cleanup") {
-        assert.equal(readFileSync(join(f.dir, "restored"), "utf8"), "restored");
         assert.deepEqual(report.prerequisites.desktop, ["synthetic contending helper"]);
         assert.deepEqual(report.sessions, []);
         assert.deepEqual(JSON.parse(readFileSync(report.evidence, "utf8")), report);
@@ -282,28 +278,22 @@ for (const mode of ["launch", "settings", "permission", "model", "cleanup"]) {
   );
 }
 
-for (const mode of ["restore-timeout", "restore-signal"]) {
-  test(
-    `a pending cleanup restoration cannot prevent teardown after ${mode}`,
-    { timeout: 20_000 },
-    async (t) => {
-      const f = checkout(t, mode);
-      const run = runScenario(t, f, "cleanup-failure");
-      await waitForFile(join(f.dir, "restoring"));
-      if (mode === "restore-signal") run.proc.kill("SIGTERM");
-      const result = await run.result;
-      assert.equal(result.signal, null, `restoration prevented exit: ${result.stderr}`);
-      assert.equal(result.code, 1, result.stderr);
-      const report = JSON.parse(result.stdout);
-      assert.equal(report.status, "FAIL");
-      assert.match(report.error, /cleanup probe restoration failed/);
-      assert.match(report.error, mode === "restore-signal" ? /scenario interrupted/ : /timed out/);
-      assert.equal(existsSync(join(f.dir, "restored")), false);
-      assertTeardown(f);
-      assert.deepEqual(JSON.parse(readFileSync(report.evidence, "utf8")), report);
-    },
-  );
-}
+test(
+  "an instance that exits mid-session fails the scenario instead of blocking it",
+  { timeout: 20_000 },
+  async (t) => {
+    const f = checkout(t, "crash");
+    const result = await runScenario(t, f, "short-dictation").result;
+    assert.equal(result.signal, null, result.stderr);
+    assert.equal(result.code, 1, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, "FAIL", result.stderr);
+    assert.match(report.error, /Voice instance exited/);
+    assert.equal(existsSync(join(f.dir, "key")), false, "posted a key to a dead instance");
+    assertTeardown(f);
+    assert.deepEqual(JSON.parse(readFileSync(report.evidence, "utf8")), report);
+  },
+);
 
 for (const { mode, scenario } of ["replace-history", "replace-snapshot", "replace-key"].flatMap(
   (mode) => ["short-dictation", "cleanup-failure"].map((scenario) => ({ mode, scenario })),
@@ -476,6 +466,45 @@ test(
     assert.equal(existsSync(f.userData), false, stderr);
     assert.equal(processIdentity(ownerPid), null);
     assert.equal(processIdentity(childPid), null);
+  },
+);
+
+test(
+  "repeated signals during teardown do not leave the instance running",
+  { timeout: 20_000 },
+  async (t) => {
+    const f = checkout(t, "signal");
+    const proc = spawn(process.execPath, [f.script, "scenario", "short-dictation"], {
+      env: f.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const exited = once(proc, "exit");
+    let stderr = "";
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
+    proc.stdout.resume();
+    t.after(() => {
+      if (proc.exitCode === null) proc.kill("SIGKILL");
+    });
+    await waitForFile(join(f.dir, "setup"));
+    const { ownerPid, ownerIdentity } = JSON.parse(readFileSync(f.trace, "utf8"));
+    proc.kill("SIGTERM");
+    // Teardown is under way once the launcher is gone; a user mashing Ctrl+C keeps signalling.
+    while (sameProcess(ownerPid, ownerIdentity)) await sleep(10);
+    const nag = () => {
+      try {
+        process.kill(proc.pid, "SIGINT");
+      } catch {}
+    };
+    nag();
+    const nagging = setInterval(nag, 20);
+    const [code, signal] = await exited;
+    clearInterval(nagging);
+    assert.equal(signal, null, stderr);
+    assert.equal(code, 1, stderr);
+    assert.match(stderr, /SIGINT ignored/);
+    assertTeardown(f);
   },
 );
 

@@ -35,7 +35,7 @@ Scenarios report unmet builds, model readiness, or Accessibility as `BLOCKED` an
 The scratch settings use hold `fn`, toggle `rightOption`, English, and cleanup on. The driver runs `dictate short.wav --key=toggle` through a real synthetic shortcut, file capture, ASR, cleanup, and insertion into the scratch textarea. It checks a new history ID, inserted status and outcome, exact target/history equality, and the fixture's Anna, meeting, time, and Thursday anchors. Model punctuation can vary.
 
 - `short-dictation` checks the complete insertion path.
-- `cleanup-failure` rejects the next cleanup call through the existing unpackaged adapter. It checks exact raw/history/target equality and the consumed rejection, then dictates again and checks normal cleanup succeeds with a new history ID. The temporary probe is restored during teardown.
+- `cleanup-failure` rejects the next cleanup call through the existing unpackaged adapter. It checks exact raw/history/target equality and the consumed rejection, then dictates again and checks normal cleanup succeeds with a new history ID. The probe dies with the disposable instance.
 - `dictionary-word` saves `THURSDAY` through the settings API and checks the saved spelling reaches the target while raw retains `Thursday`.
 - `snippet-expansion` clears dictionary entries and saves `Thursday` expanding to `Friday at noon`. It checks that exact expansion reaches the target while raw retains `Thursday`.
 

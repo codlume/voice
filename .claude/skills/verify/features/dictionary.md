@@ -19,7 +19,7 @@ The Dictionary lets a user save words and replacements. A word, such as "Worcest
 
 ## Driving it with voice-verify
 
-For the automated dictation assertion, run `vv scenario dictionary-word` with no verifier running. It launches a disposable instance, saves `THURSDAY` through the settings API with no snippets, and dictates `short.wav` with Right Option toggle. It requires `THURSDAY` in the actual target, `Thursday` in raw, a new inserted history entry, and exact target/history equality. It tears down after success or failure. This checks the rewrite, not the add dialog. See [Asserted scenarios](../SKILL.md#asserted-scenarios).
+`vv scenario dictionary-word` asserts the rewrite in a dictation, not the add dialog; see [Asserted scenarios](../SKILL.md#asserted-scenarios).
 
 Preconditions: baseline. No dictionary entries or snippets are saved. With the switch off, the one input has the placeholder `Add a new word`. With it on, the inputs have the placeholders `Phrase` and `Replace with`, which tell them apart.
 

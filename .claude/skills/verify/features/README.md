@@ -4,9 +4,7 @@ This directory is the maintained list of what a user can do in Voice and how to 
 
 ## Asserted dictation commands
 
-Run `vv doctor`, then `vv scenario short-dictation`, `vv scenario cleanup-failure`, `vv scenario dictionary-word`, or `vv scenario snippet-expansion`. Each command launches and tears down its own instance. Stop any interactive verifier first and keep the desktop exclusive. Builds, cached test models, fixtures, and Accessibility are prerequisites. Unmet prerequisites report `BLOCKED`; failed assertions exit nonzero.
-
-The scenarios use the real synthetic shortcut and scratch target, and compare target text with a new inserted history entry. Dictionary and snippet settings are API preconditions. Dialog creation is covered by the separate recipes below. Scenario reports and raw `dictate` evidence stay under the temporary evidence directory. Availability of a command does not mark a recipe as run.
+The `vv scenario <name>` commands assert dictation end to end in their own disposable instance. [Asserted scenarios](../SKILL.md#asserted-scenarios) in the skill lists them with their prerequisites and evidence. A scenario proves a dictation effect, not the dialogs in the recipes below, and running one does not mark a recipe as run.
 
 ## Baseline preconditions
 

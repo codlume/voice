@@ -41,6 +41,18 @@ test("scratch paths are stable per canonical worktree and runner", (t) => {
   assert.throws(() => scratchPath("../unsafe", first, dir), /scratch name/);
 });
 
+test("process identity reads the same under any inherited locale and time zone", (t) => {
+  const previous = { ...process.env };
+  t.after(() => {
+    process.env = previous;
+  });
+  Object.assign(process.env, { LC_ALL: "C", TZ: "UTC" });
+  const reference = processIdentity(process.pid);
+  assert.ok(reference);
+  Object.assign(process.env, { LC_ALL: "fr_FR.UTF-8", TZ: "Pacific/Kiritimati" });
+  assert.equal(processIdentity(process.pid), reference);
+});
+
 test("a second process cannot reset a live owner's scratch", async (t) => {
   const dir = fixture(t);
   const userData = join(dir, "owned");

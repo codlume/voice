@@ -58,9 +58,6 @@ export function smokeEnvironment(userData, extraEnv = {}) {
     VOICE_USER_DATA_DIR: userData,
   };
   delete env.ELECTRON_RUN_AS_NODE;
-  env.VOICE_HELPER_ALLOW_MICROPHONE = "";
-  env.VOICE_MICROPHONE_SMOKE = "";
-  env.VOICE_MICROPHONE_CAPTURE_SMOKE = "";
   env.VOICE_HELPER_TEST_AUDIO = "";
   if (extraEnv.VOICE_HELPER_TEST_AUDIO)
     env.VOICE_HELPER_TEST_AUDIO = extraEnv.VOICE_HELPER_TEST_AUDIO;
@@ -121,6 +118,7 @@ export class Page {
   #nextId = 1;
   #pending = new Map();
   #events = new Map();
+  #gone = null;
 
   static async connect(port, urlPart, { timeoutMs = 30_000 } = {}) {
     const deadline = Date.now() + timeoutMs;
@@ -146,10 +144,20 @@ export class Page {
   constructor(ws) {
     this.ws = ws;
     this.closed = new Promise((resolve) => ws.addEventListener("close", resolve, { once: true }));
+    // A closed socket never answers, as when the app exits mid-call, so every waiting call fails.
+    const drop = (reason) => {
+      this.#gone ??= reason;
+      for (const { method, reject } of this.#pending.values())
+        reject(new Error(`${reason} before ${method} answered`));
+      this.#pending.clear();
+    };
+    ws.addEventListener("close", () => drop("CDP socket closed"), { once: true });
+    ws.addEventListener("error", () => drop("CDP socket failed"), { once: true });
     ws.addEventListener("message", ({ data }) => {
       const message = JSON.parse(data);
       if (message.id !== undefined) {
         const settle = this.#pending.get(message.id);
+        if (!settle) return;
         this.#pending.delete(message.id);
         if (message.error) settle.reject(new Error(message.error.message));
         else settle.resolve(message.result);
@@ -160,9 +168,12 @@ export class Page {
   }
 
   call(method, params = {}) {
-    const id = this.#nextId++;
-    this.ws.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => this.#pending.set(id, { resolve, reject }));
+    return new Promise((resolve, reject) => {
+      if (this.#gone) throw new Error(`${this.#gone}; cannot call ${method}`);
+      const id = this.#nextId++;
+      this.#pending.set(id, { method, resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
   }
 
   async evaluate(expression) {
@@ -289,26 +300,29 @@ export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
   });
 }
 
+// Resolves with the expected text and how long it took to land, or with whatever the target last
+// held and landedMs null, so a doubled or truncated insertion stays visible in the evidence.
 export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
   const started = performance.now();
   const deadline = started + timeoutMs;
-  const missing = { text: "", landedMs: null };
+  let text = "";
+  const missed = () => ({ text, landedMs: null });
   const poll = async () => {
     while (performance.now() < deadline) {
-      const text = await read();
+      text = await read();
       const now = performance.now();
       if (now >= deadline) break;
-      if (text === expected) return { text: expected, landedMs: Math.round(now - started) };
+      if (text === expected) return { text, landedMs: Math.round(now - started) };
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return missing;
+    return missed();
   };
   let timer;
   try {
     return await Promise.race([
       poll(),
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve(missing), timeoutMs);
+        timer = setTimeout(() => resolve(missed()), timeoutMs);
       }),
     ]);
   } finally {
@@ -316,9 +330,15 @@ export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
   }
 }
 
-export function launchVoice(userData, { inspect = false, env: extraEnv = {} } = {}) {
+// `electron` is the binary to run; tests pass a stand-in so nothing launches the real app.
+export function launchVoice(
+  userData,
+  { inspect = false, env: extraEnv = {}, electron = electronPath() } = {},
+) {
+  // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
+  // after earlier unclean exits.
   const child = start(
-    electronPath(),
+    electron,
     [
       ".",
       "--remote-debugging-port=0",

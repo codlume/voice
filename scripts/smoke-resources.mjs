@@ -21,10 +21,11 @@ export function scratchPath(name, worktree, root = tmpdir()) {
 
 export function processIdentity(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return null;
+  // lstart follows the locale and time zone, and the identity must read the same from any shell.
   const result = spawnSync(
     "ps",
     ["-p", String(pid), "-o", "stat=", "-o", "lstart=", "-o", "ucomm="],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } },
   );
   if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
   if (result.error) throw result.error;
