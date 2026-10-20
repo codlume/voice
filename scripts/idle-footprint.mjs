@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import {
@@ -8,12 +7,12 @@ import {
   launchVoice,
   Page,
   prepareUserData,
+  releaseUserData,
   repoDir,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
 
-const port = 9347;
 const settleMs = 10_000;
 const sampleMs = 20_000;
 const intervalMs = 1000;
@@ -58,7 +57,7 @@ function tree(rootPid) {
       };
     });
   const inTree = new Set([rootPid]);
-  for (let grew = true; grew;) {
+  for (let grew = true; grew; ) {
     grew = false;
     for (const row of rows) {
       if (inTree.has(row.ppid) && !inTree.has(row.pid)) {
@@ -70,7 +69,7 @@ function tree(rootPid) {
   return rows.filter((row) => inTree.has(row.pid));
 }
 
-async function waitForModels() {
+async function waitForModels(port) {
   const hub = await Page.connect(port, "hub.html");
   try {
     const deadline = Date.now() + 180_000;
@@ -145,15 +144,16 @@ async function main() {
   run("pnpm", ["build"]);
   const userData = await prepareUserData("voice-idle");
   try {
-    const { child } = launchVoice(userData, { port });
-    const { permissions } = await waitForModels();
+    const { child, ports } = launchVoice(userData);
+    const { DevTools: port } = await ports;
+    const { permissions } = await waitForModels(port);
     note(`models ready, permissions ${JSON.stringify(permissions)}; settling ${settleMs / 1000} s`);
     await sleep(settleMs);
     note(`sampling ${sampleMs / 1000} s`);
     print(await sample(child.pid));
   } finally {
     await stopChildren();
-    rmSync(userData, { recursive: true, force: true });
+    await releaseUserData(userData, { remove: true });
   }
 }
 

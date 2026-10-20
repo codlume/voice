@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   copyFileSync,
@@ -10,43 +10,50 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import {
-  modelsDir,
-  runningVoiceProcesses,
-} from "../../../../native/voice-helper/scripts/helper.mjs";
+import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import {
   announcedPorts,
+  claimScratch,
+  electronDependency,
   electronPath,
   evaluateInMain,
   landedText,
   modelFiles,
   Page,
   prepareUserData,
+  processIdentity,
+  releaseUserData,
   repoDir,
+  sameProcess,
+  scratchPath,
   signalGroup,
+  smokeEnvironment,
   snapshotStream,
   start,
   stopChildren,
+  launchVoice,
+  worktreeIdentity,
 } from "../../../../scripts/voice-app.mjs";
 
 const desktopDir = join(repoDir, "apps/desktop");
 const helperDir = join(repoDir, "native/voice-helper");
-const worktree = resolve(repoDir);
-const worktreeId = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
-const scratchName = `voice-verify-${worktreeId}`;
-const statePath = join(tmpdir(), `${scratchName}.json`);
+const worktree = realpathSync(repoDir);
+const worktreeId = worktreeIdentity(worktree);
+const userDataPath = scratchPath("voice-verify", worktree);
+const statePath = `${userDataPath}.json`;
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
 
 const [command = "help", ...args] = process.argv.slice(2);
@@ -74,26 +81,6 @@ function alive(pid) {
   } catch {
     return false;
   }
-}
-
-function processIdentity(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  const result = spawnSync(
-    "ps",
-    ["-p", String(pid), "-o", "stat=", "-o", "lstart=", "-o", "ucomm="],
-    {
-      encoding: "utf8",
-    },
-  );
-  if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`cannot inspect process ${pid}: ${result.stderr}`);
-  const match = /^(\S+)\s+(.+)$/.exec(result.stdout.trim());
-  return match && !match[1].startsWith("Z") ? match[2].trim() : null;
-}
-
-function sameProcess(pid, identity) {
-  return Boolean(identity) && processIdentity(pid) === identity;
 }
 
 function publishState(state, claim = false) {
@@ -184,14 +171,10 @@ const osascript = (script) =>
 
 // A second copy of Voice on the instance's userData, as when the user opens Voice again.
 function openSecondCopy(state, ...extraArgs) {
-  const env = {
-    ...process.env,
-    VOICE_HELPER_TEST: "1",
-    VOICE_USER_DATA_DIR: state.userData,
+  const env = smokeEnvironment(state.userData, {
     VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
-  };
-  delete env.ELECTRON_RUN_AS_NODE;
-  return spawnSync(electronPath, [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
+  });
+  return spawnSync(electronPath(), [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
 }
 
 const commands = {
@@ -214,9 +197,17 @@ const commands = {
     );
     const helperBuilt = mtime(join(helperDir, ".build/debug/voice-helper"));
     const helperSource = newest(join(helperDir, "Sources"));
-    const cache = modelsDir();
+    const cache =
+      process.env.VOICE_TEST_MODELS_DIR ??
+      join(homedir(), "Library/Caches/Voice Development/test-models");
     const report = {
       node: process.version,
+      dependencies: {
+        workspace: existsSync(join(repoDir, "node_modules"))
+          ? "installed"
+          : "missing: run pnpm install",
+        electron: electronDependency().status,
+      },
       app: !appBuilt
         ? "not built: run pnpm build"
         : appBuilt < appSource
@@ -256,6 +247,7 @@ const commands = {
   },
 
   async launch() {
+    electronPath();
     const existing = readState();
     if (
       existing &&
@@ -267,7 +259,7 @@ const commands = {
       fail("app not built: run pnpm build");
 
     // --keep-user-data relaunches on the folder a `stop --keep-user-data` left, to test a restart.
-    const keptUserData = join(tmpdir(), scratchName);
+    const keptUserData = userDataPath;
     const keep = args.includes("--keep-user-data");
     if (keep && !existsSync(keptUserData))
       fail("no kept userData; run stop --keep-user-data first");
@@ -286,34 +278,29 @@ const commands = {
       fail("this worktree has an instance record; run stop before relaunching");
     }
     let stopping = false;
+    let ownsScratch = false;
     const shutdown = async (code) => {
       if (stopping) return;
       stopping = true;
       await stopChildren();
+      if (ownsScratch) await releaseUserData(keptUserData);
       process.exit(code);
     };
     process.on("SIGINT", () => void shutdown(130));
     process.on("SIGTERM", () => void shutdown(0));
 
     try {
-      const userData = keep ? keptUserData : await prepareUserData(scratchName);
+      const userData = keep
+        ? (await claimScratch(keptUserData)).userData
+        : await prepareUserData("voice-verify");
+      ownsScratch = true;
       if (stopping) return;
       const fakeMicrophonePath = join(userData, "capture.wav");
       const logPath = join(userData, "main.log");
-      const env = {
-        ...process.env,
-        VOICE_HELPER_TEST: "1",
-        VOICE_USER_DATA_DIR: userData,
-        VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
-      };
-      delete env.ELECTRON_RUN_AS_NODE;
-      // -ApplePersistenceIgnoreState keeps a modal "restore windows?" alert from blocking a launch
-      // after earlier unclean exits.
-      const child = start(
-        electronPath,
-        [".", "--remote-debugging-port=0", "--inspect=0", "-ApplePersistenceIgnoreState", "YES"],
-        { cwd: desktopDir, env, stdio: ["ignore", "pipe", "pipe"] },
-      );
+      const { child, ports: announced } = launchVoice(userData, {
+        inspect: true,
+        env: { VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath },
+      });
       child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
       child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
       child.on("exit", (code, signal) => {
@@ -332,7 +319,7 @@ const commands = {
       });
       save();
 
-      const ports = await announcedPorts(child, ["DevTools", "Debugger"]);
+      const ports = await announced;
       const runId = new Date().toISOString().replace(/[:.]/g, "-");
       Object.assign(state, {
         port: ports.DevTools,
@@ -417,8 +404,8 @@ const commands = {
         throw new Error("verify Electron did not stop; instance record and userData retained");
     }
     if (readState()?.ownerPid === state.ownerPid) {
-      if (!keep && state.userData)
-        rmSync(join(tmpdir(), scratchName), { recursive: true, force: true });
+      const claim = await claimScratch(userDataPath);
+      await claim.release({ remove: !keep });
       rmSync(statePath, { force: true });
     }
     out({
@@ -729,13 +716,11 @@ const commands = {
     const waitForLog = (pattern, timeoutMs, label) =>
       poll(() => logLine(pattern), timeoutMs, label);
 
-    const targetEnv = {
-      ...process.env,
+    const targetEnv = smokeEnvironment(state.userData, {
       VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
-    };
-    delete targetEnv.ELECTRON_RUN_AS_NODE;
+    });
     const target = start(
-      electronPath,
+      electronPath(),
       [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
       { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
     );

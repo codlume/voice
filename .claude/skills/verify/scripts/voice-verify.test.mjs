@@ -1,23 +1,78 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
 const worktree = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const id = `${basename(worktree).replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(worktree).digest("hex").slice(0, 8)}`;
+
+test("cold doctor and help run without dependencies and leave caches untouched", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "voice-verify-cold-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const checkout = join(dir, "checkout");
+  const paths = [
+    ".claude/skills/verify/scripts/voice-verify.mjs",
+    ".claude/skills/verify/scripts/dictate-flags.mjs",
+    "scripts/voice-app.mjs",
+    "scripts/smoke-resources.mjs",
+    "scripts/fixtures.mjs",
+    "native/voice-helper/scripts/helper.mjs",
+    "packages/cleanup/src/download.ts",
+  ];
+  for (const path of paths) {
+    mkdirSync(dirname(join(checkout, path)), { recursive: true });
+    copyFileSync(join(worktree, path), join(checkout, path));
+  }
+  for (const path of ["apps/desktop/src", "native/voice-helper/Sources"])
+    mkdirSync(join(checkout, path), { recursive: true });
+  writeFileSync(join(checkout, "package.json"), '{"type":"module"}');
+  const cache = join(dir, "models-must-not-be-created");
+  const temp = join(dir, "temp");
+  mkdirSync(temp);
+  const run = (command) =>
+    spawnSync(process.execPath, [join(checkout, paths[0]), command], {
+      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+  const doctor = run("doctor");
+  assert.equal(doctor.status, 0, doctor.stderr);
+  const report = JSON.parse(doctor.stdout);
+  assert.deepEqual(report.dependencies, {
+    workspace: "missing: run pnpm install",
+    electron: "missing: run pnpm install",
+  });
+  assert.equal(report.instance, "none");
+  assert.equal(existsSync(cache), false);
+  assert.deepEqual(readdirSync(temp), []);
+  const help = run("help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /read-only health report/);
+  const launch = run("launch");
+  assert.notEqual(launch.status, 0);
+  assert.match(launch.stderr, /Electron missing: run pnpm install/);
+  assert.deepEqual(readdirSync(temp), []);
+});
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), "voice-verify-stop-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const userData = join(dir, `voice-verify-${id}`);
+  const userData = scratchPath("voice-verify", worktree, dir);
   const statePath = `${userData}.json`;
   mkdirSync(userData);
   return {

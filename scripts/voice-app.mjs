@@ -1,19 +1,71 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
 import { downloadS1Mini, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import {
+  claimScratch,
+  releaseScratch,
+  scratchPath,
+  trackScratchChild,
+} from "./smoke-resources.mjs";
+
+export {
+  claimScratch,
+  processIdentity,
+  sameProcess,
+  scratchPath,
+  worktreeIdentity,
+} from "./smoke-resources.mjs";
 
 export { refuseIfVoiceIsRunning } from "../native/voice-helper/scripts/helper.mjs";
 
 export const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
-export const electronPath = createRequire(join(desktopDir, "package.json"))("electron");
+export function electronDependency(directory = desktopDir) {
+  let packagePath;
+  try {
+    packagePath = createRequire(join(directory, "package.json")).resolve("electron/package.json");
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") throw error;
+    return { status: "missing: run pnpm install" };
+  }
+  const dir = dirname(packagePath);
+  const installedPath = join(dir, "path.txt");
+  if (!existsSync(installedPath))
+    return { status: "binary missing: run pnpm --filter @voice/desktop exec install-electron" };
+  const path = join(dir, "dist", readFileSync(installedPath, "utf8").trim());
+  return existsSync(path)
+    ? { status: "installed", path }
+    : { status: "binary missing: run pnpm --filter @voice/desktop exec install-electron" };
+}
+
+export function electronPath() {
+  const dependency = electronDependency();
+  if (!dependency.path) throw new Error(`Electron ${dependency.status}`);
+  return dependency.path;
+}
+
+export function smokeEnvironment(userData, extraEnv = {}) {
+  const env = {
+    ...process.env,
+    ...extraEnv,
+    VOICE_HELPER_TEST: "1",
+    VOICE_USER_DATA_DIR: userData,
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  env.VOICE_HELPER_ALLOW_MICROPHONE = "";
+  env.VOICE_MICROPHONE_SMOKE = "";
+  env.VOICE_MICROPHONE_CAPTURE_SMOKE = "";
+  env.VOICE_HELPER_TEST_AUDIO = "";
+  if (extraEnv.VOICE_HELPER_TEST_AUDIO)
+    env.VOICE_HELPER_TEST_AUDIO = extraEnv.VOICE_HELPER_TEST_AUDIO;
+  return env;
+}
 
 export function assert(condition, message) {
   if (!condition) throw new Error(`assertion failed: ${message}`);
@@ -158,7 +210,9 @@ const children = new Set();
 export function start(command, args, options) {
   const child = spawn(command, args, { detached: true, ...options });
   children.add(child);
+  child.on("error", () => children.delete(child));
   child.on("exit", () => children.delete(child));
+  trackScratchChild(child);
   return child;
 }
 
@@ -182,21 +236,31 @@ export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE }
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
-  const cache = modelsDir();
-  console.error(`preparing test models in ${cache}`);
-  await Promise.all([
-    downloadS1Mini({ dir: cache }),
-    withHelper({}, (helper) => prepareAsr(helper, { download: true })),
-  ]);
-  const userData = join(tmpdir(), name);
-  rmSync(userData, { recursive: true, force: true });
-  const models = join(userData, "models");
-  mkdirSync(models, { recursive: true });
-  for (const file of Object.values(modelFiles)) {
-    symlinkSync(join(cache, file), join(models, file));
+  const userData = scratchPath(name, repoDir);
+  const claim = await claimScratch(userData);
+  try {
+    const cache = modelsDir();
+    console.error(`preparing test models in ${cache}`);
+    await Promise.all([
+      downloadS1Mini({ dir: cache }),
+      withHelper({ env: smokeEnvironment(userData) }, (helper) =>
+        prepareAsr(helper, { download: true }),
+      ),
+    ]);
+    claim.reset();
+    const models = join(userData, "models");
+    mkdirSync(models, { recursive: true });
+    for (const file of Object.values(modelFiles)) {
+      symlinkSync(join(cache, file), join(models, file));
+    }
+    return userData;
+  } catch (error) {
+    await claim.release();
+    throw error;
   }
-  return userData;
 }
+
+export const releaseUserData = releaseScratch;
 
 // Chromium and Node bind port 0 to a free port and print the one they got, so instances started
 // this way never share a port.
@@ -252,20 +316,22 @@ export async function landedText(read, expected, { timeoutMs = 800 } = {}) {
   }
 }
 
-export function launchVoice(userData, { port, env: extraEnv = {} }) {
-  const env = {
-    ...process.env,
-    VOICE_HELPER_TEST: "1",
-    VOICE_USER_DATA_DIR: userData,
-    ...extraEnv,
-  };
-  // Set when this script itself runs under Electron, for example inside an Electron-based IDE.
-  delete env.ELECTRON_RUN_AS_NODE;
-  const child = start(electronPath, [".", `--remote-debugging-port=${port}`], {
-    cwd: desktopDir,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+export function launchVoice(userData, { inspect = false, env: extraEnv = {} } = {}) {
+  const child = start(
+    electronPath(),
+    [
+      ".",
+      "--remote-debugging-port=0",
+      ...(inspect ? ["--inspect=0"] : []),
+      "-ApplePersistenceIgnoreState",
+      "YES",
+    ],
+    {
+      cwd: desktopDir,
+      env: smokeEnvironment(userData, extraEnv),
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   const logs = new Stream();
   createInterface({ input: child.stdout }).on("line", (line) => {
     if (line.startsWith("[voice]")) console.error(line);
@@ -274,7 +340,11 @@ export function launchVoice(userData, { port, env: extraEnv = {} }) {
   createInterface({ input: child.stderr }).on("line", (line) => {
     if (process.env.VOICE_E2E_VERBOSE) console.error(`[voice stderr] ${line}`);
   });
-  return { child, logs };
+  return {
+    child,
+    logs,
+    ports: announcedPorts(child, inspect ? ["DevTools", "Debugger"] : ["DevTools"]),
+  };
 }
 
 export function stopChildrenOnSignal() {

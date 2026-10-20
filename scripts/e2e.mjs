@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { fixturesDir } from "./fixtures.mjs";
 import {
   assert,
+  announcedPorts,
   electronPath,
   landedText,
   launchVoice,
   Page,
   prepareUserData,
+  releaseUserData,
   refuseIfVoiceIsRunning,
   repoDir,
   snapshotStream,
+  smokeEnvironment,
   start,
   stopChildren,
   stopChildrenOnSignal,
@@ -24,7 +27,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 const helperDir = join(repoDir, "native/voice-helper");
-const ports = { voice: 9345, target: 9346 };
+const hotkey = "rightOption";
 
 const hasSpeech = (text) => text.includes("Anna") && text.includes("Thursday");
 
@@ -122,7 +125,7 @@ function wavDurationMs(buffer) {
   assert(tag(0) === "RIFF" && tag(8) === "WAVE", "fixture is not a RIFF WAVE file");
   let byteRate;
   let dataBytes;
-  for (let at = 12; at + 8 <= buffer.length;) {
+  for (let at = 12; at + 8 <= buffer.length; ) {
     const size = buffer.readUInt32LE(at + 4);
     if (tag(at) === "fmt ") byteRate = buffer.readUInt32LE(at + 16);
     if (tag(at) === "data") dataBytes = size;
@@ -209,14 +212,14 @@ function textEditTarget(userData) {
 }
 
 async function electronTarget(userData) {
-  const env = { ...process.env, VOICE_E2E_TARGET_USER_DATA: join(userData, "target") };
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
   const child = start(
-    electronPath,
-    [join(repoDir, "scripts/e2e-target/main.cjs"), `--remote-debugging-port=${ports.target}`],
-    { env, stdio: ["ignore", "ignore", "ignore"] },
+    electronPath(),
+    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
+    { env, stdio: ["ignore", "ignore", "pipe"] },
   );
-  const page = await Page.connect(ports.target, "index.html");
+  const { DevTools: port } = await announcedPorts(child, ["DevTools"]);
+  const page = await Page.connect(port, "index.html");
   const field = 'document.getElementById("field")';
   return {
     name: "Electron target",
@@ -266,11 +269,11 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
   snapshots.skipToEnd();
   logs.skipToEnd();
 
-  fnpost("fn", "down");
+  fnpost(hotkey, "down");
   const pressedAt = performance.now();
   await snapshots.waitFor((s) => s.session.kind === "listening", {
     timeoutMs: 5000,
-    label: "pill listening after fn down",
+    label: `pill listening after ${hotkey} down`,
   });
   if (c.end === "audio") {
     await logs.waitFor((line) => line.endsWith("helper info: test.audioFile ended"), {
@@ -279,7 +282,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     });
   }
   if (c.end === "escape") fnpost("escape");
-  else fnpost("fn", "up");
+  else fnpost(hotkey, "up");
   const heldMs = Math.round(performance.now() - pressedAt);
 
   let snapshot;
@@ -288,7 +291,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
       timeoutMs: 5000,
       label: "pill idle after Escape",
     });
-    fnpost("fn", "up");
+    fnpost(hotkey, "up");
   } else {
     snapshot = await snapshots.waitFor((s) => s.session.kind === "done", {
       timeoutMs: 90_000,
@@ -347,15 +350,16 @@ async function main() {
   run("pnpm", ["build"]);
 
   const userData = await prepareUserData("voice-e2e");
+  writeFileSync(join(userData, "settings.json"), JSON.stringify({ hotkey }));
   const audioPath = join(userData, "capture.wav");
   const targets = {};
   const pages = [];
   try {
-    const { child, logs } = launchVoice(userData, {
-      port: ports.voice,
+    const { child, logs, ports } = launchVoice(userData, {
       env: { VOICE_HELPER_TEST_AUDIO: audioPath },
     });
-    const hub = await Page.connect(ports.voice, "hub.html");
+    const { DevTools: port } = await ports;
+    const hub = await Page.connect(port, "hub.html");
     pages.push(hub);
     const type = activationType(child.pid);
     assert(type === "Foreground", `Voice must stay in the Dock and Cmd-Tab, but is ${type}`);
@@ -391,7 +395,7 @@ async function main() {
       ...pages.map((page) => () => page.close()),
       ...Object.values(targets).map((target) => () => target.close()),
       stopChildren,
-      () => rmSync(userData, { recursive: true, force: true }),
+      () => releaseUserData(userData, { remove: true }),
     ];
     for (const step of steps) {
       try {

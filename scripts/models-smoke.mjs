@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { models as registry } from "../apps/desktop/src/shared/models.ts";
@@ -9,12 +9,12 @@ import {
   modelFiles,
   Page,
   prepareUserData,
+  releaseUserData,
   snapshotStream,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
 
-const port = 9341;
 const shots = process.env.VOICE_SMOKE_SHOTS;
 const names = Object.fromEntries(registry.map((model) => [model.id, model.name]));
 
@@ -39,9 +39,10 @@ stopChildrenOnSignal();
 const cache = modelsDir();
 const userData = await prepareUserData("voice-models-smoke");
 const models = join(userData, "models");
-launchVoice(userData, { port });
 
 try {
+  const { ports } = launchVoice(userData);
+  const { DevTools: port } = await ports;
   const page = await Page.connect(port, "hub.html");
   const snapshots = await snapshotStream(page);
   const untilModels = (predicate, label) =>
@@ -161,5 +162,5 @@ try {
   note("ok");
 } finally {
   await stopChildren();
-  rmSync(userData, { recursive: true, force: true });
+  await releaseUserData(userData, { remove: true });
 }

@@ -4,17 +4,15 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import {
-  electronPath,
+  launchVoice,
   Page,
   prepareUserData,
-  repoDir,
+  releaseUserData,
   snapshotStream,
-  start,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
 
-const ports = { cdp: 9448, inspect: 9449 };
 const TICK_MS = 2;
 const IDLE_WINDOW_MS = 3000;
 const LOAD_TIMEOUT_MS = 120_000;
@@ -52,38 +50,29 @@ const READ_AND_RESET = `(() => {
   return result;
 })()`;
 
-async function inspector() {
+async function inspector(inspectPort) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
-      const targets = await (await fetch(`http://127.0.0.1:${ports.inspect}/json`)).json();
+      const targets = await (await fetch(`http://127.0.0.1:${inspectPort}/json`)).json();
       return await Page.open(targets[0].webSocketDebuggerUrl);
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  throw new Error(`no inspector on port ${ports.inspect}`);
+  throw new Error(`no inspector on port ${inspectPort}`);
 }
 
 async function runTrial(trial) {
   const userData = await prepareUserData("voice-cleanup-lag-smoke");
   writeFileSync(join(userData, "settings.json"), JSON.stringify({ cleanup: { enabled: false } }));
-  const env = { ...process.env, VOICE_HELPER_TEST: "1", VOICE_USER_DATA_DIR: userData };
-  delete env.ELECTRON_RUN_AS_NODE;
-  start(
-    electronPath,
-    [
-      `--inspect=${ports.inspect}`,
-      ".",
-      `--remote-debugging-port=${ports.cdp}`,
-      "-ApplePersistenceIgnoreState",
-      "YES",
-    ],
-    { cwd: join(repoDir, "apps/desktop"), env, stdio: "ignore" },
-  );
-  const hub = await Page.connect(ports.cdp, "hub.html");
-  const main = await inspector();
+  let hub;
+  let main;
   try {
+    const { ports } = launchVoice(userData, { inspect: true });
+    const { DevTools: port, Debugger: inspectPort } = await ports;
+    hub = await Page.connect(port, "hub.html");
+    main = await inspector(inspectPort);
     const snapshots = await snapshotStream(hub);
     await snapshots.waitFor((s) => s.models.cleanup.state === "installed", {
       timeoutMs: LOAD_TIMEOUT_MS,
@@ -107,9 +96,10 @@ async function runTrial(trial) {
     note(JSON.stringify(result));
     return result;
   } finally {
-    hub.close();
-    main.close();
+    hub?.close();
+    main?.close();
     await stopChildren();
+    await releaseUserData(userData, { remove: true });
   }
 }
 
