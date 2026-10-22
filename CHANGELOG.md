@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.1 (2026-10-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* chore(agents): correct the verify map and add a front command by @hadrysm in https://github.com/codlume/voice/pull/309
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.20.0...v0.20.1
+
 ## 0.20.0 (2026-10-22)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
