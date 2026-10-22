@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.20.0 (2026-10-22)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(desktop): let users turn individual snippets on and off by @hadrysm in https://github.com/codlume/voice/pull/260
+* refactor(desktop): remove the other-channel account note by @hadrysm in https://github.com/codlume/voice/pull/262
+* feat(account): edit first and last name on the Account page by @hadrysm in https://github.com/codlume/voice/pull/263
+* fix(desktop): open a new snippet with an empty draft by @hadrysm in https://github.com/codlume/voice/pull/264
+* feat(desktop): add a Dictionary that fixes spellings and swaps phrases by @hadrysm in https://github.com/codlume/voice/pull/265
+* fix(desktop): use Worcestershire as the Dictionary example by @hadrysm in https://github.com/codlume/voice/pull/267
+* fix(helper): count only presses in the focus input stamp by @hadrysm in https://github.com/codlume/voice/pull/268
+* perf(helper): report capture start on the first audio, not the first 100 ms tick by @hadrysm in https://github.com/codlume/voice/pull/269
+* perf(cleanup): keep the GPU busy while the transcript is being produced by @hadrysm in https://github.com/codlume/voice/pull/270
+* feat(desktop): reset a setting to its default from Settings by @hadrysm in https://github.com/codlume/voice/pull/271
+* feat(desktop): add dictionary entries with a Replace with other text switch by @hadrysm in https://github.com/codlume/voice/pull/272
+* feat(snippets): paste formatted snippets as rich text by @hadrysm in https://github.com/codlume/voice/pull/273
+* feat(desktop): edit snippets in a rich text editor by @hadrysm in https://github.com/codlume/voice/pull/274
+* feat(desktop): add an Insights page with pace, fixes, words, and streaks by @hadrysm in https://github.com/codlume/voice/pull/276
+* feat(desktop): redesign Home with session history and opt-in saved history by @hadrysm in https://github.com/codlume/voice/pull/277
+* feat(desktop): add a toggle dictation key by @hadrysm in https://github.com/codlume/voice/pull/278
+* refactor: remove dead code and duplicated helpers across the repo by @hadrysm in https://github.com/codlume/voice/pull/280
+* test(cleanup): calibrate S1-mini stylings across general and email layouts by @hadrysm in https://github.com/codlume/voice/pull/283
+* feat(cleanup): offer Formal, Casual and Very casual styles by @hadrysm in https://github.com/codlume/voice/pull/284
+* feat(helper): report the target app and website host with each transcript by @hadrysm in https://github.com/codlume/voice/pull/285
+* feat(desktop): style dictation by the app or website it goes into by @hadrysm in https://github.com/codlume/voice/pull/286
+* feat(desktop): show the installed apps each style applies to by @hadrysm in https://github.com/codlume/voice/pull/287
+* feat(desktop): assign any app or website to a style category by @hadrysm in https://github.com/codlume/voice/pull/288
+* fix(desktop): drop the fix count that repeats the Insights total by @hadrysm in https://github.com/codlume/voice/pull/291
+* fix(desktop): draw keycaps as a soft fill instead of an outline by @hadrysm in https://github.com/codlume/voice/pull/297
+* feat(desktop): show where you dictate on Insights by @hadrysm in https://github.com/codlume/voice/pull/293
+* feat(desktop): count words per app and category in Insights by @hadrysm in https://github.com/codlume/voice/pull/294
+* feat(desktop): move the snippet on/off switch into its dialog by @hadrysm in https://github.com/codlume/voice/pull/296
+* fix(desktop): keep checking for updates after one is offered by @hadrysm in https://github.com/codlume/voice/pull/298
+* feat(desktop): show the notes of every skipped release by @hadrysm in https://github.com/codlume/voice/pull/299
+* feat(desktop): group the Settings sidebar like Wispr Flow by @hadrysm in https://github.com/codlume/voice/pull/301
+* feat(desktop): animate hub page changes by @hadrysm in https://github.com/codlume/voice/pull/302
+* feat(desktop): add a Page animations duration setting by @hadrysm in https://github.com/codlume/voice/pull/303
+* chore(agents): make verification safe and reproducible by @hadrysm in https://github.com/codlume/voice/pull/306
+* fix(desktop): report helper crashes with their stack by @hadrysm in https://github.com/codlume/voice/pull/307
+* fix(desktop): give every hub page the same container by @hadrysm in https://github.com/codlume/voice/pull/308
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.19.0...v0.20.0
+
 ## 0.19.0 (2026-10-11)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
