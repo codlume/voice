@@ -15,7 +15,7 @@ const HEALTHY_RUN_MS = 10_000;
 
 // Only codes, never error messages or stderr: this can leave the machine as a diagnostic.
 export type HelperExit =
-  | { code: number | null; signal: NodeJS.Signals | null }
+  | { code: number | null; signal: NodeJS.Signals | null; pid?: number | undefined }
   | { spawnError: string };
 
 export type HelperOptions = {
@@ -107,7 +107,9 @@ export function startHelper(options: HelperOptions): Helper {
     proc.on("error", (error: NodeJS.ErrnoException) =>
       onEnd(`failed to start (${error.message})`, { spawnError: error.code ?? "unknown" }),
     );
-    proc.on("close", (code, signal) => onEnd(`exited (${signal ?? code})`, { code, signal }));
+    proc.on("close", (code, signal) =>
+      onEnd(`exited (${signal ?? code})`, { code, signal, pid: proc.pid }),
+    );
   }
 
   function send(command: HelperCommand) {

@@ -15,15 +15,17 @@ import {
   type SessionAttribute,
 } from "./diagnostics-scrub.ts";
 import type { SessionReport } from "./dictation.ts";
+import type { HelperCrash } from "./helper-crash.ts";
 import type { HelperExit } from "./helper.ts";
 
 type NodeOptions = SentryMain.NodeOptions;
+type StackFrame = SentryMain.StackFrame;
 type MakeTransport = NonNullable<NodeOptions["transport"]>;
 
 // Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
 export type DiagnosticsSdk = Pick<
   typeof SentryMain,
-  "startInactiveSpan" | "setMeasurement" | "captureMessage" | "logger" | "withActiveSpan" | "flush"
+  "startInactiveSpan" | "setMeasurement" | "captureEvent" | "logger" | "withActiveSpan" | "flush"
 > & { init(options: NodeOptions): unknown; makeTransport: MakeTransport };
 
 export type Diagnostics = {
@@ -99,6 +101,21 @@ function helperTags(exit: HelperExit): Partial<Record<HelperTag, string | number
   return { "helper.exit_code": exit.code ?? "none" };
 }
 
+// Sentry lists frames outermost first and groups issues by the in-app ones.
+function helperException({ exceptionType, innermostFirstFrames }: HelperCrash) {
+  return {
+    type: exceptionType,
+    mechanism: { type: "helper.crash", handled: false },
+    stacktrace: {
+      frames: innermostFirstFrames.toReversed().map(({ image, symbol, inApp }) => {
+        const frame: StackFrame = { module: image, in_app: inApp, platform: "native" };
+        if (symbol !== undefined) frame.function = symbol;
+        return frame;
+      }),
+    },
+  };
+}
+
 export function startDiagnostics(options: {
   loadSdk: () => DiagnosticsSdk;
   dsn: string;
@@ -107,6 +124,7 @@ export function startDiagnostics(options: {
   tracesSampleRate: number;
   consent: () => DiagnosticsConsent;
   crashDumpsDir: string;
+  findHelperCrash: (pid: number) => Promise<HelperCrash | undefined>;
 }): Diagnostics {
   const on = () => options.consent() === "on";
   // Turning consent on takes effect at the next launch: the SDK can only start before ready.
@@ -181,7 +199,19 @@ export function startDiagnostics(options: {
       const key = JSON.stringify(tags);
       if (reportedExits.has(key)) return;
       reportedExits.add(key);
-      sdk.captureMessage(HELPER_EXIT_MESSAGE, { level: "error", tags });
+      const crash =
+        "signal" in exit && exit.signal !== null && exit.pid !== undefined
+          ? options.findHelperCrash(exit.pid)
+          : Promise.resolve(undefined);
+      void crash.then((found) => {
+        if (!on()) return;
+        sdk.captureEvent({
+          message: HELPER_EXIT_MESSAGE,
+          level: "error",
+          tags,
+          ...(found && { exception: { values: [helperException(found)] } }),
+        });
+      });
     },
     log(entry) {
       if (!on()) return;

@@ -250,7 +250,7 @@ describe("startHelper", () => {
       RESTART_MIN_MS * 2,
     ]);
     expect(h.logs.some((line) => line.includes("exited (3)"))).toBe(true);
-    expect(h.exitReasons[0]).toEqual({ code: 3, signal: null });
+    expect(h.exitReasons[0]).toEqual({ code: 3, signal: null, pid: expect.any(Number) });
   });
 
   test("reports a helper that cannot start by its errno code alone", async () => {

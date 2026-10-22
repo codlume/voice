@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS, type DiagnosticsConsent, type Outcome } from "../shar
 import { HELPER_EXIT_MESSAGE } from "./diagnostics-scrub.ts";
 import { sessionSpan, startDiagnostics, type Diagnostics } from "./diagnostics.ts";
 import { createDictation, type SessionReport } from "./dictation.ts";
+import type { HelperCrash } from "./helper-crash.ts";
 import { idle } from "./session.ts";
 import { createStore } from "./store.ts";
 
@@ -113,6 +114,16 @@ type EnvelopeItem = Envelope[1][number];
 
 const DSN = "https://public@o0.ingest.sentry.io/1";
 
+const CRASHED_PID = 4242;
+const HELPER_CRASH: HelperCrash = {
+  exceptionType: "EXC_BAD_ACCESS",
+  innermostFirstFrames: [
+    { image: "AVFAudio", symbol: undefined, inApp: false },
+    { image: "voice-helper", symbol: "Capture.start()", inApp: true },
+    { image: "dyld", symbol: "start", inApp: false },
+  ],
+};
+
 function crashDumps() {
   const dir = mkdtempSync(NodePath.join(tmpdir(), "voice-crash-dumps-"));
   for (const name of ["completed", "pending"]) mkdirSync(NodePath.join(dir, name));
@@ -123,6 +134,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   let consent = initial;
   const envelopes: Envelope[] = [];
   const crashDumpsDir = crashDumps();
+  const crashLookups: number[] = [];
   const diagnostics: Diagnostics = startDiagnostics({
     loadSdk: () => ({
       ...SentryNode,
@@ -140,6 +152,10 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     tracesSampleRate,
     consent: () => consent,
     crashDumpsDir,
+    findHelperCrash: async (pid) => {
+      crashLookups.push(pid);
+      return pid === CRASHED_PID ? HELPER_CRASH : undefined;
+    },
   });
   const store = createStore({
     updates: {
@@ -219,6 +235,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   return {
     diagnostics,
     crashDumpsDir,
+    crashLookups,
     dictate,
     sent,
     items,
@@ -285,6 +302,42 @@ describe("startDiagnostics consent", () => {
       '{"helper.signal":"SIGKILL"}',
       '{"helper.error":"ENOENT"}',
     ]);
+  });
+
+  test("on sends a helper crash with the crashed thread's stack, outermost frame first", async () => {
+    const h = harness("on");
+    h.diagnostics.helperExited({ code: null, signal: "SIGSEGV", pid: CRASHED_PID });
+    await expect.poll(async () => (await h.items("event")).length).toBe(1);
+    const [[, event]] = (await h.items("event")) as [[unknown, SentryNode.Event]];
+    expect(h.crashLookups).toEqual([CRASHED_PID]);
+    expect(event.tags).toEqual({ "helper.signal": "SIGSEGV" });
+    expect(event.exception?.values).toEqual([
+      {
+        type: "EXC_BAD_ACCESS",
+        mechanism: { type: "helper.crash", handled: false },
+        stacktrace: {
+          frames: [
+            { function: "start", module: "dyld", in_app: false, platform: "native" },
+            {
+              function: "Capture.start()",
+              module: "voice-helper",
+              in_app: true,
+              platform: "native",
+            },
+            { module: "AVFAudio", in_app: false, platform: "native" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  test("on reports a helper exit without a stack when no crash report is found", async () => {
+    const h = harness("on");
+    h.diagnostics.helperExited({ code: null, signal: "SIGKILL", pid: 7 });
+    h.diagnostics.helperExited({ code: 3, signal: null, pid: 8 });
+    await expect.poll(async () => (await h.items("event")).length).toBe(2);
+    expect(h.crashLookups).toEqual([7]);
+    expect(JSON.stringify(await h.items("event"))).not.toContain('"exception"');
   });
 
   test("on sends a crash event without its dump or any other attachment", async () => {
