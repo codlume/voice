@@ -52,6 +52,7 @@ import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
+import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
@@ -303,6 +304,13 @@ async function main() {
     tracesSampleRate: development ? 1 : 0.2,
     consent: () => store.state.settings.diagnostics,
     crashDumpsDir: app.getPath("crashDumps"),
+    findHelperCrash: (pid) =>
+      findHelperCrash(pid, {
+        dir: NodePath.join(app.getPath("home"), "Library", "Logs", "DiagnosticReports"),
+        since: Date.now() - 10_000,
+        timeoutMs: 10_000,
+        intervalMs: 500,
+      }),
   });
   const log: Log = (message, entry) => {
     console.log(`[voice] ${message}`);

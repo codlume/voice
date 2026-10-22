@@ -117,7 +117,7 @@ const DSN = "https://public@o0.ingest.sentry.io/1";
 const CRASHED_PID = 4242;
 const HELPER_CRASH: HelperCrash = {
   exceptionType: "EXC_BAD_ACCESS",
-  frames: [
+  innermostFirstFrames: [
     { image: "AVFAudio", symbol: undefined, inApp: false },
     { image: "voice-helper", symbol: "Capture.start()", inApp: true },
     { image: "dyld", symbol: "start", inApp: false },
