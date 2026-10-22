@@ -117,6 +117,13 @@ guard let modelsDir = directoryArgument("--models-dir"), let stateDir = director
     exit(64)
 }
 
+// Electron's Crashpad registers task exception ports that a spawned child inherits, so a helper
+// crash would also become a dump of the helper's memory and environment in Electron's crash folder.
+// Without them macOS alone reports the crash, and main reads that report's stack instead.
+task_set_exception_ports(
+    mach_task_self_, exception_mask_t(EXC_MASK_CRASH | EXC_MASK_RESOURCE | EXC_MASK_GUARD),
+    mach_port_t(MACH_PORT_NULL), exception_behavior_t(EXCEPTION_DEFAULT), thread_state_flavor_t(THREAD_STATE_NONE))
+
 // A vanished parent must end the helper via stdin EOF, not a SIGPIPE mid-write.
 signal(SIGPIPE, SIG_IGN)
 let output = Output()
