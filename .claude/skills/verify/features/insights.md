@@ -4,7 +4,7 @@ The Insights page shows how much a user dictates: words dictated, speaking pace 
 
 ## Sub-features
 
-- `insights-totals`: the Words, Pace, and Fixes made by Voice cards. Pace says "Dictate to see how fast you speak." until the first counted session. Fixes says "None yet" at zero, and otherwise lists `Words corrected` and `Dictionary fixes`.
+- `insights-totals`: the Pace, Words, and Fixes made by Voice cards, in that order. Pace says "Dictate to see how fast you speak." until the first counted session, then shows WPM and "N× faster than typing" when that is above typing speed. Fixes says "None yet" at zero, and otherwise lists `Words corrected` and `Dictionary fixes`, each only when above zero, with its own number only when the other is also present.
 - `insights-streak`: the Streak card shows current and longest days. A day with no words yet keeps yesterday's streak.
 - `insights-heatmap`: one cell per day, Sunday to Saturday per column, with as many weeks as fit, up to 53. Hovering or focusing a cell shows "<n> words on <weekday, month day>". Tab reaches one cell, today's or the one last focused. Up and Down move a day, Left and Right a week, Home goes to the first day, and End goes to today.
 - `insights-usage`: the "Where you dictate" card shows the number of apps used, one bar per Style category with its share of words and number of dictations, and up to five top apps. A dictation into a website counts under the browser, in the website's category when Voice detected the website. A session with no known app counts in Words but not on the card. Until then the card says "Dictate into an app to see where your words go."
@@ -15,6 +15,7 @@ The Insights page shows how much a user dictates: words dictated, speaking pace 
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Insights`, after Home.
+- Home's `Your stats` card: `vv click 'css:aside[aria-label="Your stats"] button'`. Its accessible name is the card's text, so click it by selector.
 - Keyboard: Cmd-2 in the Voice nav.
 - Clearing: Voice window > `Settings` > `Data and Privacy` > Insights > `Clear…`.
 
@@ -34,7 +35,7 @@ Preconditions: baseline on a fresh userData, so the page starts at zero. `dictat
 
 ## Gotchas
 
-- The page reads today's date on each render. A hub left open overnight moves to the new day on the next dictation or when the window regains focus.
-- A file Voice cannot read is left alone and nothing is counted until it is cleared. A failed save is logged, and the page still shows the in-memory count.
-- The heatmap is hidden until the page knows its width, so wait for the grid before a shot.
+- A hub left open overnight moves to the new day at local midnight, and again whenever the window regains focus or becomes visible.
+- A file Voice cannot read, or one from another version, is left alone and nothing is counted until it is cleared. A file that is not JSON starts counting over, and the next save replaces it. A failed save is logged, and the page still shows the in-memory count.
+- The heatmap is hidden until the page knows its width, so `vv wait hub 'document.querySelector("[aria-label=\"Words per day\"]")'` before a shot.
 - A plain `vv dictate` with no `--app` types into the scratch window, which the helper reports as `com.github.electron`. It counts under Other and shows as a raw bundle id in Top apps. Only the unit tests reach the no-known-app path.

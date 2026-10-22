@@ -43,7 +43,7 @@ Settings API calls establish preconditions. These scenarios prove dictation effe
 
 ## Launch
 
-1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server:
+1. Build what the instance runs. Rebuild after any change, because the instance runs built output, not the dev server. A fresh worktree first needs `pnpm install` and, if `doctor` reports the Electron binary missing, `pnpm --filter @voice/desktop exec install-electron`.
 
    ```sh
    swift build --package-path native/voice-helper   # helper, fnpost, disclaim
@@ -106,16 +106,19 @@ The hub is driven over CDP. Prefer the user path (`click`) over `window.voice.*`
 | `menu <id>`                                                                                             | Chooses the application menu item with that id in the main process, as its keyboard shortcut would. CDP key events never reach the native menu. The View menu's zoom items are `zoom-in`, `zoom-in-plus`, `zoom-out`, and `zoom-reset`.                                                                                                                                                                                                                                                                                                              |
 | `second-instance <code>`                                                                                | Launches a second Voice on the same userData with that callback URL as its argument, waits for it to exit, and prints its exit code and whether the instance is still alive.                                                                                                                                                                                                                                                                                                                                                                         |
 | `reopen`                                                                                                | Closes the Voice window, then opens Voice again: a second copy hands over through the single-instance lock and the running app shows its window, as when the user opens Voice from Finder. Use it to bring the window back.                                                                                                                                                                                                                                                                                                                          |
+| `front`                                                                                                 | Brings the Voice window in front of other apps from the main process and waits until it paints. Run it after `dictate` and before driving dialogs, menus, or tabs (see below).                                                                                                                                                                                                                                                                                                                                                                       |
 | `record <name>`                                                                                         | Screencasts the hub page into `<name>.mp4` in the evidence dir until it gets SIGTERM or SIGINT. Run it in the background, drive the flow, then `kill -TERM` the pid it prints. Without `ffmpeg` it keeps the PNG frames and prints their directory.                                                                                                                                                                                                                                                                                                  |
 
 Stable handles:
 
-- **Voice nav:** `Home`, `Style`. The sidebar footer button `Settings` opens the Settings nav: `General`, `System`, `Models`, `Shortcuts`, then below a divider `Account` and `Data and Privacy`. Its `Back` button returns to the Voice nav.
-- **Settings rows:** each control's id is `setting-<name>`, for example `#setting-hotkey`, `#setting-microphone`, `#setting-dictation-language`, `#setting-update-channel`, `#setting-mute-while-dictating`, `#setting-show-in-dock`, `#setting-always-show-pill`, `#setting-diagnostics`. Switches are labelled by their row title, such as `Show in Dock`.
+- **Voice nav:** `Home`, `Insights`, `Style`, `Snippets`, `Dictionary`. The sidebar footer button `Settings` opens the Settings nav: `General`, `System`, `Models`, `Shortcuts`, then below a divider `Account` and `Data and Privacy`. Its `Back` button returns to the Voice nav.
+- **Settings rows:** each control's id is `setting-<name>`, for example `#setting-hotkey`, `#setting-microphone`, `#setting-dictation-language`, `#setting-update-channel`, `#setting-mute-while-dictating`, `#setting-show-in-dock`, `#setting-always-show-pill`, `#setting-diagnostics`, `#setting-toggle-hotkey`, `#setting-history-retention`. Switches are labelled by their row title, such as `Show in Dock`. A row whose value differs from its default shows a `Reset <row title> to default` button.
 - **Selects:** open with `click css:#setting-<name>`, then `click "<option label>"`.
 - **Page headline:** `document.querySelector("main h1").textContent`.
 
-`dictate` posts a real synthetic key event. It refuses to run while any other Voice helper or `pnpm dev` is running, because that app's hotkey tap would hear the press and record the room with the real microphone. Another worktree's verify instance counts too, because the hotkey is global. If it refuses, ask the user to quit Voice.app, or wait for the other session to `stop`. Never kill it yourself. It also briefly brings the scratch target window to the front.
+`dictate` posts a real synthetic key event. It refuses to run while any other Voice helper or `pnpm dev` is running, because that app's hotkey tap would hear the press and record the room with the real microphone. Another worktree's verify instance counts too, because the hotkey is global. If it refuses, ask the user to quit Voice.app, or wait for the other session to `stop`. Never kill it yourself. It also brings the scratch target window to the front, which leaves the Voice window covered.
+
+A covered Voice window reports `document.visibilityState === "hidden"` and stops animation frames, so a closed dialog, menu, or outgoing tab panel stays in the DOM, and a menu does not open. Run `front` after `dictate` and before driving those, or check `vv eval hub 'document.visibilityState'`.
 
 ## Evidence
 
@@ -126,6 +129,7 @@ Proof standards:
 - Drive the real user path: a click in the hub, or the hotkey through `dictate`. `window.voice.updateSettings` is a setup shortcut, not proof that a control works.
 - Capture the action and the resulting state: a `shot` before and after, plus `text` or `snapshot` output, not only the final screen.
 - Check side effects alongside the UI. Settings persist in `<userData>/settings.json`, so `cat` it before `stop` deletes it. Model installs are files in `<userData>/models`. Insertion is the target textarea's value (`inserted`) and the first of `(await window.voice.getHistory()).entries`. Main-process logs are in `<userData>/main.log`.
+- The scratch target is an Electron textarea, which exposes no focused accessibility element, so `dictate` inserts with `paste`. That writes the real clipboard for about a second, then restores it.
 - Test mode replaces only the microphone with a fixture WAV. The hotkey tap, ASR, cleanup, and insertion are the production code paths. Don't describe a fixture-driven run as proof of capture-device behavior.
 - Use only the synthetic fixtures (`test-fixtures/audio/*.wav`: `short`, `long`, `silence`, `url`, `language-trigger`). Never use real recordings.
 
