@@ -481,7 +481,8 @@ const commands = {
       rejectInterrupt = reject;
     });
     const wait = (promise) => Promise.race([promise, interrupted]);
-    // The handlers stay for the whole teardown: a second Ctrl+C must not leave the instance running.
+    // The handlers stay until the command exits: a second Ctrl+C must not leave the instance running
+    // or end the command by signal instead of with its scenario status.
     const interrupt = (signal) => {
       if (abort.signal.aborted) {
         console.error(`voice-verify: ${signal} ignored; the scenario is tearing down its instance`);
@@ -618,8 +619,6 @@ const commands = {
       } catch (error) {
         failure = new AggregateError([failure, error].filter(Boolean), "scenario teardown failed");
       }
-      process.removeListener("SIGINT", interrupt);
-      process.removeListener("SIGTERM", interrupt);
     }
     const report = {
       scenario: name,
