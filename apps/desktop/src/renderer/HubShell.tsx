@@ -300,9 +300,7 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
   },
-  styleMain: { paddingBlock: space.xl },
   column: { maxWidth: 800, marginInline: "auto" },
-  homeColumn: { maxWidth: 1040 },
 });
 
 function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
@@ -593,19 +591,8 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
           </div>
         </aside>
       </SidebarTooltip>
-      <main
-        ref={mainRef}
-        tabIndex={-1}
-        {...stylex.props(styles.main, page === "style" && styles.styleMain)}
-      >
-        <div
-          key={page}
-          {...stylex.props(
-            styles.column,
-            page === "home" && styles.homeColumn,
-            shown.motion && pageMotion[shown.motion],
-          )}
-        >
+      <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
+        <div key={page} {...stylex.props(styles.column, shown.motion && pageMotion[shown.motion])}>
           <Page snapshot={snapshot} history={history} openPage={selectAppPage} />
         </div>
       </main>
