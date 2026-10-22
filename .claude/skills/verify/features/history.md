@@ -8,9 +8,9 @@ Home lists every dictation that produced a transcript, newest first, grouped und
 - `history-row`: after a session, a row appears under `TODAY` with the local time and the inserted text, line breaks kept.
 - `history-not-inserted`: a session that ended `notInserted` keeps its row, marked "Not inserted".
 - `history-copy`: clicking a row copies its text and briefly shows "Copied". The row's `Copy` button does the same from the keyboard.
-- `history-copy-raw`: `Copy raw transcript` appears only when the raw transcript differs from the inserted text, and copies the raw transcript.
+- `history-copy-raw`: `Copy raw transcript` appears only when the raw transcript differs from the inserted text, copies the raw transcript, and briefly shows "Copied raw transcript".
 - `history-delete`: `Delete` removes the row at once. With a saved history the file loses the entry first; if that fails the row stays, an error shows, and `Delete` again retries. A deleted session stays deleted when its cleanup lands a moment later.
-- `history-show-more`: Home mounts at most 100 rows. A longer history ends in a `Show 100 more` button, and search still covers every entry.
+- `history-show-more`: Home mounts at most 100 rows. A longer history ends in a `Show <n> more` button, where n is the hidden count up to 100, and search still covers every entry.
 - `history-actions-reveal`: a row's buttons fade in on hover or when a row button has keyboard focus.
 - `history-search`: the search field at the right of the History header filters rows by text or raw transcript, ignoring case. `⌘F` focuses it and selects its text, `Escape` clears it and leaves the field, and no hits read "No dictations match".
 - `history-memory`: the header says "Kept in memory until you quit Voice". A relaunch clears the list, and no `history.json` exists. The file is the only record of the choice: no file means memory, and settings.json holds nothing about history.
@@ -25,7 +25,7 @@ Home lists every dictation that produced a transcript, newest first, grouped und
 
 - Voice window > `Home` > `History`.
 - Voice window > `Settings` > `Data and Privacy` > `History`: `Keep history` (`#setting-history-retention`) and `Clear history`.
-- Menu bar icon > `Copy last transcript`. Agents can't drive this menu, so report it as unreached.
+- Menu bar icon > `Copy last transcript`, disabled while the history is empty. Agents can't drive this menu, so report it as unreached.
 
 ## Driving it with voice-verify
 
@@ -34,9 +34,9 @@ Preconditions: baseline. Producing a transcript needs `dictate`, so the [Dictati
 - **Empty state.** `vv click Home`, then `vv text`. The output includes "Your dictations show up here".
 - **Produce a transcript.** `vv dictate long.wav`. With cleanup on, `latest.raw` differs from `latest.text`, and `latest.status` is `inserted`.
 - **Row appears under Today.** `vv text` shows `TODAY`, a clock time, and `latest.text` under "History". Then `vv shot history-row`. Cross-check with `vv eval hub 'window.voice.getHistory()'`.
-- **Click copies.** Save the clipboard first: `pbpaste > "$TMPDIR/vv-clip"`. Then `vv click 'css:main section[aria-labelledby=history] li p'`, `vv wait hub 'document.querySelector("main section[aria-labelledby=history] li").textContent.includes("Copied")'`, write `latest.text` to a file without echoing it, and `pbpaste | cmp - <that file>`. `vv click 'css:button[aria-label^="Copy raw transcript"]'` and compare against `latest.raw` the same way. Restore with `pbcopy < "$TMPDIR/vv-clip" && rm "$TMPDIR/vv-clip"`.
+- **Click copies.** Save the clipboard first: `pbpaste > "$TMPDIR/vv-clip"`. Then `vv click 'css:main section[aria-labelledby=history] li:first-of-type p'`, `vv wait hub 'document.querySelector("main section[aria-labelledby=history] li").textContent.includes("Copied")'`, write `latest.text` to a file without echoing it, and `pbpaste | cmp - <that file>`. `vv click 'css:main section[aria-labelledby=history] li:first-of-type button[aria-label^="Copy raw transcript"]'` and compare against `latest.raw` the same way. Restore with `pbcopy < "$TMPDIR/vv-clip" && rm "$TMPDIR/vv-clip"`.
 - **Search.** `vv type 'css:input[type=search]' zzz`, then `vv text` shows "No dictations match". `vv click Insights`, then `vv click Home`, resets the search.
-- **Delete.** `vv click 'css:button[aria-label^="Delete dictation"]'`, then `vv text` shows the empty state again.
+- **Delete.** `vv click 'css:main section[aria-labelledby=history] li:first-of-type button[aria-label^="Delete dictation"]'`. The row leaves, and with no rows left `vv text` shows the empty state again.
 - **Show more.** Only reachable with more than 100 entries; `preview.html?hub=history-long` shows the button on fake data.
 - **Memory only.** Dictate once, then `vv stop --keep-user-data`, `vv launch --keep-user-data`, `vv click Home`, and `vv text`. The empty state is back, and `<userData>/history.json` does not exist.
 - **Saved across a relaunch.** `vv click Settings`, `vv click "Data and Privacy"`, `vv click css:#setting-history-retention`, `vv click "30 days"`. Check `retention` is `"month"` in `<userData>/history.json` and the file is mode `600` (`stat -f %Lp`). `vv click Back`, `vv click Home`, `vv dictate short.wav`, then `cat <userData>/history.json` shows one entry whose `id` matches `latest.id` (don't paste its text into notes). `vv stop --keep-user-data`, `vv launch --keep-user-data`, `vv click Home`, and `vv text` still shows the row under `TODAY` and "Saved on this Mac for 30 days".
@@ -50,4 +50,4 @@ Preconditions: baseline. Producing a transcript needs `dictate`, so the [Dictati
 - Copy writes the user's real clipboard. Save it before and restore it after, and never print or log the saved contents.
 - `Copy raw transcript` exists only when the raw text differs from the inserted text. With cleanup off, or with an already clean `short.wav`, it is absent by design.
 - The scratch userData starts in memory mode. A recipe that sets `Keep history` leaves `history.json` behind until `stop` deletes the userData, so revert the setting or relaunch fresh before the next recipe.
-- Row buttons are named with the row's time, such as `Copy dictation from 11:44 AM`, so target them with a `css:` prefix match when only one row exists.
+- Row buttons are named with the row's time and an excerpt, such as `Copy dictation from 17:07: Hi Anna, can…`, so target them with a `css:` prefix match scoped to one row (`li:first-of-type`).

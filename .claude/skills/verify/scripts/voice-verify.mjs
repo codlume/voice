@@ -183,7 +183,10 @@ async function waitOn(page, expression, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let last;
   while (Date.now() < deadline) {
-    last = await page.evaluate(`Promise.resolve(${expression}).catch(() => false)`);
+    // A matched element is truthy but cannot be returned by value.
+    last = await page.evaluate(
+      `Promise.resolve(${expression}).then((v) => (v instanceof Node ? true : v), () => false)`,
+    );
     if (last) return last;
     await sleep(100);
   }
@@ -710,6 +713,26 @@ const commands = {
     out({ reopened: true, secondCopyExit: second.status });
   },
 
+  async front() {
+    // A covered window reports visibilityState "hidden" and stops animation frames, so closing
+    // dialogs, menus, and outgoing tab panels stay in the DOM until it is painted again.
+    await evaluateInMain(
+      requireInstance().inspectPort,
+      `(() => {
+        const { app, BrowserWindow } = process.mainModule.require("electron");
+        const hub = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("hub.html"));
+        if (!hub) throw new Error("no Voice window; run reopen");
+        app.focus({ steal: true });
+        hub.show();
+        hub.focus();
+      })()`,
+    );
+    const hub = await connect("hub");
+    await waitOn(hub, 'document.visibilityState === "visible"', 5000);
+    hub.close();
+    out({ front: true });
+  },
+
   async "second-instance"() {
     const [code] = args;
     if (!code) fail("usage: second-instance <code>");
@@ -1104,6 +1127,7 @@ const commands = {
   menu <id>                      choose an application menu item by id, as its shortcut would
   second-instance <code>         launch a second Voice with that URL as its argument; print its exit
   reopen                         close the Voice window, then open Voice again (second copy hands over)
+  front                          bring the Voice window in front of other apps and wait until it paints
   record <name>                  screencast the hub to <name>.mp4 until SIGTERM (foreground; run in background)
   wait <page> <expr> [ms]        poll a page expression until truthy
   eval <page> <expr>             evaluate in hub or pill, print the result
