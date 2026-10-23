@@ -31,6 +31,7 @@ import {
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   cleanupBudgetMs,
   createDictation,
+  whenNotDictating,
   type Dictated,
   type SessionReport,
 } from "./dictation.ts";
@@ -272,6 +273,25 @@ describe("createDictation", () => {
     }));
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+  });
+
+  test("a show request waits for a transform run as it waits for a dictation", () => {
+    const h = harness();
+    const shown: string[] = [];
+    const showWhenIdle = whenNotDictating(h.store, () => shown.push(h.store.state.transform.phase));
+    h.store.update((s) => ({
+      ...s,
+      transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy" },
+    }));
+
+    showWhenIdle();
+    expect(shown).toEqual([]);
+
+    h.store.update((s) => ({
+      ...s,
+      transform: { phase: "done", id: "r1", outcome: { kind: "cancelled" } },
+    }));
+    expect(shown).toEqual(["done"]);
   });
 
   test("forwards only parameter-free helper log lines to diagnostics", () => {

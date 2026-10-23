@@ -110,18 +110,18 @@ export function createTransforms(options: TransformsOptions): Transforms {
   }
 
   store.subscribe((state, previous) => {
-    const run = state.transform;
+    const current = state.transform;
     if (
-      run.phase === "generating" &&
+      current.phase === "generating" &&
       state.models.transform.state === "ready" &&
       previous.models.transform.state !== "ready"
     ) {
-      armWatchdog(run);
+      armWatchdog(current);
     }
     // A dictation that starts over a finished run takes the pill; the stale outcome must not
     // come back once the dictation ends.
-    if (run.phase === "done" && dictating(state.session) && !dictating(previous.session)) {
-      dispatch({ type: "idleTimeout", id: run.id });
+    if (current.phase === "done" && dictating(state.session) && !dictating(previous.session)) {
+      dispatch({ type: "idleTimeout", id: current.id });
     }
   });
 

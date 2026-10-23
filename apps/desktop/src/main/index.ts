@@ -47,6 +47,7 @@ import {
   parseAccountName,
   resolveApiUrl,
 } from "./account.ts";
+import { activity } from "./activity.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -66,12 +67,13 @@ import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
-import { dictating, idle } from "./session.ts";
+import { idle } from "./session.ts";
 import { createSettingsQueue, editAssignments, type SettingsQueue } from "./settings-queue.ts";
 import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import { createTransformModel } from "./transform-model.ts";
+import { createTransforms, type Transforms } from "./transforms.ts";
 import { idleRun } from "./transform-run.ts";
 import {
   createUpdates,
@@ -363,8 +365,19 @@ async function main() {
   positionPill(pill);
 
   let dictation: Dictation;
+  let transforms: Transforms;
   let microphoneTest: MicrophoneTest;
   let installedApps: InstalledApps;
+  // The last hotkey.configure the helper got. A focus change or a settings change sends a new one
+  // only when the built command differs; a helper restart resends through `configure`.
+  let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
+  const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
+  function syncHotkeys() {
+    const next = hotkeyConfigure(store.state.settings, hubFocused());
+    if (sentHotkeys && isDeepStrictEqual(next, sentHotkeys)) return;
+    sentHotkeys = next;
+    helper.send(next);
+  }
   const helper: Helper = startHelper({
     binary: helperBinary(),
     modelsDir,
@@ -373,6 +386,7 @@ async function main() {
     onEvent: (event) => {
       if (lifecycle !== "running") return;
       dictation.onHelperEvent(event);
+      transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
       installedApps.onHelperEvent(event);
     },
@@ -387,11 +401,12 @@ async function main() {
           },
         }));
         dictation.dispatch({ type: "helperExited" });
+        transforms.dispatch({ type: "helperExited" });
         microphoneTest.helperExited();
       }
     },
     configure: () => [
-      hotkeyConfigure(store.state.settings, false),
+      (sentHotkeys = hotkeyConfigure(store.state.settings, hubFocused())),
       { type: "microphone.configure", microphone: store.state.settings.microphone },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
@@ -440,6 +455,16 @@ async function main() {
             new ClipboardItem({ "text/plain": text, "text/html": `<meta charset="utf-8">${html}` }),
           ]),
   });
+  transforms = createTransforms({
+    store,
+    send: helper.send,
+    model: transformModel,
+    log,
+    copy: (text) => clipboard.writeText(text),
+    onLastTransform: (value) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.lastTransform, value);
+    },
+  });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({
     store,
@@ -461,7 +486,7 @@ async function main() {
     onChange: (value) => store.update((s) => ({ ...s, updates: value })),
     canRestart: () =>
       lifecycle === "running" &&
-      !dictating(store.state.session) &&
+      activity(store.state) === "idle" &&
       store.state.settings.updateChannel === store.state.updates.channel,
     prepareRestart: async () => {
       lifecycle = "stopping";
@@ -534,7 +559,10 @@ async function main() {
       refreshLoginItem();
       void account.refresh();
       history.expire();
+      syncHotkeys();
     });
+    hub.on("blur", syncHotkeys);
+    hub.on("closed", syncHotkeys);
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
     hub.on("minimize", syncPermissionPolling);
@@ -651,8 +679,16 @@ async function main() {
     },
     applied: (next, previous) => {
       store.update((s) => ({ ...s, settings: next }));
-      if (!isDeepStrictEqual(hotkeyConfigure(next, false), hotkeyConfigure(previous, false)))
-        helper.send(hotkeyConfigure(next, false));
+      syncHotkeys();
+      if (next.transforms.enabled !== previous.transforms.enabled) {
+        if (next.transforms.enabled) {
+          if (!transformModel.onDisk()) void transformModel.install();
+        } else {
+          // A run in flight finishes; only what is kept for later goes.
+          transforms.clearLast();
+          void transformModel.unload();
+        }
+      }
       if (next.microphone?.uid !== previous.microphone?.uid)
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
@@ -699,8 +735,12 @@ async function main() {
     if (state === "loading" || (state === "downloading" && !model.cancelableDownload)) {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    if (model.neededWhileDictating && dictating(store.state.session)) {
+    const busy = activity(store.state);
+    if (model.neededWhileDictating && busy === "dictation") {
       throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
+    }
+    if (model.id === "transform" && busy === "transform") {
+      throw new Error(`Finish the transform, then uninstall the ${model.kind.toLowerCase()}.`);
     }
   }
 
@@ -779,6 +819,11 @@ async function main() {
       const entry = history.entries().find((candidate) => candidate.id === id);
       if (!entry) throw new Error("This transcript is no longer in your history.");
       clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
+    });
+    hubCommands.handle(Channel.getLastTransform, () => transforms.lastTransform());
+    hubCommands.handle(Channel.copyLastTransform, (_event, which: unknown) => {
+      if (which !== "before" && which !== "after") return;
+      transforms.copyLastTransform(which);
     });
     hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
       if (typeof id !== "string") return;
@@ -880,6 +925,7 @@ async function main() {
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
+    transforms.dispose();
     const stopped = Promise.allSettled([
       settingsQueue.settled(),
       insights.settled(),

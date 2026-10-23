@@ -16,7 +16,6 @@ import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnost
 import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
-  dictating,
   step,
   type Destination,
   type Effect as SessionEffect,
@@ -444,18 +443,19 @@ export function createDictation(options: DictationOptions): Dictation {
 }
 
 /**
- * Returns a request that runs `show` now, or once the current session reaches its outcome.
- * Showing a window mid-session would take focus from the target app and fail the insertion.
+ * Returns a request that runs `show` now, or once the current session or transform run reaches
+ * its outcome. Showing a window mid-session would take focus from the target app and fail the
+ * insertion.
  */
 export function whenNotDictating(store: Store, show: () => void): () => void {
   let pending = false;
   store.subscribe((state) => {
-    if (!pending || dictating(state.session)) return;
+    if (!pending || activity(state) !== "idle") return;
     pending = false;
     show();
   });
   return () => {
-    if (dictating(store.state.session)) pending = true;
+    if (activity(store.state) !== "idle") pending = true;
     else show();
   };
 }
