@@ -38,21 +38,14 @@ const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
 export function createTransformEngine({ modelPath }: { modelPath: string }): TransformEngine {
   const { load, serialize, withdrawal, dispose } = llamaHost(
     () =>
-      openLlama(
-        {
-          modelPath,
-          contextSize: TRANSFORM_MODEL.contextSize,
-          gpuLayers: TRANSFORM_MODEL.gpuLayers,
-        },
-        (llamaCpp, context) => ({
-          session: new llamaCpp.LlamaChatSession({
-            contextSequence: context.getSequence(),
-            // Thinking off, as #311 measured it.
-            chatWrapper: new llamaCpp.Gemma4ChatWrapper({ reasoning: false }),
-            systemPrompt: SYSTEM_PROMPT,
-          }),
+      openLlama({ modelPath, contextSize: TRANSFORM_MODEL.contextSize }, (llamaCpp, context) => ({
+        session: new llamaCpp.LlamaChatSession({
+          contextSequence: context.getSequence(),
+          // Thinking off, as #311 measured it.
+          chatWrapper: new llamaCpp.Gemma4ChatWrapper({ reasoning: false }),
+          systemPrompt: SYSTEM_PROMPT,
         }),
-      ),
+      })),
     "Transform model disposed",
   );
 
