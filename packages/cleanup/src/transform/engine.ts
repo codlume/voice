@@ -1,6 +1,8 @@
 // The transform adapter. Everything model-specific stays in this directory: the prompt, the chat
 // wrapper, the token budget and the output guard. Callers see requests and results.
-import type { ChatWrapper, Llama, LlamaChatSession, LlamaModel } from "node-llama-cpp";
+import type { ChatWrapper, LlamaModel } from "node-llama-cpp";
+
+import { llamaHost, openLlama } from "../llama-host.ts";
 
 import { budget, countWords } from "./budget.ts";
 import { guard } from "./guard.ts";
@@ -34,36 +36,27 @@ export type TransformEngine = {
   dispose(): Promise<void>;
 };
 
-type Engine = { llama: Llama; model: LlamaModel; session: LlamaChatSession };
-
 const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
 
 export function createTransformEngine({ modelPath }: { modelPath: string }): TransformEngine {
-  let engine: Promise<Engine> | undefined;
-  let queue: Promise<unknown> = Promise.resolve();
-  let disposal = new AbortController();
-
-  function load(): Promise<Engine> {
-    if (engine) return engine;
-    const loading: Promise<Engine> = openEngine(modelPath).catch((error: unknown) => {
-      if (engine === loading) engine = undefined;
-      throw error;
-    });
-    engine = loading;
-    return loading;
-  }
-
-  function serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = queue.then(task);
-    queue = run.catch(() => undefined);
-    return run;
-  }
+  const { load, serialize, withdrawal, dispose } = llamaHost(
+    () =>
+      openLlama({ modelPath, contextSize: TRANSFORM_MODEL.contextSize }, (llamaCpp, context) => ({
+        session: new llamaCpp.LlamaChatSession({
+          contextSequence: context.getSequence(),
+          // Thinking off, as #311 measured it.
+          chatWrapper: new llamaCpp.Gemma4ChatWrapper({ reasoning: false }),
+          systemPrompt: SYSTEM_PROMPT,
+        }),
+      })),
+    "Transform model disposed",
+  );
 
   async function attempt(
     request: TransformRequest,
     deadline: AbortSignal,
   ): Promise<TransformResult> {
-    const withdraw = AbortSignal.any([request.signal, disposal.signal]);
+    const withdraw = withdrawal(request.signal);
     withdraw.throwIfAborted();
     const { model, session } = await load();
     withdraw.throwIfAborted();
@@ -114,17 +107,7 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
       const timer = setTimeout(() => deadline.abort(), request.budgetMs);
       return serialize(() => attempt(request, deadline.signal)).finally(() => clearTimeout(timer));
     },
-    dispose: () => {
-      disposal.abort(new Error("Transform model disposed"));
-      return serialize(async () => {
-        const pending = engine;
-        engine = undefined;
-        disposal = new AbortController();
-        const loaded = await pending?.catch(() => undefined);
-        await loaded?.model.dispose();
-        await loaded?.llama.dispose();
-      });
-    },
+    dispose,
   };
 }
 
@@ -137,24 +120,4 @@ function promptTokens(chatWrapper: ChatWrapper, model: LlamaModel, user: string)
     ],
   });
   return contextText.tokenize(model.tokenizer).length;
-}
-
-async function openEngine(modelPath: string): Promise<Engine> {
-  // A static import breaks the CJS Electron bundle, because node-llama-cpp uses top-level await.
-  const { getLlama, Gemma4ChatWrapper, LlamaChatSession } = await import("node-llama-cpp");
-  const llama = await getLlama();
-  try {
-    const model = await llama.loadModel({ modelPath });
-    const context = await model.createContext({ contextSize: TRANSFORM_MODEL.contextSize });
-    const session = new LlamaChatSession({
-      contextSequence: context.getSequence(),
-      // Thinking off, as #311 measured it.
-      chatWrapper: new Gemma4ChatWrapper({ reasoning: false }),
-      systemPrompt: SYSTEM_PROMPT,
-    });
-    return { llama, model, session };
-  } catch (error) {
-    await llama.dispose();
-    throw error;
-  }
 }
