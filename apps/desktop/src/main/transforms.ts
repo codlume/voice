@@ -26,7 +26,7 @@ import {
 export type TransformsOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
-  model: Pick<TransformModel, "run" | "warm">;
+  model: Pick<TransformModel, "run">;
   /** Writes plain text to the system clipboard. Only the Last transform panel's Copy buttons reach it. */
   copy: (text: string) => void;
   onLastTransform: (value: LastTransform | null) => void;
@@ -166,7 +166,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
       case "readSelection":
         if (idleTimer) clearTimeout(idleTimer);
         active = { id: effect.id, controller: new AbortController(), readStartedAt: now() };
-        model.warm();
         send({ type: "selection.read", id: effect.id });
         return;
       case "generate":

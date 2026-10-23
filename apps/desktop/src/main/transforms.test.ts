@@ -84,7 +84,6 @@ function harness(opts: Options = {}) {
     resolve(result: TransformResult): void;
     reject(e: unknown): void;
   }[] = [];
-  let warms = 0;
   store.subscribe((state) => kinds.push(toSnapshot(state).session.kind));
   const transforms = createTransforms({
     store,
@@ -119,9 +118,6 @@ function harness(opts: Options = {}) {
       }
     },
     model: {
-      warm: () => {
-        warms += 1;
-      },
       run: (request) =>
         new Promise<TransformResult>((resolve, reject) => {
           request.signal.addEventListener("abort", () => reject(request.signal.reason), {
@@ -151,7 +147,6 @@ function harness(opts: Options = {}) {
     of,
     press,
     event,
-    warms: () => warms,
   };
 }
 
@@ -180,7 +175,6 @@ describe("createTransforms", () => {
       dictation: false,
       budgetMs: generateBudgetMs(8),
     });
-    expect(h.warms()).toBe(1);
 
     run.resolve({ ok: true, text: RESULT });
     await flush(10);
@@ -327,7 +321,7 @@ describe("createTransforms", () => {
     h.press();
 
     expect(h.of("selection.read")).toEqual([]);
-    expect(h.warms()).toBe(0);
+    expect(h.runs).toEqual([]);
     expect(h.store.state.transform).toMatchObject({
       phase: "done",
       outcome: { kind: "modelUnavailable", state },
