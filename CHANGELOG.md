@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.2 (2026-10-23)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* fix(release): force notarization stapling onto TCP by @hadrysm in https://github.com/codlume/voice/pull/313
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.20.1...v0.20.2
+
 ## 0.20.1 (2026-10-22)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
