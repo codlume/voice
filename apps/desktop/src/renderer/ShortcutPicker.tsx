@@ -4,7 +4,7 @@ import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import type { Hotkey } from "../shared/api.ts";
 import type { Modifier, Shortcut, Transform } from "../shared/transforms.ts";
 import { Button } from "./Button.tsx";
-import { Keycap } from "./Keycap.tsx";
+import { Keys } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as form } from "./RecordList.tsx";
 import { styles as settings } from "./Settings.tsx";
@@ -73,16 +73,6 @@ export function useKeyboardLayout(): KeyboardLayout | null {
     };
   }, []);
   return layout;
-}
-
-export function Keys({ keys }: { keys: readonly string[] }) {
-  return (
-    <kbd {...stylex.props(settings.keys)}>
-      {keys.map((key) => (
-        <Keycap key={key}>{key}</Keycap>
-      ))}
-    </kbd>
-  );
 }
 
 type Recording = { modifiers: readonly Modifier[]; refusal: string | null };
