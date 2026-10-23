@@ -47,34 +47,27 @@ export const GEMMA_4_E2B: ModelSource = {
   legal: [{ name: "LICENSE", from: "bundled", text: APACHE_2_0_LICENSE }],
 };
 
-type DownloadOptions = {
-  dir: string;
+type ModelOptions = { dir: string; source: ModelSource };
+
+type DownloadOptions = ModelOptions & {
+  // Overrides the source's base URL, as test mode does to serve the weights locally.
+  baseUrl?: string | undefined;
   onProgress?: ((fraction: number) => void) | undefined;
   signal?: AbortSignal | undefined;
+  stallTimeoutMs?: number | undefined;
 };
 
 const STALL_TIMEOUT_MS = 30_000;
-type StallOptions = { stallTimeoutMs?: number | undefined };
-
-export function downloadS1Mini({
-  baseUrl = S1_MINI.baseUrl,
-  ...options
-}: DownloadOptions & { baseUrl?: string | undefined }): Promise<string> {
-  return downloadModel({ ...options, ...S1_MINI, baseUrl });
-}
 
 // A stall, network error or abort keeps the weights' `.part`, and the next run resumes it.
 export async function downloadModel({
   dir,
-  baseUrl,
-  file,
-  bytes,
-  sha256,
-  legal,
+  source: { file, bytes, sha256, legal, ...source },
+  baseUrl = source.baseUrl,
   onProgress,
   signal,
   stallTimeoutMs,
-}: DownloadOptions & ModelSource & StallOptions): Promise<string> {
+}: DownloadOptions): Promise<string> {
   const path = join(dir, file);
   if (await matches(path, bytes, sha256, signal)) return path;
 
@@ -97,10 +90,7 @@ export async function downloadModel({
 }
 
 // The download renames the weights into place last, so their presence means the install finished.
-export async function findModel({
-  dir,
-  source,
-}: Pick<DownloadOptions, "dir"> & { source: ModelSource }): Promise<string | undefined> {
+export async function findModel({ dir, source }: ModelOptions): Promise<string | undefined> {
   const path = join(dir, source.file);
   try {
     await access(path);
@@ -110,18 +100,7 @@ export async function findModel({
   }
 }
 
-export function findS1Mini({ dir }: Pick<DownloadOptions, "dir">): Promise<string | undefined> {
-  return findModel({ dir, source: S1_MINI });
-}
-
-export function removeS1Mini({ dir }: Pick<DownloadOptions, "dir">): Promise<void> {
-  return removeModel({ dir, source: S1_MINI });
-}
-
-export async function removeModel({
-  dir,
-  source: { file, legal },
-}: Pick<DownloadOptions, "dir"> & { source: ModelSource }): Promise<void> {
+export async function removeModel({ dir, source: { file, legal } }: ModelOptions): Promise<void> {
   const paths = [file, ...legal.map(({ name }) => `${file}.${name}`)].map((name) =>
     join(dir, name),
   );
@@ -158,7 +137,7 @@ async function fetchToFile(
     onProgress,
     signal,
     stallTimeoutMs = STALL_TIMEOUT_MS,
-  }: Omit<DownloadOptions, "dir"> & StallOptions & { expected?: Expected },
+  }: Pick<DownloadOptions, "onProgress" | "signal" | "stallTimeoutMs"> & { expected?: Expected },
 ): Promise<void> {
   const part = `${path}.part`;
   const kept = expected ? await keptBytes(part, expected.bytes) : 0;

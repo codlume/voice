@@ -6,7 +6,12 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
-import { downloadS1Mini, GEMMA_4_E2B, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import {
+  downloadModel,
+  GEMMA_4_E2B,
+  S1_MINI,
+  S1_MINI_FILE,
+} from "../packages/cleanup/src/download.ts";
 import {
   claimScratch,
   releaseScratch,
@@ -255,7 +260,7 @@ export async function prepareUserData(name) {
     const cache = modelsDir();
     console.error(`preparing test models in ${cache}`);
     await Promise.all([
-      downloadS1Mini({ dir: cache }),
+      downloadModel({ dir: cache, source: S1_MINI }),
       withHelper({ env: smokeEnvironment(userData) }, (helper) =>
         prepareAsr(helper, { download: true }),
       ),

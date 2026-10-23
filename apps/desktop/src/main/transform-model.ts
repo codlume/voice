@@ -178,8 +178,8 @@ export function createTransformModel(options: TransformModelOptions): TransformM
           const { downloadModel, source } = await loadModule();
           const path = await downloadModel({
             dir: options.modelsDir,
-            ...source,
-            baseUrl: options.baseUrl ?? source.baseUrl,
+            source,
+            baseUrl: options.baseUrl,
             onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
             signal: controller.signal,
           });

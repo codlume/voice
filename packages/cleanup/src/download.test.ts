@@ -10,11 +10,9 @@ import { APACHE_2_0_LICENSE } from "./apache-2.0.ts";
 import {
   downloadModel,
   findModel,
-  findS1Mini,
   GEMMA_4_E2B,
   removeModel,
   S1_MINI,
-  S1_MINI_FILE,
   type LegalFile,
   type ModelSource,
 } from "./download.ts";
@@ -128,14 +126,15 @@ const source = (legal = LICENSE_AND_NOTICE): ModelSource => ({
   legal,
 });
 
-const download = (
-  options: {
-    onProgress?: (fraction: number) => void;
-    signal?: AbortSignal;
-    stallTimeoutMs?: number;
-    legal?: readonly LegalFile[];
-  } = {},
-) => downloadModel({ dir, ...source(options.legal), baseUrl, ...options });
+const download = ({
+  legal,
+  ...options
+}: {
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  stallTimeoutMs?: number;
+  legal?: readonly LegalFile[];
+} = {}) => downloadModel({ dir, source: source(legal), baseUrl, ...options });
 
 test("downloads the model with its LICENSE and NOTICE and reports progress up to 1", async () => {
   const progress: number[] = [];
@@ -342,21 +341,6 @@ test("rejects an HTTP error", async () => {
   await expect(download()).rejects.toThrow("HTTP 404");
 });
 
-test("findS1Mini finds the weights only once a download has renamed them into place", async () => {
-  for (const name of [
-    `${S1_MINI_FILE}.part`,
-    `${S1_MINI_FILE}.LICENSE`,
-    `${S1_MINI_FILE}.NOTICE`,
-  ]) {
-    await writeFile(join(dir, name), "partial");
-  }
-  await expect(findS1Mini({ dir })).resolves.toBeUndefined();
-
-  await writeFile(join(dir, S1_MINI_FILE), "weights");
-
-  await expect(findS1Mini({ dir })).resolves.toBe(join(dir, S1_MINI_FILE));
-});
-
 test("removeModel deletes everything a download wrote and keeps other files", async () => {
   await download();
   await writeFile(join(dir, "other.gguf"), "keep");
@@ -401,8 +385,10 @@ test("removeModel deletes the legal files its source lists", async () => {
   expect(await readdir(dir)).toEqual([]);
 });
 
-test("findModel finds a source's weights only once they are in place", async () => {
-  await writeFile(join(dir, "model.gguf.part"), "partial");
+test("findModel finds a source's weights only once a download has renamed them into place", async () => {
+  for (const name of ["model.gguf.part", "model.gguf.LICENSE", "model.gguf.NOTICE"]) {
+    await writeFile(join(dir, name), "partial");
+  }
   await expect(findModel({ dir, source: source() })).resolves.toBeUndefined();
 
   await writeFile(join(dir, "model.gguf"), "weights");

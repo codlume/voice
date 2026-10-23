@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
 import type { CleanRequest, CleanupStyle } from "@voice/cleanup";
-import { findS1Mini, removeS1Mini, S1_MINI_FILE } from "@voice/cleanup/download";
+import { findModel, removeModel, S1_MINI, S1_MINI_FILE } from "@voice/cleanup/download";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type ModelStatus, type Settings } from "../shared/api.ts";
@@ -46,8 +46,9 @@ function fakeModule(behavior: Behavior = {}) {
     lost: [] as ((message: string) => void)[],
   };
   const module: CleanupModule = {
-    findS1Mini,
-    async downloadS1Mini({ dir, onProgress, signal: abort }) {
+    source: S1_MINI,
+    findModel,
+    async downloadModel({ dir, onProgress, signal: abort }) {
       calls.downloads += 1;
       calls.downloadSignals.push(abort);
       if (behavior.downloadError) throw new Error(behavior.downloadError);
@@ -61,9 +62,9 @@ function fakeModule(behavior: Behavior = {}) {
       await writeFile(path, "weights");
       return path;
     },
-    async removeS1Mini(options) {
+    async removeModel(options) {
       if (behavior.removeError) throw new Error(behavior.removeError);
-      await removeS1Mini(options);
+      await removeModel(options);
     },
     createS1Mini({ modelPath, onLost }) {
       calls.creates += 1;
