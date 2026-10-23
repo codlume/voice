@@ -139,8 +139,8 @@ describe("parseSettings", () => {
     },
   );
 
-  test.each([undefined, { enabled: true, items: [], autoApply: "polish" }, "on"])(
-    "loads transforms %j as the switched-off defaults until the page exists",
+  test.each([undefined, null, "on", []])(
+    "loads transforms %j as the switched-off defaults",
     (transforms) => {
       expect(parseSettings({ transforms }).transforms).toEqual(DEFAULT_TRANSFORMS);
     },

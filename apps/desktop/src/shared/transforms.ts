@@ -89,35 +89,115 @@ export function registeredShortcuts(settings: TransformSettings): HelperShortcut
   );
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const isModifier = (v: unknown): v is Modifier => MODIFIERS.some((modifier) => modifier === v);
+
+// kVK_RightCommand through kVK_Function: a modifier alone is never the shortcut's key.
+const MODIFIER_KEYCODES = new Set([54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
+
 /** Canonicalizes a raw shortcut; null for anything that is not one. */
-export function parseShortcut(_raw: unknown): Shortcut | null {
-  throw new Error("not implemented");
+export function parseShortcut(raw: unknown): Shortcut | null {
+  if (!isRecord(raw)) return null;
+  const { keycode, modifiers } = raw;
+  if (typeof keycode !== "number" || !Number.isInteger(keycode)) return null;
+  if (keycode < 0 || keycode > 127 || MODIFIER_KEYCODES.has(keycode)) return null;
+  if (!Array.isArray(modifiers) || !modifiers.every(isModifier)) return null;
+  const canonical = MODIFIERS.filter((modifier) => modifiers.includes(modifier));
+  // Shift alone, or no modifier, would take a character away from every app.
+  if (!canonical.some((modifier) => modifier !== "shift")) return null;
+  return { keycode, modifiers: canonical };
 }
 
 /** `others` never contains the item being checked (snippets.ts convention). */
 export function transformProblem(
-  _transform: Transform,
-  _others: readonly Transform[],
+  transform: Transform,
+  others: readonly Transform[],
 ): TransformProblem | null {
-  throw new Error("not implemented");
+  const { name, instruction, shortcut } = transform;
+  if (name.trim() === "") return { field: "name", message: "Enter a name." };
+  if (name.length > TRANSFORM_NAME_MAX_LENGTH) {
+    return { field: "name", message: `Use ${TRANSFORM_NAME_MAX_LENGTH} characters or fewer.` };
+  }
+  if (instruction.trim() === "") {
+    return { field: "instruction", message: "Enter what the transform should do." };
+  }
+  if (instruction.length > INSTRUCTION_MAX_LENGTH) {
+    return {
+      field: "instruction",
+      message: `Use ${INSTRUCTION_MAX_LENGTH.toLocaleString("en-US")} characters or fewer.`,
+    };
+  }
+  if (shortcut === null) return null;
+  const canonical = parseShortcut(shortcut);
+  if (canonical === null || !sameShortcut(canonical, shortcut)) {
+    return { field: "shortcut", message: "Hold Control, Option or Command with one other key." };
+  }
+  const holder = others.find((other) => other.shortcut && sameShortcut(other.shortcut, shortcut));
+  if (holder) return { field: "shortcut", message: `${holder.name} already uses this shortcut.` };
+  return null;
 }
 
 /** Lenient, for disk: drops unreadable items, nulls a bad or repeated shortcut, never throws. */
-export function parseTransforms(_raw: unknown): Transform[] {
-  throw new Error("not implemented");
+export function parseTransforms(raw: unknown): Transform[] {
+  if (!Array.isArray(raw)) return [];
+  const kept: Transform[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const { id, name, instruction } = item;
+    if (typeof id !== "string" || id === "") continue;
+    if (typeof name !== "string" || typeof instruction !== "string") continue;
+    if (kept.some((other) => other.id === id)) continue;
+    const transform: Transform = { id: id as TransformId, name, instruction, shortcut: null };
+    if (transformProblem(transform, [])) continue;
+    // Losing a shortcut is cheap; losing the instruction the user wrote is not.
+    const shortcut = parseShortcut(item.shortcut);
+    const withShortcut = { ...transform, shortcut };
+    kept.push(shortcut && !transformProblem(withShortcut, kept) ? withShortcut : transform);
+  }
+  return kept;
 }
 
 /** Lenient, for disk. A file from before Transforms loads with the defaults, switched off. */
-export function parseTransformSettings(_raw: unknown): TransformSettings {
-  return DEFAULT_TRANSFORMS;
+export function parseTransformSettings(raw: unknown): TransformSettings {
+  if (!isRecord(raw)) return DEFAULT_TRANSFORMS;
+  // An empty list is the user's choice: deleting every transform must not bring the built-ins back.
+  const items = Array.isArray(raw.items) ? parseTransforms(raw.items) : BUILT_IN_TRANSFORMS;
+  const autoApply = items.find(({ id }) => id === raw.autoApply)?.id ?? null;
+  return { enabled: raw.enabled === true, items, autoApply };
 }
+
+// Sorted keys, so a list that differs only in key order still counts as unchanged.
+const canonicalJson = (value: unknown) =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    isRecord(v)
+      ? Object.fromEntries(Object.entries(v).toSorted(([a], [b]) => (a < b ? -1 : 1)))
+      : v,
+  );
 
 /** Strict, for the patch schema: true only when parseTransforms would leave `items` unchanged. */
-export function isValidTransformList(_items: readonly unknown[]): boolean {
-  throw new Error("not implemented");
+export function isValidTransformList(items: readonly unknown[]): boolean {
+  return canonicalJson(parseTransforms(items)) === canonicalJson(items);
 }
 
-/** Rewrites the built-ins as shipped and leaves every custom transform untouched. */
-export function restoreDefaults(_items: readonly Transform[]): Transform[] {
-  throw new Error("not implemented");
+/**
+ * Rewrites the built-ins as shipped and leaves every custom transform untouched. A deleted
+ * built-in comes back at the front. When a custom transform holds a built-in's shortcut, the
+ * built-in comes back without one: restoring never edits what the user made.
+ */
+export function restoreDefaults(items: readonly Transform[]): Transform[] {
+  const builtInIds = new Set(BUILT_IN_TRANSFORMS.map(({ id }) => id));
+  const custom = items.filter(({ id }) => !builtInIds.has(id));
+  const restored = new Map(
+    BUILT_IN_TRANSFORMS.map((builtIn) => {
+      const { shortcut } = builtIn;
+      const taken = custom.some(
+        (other) => other.shortcut && shortcut && sameShortcut(other.shortcut, shortcut),
+      );
+      return [builtIn.id, taken ? { ...builtIn, shortcut: null } : builtIn];
+    }),
+  );
+  const missing = [...restored.values()].filter(({ id }) => !items.some((t) => t.id === id));
+  return [...missing, ...items.map((t) => restored.get(t.id) ?? t)];
 }
