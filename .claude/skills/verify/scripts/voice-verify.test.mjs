@@ -247,14 +247,15 @@ test("dictate --app parses a bundle id with an optional host, and the defaults s
   assert.throws(() => parseDictateFlags(["--key=tap"]), /--key must be/);
 });
 
+const press = (type, code, key, windowsVirtualKeyCode, modifiers) => ({
+  type,
+  code,
+  key,
+  windowsVirtualKeyCode,
+  modifiers,
+});
+
 test("key presses each modifier around the key and releases them in reverse", () => {
-  const press = (type, code, key, windowsVirtualKeyCode, modifiers) => ({
-    type,
-    code,
-    key,
-    windowsVirtualKeyCode,
-    modifiers,
-  });
   assert.deepEqual(keyEvents("Digit1", ["option"]), [
     press("rawKeyDown", "AltLeft", "Alt", 18, 1),
     press("rawKeyDown", "Digit1", "1", 49, 1),
@@ -334,8 +335,9 @@ test("transform flags default to Option+1 in the scratch textarea and reject typ
   assert.throws(() => parseTransformFlags(["--target", "textedit"]), /--target must be/);
 });
 
+const item = (name, keycode, modifiers) => ({ name, shortcut: { keycode, modifiers } });
+
 test("transform finds the item on exactly Option plus the key", () => {
-  const item = (name, keycode, modifiers) => ({ name, shortcut: { keycode, modifiers } });
   const transforms = {
     enabled: true,
     items: [

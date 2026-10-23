@@ -50,6 +50,14 @@ function physicalKey(code, shifted) {
   return null;
 }
 
+const event = (type, { code, key, keyCode }, modifiers) => ({
+  type,
+  code,
+  key,
+  windowsVirtualKeyCode: keyCode,
+  modifiers,
+});
+
 export function keyEvents(code, modifierNames = []) {
   const unknown = modifierNames.filter((name) => !Object.hasOwn(MODIFIERS, name));
   if (unknown.length > 0)
@@ -62,13 +70,6 @@ export function keyEvents(code, modifierNames = []) {
     throw new Error(
       `unknown key code ${code}; use a KeyboardEvent.code such as KeyA, Digit1, Enter, or Comma`,
     );
-  const event = (type, { code: c, key, keyCode }, modifiers) => ({
-    type,
-    code: c,
-    key,
-    windowsVirtualKeyCode: keyCode,
-    modifiers,
-  });
   const events = [];
   let bits = 0;
   for (const modifier of held) {
