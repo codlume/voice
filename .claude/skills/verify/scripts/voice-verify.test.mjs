@@ -71,11 +71,8 @@ test("cold doctor and help run without dependencies and leave caches untouched",
     electron: "missing: run pnpm install",
   });
   assert.equal(report.instance, "none");
-  assert.deepEqual(report.testModels, {
-    asr: "will download",
-    cleanup: "will download",
-    transform: "missing",
-  });
+  assert.deepEqual(report.testModels, { asr: "will download", cleanup: "will download" });
+  assert.deepEqual(report.optionalTestModels, { transform: "missing" });
   assert.equal(existsSync(cache), false);
   assert.deepEqual(readdirSync(temp), []);
   const help = run("help");

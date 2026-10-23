@@ -388,20 +388,20 @@ const commands = {
       fixtures: existsSync(join(fixturesDir, "short.wav"))
         ? "present"
         : "missing: run node scripts/fixtures.mjs",
-      testModels: {
-        ...Object.fromEntries(
-          Object.entries(modelFiles).map(([id, file]) => [
-            id,
-            existsSync(join(cache, file)) ? "cached" : "will download",
-          ]),
-        ),
-        ...Object.fromEntries(
-          Object.entries(optionalModelFiles).map(([id, file]) => [
-            id,
-            existsSync(join(cache, file)) ? "cached" : "missing",
-          ]),
-        ),
-      },
+      // Every launch needs these, and `launch` downloads what is missing.
+      testModels: Object.fromEntries(
+        Object.entries(modelFiles).map(([id, file]) => [
+          id,
+          existsSync(join(cache, file)) ? "cached" : "will download",
+        ]),
+      ),
+      // Only some commands need these, and nothing downloads them.
+      optionalTestModels: Object.fromEntries(
+        Object.entries(optionalModelFiles).map(([id, file]) => [
+          id,
+          existsSync(join(cache, file)) ? "cached" : "missing",
+        ]),
+      ),
       instance: instance
         ? { ...instance, cdpPages: cdp }
         : state
