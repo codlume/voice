@@ -72,12 +72,9 @@ function listProcesses(column, pids) {
     });
 }
 
-// A dev session or Voice.app runs its own helper with real microphone permission, and its tap
-// hears synthetic presses too, so it would record the room into the test documents.
 export const CONTENDING_VOICE_MESSAGE =
   "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.";
 
-// Call before posting key events or installing a hotkey tap.
 export function refuseIfVoiceIsRunning() {
   const running = runningVoiceProcesses();
   if (running.length === 0) return;
@@ -156,7 +153,6 @@ export class Helper {
 }
 
 export async function withHelper(options, body) {
-  // Imported here so scripts that never start a helper, such as a cold doctor, need no dependencies.
   const { HELPER_PROTOCOL_VERSION } = await import("../../../apps/desktop/src/main/protocol.ts");
   const helper = new Helper(options);
   try {

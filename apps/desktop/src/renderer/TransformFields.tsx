@@ -17,7 +17,6 @@ const styles = stylex.create({
   instruction: { minHeight: 140, resize: "vertical", lineHeight: 1.45 },
 });
 
-/** Name, instruction and shortcut, inside the transform editor. */
 export function TransformFields({
   editor: { draft, edit, shown, message, saveOnEnter },
   others,

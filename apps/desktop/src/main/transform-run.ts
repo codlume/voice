@@ -1,6 +1,3 @@
-// The transform run reducer. Pure, like session.ts: step(state, event) -> { state, effects }.
-// `TransformRun` has no field that can hold selected text or a result. Text exists only inside
-// events and effects, so the run can sit in the store and still cannot reach a Snapshot or a log.
 import { countWords } from "@voice/cleanup/words";
 
 import type {
@@ -25,27 +22,21 @@ export type SelectionVia = "accessibility" | "copy";
 export type TransformRun =
   | { phase: "idle" }
   | { phase: "reading"; id: string; transformId: TransformId }
-  // `words` sizes the generation budget, so the watchdog is a function of this state alone.
   | { phase: "generating"; id: string; transformId: TransformId; via: SelectionVia; words: number }
-  // A paste cannot be recalled, so cancel is ignored from here on.
   | { phase: "inserting"; id: string }
   | { phase: "done"; id: string; outcome: TransformOutcome };
 
 export const idleRun: TransformRun = { phase: "idle" };
 
-/** A run between the shortcut and its outcome, while the target app must keep focus. */
 export const transforming = (run: TransformRun) => run.phase !== "idle" && run.phase !== "done";
 
 export type GenerateFailure =
   | { kind: "tooLong"; maxWords: number }
   | { kind: "timedOut" }
   | { kind: "rejected" }
-  // Engine lost or crashed. It carries no message, so none can reach the pill or a log.
   | { kind: "error" };
 
 export type TransformEvent =
-  // The model status rides in the event, like `asr` on a dictation hotkeyDown, so the reducer
-  // decides modelUnavailable before the helper touches the selection.
   | { type: "shortcut"; id: string; transformId: TransformId; model: ModelStatus }
   | { type: "selected"; id: string; text: string; via: SelectionVia }
   | { type: "selectionFailed"; id: string; failure: SelectionFailure }
@@ -60,20 +51,16 @@ export type TransformEvent =
 export type TransformEffect =
   | { type: "readSelection"; id: string }
   | { type: "generate"; id: string; transformId: TransformId; text: string; words: number }
-  // Sets Last transform before the write, so a refused write keeps the result.
   | { type: "keep"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; text: string }
-  // Emitted by every path into `done`, so the helper's Escape grab cannot outlive the run.
   | { type: "endRun"; id: string }
   | { type: "scheduleIdle"; id: string; ms: number };
 
 export type Step = { state: TransformRun; effects: TransformEffect[] };
 
-// 1 s release wait plus 0.5 s copy deadline plus margin.
 export const READ_TIMEOUT_MS = 4000;
 export const GENERATE_GRACE_MS = 2000;
 
-/** On-demand engine budget for a selection of `words` words. */
 export const GENERATE_BUDGET: Budget = { base: 15_000, perWord: 40, max: 60_000 };
 export const generateBudgetMs = (words: number) => budget(GENERATE_BUDGET, words);
 
@@ -109,24 +96,6 @@ function generateFailure(failure: GenerateFailure): TransformOutcome {
   }
 }
 
-/**
- * Transition table (anything not listed returns the same state and no effects). Events with an
- * `id` that is not the current run's are stale and ignored, as in session.ts. Every path into
- * `done` goes through finish(), which emits `endRun`.
- *
- *  shortcut         idle|done           model missing|downloading|failed -> done(modelUnavailable)
- *                                       otherwise -> reading + readSelection
- *                   reading..inserting  ignored (a second shortcut mid-run)
- *  selected         reading             -> generating + generate
- *  selectionFailed  reading             -> done(noSelection|secureInput|noFocusedField|keysHeld|failed)
- *  generated        generating          -> inserting + keep + insert
- *  generateFailed   generating          -> done(tooLong|failed)
- *  insertResult     inserting           -> done(inserted|notInserted)
- *  cancel           reading|generating  -> done(cancelled); inserting ignored
- *  helperExited     reading|generating  -> done(failed); inserting -> done(notInserted failed)
- *  timedOut         its own phase only  reading|generating -> done(failed); inserting -> done(notInserted failed)
- *  idleTimeout      done                -> idle
- */
 export function step(state: TransformRun, event: TransformEvent): Step {
   const same = { state, effects: [] };
   const stale =
@@ -214,7 +183,6 @@ export function step(state: TransformRun, event: TransformEvent): Step {
       return same;
     }
     case "timedOut": {
-      // A watchdog armed for an earlier phase can fire after the phase moved on.
       if (state.phase !== event.phase) return same;
       if (state.phase === "reading") return finish(state.id, failed(HELPER_TIMEOUT_MESSAGE));
       if (state.phase === "generating") return finish(state.id, failed(TIMED_OUT_MESSAGE));
@@ -225,7 +193,6 @@ export function step(state: TransformRun, event: TransformEvent): Step {
   }
 }
 
-/** Null for an idle run, so the caller falls through to the dictation pill. */
 export function toPillState(run: TransformRun, model: ModelStatus): PillState | null {
   switch (run.phase) {
     case "idle":

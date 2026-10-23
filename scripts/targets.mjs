@@ -1,5 +1,3 @@
-// The apps that verification drives text into: a named TextEdit document and the scratch Electron
-// textarea. Every smoke and verify command that needs a focused text field starts from here.
 import { execFile, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -24,7 +22,6 @@ function osascript(script) {
   return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 }
 
-// Resolves with the first truthy result of check, which may be async.
 async function until(check, timeoutMs, message) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -35,7 +32,6 @@ async function until(check, timeoutMs, message) {
   }
 }
 
-// Makes the process frontmost and waits until the OS agrees, so a posted key reaches it.
 export async function activate(pid, name) {
   osascript(
     `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`,
@@ -73,8 +69,6 @@ export function textEditTarget(label) {
 
   return {
     name: "TextEdit",
-    // Opens a new document holding text and makes it the current one. Returns a handle whose
-    // front() brings that document back, as when the user switches windows.
     async open(text = "") {
       const name = `${label}-${randomUUID()}.txt`;
       const file = join(dir, name);
@@ -105,7 +99,6 @@ export function textEditTarget(label) {
     selectAll() {
       osascript('tell application "System Events" to keystroke "a" using command down');
     },
-    // What accessibility reports as selected, or null when it reports nothing.
     axSelectedText() {
       try {
         return osascript(
@@ -134,8 +127,6 @@ export function textEditTarget(label) {
 
 const FIELD = 'document.getElementById("field")';
 
-// The scratch Electron app with one textarea. userData is the caller's to create and remove, and
-// stopChildren() ends the process. wait wraps each pending step so an interrupt can cut it short.
 export async function electronTarget(userData, { wait = (promise) => promise } = {}) {
   const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
   const child = start(
@@ -163,8 +154,6 @@ export async function electronTarget(userData, { wait = (promise) => promise } =
     axSelectedText: () => null,
     read: () => page.evaluate(`${FIELD}.value`),
     front,
-    // Every keydown the page sees, with its modifiers, so a leaked Option on a posted Cmd+C
-    // shows up as alt: true on the "c" event.
     watchKeys: () =>
       page.evaluate(
         `window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push({ key: e.key, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey, ctrl: e.ctrlKey }), true); true`,

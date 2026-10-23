@@ -1,5 +1,3 @@
-// The one place that names the transform model. Swapping it edits this file, the chat wrapper
-// in engine.ts and the display row in the desktop app's models list.
 import { APACHE_2_0_LICENSE } from "../apache-2.0.ts";
 import type { ModelSource } from "../download.ts";
 
@@ -15,9 +13,7 @@ export const GEMMA_4_E2B: ModelSource = {
 
 export type TransformModelSpec = {
   readonly source: ModelSource;
-  // Tokens in the one context sequence the engine reuses for every run.
   readonly contextSize: number;
-  // The most words a selection may have, whatever its tokens.
   readonly maxWords: number;
 };
 

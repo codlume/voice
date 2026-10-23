@@ -1,4 +1,3 @@
-// The page expression behind `click`, kept apart so a test can run it against a stub document.
 const show = (value) => JSON.stringify(value);
 
 export const ACCESSIBLE_NAME = `(el) => {
@@ -20,9 +19,6 @@ function findExpression(target) {
   return `[...document.querySelectorAll(${show(CANDIDATES)})].filter(${visible}).filter((el) => (${ACCESSIBLE_NAME})(el) === ${show(target)})`;
 }
 
-// Resolves to { clicked } for the one enabled visible match, { ambiguous } for several, and false
-// until there is exactly one. A mouse click gives the element keyboard focus before it clicks, and
-// controls such as the shortcut picker record the key presses that follow, so this does the same.
 export function clickExpression(target) {
   return `(() => {
     const matches = ${findExpression(target)};

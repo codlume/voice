@@ -1,11 +1,5 @@
-// `KeyboardEvent.code` names a physical key; the helper matches macOS virtual keycodes (Carbon
-// kVK_*). Both are positions, so the table holds on every layout. It is the whole set of keys a
-// shortcut can use, on disk and in the picker. The label is what the key types on a US layout, or
-// its name, and is the fallback when the renderer cannot read the user's layout.
-
 type Key = readonly [code: string, keycode: number, label: string];
 
-// Keys that type a character, so Option with them types another one, like ¡ or a non-breaking space.
 const TYPING_KEYS: readonly Key[] = [
   ["KeyA", 0, "A"],
   ["KeyS", 1, "S"],
@@ -87,15 +81,11 @@ const byKeycode = new Map(
   KEYS.map(({ key: [code, keycode, label], types }) => [keycode, { code, label, types }]),
 );
 
-/** The macOS keycode for a physical key, or null for a key a shortcut cannot use. */
 export const keycodeForCode = (code: string): number | null => byCode.get(code) ?? null;
 
-/** The `KeyboardEvent.code` of a stored keycode, to look the key up in the user's layout. */
 export const codeForKeycode = (keycode: number): string | null =>
   byKeycode.get(keycode)?.code ?? null;
 
-/** What the key types on a US layout, or its name when it types nothing visible. */
 export const usLabel = (keycode: number): string | null => byKeycode.get(keycode)?.label ?? null;
 
-/** Whether the key types a character; false for Return, Tab, F-keys, arrows and unknown keys. */
 export const typesCharacter = (keycode: number): boolean => byKeycode.get(keycode)?.types ?? false;

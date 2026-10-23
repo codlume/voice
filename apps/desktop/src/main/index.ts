@@ -362,8 +362,6 @@ async function main() {
   let transforms: Transforms;
   let microphoneTest: MicrophoneTest;
   let installedApps: InstalledApps;
-  // The last hotkey.configure the helper got. A focus change or a settings change sends a new one
-  // only when the built command differs; a helper restart resends through `configure`.
   let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
   const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
   const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
@@ -864,7 +862,7 @@ async function main() {
   void cleanup.loadIfDownloaded();
   void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
-  // verify skill run the transform model without a shortcut, deliver a sign-in callback URL, which macOS does not route to the stock
+  // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
   // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press.
   if (testMode) {
     Object.assign(globalThis, {

@@ -129,7 +129,7 @@ export function applyPatch(
     transforms: { ...settings.transforms, ...transforms },
   };
   // Parsing again settles what one field cannot check alone, like a toggle key that is also the
-  // hold key, or an auto-apply choice whose transform the same patch deleted.
+  // hold key.
   return parseSettings(next);
 }
 

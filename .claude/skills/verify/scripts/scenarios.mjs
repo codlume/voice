@@ -114,7 +114,6 @@ export function scenarioPrerequisites(report) {
         .map((id) => [id, report[id]]),
       ...(report.fixtures === "present" ? [] : [["fixtures", report.fixtures]]),
     ],
-    // Scenarios dictate, so only the required models gate them, not the optional transform model.
     models: Object.entries(report.testModels).filter(([, state]) => state !== "cached"),
     permissions: [],
     instance: report.instance === "none" ? [] : [report.instance],

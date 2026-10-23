@@ -1,6 +1,3 @@
-// The transform effect runner. Owns what the reducer must not: timers, the engine call, helper
-// commands and the in-memory Last transform. Mirrors dictation.ts in shape (dispatch -> step ->
-// run effects) and lives in its own module so neither runner models the other's states.
 import { randomUUID } from "node:crypto";
 
 import type { TransformOutcome } from "../shared/api.ts";
@@ -27,7 +24,6 @@ export type TransformsOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
   model: Pick<TransformModel, "run">;
-  /** Writes plain text to the system clipboard. Only the Last transform panel's Copy buttons reach it. */
   copy: (text: string) => void;
   onLastTransform: (value: LastTransform | null) => void;
   log: Log;
@@ -39,18 +35,14 @@ export type Transforms = {
   dispatch(event: TransformEvent): void;
   lastTransform(): LastTransform | null;
   copyLastTransform(which: "before" | "after"): void;
-  /** Auto-apply after dictation records its run here too, with the raw transcript as `before`. */
   remember(value: Omit<LastTransform, "finishedAt">): void;
-  /** Forgets Last transform. Called when Transforms are turned off. */
   clearLast(): void;
-  /** Aborts the engine call of a run in flight. Called on shutdown. */
   dispose(): void;
 };
 
 export const NO_LAST_TRANSFORM_MESSAGE = "There is no last transform to copy.";
 const ABORTED = new Error("Transform cancelled");
 
-// What the log line reports of a run: times and a word count, never text or the transform's name.
 type Active = {
   id: string;
   controller: AbortController;
@@ -99,8 +91,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
       watchdog = setTimeout(() => dispatch({ type: "timedOut", id, phase }), ms);
     };
     if (phase === "reading") arm(READ_TIMEOUT_MS);
-    // While the model loads the run waits on the load, which has its own bound in the model, so
-    // the generation watchdog starts once the model is ready (see the subscription below).
     else if (phase === "generating") {
       if (store.state.models.transform.state === "ready") {
         arm(generateBudgetMs(state.words) + GENERATE_GRACE_MS);
@@ -117,8 +107,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
     ) {
       armWatchdog(current);
     }
-    // A dictation that starts over a finished run takes the pill; the stale outcome must not
-    // come back once the dictation ends.
     if (current.phase === "done" && dictating(state.session) && !dictating(previous.session)) {
       dispatch({ type: "idleTimeout", id: current.id });
     }
@@ -154,7 +142,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
           }
         },
         () => {
-          // The reducer already moved on; the abort is its own doing.
           if (controller.signal.aborted) return;
           dispatch({ type: "generateFailed", id, failure: { kind: "error" } });
         },
@@ -273,11 +260,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
   };
 }
 
-/**
- * A settings change moves the transform model, as `followSettings` does for cleanup. Turning
- * Transforms on downloads the model once if it is missing. Turning them off forgets Last transform
- * and frees the memory; a run in flight finishes, only what is kept for later goes.
- */
 export function followTransformSettings(
   model: Pick<TransformModel, "onDisk" | "install" | "unload">,
   transforms: Pick<Transforms, "clearLast">,

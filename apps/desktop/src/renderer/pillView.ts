@@ -47,7 +47,6 @@ function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
   }
 }
 
-// The pill takes no clicks, so every kept result points at the Voice window.
 const transformNotInsertedText: Record<InsertFailure, string> = {
   focusChanged: "Focus changed. Result is in Voice",
   noFocusedField: "Can't write here. Result is in Voice",
@@ -105,7 +104,6 @@ export function pillView(
       return session.overdue
         ? { kind: "message", text: "Still transcribing" }
         : { kind: "processing" };
-    // Transforms never copy, so copyToClipboard does not change their text.
     case "transformDone":
       return transformOutcomeView(session.outcome);
     case "transforming":

@@ -42,7 +42,6 @@ export function modelView(
   }
 }
 
-// An installed model is on disk but not loaded. What loads it differs per model.
 function installedText(model: Model, cleanupEnabled: boolean): string {
   switch (model.id) {
     case "transform":

@@ -1,5 +1,3 @@
-// The transform model's utility process. Its own process, not a second engine in the cleanup
-// worker, so a crash or a memory kill here cannot stop dictation cleanup.
 import type { TransformEngine } from "@voice/cleanup/transform";
 import * as Schema from "effect/Schema";
 

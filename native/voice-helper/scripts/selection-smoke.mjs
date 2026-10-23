@@ -13,8 +13,6 @@ assert(
   target === "textedit" || target === "electron",
   `usage: selection-smoke.mjs textedit|electron (got ${target})`,
 );
-// The smoke posts Option+1 as a keyboard would, and any Voice that registers a transform shortcut
-// would run a transform on the smoke's paragraph.
 refuseIfVoiceIsRunning();
 
 const transformId = "polish";
@@ -57,7 +55,6 @@ async function settle(read, expected, timeoutMs = 3_000) {
   return value;
 }
 
-// A real key press through System Events, so the input stamp and the AX selection both move.
 function pressRightArrow() {
   osascript(`tell application "System Events" to key code ${rightArrowKeycode}`);
 }
@@ -77,8 +74,6 @@ async function createTarget() {
   };
 }
 
-// The shortcut as a keyboard produces it, without waiting for fnpost to finish: the helper sees
-// the transform while Option is still down, so its release wait runs for real.
 async function pressShortcut(helper) {
   const before = helper.events.length;
   const pressedAt = performance.now();
@@ -153,7 +148,6 @@ try {
     });
     await app.open(paragraph);
 
-    // 1. Select the paragraph, press the shortcut, read it, replace it.
     await app.selectAll();
     if (app.axSelectedText()) {
       assert(app.axSelectedText() === paragraph, "AX does not report the paragraph as selected");
@@ -201,7 +195,6 @@ try {
       keysSeenByTarget: await app.keysSeen(),
     };
 
-    // 2. A collapsed selection reads as noSelection and leaves the clipboard alone.
     pressRightArrow();
     const countBeforeEmpty = clipboardChangeCount();
     const emptyMark = helper.events.length;
@@ -213,7 +206,6 @@ try {
       `collapsed selection gave ${JSON.stringify(empty.result)}`,
     );
     helper.send({ type: "transform.end", id: "run-2" });
-    // An untouched clipboard gives no signal to await, so this waits out the helper's restore window.
     await new Promise((resolve) => setTimeout(resolve, 1_100));
     const countAfterEmpty = clipboardChangeCount();
     assert(
@@ -226,7 +218,6 @@ try {
       clipboardChangeCountDelta: countAfterEmpty - countBeforeEmpty,
     };
 
-    // 3. A press between the read and the insert refuses the write.
     await app.selectAll();
     const movedPress = await pressShortcut(helper);
     const moved = await readSelection(helper, "run-3");

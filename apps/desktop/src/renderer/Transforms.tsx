@@ -166,7 +166,6 @@ export function Transforms({
   };
   const edit = (kind: EditorModal["kind"], transform: Transform) =>
     setModal(openEditor(kind, transform, crypto.randomUUID()));
-  // Updates from the current state: the confirm's Delete fires its click and its close together.
   const changeEditor = (change: (editor: EditorModal) => EditorModal) =>
     setModal((current) =>
       current?.kind === "add" || current?.kind === "edit" ? change(current) : current,
@@ -333,8 +332,6 @@ export function Transforms({
               </>
             )
           }
-          // The deleted transform's card and its editor leave the page, so both dialogs send focus
-          // to Create instead of letting it fall to <body>.
           finalFocus={modal.deletion === "confirmed" ? createRef : undefined}
           open={modal.open}
           onOpenChange={setOpen}
@@ -382,7 +379,6 @@ export function Transforms({
   );
 }
 
-/** Null until main answers, and null when main has no last run, which is the state after launch. */
 function useLastTransform(): LastTransform | null {
   const [last, setLast] = useState<LastTransform | null>(null);
   useEffect(() => {
@@ -397,7 +393,6 @@ function useLastTransform(): LastTransform | null {
         (first) => {
           if (!answerStale) setLast(first);
         },
-        // Without an answer there is no run to show, which the empty panel already says.
         () => {},
       );
     return () => {

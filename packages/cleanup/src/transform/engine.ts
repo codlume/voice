@@ -1,5 +1,3 @@
-// The transform adapter. Everything model-specific stays in this directory: the prompt, the chat
-// wrapper, the token budget and the output guard. Callers see requests and results.
 import type { ChatWrapper, LlamaModel } from "node-llama-cpp";
 
 import { llamaHost, openLlama } from "../llama-host.ts";
@@ -13,7 +11,6 @@ import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 export type TransformFailure =
   | { kind: "tooLong"; maxWords: number }
   | { kind: "timedOut" }
-  // The guard refused the model's output.
   | { kind: "rejected" };
 
 export type TransformResult = { ok: true; text: string } | { ok: false; failure: TransformFailure };
@@ -21,9 +18,7 @@ export type TransformResult = { ok: true; text: string } | { ok: false; failure:
 export type TransformRequest = {
   instruction: string;
   text: string;
-  // Adds the dictation line to the prompt, so dictated commands stay words.
   dictation: boolean;
-  // Counts from the call, so time queued behind another run is inside it.
   budgetMs: number;
   signal: AbortSignal;
 };
@@ -33,7 +28,6 @@ export type TransformEngine = {
   // One run at a time. Expected failures resolve as data; aborting rejects with the signal's
   // reason, and a broken model rejects with its error.
   transform(request: TransformRequest): Promise<TransformResult>;
-  // Aborts queued and running work, then frees the model.
   dispose(): Promise<void>;
 };
 

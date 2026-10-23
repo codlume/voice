@@ -16,8 +16,6 @@ final class HotkeyTap {
     private var toggleKey: HotkeyKey?
     private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
-    /// The key of the shortcut that fired, for the selection reader to wait on its release.
-    /// The reader clears it when the run ends.
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
     private var retry: Timer?
@@ -46,8 +44,6 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
-    /// The holds are rebuilt only when a dictation key changed, which ends a held dictation.
-    /// A transforms-only change swaps the shortcuts under the live holds.
     func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut]) {
         perform {
             self.transforms = transforms

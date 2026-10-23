@@ -34,7 +34,6 @@ export type DictationOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
   cleanup: Pick<Cleanup, "clean" | "loaded" | "keepGpuBusy" | "letGpuIdle">;
-  /** Auto-apply after dictation: the transform model, and Last transform for recovery. */
   transform: {
     model: Pick<TransformModel, "run" | "warm" | "onDisk">;
     remember: (value: Omit<LastTransform, "finishedAt">) => void;
@@ -136,9 +135,6 @@ export function createDictation(options: DictationOptions): Dictation {
   }
   let watchdog: NodeJS.Timeout | null = null;
 
-  // The auto-apply transform when one is set and its model is on disk, else S1-mini cleanup. The
-  // English gate is S1-mini's alone. The language is the one captured at the start of the session,
-  // not the current setting. The style comes from the target, which only the transcript has.
   function workFor(id: string): Work {
     if (started?.id !== id) return null;
     const { settings } = store.state;
@@ -217,8 +213,6 @@ export function createDictation(options: DictationOptions): Dictation {
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
         });
-        // Loading starts while the user speaks. warm() only schedules the load, so the capture
-        // command above is on its way before any heavy work.
         if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
         return;
       case "stopCapture":
@@ -274,7 +268,6 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "keepTransform": {
-        // With History off, Last transform is where the user's own words can be recovered.
         const { items } = store.state.settings.transforms;
         options.transform.remember({
           name: items.find((item) => item.id === effect.transformId)?.name ?? "Transform",
@@ -321,7 +314,6 @@ export function createDictation(options: DictationOptions): Dictation {
     return text;
   }
 
-  // Every failure, a refused result included, takes the transcript path.
   async function applyTransform(
     raw: string,
     transformId: TransformId,
@@ -380,7 +372,6 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "hotkey": {
         const asr = store.state.models.asr.state;
-        // A transform run owns the target's focus until its write; a dictation cannot start over it.
         if (
           (event.action === "down" || event.action === "toggle") &&
           activity(store.state) === "transform"

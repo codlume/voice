@@ -107,7 +107,6 @@ export type AccountDeletion =
   | { kind: "failed"; message: string };
 
 export type InsertMethod = "accessibility" | "paste" | "none";
-/** `selectionChanged`: the selection moved or the user typed between a transform's read and its write. */
 export type InsertFailure =
   | "focusChanged"
   | "noFocusedField"
@@ -132,7 +131,6 @@ export type SelectionFailure =
   | "keysHeld"
   | "failed";
 
-/** Never carries text. `failed.message` is one of a fixed set of sentences, never model output. */
 export type TransformOutcome =
   | Inserted
   | NotInserted

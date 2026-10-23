@@ -1,5 +1,3 @@
-// Everything the hub window can ask main to do. Each handler checks its arguments at this
-// boundary and hands the work to the module that owns it; nothing here holds state of its own.
 import { app, clipboard, shell } from "electron";
 
 import {

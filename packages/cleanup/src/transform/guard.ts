@@ -1,4 +1,3 @@
-// Judges a finished generation before anything replaces the user's text.
 import { wordSurvival } from "../plausibility.ts";
 
 export type Verdict =
@@ -34,7 +33,6 @@ export function guard(
   return { ok: true, text };
 }
 
-// The model sometimes echoes the prompt's wrapper around its result.
 function unwrap(output: string): string {
   return output.startsWith("<text>") && output.endsWith("</text>")
     ? output.slice("<text>".length, -"</text>".length).trim()
@@ -58,7 +56,6 @@ function endsEarly(input: string, output: string): boolean {
     const share =
       [...probeWords].filter((word) => sentenceWords.has(word)).length / probeWords.size;
     wordsSoFar += words(sentence).length;
-    // The latest sentence wins a tie, so a repeated phrase does not look like an early stop.
     if (share >= bestShare) {
       bestShare = share;
       wordsThroughBest = wordsSoFar;

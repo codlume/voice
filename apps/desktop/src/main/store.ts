@@ -10,8 +10,6 @@ export type Store = {
   subscribe(listener: (state: AppState, previous: AppState) => void): () => void;
 };
 
-// One pill: a dictation in progress first, then a transform run that is not idle, then whatever
-// the dictation session shows (its outcome, or idle).
 function pill(state: AppState): PillState {
   if (dictating(state.session)) return toPillState(state.session);
   return (
@@ -19,7 +17,6 @@ function pill(state: AppState): PillState {
   );
 }
 
-// Built field by field, never spread: the transform run must not reach a window.
 export function toSnapshot(state: AppState): Snapshot {
   return {
     microphones: state.microphones,

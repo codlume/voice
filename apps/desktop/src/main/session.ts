@@ -24,7 +24,6 @@ export type DictationMode = "hold" | "toggle";
 /** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };
 
-/** What runs on a transcript before insertion: S1-mini cleanup in a style, or an auto-apply transform. */
 export type CleanupWork =
   | { kind: "style"; style: CleanupStyle }
   | { kind: "transform"; transformId: TransformId };
@@ -90,7 +89,6 @@ export type Effect =
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
-  // Sets Last transform from the final text, before the write, so a refused write keeps it.
   | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
@@ -278,7 +276,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         state.id,
         state.raw,
         final,
-        // Insights counts the words cleanup corrected. A transform rewrites, so it counts none.
         final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
         state.destination,
       );

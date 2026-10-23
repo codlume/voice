@@ -10,11 +10,9 @@ public enum CaptureFailure: String, Codable, Sendable { case permission, device,
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
-/// `selectionChanged`: the selection moved or the user typed between a transform's read and its write.
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
 public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
-/// Generic modifiers, in the order the shared `MODIFIERS` list keeps them.
 public enum Modifier: String, Codable, Sendable { case control, option, shift, command }
 public enum AsrState: String, Codable, Sendable { case missing, downloading, loading, ready, failed }
 public enum LogLevel: String, Codable, Sendable { case info, error }
@@ -43,7 +41,6 @@ public struct Microphone: Codable, Equatable, Sendable {
     }
 }
 
-/// A transform shortcut main registered: a macOS virtual keycode plus generic modifiers.
 public struct TransformShortcut: Equatable, Sendable {
     public let id: String
     public let keycode: Int64
@@ -62,7 +59,6 @@ public enum SelectionResult: Equatable, Sendable {
 }
 
 public enum HelperCommand: Equatable, Sendable {
-    /// `transforms` replaces the whole registration; empty while Transforms are off.
     case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
     case microphoneConfigure(microphone: Microphone?)
     /// `detectHost` is main's say on whether the session can use a page host at all.
@@ -72,7 +68,6 @@ public enum HelperCommand: Equatable, Sendable {
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
     case insert(id: String, text: String, html: String?)
-    /// Begins a transform run: read the selection and shelve the target under `id`.
     case selectionRead(id: String)
     /// Ends the run; idempotent, an unknown id is ignored.
     case transformEnd(id: String)
@@ -109,7 +104,6 @@ public enum HelperEvent: Equatable, Sendable {
     case microphonesUnavailable(message: String)
     case ready(version: Int)
     case hotkey(action: HotkeyAction)
-    /// A registered transform shortcut was pressed. `transformId` is the Transform's id, not a run id.
     case transform(transformId: String)
     case selectionResult(id: String, result: SelectionResult)
     case captureStarted(id: String, startMs: Double)

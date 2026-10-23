@@ -1,7 +1,6 @@
 import type { Settings } from "./api.ts";
 import { wantsCleanup } from "./dictation-language.ts";
 
-/** The activity an uninstall must wait for, because the run would lose the model under it. */
 export type BusyDuring = "dictation" | "transform";
 
 export const models = [

@@ -50,7 +50,6 @@ const styles = stylex.create({
   placeholder: { color: color.mutedForeground },
 });
 
-/** The user's layout, read again when the window regains focus after an input-source switch. */
 export function useKeyboardLayout(): KeyboardLayout | null {
   const [layout, setLayout] = useState<KeyboardLayout | null>(null);
   useEffect(() => {
@@ -77,7 +76,6 @@ export function useKeyboardLayout(): KeyboardLayout | null {
 
 type Recording = { modifiers: readonly Modifier[]; refusal: string | null };
 
-/** Records a shortcut from the next key press while focused. */
 export function ShortcutPicker({
   value,
   others,
@@ -101,9 +99,7 @@ export function ShortcutPicker({
   function onKeyDown(event: KeyboardEvent) {
     if (recording === null) return;
     const bare = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
-    // Tab alone still leaves the field, so a keyboard user is never trapped in it.
     if (event.code === "Tab" && bare) return;
-    // The dialog would close on Escape, and the window binds Command shortcuts.
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat) return;

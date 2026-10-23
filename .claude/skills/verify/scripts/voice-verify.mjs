@@ -219,8 +219,6 @@ function openSecondCopy(state, ...extraArgs) {
   return spawnSync(electronPath(), [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
 }
 
-// Synthetic key presses reach every running helper's tap, so they need the desktop to themselves.
-// A scenario's dictation also rechecks that it still owns its instance before each check.
 function exclusiveDesktop(state, { recheckInstance = false } = {}) {
   const check = () => {
     if (recheckInstance) requireInstance();
@@ -235,8 +233,6 @@ function exclusiveDesktop(state, { recheckInstance = false } = {}) {
   return { check, fnpost };
 }
 
-// An interrupt rejects whatever wait() is racing, so the command's finally blocks run. release()
-// removes the handlers once the command is done.
 function interruptible(message) {
   let interrupt;
   const interrupted = new Promise((_, reject) => {
@@ -253,20 +249,13 @@ function interruptible(message) {
   };
 }
 
-// The phases of `transform`. Each takes what it needs and returns what the next one reads.
-
-// The user's real clipboard, so only whether it changed ever leaves `transform`.
 const clipboardText = () => execFileSync("pbpaste", { encoding: "utf8" });
 
-// Selects the synthetic paragraph in the target and leaves it frontmost with the Voice window
-// unfocused, which is when main registers the shortcuts, and an idle Flow Bar. Returns the text
-// before the run.
 async function armTransform({ hub, snapshots, target, wait }) {
   await wait(target.open(TRANSFORM_PARAGRAPH));
   await wait(target.selectAll());
   const before = await wait(target.read());
   await wait(target.front());
-  // hasFocus() is true only while the hub window is key, the state in which main registers nothing.
   await wait(
     waitOn(hub, "!document.hasFocus()", 3000).catch(() =>
       fail("the Voice window kept focus, so no shortcut is registered"),
@@ -281,8 +270,6 @@ async function armTransform({ hub, snapshots, target, wait }) {
   return before;
 }
 
-// Posts the shortcut and waits for the run to start. With --escape it then cancels the run if it
-// is still working 400 ms in: reading takes under 100 ms and generating takes seconds.
 async function pressTransform({ desktop, snapshots, keycode, escape, wait }) {
   const pressedAt = Date.now();
   desktop.fnpost("combo", String(keycode), "option", "--side=left");
@@ -304,8 +291,6 @@ async function pressTransform({ desktop, snapshots, keycode, escape, wait }) {
   return { pressedAt, started, runFrom, escapedAfterMs };
 }
 
-// Waits for the run to end and reads main's log line for it, which names the outcome when the
-// Flow Bar's transformDone was missed.
 async function followTransform({ snapshots, state, logOffset, pressed, wait }) {
   const { started, runFrom, pressedAt } = pressed;
   const finished =
@@ -326,7 +311,6 @@ async function followTransform({ snapshots, state, logOffset, pressed, wait }) {
   return { finished, finishedMs, run, logged };
 }
 
-// What the app and the clipboard hold once the run is over.
 async function collectTransform({ hub, target, outcome, pressedAt, clipboardBefore, wait }) {
   const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
   const lastTransform = freshLast(last, pressedAt);
@@ -335,7 +319,6 @@ async function collectTransform({ hub, target, outcome, pressedAt, clipboardBefo
     expected === null
       ? { text: await wait(target.read()), landedMs: null }
       : await wait(landedText(() => target.read(), expected, { timeoutMs: 2000 }));
-  // A paste holds the result on the clipboard for about a second before restoring it.
   const clipboardUnchanged = await wait(
     poll(() => (clipboardText() === clipboardBefore ? true : undefined), 3000, "clipboard").catch(
       () => false,
@@ -389,14 +372,12 @@ const commands = {
       fixtures: existsSync(join(fixturesDir, "short.wav"))
         ? "present"
         : "missing: run node scripts/fixtures.mjs",
-      // Every launch needs these, and `launch` downloads what is missing.
       testModels: Object.fromEntries(
         Object.entries(modelFiles).map(([id, file]) => [
           id,
           existsSync(join(cache, file)) ? "cached" : "will download",
         ]),
       ),
-      // Only some commands need these, and nothing downloads them.
       optionalTestModels: Object.fromEntries(
         Object.entries(optionalModelFiles).map(([id, file]) => [
           id,

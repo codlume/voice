@@ -14,8 +14,6 @@ final class InsertTarget {
     let pid: pid_t?
     let bundleId: String?
     var focus = CapturedFocus<FocusElement>.pending
-    /// Set when the target came from a selection read: the selection read then must still be
-    /// the one under the caret, or the result would land somewhere the user did not mean.
     var origin: SelectionOrigin?
     let host: OSAllocatedUnfairLock<HostRead>
 

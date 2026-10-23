@@ -83,8 +83,6 @@ export const SettingsPatchSchema = Schema.Struct({
   transforms: Schema.optionalKey(
     Schema.Struct({
       enabled: Schema.optionalKey(Schema.Boolean),
-      // A repaired shortcut would look saved and then not fire, so refuse any list that loading
-      // would change, not only one that loses items.
       items: Schema.optionalKey(everyItem(parseTransforms, isValidTransformList)),
       autoApply: Schema.optionalKey(
         Schema.NullOr(Schema.declare((u): u is TransformId => typeof u === "string")),

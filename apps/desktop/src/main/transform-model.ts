@@ -1,6 +1,3 @@
-// The transform model's lifecycle in main: install, find, load on use, idle unload, status.
-// Unlike the cleanup model it is not kept loaded: it holds about 3.45 GB of Metal memory, so it
-// loads on the first run or warm and its process is killed after 5 idle minutes.
 import type { TransformEngine, TransformRequest, TransformResult } from "@voice/cleanup/transform";
 import type { ModelSource } from "@voice/cleanup/download";
 
@@ -15,25 +12,17 @@ export type { TransformFailure, TransformRequest, TransformResult } from "@voice
  * (`signal.reason`), a model that is not installed, a load failure or a lost process.
  */
 export type TransformModel = {
-  /** Launch check: finds weights on disk and reports installed or missing. Never loads. */
   refresh(): Promise<void>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
-  /**
-   * Loads on demand. The load has its own bound (`LOAD_TIMEOUT_MS`), and the budget counts from
-   * the moment the engine is ready, so a cold start never eats the generation time.
-   */
   run(request: TransformRequest): Promise<TransformResult>;
-  /** Fire and forget. Starts a load if the weights are on disk. Safe to call on every press. */
   warm(): void;
-  /** Frees the Metal memory now. A run in flight keeps its process; the idle unload follows it. */
   unload(): Promise<void>;
   onDisk(): boolean;
   dispose(): Promise<void>;
 };
 
 export const IDLE_UNLOAD_MS = 5 * 60_000;
-// A first-ever load measured 28.6 s in Electron; three times that is a stuck process.
 export const LOAD_TIMEOUT_MS = 90_000;
 
 export type TransformModule = Pick<
@@ -46,7 +35,6 @@ export type TransformModule = Pick<
 
 export type TransformModelOptions = {
   modelsDir: string;
-  // Test mode serves the weights from a local server.
   baseUrl?: string | undefined;
   onStatus: (status: ModelStatus) => void;
   log: (message: string) => void;
@@ -82,14 +70,10 @@ const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
 type Resident = { path: string; engine: TransformEngine; loaded: Promise<void> };
 
 type Phase =
-  // failure: why the last download or removal did not finish.
   | { phase: "missing"; failure?: string }
   | { phase: "downloading"; progress: number; controller: AbortController; done: Promise<void> }
-  // A lost process, a failed load or an idle unload all come back here, so the next run reloads
-  // from the weights already on disk.
   | { phase: "installed"; path: string }
   | ({ phase: "loading" | "ready" } & Resident)
-  // Uninstall reports the removal's outcome when it ends.
   | { phase: "removing" }
   | { phase: "disposed" };
 
@@ -114,8 +98,6 @@ function statusOf(state: Phase): ModelStatus | undefined {
 const resident = (state: Phase): state is Extract<Phase, Resident> =>
   state.phase === "loading" || state.phase === "ready";
 
-// Resolves undefined once the load overruns LOAD_TIMEOUT_MS, and rejects with the signal's reason
-// if the run is withdrawn first.
 async function withinLoadBound(
   loading: Promise<TransformEngine>,
   signal: AbortSignal,
@@ -141,13 +123,11 @@ export function createTransformModel(options: TransformModelOptions): TransformM
   let module: Promise<TransformModule> | undefined;
   const loadModule = () => (module ??= (options.loadModule ?? (() => importModule(options.log)))());
   let state: Phase = { phase: "missing" };
-  // Residency, apart from the phase: runs in flight and the idle unload that follows the last.
   let running = 0;
   let idleTimer: NodeJS.Timeout | undefined;
 
   const owns = (engine: TransformEngine) => resident(state) && state.engine === engine;
 
-  // The one place the phase changes. Leaving a loading or ready phase frees its engine.
   function set(next: Phase): Promise<void> {
     const previous = state;
     state = next;
@@ -160,8 +140,6 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     return previous.engine.dispose();
   }
 
-  // Idle means no run in flight for IDLE_UNLOAD_MS. A run clears the timer and arms it again when
-  // it ends, so a long run is never unloaded under itself.
   function armIdle() {
     clearTimeout(idleTimer);
     if (running > 0 || state.phase === "disposed") return;
@@ -230,7 +208,6 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       if (state.phase !== "missing" && state.phase !== "installed") return;
       void set(path === undefined ? { phase: "missing" } : { phase: "installed", path });
     },
-    // Weights already on disk are not checked again: hashing 3.1 GB is not a retry.
     install: () => {
       if (state.phase === "downloading") return state.done;
       if (state.phase !== "missing") return Promise.resolve();
@@ -260,8 +237,6 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       running += 1;
       clearTimeout(idleTimer);
       try {
-        // A run withdrawn while the model loads leaves the load going for the next one. A load
-        // that overruns its bound is a stuck process: it is stopped so the next run starts fresh.
         const engine = await withinLoadBound(loadedEngine(), request.signal);
         if (!engine) {
           options.log("transform: the model took too long to load");

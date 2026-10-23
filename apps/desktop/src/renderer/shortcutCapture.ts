@@ -1,6 +1,3 @@
-// The shortcut picker's rules, without React: what a key press records, what it refuses, and how
-// a stored shortcut reads on the user's keyboard. Reserved combinations live here and not in the
-// settings parser, because only the renderer can read the layout that decides them.
 import type { Hotkey } from "../shared/api.ts";
 import { codeForKeycode, keycodeForCode, typesCharacter, usLabel } from "../shared/keycodes.ts";
 import {
@@ -11,7 +8,6 @@ import {
   type Shortcut,
 } from "../shared/transforms.ts";
 
-/** `KeyboardEvent.code` to the character it types, from `navigator.keyboard.getLayoutMap()`. */
 export type KeyboardLayout = ReadonlyMap<string, string>;
 
 export type KeyPress = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
@@ -19,14 +15,12 @@ export type KeyPress = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shif
 export type Capture =
   | { kind: "cancel" }
   | { kind: "clear" }
-  // A modifier went down or up and no key yet.
   | { kind: "pending"; modifiers: readonly Modifier[] }
   | { kind: "refused"; message: string }
   | { kind: "recorded"; shortcut: Shortcut };
 
 const GLYPHS: Record<Modifier, string> = { control: "⌃", option: "⌥", shift: "⇧", command: "⌘" };
 
-// Command with one of these is a system or editing shortcut in almost every app.
 const RESERVED_WITH_COMMAND = new Set(["c", "v", "x", "z", "a", "q", "w"]);
 const TAB = keycodeForCode("Tab");
 
@@ -54,7 +48,6 @@ export const heldModifiers = (press: Omit<KeyPress, "code">): Modifier[] =>
       })[modifier],
   );
 
-/** The layout's character for the key, or the US one when the layout is unknown or has none. */
 export function keyLabel(keycode: number, layout: KeyboardLayout | null): string {
   const code = codeForKeycode(keycode);
   const typed = code === null ? undefined : layout?.get(code);
@@ -62,7 +55,6 @@ export function keyLabel(keycode: number, layout: KeyboardLayout | null): string
   return usLabel(keycode) ?? `Key ${keycode}`;
 }
 
-/** One entry per keycap: the modifier glyphs in ⌃⌥⇧⌘ order, then the key. */
 export const modifierKeys = (modifiers: readonly Modifier[]): string[] =>
   modifiers.map((modifier) => GLYPHS[modifier]);
 
@@ -87,7 +79,6 @@ function isReserved({ keycode, modifiers }: Shortcut, layout: KeyboardLayout | n
   );
 }
 
-/** Reads one keydown while the picker records. */
 export function capture(
   press: KeyPress,
   {
@@ -123,7 +114,6 @@ const SIDES: readonly { modifier: Modifier; hotkey: Hotkey; name: string }[] = [
   { modifier: "command", hotkey: "rightCommand", name: "Command" },
 ];
 
-/** Hints that never block a save: how the shortcut shares keys with dictation and other apps. */
 export function shortcutNotes(
   { keycode, modifiers }: Shortcut,
   dictationKeys: readonly Hotkey[],
@@ -133,8 +123,6 @@ export function shortcutNotes(
   ).map(
     ({ name }) => `Right ${name} starts dictation. This shortcut fires from the left ${name} key.`,
   );
-  // Control or Command make the combination a command; Option alone, or with Shift, types a
-  // character like ¡ on a key that writes, which the shortcut takes over.
   const takesCharacter =
     typesCharacter(keycode) &&
     modifiers.includes("option") &&

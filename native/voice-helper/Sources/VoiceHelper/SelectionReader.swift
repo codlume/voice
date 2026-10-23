@@ -5,15 +5,11 @@ import Foundation
 import VoiceHelperCore
 import os
 
-/// Reads the focused app's selection for a transform run and shelves where to write the result.
-/// Owned by the main actor. Every wait is a 10 ms sleep, never a blocking wait, so the helper
-/// keeps answering commands and `transform.end` can cancel the run at any tick.
 final class SelectionReader {
     private let output: Output
     private let insertion: Insertion
     private let pasteboard: Pasteboard
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
-    /// Test mode only: timings the smoke script reports. Never the text.
     private let log: ((String) -> Void)?
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var run: (id: String, task: Task<Void, Never>)?
@@ -27,22 +23,17 @@ final class SelectionReader {
         self.log = log
     }
 
-    /// Read on the tap thread: while true, Escape is consumed and reported as `cancel`.
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    /// Emits one `selection.result` for `id` unless `end` arrives first.
     func read(id: String) {
         run?.task.cancel()
         activeFlag.withLock { $0 = true }
         run = (id, Task { @MainActor [self] in
-            // A cancelled run throws out of its next wait and emits nothing.
             guard let result = try? await perform(id: id) else { return }
             output.emit(.selectionResult(id: id, result: result))
         })
     }
 
-    /// Idempotent. Drops the shelf for `id`; if `id` is the live run, ends it. A copy already
-    /// posted still restores the clipboard when the app answers.
     func end(id: String) {
         shelf.clear(id: id)
         guard let run, run.id == id else { return }
@@ -60,14 +51,10 @@ final class SelectionReader {
     private func perform(id: String) async throws -> SelectionResult {
         guard AXIsProcessTrusted() else { return .failed(.failed) }
         guard !IsSecureEventInputEnabled() else { return .failed(.secureInput) }
-        // Voice's own windows never take a transform; the hub disarms the shortcuts, and this
-        // covers a press that raced the disarm.
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getppid() else {
             return .failed(.noFocusedField)
         }
         guard try await keysReleased() else { return .failed(.keysHeld) }
-        // The target record is made only once the keys are up: its focus reading is dropped
-        // when a key press lands during it, and repeats of the held shortcut key count.
         let target = insertion.recordTarget(pid: app.processIdentifier, bundleId: app.bundleIdentifier, host: .read(nil), log: nil)
         guard let focus = try await settledFocus(of: target) else { return .failed(.failed) }
         let element = focus.element?.value
@@ -109,7 +96,6 @@ final class SelectionReader {
         }
     }
 
-    /// False at `ReleaseWait.deadline`, while the shortcut's key or a modifier is still down.
     private func keysReleased() async throws -> Bool {
         let startedAt = DispatchTime.now()
         while true {
@@ -127,7 +113,6 @@ final class SelectionReader {
         }
     }
 
-    /// Nil when the focus reading was dropped or the app did not answer by `focusDeadline`.
     private func settledFocus(of target: InsertTarget) async throws -> TargetFocus<FocusElement>? {
         let startedAt = DispatchTime.now()
         while true {
@@ -142,5 +127,4 @@ final class SelectionReader {
     }
 }
 
-/// recordTarget makes two AX reads with `axMessagingTimeout` each; past this the app is hung.
 private let focusDeadline: TimeInterval = 2

@@ -17,8 +17,6 @@ import type { HelperShortcut } from "../shared/transforms.ts";
 export const HELPER_PROTOCOL_VERSION = 13;
 
 export type HelperCommand =
-  // `transforms` is always present (empty while Transforms are off or a Voice window is focused)
-  // and replaces the whole registration.
   | {
       type: "hotkey.configure";
       key: Hotkey;
@@ -40,9 +38,7 @@ export type HelperCommand =
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
   | { type: "insert"; id: string; text: string; html: string | null }
-  // Begins a transform run: the helper reads the selection and shelves the target under `id`.
   | { type: "selection.read"; id: string }
-  // Ends the run on every path, so the helper's Escape grab and shelf never outlive it.
   | { type: "transform.end"; id: string }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
@@ -117,7 +113,6 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("hotkey"),
     action: Schema.Literals(["down", "up", "chord", "cancel", "toggle"]),
   }),
-  // A registered transform shortcut was pressed. `transformId` is the Transform's id, not a run id.
   Schema.Struct({ type: Schema.Literal("transform"), transformId: Schema.String }),
   Schema.Struct({
     type: Schema.Literal("selection.result"),

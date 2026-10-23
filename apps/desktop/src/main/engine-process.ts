@@ -1,6 +1,3 @@
-// A model engine in its own utility process, on both sides of the port: load, id-matched work,
-// process loss, the abort grace and a bounded dispose. Each engine adds only its work request,
-// its result and any fire-and-forget notices.
 import * as NodePath from "node:path";
 import { createInterface } from "node:readline";
 
@@ -21,7 +18,6 @@ type Lifecycle = typeof LifecycleSchema.Type;
 const decodeLifecycle = Schema.decodeUnknownOption(LifecycleSchema);
 
 const ReplySchema = Schema.Union([
-  // Load and dispose reply without a result.
   Schema.Struct({
     type: Schema.Literal("done"),
     id: Id,
@@ -45,8 +41,6 @@ export type ParentPort = {
 
 type Loadable = { load(): Promise<void>; dispose(): Promise<void> };
 
-// Worker side. Work is refused until a load has created the engine; aborting a request aborts the
-// signal its work got, and dispose aborts every one before it frees the engine.
 export function serveEngine<E extends Loadable, Work extends { id: number }, Result>(
   port: ParentPort,
   {
@@ -56,12 +50,10 @@ export function serveEngine<E extends Loadable, Work extends { id: number }, Res
     work,
     notify,
   }: {
-    // Lowercase, as in "cleanup model".
     name: string;
     create: (options: { modelPath: string }) => E;
     decodeWork: (data: unknown) => Option.Option<Work>;
     work: (engine: E, request: Work, signal: AbortSignal) => Promise<Result>;
-    // Any other message: one that needs no reply.
     notify?: (engine: E | undefined, data: unknown) => void;
   },
 ): void {
@@ -162,14 +154,11 @@ export type EngineProcess<Work, Result, Notice> = {
   // rejects at once with the reason and asks the child to stop. A child that has not answered
   // within ABORT_GRACE_MS is killed and reported lost.
   run(request: (id: number) => Work, signal?: AbortSignal): Promise<Result>;
-  // A message without a reply. Dropped once the process is lost or disposing.
   post(notice: Notice): void;
-  // Asks the child to free the engine, then kills it after DISPOSE_GRACE_MS at most.
   dispose(): Promise<void>;
 };
 
 type Call = {
-  // False for a result that does not decode; the reply is then ignored.
   take(result: unknown): boolean;
   reject(error: unknown): void;
   grace?: NodeJS.Timeout;
@@ -184,7 +173,6 @@ export function createEngineProcess<Work, Result, Notice = never>({
   decodeResult,
   onLost,
 }: {
-  // Lowercase, as in "cleanup model".
   name: string;
   modelPath: string;
   fork: ForkEngine;

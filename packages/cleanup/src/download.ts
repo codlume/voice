@@ -4,8 +4,6 @@ import { access, mkdir, open, rename, rm, stat, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 
-// Saved next to the weights as `${file}.${name}`. Downloaded from the source's base URL, or
-// written from text Voice ships when the source repository has no such file.
 export type LegalFile =
   | { name: "LICENSE" | "NOTICE"; from: "download" }
   | { name: "LICENSE" | "NOTICE"; from: "bundled"; text: string };
@@ -38,7 +36,6 @@ export const S1_MINI: ModelSource = {
 type ModelOptions = { dir: string; source: ModelSource };
 
 type DownloadOptions = ModelOptions & {
-  // Overrides the source's base URL, as test mode does to serve the weights locally.
   baseUrl?: string | undefined;
   onProgress?: ((fraction: number) => void) | undefined;
   signal?: AbortSignal | undefined;
@@ -47,7 +44,6 @@ type DownloadOptions = ModelOptions & {
 
 const STALL_TIMEOUT_MS = 30_000;
 
-// A stall, network error or abort keeps the weights' `.part`, and the next run resumes it.
 export async function downloadModel({
   dir,
   source: { file, bytes, sha256, legal, ...source },
@@ -97,7 +93,6 @@ export async function removeModel({ dir, source: { file, legal } }: ModelOptions
   );
 }
 
-// Size first, because hashing gigabytes is the expensive half of the check.
 async function matches(
   path: string,
   bytes: number,
@@ -116,7 +111,6 @@ async function matches(
 
 type Expected = Pick<ModelSource, "bytes" | "sha256">;
 
-// Only a download with a known size and hash resumes, because only that one can be verified whole.
 async function fetchToFile(
   url: string,
   path: string,
@@ -158,7 +152,6 @@ async function fetchToFile(
       await rm(part, { force: true });
       throw new Error(`Download of ${url} resumed at the wrong byte`);
     }
-    // Any other success is the whole file from its first byte.
     if (!resumed) hash = createHash("sha256");
 
     let received = resumed ? kept : 0;
@@ -215,7 +208,6 @@ function rangeStart(response: Response): number | undefined {
   return start === undefined ? undefined : Number(start);
 }
 
-// A part of the wrong size or content is deleted, because resuming it would keep the damage.
 async function install(
   url: string,
   part: string,

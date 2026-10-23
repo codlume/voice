@@ -5,21 +5,15 @@ import Foundation
 /// Code and JetBrains copy the whole line when nothing is selected.
 public enum AXSelectionAnswer: Equatable, Sendable {
     case text(String, range: AXTextRange?)
-    /// `kAXSelectedTextRange` present with length 0.
     case emptyRange
-    /// Subrole AXSecureTextField.
     case secureField
     /// No focused element, or an element that answers neither attribute. Chromium and Electron
     /// answer this way without an accessibility client.
     case noAnswer
 }
 
-/// How to check, right before writing, that the selection is still the one that was read.
 public enum SelectionOrigin: Equatable, Sendable {
-    /// Re-read the element's selected text and range before the write.
     case accessibility(text: String, range: AXTextRange?)
-    /// No tree to re-read. `inputStamp` is `focusInputStamp()` taken after the copy settled;
-    /// any key or mouse press since may have moved the selection.
     case copy(inputStamp: [UInt32])
 }
 
@@ -43,8 +37,6 @@ public func planRead(secureInput: Bool, answer: AXSelectionAnswer) -> ReadPlan {
 
 public enum WriteVerdict: Equatable, Sendable { case proceed, refuseSelectionChanged }
 
-/// Pulls the one re-read the origin can be checked against. An element that no longer answers
-/// refuses: unverifiable is not unchanged.
 public func writeVerdict(origin: SelectionOrigin, readAX: () -> AXSelectionAnswer, readStamp: () -> [UInt32]) -> WriteVerdict {
     switch origin {
     case .accessibility(let text, let range):
@@ -68,8 +60,6 @@ public enum ReleaseWait {
     }
 }
 
-/// The pasteboard watch after the synthetic Cmd+C. An unchanged pasteboard at the deadline means
-/// the app had nothing to copy.
 public struct CopyWait: Equatable, Sendable {
     public static let deadline: TimeInterval = 0.5
     public static let lateCheck: TimeInterval = 1.0
@@ -87,17 +77,11 @@ public struct CopyWait: Equatable, Sendable {
         return elapsed >= Self.deadline ? .timedOut : .wait
     }
 
-    /// After a timeout, one late look. Exactly one write since the copy was posted is the app
-    /// answering late, and the user's clipboard goes back; two or more mean the user copied
-    /// something meanwhile, and the clipboard is theirs.
     public func lateRestoreNeeded(changeCount: Int) -> Bool {
         changeCount == startChangeCount + 1
     }
 }
 
-/// One slot, take-once, keyed by the run id: the one target an `insert` may claim, from a
-/// finished dictation or a selection read. A new entry replaces it, an insert takes it, and a
-/// run's end drops only its own entry.
 public struct SelectionShelf<Entry> {
     private var slot: (id: String, entry: Entry)?
 

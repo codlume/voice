@@ -9,13 +9,11 @@ let keys: [String: (keycode: CGKeyCode, flags: CGEventFlags)] = [
 let escapeKeycode: CGKeyCode = 53
 let aKeycode: CGKeyCode = 0
 
-/// Which physical modifier keys a combo is pressed with.
 enum Side: String, CaseIterable {
     case left, right
 
     static let flag = "--side="
 
-    /// `.left` when no flag was given; nil for a flag this tool does not know.
     static func parse(_ argument: String?) -> Side? {
         guard let argument else { return .left }
         guard argument.hasPrefix(flag) else { return nil }
@@ -24,7 +22,6 @@ enum Side: String, CaseIterable {
 }
 let sideUsage = Side.flag + Side.allCases.map(\.rawValue).joined(separator: "|")
 
-/// Generic flag bit plus the keycode and device-side bit of each physical key.
 struct ModifierKey {
     let generic: UInt64
     let left: (keycode: CGKeyCode, bit: UInt64)
@@ -68,8 +65,6 @@ if name == "escape" {
     exit(0)
 }
 
-// A shortcut the way a keyboard produces it: each modifier's flagsChanged with the flags so
-// far, the key with the full set, then the modifiers released in reverse.
 if name == "combo" {
     let rest = arguments.dropFirst()
     guard let keycode = rest.first.flatMap({ CGKeyCode($0) }), let names = rest.dropFirst().first?.split(separator: ",") else {

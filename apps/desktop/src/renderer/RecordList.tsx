@@ -269,7 +269,6 @@ export function RecordList<T extends { id: string }, F extends string>({
   );
 }
 
-/** The add/edit dialog: a draft, validation shown after a failed save, and Save. */
 export function RecordEditor<T extends { id: string }, F extends string>({
   mode,
   initial,
@@ -314,7 +313,7 @@ export function RecordEditor<T extends { id: string }, F extends string>({
   const shown = failedSaves > 0 ? current : null;
 
   // Each failed save focuses the control of the field with the problem. Base UI marks the control
-  // of an invalid Field.Root with data-invalid; a control outside a Field marks itself aria-invalid.
+  // of an invalid Field.Root with data-invalid.
   useEffect(() => {
     if (failedSaves === 0) return;
     fieldsRef.current

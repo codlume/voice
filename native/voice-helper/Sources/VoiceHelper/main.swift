@@ -35,7 +35,6 @@ final class Helper {
         self.pasteboard = pasteboard
         let insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1", pasteboard: pasteboard)
         self.insertion = insertion
-        // Written by the tap when a shortcut fires, read by the reader waiting for its release.
         let heldShortcutKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
         let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, heldShortcutKey: heldShortcutKey,
                                         log: testMode ? { output.log(.info, $0) } : nil)
@@ -89,7 +88,6 @@ final class Helper {
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
         case .insert(let id, let text, let html):
-            // Run ids never collide: a dictation id names a capture, a transform id names a read.
             insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
         case .selectionRead(let id):
             selection.read(id: id)

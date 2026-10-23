@@ -1,20 +1,12 @@
 import AppKit
 import VoiceHelperCore
 
-/// What the focused app put on the clipboard in answer to a synthetic Cmd+C.
 enum CopyOutcome {
-    /// The clipboard's string, empty when the app wrote something that is not text.
     case text(String)
-    /// The write carried the concealed marker: a password field.
     case concealed
-    /// No write before the deadline.
     case nothing
 }
 
-/// The one keeper of the user's clipboard across every write the helper causes: a paste
-/// insertion's own item and the copy an app makes in answer to a selection read's Cmd+C. One
-/// `ClipboardRestore` for both is what lets a read inside a paste's restore window carry the
-/// user's contents over instead of saving the transcript.
 final class Pasteboard {
     typealias Item = [(NSPasteboard.PasteboardType, Data)]
     typealias Saved = SavedClipboard<Item>
@@ -38,7 +30,6 @@ final class Pasteboard {
         }
     }
 
-    /// Puts the transient paste item on the clipboard and returns the changeCount of that write.
     func write(text: String, html: String?, saved: Saved) -> Int {
         // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
         pasteboard.prepareForNewContents(with: .currentHostOnly)
@@ -54,16 +45,10 @@ final class Pasteboard {
         return write
     }
 
-    /// After a paste, puts the user's contents back once the target has read the transient item.
     func restore(write: Int) {
         restore(write: write, changed: "clipboard changed during paste; not restoring previous contents")
     }
 
-    /// Borrows the clipboard for a synthetic Cmd+C and hands it back: the user's contents are
-    /// saved, the app's answer is read and restored over at once, and an answer after the
-    /// deadline is restored too, unless the user copied something meanwhile or a paste wrote in
-    /// between (its own restore owns the clipboard then). The watch runs in a task of its own
-    /// that a cancelled caller cannot reach: the keystroke is out, so the restore must follow.
     func copyFromFocusedApp() async -> CopyOutcome {
         let saved = save()
         let wait = CopyWait(startChangeCount: pasteboard.changeCount)

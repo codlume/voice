@@ -1,8 +1,3 @@
-// CDP Input.dispatchKeyEvent parameters for one press of a physical key, the way a keyboard
-// produces it: each modifier goes down, the key goes down and up, the modifiers come up in reverse.
-// `key` is the US character without modifiers applied, so a page that reads `event.key` under
-// Option sees "1", not the "¡" macOS would type.
-
 const MODIFIERS = {
   control: { code: "ControlLeft", key: "Control", keyCode: 17, bit: 2 },
   option: { code: "AltLeft", key: "Alt", keyCode: 18, bit: 1 },

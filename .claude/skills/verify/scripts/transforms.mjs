@@ -1,5 +1,3 @@
-// Synthetic, with no real names, places, or personal data. About 40 words with two fillers, so a
-// Polish run has something to remove.
 export const TRANSFORM_PARAGRAPH =
   "So um the quarterly garden club newsletter is basically ready, and we should send it to the volunteers on Friday morning. Uh, please check that the seed swap date and the new watering rota are both listed near the top.";
 
@@ -21,7 +19,6 @@ export function parseTransformFlags(flags) {
   return { target, keycode, escape };
 }
 
-// `transform` posts Left Option plus the key, so only a shortcut of exactly Option fires.
 export function optionShortcutTransform(transforms, keycode) {
   if (!transforms.enabled)
     throw new Error("Transforms are off; turn them on in the Transforms page first");
@@ -36,8 +33,6 @@ export function optionShortcutTransform(transforms, keycode) {
   return item;
 }
 
-// The first `transform <id8> outcome=<kind> key=value…` line in main.log output, without the
-// `[voice]` prefix, and its fields with whole-number values as numbers.
 export function transformLogLine(text) {
   for (const raw of text.split("\n")) {
     const at = raw.search(/\btransform \S+ outcome=\S/);
@@ -55,12 +50,8 @@ export function transformLogLine(text) {
   return null;
 }
 
-// Escape only means something while the run is still working, so it is posted for a run that has
-// not already finished.
 export const shouldEscape = (escape, sessionKind) => escape && sessionKind === "transforming";
 
-// The Flow Bar's transformDone names the outcome. When the command missed it, main's log line for
-// the run does.
 export function resolveOutcome(finished, logged) {
   if (finished.session.kind === "transformDone")
     return { outcome: finished.session.outcome ?? null, outcomeFrom: "pill" };
@@ -68,14 +59,11 @@ export function resolveOutcome(finished, logged) {
   return { outcome: null, outcomeFrom: null };
 }
 
-// Last transform lives in memory, so one from an earlier run must not pass for this run's.
 export const freshLast = (last, pressedAt) => (last && last.finishedAt >= pressedAt ? last : null);
 
-// The text the target should come to hold, or null when the run did not insert one.
 export const expectedLanding = (outcome, lastTransform) =>
   outcome?.kind === "inserted" && lastTransform ? lastTransform.after : null;
 
-// What the pill showed during the run, from the snapshots the run produced.
 export const pillSummary = (run, finished) => ({
   sawTransforming: run.some((s) => s.session.kind === "transforming"),
   sawLoading: run.some((s) => s.session.kind === "transforming" && s.session.loading),

@@ -5,7 +5,6 @@ public struct KeyEvent: Equatable, Sendable {
     public var keycode: Int64
     /// Raw `CGEventFlags` bits, including the device-side left/right modifier bits.
     public var flags: UInt64
-    /// `kCGKeyboardEventAutorepeat`: the key is still held and the system is repeating it.
     public var isRepeat: Bool
 
     public init(kind: Kind, keycode: Int64, flags: UInt64, isRepeat: Bool = false) {
@@ -16,15 +15,11 @@ public struct KeyEvent: Equatable, Sendable {
     }
 }
 
-/// What the helper is busy with, read on the tap thread for every event. While `capturing`,
-/// transform shortcuts pass through to the app; while `transforming`, Escape cancels the run and
-/// shortcuts are still consumed (main drops them) so a held Option+1 cannot type into the app.
 public enum HelperActivity: Sendable { case idle, capturing, transforming }
 
 public struct HotkeyDecision: Equatable, Sendable {
     public enum Emit: Equatable, Sendable {
         case hotkey(HotkeyAction)
-        /// The transform shortcut that fired.
         case transform(String)
         case nothing
     }
@@ -85,11 +80,6 @@ extension HotkeyKey {
 /// Watches the hold key and the optional toggle key. The hold key reports `down`, `up`, and
 /// `chord`; the toggle key reports only `toggle`, on a clean tap, so a shortcut that uses it
 /// (Right Option + a for "ą") never reaches the session. Escape is `cancel`.
-///
-/// Transform shortcuts match a keyDown by keycode and the exact generic modifier set, and only
-/// while neither dictation key is down: Right Option+1 with dictation on Right Option stays a
-/// chord, Left Option+1 fires. A matched key is swallowed until its keyUp, so the app sees
-/// neither the press, its repeats, nor the release.
 public struct Hotkeys: Sendable {
     private var hold: KeyHold
     private var toggle: KeyHold?
@@ -102,9 +92,6 @@ public struct Hotkeys: Sendable {
         shortcuts = transforms
     }
 
-    /// Replaces the registered shortcuts. The holds are untouched, so a transforms change in
-    /// the middle of a held dictation never ends it, and a swallowed key stays swallowed until
-    /// its release even when its shortcut was just removed.
     public mutating func setTransforms(_ transforms: [TransformShortcut]) {
         shortcuts = transforms
     }
@@ -115,8 +102,7 @@ public struct Hotkeys: Sendable {
     /// Re-derives each hold from the live modifier state after events may have been missed: a
     /// tap disabled by timeout, or a release that never reached the tap. Emits `up` for a hold
     /// key that was down. Never emits `down` or `toggle`: a press or release seen only through
-    /// polling is not a deliberate one. Swallowed keys are forgotten too: their releases were
-    /// among the missed events.
+    /// polling is not a deliberate one.
     public mutating func reconcile(flags: UInt64) -> HotkeyAction? {
         swallowed.removeAll()
         _ = toggle?.reconcile(flags: flags)

@@ -26,7 +26,6 @@ export function Keycap({ children }: { children: string }) {
   return <kbd {...stylex.props(styles.keycap)}>{children}</kbd>;
 }
 
-/** A key combination, one keycap per key. */
 export function Keys({ keys }: { keys: readonly string[] }) {
   return (
     <kbd {...stylex.props(styles.keys)}>

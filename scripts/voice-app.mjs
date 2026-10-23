@@ -245,11 +245,8 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
-// Transforms are off by default and their model is several GB, so it is linked only when cached.
 export const optionalModelFiles = { transform: GEMMA_4_E2B.file };
 
-// Links the shared cache's models into a scratch userData. The required ones must exist, and the
-// optional ones are linked when the cache has them.
 export function linkTestModels(userData, cache) {
   const models = join(userData, "models");
   mkdirSync(models, { recursive: true });
