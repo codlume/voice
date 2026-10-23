@@ -21,7 +21,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("preview harness", () => {
+// The first import transforms the whole renderer, which outlasts 5 s on a loaded CI runner.
+describe("preview harness", { timeout: 30_000 }, () => {
   test("applies a transforms patch", async () => {
     const voice = await openPreview("?hub=transforms");
     await voice.updateSettings({ transforms: { enabled: true, autoApply: POLISH_ID } });
