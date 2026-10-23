@@ -1,6 +1,7 @@
 import ApplicationServices
 import Foundation
 import VoiceHelperCore
+import os
 
 /// Owns the CGEventTap on a thread of its own. The system disables a tap whose callback
 /// stalls, and a disabled tap loses the key release that ends recording, so nothing that can
@@ -8,22 +9,23 @@ import VoiceHelperCore
 /// below the run loop is touched only on that thread; `configure` and `install` hop onto it.
 final class HotkeyTap {
     private let output: Output
-    private let captureActive: () -> Bool
+    private let activity: () -> HelperActivity
     private let runLoop: CFRunLoop
     private let thread: Thread
     private var key: HotkeyKey = .fn
     private var toggleKey: HotkeyKey?
-    // Stored for the matcher that lands with the transform helper; nothing reads them yet.
     private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
+    /// The key of the last shortcut that fired, for the selection reader to wait on its release.
+    private let firedKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
     private var tap: CFMachPort?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
 
-    init(output: Output, captureActive: @escaping () -> Bool) {
+    init(output: Output, activity: @escaping () -> HelperActivity) {
         self.output = output
-        self.captureActive = captureActive
+        self.activity = activity
         hotkeys = Hotkeys(key: .fn, toggleKey: nil, initialFlags: currentFlags())
         let ready = DispatchSemaphore(value: 0)
         var loop: CFRunLoop?
@@ -42,13 +44,25 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
+    /// Whether the key that fired the last transform shortcut is still physically down.
+    var firedKeyIsDown: Bool {
+        guard let keycode = firedKey.withLock({ $0 }) else { return false }
+        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keycode))
+    }
+
+    /// The holds are rebuilt only when a dictation key changed, which ends a held dictation.
+    /// A transforms-only change swaps the shortcuts under the live holds.
     func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut]) {
         perform {
+            self.transforms = transforms
+            if key == self.key, toggleKey == self.toggleKey {
+                self.hotkeys.setTransforms(transforms)
+                return
+            }
             self.emit(self.hotkeys.reconcile(flags: 0))
             self.key = key
             self.toggleKey = toggleKey
-            self.transforms = transforms
-            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
+            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
             self.syncBackstop()
         }
     }
@@ -103,7 +117,7 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
-        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
+        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
         syncBackstop()
         output.log(.info, "hotkey tap installed")
         return true
@@ -126,10 +140,15 @@ final class HotkeyTap {
         let keyEvent = KeyEvent(
             kind: kind,
             keycode: event.getIntegerValueField(.keyboardEventKeycode),
-            flags: event.flags.rawValue
+            flags: event.flags.rawValue,
+            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         )
-        let decision = hotkeys.handle(keyEvent, captureActive: captureActive())
+        let decision = hotkeys.handle(keyEvent, activity: activity())
         emit(decision.action)
+        if let transformId = decision.transform {
+            firedKey.withLock { $0 = keyEvent.keycode }
+            output.emit(.transform(transformId: transformId))
+        }
         syncBackstop()
         return decision.consume
     }

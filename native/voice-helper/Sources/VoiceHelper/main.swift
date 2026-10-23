@@ -29,7 +29,7 @@ final class Helper {
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         self.capture = capture
         insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
-        let hotkeyTap = HotkeyTap(output: output) { capture.isActive }
+        let hotkeyTap = HotkeyTap(output: output) { capture.isActive ? .capturing : .idle }
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
         installedApps = InstalledApps(output: output)
