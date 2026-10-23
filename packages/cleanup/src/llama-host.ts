@@ -53,7 +53,15 @@ export async function openLlama<T>(
   const llamaCpp = await import("node-llama-cpp");
   const llama = await llamaCpp.getLlama();
   try {
-    const model = await llama.loadModel({ modelPath });
+    // Fitting the layers to the context, with mmap on, skips node-llama-cpp's search over context
+    // sizes and over mmap on and off. Lazy mode leaves a table the model reads a row at a time, like
+    // Gemma 4's per-layer embeddings, on disk until a row is needed.
+    const model = await llama.loadModel({
+      modelPath,
+      useMmap: true,
+      lazyMode: true,
+      gpuLayers: { fitContext: { contextSize } },
+    });
     const context = await model.createContext({ contextSize });
     return { llama, model, ...build(llamaCpp, context) };
   } catch (error) {

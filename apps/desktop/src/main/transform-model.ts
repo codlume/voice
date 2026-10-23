@@ -22,7 +22,7 @@ export type TransformModel = {
   dispose(): Promise<void>;
 };
 
-export const IDLE_UNLOAD_MS = 5 * 60_000;
+export const IDLE_UNLOAD_MS = 30 * 60_000;
 export const LOAD_TIMEOUT_MS = 90_000;
 
 export type TransformModule = Pick<

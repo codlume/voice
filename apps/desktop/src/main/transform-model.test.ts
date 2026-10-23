@@ -276,7 +276,7 @@ describe("transform model", () => {
     expect(workers).toHaveLength(2);
   });
 
-  test("the process is killed after 5 idle minutes, and the next run loads a new one", async () => {
+  test("the process is killed after the idle wait, and the next run loads a new one", async () => {
     idleTimers();
     const { model, workers, last } = harness();
     await model.refresh();
