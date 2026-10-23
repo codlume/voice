@@ -366,8 +366,9 @@ async function main() {
   // only when the built command differs; a helper restart resends through `configure`.
   let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
   const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
+  const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
   function syncHotkeys() {
-    const next = hotkeyConfigure(store.state.settings, hubFocused());
+    const next = hotkeys();
     if (sentHotkeys && isDeepStrictEqual(next, sentHotkeys)) return;
     sentHotkeys = next;
     helper.send(next);
@@ -399,12 +400,15 @@ async function main() {
         microphoneTest.helperExited();
       }
     },
-    configure: () => [
-      (sentHotkeys = hotkeyConfigure(store.state.settings, hubFocused())),
-      { type: "microphone.configure", microphone: store.state.settings.microphone },
-      { type: "permissions.check" },
-      { type: "asr.prepare", download: false },
-    ],
+    configure: () => {
+      sentHotkeys = hotkeys();
+      return [
+        sentHotkeys,
+        { type: "microphone.configure", microphone: store.state.settings.microphone },
+        { type: "permissions.check" },
+        { type: "asr.prepare", download: false },
+      ];
+    },
     log,
   });
   // The tray reads the newest entry when clicked, so it is rebuilt only when it goes from none to
