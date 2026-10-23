@@ -54,3 +54,30 @@ export function transformLogLine(text) {
   }
   return null;
 }
+
+// Escape only means something while the run is still working, so it is posted for a run that has
+// not already finished.
+export const shouldEscape = (escape, sessionKind) => escape && sessionKind === "transforming";
+
+// The Flow Bar's transformDone names the outcome. When the command missed it, main's log line for
+// the run does.
+export function resolveOutcome(finished, logged) {
+  if (finished.session.kind === "transformDone")
+    return { outcome: finished.session.outcome ?? null, outcomeFrom: "pill" };
+  if (logged) return { outcome: { kind: logged.fields.outcome }, outcomeFrom: "log" };
+  return { outcome: null, outcomeFrom: null };
+}
+
+// Last transform lives in memory, so one from an earlier run must not pass for this run's.
+export const freshLast = (last, pressedAt) => (last && last.finishedAt >= pressedAt ? last : null);
+
+// The text the target should come to hold, or null when the run did not insert one.
+export const expectedLanding = (outcome, lastTransform) =>
+  outcome?.kind === "inserted" && lastTransform ? lastTransform.after : null;
+
+// What the pill showed during the run, from the snapshots the run produced.
+export const pillSummary = (run, finished) => ({
+  sawTransforming: run.some((s) => s.session.kind === "transforming"),
+  sawLoading: run.some((s) => s.session.kind === "transforming" && s.session.loading),
+  sawTransformDone: finished.session.kind === "transformDone",
+});

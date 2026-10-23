@@ -132,12 +132,32 @@ function checkout(t, mode) {
       return claim.userData;
     }
     const snapshot = {
-      settings: { hotkey: "fn", toggleHotkey: "rightOption", cleanup: { enabled: true } },
+      settings: {
+        hotkey: "fn", toggleHotkey: "rightOption", cleanup: { enabled: true },
+        transforms: { enabled: true, items: [
+          { id: "polish", name: "Polish", shortcut: { keycode: 18, modifiers: ["option"] } },
+        ] },
+      },
       permissions: { accessibility: ${JSON.stringify(mode === "permission" ? "denied" : "granted")} },
-      models: { asr: { state: "ready" }, cleanup: { state: ${JSON.stringify(mode === "model" ? "failed" : "ready")} } },
+      models: {
+        asr: { state: "ready" },
+        cleanup: { state: ${JSON.stringify(mode === "model" ? "failed" : "ready")} },
+        transform: { state: "ready" },
+      },
     };
     export const snapshotStream = async () => ({
-      items: [snapshot], waitFor: async () => snapshot, skipToEnd() {},
+      items: [snapshot],
+      async waitFor(_predicate, { label }) {
+        // The shortcut has been posted and no run starts: the command is mid-transform.
+        if (${JSON.stringify(mode)}.startsWith("transform") && label.startsWith("a transform run")) {
+          writeFileSync(${JSON.stringify(join(dir, "transform-waiting"))}, "waiting");
+          // The real hub connection keeps the event loop alive while a run is awaited.
+          setInterval(() => {}, 1000);
+          return new Promise(() => {});
+        }
+        return snapshot;
+      },
+      skipToEnd() {},
     });
     async function pause() {
       writeFileSync(${JSON.stringify(join(dir, "paused"))}, "waiting");
@@ -200,7 +220,7 @@ function checkout(t, mode) {
       return child;
     }
     export function announcedPorts() {
-      return ["replace-key", "crash"].includes(${JSON.stringify(mode)})
+      return ["replace-key", "crash"].includes(${JSON.stringify(mode)}) || ${JSON.stringify(mode)}.startsWith("transform")
         ? Promise.resolve({ DevTools: 3 }) : new Promise(() => {});
     }
     export function launchVoice(userData) {
@@ -482,6 +502,65 @@ test(
     assert.equal(existsSync(f.userData), false);
   },
 );
+
+for (const target of ["electron", "textedit"]) {
+  test(
+    `interrupting a transform closes its ${target} target before the instance stops`,
+    { timeout: 20_000 },
+    async (t) => {
+      const f = checkout(t, `transform-${target}`);
+      const instance = spawn(process.execPath, [f.script, "launch"], {
+        env: f.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      t.after(() => {
+        if (instance.exitCode === null) instance.kill("SIGKILL");
+      });
+      const [ready] = await once(instance.stdout, "data");
+      assert.equal(JSON.parse(ready).ready, true);
+
+      const proc = spawn(process.execPath, [f.script, "transform", `--target=${target}`], {
+        env: f.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const exited = once(proc, "exit");
+      let stderr = "";
+      proc.stderr.on("data", (data) => {
+        stderr += data;
+      });
+      proc.stdout.resume();
+      t.after(() => {
+        if (proc.exitCode === null) proc.kill("SIGKILL");
+      });
+      await waitForFile(join(f.dir, "transform-waiting"));
+      proc.kill("SIGTERM");
+      const [code] = await exited;
+      assert.equal(code, 1, stderr);
+      assert.match(stderr, /transform interrupted/);
+      assert.equal(readFileSync(join(f.dir, "key"), "utf8"), "called", "the shortcut was posted");
+
+      if (target === "electron") {
+        const scratch = JSON.parse(readFileSync(join(f.dir, "target.json"), "utf8"));
+        assert.equal(processIdentity(scratch.pid), null);
+      } else {
+        const scripts = readFileSync(join(f.dir, "osascript.log"), "utf8");
+        assert.match(scripts, /close document "transform-[^"]+" saving no/);
+        assert.match(scripts, /tell application "TextEdit" to quit/);
+        assert.deepEqual(
+          readdirSync(f.temp).filter((name) => name.startsWith("voice-transform-")),
+          [],
+        );
+      }
+
+      await new Promise((resolve, reject) => {
+        execFile(process.execPath, [f.script, "_stop"], { env: f.env }, (error) =>
+          error ? reject(error) : resolve(),
+        );
+      });
+      assertTeardown(f);
+    },
+  );
+}
 
 test(
   "an interrupted scenario tears down while setup is still pending",

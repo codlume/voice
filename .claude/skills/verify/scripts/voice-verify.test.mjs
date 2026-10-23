@@ -19,9 +19,13 @@ import { fileURLToPath } from "node:url";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
 import {
+  expectedLanding,
+  freshLast,
   optionShortcutTransform,
   parseTransformFlags,
-  TRANSFORM_PARAGRAPH,
+  pillSummary,
+  resolveOutcome,
+  shouldEscape,
   transformLogLine,
 } from "./transforms.mjs";
 import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
@@ -330,9 +334,47 @@ test("the transform log line yields its outcome and timings without the log pref
   assert.equal(transformLogLine(""), null);
 });
 
-test("the transform paragraph is synthetic, about 40 words, and has fillers to polish", () => {
-  const words = TRANSFORM_PARAGRAPH.split(/\s+/);
-  assert.ok(words.length >= 35 && words.length <= 45, `${words.length} words`);
-  assert.match(TRANSFORM_PARAGRAPH, /\bum\b/);
-  assert.match(TRANSFORM_PARAGRAPH, /\bUh\b/);
+test("a missed transformDone is recovered from main's log line, and no outcome stays null", () => {
+  const blocked = { kind: "notInserted", reason: "focusChanged" };
+  const done = { session: { kind: "transformDone", outcome: blocked } };
+  const idle = { session: { kind: "idle" } };
+  const logged = { line: "transform 9f8e7d6c outcome=inserted", fields: { outcome: "inserted" } };
+  assert.deepEqual(resolveOutcome(done, logged), { outcome: blocked, outcomeFrom: "pill" });
+  assert.deepEqual(resolveOutcome(idle, logged), {
+    outcome: { kind: "inserted" },
+    outcomeFrom: "log",
+  });
+  assert.deepEqual(resolveOutcome(idle, null), { outcome: null, outcomeFrom: null });
+});
+
+test("a Last transform from before the press is dropped, and the landing is awaited only for an insert", () => {
+  const last = { finishedAt: 1000, after: "Polished." };
+  assert.equal(freshLast(last, 1000), last);
+  assert.equal(freshLast(last, 1001), null);
+  assert.equal(freshLast(null, 0), null);
+  assert.equal(expectedLanding({ kind: "inserted" }, last), "Polished.");
+  assert.equal(expectedLanding({ kind: "inserted" }, null), null);
+  assert.equal(expectedLanding({ kind: "notInserted" }, last), null);
+  assert.equal(expectedLanding(null, last), null);
+});
+
+test("escape is posted only while the run is still transforming", () => {
+  assert.equal(shouldEscape(true, "transforming"), true);
+  assert.equal(shouldEscape(true, "transformDone"), false);
+  assert.equal(shouldEscape(true, "idle"), false);
+  assert.equal(shouldEscape(false, "transforming"), false);
+});
+
+test("the pill summary reports whether the run loaded the model and reached transformDone", () => {
+  const snapshot = (kind, loading) => ({ session: { kind, loading } });
+  const done = snapshot("transformDone");
+  assert.deepEqual(
+    pillSummary([snapshot("transforming", true), snapshot("transforming", false), done], done),
+    { sawTransforming: true, sawLoading: true, sawTransformDone: true },
+  );
+  assert.deepEqual(pillSummary([snapshot("transforming", false)], snapshot("idle")), {
+    sawTransforming: true,
+    sawLoading: false,
+    sawTransformDone: false,
+  });
 });

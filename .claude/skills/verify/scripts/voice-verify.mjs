@@ -30,8 +30,13 @@ import { electronTarget, textEditTarget } from "../../../../scripts/targets.mjs"
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
 import {
+  expectedLanding,
+  freshLast,
   optionShortcutTransform,
   parseTransformFlags,
+  pillSummary,
+  resolveOutcome,
+  shouldEscape,
   TRANSFORM_PARAGRAPH,
   transformLogLine,
 } from "./transforms.mjs";
@@ -264,6 +269,97 @@ function interruptible(message) {
       process.removeListener("SIGTERM", interrupt);
     },
   };
+}
+
+// The phases of `transform`. Each takes what it needs and returns what the next one reads.
+
+// The user's real clipboard, so only whether it changed ever leaves `transform`.
+const clipboardText = () => execFileSync("pbpaste", { encoding: "utf8" });
+
+// Selects the synthetic paragraph in the target and leaves it frontmost with the Voice window
+// unfocused, which is when main registers the shortcuts, and an idle Flow Bar. Returns the text
+// before the run.
+async function armTransform({ hub, snapshots, target, wait }) {
+  await wait(target.open(TRANSFORM_PARAGRAPH));
+  await wait(target.selectAll());
+  const before = await wait(target.read());
+  await wait(target.front());
+  // hasFocus() is true only while the hub window is key, the state in which main registers nothing.
+  await wait(
+    waitOn(hub, "!document.hasFocus()", 3000).catch(() =>
+      fail("the Voice window kept focus, so no shortcut is registered"),
+    ),
+  );
+  await wait(
+    snapshots.waitFor((s) => s.session.kind === "idle", {
+      timeoutMs: 5000,
+      label: "an idle Flow Bar before the shortcut",
+    }),
+  );
+  return before;
+}
+
+// Posts the shortcut and waits for the run to start. With --escape it then cancels the run if it
+// is still working 400 ms in: reading takes under 100 ms and generating takes seconds.
+async function pressTransform({ desktop, snapshots, keycode, escape, wait }) {
+  const pressedAt = Date.now();
+  desktop.fnpost("combo", String(keycode), "option", "--side=left");
+  const started = await wait(
+    snapshots.waitFor((s) => ["transforming", "transformDone"].includes(s.session.kind), {
+      timeoutMs: 5000,
+      label: "a transform run after the shortcut (Transforms on, target frontmost)",
+    }),
+  );
+  const runFrom = snapshots.items.indexOf(started);
+  let escapedAfterMs = null;
+  if (shouldEscape(escape, started.session.kind)) {
+    await wait(sleep(400));
+    if (shouldEscape(escape, snapshots.items.at(-1).session.kind)) {
+      desktop.fnpost("escape");
+      escapedAfterMs = Date.now() - pressedAt;
+    }
+  }
+  return { pressedAt, started, runFrom, escapedAfterMs };
+}
+
+// Waits for the run to end and reads main's log line for it, which names the outcome when the
+// Flow Bar's transformDone was missed.
+async function followTransform({ snapshots, state, logOffset, pressed, wait }) {
+  const { started, runFrom, pressedAt } = pressed;
+  const finished =
+    started.session.kind === "transformDone"
+      ? started
+      : await wait(
+          snapshots.waitFor((s) => ["transformDone", "idle"].includes(s.session.kind), {
+            timeoutMs: 150_000,
+            label: "the transform to finish",
+          }),
+        );
+  const finishedMs = Date.now() - pressedAt;
+  const run = snapshots.items.slice(runFrom);
+  const newLog = () => readFileSync(state.logPath).subarray(logOffset).toString("utf8");
+  const logged = await wait(
+    poll(() => transformLogLine(newLog()) ?? undefined, 5000, "transform line").catch(() => null),
+  );
+  return { finished, finishedMs, run, logged };
+}
+
+// What the app and the clipboard hold once the run is over.
+async function collectTransform({ hub, target, outcome, pressedAt, clipboardBefore, wait }) {
+  const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
+  const lastTransform = freshLast(last, pressedAt);
+  const expected = expectedLanding(outcome, lastTransform);
+  const { text: after, landedMs } =
+    expected === null
+      ? { text: await wait(target.read()), landedMs: null }
+      : await wait(landedText(() => target.read(), expected, { timeoutMs: 2000 }));
+  // A paste holds the result on the clipboard for about a second before restoring it.
+  const clipboardUnchanged = await wait(
+    poll(() => (clipboardText() === clipboardBefore ? true : undefined), 3000, "clipboard").catch(
+      () => false,
+    ),
+  );
+  return { lastTransform, after, landedMs, clipboardUnchanged };
 }
 
 const commands = {
@@ -1158,121 +1254,45 @@ const commands = {
     let target;
     try {
       const { settings, models } = await wait(hub.evaluate("window.voice.getSnapshot()"));
-      let transform;
-      try {
-        transform = optionShortcutTransform(settings.transforms, keycode);
-      } catch (error) {
-        fail(error.message);
-      }
+      const transform = optionShortcutTransform(settings.transforms, keycode);
       const snapshots = await snapshotStream(hub);
-      const newLog = (offset) => readFileSync(state.logPath).subarray(offset).toString("utf8");
       const logOffset = statSync(state.logPath).size;
-      // The clipboard is the user's real one, so only whether it changed leaves this command.
-      const clipboard = () => execFileSync("pbpaste", { encoding: "utf8" });
-      const clipboardBefore = clipboard();
+      const clipboardBefore = clipboardText();
 
       desktop.check();
       target =
         targetKind === "textedit"
           ? textEditTarget("transform")
           : await electronTarget(state.userData, { wait });
-      await wait(target.open(TRANSFORM_PARAGRAPH));
-      await wait(target.selectAll());
-      const before = await wait(target.read());
-      await wait(target.front());
-      // Main registers transform shortcuts with the helper only while the Voice window lacks focus.
-      const deadline = Date.now() + 3000;
-      while (
-        await wait(
-          evaluateInMain(
-            state.inspectPort,
-            `process.mainModule.require("electron").BrowserWindow.getAllWindows().some((w) => w.webContents.getURL().endsWith("hub.html") && w.isFocused())`,
-          ),
-        )
-      ) {
-        if (Date.now() > deadline)
-          fail("the Voice window kept focus, so no shortcut is registered");
-        await sleep(50);
-      }
-      await wait(
-        snapshots.waitFor((s) => s.session.kind === "idle", {
-          timeoutMs: 5000,
-          label: "an idle Flow Bar before the shortcut",
-        }),
-      );
-
-      const pressedAt = Date.now();
-      desktop.fnpost("combo", String(keycode), "option", "--side=left");
-      const started = await wait(
-        snapshots.waitFor((s) => ["transforming", "transformDone"].includes(s.session.kind), {
-          timeoutMs: 5000,
-          label: "a transform run after the shortcut (Transforms on, target frontmost)",
-        }),
-      );
-      const runFrom = snapshots.items.indexOf(started);
-      let escapedAfterMs = null;
-      if (escape && started.session.kind === "transforming") {
-        // Reading takes under 100 ms and generating takes seconds, so this lands in generating.
-        await wait(sleep(400));
-        if (snapshots.items.at(-1).session.kind === "transforming") {
-          desktop.fnpost("escape");
-          escapedAfterMs = Date.now() - pressedAt;
-        }
-      }
-      const finished =
-        started.session.kind === "transformDone"
-          ? started
-          : await wait(
-              snapshots.waitFor((s) => ["transformDone", "idle"].includes(s.session.kind), {
-                timeoutMs: 150_000,
-                label: "the transform to finish",
-              }),
-            );
-      const finishedMs = Date.now() - pressedAt;
-      const run = snapshots.items.slice(runFrom);
-      const logged = await wait(
-        poll(() => transformLogLine(newLog(logOffset)) ?? undefined, 5000, "transform line").catch(
-          () => null,
-        ),
-      );
-      const outcome =
-        finished.session.kind === "transformDone"
-          ? finished.session.outcome
-          : logged && { kind: logged.fields.outcome };
-
-      const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
-      const lastTransform = last && last.finishedAt >= pressedAt ? last : null;
-      const { text: after, landedMs } =
-        outcome?.kind === "inserted" && lastTransform
-          ? await wait(landedText(() => target.read(), lastTransform.after, { timeoutMs: 2000 }))
-          : { text: await wait(target.read()), landedMs: null };
-      // A paste holds the result on the clipboard for about a second before restoring it.
-      const clipboardUnchanged = await wait(
-        poll(() => (clipboard() === clipboardBefore ? true : undefined), 3000, "clipboard").catch(
-          () => false,
-        ),
-      );
+      const before = await armTransform({ hub, snapshots, target, wait });
+      const pressed = await pressTransform({ desktop, snapshots, keycode, escape, wait });
+      const followed = await followTransform({ snapshots, state, logOffset, pressed, wait });
+      const { outcome, outcomeFrom } = resolveOutcome(followed.finished, followed.logged);
+      const collected = await collectTransform({
+        hub,
+        target,
+        outcome,
+        pressedAt: pressed.pressedAt,
+        clipboardBefore,
+        wait,
+      });
 
       const result = {
         target: targetKind,
         transform: transform.name,
         shortcut: { keycode, modifiers: ["option"], side: "left" },
-        escapedAfterMs,
+        escapedAfterMs: pressed.escapedAfterMs,
         modelAtPress: models.transform.state,
-        pill: {
-          sawTransforming: run.some((s) => s.session.kind === "transforming"),
-          sawLoading: run.some((s) => s.session.kind === "transforming" && s.session.loading),
-          sawTransformDone: finished.session.kind === "transformDone",
-        },
-        outcome: outcome ?? null,
-        outcomeFrom: finished.session.kind === "transformDone" ? "pill" : logged ? "log" : null,
-        finishedMs,
+        pill: pillSummary(followed.run, followed.finished),
+        outcome,
+        outcomeFrom,
+        finishedMs: followed.finishedMs,
         before,
-        after,
-        landedMs,
-        lastTransform,
-        clipboardUnchanged,
-        logLine: logged?.line ?? null,
+        after: collected.after,
+        landedMs: collected.landedMs,
+        lastTransform: collected.lastTransform,
+        clipboardUnchanged: collected.clipboardUnchanged,
+        logLine: followed.logged?.line ?? null,
       };
       const path = join(
         evidenceDir(),
