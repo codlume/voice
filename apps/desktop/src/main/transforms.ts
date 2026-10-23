@@ -10,7 +10,7 @@ import { INSERT_TIMEOUT_MS } from "./dictation.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { dictating } from "./session.ts";
-import type { Store } from "./store.ts";
+import type { AppState, Store } from "./store.ts";
 import type { TransformModel } from "./transform-model.ts";
 import {
   GENERATE_GRACE_MS,
@@ -280,4 +280,25 @@ export function createTransforms(options: TransformsOptions): Transforms {
       active?.controller.abort(ABORTED);
     },
   };
+}
+
+/**
+ * A settings change moves the transform model, as `followSettings` does for cleanup. Turning
+ * Transforms on downloads the model once if it is missing. Turning them off forgets Last transform
+ * and frees the memory; a run in flight finishes, only what is kept for later goes.
+ */
+export function followTransformSettings(
+  model: Pick<TransformModel, "onDisk" | "install" | "unload">,
+  transforms: Pick<Transforms, "clearLast">,
+  state: AppState,
+  previous: AppState,
+) {
+  const enabled = state.settings.transforms.enabled;
+  if (enabled === previous.settings.transforms.enabled) return;
+  if (enabled) {
+    if (!model.onDisk()) void model.install();
+  } else {
+    transforms.clearLast();
+    void model.unload();
+  }
 }

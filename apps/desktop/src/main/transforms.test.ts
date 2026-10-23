@@ -19,7 +19,11 @@ import {
   generateBudgetMs,
   idleRun,
 } from "./transform-run.ts";
-import { NO_LAST_TRANSFORM_MESSAGE, createTransforms } from "./transforms.ts";
+import {
+  NO_LAST_TRANSFORM_MESSAGE,
+  createTransforms,
+  followTransformSettings,
+} from "./transforms.ts";
 
 type Selection =
   | { outcome: "selected"; text: string; via?: "accessibility" | "copy" }
@@ -488,5 +492,55 @@ describe("createTransforms", () => {
     }));
 
     expect(h.store.state.transform).toEqual(idleRun);
+  });
+});
+
+describe("followTransformSettings", () => {
+  // Wired as index.ts wires it: every store change goes through it with the previous state.
+  function followed(opts: Options & { onDisk?: boolean } = {}) {
+    const h = harness(opts);
+    const calls: ("install" | "unload")[] = [];
+    const model = {
+      onDisk: () => opts.onDisk ?? true,
+      install: async () => void calls.push("install"),
+      unload: async () => void calls.push("unload"),
+    };
+    h.store.subscribe((state, previous) =>
+      followTransformSettings(model, h.transforms, state, previous),
+    );
+    const setEnabled = (enabled: boolean) =>
+      h.store.update((s) => ({
+        ...s,
+        settings: { ...s.settings, transforms: { ...s.settings.transforms, enabled } },
+      }));
+    return { ...h, calls, setEnabled };
+  }
+
+  test("turning Transforms on downloads the model once when it is missing", () => {
+    const h = followed({ transforms: { enabled: false }, onDisk: false });
+    h.setEnabled(true);
+    expect(h.calls).toEqual(["install"]);
+  });
+
+  test("turning Transforms on leaves a model that is already on disk alone", () => {
+    const h = followed({ transforms: { enabled: false }, onDisk: true });
+    h.setEnabled(true);
+    expect(h.calls).toEqual([]);
+  });
+
+  test("turning Transforms off forgets Last transform and unloads the model", () => {
+    const h = followed();
+    h.transforms.remember({ name: "Polish", before: "raw words", after: "Raw words." });
+    h.setEnabled(false);
+    expect(h.transforms.lastTransform()).toBeNull();
+    expect(h.lasts.at(-1)).toBeNull();
+    expect(h.calls).toEqual(["unload"]);
+  });
+
+  test("a settings change that keeps the flag moves nothing", () => {
+    const h = followed({ onDisk: false });
+    h.store.update((s) => ({ ...s, settings: { ...s.settings, copyToClipboard: true } }));
+    h.setEnabled(true);
+    expect(h.calls).toEqual([]);
   });
 });

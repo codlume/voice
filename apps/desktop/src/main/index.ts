@@ -73,7 +73,7 @@ import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./se
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import { createTransformModel } from "./transform-model.ts";
-import { createTransforms, type Transforms } from "./transforms.ts";
+import { createTransforms, followTransformSettings, type Transforms } from "./transforms.ts";
 import { idleRun } from "./transform-run.ts";
 import {
   createUpdates,
@@ -654,6 +654,7 @@ async function main() {
     if (state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     followSettings(cleanup, state, previous);
+    followTransformSettings(transformModel, transforms, state, previous);
   });
 
   // A restart request holds the history still from the moment it starts draining it, so what it
@@ -681,15 +682,6 @@ async function main() {
     applied: (next, previous) => {
       store.update((s) => ({ ...s, settings: next }));
       syncHotkeys();
-      if (next.transforms.enabled !== previous.transforms.enabled) {
-        if (next.transforms.enabled) {
-          if (!transformModel.onDisk()) void transformModel.install();
-        } else {
-          // A run in flight finishes; only what is kept for later goes.
-          transforms.clearLast();
-          void transformModel.unload();
-        }
-      }
       if (next.microphone?.uid !== previous.microphone?.uid)
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
