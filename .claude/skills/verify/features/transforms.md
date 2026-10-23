@@ -21,9 +21,20 @@ The user selects text in any app and presses a transform shortcut. Voice reads t
 - In any other app, select text and press Option+1 or Option+2, or the shortcut set in the editor.
 - Settings > Models lists the transform model with the speech and cleanup models.
 
+## Run record
+
+Measured in the real app on commit adad582a. Later commits changed the helper reader and the model lifecycle, so rerun the recipes below after touching either.
+
+- Electron textarea, copy path: inserted by paste, clipboard unchanged.
+- TextEdit, accessibility path: inserted, clipboard unchanged. 40 words took 1.3 to 1.9 s warm and 154 words took 3.7 to 3.9 s warm.
+- Escape mid-run: cancelled, text unchanged.
+- Safari read-only page: not inserted (`focusChanged`), and the result was copyable from Last transform.
+- Real Chrome textarea (isolated profile): inserted via copy.
+- Cold first run: about 5 s, occasionally 28 s under memory pressure.
+
 ## Driving it with voice-verify
 
-Preconditions: baseline, `vv doctor` shows `testModels.transform: "cached"` and `otherVoiceProcesses: []`, and Accessibility is `granted`. `launch` links the cached model, so `s.models.transform.state` starts `installed`.
+Preconditions: baseline, `vv doctor` shows `optionalTestModels.transform: "cached"` and `otherVoiceProcesses: []`, and Accessibility is `granted`. `launch` links the cached model, so `s.models.transform.state` starts `installed`.
 
 - **Turn on.** `vv key Digit4 command`, then `vv click 'css:main [role="switch"]'`. Wait for `s.settings.transforms.enabled === true`. With the model linked, no download dialog opens.
 - **Run in the scratch textarea.** `vv transform`. It selects a synthetic 40-word paragraph, posts Left Option+1, and follows the Flow Bar. Expect `outcome.kind` `inserted` with method `paste`, `after` different from `before` and equal to `lastTransform.after`, `clipboardUnchanged: true`, and a `logLine` with `via=copy`.
@@ -32,7 +43,7 @@ Preconditions: baseline, `vv doctor` shows `testModels.transform: "cached"` and 
 - **Cancel.** `vv transform --escape`. It posts Escape 400 ms into the run. Expect `outcome.kind` `cancelled`, `after === before`, and `escapedAfterMs` set.
 - **Loading.** The first run after `launch` reports `pill.sawLoading: true`. Later runs within 5 minutes do not.
 - **Flow Bar.** `transform` blocks, so run it in the background. During a load, `vv eval pill 'document.body.innerText'` reads "Loading model". During generation, the `[role=status]` element's `data-view` is `processing`. Then `vv shot transform-done pill` captures the outcome.
-- **Record a shortcut.** `vv click "Edit Polish"`, `vv click Shortcut`, `vv key Digit3 option`, then `vv click "Save changes"`. Polish's `shortcut` is `{ keycode: 20, modifiers: ["option"] }`, and `vv transform --shortcut=20` runs it.
+- **Record a shortcut.** `vv click "Edit Polish"`, `vv click Shortcut` (which focuses the picker, so it records the next press), `vv key Digit3 option`, then `vv click "Save changes"`. Polish's `shortcut` is `{ keycode: 20, modifiers: ["option"] }`, and `vv transform --shortcut=20` runs it.
 - **Last transform.** After a run, `vv front`, then `vv text` shows `Before` and `After Polish` with the paragraph and result. `vv click "Copy result"` puts the result on the clipboard, and `pbpaste` shows it.
 - **No text in the log.** After a run, `grep -c "garden club" <userData>/main.log` prints 0.
 - **Proof.** Each run writes `transform-<electron|textedit>[-escape]-<ts>.json` to the evidence dir with the outcome, the target text before and after, the Last transform, `clipboardUnchanged`, and the log line. The clipboard's contents are never written.
@@ -43,6 +54,6 @@ Preconditions: baseline, `vv doctor` shows `testModels.transform: "cached"` and 
 - `transform` fails early when Transforms are off or no transform sits on exactly Option plus that key. A shortcut with other modifiers cannot be posted by it.
 - The target must be frontmost when the shortcut is posted, and the Voice window must not have focus. `transform` arranges both. It leaves the Voice window covered, so run `front` before driving the page.
 - The switch and the nav item are both named `Transforms`. On the Transforms page, click the switch by `css:main [role="switch"]`.
-- Without the cached model, turning Transforms on downloads 3.1 GB into the scratch userData, and `stop` deletes it. Keep the file in `~/Library/Caches/Voice Development/test-models`.
+- Without the cached model, turning Transforms on downloads the multi-GB model into the scratch userData, and `stop` deletes it. Keep the file in `~/Library/Caches/Voice Development/test-models`.
 - `transform` always selects the whole paragraph, so it cannot produce `noSelection`, `secureInput`, or `selectionChanged`. `node native/voice-helper/scripts/selection-smoke.mjs electron` and `… textedit` cover the helper's read, the write guard, and the clipboard restore without the app.
 - `Copy original` and `Copy result` overwrite the real clipboard.
