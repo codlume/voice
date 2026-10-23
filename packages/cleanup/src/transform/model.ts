@@ -15,6 +15,7 @@ export type TransformModelSpec = {
   readonly source: ModelSource;
   readonly contextSize: number;
   readonly maxWords: number;
+  readonly gpuLayers: number;
 };
 
 // 8,192 tokens cost 23 MB more Metal memory than 4,096 and fit 1,000 words of Polish with room
@@ -23,4 +24,6 @@ export const TRANSFORM_MODEL: TransformModelSpec = {
   source: GEMMA_4_E2B,
   contextSize: 8192,
   maxWords: 1000,
+  // Gemma 4 E2B's 35 blocks plus its output layer.
+  gpuLayers: 36,
 };

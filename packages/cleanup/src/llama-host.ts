@@ -45,19 +45,42 @@ export function llamaHost<E extends Opened>(open: () => Promise<E>, disposedMess
 
 type LlamaCpp = typeof import("node-llama-cpp");
 
+type LoadOptions = { modelPath: string; contextSize: number; gpuLayers?: number | undefined };
+
 export async function openLlama<T>(
-  { modelPath, contextSize }: { modelPath: string; contextSize: number },
+  options: LoadOptions,
   build: (llamaCpp: LlamaCpp, context: LlamaContext) => T,
 ): Promise<Opened & T> {
   // A static import breaks the CJS Electron bundle, because node-llama-cpp uses top-level await.
   const llamaCpp = await import("node-llama-cpp");
   const llama = await llamaCpp.getLlama();
   try {
-    const model = await llama.loadModel({ modelPath });
-    const context = await model.createContext({ contextSize });
+    const model = await loadModel(llamaCpp, llama, options);
+    const context = await model.createContext({ contextSize: options.contextSize });
     return { llama, model, ...build(llamaCpp, context) };
   } catch (error) {
     await llama.dispose();
     throw error;
+  }
+}
+
+// Naming the layers and the context lets node-llama-cpp skip its layer and context-size searches.
+// Lazy mode leaves a table the model reads a row at a time, like Gemma 4's per-layer embeddings,
+// on disk until a row is needed.
+async function loadModel(
+  llamaCpp: LlamaCpp,
+  llama: Llama,
+  { modelPath, contextSize, gpuLayers }: LoadOptions,
+): Promise<LlamaModel> {
+  if (gpuLayers === undefined) return llama.loadModel({ modelPath });
+  const lazy = { modelPath, useMmap: true, lazyMode: true };
+  try {
+    return await llama.loadModel({
+      ...lazy,
+      gpuLayers: { min: gpuLayers, max: gpuLayers, fitContext: { contextSize } },
+    });
+  } catch (error) {
+    if (!(error instanceof llamaCpp.InsufficientMemoryError)) throw error;
+    return llama.loadModel(lazy);
   }
 }
