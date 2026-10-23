@@ -1,15 +1,12 @@
 #!/usr/bin/env node
-import { execFile, execFileSync, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { fixturesDir } from "./fixtures.mjs";
+import { electronTarget, textEditTarget } from "./targets.mjs";
 import {
   assert,
-  announcedPorts,
-  electronPath,
   landedText,
   launchVoice,
   Page,
@@ -18,13 +15,9 @@ import {
   refuseIfVoiceIsRunning,
   repoDir,
   snapshotStream,
-  smokeEnvironment,
-  start,
   stopChildren,
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
-
-const execFileAsync = promisify(execFile);
 
 const helperDir = join(repoDir, "native/voice-helper");
 const hotkey = "rightOption";
@@ -107,10 +100,6 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited ${result.status}`);
 }
 
-function osascript(script) {
-  return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
-}
-
 function activationType(pid) {
   const apps = execFileSync("lsappinfo", ["list"], { encoding: "utf8" });
   return new RegExp(`pid = ${pid} .*?type="([^"]+)"`).exec(apps)?.[1];
@@ -133,108 +122,6 @@ function wavDurationMs(buffer) {
   }
   assert(byteRate && dataBytes !== undefined, "fixture lacks a fmt or data chunk");
   return (dataBytes / byteRate) * 1000;
-}
-
-const frontmostPid = () =>
-  Number(
-    osascript(
-      'tell application "System Events" to unix id of first process whose frontmost is true',
-    ),
-  );
-
-async function activate(pid, name) {
-  osascript(
-    `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`,
-  );
-  const deadline = Date.now() + 5000;
-  while (frontmostPid() !== pid) {
-    assert(Date.now() < deadline, `${name} (pid ${pid}) did not become frontmost`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-// Each case gets its own empty file. An untitled document would be renamed from its content and
-// could not be addressed again, and launching TextEdit through a file opens nothing else. Only
-// documents this script opened are touched: TextEdit restores autosaved untitled documents from
-// earlier crashes, and quitting over one of those raises a save sheet that blocks every later
-// AppleEvent.
-function textEditTarget(userData) {
-  const wasRunning = osascript('application "TextEdit" is running') === "true";
-  const dir = join(userData, "textedit");
-  mkdirSync(dir);
-  const documents = [];
-  const current = () => `document ${show(documents.at(-1))}`;
-  return {
-    name: "TextEdit",
-    async open(caseName) {
-      const name = `${caseName}-${randomUUID()}.txt`;
-      const file = join(dir, name);
-      writeFileSync(file, "");
-      execFileSync("open", ["-a", "TextEdit", file]);
-      documents.push(name);
-      const exists = () => {
-        try {
-          const script = `tell application "TextEdit" to exists document ${show(name)}`;
-          return execFileSync("osascript", ["-e", script], {
-            encoding: "utf8",
-            stdio: "pipe",
-          }).trim();
-        } catch (error) {
-          return error.message;
-        }
-      };
-      const deadline = Date.now() + 10_000;
-      for (let reply = exists(); reply !== "true"; reply = exists()) {
-        assert(Date.now() < deadline, `TextEdit did not open ${file}: ${reply}`);
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      const pid = osascript('tell application "System Events" to unix id of process "TextEdit"');
-      await activate(Number(pid), "TextEdit");
-    },
-    async read() {
-      const { stdout } = await execFileAsync(
-        "osascript",
-        ["-e", `tell application "TextEdit" to get text of ${current()}`],
-        { encoding: "utf8", timeout: 1000, killSignal: "SIGKILL" },
-      );
-      return stdout.trim();
-    },
-    close() {
-      for (const name of documents.splice(0)) {
-        osascript(
-          `tell application "TextEdit" to if exists document ${show(name)} then close document ${show(name)} saving no`,
-        );
-      }
-      const remaining = Number(osascript('tell application "TextEdit" to count documents'));
-      if (!wasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');
-    },
-  };
-}
-
-async function electronTarget(userData) {
-  const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
-  const child = start(
-    electronPath(),
-    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-    { env, stdio: ["ignore", "ignore", "pipe"] },
-  );
-  const { DevTools: port } = await announcedPorts(child, ["DevTools"]);
-  const page = await Page.connect(port, "index.html");
-  const field = 'document.getElementById("field")';
-  return {
-    name: "Electron target",
-    async open() {
-      await activate(child.pid, "Electron target");
-      const focused = await page.evaluate(
-        `${field}.value = ""; ${field}.focus(); document.hasFocus() && document.activeElement.id`,
-      );
-      assert(focused === "field", `textarea is not focused (activeElement ${show(focused)})`);
-    },
-    read: () => page.evaluate(`${field}.value`),
-    close() {
-      page.close();
-    },
-  };
 }
 
 function parseTiming(line) {
@@ -261,7 +148,7 @@ async function runCase(c, { snapshots, logs, hub, audioPath, targets }) {
     );
   }
 
-  await target.open(c.name);
+  await target.open();
   const before = await target.read();
   const newestEntry = () =>
     hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
@@ -382,7 +269,7 @@ async function main() {
       { timeoutMs: 180_000, label: "speech and cleanup models ready" },
     );
 
-    targets.textedit = textEditTarget(userData);
+    targets.textedit = textEditTarget("e2e");
     targets.electron = await electronTarget(userData);
     for (const c of cases) await runCase(c, { snapshots, logs, hub, audioPath, targets });
     note(`all ${cases.length} cases passed`);

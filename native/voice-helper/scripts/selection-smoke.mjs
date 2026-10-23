@@ -1,18 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  announcedPorts,
-  electronPath,
-  Page,
-  repoDir,
-  smokeEnvironment,
-  start,
-  stopChildren,
-} from "../../../scripts/voice-app.mjs";
+import { stopChildren } from "../../../scripts/voice-app.mjs";
+import { electronTarget, textEditTarget } from "../../../scripts/targets.mjs";
 import { assert, helperBinary, runningVoiceProcesses, withHelper } from "./helper.mjs";
 
 const target = process.argv[2];
@@ -56,24 +49,6 @@ function clipboardChangeCount() {
   );
 }
 
-const frontmostPid = () =>
-  Number(
-    osascript(
-      'tell application "System Events" to unix id of first process whose frontmost is true',
-    ),
-  );
-
-async function activate(pid, name) {
-  osascript(
-    `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`,
-  );
-  const deadline = Date.now() + 5000;
-  while (frontmostPid() !== pid) {
-    assert(Date.now() < deadline, `${name} (pid ${pid}) did not become frontmost`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
 async function settle(read, expected, timeoutMs = 3_000) {
   const deadline = Date.now() + timeoutMs;
   let value = await read();
@@ -89,94 +64,15 @@ function pressRightArrow() {
   osascript(`tell application "System Events" to key code ${rightArrowKeycode}`);
 }
 
-// Named files, as in insert-smoke.mjs: an untitled document can fail to appear on a cold launch,
-// and closing one can raise a save sheet that blocks every later AppleEvent.
-function textEditTarget() {
-  const wasRunning = osascript('application "TextEdit" is running') === "true";
-  const dir = mkdtempSync(join(tmpdir(), "voice-selection-smoke-"));
-  const name = `selection-${randomUUID()}.txt`;
-  const file = join(dir, name);
-  const document = `document ${JSON.stringify(name)}`;
-  return {
-    name: "TextEdit",
-    async open() {
-      writeFileSync(file, paragraph);
-      osascript(
-        `tell application "TextEdit"\nopen POSIX file ${JSON.stringify(file)}\nactivate\nend tell`,
-      );
-      const pid = Number(
-        osascript('tell application "System Events" to unix id of process "TextEdit"'),
-      );
-      await activate(pid, "TextEdit");
-      const text = await settle(() => this.read(), paragraph);
-      assert(
-        text === paragraph,
-        `document did not open with the paragraph: ${JSON.stringify(text)}`,
-      );
-    },
-    selectAll() {
-      osascript(`tell application "System Events" to keystroke "a" using command down`);
-    },
-    axSelectedText() {
-      try {
-        return osascript(
-          'tell application "System Events" to tell process "TextEdit" to get value of attribute "AXSelectedText" of (value of attribute "AXFocusedUIElement")',
-        );
-      } catch {
-        return null;
-      }
-    },
-    read: () => osascript(`tell application "TextEdit" to get text of ${document}`),
-    keysSeen: () => null,
-    async close() {
-      try {
-        osascript(`tell application "TextEdit" to close ${document} saving no`);
-        // Quitting over a document this script did not open, such as a restored autosave, raises
-        // a save sheet, so TextEdit stays up unless this script launched it and nothing else is open.
-        const remaining = Number(osascript('tell application "TextEdit" to count documents'));
-        if (!wasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
-  };
-}
-
-async function electronTarget() {
+async function createTarget() {
+  if (target === "textedit") return textEditTarget("selection-smoke");
   const userData = mkdtempSync(join(tmpdir(), "voice-selection-smoke-"));
-  const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
-  const child = start(
-    electronPath(),
-    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-    { env, stdio: ["ignore", "ignore", "pipe"] },
-  );
-  const { DevTools: port } = await announcedPorts(child, ["DevTools"]);
-  const page = await Page.connect(port, "index.html");
-  const field = 'document.getElementById("field")';
-  // Every keydown the page sees, with its modifiers, so a leaked Option on the posted Cmd+C
-  // shows up as alt: true on the "c" event.
-  await page.evaluate(
-    `window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push({ key: e.key, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey, ctrl: e.ctrlKey }), true); true`,
-  );
+  const electron = await electronTarget(userData);
+  await electron.watchKeys();
   return {
-    name: "Electron target",
-    async open() {
-      await activate(child.pid, "Electron target");
-      const focused = await page.evaluate(
-        `${field}.value = ${JSON.stringify(paragraph)}; ${field}.focus(); document.hasFocus() && document.activeElement.id`,
-      );
-      assert(
-        focused === "field",
-        `textarea is not focused (activeElement ${JSON.stringify(focused)})`,
-      );
-    },
-    selectAll: () =>
-      page.evaluate(`${field}.select(); ${field}.selectionEnd - ${field}.selectionStart`),
-    axSelectedText: () => null,
-    read: () => page.evaluate(`${field}.value`),
-    keysSeen: () => page.evaluate("JSON.stringify(window.__keys.splice(0))"),
+    ...electron,
     async close() {
-      page.close();
+      electron.close();
       await stopChildren();
       rmSync(userData, { recursive: true, force: true });
     },
@@ -244,7 +140,7 @@ function timings(helper, since) {
 
 const clipboardShaBefore = clipboardSha256();
 const clipboardCountBefore = clipboardChangeCount();
-const app = target === "textedit" ? textEditTarget() : await electronTarget();
+const app = await createTarget();
 const report = { target: app.name };
 try {
   await withHelper({}, async (helper) => {
@@ -257,7 +153,7 @@ try {
       toggleKey: null,
       transforms: [{ id: transformId, keycode: oneKeycode, modifiers: ["option"] }],
     });
-    await app.open();
+    await app.open(paragraph);
 
     // 1. Select the paragraph, press the shortcut, read it, replace it.
     await app.selectAll();
@@ -319,6 +215,7 @@ try {
       `collapsed selection gave ${JSON.stringify(empty.result)}`,
     );
     helper.send({ type: "transform.end", id: "run-2" });
+    // An untouched clipboard gives no signal to await, so this waits out the helper's restore window.
     await new Promise((resolve) => setTimeout(resolve, 1_100));
     const countAfterEmpty = clipboardChangeCount();
     assert(
