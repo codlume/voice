@@ -18,6 +18,12 @@ import { fileURLToPath } from "node:url";
 
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
+import {
+  optionShortcutTransform,
+  parseTransformFlags,
+  TRANSFORM_PARAGRAPH,
+  transformLogLine,
+} from "./transforms.mjs";
 import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
@@ -31,6 +37,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
     ".claude/skills/verify/scripts/voice-verify.mjs",
     ".claude/skills/verify/scripts/dictate-flags.mjs",
     ".claude/skills/verify/scripts/key-events.mjs",
+    ".claude/skills/verify/scripts/transforms.mjs",
     ".claude/skills/verify/scripts/scenarios.mjs",
     "scripts/voice-app.mjs",
     "scripts/smoke-resources.mjs",
@@ -269,4 +276,70 @@ test("key presses each modifier around the key and releases them in reverse", ()
   assert.equal(keyEvents("KeyK", ["control"])[1].key, "k");
   assert.throws(() => keyEvents("Digit1", ["alt"]), /unknown modifier alt/);
   assert.throws(() => keyEvents("Numpad1"), /unknown key code Numpad1/);
+});
+
+test("transform flags default to Option+1 in the scratch textarea and reject typos", () => {
+  assert.deepEqual(parseTransformFlags([]), { target: "electron", keycode: 18, escape: false });
+  assert.deepEqual(parseTransformFlags(["--target=textedit", "--shortcut=19", "--escape"]), {
+    target: "textedit",
+    keycode: 19,
+    escape: true,
+  });
+  assert.throws(() => parseTransformFlags(["--target=safari"]), /--target must be/);
+  for (const bad of ["--shortcut=", "--shortcut=128", "--shortcut=1.5", "--shortcut=a"])
+    assert.throws(() => parseTransformFlags([bad]), /--shortcut must be/, bad);
+  assert.throws(() => parseTransformFlags(["--escape=yes"]), /unknown flag --escape=yes/);
+  assert.throws(() => parseTransformFlags(["--target", "textedit"]), /--target must be/);
+});
+
+test("transform finds the item on exactly Option plus the key", () => {
+  const item = (name, keycode, modifiers) => ({ name, shortcut: { keycode, modifiers } });
+  const transforms = {
+    enabled: true,
+    items: [
+      item("Shifted", 18, ["option", "shift"]),
+      item("Polish", 18, ["option"]),
+      item("Prompt Engineer", 19, ["option"]),
+      { name: "Unbound", shortcut: null },
+    ],
+  };
+  assert.equal(optionShortcutTransform(transforms, 18).name, "Polish");
+  assert.equal(optionShortcutTransform(transforms, 19).name, "Prompt Engineer");
+  assert.throws(
+    () => optionShortcutTransform(transforms, 20),
+    /no transform is on Option with keycode 20; Option shortcuts: \[\{"name":"Polish","keycode":18\},\{"name":"Prompt Engineer","keycode":19\}\]/,
+  );
+  assert.throws(
+    () => optionShortcutTransform({ ...transforms, enabled: false }, 18),
+    /Transforms are off/,
+  );
+});
+
+test("the transform log line yields its outcome and timings without the log prefix", () => {
+  const log = [
+    "[voice] session 1a2b3c4d outcome=inserted startMs=1 asrMs=80",
+    "[voice] transform 9f8e7d6c outcome=notInserted via=copy readMs=48 generateMs=3120 insertMs=7 words=40",
+    "[voice] transform 00000000 outcome=inserted via=accessibility readMs=1 generateMs=1 insertMs=1 words=1",
+  ].join("\n");
+  assert.deepEqual(transformLogLine(log), {
+    line: "transform 9f8e7d6c outcome=notInserted via=copy readMs=48 generateMs=3120 insertMs=7 words=40",
+    fields: {
+      id: "9f8e7d6c",
+      outcome: "notInserted",
+      via: "copy",
+      readMs: 48,
+      generateMs: 3120,
+      insertMs: 7,
+      words: 40,
+    },
+  });
+  assert.equal(transformLogLine("[voice] transform model loaded in 2100 ms\n"), null);
+  assert.equal(transformLogLine(""), null);
+});
+
+test("the transform paragraph is synthetic, about 40 words, and has fillers to polish", () => {
+  const words = TRANSFORM_PARAGRAPH.split(/\s+/);
+  assert.ok(words.length >= 35 && words.length <= 45, `${words.length} words`);
+  assert.match(TRANSFORM_PARAGRAPH, /\bum\b/);
+  assert.match(TRANSFORM_PARAGRAPH, /\bUh\b/);
 });

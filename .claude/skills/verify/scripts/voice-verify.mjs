@@ -25,6 +25,12 @@ import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/h
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
+import {
+  optionShortcutTransform,
+  parseTransformFlags,
+  TRANSFORM_PARAGRAPH,
+  transformLogLine,
+} from "./transforms.mjs";
 import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
 import {
   announcedPorts,
@@ -223,6 +229,118 @@ function openSecondCopy(state, ...extraArgs) {
     VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
   });
   return spawnSync(electronPath(), [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
+}
+
+// Synthetic key presses reach every running helper's tap, so they need the desktop to themselves.
+function exclusiveDesktop(state) {
+  const check = () => {
+    if (scenarioOwner) requireInstance();
+    const others = otherVoiceProcesses(state.userData);
+    if (others.length > 0)
+      throw new VerificationBlocked(
+        "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.",
+        { desktop: others },
+      );
+  };
+  const fnpost = (...keys) => {
+    check();
+    execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
+  };
+  return { check, fnpost };
+}
+
+async function startScratchTarget(state, wait) {
+  const env = smokeEnvironment(state.userData, {
+    VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
+  });
+  const target = start(
+    electronPath(),
+    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
+    { env, stdio: ["ignore", "ignore", "pipe"] },
+  );
+  const { DevTools: port } = await wait(announcedPorts(target, ["DevTools"]));
+  return { pid: target.pid, page: await wait(Page.connect(port, "index.html")) };
+}
+
+async function bringToFront(pid, name) {
+  osascript(
+    `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`,
+  );
+  const frontmostPid = () =>
+    Number(
+      osascript(
+        'tell application "System Events" to unix id of first process whose frontmost is true',
+      ),
+    );
+  const deadline = Date.now() + 5000;
+  while (frontmostPid() !== pid) {
+    if (Date.now() > deadline) fail(`${name} (pid ${pid}) did not become frontmost`);
+    await sleep(50);
+  }
+}
+
+const FIELD = 'document.getElementById("field")';
+
+async function electronTransformTarget(state, wait) {
+  const { pid, page } = await startScratchTarget(state, wait);
+  const front = () => bringToFront(pid, "the scratch target");
+  return {
+    async open(text) {
+      await front();
+      await waitOn(
+        page,
+        `(${FIELD}.value = ${show(text)}, ${FIELD}.focus(), document.hasFocus() && document.activeElement.id === "field")`,
+        5000,
+      );
+    },
+    selectAll: () => page.evaluate(`${FIELD}.select(), ${FIELD}.selectionEnd`),
+    read: () => page.evaluate(`${FIELD}.value`),
+    front,
+    close: () => page.close(),
+  };
+}
+
+// A named file, as in native/voice-helper/scripts/selection-smoke.mjs: an untitled document can
+// fail to appear on a cold launch, and closing one can raise a save sheet that blocks AppleEvents.
+function textEditTransformTarget() {
+  const wasRunning = osascript('application "TextEdit" is running') === "true";
+  const dir = mkdtempSync(join(tmpdir(), "voice-verify-transform-"));
+  const name = `transform-${randomUUID()}.txt`;
+  const file = join(dir, name);
+  const document = `document ${show(name)}`;
+  const read = async () => osascript(`tell application "TextEdit" to get text of ${document}`);
+  let front;
+  return {
+    async open(text) {
+      writeFileSync(file, text);
+      osascript(`tell application "TextEdit"\nopen POSIX file ${show(file)}\nactivate\nend tell`);
+      const pid = Number(
+        osascript('tell application "System Events" to unix id of process "TextEdit"'),
+      );
+      front = () => bringToFront(pid, "TextEdit");
+      await front();
+      const deadline = Date.now() + 3000;
+      while ((await read()) !== text) {
+        if (Date.now() > deadline) fail("the TextEdit document did not open with the paragraph");
+        await sleep(50);
+      }
+    },
+    selectAll: () =>
+      osascript('tell application "System Events" to keystroke "a" using command down'),
+    read,
+    front: () => front(),
+    close() {
+      try {
+        osascript(`tell application "TextEdit" to close ${document} saving no`);
+        // Quitting over a document this run did not open raises a save sheet, so TextEdit stays up
+        // unless this run launched it and nothing else is open.
+        const remaining = Number(osascript('tell application "TextEdit" to count documents'));
+        if (!wasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  };
 }
 
 const commands = {
@@ -964,22 +1082,10 @@ const commands = {
     }
     const { end, mode, app } = parsed;
     const state = requireInstance();
-    const checkAccess = () => {
-      if (scenarioOwner) requireInstance();
-      const others = otherVoiceProcesses(state.userData);
-      if (others.length > 0)
-        throw new VerificationBlocked(
-          "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.",
-          { desktop: others },
-        );
-    };
+    const { check: checkAccess, fnpost } = exclusiveDesktop(state);
     checkAccess();
     const fixture = join(fixturesDir, wav);
     if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
-    const fnpost = (...keys) => {
-      checkAccess();
-      execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
-    };
 
     const hub = await connect("hub");
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
@@ -998,15 +1104,7 @@ const commands = {
     const waitForLog = (pattern, timeoutMs, label) =>
       poll(() => logLine(pattern), timeoutMs, label);
 
-    const targetEnv = smokeEnvironment(state.userData, {
-      VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
-    });
     checkAccess();
-    const target = start(
-      electronPath(),
-      [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-      { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
-    );
     let interrupt;
     const interrupted = new Promise((_, reject) => {
       interrupt = () => reject(new Error("dictation interrupted"));
@@ -1017,8 +1115,8 @@ const commands = {
     let targetPage;
     try {
       const field = 'document.getElementById("field")';
-      const { DevTools: targetPort } = await wait(announcedPorts(target, ["DevTools"]));
-      targetPage = await wait(Page.connect(targetPort, "index.html"));
+      const target = await startScratchTarget(state, wait);
+      targetPage = target.page;
       checkAccess();
       osascript(
         `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
@@ -1137,6 +1235,163 @@ const commands = {
     }
   },
 
+  async transform() {
+    let flags;
+    try {
+      flags = parseTransformFlags(args);
+    } catch (error) {
+      fail(error.message);
+    }
+    const { target: targetKind, keycode, escape } = flags;
+    const state = requireInstance();
+    const desktop = exclusiveDesktop(state);
+    desktop.check();
+    const hub = await connect("hub");
+    let interrupt;
+    const interrupted = new Promise((_, reject) => {
+      interrupt = () => reject(new Error("transform interrupted"));
+    });
+    const wait = (promise) => Promise.race([promise, interrupted]);
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", interrupt);
+    let target;
+    try {
+      const { settings, models } = await wait(hub.evaluate("window.voice.getSnapshot()"));
+      let transform;
+      try {
+        transform = optionShortcutTransform(settings.transforms, keycode);
+      } catch (error) {
+        fail(error.message);
+      }
+      const snapshots = await snapshotStream(hub);
+      const newLog = (offset) => readFileSync(state.logPath).subarray(offset).toString("utf8");
+      const logOffset = statSync(state.logPath).size;
+      // The clipboard is the user's real one, so only whether it changed leaves this command.
+      const clipboard = () => execFileSync("pbpaste", { encoding: "utf8" });
+      const clipboardBefore = clipboard();
+
+      desktop.check();
+      target =
+        targetKind === "textedit"
+          ? textEditTransformTarget()
+          : await electronTransformTarget(state, wait);
+      await wait(target.open(TRANSFORM_PARAGRAPH));
+      await wait(target.selectAll());
+      const before = await wait(target.read());
+      await wait(target.front());
+      // Main registers transform shortcuts with the helper only while the Voice window lacks focus.
+      const deadline = Date.now() + 3000;
+      while (
+        await wait(
+          evaluateInMain(
+            state.inspectPort,
+            `process.mainModule.require("electron").BrowserWindow.getAllWindows().some((w) => w.webContents.getURL().endsWith("hub.html") && w.isFocused())`,
+          ),
+        )
+      ) {
+        if (Date.now() > deadline)
+          fail("the Voice window kept focus, so no shortcut is registered");
+        await sleep(50);
+      }
+      await wait(
+        snapshots.waitFor((s) => s.session.kind === "idle", {
+          timeoutMs: 5000,
+          label: "an idle Flow Bar before the shortcut",
+        }),
+      );
+
+      const pressedAt = Date.now();
+      desktop.fnpost("combo", String(keycode), "option", "--side=left");
+      const started = await wait(
+        snapshots.waitFor((s) => ["transforming", "transformDone"].includes(s.session.kind), {
+          timeoutMs: 5000,
+          label: "a transform run after the shortcut (Transforms on, target frontmost)",
+        }),
+      );
+      const runFrom = snapshots.items.indexOf(started);
+      let escapedAfterMs = null;
+      if (escape && started.session.kind === "transforming") {
+        // Reading takes under 100 ms and generating takes seconds, so this lands in generating.
+        await wait(sleep(400));
+        if (snapshots.items.at(-1).session.kind === "transforming") {
+          desktop.fnpost("escape");
+          escapedAfterMs = Date.now() - pressedAt;
+        }
+      }
+      const finished =
+        started.session.kind === "transformDone"
+          ? started
+          : await wait(
+              snapshots.waitFor((s) => ["transformDone", "idle"].includes(s.session.kind), {
+                timeoutMs: 150_000,
+                label: "the transform to finish",
+              }),
+            );
+      const finishedMs = Date.now() - pressedAt;
+      const run = snapshots.items.slice(runFrom);
+      const logged = await wait(
+        poll(() => transformLogLine(newLog(logOffset)) ?? undefined, 5000, "transform line").catch(
+          () => null,
+        ),
+      );
+      const outcome =
+        finished.session.kind === "transformDone"
+          ? finished.session.outcome
+          : logged && { kind: logged.fields.outcome };
+
+      const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
+      const lastTransform = last && last.finishedAt >= pressedAt ? last : null;
+      const { text: after, landedMs } =
+        outcome?.kind === "inserted" && lastTransform
+          ? await wait(landedText(() => target.read(), lastTransform.after, { timeoutMs: 2000 }))
+          : { text: await wait(target.read()), landedMs: null };
+      // A paste holds the result on the clipboard for about a second before restoring it.
+      const clipboardUnchanged = await wait(
+        poll(() => (clipboard() === clipboardBefore ? true : undefined), 3000, "clipboard").catch(
+          () => false,
+        ),
+      );
+
+      const result = {
+        target: targetKind,
+        transform: transform.name,
+        shortcut: { keycode, modifiers: ["option"], side: "left" },
+        escapedAfterMs,
+        modelAtPress: models.transform.state,
+        pill: {
+          sawTransforming: run.some((s) => s.session.kind === "transforming"),
+          sawLoading: run.some((s) => s.session.kind === "transforming" && s.session.loading),
+          sawTransformDone: finished.session.kind === "transformDone",
+        },
+        outcome: outcome ?? null,
+        outcomeFrom: finished.session.kind === "transformDone" ? "pill" : logged ? "log" : null,
+        finishedMs,
+        before,
+        after,
+        landedMs,
+        lastTransform,
+        clipboardUnchanged,
+        logLine: logged?.line ?? null,
+      };
+      const path = join(
+        evidenceDir(),
+        `transform-${targetKind}${escape ? "-escape" : ""}-${Date.now()}.json`,
+      );
+      writeFileSync(path, JSON.stringify(result, null, 2));
+      out({ ...result, evidence: path });
+      if (!outcome) fail("the run ended without a transformDone pill or a transform log line");
+    } finally {
+      try {
+        await target?.close();
+      } finally {
+        hub.close();
+        await stopChildren();
+        process.removeListener("SIGINT", interrupt);
+        process.removeListener("SIGTERM", interrupt);
+      }
+    }
+  },
+
   help() {
     out(`usage: node .claude/skills/verify/scripts/voice-verify.mjs <command>
   doctor                         read-only health report
@@ -1163,7 +1418,9 @@ const commands = {
   shot <name> [page]             screenshot into the evidence dir
   note <name> <text...>          append text evidence
   dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]
-                                 --app makes the helper report that target app for the session`);
+                                 --app makes the helper report that target app for the session
+  transform [--target=electron|textedit] [--shortcut=<keycode>] [--escape]
+                                 select a synthetic paragraph in the target, press Left Option+key, report the run`);
   },
 };
 
@@ -1171,7 +1428,7 @@ try {
   if (!Object.hasOwn(commands, command)) fail(`unknown command ${command}; try help`);
   await commands[command]();
 } catch (error) {
-  if (command === "dictate" && error instanceof VerificationBlocked)
+  if (["dictate", "transform"].includes(command) && error instanceof VerificationBlocked)
     out({ status: "BLOCKED", prerequisites: error.prerequisites, error: error.message });
   console.error(`voice-verify: ${error.stack}`);
   process.exitCode = 1;
