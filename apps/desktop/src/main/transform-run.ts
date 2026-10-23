@@ -1,4 +1,4 @@
-// The transform run reducer. Pure, like session.ts: step(state, event, now) -> { state, effects }.
+// The transform run reducer. Pure, like session.ts: step(state, event) -> { state, effects }.
 // `TransformRun` has no field that can hold selected text or a result. Text exists only inside
 // events and effects, so the run can sit in the store and still cannot reach a Snapshot or a log.
 import type {
@@ -37,8 +37,8 @@ export type GenerateFailure =
   | { kind: "tooLong"; maxWords: number }
   | { kind: "timedOut" }
   | { kind: "rejected" }
-  // Engine lost or crashed. The reducer substitutes a fixed sentence; the message is never shown.
-  | { kind: "error"; message: string };
+  // Engine lost or crashed. It carries no message, so none can reach the pill or a log.
+  | { kind: "error" };
 
 export type TransformEvent =
   // The model status rides in the event, like `asr` on a dictation hotkeyDown, so the reducer
@@ -125,7 +125,7 @@ function generateFailure(failure: GenerateFailure): TransformOutcome {
  *  timedOut         its own phase only  reading|generating -> done(failed); inserting -> done(notInserted failed)
  *  idleTimeout      done                -> idle
  */
-export function step(state: TransformRun, event: TransformEvent, _now: number): Step {
+export function step(state: TransformRun, event: TransformEvent): Step {
   const same = { state, effects: [] };
   const stale =
     event.type !== "shortcut" && "id" in event && (state.phase === "idle" || state.id !== event.id);

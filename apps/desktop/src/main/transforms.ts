@@ -79,7 +79,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
 
   function dispatch(event: TransformEvent) {
     const before = store.state.transform;
-    const { state, effects } = step(before, event, now());
+    const { state, effects } = step(before, event);
     if (state !== before) {
       store.update((s) => ({ ...s, transform: state }));
       if (state.phase !== before.phase) armWatchdog(state);
@@ -128,7 +128,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
     const { id } = effect;
     const transform = transformById(effect.transformId);
     if (!transform) {
-      dispatch({ type: "generateFailed", id, failure: { kind: "error", message: "removed" } });
+      dispatch({ type: "generateFailed", id, failure: { kind: "error" } });
       return;
     }
     const controller = new AbortController();
@@ -153,11 +153,10 @@ export function createTransforms(options: TransformsOptions): Transforms {
             dispatch({ type: "generateFailed", id, failure: result.failure });
           }
         },
-        (error: unknown) => {
+        () => {
           // The reducer already moved on; the abort is its own doing.
           if (controller.signal.aborted) return;
-          const message = error instanceof Error ? error.message : String(error);
-          dispatch({ type: "generateFailed", id, failure: { kind: "error", message } });
+          dispatch({ type: "generateFailed", id, failure: { kind: "error" } });
         },
       );
   }
