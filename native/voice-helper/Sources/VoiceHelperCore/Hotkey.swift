@@ -22,18 +22,22 @@ public struct KeyEvent: Equatable, Sendable {
 public enum HelperActivity: Sendable { case idle, capturing, transforming }
 
 public struct HotkeyDecision: Equatable, Sendable {
-    public var action: HotkeyAction?
-    /// The transform shortcut that fired. Never set together with `action`.
-    public var transform: String?
+    public enum Emit: Equatable, Sendable {
+        case hotkey(HotkeyAction)
+        /// The transform shortcut that fired.
+        case transform(String)
+        case nothing
+    }
+
+    public var emit: Emit
     public var consume: Bool
 
-    public init(action: HotkeyAction?, transform: String? = nil, consume: Bool) {
-        self.action = action
-        self.transform = transform
+    public init(emit: Emit, consume: Bool) {
+        self.emit = emit
         self.consume = consume
     }
 
-    public static let none = HotkeyDecision(action: nil, consume: false)
+    public static let none = HotkeyDecision(emit: .nothing, consume: false)
 }
 
 /// The generic modifier bits of `flags` as the families a shortcut names. Caps Lock, fn and the
@@ -126,22 +130,22 @@ public struct Hotkeys: Sendable {
             guard activity != .idle else { return .none }
             hold.cancel()
             toggle?.cancel()
-            return HotkeyDecision(action: .cancel, consume: true)
+            return HotkeyDecision(emit: .hotkey(.cancel), consume: true)
         }
         if event.kind == .keyUp, swallowed.remove(event.keycode) != nil {
-            return HotkeyDecision(action: nil, consume: true)
+            return HotkeyDecision(emit: .nothing, consume: true)
         }
         if event.kind == .keyDown, let shortcut = matchingShortcut(event, activity: activity) {
-            if event.isRepeat { return HotkeyDecision(action: nil, consume: true) }
+            if event.isRepeat { return HotkeyDecision(emit: .nothing, consume: true) }
             swallowed.insert(event.keycode)
-            return HotkeyDecision(action: nil, transform: shortcut.id, consume: true)
+            return HotkeyDecision(emit: .transform(shortcut.id), consume: true)
         }
         if event.kind == .keyDown, event.isRepeat, swallowed.contains(event.keycode) {
-            return HotkeyDecision(action: nil, consume: true)
+            return HotkeyDecision(emit: .nothing, consume: true)
         }
         let tapped = toggle?.handle(event) == .up
         let action = hold.handle(event) ?? (tapped ? .toggle : nil)
-        return HotkeyDecision(action: action, consume: false)
+        return HotkeyDecision(emit: action.map(HotkeyDecision.Emit.hotkey) ?? .nothing, consume: false)
     }
 
     private func matchingShortcut(_ event: KeyEvent, activity: HelperActivity) -> TransformShortcut? {

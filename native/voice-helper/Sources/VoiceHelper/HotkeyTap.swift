@@ -139,10 +139,14 @@ final class HotkeyTap {
             isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         )
         let decision = hotkeys.handle(keyEvent, activity: activity())
-        emit(decision.action)
-        if let transformId = decision.transform {
+        switch decision.emit {
+        case .hotkey(let action):
+            output.emit(.hotkey(action: action))
+        case .transform(let transformId):
             firedKey.withLock { $0 = keyEvent.keycode }
             output.emit(.transform(transformId: transformId))
+        case .nothing:
+            break
         }
         syncBackstop()
         return decision.consume

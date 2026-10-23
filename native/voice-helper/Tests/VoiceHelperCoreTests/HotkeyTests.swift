@@ -17,8 +17,8 @@ private let rightOptionDown = KeyEvent(kind: .flagsChanged, keycode: 61, flags: 
 private let rightOptionUp = KeyEvent(kind: .flagsChanged, keycode: 61, flags: 0)
 private let letterA = KeyEvent(kind: .keyDown, keycode: 0, flags: rightOptionBits)
 private let letterAUp = KeyEvent(kind: .keyUp, keycode: 0, flags: rightOptionBits)
-private let escapeCancel = HotkeyDecision(action: .cancel, consume: true)
-private func emits(_ action: HotkeyAction) -> HotkeyDecision { HotkeyDecision(action: action, consume: false) }
+private let escapeCancel = HotkeyDecision(emit: .hotkey(.cancel), consume: true)
+private func emits(_ action: HotkeyAction) -> HotkeyDecision { HotkeyDecision(emit: .hotkey(action), consume: false) }
 private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask | 0x2_0000)
 
 @Test func pressAndReleaseEmitDownThenUp() {
@@ -233,8 +233,8 @@ private let optionBit: UInt64 = 0x8_0000
 private let shiftBit: UInt64 = 0x2_0000
 private let capsLockBit: UInt64 = 0x1_0000
 private let arrowBits: UInt64 = fnMask | 0x20_0000
-private let consumed = HotkeyDecision(action: nil, consume: true)
-private func fires(_ id: String) -> HotkeyDecision { HotkeyDecision(action: nil, transform: id, consume: true) }
+private let consumed = HotkeyDecision(emit: .nothing, consume: true)
+private func fires(_ id: String) -> HotkeyDecision { HotkeyDecision(emit: .transform(id), consume: true) }
 private func press(_ keycode: Int64, flags: UInt64, isRepeat: Bool = false) -> KeyEvent {
     KeyEvent(kind: .keyDown, keycode: keycode, flags: flags, isRepeat: isRepeat)
 }
