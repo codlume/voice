@@ -177,9 +177,12 @@ const canonicalJson = (value: unknown) =>
       : v,
   );
 
-/** Strict, for the patch schema: true only when parseTransforms would leave `items` unchanged. */
-export function isValidTransformList(items: readonly unknown[]): boolean {
-  return canonicalJson(parseTransforms(items)) === canonicalJson(items);
+/** Strict, for the patch schema: true only when parsing left `items` unchanged. */
+export function isValidTransformList(
+  items: readonly unknown[],
+  parsed: readonly Transform[],
+): boolean {
+  return canonicalJson(parsed) === canonicalJson(items);
 }
 
 /**

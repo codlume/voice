@@ -24,17 +24,18 @@ import { isValidTransformList, parseTransforms, type TransformId } from "./trans
 // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
 const everyItem = <T>(
   parse: (raw: unknown) => T[],
-  isValid = (items: readonly unknown[]) => parse(items).length === items.length,
+  isValid = (items: readonly unknown[], parsed: readonly T[]) => parsed.length === items.length,
 ) =>
   Schema.Array(Schema.Unknown).pipe(
     Schema.decodeTo(
       Schema.declare((u): u is readonly T[] => Array.isArray(u)),
       {
-        decode: SchemaGetter.transformEffect((items: readonly unknown[]) =>
-          isValid(items)
-            ? Effect.succeed(parse(items))
-            : Effect.fail(new SchemaIssue.InvalidValue()),
-        ),
+        decode: SchemaGetter.transformEffect((items: readonly unknown[]) => {
+          const parsed = parse(items);
+          return isValid(items, parsed)
+            ? Effect.succeed(parsed)
+            : Effect.fail(new SchemaIssue.InvalidValue());
+        }),
         encode: SchemaGetter.passthroughSubtype(),
       },
     ),

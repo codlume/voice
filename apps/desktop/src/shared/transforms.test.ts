@@ -228,16 +228,18 @@ describe("parseTransformSettings", () => {
   });
 });
 
+const isValid = (items: readonly unknown[]) => isValidTransformList(items, parseTransforms(items));
+
 describe("isValidTransformList", () => {
   test("accepts the defaults, an empty list and a canonical custom list", () => {
-    expect(isValidTransformList(BUILT_IN_TRANSFORMS)).toBe(true);
-    expect(isValidTransformList([])).toBe(true);
-    expect(isValidTransformList([custom, { ...custom, id: other, shortcut: null }])).toBe(true);
+    expect(isValid(BUILT_IN_TRANSFORMS)).toBe(true);
+    expect(isValid([])).toBe(true);
+    expect(isValid([custom, { ...custom, id: other, shortcut: null }])).toBe(true);
   });
 
   test("ignores key order", () => {
     const { shortcut, instruction, name, id } = custom;
-    expect(isValidTransformList([{ shortcut, instruction, name, id }])).toBe(true);
+    expect(isValid([{ shortcut, instruction, name, id }])).toBe(true);
   });
 
   test.each([
@@ -252,7 +254,7 @@ describe("isValidTransformList", () => {
     ["a missing shortcut field", [{ id: "x", name: "N", instruction: "I" }]],
     ["an extra field", [{ ...custom, enabled: true }]],
   ])("refuses %s, which loading would repair", (_label, items) => {
-    expect(isValidTransformList(items)).toBe(false);
+    expect(isValid(items)).toBe(false);
   });
 });
 
@@ -307,7 +309,8 @@ describe("restoreDefaults", () => {
 
   test("the result is a list a patch accepts", () => {
     const onOption1 = { ...custom, shortcut: { keycode: 18, modifiers: ["option"] } } as const;
-    expect(isValidTransformList(restoreDefaults([onOption1, ...edited]))).toBe(true);
+    const restored = restoreDefaults([onOption1, ...edited]);
+    expect(isValidTransformList(restored, parseTransforms(restored))).toBe(true);
   });
 });
 
