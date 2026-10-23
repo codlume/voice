@@ -65,6 +65,15 @@ describe("keycodes", () => {
     }
   });
 
+  test("a shortcut accepts the table's keycodes and no other", () => {
+    const tableKeycodes = new Set(CODES.map((code) => keycodeForCode(code)));
+    for (let keycode = -1; keycode <= 128; keycode += 1) {
+      const parsed = parseShortcut({ keycode, modifiers: ["option"] });
+      expect(parsed !== null, `keycode ${keycode}`).toBe(tableKeycodes.has(keycode));
+    }
+    expect(parseShortcut({ keycode: 18.5, modifiers: ["option"] })).toBeNull();
+  });
+
   test.each([
     "AltLeft",
     "MetaRight",

@@ -159,5 +159,12 @@ describe("shortcutNotes", () => {
     expect(shortcutNotes({ keycode: 18, modifiers: ["option", "command"] }, ["fn"])).toEqual([]);
     expect(shortcutNotes({ keycode: 123, modifiers: ["option"] }, ["fn"])).toEqual([]);
     expect(shortcutNotes({ keycode: 122, modifiers: ["option"] }, ["fn"])).toEqual([]);
+    expect(shortcutNotes({ keycode: 36, modifiers: ["option"] }, ["fn"])).toEqual([]);
+  });
+
+  test("Option+Space says it takes the non-breaking space", () => {
+    expect(shortcutNotes({ keycode: 49, modifiers: ["option"] }, ["fn"])).toEqual([
+      "Option shortcuts replace the character this combination types in other apps.",
+    ]);
   });
 });

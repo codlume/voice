@@ -1,6 +1,7 @@
 // The Transform domain shared by main, the renderer and tests: what a transform is, the built-ins,
 // the settings slice, edit rules, Restore defaults and what the helper registers. No window,
 // process or wire concerns live here.
+import { codeForKeycode } from "./keycodes.ts";
 
 export type TransformId = string & { readonly __brand: "TransformId" };
 
@@ -96,15 +97,13 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 const isModifier = (v: unknown): v is Modifier => MODIFIERS.some((modifier) => modifier === v);
 
-// kVK_RightCommand through kVK_Function: a modifier alone is never the shortcut's key.
-const MODIFIER_KEYCODES = new Set([54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
-
 /** Canonicalizes a raw shortcut; null for anything that is not one. */
 export function parseShortcut(raw: unknown): Shortcut | null {
   if (!isRecord(raw)) return null;
   const { keycode, modifiers } = raw;
-  if (typeof keycode !== "number" || !Number.isInteger(keycode)) return null;
-  if (keycode < 0 || keycode > 127 || MODIFIER_KEYCODES.has(keycode)) return null;
+  // The keycode table is the only definition of a shortcut key, so a hand-edited file cannot
+  // register Escape, the transform cancel key, or a key the picker could never record.
+  if (typeof keycode !== "number" || codeForKeycode(keycode) === null) return null;
   if (!Array.isArray(modifiers) || !modifiers.every(isModifier)) return null;
   const canonical = MODIFIERS.filter((modifier) => modifiers.includes(modifier));
   // Shift alone, or no modifier, would take a character away from every app.

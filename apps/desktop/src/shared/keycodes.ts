@@ -1,8 +1,12 @@
 // `KeyboardEvent.code` names a physical key; the helper matches macOS virtual keycodes (Carbon
-// kVK_*). Both are positions, so the table holds on every layout. The label is what the key types
-// on a US layout, the fallback when the renderer cannot read the user's layout.
+// kVK_*). Both are positions, so the table holds on every layout. It is the whole set of keys a
+// shortcut can use, on disk and in the picker. The label is what the key types on a US layout, or
+// its name, and is the fallback when the renderer cannot read the user's layout.
 
-const KEYS: readonly (readonly [code: string, keycode: number, label: string])[] = [
+type Key = readonly [code: string, keycode: number, label: string];
+
+// Keys that type a character, so Option with them types another one, like ¡ or a non-breaking space.
+const TYPING_KEYS: readonly Key[] = [
   ["KeyA", 0, "A"],
   ["KeyS", 1, "S"],
   ["KeyD", 2, "D"],
@@ -38,7 +42,6 @@ const KEYS: readonly (readonly [code: string, keycode: number, label: string])[]
   ["BracketLeft", 33, "["],
   ["KeyI", 34, "I"],
   ["KeyP", 35, "P"],
-  ["Enter", 36, "Return"],
   ["KeyL", 37, "L"],
   ["KeyJ", 38, "J"],
   ["Quote", 39, "'"],
@@ -50,9 +53,13 @@ const KEYS: readonly (readonly [code: string, keycode: number, label: string])[]
   ["KeyN", 45, "N"],
   ["KeyM", 46, "M"],
   ["Period", 47, "."],
-  ["Tab", 48, "Tab"],
   ["Space", 49, "Space"],
   ["Backquote", 50, "`"],
+];
+
+const NAMED_KEYS: readonly Key[] = [
+  ["Enter", 36, "Return"],
+  ["Tab", 48, "Tab"],
   ["F5", 96, "F5"],
   ["F6", 97, "F6"],
   ["F7", 98, "F7"],
@@ -71,8 +78,14 @@ const KEYS: readonly (readonly [code: string, keycode: number, label: string])[]
   ["ArrowUp", 126, "↑"],
 ];
 
-const byCode = new Map(KEYS.map(([code, keycode]) => [code, keycode]));
-const byKeycode = new Map(KEYS.map(([code, keycode, label]) => [keycode, { code, label }]));
+const KEYS = [
+  ...TYPING_KEYS.map((key) => ({ key, types: true })),
+  ...NAMED_KEYS.map((key) => ({ key, types: false })),
+];
+const byCode = new Map(KEYS.map(({ key: [code, keycode] }) => [code, keycode]));
+const byKeycode = new Map(
+  KEYS.map(({ key: [code, keycode, label], types }) => [keycode, { code, label, types }]),
+);
 
 /** The macOS keycode for a physical key, or null for a key a shortcut cannot use. */
 export const keycodeForCode = (code: string): number | null => byCode.get(code) ?? null;
@@ -83,3 +96,6 @@ export const codeForKeycode = (keycode: number): string | null =>
 
 /** What the key types on a US layout, or its name when it types nothing visible. */
 export const usLabel = (keycode: number): string | null => byKeycode.get(keycode)?.label ?? null;
+
+/** Whether the key types a character; false for Return, Tab, F-keys, arrows and unknown keys. */
+export const typesCharacter = (keycode: number): boolean => byKeycode.get(keycode)?.types ?? false;

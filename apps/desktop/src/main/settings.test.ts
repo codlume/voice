@@ -764,6 +764,13 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual({ ...older, transforms: DEFAULT_TRANSFORMS });
   });
 
+  test("a settings file with Option+Escape, the cancel key, loads with that shortcut nulled", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const onEscape = { ...bullets, shortcut: { keycode: 53, modifiers: ["option"] } };
+    await writeFile(file, JSON.stringify({ transforms: { enabled: true, items: [onEscape] } }));
+    expect(loadSettings(file).transforms.items).toEqual([{ ...bullets, shortcut: null }]);
+  });
+
   test("a settings file whose transforms were all deleted loads with none", async () => {
     const file = NodePath.join(dir, "settings.json");
     const settings = applyPatch(DEFAULT_SETTINGS, { transforms: { items: [] } });

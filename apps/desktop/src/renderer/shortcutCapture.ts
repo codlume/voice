@@ -2,7 +2,7 @@
 // a stored shortcut reads on the user's keyboard. Reserved combinations live here and not in the
 // settings parser, because only the renderer can read the layout that decides them.
 import type { Hotkey } from "../shared/api.ts";
-import { codeForKeycode, keycodeForCode, usLabel } from "../shared/keycodes.ts";
+import { codeForKeycode, keycodeForCode, typesCharacter, usLabel } from "../shared/keycodes.ts";
 import {
   MODIFIERS,
   parseShortcut,
@@ -135,14 +135,12 @@ export function shortcutNotes(
   );
   // Control or Command make the combination a command; Option alone, or with Shift, types a
   // character like ¡ on a key that writes, which the shortcut takes over.
-  const writes =
-    codeForKeycode(keycode)?.startsWith("Arrow") === false && usLabel(keycode)?.length === 1;
-  const typesCharacter =
-    writes &&
+  const takesCharacter =
+    typesCharacter(keycode) &&
     modifiers.includes("option") &&
     !modifiers.includes("control") &&
     !modifiers.includes("command");
-  if (typesCharacter) {
+  if (takesCharacter) {
     notes.push("Option shortcuts replace the character this combination types in other apps.");
   }
   return notes;
