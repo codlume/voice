@@ -14,6 +14,7 @@ import {
   BUILT_IN_TRANSFORMS,
   POLISH_ID,
   type LastTransform,
+  type Transform,
   type TransformId,
 } from "../shared/transforms.ts";
 import {
@@ -68,6 +69,7 @@ type Options = {
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
   autoApply?: TransformId;
+  transforms?: readonly Transform[];
   transformsEnabled?: boolean;
   transformOnDisk?: boolean;
   transformResult?: TransformResult | "rejects" | "hangs";
@@ -117,6 +119,7 @@ function harness(opts: Options = {}) {
       transforms: {
         ...DEFAULT_SETTINGS.transforms,
         enabled: opts.transformsEnabled ?? opts.autoApply !== undefined,
+        items: opts.transforms ?? DEFAULT_SETTINGS.transforms.items,
         autoApply: opts.autoApply ?? null,
       },
       cleanup: {
@@ -1740,7 +1743,7 @@ describe("auto-apply after dictation", () => {
       {
         instruction: polish.instruction,
         text: raw,
-        dictation: true,
+        dictation: { instructionKeepsWords: true },
         budgetMs: autoApplyBudgetMs(raw),
       },
     ]);
@@ -1769,22 +1772,50 @@ describe("auto-apply after dictation", () => {
     ]);
   });
 
-  test.each<[string, TransformResult | "rejects"]>([
-    ["refuses the result", { ok: false, failure: { kind: "rejected" } }],
-    ["runs out of time", { ok: false, failure: { kind: "timedOut" } }],
-    ["finds the text too long", { ok: false, failure: { kind: "tooLong", maxWords: 1000 } }],
-    ["stops", "rejects"],
+  test.each<[string, TransformResult | "rejects", string]>([
+    ["refuses the result", { ok: false, failure: { kind: "rejected" } }, "transform rejected"],
+    ["runs out of time", { ok: false, failure: { kind: "timedOut" } }, "transform timedOut"],
+    [
+      "finds the text too long",
+      { ok: false, failure: { kind: "tooLong", maxWords: 1000 } },
+      "transform tooLong",
+    ],
+    ["stops", "rejects", "transform failed"],
   ])(
     "inserts the transcript with the dictionary applied when the transform %s",
-    async (_, transformResult) => {
+    async (_, transformResult, logged) => {
       const h = harness({ autoApply: POLISH_ID, transformResult, dictionary: [hadrys] });
       const id = await dictate(h, "keep hadrys");
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep Hadryś", html: null });
       expect(h.latest()).toMatchObject({ raw: "keep hadrys", text: "keep Hadryś" });
       expect(h.lastTransforms).toEqual([]);
-      expect(h.logs).toContainEqual(expect.stringMatching(/^cleanup failed: /));
+      // The worker's own message never reaches the log, as on the on-demand path.
+      expect(h.logs).toContain(`cleanup failed: ${logged}`);
+      expect(h.logs.join("\n")).not.toContain("The transform model stopped");
+      expect(h.entries).toEqual([
+        { message: "cleanup failed", level: "warn", attributes: { "error.type": "Error" } },
+      ]);
     },
   );
+
+  test.each<[string, Transform]>([
+    [
+      "a custom transform",
+      {
+        id: "translate" as TransformId,
+        name: "Translate",
+        instruction: "Translate to English.",
+        shortcut: null,
+      },
+    ],
+    ["an edited Polish", { ...polish, instruction: `${polish.instruction} Use British spelling.` }],
+  ])("does not vouch that %s keeps the dictation's words", async (_, transform) => {
+    const h = harness({ autoApply: transform.id, transforms: [transform] });
+    await dictate(h, "ask kenji about friday");
+    expect(h.transformRuns).toMatchObject([
+      { instruction: transform.instruction, dictation: { instructionKeepsWords: false } },
+    ]);
+  });
 
   test("a transform that never settles is aborted after its budget and a grace, and the transcript goes in", async () => {
     const h = harness({ autoApply: POLISH_ID, transformResult: "hangs" });

@@ -9,7 +9,7 @@ const recorded: { name: string; input: string; output: string; accepted: boolean
   readFileSync(new URL("../../fixtures/transform-guard.json", import.meta.url), "utf8"),
 );
 
-const finished = { truncated: false, dictation: false };
+const finished = { truncated: false, dictation: false as const };
 
 describe("recorded outputs", () => {
   test.each(recorded)("$name: accepted $accepted", ({ input, output, accepted }) => {
@@ -107,7 +107,7 @@ const rejectedCommands = new Set([
   "instruction-commit",
   "instruction-shorter",
 ]);
-const afterDictation = { truncated: false, dictation: true };
+const afterDictation = { truncated: false, dictation: { instructionKeepsWords: true } };
 
 describe("after dictation", () => {
   test.each(dictations.filter((d) => !d.carriedOut))(
@@ -131,5 +131,12 @@ describe("after dictation", () => {
     const german = dictations.find((d) => d.name === "instruction-translate-german");
 
     expect(german && guard(german.input, german.output, finished).ok).toBe(true);
+  });
+
+  test("a translation after dictation is accepted when the instruction itself rewrites the words", () => {
+    const german = dictations.find((d) => d.name === "instruction-translate-german");
+    const translating = { truncated: false, dictation: { instructionKeepsWords: false } };
+
+    expect(german && guard(german.input, german.output, translating).ok).toBe(true);
   });
 });

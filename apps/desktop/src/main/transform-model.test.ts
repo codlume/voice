@@ -196,7 +196,7 @@ describe("transform model", () => {
     const { model, statuses, workers } = harness();
     await model.refresh();
 
-    const result = await model.run(request({ dictation: true }));
+    const result = await model.run(request({ dictation: { instructionKeepsWords: true } }));
 
     expect(result).toEqual(RESULT);
     expect(statuses).toEqual([{ state: "installed" }, { state: "loading" }, { state: "ready" }]);
@@ -205,7 +205,7 @@ describe("transform model", () => {
     expect(workers[0]?.runs[0]?.request).toMatchObject({
       instruction: "Polish this text.",
       text: "so um the launch moved to friday",
-      dictation: true,
+      dictation: { instructionKeepsWords: true },
     });
   });
 

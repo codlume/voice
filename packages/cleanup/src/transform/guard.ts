@@ -16,18 +16,28 @@ const allowedGap = (inputWords: number) => Math.max(40, 0.1 * inputWords);
 // almost none of the dictation's opening words. On 118 recorded Polish dictations this rejected
 // 6 of 12 carried-out commands, all three translations among them, and 0 of 106 legitimate
 // results; the lowest legitimate result kept 3 of its first 8 content words (measured, #312).
+// Only the stock Polish instruction was measured. An instruction that rewrites the words, such as
+// a translation, loses the opening by design, so the check runs only when the caller vouches
+// that the instruction keeps them.
 const MIN_DICTATION_HEAD = 0.25;
 
 export function guard(
   input: string,
   output: string,
-  { truncated, dictation }: { truncated: boolean; dictation: boolean },
+  {
+    truncated,
+    dictation,
+  }: { truncated: boolean; dictation: false | { instructionKeepsWords: boolean } },
 ): Verdict {
   if (truncated) return { ok: false, reason: "truncated" };
   const text = unwrap(output.trim());
   if (!text) return { ok: false, reason: "empty" };
   if (endsEarly(input, text)) return { ok: false, reason: "endsEarly" };
-  if (dictation && wordSurvival(input, text).head < MIN_DICTATION_HEAD) {
+  if (
+    dictation &&
+    dictation.instructionKeepsWords &&
+    wordSurvival(input, text).head < MIN_DICTATION_HEAD
+  ) {
     return { ok: false, reason: "lostOpening" };
   }
   return { ok: true, text };

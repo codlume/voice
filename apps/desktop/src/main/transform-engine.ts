@@ -13,7 +13,10 @@ const TransformSchema = Schema.Struct({
   id: Schema.Int,
   instruction: Schema.String,
   text: Schema.String,
-  dictation: Schema.Boolean,
+  dictation: Schema.Union([
+    Schema.Literal(false),
+    Schema.Struct({ instructionKeepsWords: Schema.Boolean }),
+  ]),
   budgetMs: Schema.Finite,
 });
 

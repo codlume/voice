@@ -12,7 +12,12 @@ import {
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
-import type { LastTransform, TransformId } from "../shared/transforms.ts";
+import {
+  BUILT_IN_TRANSFORMS,
+  POLISH_ID,
+  type LastTransform,
+  type TransformId,
+} from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
@@ -322,13 +327,23 @@ export function createDictation(options: DictationOptions): Dictation {
   ): Promise<string> {
     const transform = store.state.settings.transforms.items.find((item) => item.id === transformId);
     if (!transform) throw new Error("the auto-apply transform was removed");
-    const result = await options.transform.model.run({
-      instruction: transform.instruction,
-      text: raw,
-      dictation: true,
-      budgetMs,
-      signal,
-    });
+    const result = await options.transform.model
+      .run({
+        instruction: transform.instruction,
+        text: raw,
+        dictation: {
+          // The guard's lost-opening check was measured on the stock Polish instruction (#312).
+          instructionKeepsWords: BUILT_IN_TRANSFORMS.some(
+            (builtIn) => builtIn.id === POLISH_ID && builtIn.instruction === transform.instruction,
+          ),
+        },
+        budgetMs,
+        signal,
+      })
+      .catch((error: unknown) => {
+        // The worker's message is not ours to repeat in the log; the type is enough.
+        throw Object.assign(new Error("transform failed"), { name: errorType(error) });
+      });
     if (!result.ok) throw new Error(`transform ${result.failure.kind}`);
     return result.text;
   }

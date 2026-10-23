@@ -336,6 +336,24 @@ describe("engine process", () => {
     expect(lost).not.toHaveBeenCalled();
   });
 
+  test("a reply whose result does not decode rejects the call instead of leaving it pending", async () => {
+    const lost = vi.fn();
+    let events: Parameters<ForkEngine>[0] | undefined;
+    const proxy = engineProcess((listeners) => {
+      events = listeners;
+      return {
+        postMessage: (message) => {
+          const { id } = message as { id: number };
+          events?.message({ type: "done", id, result: 42 });
+        },
+        kill: () => {},
+      };
+    }, lost);
+
+    await expect(echo(proxy, "hello")).rejects.toThrow("returned a malformed result");
+    expect(lost).not.toHaveBeenCalled();
+  });
+
   test("duplicate exit notifications only report the loss once", async () => {
     const lost = vi.fn();
     let events: Parameters<ForkEngine>[0] | undefined;

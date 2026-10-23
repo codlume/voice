@@ -159,7 +159,7 @@ export type EngineProcess<Work, Result, Notice> = {
 };
 
 type Call = {
-  take(result: unknown): boolean;
+  settle(result: unknown): void;
   reject(error: unknown): void;
   grace?: NodeJS.Timeout;
 };
@@ -214,13 +214,13 @@ export function createEngineProcess<Work, Result, Notice = never>({
       const reply = Option.getOrUndefined(decodeReply(message));
       const call = reply && calls.get(reply.id);
       if (!reply || !call) return;
-      if (reply.type === "failed") {
-        call.reject(Object.assign(new Error(reply.message), { name: reply.name }));
-      } else if (!call.take(reply.result)) {
-        return;
-      }
       calls.delete(reply.id);
       clearTimeout(call.grace);
+      if (reply.type === "failed") {
+        call.reject(Object.assign(new Error(reply.message), { name: reply.name }));
+      } else {
+        call.settle(reply.result);
+      }
     },
     exit: stopped,
   });
@@ -232,12 +232,12 @@ export function createEngineProcess<Work, Result, Notice = never>({
   ): Promise<T> {
     if (lost) return Promise.reject(lost);
     return new Promise((resolve, reject) => {
-      const take = (result: unknown) => {
+      const settle = (result: unknown) => {
         const value = accept(result);
         if (Option.isSome(value)) resolve(value.value);
-        return Option.isSome(value);
+        else reject(new Error(`The ${name} returned a malformed result.`));
       };
-      calls.set(id, { take, reject });
+      calls.set(id, { settle, reject });
       post(message);
     });
   }

@@ -18,7 +18,9 @@ export type TransformResult = { ok: true; text: string } | { ok: false; failure:
 export type TransformRequest = {
   instruction: string;
   text: string;
-  dictation: boolean;
+  // A transcript: commands in it are words the user said. When the instruction keeps the text's
+  // words, a result that lost the transcript's opening carried such a command out instead.
+  dictation: false | { instructionKeepsWords: boolean };
   budgetMs: number;
   signal: AbortSignal;
 };
@@ -60,7 +62,7 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
     // A fresh chat on the one sequence: a new sequence per run fails with "No sequences left".
     await session.sequence.clearHistory();
     session.resetChatHistory();
-    const user = userMessage(request);
+    const user = userMessage({ ...request, dictation: request.dictation !== false });
     const plan = budget(
       {
         words: countWords(request.text),
