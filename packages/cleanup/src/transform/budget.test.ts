@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import { budget, countWords } from "./budget.ts";
+import { budget } from "./budget.ts";
 
 const model = { contextSize: 8192, maxWords: 1000 };
 // The measured fixed prompt, without the text.
@@ -32,9 +32,4 @@ test("the token limit refuses a text that leaves no room for its rewrite, exactl
 test("a text dense in tokens is told the word count that would fit at its own tokens per word", () => {
   // 3 tokens per word: (8192 - 364 - 256) / (3 × 3) = 841.3.
   expect(plan(1000, 3000)).toEqual({ ok: false, maxWords: 841 });
-});
-
-test("words are what whitespace separates", () => {
-  expect(countWords("  Hi Anna,\n\nsee https://x.y/z — thanks.  ")).toBe(6);
-  expect(countWords("")).toBe(0);
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { CleanupStyle } from "@voice/cleanup/style";
+import { countWords } from "@voice/cleanup/words";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
@@ -11,7 +12,7 @@ import {
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
-import { countWords, type LastTransform, type TransformId } from "../shared/transforms.ts";
+import type { LastTransform, TransformId } from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";

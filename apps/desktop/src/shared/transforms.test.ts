@@ -2,7 +2,6 @@ import { describe, expect, test } from "vite-plus/test";
 
 import {
   BUILT_IN_TRANSFORMS,
-  countWords,
   DEFAULT_TRANSFORMS,
   INSTRUCTION_MAX_LENGTH,
   isValidTransformList,
@@ -337,18 +336,5 @@ describe("sameShortcut", () => {
     expect(sameShortcut(a, { keycode: 19, modifiers: ["option"] })).toBe(false);
     expect(sameShortcut(a, { keycode: 18, modifiers: ["option", "shift"] })).toBe(false);
     expect(sameShortcut({ keycode: 18, modifiers: ["option", "shift"] }, a)).toBe(false);
-  });
-});
-
-describe("countWords", () => {
-  test.each([
-    ["", 0],
-    ["   ", 0],
-    ["one", 1],
-    ["  two words ", 2],
-    ["line\nbreaks\tand tabs", 4],
-    ["Zażółć gęślą jaźń", 3],
-  ])("%j has %i words", (text, words) => {
-    expect(countWords(text)).toBe(words);
   });
 });

@@ -1,6 +1,8 @@
 // The transform run reducer. Pure, like session.ts: step(state, event) -> { state, effects }.
 // `TransformRun` has no field that can hold selected text or a result. Text exists only inside
 // events and effects, so the run can sit in the store and still cannot reach a Snapshot or a log.
+import { countWords } from "@voice/cleanup/words";
+
 import type {
   InsertFailure,
   InsertMethod,
@@ -9,7 +11,7 @@ import type {
   SelectionFailure,
   TransformOutcome,
 } from "../shared/api.ts";
-import { countWords, type TransformId } from "../shared/transforms.ts";
+import type { TransformId } from "../shared/transforms.ts";
 import {
   HELPER_EXITED_MESSAGE,
   HELPER_TIMEOUT_MESSAGE,

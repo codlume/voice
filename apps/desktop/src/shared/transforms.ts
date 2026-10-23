@@ -74,8 +74,6 @@ export type TransformProblem = {
 
 export const newTransformId = () => crypto.randomUUID() as TransformId;
 
-export const countWords = (text: string): number => text.split(/\s+/).filter(Boolean).length;
-
 export const sameShortcut = (a: Shortcut, b: Shortcut): boolean =>
   a.keycode === b.keycode &&
   a.modifiers.length === b.modifiers.length &&

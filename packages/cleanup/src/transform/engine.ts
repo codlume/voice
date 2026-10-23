@@ -4,7 +4,8 @@ import type { ChatWrapper, LlamaModel } from "node-llama-cpp";
 
 import { llamaHost, openLlama } from "../llama-host.ts";
 
-import { budget, countWords } from "./budget.ts";
+import { countWords } from "../words.ts";
+import { budget } from "./budget.ts";
 import { guard } from "./guard.ts";
 import { TRANSFORM_MODEL } from "./model.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";

@@ -5,8 +5,6 @@ export const OUTPUT_MARGIN_TOKENS = 256;
 
 export type Budget = { ok: true; maxTokens: number } | { ok: false; maxWords: number };
 
-export const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
-
 // promptTokens counts the whole prompt, the text's textTokens included. A fitting selection leaves
 // room for a result twice its length, so maxTokens never runs past the context.
 export function budget(
