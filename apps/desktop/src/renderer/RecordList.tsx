@@ -2,7 +2,15 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
 import { PencilIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
@@ -51,7 +59,7 @@ export const styles = stylex.create({
   saveError: { marginTop: space.md },
 });
 
-type Mode = "add" | "edit";
+export type Mode = "add" | "edit";
 
 type Problem<F extends string> = { field: F; message: string };
 
@@ -79,7 +87,7 @@ type RowText = {
 };
 
 /** What the editor dialog hands the page to render its fields and footer. */
-type Editor<T, F extends string> = {
+export type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
   // The problem to show, once a save was attempted.
@@ -261,7 +269,8 @@ export function RecordList<T extends { id: string }, F extends string>({
   );
 }
 
-function RecordEditor<T extends { id: string }, F extends string>({
+/** The add/edit dialog: a draft, validation shown after a failed save, and Save. */
+export function RecordEditor<T extends { id: string }, F extends string>({
   mode,
   initial,
   records,
@@ -272,6 +281,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
   renderFields,
   renderFooter,
   wide,
+  finalFocus,
   open,
   onOpenChange,
   onOpenChangeComplete,
@@ -279,13 +289,14 @@ function RecordEditor<T extends { id: string }, F extends string>({
   mode: Mode;
   initial: T;
   records: readonly T[];
-  copy: Copy;
+  copy: Pick<Copy, "editor" | "saveFailed">;
   save: (next: readonly T[]) => Promise<void>;
   normalize: (draft: T) => T;
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
   renderFooter: ((editor: Editor<T, F>) => ReactNode) | undefined;
   wide: boolean;
+  finalFocus?: RefObject<HTMLElement | null> | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
@@ -303,11 +314,13 @@ function RecordEditor<T extends { id: string }, F extends string>({
   const shown = failedSaves > 0 ? current : null;
 
   // Each failed save focuses the control of the field with the problem. Base UI marks the control
-  // of an invalid Field.Root with data-invalid.
+  // of an invalid Field.Root with data-invalid; a control outside a Field marks itself aria-invalid.
   useEffect(() => {
     if (failedSaves === 0) return;
     fieldsRef.current
-      ?.querySelector<HTMLElement>("input[data-invalid], [contenteditable][data-invalid]")
+      ?.querySelector<HTMLElement>(
+        'input[data-invalid], textarea[data-invalid], [contenteditable][data-invalid], [aria-invalid="true"]',
+      )
       ?.focus();
   }, [failedSaves]);
 
@@ -351,6 +364,7 @@ function RecordEditor<T extends { id: string }, F extends string>({
       <DialogFrame
         title={text.title}
         wide={wide}
+        finalFocus={finalFocus}
         footerStart={renderFooter?.(editor)}
         actions={
           <Button disabled={pending} onClick={submit}>

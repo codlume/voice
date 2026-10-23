@@ -53,6 +53,32 @@ export function modelLine(enabled: boolean, model: ModelStatus): ModelLine {
   }
 }
 
+/**
+ * Only one dialog is open at a time, and each one outlives `open` to keep its content through the
+ * exit animation. `key` is new on every open, so an editor starts from the saved transform.
+ */
+export type Modal =
+  | { kind: "add" | "edit"; transform: Transform; open: boolean; key: string }
+  | { kind: "delete"; transform: Transform; open: boolean }
+  | { kind: "restore" | "download"; open: boolean };
+
+export const openEditor = (kind: "add" | "edit", transform: Transform, key: string): Modal => ({
+  kind,
+  transform,
+  open: true,
+  key,
+});
+
+/** The editor's Delete button. */
+export const askToDelete = ({ transform }: { transform: Transform }): Modal => ({
+  kind: "delete",
+  transform,
+  open: true,
+});
+
+/** The delete confirm's Cancel. */
+export const cancelDelete = (modal: Modal): Modal => ({ ...modal, open: false });
+
 export const firstLine = (text: string) => text.trim().split("\n", 1)[0] ?? "";
 
 /** The Restore defaults confirm, naming each shortcut a built-in cannot take back. */

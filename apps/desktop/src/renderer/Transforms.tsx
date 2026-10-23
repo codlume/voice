@@ -5,6 +5,7 @@ import type { ModelStatus, Settings, SettingsPatch } from "../shared/api.ts";
 import {
   newTransformId,
   restoreDefaults,
+  transformProblem,
   type LastTransform,
   type Transform,
 } from "../shared/transforms.ts";
@@ -13,22 +14,27 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { dictationKeys } from "./hotkeys.ts";
 import { pageStyles } from "./pageStyles.ts";
+import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
 import { styles as settingsStyles } from "./Settings.tsx";
 import { shortcutKeys } from "./shortcutCapture.ts";
 import { Keys, useKeyboardLayout } from "./ShortcutPicker.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
-import { TransformEditor, type EditorMode } from "./TransformEditor.tsx";
+import { TransformFields } from "./TransformFields.tsx";
 import {
+  askToDelete,
   asksBeforeTurningOn,
   autoApplyChoice,
   autoApplyOptions,
+  cancelDelete,
   firstLine,
   modelLine,
   NO_AUTO_APPLY,
+  openEditor,
   restoreDescription,
   TRANSFORM_MODEL_SIZE,
+  type Modal,
 } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
@@ -103,10 +109,19 @@ const styles = stylex.create({
   empty: { padding: space.lg },
 });
 
-type Modal =
-  | { kind: EditorMode; transform: Transform; open: boolean; key: string }
-  | { kind: "delete"; transform: Transform; open: boolean }
-  | { kind: "restore" | "download"; open: boolean };
+const EDITOR_COPY: Pick<Copy, "editor" | "saveFailed"> = {
+  editor: {
+    add: { title: "Create transform", save: "Create transform" },
+    edit: { title: "Edit transform", save: "Save changes" },
+  },
+  saveFailed: "Could not save this transform. Try again.",
+};
+
+const normalize = (draft: Transform): Transform => ({
+  ...draft,
+  name: draft.name.trim(),
+  instruction: draft.instruction.trim(),
+});
 
 const saveItems = (next: readonly Transform[]) =>
   hubApi().updateSettings({ transforms: { items: next } });
@@ -146,8 +161,8 @@ export function Transforms({
     if (asksBeforeTurningOn(on, model)) setModal({ kind: "download", open: true });
     else void update({ enabled: on }, "Could not change Transforms. Try again.");
   };
-  const edit = (kind: EditorMode, transform: Transform) =>
-    setModal({ kind, transform, open: true, key: crypto.randomUUID() });
+  const edit = (kind: "add" | "edit", transform: Transform) =>
+    setModal(openEditor(kind, transform, crypto.randomUUID()));
 
   return (
     <div {...stylex.props(styles.page)}>
@@ -214,7 +229,7 @@ export function Transforms({
           <Button variant="secondary" onClick={() => setModal({ kind: "restore", open: true })}>
             Restore defaults
           </Button>
-          <Button ref={createRef} onClick={() => edit("create", blank())}>
+          <Button ref={createRef} onClick={() => edit("add", blank())}>
             Create
           </Button>
         </div>
@@ -260,16 +275,32 @@ export function Transforms({
         links is not kept.
       </p>
 
-      {(modal?.kind === "create" || modal?.kind === "edit") && (
-        <TransformEditor
+      {(modal?.kind === "add" || modal?.kind === "edit") && (
+        <RecordEditor
           key={modal.key}
           mode={modal.kind}
           initial={modal.transform}
-          items={items}
-          layout={layout}
-          dictationKeys={dictationKeys(settings)}
+          records={items}
+          copy={EDITOR_COPY}
           save={saveItems}
-          onDelete={() => setModal({ kind: "delete", transform: modal.transform, open: true })}
+          normalize={normalize}
+          problem={transformProblem}
+          wide
+          renderFields={(editor) => (
+            <TransformFields
+              editor={editor}
+              others={items.filter(({ id }) => id !== editor.draft.id)}
+              layout={layout}
+              dictationKeys={dictationKeys(settings)}
+            />
+          )}
+          renderFooter={() =>
+            modal.kind === "edit" && (
+              <Button variant="text" onClick={() => setModal(askToDelete(modal))}>
+                Delete transform
+              </Button>
+            )
+          }
           open={modal.open}
           onOpenChange={setOpen}
           onOpenChangeComplete={clearOnClose}
@@ -278,7 +309,7 @@ export function Transforms({
       {modal?.kind === "delete" && (
         <ConfirmDialog
           open={modal.open}
-          onOpenChange={setOpen}
+          onOpenChange={() => setModal(cancelDelete(modal))}
           onOpenChangeComplete={clearOnClose}
           finalFocus={createRef}
           title="Delete transform?"
