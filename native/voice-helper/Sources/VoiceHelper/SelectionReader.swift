@@ -77,14 +77,14 @@ final class SelectionReader {
         let postedAt = DispatchTime.now()
         let outcome = await pasteboard.copyFromFocusedApp()
         let ms = Int(elapsed(since: postedAt) * 1000)
-        if case .nothing = outcome {
-            log?("selection copy unanswered after \(ms) ms")
-        } else {
-            log?("selection copy answered after \(ms) ms")
+        switch outcome {
+        case .nothing: log?("selection copy unanswered after \(ms) ms")
+        case .lineOfEmptySelection: log?("selection copy answered after \(ms) ms with the caret's line; nothing selected")
+        case .text, .concealed: log?("selection copy answered after \(ms) ms")
         }
         try Task.checkCancellation()
         switch outcome {
-        case .nothing:
+        case .nothing, .lineOfEmptySelection:
             return .failed(.noSelection)
         case .concealed:
             return .failed(.secureInput)

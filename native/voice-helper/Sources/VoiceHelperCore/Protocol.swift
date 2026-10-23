@@ -332,6 +332,12 @@ extension TransformShortcut: Decodable {
         id = try c.decode(String.self, forKey: .id)
         keycode = try c.decode(Int64.self, forKey: .keycode)
         modifiers = try c.decode([Modifier].self, forKey: .modifiers)
+        // The event tap swallows a matching press system-wide, so a shortcut Shift alone (or
+        // nothing) modifies would eat plain typing in every app.
+        guard modifiers.contains(where: { $0 != .shift }) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .modifiers, in: c, debugDescription: "a transform shortcut needs a modifier other than shift")
+        }
     }
 }
 

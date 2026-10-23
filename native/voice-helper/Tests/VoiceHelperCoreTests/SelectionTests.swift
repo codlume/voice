@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import VoiceHelperCore
 
@@ -25,6 +26,37 @@ private let fnBit: UInt64 = 0x80_0000
 
 @Test func onlySilenceFallsBackToCopy() {
     #expect(planRead(secureInput: false, answer: .noAnswer) == .copyFallback)
+}
+
+/// Chromium's `org.chromium.web-custom-data` layout (base/pickle.cc, custom_data_helper.cc): a
+/// uint32 payload size, a uint32 entry count, then each key and value as a uint32 UTF-16 code
+/// unit count followed by the little-endian code units, padded to four bytes.
+private func chromiumWebCustomData(_ entries: [(String, String)]) -> Data {
+    var payload = Data()
+    func append(_ value: UInt32) { withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) } }
+    func append(_ string: String) {
+        let units = Array(string.utf16)
+        append(UInt32(units.count))
+        for unit in units { payload.append(contentsOf: [UInt8(unit & 0xFF), UInt8(unit >> 8)]) }
+        payload.append(contentsOf: [UInt8](repeating: 0, count: (4 - units.count * 2 % 4) % 4))
+    }
+    append(UInt32(entries.count))
+    for (key, value) in entries {
+        append(key)
+        append(value)
+    }
+    var pickle = Data()
+    withUnsafeBytes(of: UInt32(payload.count).littleEndian) { pickle.append(contentsOf: $0) }
+    return pickle + payload
+}
+
+@Test func monacoMarksALineCopiedWithNothingSelectedInItsClipboardMetadata() {
+    let emptySelection = #"{"version":1,"id":"a1","isFromEmptySelection":true,"isBlock":false,"multicursorText":null,"mode":"swift"}"#
+    let selection = #"{"version":1,"id":"a2","isFromEmptySelection":false,"isBlock":false,"multicursorText":null,"mode":"swift"}"#
+    #expect(isMonacoEmptySelectionCopy(webCustomData: chromiumWebCustomData([("vscode-editor-data", emptySelection)])))
+    #expect(!isMonacoEmptySelectionCopy(webCustomData: chromiumWebCustomData([("vscode-editor-data", selection)])))
+    #expect(!isMonacoEmptySelectionCopy(webCustomData: chromiumWebCustomData([("text/x-synthetic", "isFromEmptySelection")])))
+    #expect(!isMonacoEmptySelectionCopy(webCustomData: Data("\"isFromEmptySelection\":true".utf8)))
 }
 
 @Test func secureInputAndSecureFieldsRefuseBeforeAnyRead() {

@@ -382,6 +382,14 @@
       "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}]}"
     },
     {
+      "name": "unmodified-transform",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}]}"
+    },
+    {
+      "name": "shift-only-transform",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}]}"
+    },
+    {
       "name": "unknown-permission",
       "line": "{\"type\":\"permissions.request\",\"kind\":\"screen\"}"
     },

@@ -75,6 +75,11 @@ private func json(_ line: String) throws -> [String: Any] {
     let keycodeless = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","modifiers":["option"]}]}"#)
     #expect(try unknownDescription(keycodeless).contains("missing field \"keycode\""))
 
+    for modifiers in ["[]", #"["shift"]"#] {
+        let swallowsTyping = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":"# + modifiers + "}]}")
+        #expect(try unknownDescription(swallowsTyping).contains("field \"modifiers\": a transform shortcut needs a modifier other than shift"))
+    }
+
     let readWithoutId = HelperCommand.decode(line: #"{"type":"selection.read"}"#)
     #expect(try unknownDescription(readWithoutId).contains("missing field \"id\""))
 

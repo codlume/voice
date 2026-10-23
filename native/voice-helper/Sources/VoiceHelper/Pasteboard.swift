@@ -4,6 +4,8 @@ import VoiceHelperCore
 enum CopyOutcome {
     case text(String)
     case concealed
+    /// Monaco answered with the caret's line because nothing was selected.
+    case lineOfEmptySelection
     case nothing
 }
 
@@ -69,9 +71,12 @@ final class Pasteboard {
                     let write = pasteboard.changeCount
                     tracker.wrote(write, saved: saved)
                     let concealed = (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(concealedPasteboardType))
+                    let emptySelection = pasteboard.data(forType: NSPasteboard.PasteboardType(chromiumWebCustomDataType))
+                        .map(isMonacoEmptySelectionCopy) ?? false
                     let text = pasteboard.string(forType: .string) ?? ""
                     restore(write: write, changed: "clipboard changed during copy; not restoring previous contents")
-                    return concealed ? .concealed : .text(text)
+                    if concealed { return .concealed }
+                    return emptySelection ? .lineOfEmptySelection : .text(text)
                 }
             }
         }

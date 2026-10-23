@@ -1,8 +1,11 @@
 import Foundation
 
 /// What the accessibility tree said about the focused element's selection. An explicit empty
-/// range is an answer ("nothing is selected"), and only silence permits a synthetic Cmd+C: VS
-/// Code and JetBrains copy the whole line when nothing is selected.
+/// range is an answer ("nothing is selected"), and only silence permits a synthetic Cmd+C,
+/// because code editors copy the caret's whole line when nothing is selected. Electron is
+/// silent, so a Monaco line copy (VS Code, Cursor) is caught afterwards by the metadata Monaco
+/// writes next to the text; see `isMonacoEmptySelectionCopy`. Any other editor that both stays
+/// silent and copies the line still reads that line as the selection.
 public enum AXSelectionAnswer: Equatable, Sendable {
     case text(String, range: AXTextRange?)
     case emptyRange
@@ -39,6 +42,17 @@ public func planRead(secureInput: Bool, answer: AXSelectionAnswer) -> ReadPlan {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .fail(.noSelection) }
         return .selected(text: text, origin: .accessibility(text: text, range: range))
     }
+}
+
+/// Chromium pickles a page's custom clipboard types into one pasteboard item of this type.
+public let chromiumWebCustomDataType = "org.chromium.web-custom-data"
+
+/// Whether Chromium custom clipboard data carries Monaco's `vscode-editor-data` entry for a
+/// copy made with nothing selected. The pickle holds UTF-16 strings, and Monaco's JSON names
+/// the flag the same way in every version, so a byte search needs no pickle walk.
+public func isMonacoEmptySelectionCopy(webCustomData: Data) -> Bool {
+    let marker = Data("\"isFromEmptySelection\":true".utf16.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] })
+    return webCustomData.range(of: marker) != nil
 }
 
 public enum WriteVerdict: Equatable, Sendable { case proceed, refuseSelectionChanged }

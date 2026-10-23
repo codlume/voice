@@ -136,7 +136,7 @@ final class Insertion {
         else {
             return .refused(.failed)
         }
-        switch destination.focus.validate(readTargetFocus(pid: pid)) {
+        switch destination.focus.validate(readTargetFocus(pid: pid), comparingTitle: destination.origin == nil) {
         case .unchanged:
             if let origin = destination.origin, selectionMoved(origin, element: captured.element?.value) {
                 output.log(.info, "insert refused: selection changed since the read")
