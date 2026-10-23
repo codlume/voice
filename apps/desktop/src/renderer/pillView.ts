@@ -56,14 +56,18 @@ const transformNotInsertedText: Record<InsertFailure, string> = {
   failed: "Not replaced. Result is in Voice",
 };
 
-const transformModelText = {
-  missing: () => "Set up the transform model in Voice",
-  downloading: (progress: number | undefined) =>
-    progress === undefined
-      ? "Transform model downloading"
-      : `Transform model downloading ${Math.round(progress * 100)}%`,
-  failed: () => "Transform model failed. See Models",
-};
+function transformModelText(outcome: Extract<TransformOutcome, { kind: "modelUnavailable" }>) {
+  switch (outcome.state) {
+    case "missing":
+      return "Set up the transform model in Voice";
+    case "downloading":
+      return outcome.progress === undefined
+        ? "Transform model downloading"
+        : `Transform model downloading ${Math.round(outcome.progress * 100)}%`;
+    case "failed":
+      return "Transform model failed. See Models";
+  }
+}
 
 function transformOutcomeView(outcome: TransformOutcome): PillView {
   switch (outcome.kind) {
@@ -82,7 +86,7 @@ function transformOutcomeView(outcome: TransformOutcome): PillView {
     case "tooLong":
       return { kind: "message", text: `Too long. Select up to ${outcome.maxWords} words` };
     case "modelUnavailable":
-      return { kind: "message", text: transformModelText[outcome.state](outcome.progress) };
+      return { kind: "message", text: transformModelText(outcome) };
     case "cancelled":
       return { kind: "message", text: "Cancelled. Text unchanged" };
     case "failed":

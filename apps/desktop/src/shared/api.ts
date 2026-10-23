@@ -115,9 +115,12 @@ export type InsertFailure =
   | "selectionChanged"
   | "failed";
 
+type Inserted = { kind: "inserted"; method: Exclude<InsertMethod, "none"> };
+type NotInserted = { kind: "notInserted"; reason: InsertFailure };
+
 export type Outcome =
-  | { kind: "inserted"; method: "accessibility" | "paste" }
-  | { kind: "notInserted"; reason: InsertFailure }
+  | Inserted
+  | NotInserted
   | { kind: "empty" }
   | { kind: "tooShort" }
   | { kind: "failed"; message: string };
@@ -131,11 +134,12 @@ export type SelectionFailure =
 
 /** Never carries text. `failed.message` is one of a fixed set of sentences, never model output. */
 export type TransformOutcome =
-  | { kind: "inserted"; method: "accessibility" | "paste" }
-  | { kind: "notInserted"; reason: InsertFailure }
-  | { kind: "noSelection" | "secureInput" | "noFocusedField" | "keysHeld" | "cancelled" }
+  | Inserted
+  | NotInserted
+  | { kind: Exclude<SelectionFailure, "failed"> | "cancelled" }
   | { kind: "tooLong"; maxWords: number }
-  | { kind: "modelUnavailable"; state: "missing" | "downloading" | "failed"; progress?: number }
+  | { kind: "modelUnavailable"; state: "missing" | "failed" }
+  | { kind: "modelUnavailable"; state: "downloading"; progress?: number }
   | { kind: "failed"; message: string };
 
 export type PillState =
