@@ -75,6 +75,7 @@ describe("toSnapshot", () => {
       id: "r1",
       transformId: POLISH_ID,
       via: "copy",
+      words: 2,
     };
     const models = { ...state.models, transform: { state: "loading" } as const };
     expect(toSnapshot({ ...state, transform: generating, models }).session).toEqual({

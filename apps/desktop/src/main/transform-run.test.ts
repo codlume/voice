@@ -36,6 +36,7 @@ const generating: TransformRun = {
   id: "r1",
   transformId: polish,
   via: "accessibility",
+  words: 3,
 };
 const inserting: TransformRun = { phase: "inserting", id: "r1" };
 const done = (outcome: TransformOutcome): TransformRun => ({ phase: "done", id: "r1", outcome });
@@ -63,7 +64,7 @@ describe("transform run", () => {
     );
     expect(generate).toEqual({
       state: generating,
-      effects: [{ type: "generate", id: "r1", transformId: polish, text: "so um hello" }],
+      effects: [{ type: "generate", id: "r1", transformId: polish, text: "so um hello", words: 3 }],
     });
 
     const insert = step(

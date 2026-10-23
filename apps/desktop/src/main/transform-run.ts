@@ -9,7 +9,7 @@ import type {
   SelectionFailure,
   TransformOutcome,
 } from "../shared/api.ts";
-import type { TransformId } from "../shared/transforms.ts";
+import { countWords, type TransformId } from "../shared/transforms.ts";
 import {
   HELPER_EXITED_MESSAGE,
   HELPER_TIMEOUT_MESSAGE,
@@ -22,7 +22,8 @@ export type SelectionVia = "accessibility" | "copy";
 export type TransformRun =
   | { phase: "idle" }
   | { phase: "reading"; id: string; transformId: TransformId }
-  | { phase: "generating"; id: string; transformId: TransformId; via: SelectionVia }
+  // `words` sizes the generation budget, so the watchdog is a function of this state alone.
+  | { phase: "generating"; id: string; transformId: TransformId; via: SelectionVia; words: number }
   // A paste cannot be recalled, so cancel is ignored from here on.
   | { phase: "inserting"; id: string }
   | { phase: "done"; id: string; outcome: TransformOutcome };
@@ -55,7 +56,7 @@ export type TransformEvent =
 
 export type TransformEffect =
   | { type: "readSelection"; id: string }
-  | { type: "generate"; id: string; transformId: TransformId; text: string }
+  | { type: "generate"; id: string; transformId: TransformId; text: string; words: number }
   // Sets Last transform before the write, so a refused write keeps the result.
   | { type: "keep"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; text: string }
@@ -151,15 +152,23 @@ export function step(state: TransformRun, event: TransformEvent, _now: number): 
     }
     case "selected": {
       if (state.phase !== "reading") return same;
+      const words = countWords(event.text);
       return {
         state: {
           phase: "generating",
           id: state.id,
           transformId: state.transformId,
           via: event.via,
+          words,
         },
         effects: [
-          { type: "generate", id: state.id, transformId: state.transformId, text: event.text },
+          {
+            type: "generate",
+            id: state.id,
+            transformId: state.transformId,
+            text: event.text,
+            words,
+          },
         ],
       };
     }

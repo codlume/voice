@@ -325,7 +325,7 @@ describe("createDictation", () => {
     const showWhenIdle = whenNotDictating(h.store, () => shown.push(h.store.state.transform.phase));
     h.store.update((s) => ({
       ...s,
-      transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy" },
+      transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy", words: 2 },
     }));
 
     showWhenIdle();

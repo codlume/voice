@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { TransformOutcome } from "../shared/api.ts";
-import { countWords, type LastTransform, type TransformId } from "../shared/transforms.ts";
+import type { LastTransform, TransformId } from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
 import { INSERT_TIMEOUT_MS } from "./dictation.ts";
 import type { Log } from "./diagnostics-scrub.ts";
@@ -54,7 +54,6 @@ const ABORTED = new Error("Transform cancelled");
 type Active = {
   id: string;
   controller: AbortController;
-  budgetMs?: number;
   via?: SelectionVia;
   words?: number;
   readStartedAt?: number;
@@ -101,12 +100,10 @@ export function createTransforms(options: TransformsOptions): Transforms {
     };
     if (phase === "reading") arm(READ_TIMEOUT_MS);
     // While the model loads the run waits on the load, which has its own bound in the model, so
-    // the generation watchdog starts once the model is ready (see the subscription below). The
-    // phase changes before the generate effect sets the budget, so that effect arms it again.
+    // the generation watchdog starts once the model is ready (see the subscription below).
     else if (phase === "generating") {
-      const budgetMs = active?.id === id ? active.budgetMs : undefined;
-      if (store.state.models.transform.state === "ready" && budgetMs !== undefined) {
-        arm(budgetMs + GENERATE_GRACE_MS);
+      if (store.state.models.transform.state === "ready") {
+        arm(generateBudgetMs(state.words) + GENERATE_GRACE_MS);
       }
     } else arm(INSERT_TIMEOUT_MS);
   }
@@ -135,12 +132,10 @@ export function createTransforms(options: TransformsOptions): Transforms {
       return;
     }
     const controller = new AbortController();
-    const words = countWords(effect.text);
-    const budgetMs = generateBudgetMs(words);
+    const budgetMs = generateBudgetMs(effect.words);
     const startedAt = now();
-    track(id, { words, budgetMs });
+    track(id, { words: effect.words });
     if (active?.id === id) active.controller = controller;
-    armWatchdog(store.state.transform);
     model
       .run({
         instruction: transform.instruction,
