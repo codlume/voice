@@ -322,7 +322,6 @@ export type HubApi = WindowApi & {
   getLastTransform(): Promise<LastTransform | null>;
   /** Fires after every change, with the whole value; null once Transforms are turned off. */
   onLastTransform(listener: (value: LastTransform | null) => void): () => void;
-  /** Copies in main, so the text never round-trips through the renderer. */
   copyLastTransform(which: "before" | "after"): Promise<void>;
 };
 
