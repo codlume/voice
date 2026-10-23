@@ -11,13 +11,14 @@ import {
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
-import { countWords, type TransformId } from "../shared/transforms.ts";
+import { countWords, type LastTransform, type TransformId } from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
+  INSERT_TIMEOUT_MS,
   step,
   type Destination,
   type Effect as SessionEffect,
@@ -25,9 +26,8 @@ import {
   type SessionEvent,
 } from "./session.ts";
 import type { Store } from "./store.ts";
-import { budget, type Budget } from "./timing.ts";
+import { budget, timingLine, type Budget } from "./timing.ts";
 import type { TransformModel } from "./transform-model.ts";
-import type { Transforms } from "./transforms.ts";
 
 export type DictationOptions = {
   store: Store;
@@ -36,7 +36,7 @@ export type DictationOptions = {
   /** Auto-apply after dictation: the transform model, and Last transform for recovery. */
   transform: {
     model: Pick<TransformModel, "run" | "warm" | "onDisk">;
-    remember: Transforms["remember"];
+    remember: (value: Omit<LastTransform, "finishedAt">) => void;
   };
   onLevel: (level: number) => void;
   log: Log;
@@ -62,7 +62,6 @@ export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
-export const INSERT_TIMEOUT_MS = 5000;
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -353,10 +352,7 @@ export function createDictation(options: DictationOptions): Dictation {
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
     };
-    const parts = Object.entries(capture?.timings ?? {}).flatMap(([key, value]) =>
-      value === undefined ? [] : [`${key}=${Math.round(value)}`],
-    );
-    log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
+    log(timingLine("session", id, outcome.kind, capture?.timings ?? {}));
     options.onSessionDone({ outcome, finishedAt, capture });
     options.history.settle(id, outcome.kind === "inserted");
     if (produced && gaveTranscript(outcome)) {
@@ -512,7 +508,7 @@ export function createDictation(options: DictationOptions): Dictation {
  * its outcome. Showing a window mid-session would take focus from the target app and fail the
  * insertion.
  */
-export function whenNotDictating(store: Store, show: () => void): () => void {
+export function whenIdle(store: Store, show: () => void): () => void {
   let pending = false;
   store.subscribe((state) => {
     if (!pending || activity(state) !== "idle") return;

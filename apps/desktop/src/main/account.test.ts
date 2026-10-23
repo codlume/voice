@@ -18,7 +18,7 @@ import {
   parseSignInCode,
   resolveApiUrl,
 } from "./account.ts";
-import { createDictation, whenNotDictating } from "./dictation.ts";
+import { createDictation, whenIdle } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import {
   API_URL,
@@ -607,9 +607,7 @@ describe("createAccount", () => {
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
-    const showWhenIdle = whenNotDictating(h.store, () =>
-      shownDuring.push(h.store.state.session.phase),
-    );
+    const showWhenIdle = whenIdle(h.store, () => shownDuring.push(h.store.state.session.phase));
     const takeCallback = (url: string) => {
       if (h.account.handleCallbackUrl(url) !== "ignored") showWhenIdle();
     };
@@ -663,7 +661,7 @@ describe("createAccount", () => {
   test("an interrupted callback outside a session shows Voice at once", () => {
     const h = harness();
     const shown = vi.fn();
-    const showWhenIdle = whenNotDictating(h.store, shown);
+    const showWhenIdle = whenIdle(h.store, shown);
     if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") showWhenIdle();
     expect(shown).toHaveBeenCalledOnce();
     expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });

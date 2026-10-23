@@ -101,6 +101,7 @@ type Step = { state: Session; effects: Effect[] };
 const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
+export const INSERT_TIMEOUT_MS = 5000;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";

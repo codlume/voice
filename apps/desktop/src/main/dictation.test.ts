@@ -28,7 +28,6 @@ import {
   AUTO_APPLY_BUDGET,
   CLEANUP_BUDGET,
   CLEANUP_GRACE_MS,
-  INSERT_TIMEOUT_MS,
   START_TIMEOUT_MS,
   TRANSCRIBE_OVERDUE_MIN_MS,
   TRANSCRIBE_TIMEOUT_MS,
@@ -36,7 +35,7 @@ import {
   autoApplyBudgetMs,
   cleanupBudgetMs,
   createDictation,
-  whenNotDictating,
+  whenIdle,
   type Dictated,
   type SessionReport,
 } from "./dictation.ts";
@@ -46,6 +45,7 @@ import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  INSERT_TIMEOUT_MS,
   TRANSCRIBE_GAVE_UP_MESSAGE,
   idle,
   type SessionEvent,
@@ -319,7 +319,7 @@ describe("createDictation", () => {
   test("a show request waits for a transform run as it waits for a dictation", () => {
     const h = harness();
     const shown: string[] = [];
-    const showWhenIdle = whenNotDictating(h.store, () => shown.push(h.store.state.transform.phase));
+    const showWhenIdle = whenIdle(h.store, () => shown.push(h.store.state.transform.phase));
     h.store.update((s) => ({
       ...s,
       transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy", words: 2 },

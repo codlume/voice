@@ -50,7 +50,7 @@ import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
-import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
+import { createDictation, whenIdle, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hotkeyConfigure } from "./hotkey-config.ts";
@@ -782,7 +782,7 @@ async function main() {
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
   // target app must keep focus until insertion. A launch by URL shows the hub anyway.
-  const showHubWhenIdle = whenNotDictating(store, showHub);
+  const showHubWhenIdle = whenIdle(store, showHub);
   handleCallbackUrl = (url) => {
     if (account.handleCallbackUrl(url) !== "ignored") showHubWhenIdle();
   };

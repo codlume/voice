@@ -6,11 +6,11 @@ import { randomUUID } from "node:crypto";
 import type { TransformOutcome } from "../shared/api.ts";
 import type { LastTransform, TransformId } from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
-import { INSERT_TIMEOUT_MS } from "./dictation.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
-import { dictating } from "./session.ts";
+import { INSERT_TIMEOUT_MS, dictating } from "./session.ts";
 import type { AppState, Store } from "./store.ts";
+import { timingLine } from "./timing.ts";
 import type { TransformModel } from "./transform-model.ts";
 import {
   GENERATE_GRACE_MS,
@@ -196,17 +196,15 @@ export function createTransforms(options: TransformsOptions): Transforms {
   function finish(id: string, outcome: TransformOutcome["kind"]) {
     const a = active?.id === id ? active : null;
     const finishedAt = now();
-    const timings = {
-      readMs: a?.readMs,
-      generateMs: a?.generateMs,
-      insertMs: a?.insertStartedAt === undefined ? undefined : finishedAt - a.insertStartedAt,
-      words: a?.words,
-    };
-    const parts = Object.entries(timings).flatMap(([key, value]) =>
-      value === undefined ? [] : [`${key}=${Math.round(value)}`],
+    log(
+      timingLine("transform", id, outcome, {
+        via: a?.via,
+        readMs: a?.readMs,
+        generateMs: a?.generateMs,
+        insertMs: a?.insertStartedAt === undefined ? undefined : finishedAt - a.insertStartedAt,
+        words: a?.words,
+      }),
     );
-    const via = a?.via === undefined ? [] : [`via=${a.via}`];
-    log(`transform ${id.slice(0, 8)} outcome=${outcome} ${[...via, ...parts].join(" ")}`);
   }
 
   function setLast(value: Omit<LastTransform, "finishedAt"> | null) {

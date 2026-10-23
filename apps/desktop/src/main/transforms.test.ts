@@ -7,9 +7,8 @@ import {
   type LastTransform,
   type TransformSettings,
 } from "../shared/transforms.ts";
-import { INSERT_TIMEOUT_MS } from "./dictation.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
-import { HELPER_TIMEOUT_MESSAGE, idle, type Session } from "./session.ts";
+import { HELPER_TIMEOUT_MESSAGE, INSERT_TIMEOUT_MS, idle, type Session } from "./session.ts";
 import { createStore, toSnapshot } from "./store.ts";
 import type { TransformRequest, TransformResult } from "./transform-model.ts";
 import {
