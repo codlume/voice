@@ -34,6 +34,7 @@ import {
   evaluateInMain,
   landedText,
   modelFiles,
+  optionalModelFiles,
   Page,
   prepareUserData,
   processIdentity,
@@ -269,12 +270,20 @@ const commands = {
       fixtures: existsSync(join(fixturesDir, "short.wav"))
         ? "present"
         : "missing: run node scripts/fixtures.mjs",
-      testModels: Object.fromEntries(
-        Object.entries(modelFiles).map(([id, file]) => [
-          id,
-          existsSync(join(cache, file)) ? "cached" : "will download",
-        ]),
-      ),
+      testModels: {
+        ...Object.fromEntries(
+          Object.entries(modelFiles).map(([id, file]) => [
+            id,
+            existsSync(join(cache, file)) ? "cached" : "will download",
+          ]),
+        ),
+        ...Object.fromEntries(
+          Object.entries(optionalModelFiles).map(([id, file]) => [
+            id,
+            existsSync(join(cache, file)) ? "cached" : "missing",
+          ]),
+        ),
+      },
       instance: instance
         ? { ...instance, cdpPages: cdp }
         : state

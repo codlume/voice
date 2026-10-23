@@ -114,7 +114,10 @@ export function scenarioPrerequisites(report) {
         .map((id) => [id, report[id]]),
       ...(report.fixtures === "present" ? [] : [["fixtures", report.fixtures]]),
     ],
-    models: Object.entries(report.testModels).filter(([, state]) => state !== "cached"),
+    // Scenarios dictate, so only the speech and cleanup models gate them.
+    models: Object.entries(report.testModels).filter(
+      ([id, state]) => ["asr", "cleanup"].includes(id) && state !== "cached",
+    ),
     permissions: [],
     instance: report.instance === "none" ? [] : [report.instance],
     desktop: report.otherVoiceProcesses,

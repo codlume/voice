@@ -157,7 +157,7 @@ test("unmet prerequisites stay separate from scenario assertions", () => {
     helper: "stale",
     fnpost: "built",
     fixtures: "present",
-    testModels: { asr: "cached", cleanup: "will download" },
+    testModels: { asr: "cached", cleanup: "will download", transform: "missing" },
     instance: "none",
     otherVoiceProcesses: ["another helper"],
   };

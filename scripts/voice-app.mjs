@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
-import { downloadS1Mini, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import { downloadS1Mini, GEMMA_4_E2B, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
 import {
   claimScratch,
   releaseScratch,
@@ -244,6 +244,8 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
+// Transforms are off by default and their model is 3.1 GB, so it is linked only when cached.
+export const optionalModelFiles = { transform: GEMMA_4_E2B.file };
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
@@ -263,6 +265,9 @@ export async function prepareUserData(name) {
     mkdirSync(models, { recursive: true });
     for (const file of Object.values(modelFiles)) {
       symlinkSync(join(cache, file), join(models, file));
+    }
+    for (const file of Object.values(optionalModelFiles)) {
+      if (existsSync(join(cache, file))) symlinkSync(join(cache, file), join(models, file));
     }
     return userData;
   } catch (error) {
