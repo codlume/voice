@@ -62,33 +62,34 @@ final class Pasteboard {
     /// Borrows the clipboard for a synthetic Cmd+C and hands it back: the user's contents are
     /// saved, the app's answer is read and restored over at once, and an answer after the
     /// deadline is restored too, unless the user copied something meanwhile or a paste wrote in
-    /// between (its own restore owns the clipboard then). Never cancelled: a posted keystroke
-    /// must get its restore. `completion` runs on main.
-    func copyFromFocusedApp(_ completion: @escaping (CopyOutcome) -> Void) {
+    /// between (its own restore owns the clipboard then). The watch runs in a task of its own
+    /// that a cancelled caller cannot reach: the keystroke is out, so the restore must follow.
+    func copyFromFocusedApp() async -> CopyOutcome {
         let saved = save()
         let wait = CopyWait(startChangeCount: pasteboard.changeCount)
         postCommand(typing: "c", fallback: PasteKey.ansiC)
         let postedAt = DispatchTime.now()
-        poll { [self] in
-            switch wait.step(changeCount: pasteboard.changeCount, elapsed: elapsed(since: postedAt)) {
-            case .wait:
-                return false
-            case .timedOut:
-                completion(.nothing)
-                DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
-                    guard !tracker.hasPending, wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
-                    put(saved)
+        return await Task { @MainActor [self] in
+            while true {
+                switch wait.step(changeCount: pasteboard.changeCount, elapsed: elapsed(since: postedAt)) {
+                case .wait:
+                    try? await Task.sleep(for: .milliseconds(10))
+                case .timedOut:
+                    DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
+                        guard !tracker.hasPending, wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
+                        put(saved)
+                    }
+                    return .nothing
+                case .changed:
+                    let write = pasteboard.changeCount
+                    tracker.wrote(write, saved: saved)
+                    let concealed = (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(concealedPasteboardType))
+                    let text = pasteboard.string(forType: .string) ?? ""
+                    restore(write: write, changed: "clipboard changed during copy; not restoring previous contents")
+                    return concealed ? .concealed : .text(text)
                 }
-            case .changed:
-                let write = pasteboard.changeCount
-                tracker.wrote(write, saved: saved)
-                let concealed = (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(concealedPasteboardType))
-                let text = pasteboard.string(forType: .string) ?? ""
-                restore(write: write, changed: "clipboard changed during copy; not restoring previous contents")
-                completion(concealed ? .concealed : .text(text))
             }
-            return true
-        }
+        }.value
     }
 
     /// Runs a restore still waiting on its timer, so an exit inside the window does not leave
@@ -118,11 +119,5 @@ final class Pasteboard {
             return restored
         }
         if !items.isEmpty { pasteboard.writeObjects(items) }
-    }
-
-    /// Runs `step` now and then every 10 ms until it returns true.
-    private func poll(_ step: @escaping () -> Bool) {
-        if step() { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [self] in poll(step) }
     }
 }
