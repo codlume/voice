@@ -520,7 +520,17 @@ describe("cleanup", () => {
       output: { text: "Hello, world.", html: null },
       insertedCleanup: null,
     });
-    expect(effects).toContainEqual(remembered("hello um world", "Hello, world."));
+    // Last transform is kept from the final text, after the dictionary pass, and before the write.
+    expect(effects).toEqual([
+      {
+        type: "keepTransform",
+        transformId: POLISH_ID,
+        before: "hello um world",
+        after: "Hello, world.",
+      },
+      remembered("hello um world", "Hello, world."),
+      { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+    ]);
   });
 
   test("cleanup returning empty for filler input ends empty and keeps the raw transcript", () => {

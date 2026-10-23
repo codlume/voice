@@ -1756,7 +1756,7 @@ describe("auto-apply after dictation", () => {
     expect(h.logs.at(-1)).toMatch(/^session \S+ outcome=inserted .*cleanupMs=\d+/);
   });
 
-  test("applies the dictionary to the result", async () => {
+  test("applies the dictionary to the result, and Last transform keeps what was inserted", async () => {
     const h = harness({ autoApply: POLISH_ID, dictionary: [hadrys] });
     const id = await dictate(h, "ask hadrys");
     expect(h.transformRuns.map((r) => r.text)).toEqual(["ask hadrys"]);
@@ -1766,6 +1766,10 @@ describe("auto-apply after dictation", () => {
       text: "Polished: ask Hadryś",
       html: null,
     });
+    // Copy result on the Transforms page must give the text that landed in the app.
+    expect(h.lastTransforms).toEqual([
+      { name: "Polish", before: "ask hadrys", after: "Polished: ask Hadryś" },
+    ]);
   });
 
   test.each<[string, TransformResult | "rejects"]>([
