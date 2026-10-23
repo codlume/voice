@@ -35,6 +35,10 @@ public struct ClipboardRestore<Contents> {
         pending = (write, saved)
     }
 
+    /// True while a write of ours still waits for its restore. A copy that answered late must
+    /// not restore over it: that write's own restore puts the user's contents back.
+    public var hasPending: Bool { pending != nil }
+
     /// The contents to put back for the paste whose write was `write`, or nil when the clipboard
     /// no longer holds that write.
     public mutating func restore(write: Int, changeCount: Int) -> Contents? {
