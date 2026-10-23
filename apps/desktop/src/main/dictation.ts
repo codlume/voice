@@ -10,6 +10,7 @@ import {
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
+import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
@@ -320,6 +321,13 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "hotkey": {
         const asr = store.state.models.asr.state;
+        // A transform run owns the target's focus until its write; a dictation cannot start over it.
+        if (
+          (event.action === "down" || event.action === "toggle") &&
+          activity(store.state) === "transform"
+        ) {
+          return;
+        }
         switch (event.action) {
           case "down":
             return dispatch({ type: "hotkeyDown", id: randomUUID(), asr });

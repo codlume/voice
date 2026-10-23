@@ -10,6 +10,7 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Output } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
+import { POLISH_ID } from "../shared/transforms.ts";
 import {
   DEFAULT_STYLES,
   parseAssignments,
@@ -250,6 +251,28 @@ function release(h: ReturnType<typeof harness>, holdMs: number) {
 describe("createDictation", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  test("a hotkey down or toggle during a transform run starts no capture", () => {
+    const h = harness();
+    h.store.update((s) => ({
+      ...s,
+      transform: { phase: "reading", id: "r1", transformId: POLISH_ID },
+    }));
+
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+
+    expect(h.commands).toEqual([]);
+    expect(h.store.state.session).toEqual(idle);
+
+    // Once the run has its outcome, dictation starts again.
+    h.store.update((s) => ({
+      ...s,
+      transform: { phase: "done", id: "r1", outcome: { kind: "noSelection" } },
+    }));
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+  });
 
   test("forwards only parameter-free helper log lines to diagnostics", () => {
     const h = harness();
