@@ -8,7 +8,6 @@ import { createTransformProcess, serve } from "./transform-engine.ts";
 import {
   createTransformModel,
   IDLE_UNLOAD_MS,
-  LOAD_TIMED_OUT_MESSAGE,
   LOAD_TIMEOUT_MS,
   type TransformModule,
 } from "./transform-model.ts";
@@ -50,10 +49,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function harness({ onDisk = true, holdLoad = false, holdRuns = false } = {}) {
+function harness({
+  onDisk = true,
+  holdLoad = false,
+  holdRuns = false,
+  loadError = undefined as string | undefined,
+} = {}) {
   const statuses: ModelStatus[] = [];
   const workers: FakeWorker[] = [];
-  const disk = { present: onDisk, removes: 0 };
+  const disk = { present: onDisk, downloads: 0, removes: 0 };
   let loadGate = holdLoad ? deferred() : undefined;
   const runStarted: (() => void)[] = [];
 
@@ -67,6 +71,7 @@ function harness({ onDisk = true, holdLoad = false, holdRuns = false } = {}) {
     },
     findModel: async () => (disk.present ? MODEL_PATH : undefined),
     downloadModel: async ({ onProgress }) => {
+      disk.downloads += 1;
       onProgress?.(0.5);
       disk.present = true;
       return MODEL_PATH;
@@ -92,6 +97,7 @@ function harness({ onDisk = true, holdLoad = false, holdRuns = false } = {}) {
         load: async () => {
           worker.loads += 1;
           await loadGate?.promise;
+          if (loadError) throw new Error(loadError);
         },
         transform: ({ signal, ...received }) =>
           new Promise((resolve, reject) => {
@@ -231,7 +237,7 @@ describe("transform model", () => {
     expect(workers[0]?.runs[0]?.request.budgetMs).toBe(10_000);
   });
 
-  test("a load past its bound ends the run timed out, stops the process and reports failed", async () => {
+  test("a load past its bound ends the run timed out, stops the process and leaves the model installed", async () => {
     idleTimers();
     const { model, workers, last } = harness({ holdLoad: true });
     await model.refresh();
@@ -243,7 +249,7 @@ describe("transform model", () => {
     await expect(running).resolves.toEqual({ ok: false, failure: { kind: "timedOut" } });
     await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
     expect(workers[0]?.runs).toEqual([]);
-    expect(last()).toEqual({ state: "failed", message: LOAD_TIMED_OUT_MESSAGE });
+    expect(last()).toEqual({ state: "installed" });
   });
 
   test("unload stops an idle process and reports installed, but leaves a run in flight alone", async () => {
@@ -317,8 +323,8 @@ describe("transform model", () => {
     await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
   });
 
-  test("a lost process reports failed, rejects its run, and the next run loads again", async () => {
-    const { model, workers, nextRun, statuses, last } = harness({ holdRuns: true });
+  test("a lost process rejects its run and leaves the model installed; install does not download again, and the next run loads again", async () => {
+    const { model, workers, disk, nextRun, statuses, last } = harness({ holdRuns: true });
     await model.refresh();
     const started = nextRun();
     const running = model.run(request());
@@ -327,10 +333,9 @@ describe("transform model", () => {
     workers[0]?.crash();
 
     await expect(running).rejects.toThrow("The transform model stopped unexpectedly.");
-    expect(last()).toEqual({
-      state: "failed",
-      message: "The transform model stopped unexpectedly.",
-    });
+    expect(last()).toEqual({ state: "installed" });
+    await model.install();
+    expect(disk.downloads).toBe(0);
     statuses.length = 0;
 
     const again = nextRun();
@@ -339,6 +344,22 @@ describe("transform model", () => {
     workers[1]?.runs[0]?.finish(RESULT);
     await expect(next).resolves.toEqual(RESULT);
     expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
+  });
+
+  test("a load failure rejects the run and leaves the model installed; install does not download again", async () => {
+    const { model, workers, disk, statuses } = harness({ loadError: "Metal out of memory" });
+    await model.refresh();
+
+    await expect(model.run(request())).rejects.toThrow("Metal out of memory");
+    await model.install();
+
+    expect(disk.downloads).toBe(0);
+    await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+    expect(statuses).toEqual([
+      { state: "installed" },
+      { state: "loading" },
+      { state: "installed" },
+    ]);
   });
 
   test("uninstall during a load stops the process, removes the weights and ends missing", async () => {

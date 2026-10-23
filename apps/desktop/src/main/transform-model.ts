@@ -35,7 +35,6 @@ export type TransformModel = {
 export const IDLE_UNLOAD_MS = 5 * 60_000;
 // A first-ever load measured 28.6 s in Electron; three times that is a stuck process.
 export const LOAD_TIMEOUT_MS = 90_000;
-export const LOAD_TIMED_OUT_MESSAGE = "The transform model took too long to load.";
 
 export type TransformModule = Pick<
   typeof import("@voice/cleanup/download"),
@@ -78,176 +77,221 @@ async function importModule(log: (message: string) => void): Promise<TransformMo
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-type EngineWorker = { engine: TransformEngine; loaded: Promise<void>; ready: boolean };
+const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
+
+type Resident = { path: string; engine: TransformEngine; loaded: Promise<void> };
+
+type Phase =
+  // failure: why the last download or removal did not finish.
+  | { phase: "missing"; failure?: string }
+  | { phase: "downloading"; progress: number; controller: AbortController; done: Promise<void> }
+  // A lost process, a failed load or an idle unload all come back here, so the next run reloads
+  // from the weights already on disk.
+  | { phase: "installed"; path: string }
+  | ({ phase: "loading" | "ready" } & Resident)
+  // Uninstall reports the removal's outcome when it ends.
+  | { phase: "removing" }
+  | { phase: "disposed" };
+
+function statusOf(state: Phase): ModelStatus | undefined {
+  switch (state.phase) {
+    case "missing":
+      return state.failure === undefined
+        ? { state: "missing" }
+        : { state: "failed", message: state.failure };
+    case "downloading":
+      return { state: "downloading", progress: state.progress };
+    case "installed":
+    case "loading":
+    case "ready":
+      return { state: state.phase };
+    case "removing":
+    case "disposed":
+      return undefined;
+  }
+}
+
+const resident = (state: Phase): state is Extract<Phase, Resident> =>
+  state.phase === "loading" || state.phase === "ready";
+
+// Resolves undefined once the load overruns LOAD_TIMEOUT_MS, and rejects with the signal's reason
+// if the run is withdrawn first.
+async function withinLoadBound(
+  loading: Promise<TransformEngine>,
+  signal: AbortSignal,
+): Promise<TransformEngine | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  let withdraw: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      loading,
+      new Promise<undefined>((resolve, reject) => {
+        timer = setTimeout(() => resolve(undefined), LOAD_TIMEOUT_MS);
+        withdraw = () => reject(signal.reason);
+        signal.addEventListener("abort", withdraw, { once: true });
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (withdraw) signal.removeEventListener("abort", withdraw);
+  }
+}
 
 export function createTransformModel(options: TransformModelOptions): TransformModel {
   let module: Promise<TransformModule> | undefined;
   const loadModule = () => (module ??= (options.loadModule ?? (() => importModule(options.log)))());
-  // Where the weights are, once a refresh or an install found them.
-  let modelPath: string | undefined;
-  let worker: EngineWorker | undefined;
-  let installing: { controller: AbortController; done: Promise<void> } | undefined;
+  let state: Phase = { phase: "missing" };
+  // Residency, apart from the phase: runs in flight and the idle unload that follows the last.
   let running = 0;
   let idleTimer: NodeJS.Timeout | undefined;
-  let disposed = false;
 
-  const restingStatus = (): ModelStatus =>
-    worker
-      ? { state: worker.ready ? "ready" : "loading" }
-      : { state: modelPath ? "installed" : "missing" };
+  const owns = (engine: TransformEngine) => resident(state) && state.engine === engine;
 
-  function stop(): Promise<void> {
+  // The one place the phase changes. Leaving a loading or ready phase frees its engine.
+  function set(next: Phase): Promise<void> {
+    const previous = state;
+    state = next;
+    const status = statusOf(next);
+    if (status) options.onStatus(status);
+    if (!resident(previous) || (resident(next) && next.engine === previous.engine)) {
+      return Promise.resolve();
+    }
     clearTimeout(idleTimer);
-    const current = worker;
-    worker = undefined;
-    return current?.engine.dispose() ?? Promise.resolve();
+    return previous.engine.dispose();
   }
 
   // Idle means no run in flight for IDLE_UNLOAD_MS. A run clears the timer and arms it again when
   // it ends, so a long run is never unloaded under itself.
   function armIdle() {
     clearTimeout(idleTimer);
-    if (running > 0 || disposed) return;
+    if (running > 0 || state.phase === "disposed") return;
     idleTimer = setTimeout(() => {
-      if (!worker) return;
-      void stop();
-      options.onStatus(restingStatus());
+      if (resident(state)) void set({ phase: "installed", path: state.path });
     }, IDLE_UNLOAD_MS);
+  }
+
+  function start(path: string, createProcess: TransformModule["createProcess"]) {
+    const engine = createProcess({
+      modelPath: path,
+      onLost: (lostMessage) => {
+        if (!owns(engine)) return;
+        options.log(`transform: ${lostMessage}`);
+        void set({ phase: "installed", path });
+      },
+    });
+    const loaded = engine.load();
+    void set({ phase: "loading", path, engine, loaded });
+    loaded.then(
+      () => {
+        if (owns(engine)) void set({ phase: "ready", path, engine, loaded });
+      },
+      (error: unknown) => {
+        if (!owns(engine)) return;
+        options.log(`transform: load failed: ${message(error)}`);
+        void set({ phase: "installed", path });
+      },
+    );
   }
 
   async function loadedEngine(): Promise<TransformEngine> {
     const { createProcess } = await loadModule();
-    if (disposed) throw new Error("Voice is closing.");
-    if (!worker) {
-      if (modelPath === undefined) throw new Error("The transform model is not installed.");
-      const engine = createProcess({
-        modelPath,
-        onLost: (lostMessage) => {
-          if (worker?.engine !== engine) return;
-          worker = undefined;
-          clearTimeout(idleTimer);
-          options.onStatus({ state: "failed", message: lostMessage });
-        },
-      });
-      const current: EngineWorker = { engine, loaded: engine.load(), ready: false };
-      worker = current;
-      options.onStatus({ state: "loading" });
-      current.loaded.then(
-        () => {
-          current.ready = true;
-          if (worker === current) options.onStatus({ state: "ready" });
-        },
-        (error: unknown) => {
-          if (worker !== current) return;
-          worker = undefined;
-          void engine.dispose();
-          options.onStatus({ state: "failed", message: message(error) });
-        },
-      );
-    }
-    const { engine, loaded } = worker;
+    if (state.phase === "disposed") throw new Error("Voice is closing.");
+    if (state.phase === "installed") start(state.path, createProcess);
+    if (!resident(state)) throw new Error("The transform model is not installed.");
+    const { engine, loaded } = state;
     await loaded;
     return engine;
+  }
+
+  async function download(controller: AbortController): Promise<void> {
+    try {
+      const { downloadModel, source } = await loadModule();
+      const path = await downloadModel({
+        dir: options.modelsDir,
+        source,
+        baseUrl: options.baseUrl,
+        onProgress: (progress) => {
+          if (state.phase === "downloading" && state.controller === controller) {
+            void set({ ...state, progress });
+          }
+        },
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) void set({ phase: "installed", path });
+    } catch (error) {
+      if (!controller.signal.aborted) void set({ phase: "missing", failure: message(error) });
+    }
   }
 
   return {
     refresh: async () => {
       const { findModel, source } = await loadModule();
-      modelPath = await findModel({ dir: options.modelsDir, source });
-      if (!installing && !worker && !disposed) options.onStatus(restingStatus());
+      const path = await findModel({ dir: options.modelsDir, source });
+      if (state.phase !== "missing" && state.phase !== "installed") return;
+      void set(path === undefined ? { phase: "missing" } : { phase: "installed", path });
     },
+    // Weights already on disk are not checked again: hashing 3.1 GB is not a retry.
     install: () => {
-      if (disposed) return Promise.resolve();
-      if (installing) return installing.done;
+      if (state.phase === "downloading") return state.done;
+      if (state.phase !== "missing") return Promise.resolve();
       const controller = new AbortController();
-      const done = (async () => {
-        options.onStatus({ state: "downloading", progress: 0 });
-        try {
-          const { downloadModel, source } = await loadModule();
-          const path = await downloadModel({
-            dir: options.modelsDir,
-            source,
-            baseUrl: options.baseUrl,
-            onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
-            signal: controller.signal,
-          });
-          if (controller.signal.aborted) return;
-          modelPath = path;
-          options.onStatus(restingStatus());
-        } catch (error) {
-          if (!controller.signal.aborted) {
-            options.onStatus({ state: "failed", message: message(error) });
-          }
-        } finally {
-          installing = undefined;
-        }
-      })();
-      installing = { controller, done };
+      const done = download(controller);
+      void set({ phase: "downloading", progress: 0, controller, done });
       return done;
     },
     uninstall: async () => {
-      installing?.controller.abort(new Error("Download cancelled"));
-      await installing?.done;
-      modelPath = undefined;
-      await stop();
+      if (state.phase === "downloading") {
+        const { controller, done } = state;
+        controller.abort(new Error("Download cancelled"));
+        await done;
+      }
+      await set({ phase: "removing" });
       const { removeModel, source } = await loadModule();
       try {
         await removeModel({ dir: options.modelsDir, source });
       } catch (error) {
-        options.onStatus({ state: "failed", message: message(error) });
+        void set({ phase: "missing", failure: message(error) });
         return;
       }
-      options.onStatus({ state: "missing" });
+      void set({ phase: "missing" });
     },
     run: async (request) => {
       request.signal.throwIfAborted();
-      let withdraw: (() => void) | undefined;
-      let loadTimer: NodeJS.Timeout | undefined;
       running += 1;
       clearTimeout(idleTimer);
       try {
         // A run withdrawn while the model loads leaves the load going for the next one. A load
         // that overruns its bound is a stuck process: it is stopped so the next run starts fresh.
-        const loading = loadedEngine();
-        loading.catch(() => undefined);
-        const engine = await Promise.race([
-          loading,
-          new Promise<never>((_, reject) => {
-            withdraw = () => reject(request.signal.reason);
-            request.signal.addEventListener("abort", withdraw, { once: true });
-          }),
-          new Promise<"loadTimedOut">((resolve) => {
-            loadTimer = setTimeout(resolve, LOAD_TIMEOUT_MS, "loadTimedOut");
-          }),
-        ]);
-        if (engine === "loadTimedOut") {
-          void stop();
-          options.onStatus({ state: "failed", message: LOAD_TIMED_OUT_MESSAGE });
-          return { ok: false, failure: { kind: "timedOut" } };
+        const engine = await withinLoadBound(loadedEngine(), request.signal);
+        if (!engine) {
+          options.log("transform: the model took too long to load");
+          if (resident(state)) void set({ phase: "installed", path: state.path });
+          return TIMED_OUT;
         }
         return await engine.transform(request);
       } finally {
-        clearTimeout(loadTimer);
-        if (withdraw) request.signal.removeEventListener("abort", withdraw);
         running -= 1;
         armIdle();
       }
     },
     warm: () => {
-      if (modelPath === undefined || disposed) return;
+      if (state.phase !== "installed" && !resident(state)) return;
       loadedEngine().catch(() => undefined);
       armIdle();
     },
     unload: async () => {
-      if (!worker || running > 0 || disposed) return;
-      await stop();
-      options.onStatus(restingStatus());
+      if (!resident(state) || running > 0) return;
+      await set({ phase: "installed", path: state.path });
     },
-    onDisk: () => modelPath !== undefined,
+    onDisk: () => state.phase === "installed" || resident(state),
     dispose: async () => {
-      disposed = true;
-      installing?.controller.abort(new Error("Voice is closing"));
-      await Promise.all([installing?.done, stop()]);
+      const previous = state;
+      if (previous.phase === "downloading")
+        previous.controller.abort(new Error("Voice is closing"));
+      await Promise.all([
+        previous.phase === "downloading" ? previous.done : undefined,
+        set({ phase: "disposed" }),
+      ]);
     },
   };
 }
