@@ -18,7 +18,13 @@ const isExternal = (id: string) =>
   id === "electron-updater";
 
 const electronEntry = (
-  name: "main" | "hub-preload" | "pill-preload" | "sentry" | "cleanup-engine-worker",
+  name:
+    | "main"
+    | "hub-preload"
+    | "pill-preload"
+    | "sentry"
+    | "cleanup-engine-worker"
+    | "transform-engine-worker",
   entry: string,
 ) => ({
   entry: { [name]: entry },
@@ -108,6 +114,7 @@ export default defineConfig({
     electronEntry("pill-preload", "src/preload/pill.ts"),
     electronEntry("sentry", "src/main/sentry.ts"),
     electronEntry("cleanup-engine-worker", "src/main/cleanup-engine-worker.ts"),
+    electronEntry("transform-engine-worker", "src/main/transform-engine-worker.ts"),
   ],
   test: {
     root: appDir,
