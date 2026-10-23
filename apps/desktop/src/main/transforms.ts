@@ -23,7 +23,7 @@ import {
 export type TransformsOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
-  model: Pick<TransformModel, "run">;
+  model: Pick<TransformModel, "run" | "warm">;
   copy: (text: string) => void;
   onLastTransform: (value: LastTransform | null) => void;
   log: Log;
@@ -154,6 +154,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
         if (idleTimer) clearTimeout(idleTimer);
         active = { id: effect.id, controller: new AbortController(), readStartedAt: now() };
         send({ type: "selection.read", id: effect.id });
+        model.warm();
         return;
       case "generate":
         generate(effect);

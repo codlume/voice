@@ -74,6 +74,7 @@ function harness(opts: Options = {}) {
     account: { kind: "signedOut" },
   });
   const commands: HelperCommand[] = [];
+  const runsStartedAtWarm: number[] = [];
   const logs: string[] = [];
   const copies: string[] = [];
   const lasts: (LastTransform | null)[] = [];
@@ -117,6 +118,9 @@ function harness(opts: Options = {}) {
       }
     },
     model: {
+      warm: () => {
+        runsStartedAtWarm.push(runs.length);
+      },
       run: (request) =>
         new Promise<TransformResult>((resolve, reject) => {
           request.signal.addEventListener("abort", () => reject(request.signal.reason), {
@@ -143,6 +147,7 @@ function harness(opts: Options = {}) {
     lasts,
     kinds,
     runs,
+    runsStartedAtWarm,
     of,
     press,
     event,
@@ -193,6 +198,17 @@ describe("createTransforms", () => {
         `^transform ${id.slice(0, 8)} outcome=inserted via=accessibility readMs=\\d+ generateMs=\\d+ insertMs=\\d+ words=8$`,
       ),
     );
+  });
+
+  test("a shortcut starts loading the model before the selection comes back", async () => {
+    const h = harness();
+    h.press();
+    expect(h.of("selection.read")).toHaveLength(1);
+    expect(h.runsStartedAtWarm).toEqual([0]);
+
+    await flush(10);
+    expect(h.runs).toHaveLength(1);
+    expect(h.runsStartedAtWarm).toEqual([0]);
   });
 
   test("the selection, the instruction and the result reach no log line", async () => {
