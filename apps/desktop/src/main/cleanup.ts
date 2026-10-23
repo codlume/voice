@@ -1,12 +1,10 @@
-import * as NodePath from "node:path";
-import { createInterface } from "node:readline";
-
 import type { CleanRequest, CleanResult, CleanupStyle } from "@voice/cleanup";
 import type { ModelSource } from "@voice/cleanup/download";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { createS1MiniProcess, type CleanupEngine, type ForkEngine } from "./cleanup-engine.ts";
+import { createS1MiniProcess, type CleanupEngine } from "./cleanup-engine.ts";
+import { forkUtility } from "./engine-process.ts";
 import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
@@ -44,21 +42,12 @@ export type CleanupOptions = {
 async function importModule(log: (message: string) => void): Promise<CleanupModule> {
   const [{ downloadModel, findModel, removeModel, S1_MINI }, { utilityProcess }] =
     await Promise.all([import("@voice/cleanup/download"), import("electron")]);
-  const fork: ForkEngine = (events) => {
-    const child = utilityProcess.fork(NodePath.join(__dirname, "cleanup-engine-worker.cjs"), [], {
-      serviceName: "Voice cleanup",
-      stdio: "pipe",
-      execArgv: [],
-    });
-    child.on("message", events.message).on("exit", (code) => {
-      log(`cleanup: exited (${code})`);
-      events.exit();
-    });
-    for (const output of [child.stdout, child.stderr]) {
-      if (output) createInterface({ input: output }).on("line", (line) => log(`cleanup: ${line}`));
-    }
-    return child;
-  };
+  const fork = forkUtility(utilityProcess, {
+    entry: "cleanup-engine-worker.cjs",
+    serviceName: "Voice cleanup",
+    tag: "cleanup",
+    log,
+  });
   return {
     downloadModel,
     findModel,

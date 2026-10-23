@@ -1,80 +1,198 @@
-// The parts of a model engine's utility process that do not depend on the model: id-matched
-// calls, process loss, the abort grace and a bounded dispose. Each engine adds its own messages.
+// A model engine in its own utility process, on both sides of the port: load, id-matched work,
+// process loss, the abort grace and a bounded dispose. Each engine adds only its work request,
+// its result and any fire-and-forget notices.
+import * as NodePath from "node:path";
+import { createInterface } from "node:readline";
+
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 export const ABORT_GRACE_MS = 2000;
 export const DISPOSE_GRACE_MS = 2000;
 
-export const FailedReplySchema = Schema.Struct({
-  type: Schema.Literal("failed"),
-  id: Schema.Int,
-  name: Schema.String,
-  message: Schema.String,
-});
-type FailedReply = typeof FailedReplySchema.Type;
-const isFailed = Schema.is(FailedReplySchema);
+const Id = Schema.Int;
+
+const LifecycleSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("load"), id: Id, modelPath: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("abort"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("dispose"), id: Id }),
+]);
+type Lifecycle = typeof LifecycleSchema.Type;
+const decodeLifecycle = Schema.decodeUnknownOption(LifecycleSchema);
+
+const ReplySchema = Schema.Union([
+  // Load and dispose reply without a result.
+  Schema.Struct({
+    type: Schema.Literal("done"),
+    id: Id,
+    result: Schema.optionalKey(Schema.Unknown),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("failed"),
+    id: Id,
+    name: Schema.String,
+    message: Schema.String,
+  }),
+]);
+type Reply = typeof ReplySchema.Type;
+const decodeReply = Schema.decodeUnknownOption(ReplySchema);
 
 // Electron's process.parentPort, which wraps each message as { data }.
-export type ParentPort<Reply> = {
+export type ParentPort = {
   on(event: "message", listener: (event: { data: unknown }) => void): unknown;
-  postMessage(message: Reply | FailedReply): void;
+  postMessage(message: Reply): void;
 };
 
-// Worker side: posts the reply work produces, or a failed reply with the error's name and message.
-export function responder<Reply>(port: ParentPort<Reply>) {
-  return (id: number, work: () => Promise<Reply>): void => {
+type Loadable = { load(): Promise<void>; dispose(): Promise<void> };
+
+// Worker side. Work is refused until a load has created the engine; aborting a request aborts the
+// signal its work got, and dispose aborts every one before it frees the engine.
+export function serveEngine<E extends Loadable, Work extends { id: number }, Result>(
+  port: ParentPort,
+  {
+    name,
+    create,
+    decodeWork,
+    work,
+    notify,
+  }: {
+    // Lowercase, as in "cleanup model".
+    name: string;
+    create: (options: { modelPath: string }) => E;
+    decodeWork: (data: unknown) => Option.Option<Work>;
+    work: (engine: E, request: Work, signal: AbortSignal) => Promise<Result>;
+    // Any other message: one that needs no reply.
+    notify?: (engine: E | undefined, data: unknown) => void;
+  },
+): void {
+  let engine: E | undefined;
+  const running = new Map<number, AbortController>();
+
+  function respond(id: number, task: () => Promise<unknown>) {
     void Promise.resolve()
-      .then(work)
-      .catch((error: unknown): FailedReply => {
-        const { name, message } =
-          error instanceof Error ? error : { name: "Error", message: String(error) };
-        return { type: "failed", id, name, message };
-      })
+      .then(task)
+      .then(
+        (result): Reply => ({ type: "done", id, result }),
+        (error: unknown): Reply => {
+          const failure =
+            error instanceof Error ? error : { name: "Error", message: String(error) };
+          return { type: "failed", id, name: failure.name, message: failure.message };
+        },
+      )
       .then((reply) => port.postMessage(reply));
-  };
+  }
+
+  function lifecycle(request: Lifecycle) {
+    switch (request.type) {
+      case "load":
+        respond(request.id, async () => {
+          engine ??= create({ modelPath: request.modelPath });
+          await engine.load();
+        });
+        return;
+      case "abort":
+        running.get(request.id)?.abort();
+        return;
+      case "dispose":
+        respond(request.id, async () => {
+          for (const controller of running.values()) controller.abort();
+          await engine?.dispose();
+        });
+        return;
+    }
+  }
+
+  function start(job: Work) {
+    const controller = new AbortController();
+    running.set(job.id, controller);
+    respond(job.id, async () => {
+      try {
+        if (!engine) throw new Error(`${name} is not loaded`);
+        return await work(engine, job, controller.signal);
+      } finally {
+        running.delete(job.id);
+      }
+    });
+  }
+
+  port.on("message", ({ data }) => {
+    const request = Option.getOrUndefined(decodeLifecycle(data));
+    const job = request ? undefined : Option.getOrUndefined(decodeWork(data));
+    if (request) lifecycle(request);
+    else if (job) start(job);
+    else notify?.(engine, data);
+  });
 }
 
 // The utility process seen from main. Electron delivers its messages unwrapped.
-export type ForkEngine<Request> = (events: { message(message: unknown): void; exit(): void }) => {
-  postMessage(message: Request): void;
+export type ForkEngine = (events: { message(message: unknown): void; exit(): void }) => {
+  postMessage(message: unknown): void;
   kill(): void;
 };
 
-export type EngineProcess<Request, Reply> = {
-  // Settles with the reply carrying the request's id; a failed reply rejects with its error.
-  // Aborting rejects at once with the reason and asks the child to stop. A child that has not
-  // answered within ABORT_GRACE_MS is killed and reported lost.
-  call(request: (id: number) => Request, signal?: AbortSignal): Promise<Reply>;
+export function forkUtility(
+  utilityProcess: typeof import("electron").utilityProcess,
+  {
+    entry,
+    serviceName,
+    tag,
+    log,
+  }: { entry: string; serviceName: string; tag: string; log: (message: string) => void },
+): ForkEngine {
+  return (events) => {
+    const child = utilityProcess.fork(NodePath.join(__dirname, entry), [], {
+      serviceName,
+      stdio: "pipe",
+      execArgv: [],
+    });
+    child.on("message", events.message).on("exit", (code) => {
+      log(`${tag}: exited (${code})`);
+      events.exit();
+    });
+    for (const output of [child.stdout, child.stderr]) {
+      if (output) createInterface({ input: output }).on("line", (line) => log(`${tag}: ${line}`));
+    }
+    return child;
+  };
+}
+
+export type EngineProcess<Work, Result, Notice> = {
+  load(): Promise<void>;
+  // Settles with the work's result; a failed reply rejects with the engine's error. Aborting
+  // rejects at once with the reason and asks the child to stop. A child that has not answered
+  // within ABORT_GRACE_MS is killed and reported lost.
+  run(request: (id: number) => Work, signal?: AbortSignal): Promise<Result>;
   // A message without a reply. Dropped once the process is lost or disposing.
-  post(request: Request): void;
+  post(notice: Notice): void;
   // Asks the child to free the engine, then kills it after DISPOSE_GRACE_MS at most.
   dispose(): Promise<void>;
 };
 
-type Call<Reply> = {
-  resolve(reply: Reply): void;
+type Call = {
+  // False for a result that does not decode; the reply is then ignored.
+  take(result: unknown): boolean;
   reject(error: unknown): void;
   grace?: NodeJS.Timeout;
 };
 
-export function createEngineProcess<Request, Reply extends { type: string; id: number }>({
+const anyResult = () => Option.some(undefined);
+
+export function createEngineProcess<Work, Result, Notice = never>({
   name,
+  modelPath,
   fork,
-  decodeReply,
-  abort,
-  dispose,
+  decodeResult,
   onLost,
 }: {
   // Lowercase, as in "cleanup model".
   name: string;
-  fork: ForkEngine<Request>;
-  decodeReply: (message: unknown) => Reply | undefined;
-  abort: (id: number) => Request;
-  dispose: (id: number) => Request;
+  modelPath: string;
+  fork: ForkEngine;
+  decodeResult: (result: unknown) => Option.Option<Result>;
   onLost: (message: string) => void;
-}): EngineProcess<Request, Reply> {
+}): EngineProcess<Work, Result, Notice> {
   const lostMessage = `The ${name} stopped unexpectedly.`;
-  const calls = new Map<number, Call<Reply>>();
+  const calls = new Map<number, Call>();
   let nextId = 0;
   let lost: Error | undefined;
   let disposal: Promise<void> | undefined;
@@ -95,9 +213,9 @@ export function createEngineProcess<Request, Reply extends { type: string; id: n
     port.kill();
   }
 
-  function post(request: Request) {
+  function post(message: Lifecycle | Work | Notice) {
     try {
-      port.postMessage(request);
+      port.postMessage(message);
     } catch {
       kill();
     }
@@ -105,58 +223,77 @@ export function createEngineProcess<Request, Reply extends { type: string; id: n
 
   const port = fork({
     message(message) {
-      const reply = decodeReply(message);
+      const reply = Option.getOrUndefined(decodeReply(message));
       const call = reply && calls.get(reply.id);
       if (!reply || !call) return;
+      if (reply.type === "failed") {
+        call.reject(Object.assign(new Error(reply.message), { name: reply.name }));
+      } else if (!call.take(reply.result)) {
+        return;
+      }
       calls.delete(reply.id);
       clearTimeout(call.grace);
-      if (isFailed(reply)) {
-        call.reject(Object.assign(new Error(reply.message), { name: reply.name }));
-      } else {
-        call.resolve(reply);
-      }
     },
     exit: stopped,
   });
 
-  function send(id: number, request: Request): Promise<Reply> {
+  function send<T>(
+    id: number,
+    message: Lifecycle | Work,
+    accept: (result: unknown) => Option.Option<T>,
+  ): Promise<T> {
     if (lost) return Promise.reject(lost);
     return new Promise((resolve, reject) => {
-      calls.set(id, { resolve, reject });
-      post(request);
+      const take = (result: unknown) => {
+        const value = accept(result);
+        if (Option.isSome(value)) resolve(value.value);
+        return Option.isSome(value);
+      };
+      calls.set(id, { take, reject });
+      post(message);
     });
   }
 
+  async function request<T>(
+    build: (id: number) => Lifecycle | Work,
+    accept: (result: unknown) => Option.Option<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    signal?.throwIfAborted();
+    if (disposal && !lost) throw new Error(`${name} is disposing`);
+    const id = nextId++;
+    const reply = send(id, build(id), accept);
+    const withdraw = () => {
+      const pending = calls.get(id);
+      if (!pending) return;
+      pending.grace = setTimeout(kill, ABORT_GRACE_MS);
+      pending.reject(signal?.reason);
+      post({ type: "abort", id });
+    };
+    signal?.addEventListener("abort", withdraw, { once: true });
+    if (signal?.aborted) withdraw();
+    try {
+      return await reply;
+    } finally {
+      signal?.removeEventListener("abort", withdraw);
+    }
+  }
+
   return {
-    call: async (build, signal) => {
-      signal?.throwIfAborted();
-      if (disposal && !lost) throw new Error(`${name} is disposing`);
-      const id = nextId++;
-      const reply = send(id, build(id));
-      const withdraw = () => {
-        const call = calls.get(id);
-        if (!call) return;
-        call.grace = setTimeout(kill, ABORT_GRACE_MS);
-        call.reject(signal?.reason);
-        post(abort(id));
-      };
-      signal?.addEventListener("abort", withdraw, { once: true });
-      if (signal?.aborted) withdraw();
-      try {
-        return await reply;
-      } finally {
-        signal?.removeEventListener("abort", withdraw);
-      }
-    },
-    post: (request) => {
-      if (!lost && !disposal) post(request);
+    load: () => request((id) => ({ type: "load", id, modelPath }), anyResult),
+    run: (build, signal) => request(build, decodeResult, signal),
+    post: (notice) => {
+      if (!lost && !disposal) post(notice);
     },
     dispose: () =>
       (disposal ??= Promise.resolve().then(async () => {
         let timer: NodeJS.Timeout | undefined;
         const grace = new Promise((resolve) => (timer = setTimeout(resolve, DISPOSE_GRACE_MS)));
         const id = nextId++;
-        await Promise.race([send(id, dispose(id)).catch(() => undefined), grace]);
+        await Promise.race([
+          send(id, { type: "dispose", id }, anyResult).catch(() => undefined),
+          grace,
+        ]);
         clearTimeout(timer);
         kill();
       })),

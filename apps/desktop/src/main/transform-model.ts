@@ -1,14 +1,12 @@
 // The transform model's lifecycle in main: install, find, load on use, idle unload, status.
 // Unlike the cleanup model it is not kept loaded: it holds about 3.45 GB of Metal memory, so it
 // loads on the first run or warm and its process is killed after 5 idle minutes.
-import * as NodePath from "node:path";
-import { createInterface } from "node:readline";
-
 import type { TransformEngine, TransformRequest, TransformResult } from "@voice/cleanup/transform";
 import type { ModelSource } from "@voice/cleanup/download";
 
 import type { ModelStatus } from "../shared/api.ts";
-import { createTransformProcess, type ForkTransformEngine } from "./transform-engine.ts";
+import { forkUtility } from "./engine-process.ts";
+import { createTransformProcess } from "./transform-engine.ts";
 
 export type { TransformFailure, TransformRequest, TransformResult } from "@voice/cleanup/transform";
 
@@ -63,22 +61,12 @@ async function importModule(log: (message: string) => void): Promise<TransformMo
       import("@voice/cleanup/transform"),
       import("electron"),
     ]);
-  const fork: ForkTransformEngine = (events) => {
-    const child = utilityProcess.fork(NodePath.join(__dirname, "transform-engine-worker.cjs"), [], {
-      serviceName: "Voice transforms",
-      stdio: "pipe",
-      execArgv: [],
-    });
-    child.on("message", events.message).on("exit", (code) => {
-      log(`transform: exited (${code})`);
-      events.exit();
-    });
-    for (const output of [child.stdout, child.stderr]) {
-      if (output)
-        createInterface({ input: output }).on("line", (line) => log(`transform: ${line}`));
-    }
-    return child;
-  };
+  const fork = forkUtility(utilityProcess, {
+    entry: "transform-engine-worker.cjs",
+    serviceName: "Voice transforms",
+    tag: "transform",
+    log,
+  });
   return {
     downloadModel,
     findModel,

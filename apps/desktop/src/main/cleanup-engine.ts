@@ -5,104 +5,49 @@ import * as Schema from "effect/Schema";
 
 import {
   createEngineProcess,
-  FailedReplySchema,
-  responder,
-  type ForkEngine as ForkEngineOf,
+  serveEngine,
+  type ForkEngine,
   type ParentPort,
 } from "./engine-process.ts";
 
-export { ABORT_GRACE_MS, DISPOSE_GRACE_MS } from "./engine-process.ts";
-
 export type CleanupEngine = Pick<S1Mini, "load" | "clean" | "keepGpuBusy" | "dispose">;
 
-const Id = Schema.Int;
-
-const RequestSchema = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("load"), id: Id, modelPath: Schema.String }),
-  Schema.Struct({
-    type: Schema.Literal("clean"),
-    id: Id,
-    raw: Schema.String,
-    style: Schema.Struct({
-      style: Schema.Literals(WRITING_STYLES),
-      layout: Schema.Literals(LAYOUTS),
-    }),
-    budgetMs: Schema.optionalKey(Schema.Finite),
+const CleanSchema = Schema.Struct({
+  type: Schema.Literal("clean"),
+  id: Schema.Int,
+  raw: Schema.String,
+  style: Schema.Struct({
+    style: Schema.Literals(WRITING_STYLES),
+    layout: Schema.Literals(LAYOUTS),
   }),
-  Schema.Struct({ type: Schema.Literal("abort"), id: Id }),
-  Schema.Struct({ type: Schema.Literal("keepGpuBusy"), ms: Schema.Finite }),
-  Schema.Struct({ type: Schema.Literal("dispose"), id: Id }),
-]);
+  budgetMs: Schema.optionalKey(Schema.Finite),
+});
+const KeepGpuBusySchema = Schema.Struct({ type: Schema.Literal("keepGpuBusy"), ms: Schema.Finite });
+const ResultSchema = Schema.Struct({
+  text: Schema.String,
+  chunks: Schema.Finite,
+  cleaned: Schema.Finite,
+});
 
-const ReplySchema = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("loaded"), id: Id }),
-  Schema.Struct({
-    type: Schema.Literal("cleaned"),
-    id: Id,
-    result: Schema.Struct({ text: Schema.String, chunks: Schema.Finite, cleaned: Schema.Finite }),
-  }),
-  FailedReplySchema,
-  Schema.Struct({ type: Schema.Literal("disposed"), id: Id }),
-]);
-
-type Request = typeof RequestSchema.Type;
-type Reply = typeof ReplySchema.Type;
-
-const decodeRequest = Schema.decodeUnknownOption(RequestSchema);
-const decodeReply = Schema.decodeUnknownOption(ReplySchema);
+const decodeClean = Schema.decodeUnknownOption(CleanSchema);
+const decodeKeepGpuBusy = Schema.decodeUnknownOption(KeepGpuBusySchema);
 
 export function serve(
-  port: ParentPort<Reply>,
+  port: ParentPort,
   createEngine: (options: { modelPath: string }) => CleanupEngine,
 ) {
-  let engine: CleanupEngine | undefined;
-  const cleans = new Map<number, AbortController>();
-  const respond = responder(port);
-
-  port.on("message", ({ data }) => {
-    const request = Option.getOrUndefined(decodeRequest(data));
-    if (!request) return;
-    switch (request.type) {
-      case "load":
-        respond(request.id, async () => {
-          engine ??= createEngine({ modelPath: request.modelPath });
-          await engine.load();
-          return { type: "loaded", id: request.id };
-        });
-        return;
-      case "clean": {
-        const { type: _type, id, raw, style, ...budget } = request;
-        const controller = new AbortController();
-        cleans.set(id, controller);
-        respond(id, async () => {
-          try {
-            if (!engine) throw new Error("cleanup model is not loaded");
-            const result = await engine.clean(raw, style, { ...budget, signal: controller.signal });
-            return { type: "cleaned", id, result };
-          } finally {
-            cleans.delete(id);
-          }
-        });
-        return;
-      }
-      case "abort":
-        cleans.get(request.id)?.abort();
-        return;
-      case "keepGpuBusy":
-        engine?.keepGpuBusy(request.ms);
-        return;
-      case "dispose":
-        respond(request.id, async () => {
-          for (const controller of cleans.values()) controller.abort();
-          await engine?.dispose();
-          return { type: "disposed", id: request.id };
-        });
-        return;
-    }
+  serveEngine(port, {
+    name: "cleanup model",
+    create: createEngine,
+    decodeWork: decodeClean,
+    work: (engine, { type: _type, id: _id, raw, style, ...budget }, signal) =>
+      engine.clean(raw, style, { ...budget, signal }),
+    notify: (engine, data) => {
+      const notice = Option.getOrUndefined(decodeKeepGpuBusy(data));
+      if (notice) engine?.keepGpuBusy(notice.ms);
+    },
   });
 }
-
-export type ForkEngine = ForkEngineOf<Request>;
 
 export function createS1MiniProcess({
   modelPath,
@@ -113,29 +58,23 @@ export function createS1MiniProcess({
   fork: ForkEngine;
   onLost: (message: string) => void;
 }): CleanupEngine {
-  const engine = createEngineProcess<Request, Reply>({
+  const engine = createEngineProcess<
+    typeof CleanSchema.Type,
+    typeof ResultSchema.Type,
+    typeof KeepGpuBusySchema.Type
+  >({
     name: "cleanup model",
+    modelPath,
     fork,
-    decodeReply: (message) => Option.getOrUndefined(decodeReply(message)),
-    abort: (id) => ({ type: "abort", id }),
-    dispose: (id) => ({ type: "dispose", id }),
+    decodeResult: Schema.decodeUnknownOption(ResultSchema),
     onLost,
   });
 
   return {
-    load: async () => {
-      const reply = await engine.call((id) => ({ type: "load", id, modelPath }));
-      if (reply.type !== "loaded") throw new Error(`cleanup engine replied ${reply.type}`);
-    },
+    load: engine.load,
     keepGpuBusy: (ms) => engine.post({ type: "keepGpuBusy", ms }),
-    clean: async (raw, style, { signal, ...budget } = {}) => {
-      const reply = await engine.call(
-        (id) => ({ type: "clean", id, raw, style, ...budget }),
-        signal,
-      );
-      if (reply.type !== "cleaned") throw new Error(`cleanup engine replied ${reply.type}`);
-      return reply.result;
-    },
+    clean: (raw, style, { signal, ...budget } = {}) =>
+      engine.run((id) => ({ type: "clean", id, raw, style, ...budget }), signal),
     dispose: engine.dispose,
   };
 }
