@@ -114,7 +114,10 @@ export function parseSettingsPatch(raw: unknown): SettingsPatch {
   return Option.getOrThrowWith(decodePatch(raw), () => new Error("Could not save these settings."));
 }
 
-export function applyPatch(settings: Settings, { cleanup, ...patch }: SettingsPatch): Settings {
+export function applyPatch(
+  settings: Settings,
+  { cleanup, transforms, ...patch }: SettingsPatch,
+): Settings {
   const next: Settings = {
     ...settings,
     ...patch,
@@ -123,9 +126,10 @@ export function applyPatch(settings: Settings, { cleanup, ...patch }: SettingsPa
       ...cleanup,
       styles: { ...settings.cleanup.styles, ...cleanup?.styles },
     },
+    transforms: { ...settings.transforms, ...transforms },
   };
   // Parsing again settles what one field cannot check alone, like a toggle key that is also the
-  // hold key.
+  // hold key, or an auto-apply choice whose transform the same patch deleted.
   return parseSettings(next);
 }
 

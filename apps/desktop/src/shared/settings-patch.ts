@@ -19,19 +19,22 @@ import { dictationLanguages } from "./dictation-language.ts";
 import { parseDictionary } from "./dictionary.ts";
 import { MicrophoneSchema } from "./microphone.ts";
 import { parseSnippets } from "./snippets.ts";
+import { isValidTransformList, parseTransforms, type TransformId } from "./transforms.ts";
 
 // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
-const everyItem = <T>(parse: (raw: unknown) => T[]) =>
+const everyItem = <T>(
+  parse: (raw: unknown) => T[],
+  isValid = (items: readonly unknown[]) => parse(items).length === items.length,
+) =>
   Schema.Array(Schema.Unknown).pipe(
     Schema.decodeTo(
       Schema.declare((u): u is readonly T[] => Array.isArray(u)),
       {
-        decode: SchemaGetter.transformEffect((items: readonly unknown[]) => {
-          const parsed = parse(items);
-          return parsed.length === items.length
-            ? Effect.succeed(parsed)
-            : Effect.fail(new SchemaIssue.InvalidValue());
-        }),
+        decode: SchemaGetter.transformEffect((items: readonly unknown[]) =>
+          isValid(items)
+            ? Effect.succeed(parse(items))
+            : Effect.fail(new SchemaIssue.InvalidValue()),
+        ),
         encode: SchemaGetter.passthroughSubtype(),
       },
     ),
@@ -76,8 +79,17 @@ export const SettingsPatchSchema = Schema.Struct({
   snippets: Schema.optionalKey(everyItem(parseSnippets)),
   dictionary: Schema.optionalKey(everyItem(parseDictionary)),
   zoomLevel: Schema.optionalKey(Schema.Finite),
-  // The Transforms page is not built yet, so no patch may touch this slice.
-  transforms: Schema.optionalKey(Schema.Never),
+  transforms: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      // A repaired shortcut would look saved and then not fire, so refuse any list that loading
+      // would change, not only one that loses items.
+      items: Schema.optionalKey(everyItem(parseTransforms, isValidTransformList)),
+      autoApply: Schema.optionalKey(
+        Schema.NullOr(Schema.declare((u): u is TransformId => typeof u === "string")),
+      ),
+    }),
+  ),
 } satisfies Record<keyof Settings, unknown>);
 
 export type SettingsPatch = typeof SettingsPatchSchema.Type;
