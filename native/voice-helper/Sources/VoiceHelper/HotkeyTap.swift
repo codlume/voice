@@ -16,16 +16,17 @@ final class HotkeyTap {
     private var toggleKey: HotkeyKey?
     private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
-    /// The key of the last shortcut that fired, for the selection reader to wait on its release.
-    private let firedKey: OSAllocatedUnfairLock<Int64?>
+    /// The key of the shortcut that fired, for the selection reader to wait on its release.
+    /// The reader clears it when the run ends.
+    private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
 
-    init(output: Output, firedKey: OSAllocatedUnfairLock<Int64?>, activity: @escaping () -> HelperActivity) {
+    init(output: Output, heldShortcutKey: OSAllocatedUnfairLock<Int64?>, activity: @escaping () -> HelperActivity) {
         self.output = output
-        self.firedKey = firedKey
+        self.heldShortcutKey = heldShortcutKey
         self.activity = activity
         hotkeys = Hotkeys(key: .fn, toggleKey: nil, initialFlags: currentFlags())
         let ready = DispatchSemaphore(value: 0)
@@ -143,7 +144,7 @@ final class HotkeyTap {
         case .hotkey(let action):
             output.emit(.hotkey(action: action))
         case .transform(let transformId):
-            firedKey.withLock { $0 = keyEvent.keycode }
+            heldShortcutKey.withLock { $0 = keyEvent.keycode }
             output.emit(.transform(transformId: transformId))
         case .nothing:
             break

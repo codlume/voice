@@ -12,18 +12,18 @@ final class SelectionReader {
     private let output: Output
     private let insertion: Insertion
     private let pasteboard: Pasteboard
-    private let firedKey: OSAllocatedUnfairLock<Int64?>
+    private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     /// Test mode only: timings the smoke script reports. Never the text.
     private let log: ((String) -> Void)?
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var run: (id: String, task: Task<Void, Never>)?
     private var shelf = SelectionShelf<InsertTarget>()
 
-    init(output: Output, insertion: Insertion, pasteboard: Pasteboard, firedKey: OSAllocatedUnfairLock<Int64?>, log: ((String) -> Void)?) {
+    init(output: Output, insertion: Insertion, pasteboard: Pasteboard, heldShortcutKey: OSAllocatedUnfairLock<Int64?>, log: ((String) -> Void)?) {
         self.output = output
         self.insertion = insertion
         self.pasteboard = pasteboard
-        self.firedKey = firedKey
+        self.heldShortcutKey = heldShortcutKey
         self.log = log
     }
 
@@ -49,6 +49,7 @@ final class SelectionReader {
         run.task.cancel()
         self.run = nil
         activeFlag.withLock { $0 = false }
+        heldShortcutKey.withLock { $0 = nil }
     }
 
     func take(id: String) -> InsertTarget? {
@@ -113,7 +114,7 @@ final class SelectionReader {
         let startedAt = DispatchTime.now()
         while true {
             let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
-            let keyDown = firedKey.withLock { $0 }.map { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode($0)) } ?? false
+            let keyDown = heldShortcutKey.withLock { $0 }.map { CGEventSource.keyState(.combinedSessionState, key: CGKeyCode($0)) } ?? false
             switch ReleaseWait.step(flags: flags, keyDown: keyDown, elapsed: elapsed(since: startedAt)) {
             case .proceed:
                 log?("selection keys released after \(Int(elapsed(since: startedAt) * 1000)) ms")

@@ -36,11 +36,11 @@ final class Helper {
         let insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1", pasteboard: pasteboard)
         self.insertion = insertion
         // Written by the tap when a shortcut fires, read by the reader waiting for its release.
-        let firedKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
-        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, firedKey: firedKey,
+        let heldShortcutKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
+        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, heldShortcutKey: heldShortcutKey,
                                         log: testMode ? { output.log(.info, $0) } : nil)
         self.selection = selection
-        let hotkeyTap = HotkeyTap(output: output, firedKey: firedKey) {
+        let hotkeyTap = HotkeyTap(output: output, heldShortcutKey: heldShortcutKey) {
             capture.isActive ? .capturing : selection.isActive ? .transforming : .idle
         }
         self.hotkeyTap = hotkeyTap
