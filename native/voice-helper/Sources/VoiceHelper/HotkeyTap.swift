@@ -13,6 +13,8 @@ final class HotkeyTap {
     private let thread: Thread
     private var key: HotkeyKey = .fn
     private var toggleKey: HotkeyKey?
+    // Stored for the matcher that lands with the transform helper; nothing reads them yet.
+    private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
     private var tap: CFMachPort?
     private var retry: Timer?
@@ -40,11 +42,12 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
-    func configure(key: HotkeyKey, toggleKey: HotkeyKey?) {
+    func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut]) {
         perform {
             self.emit(self.hotkeys.reconcile(flags: 0))
             self.key = key
             self.toggleKey = toggleKey
+            self.transforms = transforms
             self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
             self.syncBackstop()
         }

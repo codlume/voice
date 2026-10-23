@@ -1,6 +1,12 @@
 import type { CleanupStyle } from "@voice/cleanup/style";
 
-import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
+import type {
+  InsertFailure,
+  InsertMethod,
+  ModelStatus,
+  Outcome,
+  PillState,
+} from "../shared/api.ts";
 import type { BundleId, Category } from "../shared/app-categories.ts";
 import type { Transcript } from "../shared/history.ts";
 import {
@@ -46,9 +52,6 @@ export type Session =
       destination: Destination | null;
     }
   | { phase: "done"; id: string; outcome: Outcome };
-
-export type InsertMethod = "accessibility" | "paste" | "none";
-export type InsertFailure = "focusChanged" | "noFocusedField" | "secureInput" | "failed";
 
 export type SessionEvent =
   | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }

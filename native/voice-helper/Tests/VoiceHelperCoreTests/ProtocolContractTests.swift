@@ -94,8 +94,12 @@ private func line(_ wire: [String: ContractJSON]) throws -> String {
 private func commandCases() -> [String: HelperCommand] {
     let microphone = Microphone(uid: "usb", name: "Synthetic USB")
     return [
-        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil),
-        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand),
+        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: []),
+        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand, transforms: []),
+        "hotkey.configure.transforms": .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [
+            TransformShortcut(id: "polish", keycode: 18, modifiers: [.option]),
+            TransformShortcut(id: "c1", keycode: 40, modifiers: [.control, .option, .command]),
+        ]),
         "microphone.configure": .microphoneConfigure(microphone: microphone),
         "microphone.configure.default": .microphoneConfigure(microphone: nil),
         "capture.start": .captureStart(id: "s1", language: .en, muteWhileDictating: false, microphone: nil, detectHost: true),
@@ -107,6 +111,8 @@ private func commandCases() -> [String: HelperCommand] {
         "microphone.test.stop": .microphoneTestStop(id: "t1"),
         "insert": .insert(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", html: nil),
         "insert.html": .insert(id: "s1", text: "Hi Ada", html: "Hi <strong>Ada</strong>"),
+        "selection.read": .selectionRead(id: "r1"),
+        "transform.end": .transformEnd(id: "r1"),
         "permissions.check": .permissionsCheck,
         "permissions.request": .permissionsRequest(kind: .accessibility),
         "permissions.request.microphone": .permissionsRequest(kind: .microphone),
@@ -136,6 +142,11 @@ private func eventCases() -> [String: HelperEvent] {
         "hotkey.chord": .hotkey(action: .chord),
         "hotkey.cancel": .hotkey(action: .cancel),
         "hotkey.toggle": .hotkey(action: .toggle),
+        "transform": .transform(transformId: "polish"),
+        "selection.result.selected": .selectionResult(id: "r1", result: .selected(text: "Zażółć /tmp/synthetic\nAda 42", via: .copy)),
+        "selection.result.accessibility": .selectionResult(id: "r1", result: .selected(text: "Synthetic selection", via: .accessibility)),
+        "selection.result.failed": .selectionResult(id: "r1", result: .failed(.noSelection)),
+        "selection.result.keysHeld": .selectionResult(id: "r1", result: .failed(.keysHeld)),
         "capture.started": .captureStarted(id: "s1", startMs: 12.5),
         "capture.level": .captureLevel(id: "s1", level: 0.4),
         "capture.level.clamped": .captureLevel(id: "s1", level: 2),
@@ -155,6 +166,7 @@ private func eventCases() -> [String: HelperEvent] {
                                       target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil)),
         "transcript.failed": .transcriptFailed(id: "s1", reason: .asrUnavailable, message: "Synthetic ASR failure"),
         "insert.result": .insertResult(id: "s1", method: .none, reason: .focusChanged),
+        "insert.result.selectionChanged": .insertResult(id: "r1", method: .none, reason: .selectionChanged),
         "insert.result.paste": .insertResult(id: "s1", method: .paste, reason: nil),
         "insert.result.accessibility": .insertResult(id: "s1", method: .accessibility, reason: .failed),
         "permissions": .permissions(microphone: .granted, accessibility: .notDetermined),
@@ -180,6 +192,8 @@ private func commandType(_ command: HelperCommand) -> String {
     case .microphoneTestStart: "microphone.test.start"
     case .microphoneTestStop: "microphone.test.stop"
     case .insert: "insert"
+    case .selectionRead: "selection.read"
+    case .transformEnd: "transform.end"
     case .permissionsCheck: "permissions.check"
     case .permissionsRequest: "permissions.request"
     case .asrPrepare: "asr.prepare"
@@ -197,6 +211,8 @@ private func eventType(_ event: HelperEvent) -> String {
     case .microphonesUnavailable: "microphones.unavailable"
     case .ready: "ready"
     case .hotkey: "hotkey"
+    case .transform: "transform"
+    case .selectionResult: "selection.result"
     case .captureStarted: "capture.started"
     case .captureLevel: "capture.level"
     case .captureFailed: "capture.failed"

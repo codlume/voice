@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, test, vi } from "vite-plus/test";
 
 import { dictationLanguages } from "../shared/dictation-language.ts";
+import type { TransformId } from "../shared/transforms.ts";
 import { startHelper } from "./helper.ts";
 import {
   decodeTarget,
@@ -26,12 +27,17 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 12 },
+      { type: "ready", version: 13 },
       { type: "hotkey", action: "down" },
       { type: "hotkey", action: "up" },
       { type: "hotkey", action: "chord" },
       { type: "hotkey", action: "cancel" },
       { type: "hotkey", action: "toggle" },
+      { type: "transform", transformId: "polish" },
+      { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "accessibility" },
+      { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "copy" },
+      { type: "selection.result", id: "r", outcome: "failed", reason: "noSelection" },
+      { type: "selection.result", id: "r", outcome: "failed", reason: "keysHeld" },
       { type: "capture.started", id: "a", startMs: 42 },
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },
@@ -72,6 +78,7 @@ describe("parseHelperEvent", () => {
       { type: "transcript.failed", id: "a", message: "no model" },
       { type: "insert.result", id: "a", method: "accessibility", reason: null },
       { type: "insert.result", id: "a", method: "none", reason: "focusChanged" },
+      { type: "insert.result", id: "a", method: "none", reason: "selectionChanged" },
       { type: "permissions", microphone: "granted", accessibility: "denied" },
       { type: "asr.status", state: "ready", message: null },
       { type: "log", level: "info", message: "hello" },
@@ -399,11 +406,21 @@ const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
   detectHost: true,
 };
 const commandCases = {
-  "hotkey.configure": { type: "hotkey.configure", key: "fn", toggleKey: null },
+  "hotkey.configure": { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [] },
   "hotkey.configure.toggle": {
     type: "hotkey.configure",
     key: "rightOption",
     toggleKey: "rightCommand",
+    transforms: [],
+  },
+  "hotkey.configure.transforms": {
+    type: "hotkey.configure",
+    key: "rightOption",
+    toggleKey: null,
+    transforms: [
+      { id: "polish" as TransformId, keycode: 18, modifiers: ["option"] },
+      { id: "c1" as TransformId, keycode: 40, modifiers: ["control", "option", "command"] },
+    ],
   },
   "microphone.configure": { type: "microphone.configure", microphone },
   "microphone.configure.default": { type: "microphone.configure", microphone: null },
@@ -422,6 +439,8 @@ const commandCases = {
   "microphone.test.stop": { type: "microphone.test.stop", id: "t1" },
   insert: { type: "insert", id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", html: null },
   "insert.html": { type: "insert", id: "s1", text: "Hi Ada", html: "Hi <strong>Ada</strong>" },
+  "selection.read": { type: "selection.read", id: "r1" },
+  "transform.end": { type: "transform.end", id: "r1" },
   "permissions.check": { type: "permissions.check" },
   "permissions.request": { type: "permissions.request", kind: "accessibility" },
   "permissions.request.microphone": { type: "permissions.request", kind: "microphone" },
@@ -449,6 +468,8 @@ const eventTypes = {
   "microphones.unavailable": true,
   ready: true,
   hotkey: true,
+  transform: true,
+  "selection.result": true,
   "capture.started": true,
   "capture.level": true,
   "capture.failed": true,

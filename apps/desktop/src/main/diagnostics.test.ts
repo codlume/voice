@@ -12,6 +12,7 @@ import { sessionSpan, startDiagnostics, type Diagnostics } from "./diagnostics.t
 import { createDictation, type SessionReport } from "./dictation.ts";
 import type { HelperCrash } from "./helper-crash.ts";
 import { idle } from "./session.ts";
+import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 
 // The Sentry SDK's main module parses the Electron version at load.
@@ -165,9 +166,14 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       status: { kind: "disabled", reason: "Test" },
     },
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "granted", accessibility: "granted" },
     loginItem: "off",
-    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+    models: {
+      asr: { state: "ready" },
+      cleanup: { state: "ready" },
+      transform: { state: "missing" },
+    },
     settings: { ...DEFAULT_SETTINGS, diagnostics: initial },
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },

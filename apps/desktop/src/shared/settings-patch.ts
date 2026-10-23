@@ -76,6 +76,8 @@ export const SettingsPatchSchema = Schema.Struct({
   snippets: Schema.optionalKey(everyItem(parseSnippets)),
   dictionary: Schema.optionalKey(everyItem(parseDictionary)),
   zoomLevel: Schema.optionalKey(Schema.Finite),
+  // The Transforms page is not built yet, so no patch may touch this slice.
+  transforms: Schema.optionalKey(Schema.Never),
 } satisfies Record<keyof Settings, unknown>);
 
 export type SettingsPatch = typeof SettingsPatchSchema.Type;

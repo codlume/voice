@@ -101,6 +101,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
   ];
   for (const model of models) {
     if (model.id === "cleanup" && !wantsCleanup(settings)) continue;
+    if (model.id === "transform" && !settings.transforms.enabled) continue;
     rows.push({
       id: model.id,
       title: model.kind,

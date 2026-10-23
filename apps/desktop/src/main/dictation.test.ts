@@ -43,6 +43,7 @@ import {
   idle,
   type SessionEvent,
 } from "./session.ts";
+import { idleRun } from "./transform-run.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {
@@ -87,11 +88,13 @@ function harness(opts: Options = {}) {
       status: { kind: "disabled", reason: "Test" },
     },
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "granted", accessibility: "granted" },
     loginItem: "off",
     models: {
       asr: opts.asrModel ?? { state: "ready" },
       cleanup: { state: "ready" },
+      transform: { state: "missing" },
     },
     settings: {
       ...DEFAULT_SETTINGS,

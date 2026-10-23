@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 import { DEFAULT_SETTINGS, type Settings } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
+import { DEFAULT_TRANSFORMS } from "../shared/transforms.ts";
 import {
   applyPatch,
   loadSettings,
@@ -127,6 +128,7 @@ describe("parseSettings", () => {
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
+      transforms: DEFAULT_TRANSFORMS,
     });
   });
 
@@ -134,6 +136,13 @@ describe("parseSettings", () => {
     "treats a missing or invalid diagnostics choice %j as off",
     (diagnostics) => {
       expect(parseSettings({ diagnostics }).diagnostics).toBe("off");
+    },
+  );
+
+  test.each([undefined, { enabled: true, items: [], autoApply: "polish" }, "on"])(
+    "loads transforms %j as the switched-off defaults until the page exists",
+    (transforms) => {
+      expect(parseSettings({ transforms }).transforms).toEqual(DEFAULT_TRANSFORMS);
     },
   );
 
@@ -319,10 +328,20 @@ describe("applyPatch", () => {
       ],
       dictionary: [{ id: "d", phrase: "btw", replacement: "by the way" }],
       zoomLevel: 1.5,
+      transforms: DEFAULT_TRANSFORMS,
     };
+    // Transforms have no page yet, so no patch owns them.
     const { assignments: _, ...cleanup } = changed.cleanup;
-    const wire: unknown = JSON.parse(JSON.stringify({ ...changed, cleanup }));
+    const { transforms: __, ...patchable } = changed;
+    const wire: unknown = JSON.parse(JSON.stringify({ ...patchable, cleanup }));
     expect(applyPatch(DEFAULT_SETTINGS, parseSettingsPatch(wire))).toEqual(changed);
+  });
+
+  test("refuses any patch that names transforms", () => {
+    for (const transforms of [undefined, null, {}, { enabled: true }, DEFAULT_TRANSFORMS]) {
+      expect(() => parseSettingsPatch({ transforms })).toThrow("Could not save these settings.");
+    }
+    expect(applyPatch(DEFAULT_SETTINGS, { theme: "dark" }).transforms).toEqual(DEFAULT_TRANSFORMS);
   });
 
   test("mute preference survives unrelated patches and can be turned back off", () => {
@@ -369,6 +388,7 @@ describe("applyPatch", () => {
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
+      transforms: DEFAULT_TRANSFORMS,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({
       enabled: true,

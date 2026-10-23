@@ -21,6 +21,7 @@ import {
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
+import { parseTransformSettings } from "../shared/transforms.ts";
 import type { Category } from "../shared/app-categories.ts";
 import { DEFAULT_STYLES, parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import { SettingsPatchSchema } from "../shared/settings-patch.ts";
@@ -102,6 +103,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     snippets: parseSnippets(r.snippets),
     dictionary: parseDictionary(r.dictionary),
     zoomLevel: parseZoomLevel(r.zoomLevel),
+    transforms: parseTransformSettings(r.transforms),
   };
 }
 

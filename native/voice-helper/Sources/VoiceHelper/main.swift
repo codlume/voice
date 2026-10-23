@@ -52,8 +52,8 @@ final class Helper {
     @MainActor
     private func dispatch(_ command: HelperCommand, receivedAt: DispatchTime) {
         switch command {
-        case .hotkeyConfigure(let key, let toggleKey):
-            hotkeyTap.configure(key: key, toggleKey: toggleKey)
+        case .hotkeyConfigure(let key, let toggleKey, let transforms):
+            hotkeyTap.configure(key: key, toggleKey: toggleKey, transforms: transforms)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
@@ -77,6 +77,11 @@ final class Helper {
             capture.stopTest(id: id)
         case .insert(let id, let text, let html):
             insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id))
+        // The selection reader lands with the transform helper; until then every read fails.
+        case .selectionRead(let id):
+            output.emit(.selectionResult(id: id, result: .failed(.failed)))
+        case .transformEnd:
+            break
         case .permissionsCheck:
             permissions.check()
         case .permissionsRequest(let kind):

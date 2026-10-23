@@ -12,6 +12,7 @@ import { createCleanup, followSettings, type CleanupModule } from "./cleanup.ts"
 import { createDictation } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
+import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 
 const style: CleanupStyle = { style: "veryCasual", layout: "email" };
@@ -593,9 +594,14 @@ describe("followSettings", () => {
         status: { kind: "disabled", reason: "Test" },
       },
       session: idle,
+      transform: idleRun,
       permissions: { microphone: "granted", accessibility: "granted" },
       loginItem: "off",
-      models: { asr: { state: "ready" }, cleanup: { state: "missing" } },
+      models: {
+        asr: { state: "ready" },
+        cleanup: { state: "missing" },
+        transform: { state: "missing" },
+      },
       settings: { ...DEFAULT_SETTINGS, dictationLanguage: "en" },
       microphones: { kind: "loading" },
       microphoneTest: { kind: "off" },

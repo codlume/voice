@@ -1,7 +1,8 @@
 import type { Snapshot } from "../shared/api.ts";
 import { toPillState, type Session } from "./session.ts";
+import type { TransformRun } from "./transform-run.ts";
 
-export type AppState = Omit<Snapshot, "session"> & { session: Session };
+export type AppState = Omit<Snapshot, "session"> & { session: Session; transform: TransformRun };
 
 export type Store = {
   readonly state: AppState;
@@ -9,8 +10,19 @@ export type Store = {
   subscribe(listener: (state: AppState, previous: AppState) => void): () => void;
 };
 
+// Built field by field, never spread: the transform run must not reach a window.
 export function toSnapshot(state: AppState): Snapshot {
-  return { ...state, session: toPillState(state.session) };
+  return {
+    microphones: state.microphones,
+    microphoneTest: state.microphoneTest,
+    updates: state.updates,
+    session: toPillState(state.session),
+    permissions: state.permissions,
+    loginItem: state.loginItem,
+    models: state.models,
+    settings: state.settings,
+    account: state.account,
+  };
 }
 
 export function createStore(initial: AppState): Store {

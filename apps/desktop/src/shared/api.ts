@@ -7,6 +7,7 @@ import type { HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
+import { DEFAULT_TRANSFORMS, type LastTransform, type TransformSettings } from "./transforms.ts";
 import {
   DEFAULT_STYLES,
   type Assignment,
@@ -105,18 +106,45 @@ export type AccountDeletion =
   | { kind: "revocationFailed"; message: string }
   | { kind: "failed"; message: string };
 
+export type InsertMethod = "accessibility" | "paste" | "none";
+/** `selectionChanged`: the selection moved or the user typed between a transform's read and its write. */
+export type InsertFailure =
+  | "focusChanged"
+  | "noFocusedField"
+  | "secureInput"
+  | "selectionChanged"
+  | "failed";
+
 export type Outcome =
   | { kind: "inserted"; method: "accessibility" | "paste" }
-  | { kind: "notInserted"; reason: "focusChanged" | "noFocusedField" | "secureInput" | "failed" }
+  | { kind: "notInserted"; reason: InsertFailure }
   | { kind: "empty" }
   | { kind: "tooShort" }
+  | { kind: "failed"; message: string };
+
+export type SelectionFailure =
+  | "noSelection"
+  | "secureInput"
+  | "noFocusedField"
+  | "keysHeld"
+  | "failed";
+
+/** Never carries text. `failed.message` is one of a fixed set of sentences, never model output. */
+export type TransformOutcome =
+  | { kind: "inserted"; method: "accessibility" | "paste" }
+  | { kind: "notInserted"; reason: InsertFailure }
+  | { kind: "noSelection" | "secureInput" | "noFocusedField" | "keysHeld" | "cancelled" }
+  | { kind: "tooLong"; maxWords: number }
+  | { kind: "modelUnavailable"; state: "missing" | "downloading" | "failed"; progress?: number }
   | { kind: "failed"; message: string };
 
 export type PillState =
   | { kind: "idle" }
   | { kind: "listening" }
   | { kind: "processing"; overdue: boolean }
-  | { kind: "done"; outcome: Outcome };
+  | { kind: "done"; outcome: Outcome }
+  | { kind: "transforming"; loading: boolean }
+  | { kind: "transformDone"; outcome: TransformOutcome };
 
 export type ModelStatus =
   | { state: "missing" }
@@ -163,6 +191,7 @@ export type Settings = {
   dictionary: readonly DictionaryEntry[];
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
   zoomLevel: number;
+  transforms: TransformSettings;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -182,6 +211,7 @@ export const DEFAULT_SETTINGS: Settings = {
   snippets: [],
   dictionary: [],
   zoomLevel: 0,
+  transforms: DEFAULT_TRANSFORMS,
 };
 
 export type { SettingsPatch } from "./settings-patch.ts";
@@ -285,6 +315,11 @@ export type HubApi = WindowApi & {
   getAppIcons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
   /** Applies one assignment change to the saved settings. Rejects with a message for the user when the save failed. */
   editAssignments(edit: AssignmentEdit): Promise<void>;
+  getLastTransform(): Promise<LastTransform | null>;
+  /** Fires after every change, with the whole value; null once Transforms are turned off. */
+  onLastTransform(listener: (value: LastTransform | null) => void): () => void;
+  /** Copies in main, so the text never round-trips through the renderer. */
+  copyLastTransform(which: "before" | "after"): Promise<void>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -329,4 +364,7 @@ export const Channel = {
   getInstalledApps: "voice:getInstalledApps",
   getAppIcons: "voice:getAppIcons",
   editAssignments: "voice:editAssignments",
+  getLastTransform: "voice:getLastTransform",
+  lastTransform: "voice:lastTransform",
+  copyLastTransform: "voice:copyLastTransform",
 } as const;

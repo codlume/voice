@@ -153,7 +153,7 @@ test("preparation helpers cannot restore an inherited fixture path", async (t) =
   writeFileSync(
     binary,
     `#!/usr/bin/env node
-console.log(JSON.stringify({ type: "ready", version: 12 }));
+console.log(JSON.stringify({ type: "ready", version: 13 }));
 console.log(JSON.stringify({ type: "log", env: Object.fromEntries(${JSON.stringify(names)}.map(name => [name, process.env[name]])) }));
 process.stdin.resume();
 `,

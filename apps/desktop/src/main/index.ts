@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   app,
@@ -54,6 +55,7 @@ import type * as SentryEntry from "./sentry.ts";
 import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
+import { hotkeyConfigure } from "./hotkey-config.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
 import { createInsights } from "./insights.ts";
@@ -69,6 +71,7 @@ import { createSettingsQueue, editAssignments, type SettingsQueue } from "./sett
 import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
+import { idleRun } from "./transform-run.ts";
 import {
   createUpdates,
   parseReleaseConfig,
@@ -272,9 +275,14 @@ async function main() {
 
   const store = createStore({
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
     loginItem: "unavailable",
-    models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
+    models: {
+      asr: { state: "missing" },
+      cleanup: { state: "missing" },
+      transform: { state: "missing" },
+    },
     settings,
     updates: {
       version: app.getVersion(),
@@ -375,11 +383,7 @@ async function main() {
       }
     },
     configure: () => [
-      {
-        type: "hotkey.configure",
-        key: store.state.settings.hotkey,
-        toggleKey: store.state.settings.toggleHotkey,
-      },
+      hotkeyConfigure(store.state.settings, false),
       { type: "microphone.configure", microphone: store.state.settings.microphone },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
@@ -639,8 +643,8 @@ async function main() {
     },
     applied: (next, previous) => {
       store.update((s) => ({ ...s, settings: next }));
-      if (next.hotkey !== previous.hotkey || next.toggleHotkey !== previous.toggleHotkey)
-        helper.send({ type: "hotkey.configure", key: next.hotkey, toggleKey: next.toggleHotkey });
+      if (!isDeepStrictEqual(hotkeyConfigure(next, false), hotkeyConfigure(previous, false)))
+        helper.send(hotkeyConfigure(next, false));
       if (next.microphone?.uid !== previous.microphone?.uid)
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
@@ -674,6 +678,11 @@ async function main() {
     cleanup: {
       install: () => void cleanup.install(),
       uninstall: () => cleanup.uninstall(),
+    },
+    // The transform model arrives with its engine; until then the row only reports missing.
+    transform: {
+      install: () => {},
+      uninstall: async () => {},
     },
   };
 

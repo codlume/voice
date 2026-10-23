@@ -10,6 +10,13 @@ type Config = {
   script?: { at: number; action: Action }[];
   control?: string;
   version?: number;
+  // What selection.read answers. Default: failed with reason failed, like a helper without stubs.
+  selection?:
+    | { outcome: "selected"; text: string; via?: "accessibility" | "copy" }
+    | {
+        outcome: "failed";
+        reason: "noSelection" | "secureInput" | "noFocusedField" | "keysHeld" | "failed";
+      };
 };
 
 for (const flag of ["--models-dir", "--state-dir"]) {
@@ -114,6 +121,21 @@ function handle(command: Record<string, unknown>) {
     case "insert":
       setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);
       return;
+    case "selection.read": {
+      const selection = config.selection ?? { outcome: "failed", reason: "failed" };
+      setTimeout(
+        () =>
+          emit(
+            selection.outcome === "selected"
+              ? { type: "selection.result", id, ...selection, via: selection.via ?? "copy" }
+              : { type: "selection.result", id, ...selection },
+          ),
+        10,
+      );
+      return;
+    }
+    case "transform.end":
+      return;
     case "apps.list":
       emit({ type: "apps.listed", apps: installedApps });
       return;
@@ -129,7 +151,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 12 });
+const ready = () => emit({ type: "ready", version: config.version ?? 13 });
 
 if (config.control) {
   const path = config.control;

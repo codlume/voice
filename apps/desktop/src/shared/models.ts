@@ -22,6 +22,17 @@ export const models = [
     neededWhileDictating: false,
     cancelableDownload: true,
   },
+  {
+    id: "transform",
+    kind: "Transform model",
+    purpose: "Transforms",
+    name: "Gemma 4 E2B",
+    vendor: "Google",
+    size: "3.1 GB",
+    lostUntilReinstalled: "Transforms stop working",
+    neededWhileDictating: false,
+    cancelableDownload: true,
+  },
 ] as const;
 
 export type Model = (typeof models)[number];
