@@ -27,6 +27,7 @@ import {
 } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import { electronTarget, textEditTarget } from "../../../../scripts/targets.mjs";
+import { clickExpression, visible } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
 import {
@@ -174,25 +175,6 @@ function evidenceDir() {
 
 function otherVoiceProcesses(ownUserData) {
   return runningVoiceProcesses().filter((line) => !ownUserData || !line.includes(ownUserData));
-}
-
-const ACCESSIBLE_NAME = `(el) => {
-  const ids = el.getAttribute("aria-labelledby");
-  const text = el.getAttribute("aria-label")
-    ?? (ids && ids.split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" "))
-    ?? (el.labels?.[0]?.textContent)
-    ?? el.textContent;
-  return (text ?? "").replace(/\\s+/g, " ").trim();
-}`;
-const CANDIDATES =
-  'button, a, [role="switch"], [role="radio"], [role="option"], [role="combobox"], [role="menuitem"]';
-const visible = "(el) => el.getClientRects().length > 0";
-
-function findExpression(target) {
-  if (target.startsWith("css:")) {
-    return `[...document.querySelectorAll(${show(target.slice(4))})].filter(${visible})`;
-  }
-  return `[...document.querySelectorAll(${show(CANDIDATES)})].filter(${visible}).filter((el) => (${ACCESSIBLE_NAME})(el) === ${show(target)})`;
 }
 
 async function waitOn(page, expression, timeoutMs) {
@@ -917,17 +899,7 @@ const commands = {
     if (!target) fail("usage: click <accessible name | css:selector> [hub|pill]");
     const page = await connect(which);
     try {
-      const result = await waitOn(
-        page,
-        `(() => {
-          const matches = ${findExpression(target)};
-          if (matches.length !== 1) return matches.length > 1 ? { ambiguous: matches.map(${ACCESSIBLE_NAME}) } : false;
-          if (matches[0].disabled || matches[0].getAttribute("aria-disabled") === "true") return false;
-          matches[0].click();
-          return { clicked: (${ACCESSIBLE_NAME})(matches[0]) };
-        })()`,
-        5000,
-      );
+      const result = await waitOn(page, clickExpression(target), 5000);
       if (result.ambiguous)
         fail(
           `${show(target)} matches ${result.ambiguous.length} elements: ${show(result.ambiguous)}`,

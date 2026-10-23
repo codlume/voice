@@ -16,6 +16,9 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { runInNewContext } from "node:vm";
+
+import { clickExpression } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
 import {
@@ -273,6 +276,48 @@ test("key presses each modifier around the key and releases them in reverse", ()
   assert.equal(keyEvents("KeyK", ["control"])[1].key, "k");
   assert.throws(() => keyEvents("Digit1", ["alt"]), /unknown modifier alt/);
   assert.throws(() => keyEvents("Numpad1"), /unknown key code Numpad1/);
+});
+
+function runClick(target, elements) {
+  const calls = [];
+  const stub = ({ name, disabled = false }) => ({
+    textContent: name,
+    labels: null,
+    disabled,
+    getAttribute: () => null,
+    getClientRects: () => [{}],
+    focus: () => calls.push(`focus ${name}`),
+    click: () => calls.push(`click ${name}`),
+  });
+  const document = {
+    querySelectorAll: () => elements.map(stub),
+    getElementById: () => null,
+  };
+  const result = runInNewContext(clickExpression(target), { document });
+  return { result: JSON.parse(JSON.stringify(result)), calls };
+}
+
+test("click focuses the element before it clicks, so a picker records the keys that follow", () => {
+  assert.deepEqual(runClick("Shortcut", [{ name: "Shortcut" }, { name: "Save changes" }]), {
+    result: { clicked: "Shortcut" },
+    calls: ["focus Shortcut", "click Shortcut"],
+  });
+  assert.deepEqual(runClick("css:main button", [{ name: "Only" }]), {
+    result: { clicked: "Only" },
+    calls: ["focus Only", "click Only"],
+  });
+});
+
+test("click touches nothing when the match is missing, ambiguous, or disabled", () => {
+  assert.deepEqual(runClick("Shortcut", [{ name: "Other" }]), { result: false, calls: [] });
+  assert.deepEqual(runClick("css:button", [{ name: "A" }, { name: "B" }]), {
+    result: { ambiguous: ["A", "B"] },
+    calls: [],
+  });
+  assert.deepEqual(runClick("Shortcut", [{ name: "Shortcut", disabled: true }]), {
+    result: false,
+    calls: [],
+  });
 });
 
 test("transform flags default to Option+1 in the scratch textarea and reject typos", () => {
