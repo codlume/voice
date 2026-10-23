@@ -101,10 +101,12 @@ export function createTransforms(options: TransformsOptions): Transforms {
     };
     if (phase === "reading") arm(READ_TIMEOUT_MS);
     // While the model loads the run waits on the load, which has its own bound in the model, so
-    // the generation watchdog starts once the model is ready (see the subscription below).
+    // the generation watchdog starts once the model is ready (see the subscription below). The
+    // phase changes before the generate effect sets the budget, so that effect arms it again.
     else if (phase === "generating") {
-      if (store.state.models.transform.state === "ready" && active?.id === id) {
-        arm((active.budgetMs ?? 0) + GENERATE_GRACE_MS);
+      const budgetMs = active?.id === id ? active.budgetMs : undefined;
+      if (store.state.models.transform.state === "ready" && budgetMs !== undefined) {
+        arm(budgetMs + GENERATE_GRACE_MS);
       }
     } else arm(INSERT_TIMEOUT_MS);
   }
@@ -138,6 +140,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
     const startedAt = now();
     track(id, { words, budgetMs });
     if (active?.id === id) active.controller = controller;
+    armWatchdog(store.state.transform);
     model
       .run({
         instruction: transform.instruction,

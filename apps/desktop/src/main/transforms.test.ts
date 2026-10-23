@@ -445,6 +445,22 @@ describe("createTransforms", () => {
     expect(h.of("insert")).toEqual([]);
   });
 
+  test("with the model already loaded, the generation watchdog runs from the budget", async () => {
+    const h = harness({ model: { state: "ready" } });
+    const run = await startGenerating(h);
+    const budget = generateBudgetMs(8) + GENERATE_GRACE_MS;
+
+    await flush(budget - 1);
+    expect(h.store.state.transform.phase).toBe("generating");
+    await flush(1);
+
+    expect(h.store.state.transform).toMatchObject({
+      phase: "done",
+      outcome: { kind: "failed", message: TIMED_OUT_MESSAGE },
+    });
+    expect(run.request.signal.aborted).toBe(true);
+  });
+
   test("a write the helper never confirms times out as not inserted", async () => {
     const h = harness({ insertNeverAnswers: true });
     const run = await startGenerating(h);
