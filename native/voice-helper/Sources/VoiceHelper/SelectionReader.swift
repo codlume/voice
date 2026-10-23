@@ -21,15 +21,18 @@ final class SelectionReader {
     private let insertion: Insertion
     private let pasteboard: Pasteboard
     private let firedKey: OSAllocatedUnfairLock<Int64?>
+    /// Test mode only: timings the smoke script reports. Never the text.
+    private let log: ((String) -> Void)?
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var run: Run?
     private var shelf = SelectionShelf<Shelved>()
 
-    init(output: Output, insertion: Insertion, pasteboard: Pasteboard, firedKey: OSAllocatedUnfairLock<Int64?>) {
+    init(output: Output, insertion: Insertion, pasteboard: Pasteboard, firedKey: OSAllocatedUnfairLock<Int64?>, log: ((String) -> Void)?) {
         self.output = output
         self.insertion = insertion
         self.pasteboard = pasteboard
         self.firedKey = firedKey
+        self.log = log
     }
 
     /// Read on the tap thread: while true, Escape is consumed and reported as `cancel`.
@@ -86,7 +89,9 @@ final class SelectionReader {
             switch ReleaseWait.step(flags: flags, keyDown: keyDown, elapsed: elapsed(since: startedAt)) {
             case .wait: return false
             case .giveUp: finish(run, .failed(.keysHeld))
-            case .proceed: next()
+            case .proceed:
+                log?("selection keys released after \(Int(elapsed(since: startedAt) * 1000)) ms")
+                next()
             }
             return true
         }
@@ -135,12 +140,14 @@ final class SelectionReader {
             case .wait:
                 return false
             case .timedOut:
+                log?("selection copy unanswered after \(Int(elapsed(since: postedAt) * 1000)) ms")
                 finish(run, .failed(.noSelection))
                 DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
                     guard wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
                     pasteboard.restoreLate(saved, write: wait.startChangeCount + 1)
                 }
             case .changed:
+                log?("selection copy answered after \(Int(elapsed(since: postedAt) * 1000)) ms")
                 let write = pasteboard.changeCount
                 pasteboard.wrote(write, saved: saved)
                 let concealed = pasteboard.holdsConcealed

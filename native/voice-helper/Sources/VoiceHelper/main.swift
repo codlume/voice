@@ -37,7 +37,8 @@ final class Helper {
         self.insertion = insertion
         // Written by the tap when a shortcut fires, read by the reader waiting for its release.
         let firedKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
-        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, firedKey: firedKey)
+        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, firedKey: firedKey,
+                                        log: testMode ? { output.log(.info, $0) } : nil)
         self.selection = selection
         let hotkeyTap = HotkeyTap(output: output, firedKey: firedKey) {
             capture.isActive ? .capturing : selection.isActive ? .transforming : .idle
