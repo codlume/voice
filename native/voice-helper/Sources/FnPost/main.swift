@@ -9,6 +9,21 @@ let keys: [String: (keycode: CGKeyCode, flags: CGEventFlags)] = [
 let escapeKeycode: CGKeyCode = 53
 let aKeycode: CGKeyCode = 0
 
+/// Which physical modifier keys a combo is pressed with.
+enum Side: String, CaseIterable {
+    case left, right
+
+    static let flag = "--side="
+
+    /// `.left` when no flag was given; nil for a flag this tool does not know.
+    static func parse(_ argument: String?) -> Side? {
+        guard let argument else { return .left }
+        guard argument.hasPrefix(flag) else { return nil }
+        return Side(rawValue: String(argument.dropFirst(flag.count)))
+    }
+}
+let sideUsage = Side.flag + Side.allCases.map(\.rawValue).joined(separator: "|")
+
 /// Generic flag bit plus the keycode and device-side bit of each physical key.
 struct ModifierKey {
     let generic: UInt64
@@ -26,7 +41,7 @@ func usage() -> Never {
     FileHandle.standardError.write(
         Data("""
         usage: fnpost [fn|rightOption|rightCommand] [down|up|chord] | fnpost escape
-               fnpost combo <keycode> <modifier>[,<modifier>...] [--side=left|right]
+               fnpost combo <keycode> <modifier>[,<modifier>...] [\(sideUsage)]
 
         """.utf8))
     exit(64)
@@ -60,12 +75,11 @@ if name == "combo" {
     guard let keycode = rest.first.flatMap({ CGKeyCode($0) }), let names = rest.dropFirst().first?.split(separator: ",") else {
         usage()
     }
-    let side = rest.dropFirst(2).first ?? "--side=left"
-    guard side == "--side=left" || side == "--side=right" else { usage() }
+    guard let side = Side.parse(rest.dropFirst(2).first) else { usage() }
     var held: [(keycode: CGKeyCode, flags: UInt64)] = []
     for name in names {
         guard let modifier = modifiers[String(name)] else { usage() }
-        let physical = side == "--side=right" ? modifier.right : modifier.left
+        let physical = side == .right ? modifier.right : modifier.left
         let flags = (held.last?.flags ?? 0) | modifier.generic | physical.bit
         held.append((physical.keycode, flags))
     }
@@ -84,7 +98,7 @@ if name == "combo" {
     for index in held.indices.reversed() {
         flagsChanged(held[index].keycode, down: false, flags: index == 0 ? 0 : held[index - 1].flags)
     }
-    print("posted \(side.dropFirst(7)) \(names.joined(separator: "+")) with keycode \(keycode)")
+    print("posted \(side.rawValue) \(names.joined(separator: "+")) with keycode \(keycode)")
     exit(0)
 }
 
