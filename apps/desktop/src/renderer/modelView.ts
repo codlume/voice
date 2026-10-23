@@ -1,25 +1,38 @@
-import type { ModelStatus } from "../shared/api.ts";
-import type { Model } from "../shared/models.ts";
+import type { ModelStatus, PillState } from "../shared/api.ts";
+import type { BusyDuring, Model } from "../shared/models.ts";
 
 export type ModelAction = "Install" | "Retry" | "Uninstall" | "Cancel";
+
+export type Activity = BusyDuring | "idle";
 
 type ModelView = {
   text: string;
   actions: readonly { label: ModelAction; disabled: boolean }[];
 };
 
+export function activityOf(session: PillState): Activity {
+  switch (session.kind) {
+    case "listening":
+    case "processing":
+      return "dictation";
+    case "transforming":
+      return "transform";
+    case "idle":
+    case "done":
+    case "transformDone":
+      return "idle";
+  }
+}
+
 export function modelView(
   model: Model,
   status: ModelStatus,
-  { cleanupEnabled, dictating }: { cleanupEnabled: boolean; dictating: boolean },
+  { cleanupEnabled, activity }: { cleanupEnabled: boolean; activity: Activity },
 ): ModelView {
   const install = { label: "Install", disabled: false } as const;
   const retry = { label: "Retry", disabled: false } as const;
   const cancel = { label: "Cancel", disabled: false } as const;
-  const uninstall = {
-    label: "Uninstall",
-    disabled: model.busyDuring === "dictation" && dictating,
-  } as const;
+  const uninstall = { label: "Uninstall", disabled: model.busyDuring === activity } as const;
   switch (status.state) {
     case "missing":
       return { text: "Not installed", actions: [install] };

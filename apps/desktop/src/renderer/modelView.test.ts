@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import { models } from "../shared/models.ts";
-import { modelView } from "./modelView.ts";
+import { activityOf, modelView } from "./modelView.ts";
 
 const [asr, cleanup, transform] = models;
 
-const idle = { cleanupEnabled: true, dictating: false };
+const idle = { cleanupEnabled: true, activity: "idle" } as const;
 const install = { label: "Install", disabled: false };
 const retry = { label: "Retry", disabled: false };
 const uninstall = { label: "Uninstall", disabled: false };
@@ -77,7 +77,7 @@ describe("modelView", () => {
   });
 
   test("dictation locks only the speech model's Uninstall", () => {
-    const dictating = { ...idle, dictating: true };
+    const dictating = { ...idle, activity: "dictation" } as const;
     const locked = { label: "Uninstall", disabled: true };
     expect(modelView(asr, { state: "ready" }, dictating).actions).toEqual([locked]);
     expect(modelView(asr, { state: "failed", message: "offline" }, dictating).actions).toEqual([
@@ -85,6 +85,26 @@ describe("modelView", () => {
       locked,
     ]);
     expect(modelView(cleanup, { state: "ready" }, dictating).actions).toEqual([uninstall]);
+    expect(modelView(transform, { state: "ready" }, dictating).actions).toEqual([uninstall]);
     expect(modelView(asr, { state: "missing" }, dictating).actions).toEqual([install]);
+  });
+
+  test("a transform run locks only the transform model's Uninstall", () => {
+    const transforming = { ...idle, activity: "transform" } as const;
+    const locked = { label: "Uninstall", disabled: true };
+    expect(modelView(transform, { state: "ready" }, transforming).actions).toEqual([locked]);
+    expect(modelView(transform, { state: "installed" }, transforming).actions).toEqual([locked]);
+    expect(modelView(asr, { state: "ready" }, transforming).actions).toEqual([uninstall]);
+    expect(modelView(cleanup, { state: "ready" }, transforming).actions).toEqual([uninstall]);
+  });
+
+  test("the pill state names the activity that locks a model", () => {
+    expect(activityOf({ kind: "transforming", loading: true })).toBe("transform");
+    expect(activityOf({ kind: "listening" })).toBe("dictation");
+    expect(activityOf({ kind: "processing", overdue: false })).toBe("dictation");
+    expect(activityOf({ kind: "idle" })).toBe("idle");
+    expect(
+      activityOf({ kind: "transformDone", outcome: { kind: "inserted", method: "accessibility" } }),
+    ).toBe("idle");
   });
 });

@@ -13,6 +13,8 @@ export type KeyboardLayout = ReadonlyMap<string, string>;
 export type KeyPress = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
 
 export type Capture =
+  /** Tab or Shift+Tab, left to the browser so keyboard focus can leave the picker either way. */
+  | { kind: "pass" }
   | { kind: "cancel" }
   | { kind: "clear" }
   | { kind: "pending"; modifiers: readonly Modifier[] }
@@ -89,6 +91,9 @@ export function capture(
     layout: KeyboardLayout | null;
   },
 ): Capture {
+  if (press.code === "Tab" && !press.ctrlKey && !press.altKey && !press.metaKey) {
+    return { kind: "pass" };
+  }
   if (press.code === "Escape") return { kind: "cancel" };
   if (press.code === "Backspace" || press.code === "Delete") return { kind: "clear" };
   const modifiers = heldModifiers(press);

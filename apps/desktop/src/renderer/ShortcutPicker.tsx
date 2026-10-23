@@ -98,12 +98,11 @@ export function ShortcutPicker({
 
   function onKeyDown(event: KeyboardEvent) {
     if (recording === null) return;
-    const bare = !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
-    if (event.code === "Tab" && bare) return;
+    const result = capture(event, { others, layout });
+    if (result.kind === "pass") return;
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat) return;
-    const result = capture(event, { others, layout });
     switch (result.kind) {
       case "cancel":
         setRecording(null);

@@ -195,6 +195,8 @@ export function createTransforms(options: TransformsOptions): Transforms {
   }
 
   function setLast(value: Omit<LastTransform, "finishedAt"> | null) {
+    // A run that outlives the switch-off, or dictation's auto-apply, must not leave text behind.
+    if (value && !store.state.settings.transforms.enabled) return;
     last = value && { ...value, finishedAt: now() };
     options.onLastTransform(last);
   }
@@ -262,7 +264,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
 
 export function followTransformSettings(
   model: Pick<TransformModel, "onDisk" | "install" | "unload">,
-  transforms: Pick<Transforms, "clearLast">,
+  transforms: Pick<Transforms, "dispatch" | "clearLast">,
   state: AppState,
   previous: AppState,
 ) {
@@ -271,6 +273,7 @@ export function followTransformSettings(
   if (enabled) {
     if (!model.onDisk()) void model.install();
   } else {
+    transforms.dispatch({ type: "cancel" });
     transforms.clearLast();
     void model.unload();
   }

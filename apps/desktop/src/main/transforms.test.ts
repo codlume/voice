@@ -486,9 +486,19 @@ describe("createTransforms", () => {
 
     expect(h.store.state.transform).toEqual(idleRun);
   });
+
+  test("remember stores nothing while Transforms are off", () => {
+    const h = harness({ transforms: { enabled: false } });
+    h.transforms.remember({ name: "Polish", before: "raw words", after: "Raw words." });
+    expect(h.transforms.lastTransform()).toBeNull();
+    expect(h.lasts).toEqual([]);
+  });
 });
 
 describe("followTransformSettings", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   // Wired as index.ts wires it: every store change goes through it with the previous state.
   function followed(opts: Options & { onDisk?: boolean } = {}) {
     const h = harness(opts);
@@ -528,6 +538,23 @@ describe("followTransformSettings", () => {
     expect(h.transforms.lastTransform()).toBeNull();
     expect(h.lasts.at(-1)).toBeNull();
     expect(h.calls).toEqual(["unload"]);
+  });
+
+  test("turning Transforms off mid-generation cancels the run, so the model's answer is never kept", async () => {
+    const h = followed();
+    const run = await startGenerating(h);
+    h.setEnabled(false);
+    expect(h.store.state.transform).toMatchObject({
+      phase: "done",
+      outcome: { kind: "cancelled" },
+    });
+
+    run.resolve({ ok: true, text: RESULT });
+    await flush(10);
+
+    expect(h.transforms.lastTransform()).toBeNull();
+    expect(h.lasts.at(-1)).toBeNull();
+    expect(h.of("insert")).toEqual([]);
   });
 
   test("a settings change that keeps the flag moves nothing", () => {

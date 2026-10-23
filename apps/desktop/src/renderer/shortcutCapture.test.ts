@@ -98,6 +98,12 @@ describe("capture", () => {
     },
   );
 
+  test("Tab and Shift+Tab pass through so focus can leave the picker in either direction", () => {
+    expect(capture(press("Tab"), context)).toEqual({ kind: "pass" });
+    expect(capture(press("Tab", { shiftKey: true }), context)).toEqual({ kind: "pass" });
+    expect(capture(press("Tab", { ctrlKey: true }), context).kind).toBe("recorded");
+  });
+
   test("Command with Control or Option on a reserved key is a shortcut of its own", () => {
     expect(capture(press("KeyC", { ...command, altKey: true }), context).kind).toBe("recorded");
     expect(capture(press("KeyC", { ...command, ctrlKey: true }), context).kind).toBe("recorded");
