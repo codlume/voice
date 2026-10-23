@@ -7,12 +7,16 @@ import {
   type TransformId,
 } from "../shared/transforms.ts";
 import {
+  askToDelete,
   asksBeforeTurningOn,
   autoApplyChoice,
   autoApplyOptions,
+  cancelDelete,
+  confirmDelete,
   firstLine,
   modelLine,
   NO_AUTO_APPLY,
+  openEditor,
   restoreDescription,
   TRANSFORM_MODEL_SIZE,
 } from "./transformsView.ts";
@@ -87,5 +91,19 @@ describe("Restore defaults", () => {
       "Polish comes back without ⌥&, which Bullets uses.",
     );
     expect(restoreDescription([bullets], layout)).not.toContain("Prompt Engineer comes back");
+  });
+});
+
+describe("Delete from the editor", () => {
+  const editing = openEditor("edit", bullets, "editor-key");
+
+  test("Delete then Cancel keeps the editor open on the same draft", () => {
+    // The editor keeps its draft for as long as it stays mounted under the same key.
+    expect(cancelDelete(askToDelete(editing))).toEqual(editing);
+  });
+
+  test("confirming closes the editor for good, though the confirm closes after it", () => {
+    const deleted = cancelDelete(confirmDelete(askToDelete(editing)));
+    expect(deleted).toEqual({ ...editing, open: false, deletion: "confirmed" });
   });
 });

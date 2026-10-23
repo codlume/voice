@@ -54,30 +54,42 @@ export function modelLine(enabled: boolean, model: ModelStatus): ModelLine {
 }
 
 /**
- * Only one dialog is open at a time, and each one outlives `open` to keep its content through the
- * exit animation. `key` is new on every open, so an editor starts from the saved transform.
+ * The editor outlives `open` to keep its content through the exit animation, and `key` is new on
+ * every open, so it starts from the saved transform. The delete confirm stacks on the editor, so
+ * Cancel returns to the unsaved draft; "confirmed" closes an editor whose card is going away.
  */
-export type Modal =
-  | { kind: "add" | "edit"; transform: Transform; open: boolean; key: string }
-  | { kind: "delete"; transform: Transform; open: boolean }
-  | { kind: "restore" | "download"; open: boolean };
+export type EditorModal = {
+  kind: "add" | "edit";
+  transform: Transform;
+  open: boolean;
+  key: string;
+  deletion: "none" | "confirming" | "confirmed";
+};
 
-export const openEditor = (kind: "add" | "edit", transform: Transform, key: string): Modal => ({
-  kind,
-  transform,
-  open: true,
-  key,
-});
+/** Only one of these is open at a time. */
+export type Modal = EditorModal | { kind: "restore" | "download"; open: boolean };
+
+export const openEditor = (
+  kind: EditorModal["kind"],
+  transform: Transform,
+  key: string,
+): EditorModal => ({ kind, transform, open: true, key, deletion: "none" });
 
 /** The editor's Delete button. */
-export const askToDelete = ({ transform }: { transform: Transform }): Modal => ({
-  kind: "delete",
-  transform,
-  open: true,
+export const askToDelete = (editor: EditorModal): EditorModal => ({
+  ...editor,
+  deletion: "confirming",
 });
 
-/** The delete confirm's Cancel. */
-export const cancelDelete = (modal: Modal): Modal => ({ ...modal, open: false });
+/** The delete confirm closing. Its Delete button closes it too, after confirming. */
+export const cancelDelete = (editor: EditorModal): EditorModal =>
+  editor.deletion === "confirming" ? { ...editor, deletion: "none" } : editor;
+
+export const confirmDelete = (editor: EditorModal): EditorModal => ({
+  ...editor,
+  open: false,
+  deletion: "confirmed",
+});
 
 export const firstLine = (text: string) => text.trim().split("\n", 1)[0] ?? "";
 

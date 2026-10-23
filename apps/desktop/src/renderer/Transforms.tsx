@@ -28,12 +28,14 @@ import {
   autoApplyChoice,
   autoApplyOptions,
   cancelDelete,
+  confirmDelete,
   firstLine,
   modelLine,
   NO_AUTO_APPLY,
   openEditor,
   restoreDescription,
   TRANSFORM_MODEL_SIZE,
+  type EditorModal,
   type Modal,
 } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
@@ -161,8 +163,13 @@ export function Transforms({
     if (asksBeforeTurningOn(on, model)) setModal({ kind: "download", open: true });
     else void update({ enabled: on }, "Could not change Transforms. Try again.");
   };
-  const edit = (kind: "add" | "edit", transform: Transform) =>
+  const edit = (kind: EditorModal["kind"], transform: Transform) =>
     setModal(openEditor(kind, transform, crypto.randomUUID()));
+  // Updates from the current state: the confirm's Delete fires its click and its close together.
+  const changeEditor = (change: (editor: EditorModal) => EditorModal) =>
+    setModal((current) =>
+      current?.kind === "add" || current?.kind === "edit" ? change(current) : current,
+    );
 
   return (
     <div {...stylex.props(styles.page)}>
@@ -296,35 +303,41 @@ export function Transforms({
           )}
           renderFooter={() =>
             modal.kind === "edit" && (
-              <Button variant="text" onClick={() => setModal(askToDelete(modal))}>
-                Delete transform
-              </Button>
+              <>
+                <Button variant="text" onClick={() => changeEditor(askToDelete)}>
+                  Delete transform
+                </Button>
+                <ConfirmDialog
+                  open={modal.deletion === "confirming"}
+                  onOpenChange={(open) => {
+                    if (!open) changeEditor(cancelDelete);
+                  }}
+                  finalFocus={modal.deletion === "confirmed" ? createRef : undefined}
+                  title="Delete transform?"
+                  description={`‘${modal.transform.name}’ will be deleted permanently.`}
+                  actions={[
+                    {
+                      label: "Delete",
+                      variant: "destructive",
+                      onClick: () => {
+                        changeEditor(confirmDelete);
+                        void update(
+                          { items: items.filter(({ id }) => id !== modal.transform.id) },
+                          "Could not delete this transform. Try again.",
+                        );
+                      },
+                    },
+                  ]}
+                />
+              </>
             )
           }
+          // The deleted transform's card and its editor leave the page, so both dialogs send focus
+          // to Create instead of letting it fall to <body>.
+          finalFocus={modal.deletion === "confirmed" ? createRef : undefined}
           open={modal.open}
           onOpenChange={setOpen}
           onOpenChangeComplete={clearOnClose}
-        />
-      )}
-      {modal?.kind === "delete" && (
-        <ConfirmDialog
-          open={modal.open}
-          onOpenChange={() => setModal(cancelDelete(modal))}
-          onOpenChangeComplete={clearOnClose}
-          finalFocus={createRef}
-          title="Delete transform?"
-          description={`‘${modal.transform.name}’ will be deleted permanently.`}
-          actions={[
-            {
-              label: "Delete",
-              variant: "destructive",
-              onClick: () =>
-                void update(
-                  { items: items.filter(({ id }) => id !== modal.transform.id) },
-                  "Could not delete this transform. Try again.",
-                ),
-            },
-          ]}
         />
       )}
       {modal?.kind === "restore" && (
