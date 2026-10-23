@@ -25,13 +25,9 @@ import {
 } from "../shared/style.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import {
-  CLEANUP_BASE_MS,
+  AUTO_APPLY_BUDGET,
+  CLEANUP_BUDGET,
   CLEANUP_GRACE_MS,
-  CLEANUP_MAX_MS,
-  CLEANUP_PER_WORD_MS,
-  AUTO_APPLY_BASE_MS,
-  AUTO_APPLY_MAX_MS,
-  AUTO_APPLY_PER_WORD_MS,
   INSERT_TIMEOUT_MS,
   START_TIMEOUT_MS,
   TRANSCRIBE_OVERDUE_MIN_MS,
@@ -1317,9 +1313,9 @@ describe("createDictation", () => {
   });
 
   test("cleanup budget grows with the input and is capped", () => {
-    expect(cleanupBudgetMs("")).toBe(CLEANUP_BASE_MS);
-    expect(cleanupBudgetMs("a b c")).toBe(CLEANUP_BASE_MS + 3 * CLEANUP_PER_WORD_MS);
-    expect(cleanupBudgetMs("w ".repeat(1000))).toBe(CLEANUP_MAX_MS);
+    expect(cleanupBudgetMs("")).toBe(CLEANUP_BUDGET.base);
+    expect(cleanupBudgetMs("a b c")).toBe(CLEANUP_BUDGET.base + 3 * CLEANUP_BUDGET.perWord);
+    expect(cleanupBudgetMs("w ".repeat(1000))).toBe(CLEANUP_BUDGET.max);
   });
 
   test("the next session is cleaned even when the earlier aborted cleanup has not settled yet", async () => {
@@ -1855,8 +1851,8 @@ describe("auto-apply after dictation", () => {
   });
 
   test("the auto-apply budget grows with the input and is capped", () => {
-    expect(autoApplyBudgetMs("")).toBe(AUTO_APPLY_BASE_MS);
-    expect(autoApplyBudgetMs("a b c")).toBe(AUTO_APPLY_BASE_MS + 3 * AUTO_APPLY_PER_WORD_MS);
-    expect(autoApplyBudgetMs("w ".repeat(1000))).toBe(AUTO_APPLY_MAX_MS);
+    expect(autoApplyBudgetMs("")).toBe(AUTO_APPLY_BUDGET.base);
+    expect(autoApplyBudgetMs("a b c")).toBe(AUTO_APPLY_BUDGET.base + 3 * AUTO_APPLY_BUDGET.perWord);
+    expect(autoApplyBudgetMs("w ".repeat(1000))).toBe(AUTO_APPLY_BUDGET.max);
   });
 });

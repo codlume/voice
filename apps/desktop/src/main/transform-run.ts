@@ -16,6 +16,7 @@ import {
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
 } from "./session.ts";
+import { budget, type Budget } from "./timing.ts";
 
 export type SelectionVia = "accessibility" | "copy";
 
@@ -69,11 +70,10 @@ export type Step = { state: TransformRun; effects: TransformEffect[] };
 // 1 s release wait plus 0.5 s copy deadline plus margin.
 export const READ_TIMEOUT_MS = 4000;
 export const GENERATE_GRACE_MS = 2000;
-export const MAX_GENERATE_BUDGET_MS = 60_000;
 
 /** On-demand engine budget for a selection of `words` words. */
-export const generateBudgetMs = (words: number) =>
-  Math.min(MAX_GENERATE_BUDGET_MS, 15_000 + 40 * words);
+export const GENERATE_BUDGET: Budget = { base: 15_000, perWord: 40, max: 60_000 };
+export const generateBudgetMs = (words: number) => budget(GENERATE_BUDGET, words);
 
 export const SELECTION_FAILED_MESSAGE = "Could not read the selection";
 export const TIMED_OUT_MESSAGE = "The transform took too long. Text unchanged";

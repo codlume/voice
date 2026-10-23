@@ -25,6 +25,7 @@ import {
   type SessionEvent,
 } from "./session.ts";
 import type { Store } from "./store.ts";
+import { budget, type Budget } from "./timing.ts";
 import type { TransformModel } from "./transform-model.ts";
 import type { Transforms } from "./transforms.ts";
 
@@ -46,24 +47,13 @@ export type DictationOptions = {
   now?: () => number;
 };
 
-export const CLEANUP_BASE_MS = 2000;
-export const CLEANUP_PER_WORD_MS = 20;
-export const CLEANUP_MAX_MS = 8000;
+export const CLEANUP_BUDGET: Budget = { base: 2000, perWord: 20, max: 8000 };
 export const CLEANUP_GRACE_MS = 1000;
-
-export function cleanupBudgetMs(raw: string): number {
-  const words = raw.split(/\s+/).filter(Boolean).length;
-  return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
-}
+export const cleanupBudgetMs = (raw: string) => budget(CLEANUP_BUDGET, countWords(raw));
 
 // #311: the measured auto-apply times plus about 30% headroom.
-export const AUTO_APPLY_BASE_MS = 2000;
-export const AUTO_APPLY_PER_WORD_MS = 30;
-export const AUTO_APPLY_MAX_MS = 20_000;
-
-export function autoApplyBudgetMs(raw: string): number {
-  return Math.min(AUTO_APPLY_MAX_MS, AUTO_APPLY_BASE_MS + AUTO_APPLY_PER_WORD_MS * countWords(raw));
-}
+export const AUTO_APPLY_BUDGET: Budget = { base: 2000, perWord: 30, max: 20_000 };
+export const autoApplyBudgetMs = (raw: string) => budget(AUTO_APPLY_BUDGET, countWords(raw));
 
 type CleanupFailure = { message: string; entry: DiagnosticLog };
 
