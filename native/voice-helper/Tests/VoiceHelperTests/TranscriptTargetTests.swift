@@ -25,7 +25,7 @@ private final class SilentCapture {
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
             devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: fileSamples / 4,
             source: .fixture(file.path))
-        insertion = Insertion(output: output, forcePaste: false)
+        insertion = Insertion(output: output, forcePaste: false, pasteboard: Pasteboard(output: output))
     }
 
     func start(_ target: InsertTarget) {

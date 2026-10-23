@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import VoiceHelperCore
+import os
 
 final class Helper {
     private let output: Output
@@ -9,7 +10,9 @@ final class Helper {
     private let transcriber: Transcriber
     private let capture: Capture
     private let devices: AudioInputDevices
+    private let pasteboard: Pasteboard
     private let insertion: Insertion
+    private let selection: SelectionReader
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
     private let installedApps: InstalledApps
@@ -28,8 +31,17 @@ final class Helper {
                               source: .resolve(environment: environment))
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         self.capture = capture
-        insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
-        let hotkeyTap = HotkeyTap(output: output) { capture.isActive ? .capturing : .idle }
+        let pasteboard = Pasteboard(output: output)
+        self.pasteboard = pasteboard
+        let insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1", pasteboard: pasteboard)
+        self.insertion = insertion
+        // Written by the tap when a shortcut fires, read by the reader waiting for its release.
+        let firedKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
+        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, firedKey: firedKey)
+        self.selection = selection
+        let hotkeyTap = HotkeyTap(output: output, firedKey: firedKey) {
+            capture.isActive ? .capturing : selection.isActive ? .transforming : .idle
+        }
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
         installedApps = InstalledApps(output: output)
@@ -76,12 +88,17 @@ final class Helper {
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
         case .insert(let id, let text, let html):
-            insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id))
-        // The selection reader lands with the transform helper; until then every read fails.
+            // Run ids never collide: a dictation id names a capture, a transform id names a read.
+            if let target = capture.takeLastTarget(id: id) {
+                insertion.insert(id: id, text: text, html: html, target: target)
+            } else {
+                let shelved = selection.take(id: id)
+                insertion.insert(id: id, text: text, html: html, target: shelved?.target, origin: shelved?.origin)
+            }
         case .selectionRead(let id):
-            output.emit(.selectionResult(id: id, result: .failed(.failed)))
-        case .transformEnd:
-            break
+            selection.read(id: id)
+        case .transformEnd(let id):
+            selection.end(id: id)
         case .permissionsCheck:
             permissions.check()
         case .permissionsRequest(let kind):
@@ -107,7 +124,7 @@ final class Helper {
     func shutdown() {
         devices.shutdown()
         capture.shutdown()
-        insertion.shutdown()
+        pasteboard.flush()
     }
 }
 

@@ -36,12 +36,12 @@ final class InsertTarget {
 final class Insertion {
     private let output: Output
     private let forcePaste: Bool
-    private typealias PasteboardItem = [(NSPasteboard.PasteboardType, Data)]
-    private var clipboard = ClipboardRestore<SavedClipboard<PasteboardItem>>()
+    private let pasteboard: Pasteboard
 
-    init(output: Output, forcePaste: Bool) {
+    init(output: Output, forcePaste: Bool, pasteboard: Pasteboard) {
         self.output = output
         self.forcePaste = forcePaste
+        self.pasteboard = pasteboard
     }
 
     func recordTarget(pid: pid_t?, bundleId: String?, host: HostRead, log: ((String) -> Void)?) -> InsertTarget {
@@ -76,9 +76,11 @@ final class Insertion {
         return target
     }
 
-    func insert(id: String, text: String, html: String?, target: InsertTarget?) {
+    /// `origin` is set for a transform run: the selection read earlier must still be the one
+    /// under the caret, or the result would land somewhere the user did not mean.
+    func insert(id: String, text: String, html: String?, target: InsertTarget?, origin: SelectionOrigin? = nil) {
         let focused: AXUIElement?
-        switch check(id: id, target: target) {
+        switch check(id: id, target: target, origin: origin) {
         case .refused(let reason):
             output.emit(.insertResult(id: id, method: .none, reason: reason))
             return
@@ -121,9 +123,9 @@ final class Insertion {
         case refused(InsertFailure)
     }
 
-    private func check(id: String, target destination: InsertTarget?) -> TargetCheck {
+    private func check(id: String, target destination: InsertTarget?, origin: SelectionOrigin?) -> TargetCheck {
         guard let destination else {
-            output.log(.error, "insert \(id) refused: no finished capture with that id")
+            output.log(.error, "insert \(id) refused: no finished capture or read with that id")
             return .refused(.failed)
         }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.pid else {
@@ -137,6 +139,10 @@ final class Insertion {
         }
         switch destination.focus.validate(readTargetFocus(pid: pid)) {
         case .unchanged:
+            if let origin, selectionMoved(origin, element: captured.element?.value) {
+                output.log(.info, "insert refused: selection changed since the read")
+                return .refused(.selectionChanged)
+            }
             return .ready(focused: captured.element?.value)
         case .changed:
             output.log(.info, "insert refused: target focus changed")
@@ -144,6 +150,12 @@ final class Insertion {
         case .unverifiable:
             return .refused(.failed)
         }
+    }
+
+    private func selectionMoved(_ origin: SelectionOrigin, element: AXUIElement?) -> Bool {
+        let current: AXSelectionAnswer?
+        if case .accessibility = origin { current = readAXSelection(element) } else { current = nil }
+        return writeVerdict(origin: origin, currentAX: current, currentStamp: focusInputStamp()) == .refuseSelectionChanged
     }
 
     private enum AccessibilityOutcome {
@@ -182,42 +194,17 @@ final class Insertion {
 
     private func textState(of element: AXUIElement) -> AXTextState {
         var value: CFTypeRef?
-        var range: CFTypeRef?
         let text = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
             ? value as? String : nil
         var selection: AXTextRange?
-        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
-            let range, CFGetTypeID(range) == AXValueGetTypeID()
-        {
-            var cfRange = CFRange()
-            if AXValueGetValue(range as! AXValue, .cfRange, &cfRange) {
-                selection = AXTextRange(location: cfRange.location, length: cfRange.length)
-            }
+        if case .value(let range) = focusAttribute(element, kAXSelectedTextRangeAttribute) {
+            selection = axTextRange(range)
         }
         return AXTextState(value: text, selection: selection)
     }
 
     private func paste(id: String, text: String, html: String?) {
-        let pasteboard = NSPasteboard.general
-        let saved = clipboard.contentsToSave(changeCount: pasteboard.changeCount) {
-            let items = pasteboard.pasteboardItems ?? []
-            return SavedClipboard(types: items.flatMap { $0.types.map(\.rawValue) }) {
-                items.map { item in
-                    item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
-                }
-            }
-        }
-        // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
-        pasteboard.prepareForNewContents(with: .currentHostOnly)
-        let item = NSPasteboardItem()
-        // Without the charset, readers decode the HTML as Latin-1 and garble non-ASCII text.
-        if let html { item.setString("<meta charset=\"utf-8\">" + html, forType: .html) }
-        item.setString(text, forType: .string)
-        item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))
-        pasteboard.writeObjects([item])
-        let ourChange = pasteboard.changeCount
-        clipboard.wrote(ourChange, saved: saved)
+        let write = pasteboard.write(text: text, html: html, saved: pasteboard.save())
 
         let source = CGEventSource(stateID: .combinedSessionState)
         let key = currentLayoutData().flatMap { PasteKey.keycode(typing: "v", in: $0) } ?? PasteKey.ansiV
@@ -234,35 +221,9 @@ final class Insertion {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
             output.emit(.insertResult(id: id, method: .paste, reason: nil))
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
-            guard let saved = clipboard.restore(write: ourChange, changeCount: pasteboard.changeCount) else {
-                output.log(.info, "clipboard changed during paste; not restoring previous contents")
-                return
-            }
-            restore(saved, to: pasteboard)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
+            pasteboard.restore(write: write)
         }
-    }
-
-    /// Runs a restore still waiting on its timer, so an exit inside the window does not leave
-    /// the transcript on the user's clipboard.
-    func shutdown() {
-        let pasteboard = NSPasteboard.general
-        guard let saved = clipboard.flush(changeCount: pasteboard.changeCount) else { return }
-        restore(saved, to: pasteboard)
-    }
-
-    private func restore(_ saved: SavedClipboard<PasteboardItem>, to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
-        guard case .items(let saved) = saved else {
-            output.log(.info, "clipboard held concealed contents; cleared instead of restoring")
-            return
-        }
-        let items = saved.map { entries in
-            let restored = NSPasteboardItem()
-            for (type, data) in entries { restored.setData(data, forType: type) }
-            return restored
-        }
-        if !items.isEmpty { pasteboard.writeObjects(items) }
     }
 }
 
@@ -271,7 +232,7 @@ let axMessagingTimeout: Float = 0.3
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
 /// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
 /// would refuse insertions whose focus never changed.
-private func focusInputStamp() -> [UInt32] {
+func focusInputStamp() -> [UInt32] {
     [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
         CGEventSource.counterForEventType(.combinedSessionState, eventType: $0)
     }
@@ -289,6 +250,33 @@ private func focusAttribute(_ element: AXUIElement, _ name: String) -> FocusAttr
     case .noValue, .attributeUnsupported: return .absent
     default: return .noAnswer
     }
+}
+
+private func axTextRange(_ value: CFTypeRef) -> AXTextRange? {
+    guard CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+    var range = CFRange()
+    guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+    return AXTextRange(location: range.location, length: range.length)
+}
+
+/// The focused element's selection as the selection reader and the write guard see it. An
+/// explicit zero-length range answers before the text is asked for, so apps that report "" for
+/// an unselected field never reach the copy fallback.
+func readAXSelection(_ element: AXUIElement?) -> AXSelectionAnswer {
+    guard let element else { return .noAnswer }
+    AXUIElementSetMessagingTimeout(element, axMessagingTimeout)
+    if case .value(let subrole) = focusAttribute(element, kAXSubroleAttribute), subrole as? String == kAXSecureTextFieldSubrole {
+        return .secureField
+    }
+    var range: AXTextRange?
+    if case .value(let value) = focusAttribute(element, kAXSelectedTextRangeAttribute), let found = axTextRange(value) {
+        if found.length == 0 { return .emptyRange }
+        range = found
+    }
+    guard case .value(let value) = focusAttribute(element, kAXSelectedTextAttribute), let text = value as? String else {
+        return .noAnswer
+    }
+    return .text(text, range: range)
 }
 
 private func readTargetFocus(pid: pid_t) -> FocusReread<FocusElement> {
@@ -322,7 +310,7 @@ private func readTargetFocus(pid: pid_t) -> FocusReread<FocusElement> {
     return .focused(TargetFocus(element: element, window: FocusElement(value: window), title: title))
 }
 
-private func currentLayoutData() -> Data? {
+func currentLayoutData() -> Data? {
     guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
         let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
     else { return nil }

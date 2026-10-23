@@ -17,14 +17,15 @@ final class HotkeyTap {
     private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
     /// The key of the last shortcut that fired, for the selection reader to wait on its release.
-    private let firedKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
+    private let firedKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
 
-    init(output: Output, activity: @escaping () -> HelperActivity) {
+    init(output: Output, firedKey: OSAllocatedUnfairLock<Int64?>, activity: @escaping () -> HelperActivity) {
         self.output = output
+        self.firedKey = firedKey
         self.activity = activity
         hotkeys = Hotkeys(key: .fn, toggleKey: nil, initialFlags: currentFlags())
         let ready = DispatchSemaphore(value: 0)
@@ -42,12 +43,6 @@ final class HotkeyTap {
         thread.start()
         ready.wait()
         runLoop = loop!
-    }
-
-    /// Whether the key that fired the last transform shortcut is still physically down.
-    var firedKeyIsDown: Bool {
-        guard let keycode = firedKey.withLock({ $0 }) else { return false }
-        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keycode))
     }
 
     /// The holds are rebuilt only when a dictation key changed, which ends a held dictation.
