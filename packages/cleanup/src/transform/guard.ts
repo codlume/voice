@@ -1,8 +1,9 @@
 // Judges a finished generation before anything replaces the user's text.
+import { wordSurvival } from "../plausibility.ts";
 
 export type Verdict =
   | { ok: true; text: string }
-  | { ok: false; reason: "truncated" | "empty" | "endsEarly" };
+  | { ok: false; reason: "truncated" | "empty" | "endsEarly" | "lostOpening" };
 
 // Gemma stops early on long list-like text, and the shortened result reads as finished. Its last
 // sentence then matches an input sentence well before the end. A sentence shares at least this
@@ -12,16 +13,24 @@ const LOCATE_SHARE = 0.5;
 // The words that may follow the located sentence: 4 of 4 real early stops had more, 0 of 11
 // legitimate results did (measured, #312).
 const allowedGap = (inputWords: number) => Math.max(40, 0.1 * inputWords);
+// A dictated command the model carried out (a translation, a grammar fix, a commit message) keeps
+// almost none of the dictation's opening words. On 118 recorded Polish dictations this rejected
+// 6 of 12 carried-out commands, all three translations among them, and 0 of 106 legitimate
+// results; the lowest legitimate result kept 3 of its first 8 content words (measured, #312).
+const MIN_DICTATION_HEAD = 0.25;
 
 export function guard(
   input: string,
   output: string,
-  { truncated }: { truncated: boolean },
+  { truncated, dictation }: { truncated: boolean; dictation: boolean },
 ): Verdict {
   if (truncated) return { ok: false, reason: "truncated" };
   const text = unwrap(output.trim());
   if (!text) return { ok: false, reason: "empty" };
   if (endsEarly(input, text)) return { ok: false, reason: "endsEarly" };
+  if (dictation && wordSurvival(input, text).head < MIN_DICTATION_HEAD) {
+    return { ok: false, reason: "lostOpening" };
+  }
   return { ok: true, text };
 }
 

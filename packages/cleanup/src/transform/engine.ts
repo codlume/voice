@@ -98,6 +98,7 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
     withdraw.throwIfAborted();
     const verdict = guard(request.text, output.responseText, {
       truncated: output.stopReason === "maxTokens",
+      dictation: request.dictation,
     });
     return verdict.ok
       ? { ok: true, text: verdict.text }

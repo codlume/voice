@@ -9,7 +9,7 @@ const recorded: { name: string; input: string; output: string; accepted: boolean
   readFileSync(new URL("../../fixtures/transform-guard.json", import.meta.url), "utf8"),
 );
 
-const finished = { truncated: false };
+const finished = { truncated: false, dictation: false };
 
 describe("recorded outputs", () => {
   test.each(recorded)("$name: accepted $accepted", ({ input, output, accepted }) => {
@@ -61,7 +61,10 @@ test("a translation ending on a name from the first sentence is accepted, since 
 });
 
 test("a result cut off by the token cap is rejected, however complete it looks", () => {
-  expect(guard(input, rewrite, { truncated: true })).toEqual({ ok: false, reason: "truncated" });
+  expect(guard(input, rewrite, { truncated: true, dictation: false })).toEqual({
+    ok: false,
+    reason: "truncated",
+  });
 });
 
 test("a result that ends at the first of many sentences is rejected, and one that ends at the last is not", () => {
@@ -88,4 +91,45 @@ test("a result that ends at the first of many sentences is rejected, and one tha
   });
   const bookended = `${long} The pricing team finished its pricing review.`;
   expect(guard(bookended, "The pricing team finished its pricing review.", finished).ok).toBe(true);
+});
+
+// Inputs are the cleanup calibration dictations; outputs are Gemma 4 E2B's Polish in dictation
+// mode. `carriedOut` is a hand label: the output acted on a dictated command instead of keeping it.
+const dictations: { name: string; input: string; output: string; carriedOut: boolean }[] =
+  JSON.parse(
+    readFileSync(new URL("../../fixtures/transform-dictations.json", import.meta.url), "utf8"),
+  );
+const rejectedCommands = new Set([
+  "instruction-translate-spanish",
+  "instruction-translate-german",
+  "instruction-translate-french",
+  "instruction-grammar",
+  "instruction-commit",
+  "instruction-shorter",
+]);
+const afterDictation = { truncated: false, dictation: true };
+
+describe("after dictation", () => {
+  test.each(dictations.filter((d) => !d.carriedOut))(
+    "$name: a legitimate Polish is accepted",
+    (dictated) => {
+      expect(guard(dictated.input, dictated.output, afterDictation).ok).toBe(true);
+    },
+  );
+
+  test.each(dictations.filter((d) => rejectedCommands.has(d.name)))(
+    "$name: a carried-out command is rejected",
+    (dictated) => {
+      expect(guard(dictated.input, dictated.output, afterDictation)).toEqual({
+        ok: false,
+        reason: "lostOpening",
+      });
+    },
+  );
+
+  test("a translation outside dictation is accepted", () => {
+    const german = dictations.find((d) => d.name === "instruction-translate-german");
+
+    expect(german && guard(german.input, german.output, finished).ok).toBe(true);
+  });
 });
