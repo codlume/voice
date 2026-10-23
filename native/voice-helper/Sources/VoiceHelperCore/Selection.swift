@@ -43,14 +43,14 @@ public func planRead(secureInput: Bool, answer: AXSelectionAnswer) -> ReadPlan {
 
 public enum WriteVerdict: Equatable, Sendable { case proceed, refuseSelectionChanged }
 
-/// `currentAX` is the element's answer now, nil when no re-read was made. An element that no
-/// longer answers refuses: unverifiable is not unchanged.
-public func writeVerdict(origin: SelectionOrigin, currentAX: AXSelectionAnswer?, currentStamp: [UInt32]) -> WriteVerdict {
+/// Pulls the one re-read the origin can be checked against. An element that no longer answers
+/// refuses: unverifiable is not unchanged.
+public func writeVerdict(origin: SelectionOrigin, readAX: () -> AXSelectionAnswer, readStamp: () -> [UInt32]) -> WriteVerdict {
     switch origin {
     case .accessibility(let text, let range):
-        return currentAX == .text(text, range: range) ? .proceed : .refuseSelectionChanged
+        return readAX() == .text(text, range: range) ? .proceed : .refuseSelectionChanged
     case .copy(let stamp):
-        return stamp == currentStamp ? .proceed : .refuseSelectionChanged
+        return readStamp() == stamp ? .proceed : .refuseSelectionChanged
     }
 }
 

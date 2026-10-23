@@ -33,23 +33,25 @@ private let fnBit: UInt64 = 0x80_0000
     #expect(planRead(secureInput: false, answer: .secureField) == .fail(.secureInput))
 }
 
+private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [UInt32]) -> WriteVerdict {
+    writeVerdict(origin: origin, readAX: { ax }, readStamp: { stamp })
+}
+
 @Test func accessibilityOriginProceedsOnlyWhenTextAndRangeStillMatch() {
     let origin = SelectionOrigin.accessibility(text: synthetic, range: range)
-    #expect(writeVerdict(origin: origin, currentAX: .text(synthetic, range: range), currentStamp: []) == .proceed)
-    #expect(writeVerdict(origin: origin, currentAX: .text(synthetic, range: AXTextRange(location: 5, length: 9)), currentStamp: [])
-        == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: .text("Synthetic", range: range), currentStamp: []) == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: .emptyRange, currentStamp: []) == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: .noAnswer, currentStamp: []) == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: nil, currentStamp: []) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .text(synthetic, range: range), stamp: []) == .proceed)
+    #expect(verdict(origin, ax: .text(synthetic, range: AXTextRange(location: 5, length: 9)), stamp: []) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .text("Synthetic", range: range), stamp: []) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .emptyRange, stamp: []) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .noAnswer, stamp: []) == .refuseSelectionChanged)
 }
 
 @Test func copyOriginProceedsOnlyWhileNoPressHappenedSinceTheRead() {
     let origin = SelectionOrigin.copy(inputStamp: [10, 2, 0, 0])
-    #expect(writeVerdict(origin: origin, currentAX: nil, currentStamp: [10, 2, 0, 0]) == .proceed)
-    #expect(writeVerdict(origin: origin, currentAX: nil, currentStamp: [11, 2, 0, 0]) == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: nil, currentStamp: [10, 3, 0, 0]) == .refuseSelectionChanged)
-    #expect(writeVerdict(origin: origin, currentAX: .text(synthetic, range: range), currentStamp: [10, 2, 0, 0]) == .proceed)
+    #expect(verdict(origin, ax: .noAnswer, stamp: [10, 2, 0, 0]) == .proceed)
+    #expect(verdict(origin, ax: .noAnswer, stamp: [11, 2, 0, 0]) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .noAnswer, stamp: [10, 3, 0, 0]) == .refuseSelectionChanged)
+    #expect(verdict(origin, ax: .text(synthetic, range: range), stamp: [10, 2, 0, 0]) == .proceed)
 }
 
 @Test func releaseWaitsForTheKeyAndEveryModifier() {

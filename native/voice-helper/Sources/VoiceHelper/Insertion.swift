@@ -154,9 +154,7 @@ final class Insertion {
     }
 
     private func selectionMoved(_ origin: SelectionOrigin, element: AXUIElement?) -> Bool {
-        let current: AXSelectionAnswer?
-        if case .accessibility = origin { current = readAXSelection(element) } else { current = nil }
-        return writeVerdict(origin: origin, currentAX: current, currentStamp: focusInputStamp()) == .refuseSelectionChanged
+        writeVerdict(origin: origin, readAX: { readAXSelection(element) }, readStamp: focusInputStamp) == .refuseSelectionChanged
     }
 
     private enum AccessibilityOutcome {
