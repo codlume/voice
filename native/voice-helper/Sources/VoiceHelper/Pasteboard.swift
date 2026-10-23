@@ -1,6 +1,16 @@
 import AppKit
 import VoiceHelperCore
 
+/// What the focused app put on the clipboard in answer to a synthetic Cmd+C.
+enum CopyOutcome {
+    /// The clipboard's string, empty when the app wrote something that is not text.
+    case text(String)
+    /// The write carried the concealed marker: a password field.
+    case concealed
+    /// No write before the deadline.
+    case nothing
+}
+
 /// The one keeper of the user's clipboard across every write the helper causes: a paste
 /// insertion's own item and the copy an app makes in answer to a selection read's Cmd+C. One
 /// `ClipboardRestore` for both is what lets a read inside a paste's restore window carry the
@@ -15,14 +25,6 @@ final class Pasteboard {
 
     init(output: Output) {
         self.output = output
-    }
-
-    var changeCount: Int { pasteboard.changeCount }
-
-    var string: String? { pasteboard.string(forType: .string) }
-
-    var holdsConcealed: Bool {
-        (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(concealedPasteboardType))
     }
 
     func save() -> Saved {
@@ -52,31 +54,55 @@ final class Pasteboard {
         return write
     }
 
-    /// Registers the write an app made in answer to a synthetic Cmd+C.
-    func wrote(_ write: Int, saved: Saved) {
-        tracker.wrote(write, saved: saved)
-    }
-
+    /// After a paste, puts the user's contents back once the target has read the transient item.
     func restore(write: Int) {
-        guard let saved = tracker.restore(write: write, changeCount: pasteboard.changeCount) else {
-            output.log(.info, "clipboard changed during paste; not restoring previous contents")
-            return
-        }
-        put(saved)
+        restore(write: write, changed: "clipboard changed during paste; not restoring previous contents")
     }
 
-    /// For a copy that answered after its deadline. A paste that wrote meanwhile owns the
-    /// clipboard until its own restore, so nothing is put back over it.
-    func restoreLate(_ saved: Saved, write: Int) {
-        guard !tracker.hasPending else { return }
-        tracker.wrote(write, saved: saved)
-        restore(write: write)
+    /// Borrows the clipboard for a synthetic Cmd+C and hands it back: the user's contents are
+    /// saved, the app's answer is read and restored over at once, and an answer after the
+    /// deadline is restored too, unless the user copied something meanwhile or a paste wrote in
+    /// between (its own restore owns the clipboard then). Never cancelled: a posted keystroke
+    /// must get its restore. `completion` runs on main.
+    func copyFromFocusedApp(_ completion: @escaping (CopyOutcome) -> Void) {
+        let saved = save()
+        let wait = CopyWait(startChangeCount: pasteboard.changeCount)
+        postCommand(typing: "c", fallback: PasteKey.ansiC)
+        let postedAt = DispatchTime.now()
+        poll { [self] in
+            switch wait.step(changeCount: pasteboard.changeCount, elapsed: elapsed(since: postedAt)) {
+            case .wait:
+                return false
+            case .timedOut:
+                completion(.nothing)
+                DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
+                    guard !tracker.hasPending, wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
+                    put(saved)
+                }
+            case .changed:
+                let write = pasteboard.changeCount
+                tracker.wrote(write, saved: saved)
+                let concealed = (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(concealedPasteboardType))
+                let text = pasteboard.string(forType: .string) ?? ""
+                restore(write: write, changed: "clipboard changed during copy; not restoring previous contents")
+                completion(concealed ? .concealed : .text(text))
+            }
+            return true
+        }
     }
 
     /// Runs a restore still waiting on its timer, so an exit inside the window does not leave
     /// the transcript on the user's clipboard.
     func flush() {
         guard let saved = tracker.flush(changeCount: pasteboard.changeCount) else { return }
+        put(saved)
+    }
+
+    private func restore(write: Int, changed log: String) {
+        guard let saved = tracker.restore(write: write, changeCount: pasteboard.changeCount) else {
+            output.log(.info, log)
+            return
+        }
         put(saved)
     }
 
@@ -92,5 +118,11 @@ final class Pasteboard {
             return restored
         }
         if !items.isEmpty { pasteboard.writeObjects(items) }
+    }
+
+    /// Runs `step` now and then every 10 ms until it returns true.
+    private func poll(_ step: @escaping () -> Bool) {
+        if step() { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [self] in poll(step) }
     }
 }

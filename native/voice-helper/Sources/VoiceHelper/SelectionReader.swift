@@ -130,49 +130,26 @@ final class SelectionReader {
     }
 
     private func copy(_ run: Run, target: InsertTarget) {
-        let saved = pasteboard.save()
-        let wait = CopyWait(startChangeCount: pasteboard.changeCount)
-        postCommandC()
         let postedAt = DispatchTime.now()
-        poll { [self] in
-            switch wait.step(changeCount: pasteboard.changeCount, elapsed: elapsed(since: postedAt)) {
-            case .wait:
-                return false
-            case .timedOut:
-                log?("selection copy unanswered after \(Int(elapsed(since: postedAt) * 1000)) ms")
+        pasteboard.copyFromFocusedApp { [self] outcome in
+            let ms = Int(elapsed(since: postedAt) * 1000)
+            switch outcome {
+            case .nothing:
+                log?("selection copy unanswered after \(ms) ms")
                 finish(run, .failed(.noSelection))
-                DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
-                    guard wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
-                    pasteboard.restoreLate(saved, write: wait.startChangeCount + 1)
+            case .concealed:
+                log?("selection copy answered after \(ms) ms")
+                finish(run, .failed(.secureInput))
+            case .text(let text):
+                log?("selection copy answered after \(ms) ms")
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return finish(run, .failed(.noSelection))
                 }
-            case .changed:
-                log?("selection copy answered after \(Int(elapsed(since: postedAt) * 1000)) ms")
-                let write = pasteboard.changeCount
-                pasteboard.wrote(write, saved: saved)
-                let concealed = pasteboard.holdsConcealed
-                let text = pasteboard.string ?? ""
-                pasteboard.restore(write: write)
-                if concealed {
-                    finish(run, .failed(.secureInput))
-                } else if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    finish(run, .failed(.noSelection))
-                } else if !run.cancelled {
-                    target.origin = .copy(inputStamp: focusInputStamp())
-                    shelf.put(id: run.id, target)
-                    finish(run, .selected(text: text, via: .copy))
-                }
+                guard !run.cancelled else { return }
+                target.origin = .copy(inputStamp: focusInputStamp())
+                shelf.put(id: run.id, target)
+                finish(run, .selected(text: text, via: .copy))
             }
-            return true
-        }
-    }
-
-    private func postCommandC() {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let key = currentLayoutData().flatMap { PasteKey.keycode(typing: "c", in: $0) } ?? PasteKey.ansiC
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
-            event.flags = .maskCommand
-            event.post(tap: .cghidEventTap)
         }
     }
 
@@ -185,7 +162,3 @@ final class SelectionReader {
 
 /// recordTarget makes two AX reads with `axMessagingTimeout` each; past this the app is hung.
 private let focusDeadline: TimeInterval = 2
-
-private func elapsed(since start: DispatchTime) -> TimeInterval {
-    TimeInterval(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e9
-}

@@ -206,14 +206,7 @@ final class Insertion {
 
     private func paste(id: String, text: String, html: String?) {
         let write = pasteboard.write(text: text, html: html, saved: pasteboard.save())
-
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let key = currentLayoutData().flatMap { PasteKey.keycode(typing: "v", in: $0) } ?? PasteKey.ansiV
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
-            event.flags = .maskCommand
-            event.post(tap: .cghidEventTap)
-        }
+        postCommand(typing: "v", fallback: PasteKey.ansiV)
 
         // The target handles Cmd+V asynchronously. The result gives it a moment to land but
         // does not wait for the restore, which only protects the user's clipboard. A slow
@@ -316,4 +309,20 @@ func currentLayoutData() -> Data? {
         let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
     else { return nil }
     return Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
+}
+
+/// Presses and releases the key that types `character` under Command in the current layout,
+/// with Command as the only flag: a modifier the user still holds must not ride along.
+func postCommand(typing character: Character, fallback: CGKeyCode) {
+    let source = CGEventSource(stateID: .combinedSessionState)
+    let key = currentLayoutData().flatMap { PasteKey.keycode(typing: character, in: $0) } ?? fallback
+    for down in [true, false] {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { continue }
+        event.flags = .maskCommand
+        event.post(tap: .cghidEventTap)
+    }
+}
+
+func elapsed(since start: DispatchTime) -> TimeInterval {
+    TimeInterval(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e9
 }
