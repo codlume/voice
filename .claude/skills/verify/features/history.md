@@ -34,7 +34,7 @@ Preconditions: baseline. Producing a transcript needs `dictate`, so the [Dictati
 - **Empty state.** `vv click Home`, then `vv text`. The output includes "Your dictations show up here".
 - **Produce a transcript.** `vv dictate long.wav`. With cleanup on, `latest.raw` differs from `latest.text`, and `latest.status` is `inserted`.
 - **Row appears under Today.** `vv text` shows `TODAY`, a clock time, and `latest.text` under "History". Then `vv shot history-row`. Cross-check with `vv eval hub 'window.voice.getHistory()'`.
-- **Click copies.** Save the clipboard first: `pbpaste > "$TMPDIR/vv-clip"`. Then `vv click 'css:main section[aria-labelledby=history] li:first-of-type p'`, `vv wait hub 'document.querySelector("main section[aria-labelledby=history] li").textContent.includes("Copied")'`, write `latest.text` to a file without echoing it, and `pbpaste | cmp - <that file>`. `vv click 'css:main section[aria-labelledby=history] li:first-of-type button[aria-label^="Copy raw transcript"]'` and compare against `latest.raw` the same way. Restore with `pbcopy < "$TMPDIR/vv-clip" && rm "$TMPDIR/vv-clip"`.
+- **Click copies.** Save the clipboard first with `vv clipboard save`. Then `vv click 'css:main section[aria-labelledby=history] li:first-of-type p'`, `vv wait hub 'document.querySelector("main section[aria-labelledby=history] li").textContent.includes("Copied")'`, write `latest.text` to a file without echoing it, and `pbpaste | cmp - <that file>`. `vv click 'css:main section[aria-labelledby=history] li:first-of-type button[aria-label^="Copy raw transcript"]'` and compare against `latest.raw` the same way. Restore with `vv clipboard restore`.
 - **Search.** `vv type 'css:input[type=search]' zzz`, then `vv text` shows "No dictations match". `vv click Insights`, then `vv click Home`, resets the search.
 - **Delete.** `vv click 'css:main section[aria-labelledby=history] li:first-of-type button[aria-label^="Delete dictation"]'`. The row leaves, and with no rows left `vv text` shows the empty state again.
 - **Show more.** Only reachable with more than 100 entries; `preview.html?hub=history-long` shows the button on fake data.
@@ -47,7 +47,7 @@ Preconditions: baseline. Producing a transcript needs `dictate`, so the [Dictati
 
 ## Gotchas
 
-- Copy writes the user's real clipboard. Save it before and restore it after, and never print or log the saved contents.
+- Copy writes the user's real clipboard. `vv clipboard save` before and `vv clipboard restore` after keep every type on it, including images and rich text, which `pbpaste` and `pbcopy` drop. Never print or log the saved contents.
 - `Copy raw transcript` exists only when the raw text differs from the inserted text. With cleanup off, or with an already clean `short.wav`, it is absent by design.
 - The scratch userData starts in memory mode. A recipe that sets `Keep history` leaves `history.json` behind until `stop` deletes the userData, so revert the setting or relaunch fresh before the next recipe.
 - Row buttons are named with the row's time and an excerpt, such as `Copy dictation from 17:07: Hi Anna, can…`, so target them with a `css:` prefix match scoped to one row (`li:first-of-type`).

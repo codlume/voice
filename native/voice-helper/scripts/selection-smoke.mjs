@@ -1,11 +1,17 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { stopChildren } from "../../../scripts/voice-app.mjs";
-import { electronTarget, textEditTarget } from "../../../scripts/targets.mjs";
+import { stopChildrenOnSignal } from "../../../scripts/voice-app.mjs";
+import {
+  clipboardKept,
+  electronTarget,
+  restoreClipboard,
+  saveClipboard,
+  textEditTarget,
+} from "../../../scripts/targets.mjs";
 import { assert, helperBinary, refuseIfVoiceIsRunning, withHelper } from "./helper.mjs";
 
 // CopyWait.lateCheck in the helper: an unanswered copy may still restore until then.
@@ -25,12 +31,6 @@ const paragraph = `Synthetic paragraph ${randomUUID()}: Ada met Grace on Thursda
 
 function osascript(script) {
   return execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
-}
-
-function clipboardSha256() {
-  return createHash("sha256")
-    .update(execFileSync("pbpaste", { encoding: "utf8" }))
-    .digest("hex");
 }
 
 function clipboardChangeCount() {
@@ -65,16 +65,9 @@ function pressRightArrow() {
 async function createTarget() {
   if (target === "textedit") return textEditTarget("selection-smoke");
   const userData = mkdtempSync(join(tmpdir(), "voice-selection-smoke-"));
-  const electron = await electronTarget(userData);
-  await electron.watchKeys();
-  return {
-    ...electron,
-    async close() {
-      electron.close();
-      await stopChildren();
-      rmSync(userData, { recursive: true, force: true });
-    },
-  };
+  // On a signal stopChildrenOnSignal exits without unwinding to finally, so cleanup runs on exit.
+  process.once("exit", () => rmSync(userData, { recursive: true, force: true }));
+  return electronTarget(userData);
 }
 
 async function pressShortcut(helper) {
@@ -134,11 +127,18 @@ function timings(helper, since) {
   return found;
 }
 
-const clipboardShaBefore = clipboardSha256();
+stopChildrenOnSignal();
+const clipboardSaved = saveClipboard();
+process.once("exit", () => {
+  if (restoreClipboard(clipboardSaved))
+    console.error("restored the clipboard saved before the run");
+});
 const clipboardCountBefore = clipboardChangeCount();
-const app = await createTarget();
-const report = { target: app.name };
+let app;
 try {
+  app = await createTarget();
+  await app.watchKeys?.();
+  const report = { target: app.name };
   await withHelper({}, async (helper) => {
     await helper.waitFor((e) => e.type === "log" && e.message === "hotkey tap installed", {
       label: "hotkey tap installed",
@@ -178,11 +178,7 @@ try {
     assert(written.result.method !== "none", `insert.result ${JSON.stringify(written.result)}`);
     const landed = await settle(() => app.read(), marker);
     assert(landed === marker, `target text ${JSON.stringify(landed)} != ${JSON.stringify(marker)}`);
-    const shaAfterInsert = await settle(clipboardSha256, clipboardShaBefore);
-    assert(
-      shaAfterInsert === clipboardShaBefore,
-      `clipboard contents changed ${clipboardShaBefore} -> ${shaAfterInsert}`,
-    );
+    assert(await clipboardKept(clipboardSaved), "the insert changed the clipboard contents");
     helper.send({ type: "transform.end", id: "run-1" });
     report.replace = {
       pressToTransformMs: Math.round(press.transformMs),
@@ -238,11 +234,7 @@ try {
     const kept = await app.read();
     assert(kept === marker, `refused insert changed the target: ${JSON.stringify(kept)}`);
     helper.send({ type: "transform.end", id: "run-3" });
-    const shaEnd = await settle(clipboardSha256, clipboardShaBefore);
-    assert(
-      shaEnd === clipboardShaBefore,
-      `clipboard contents changed by the end ${clipboardShaBefore} -> ${shaEnd}`,
-    );
+    assert(await clipboardKept(clipboardSaved), "the clipboard contents changed by the end");
     report.selectionChanged = {
       via: moved.result.via,
       insertReason: refused.result.reason,
@@ -252,5 +244,5 @@ try {
   });
   console.log(JSON.stringify(report));
 } finally {
-  await app.close();
+  await app?.close();
 }

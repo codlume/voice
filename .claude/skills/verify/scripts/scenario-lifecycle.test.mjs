@@ -9,13 +9,14 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   processIdentity,
@@ -33,7 +34,7 @@ const OSASCRIPT_STUB = `
 const fs = require("node:fs");
 const path = require("node:path");
 const dir = process.env.VOICE_TEST_DIR;
-const script = process.argv[3] ?? "";
+const script = process.argv[process.argv[3] === "JavaScript" ? 5 : 3] ?? "";
 fs.writeFileSync(path.join(dir, "focus"), "called");
 fs.appendFileSync(path.join(dir, "osascript.log"), script + "\\n");
 const targetFile = path.join(dir, "target.json");
@@ -51,6 +52,7 @@ const document = fs.existsSync(documentFile)
   ? JSON.parse(fs.readFileSync(documentFile, "utf8"))
   : { name: "", text: "" };
 const answers = [
+  ["pasteboardItems", "[]"],
   ["is running", "false"],
   ["unix id", String(pid)],
   ["get name of document", document.name],
@@ -101,12 +103,11 @@ function checkout(t, mode) {
   );
   put("bin/osascript", `#!${process.execPath}\nimport("./osascript-impl.cjs");\n`);
   put("bin/osascript-impl.cjs", OSASCRIPT_STUB);
-  put("bin/pbpaste", `#!${process.execPath}\nprocess.stdout.write("synthetic clipboard");\n`);
   put(
     "native/voice-helper/.build/debug/fnpost",
     `#!${process.execPath}\nimport("node:fs").then(fs => fs.writeFileSync(${JSON.stringify(join(dir, "key"))}, "called"));\n`,
   );
-  for (const path of ["bin/osascript", "bin/pbpaste", "native/voice-helper/.build/debug/fnpost"])
+  for (const path of ["bin/osascript", "native/voice-helper/.build/debug/fnpost"])
     chmodSync(join(repo, path), 0o755);
   put("scripts/e2e-target/main.cjs", "setInterval(() => {}, 1000);");
   put(
@@ -502,6 +503,53 @@ test(
     assert.equal(existsSync(f.userData), false);
   },
 );
+
+test("clipboard save keeps one private copy until restore removes it", async (t) => {
+  const f = checkout(t, "clipboard");
+  const saved = `${f.userData}.clipboard.json`;
+  const vv = (...args) =>
+    new Promise((resolve) => {
+      execFile(
+        process.execPath,
+        [f.script, "clipboard", ...args],
+        { env: f.env },
+        (error, stdout) => resolve({ code: error?.code ?? 0, stdout }),
+      );
+    });
+
+  assert.equal((await vv("save")).code, 0);
+  assert.equal(statSync(saved).mode & 0o777, 0o600);
+  const again = await vv("save");
+  assert.equal(again.code, 1, "a second save must not replace the first copy");
+  const restore = await vv("restore");
+  assert.deepEqual(JSON.parse(restore.stdout), { restored: false });
+  assert.equal(existsSync(saved), false);
+  assert.equal((await vv("restore")).code, 1);
+});
+
+async function scratchTargets(t) {
+  const f = checkout(t, "transform-electron");
+  const targets = await import(pathToFileURL(join(f.dir, "checkout/scripts/targets.mjs")).href);
+  const scratchPid = () => JSON.parse(readFileSync(join(f.dir, "target.json"), "utf8")).pid;
+  return { ...targets, userData: mkdtempSync(join(f.dir, "target-")), scratchPid };
+}
+
+test("closing the Electron target stops the process it started", async (t) => {
+  const { electronTarget, userData, scratchPid } = await scratchTargets(t);
+  const target = await electronTarget(userData);
+  assert.notEqual(processIdentity(scratchPid()), null);
+  await target.close();
+  assert.equal(processIdentity(scratchPid()), null);
+});
+
+test("an Electron target interrupted while starting stops its process", async (t) => {
+  const { electronTarget, userData, scratchPid } = await scratchTargets(t);
+  await assert.rejects(
+    electronTarget(userData, { wait: () => Promise.reject(new Error("synthetic interrupt")) }),
+    /synthetic interrupt/,
+  );
+  assert.equal(processIdentity(scratchPid()), null);
+});
 
 for (const target of ["electron", "textedit"]) {
   test(

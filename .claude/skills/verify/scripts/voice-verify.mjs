@@ -26,7 +26,13 @@ import {
   runningVoiceProcesses,
 } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
-import { electronTarget, textEditTarget } from "../../../../scripts/targets.mjs";
+import {
+  clipboardKept,
+  electronTarget,
+  restoreClipboard,
+  saveClipboard,
+  textEditTarget,
+} from "../../../../scripts/targets.mjs";
 import { clickExpression, visible } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
@@ -72,6 +78,7 @@ const worktree = realpathSync(repoDir);
 const worktreeId = worktreeIdentity(worktree);
 const userDataPath = scratchPath("voice-verify", worktree);
 const statePath = `${userDataPath}.json`;
+const savedClipboardPath = `${userDataPath}.clipboard.json`;
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
 
 const [command = "help", ...args] = process.argv.slice(2);
@@ -249,8 +256,6 @@ function interruptible(message) {
   };
 }
 
-const clipboardText = () => execFileSync("pbpaste", { encoding: "utf8" });
-
 async function armTransform({ hub, snapshots, target, wait }) {
   await wait(target.open(TRANSFORM_PARAGRAPH));
   await wait(target.selectAll());
@@ -311,7 +316,7 @@ async function followTransform({ snapshots, state, logOffset, pressed, wait }) {
   return { finished, finishedMs, run, logged };
 }
 
-async function collectTransform({ hub, target, outcome, pressedAt, clipboardBefore, wait }) {
+async function collectTransform({ hub, target, outcome, pressedAt, clipboardSaved, wait }) {
   const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
   const lastTransform = freshLast(last, pressedAt);
   const expected = expectedLanding(outcome, lastTransform);
@@ -319,11 +324,7 @@ async function collectTransform({ hub, target, outcome, pressedAt, clipboardBefo
     expected === null
       ? { text: await wait(target.read()), landedMs: null }
       : await wait(landedText(() => target.read(), expected, { timeoutMs: 2000 }));
-  const clipboardUnchanged = await wait(
-    poll(() => (clipboardText() === clipboardBefore ? true : undefined), 3000, "clipboard").catch(
-      () => false,
-    ),
-  );
+  const clipboardUnchanged = await wait(clipboardKept(clipboardSaved));
   return { lastTransform, after, landedMs, clipboardUnchanged };
 }
 
@@ -1034,6 +1035,30 @@ const commands = {
     out(path);
   },
 
+  clipboard() {
+    const [action] = args;
+    if (action === "save") {
+      // A second save would replace the user's clipboard with whatever a recipe copied since.
+      try {
+        writeFileSync(savedClipboardPath, JSON.stringify(saveClipboard()), {
+          mode: 0o600,
+          flag: "wx",
+        });
+      } catch (error) {
+        if (error.code === "EEXIST") fail("a saved clipboard is waiting; run clipboard restore");
+        throw error;
+      }
+      out({ saved: true });
+    } else if (action === "restore") {
+      if (!existsSync(savedClipboardPath)) fail("no saved clipboard; run clipboard save first");
+      const restored = restoreClipboard(JSON.parse(readFileSync(savedClipboardPath, "utf8")));
+      rmSync(savedClipboardPath);
+      out({ restored });
+    } else {
+      fail("usage: clipboard save|restore");
+    }
+  },
+
   async note() {
     const [name, ...rest] = args;
     if (!name || rest.length === 0) fail("usage: note <name> <text...>");
@@ -1184,7 +1209,7 @@ const commands = {
     } finally {
       if (!scenarioOwner || readState()?.scenarioOwner === scenarioOwner)
         rmSync(state.fakeMicrophonePath, { force: true });
-      target?.close();
+      await target?.close();
       hub.close();
       await stopChildren();
       release();
@@ -1205,12 +1230,13 @@ const commands = {
     const hub = await connect("hub");
     const { wait, release } = interruptible("transform interrupted");
     let target;
+    let clipboardSaved;
     try {
       const { settings, models } = await wait(hub.evaluate("window.voice.getSnapshot()"));
       const transform = optionShortcutTransform(settings.transforms, keycode);
       const snapshots = await snapshotStream(hub);
       const logOffset = statSync(state.logPath).size;
-      const clipboardBefore = clipboardText();
+      clipboardSaved = saveClipboard();
 
       desktop.check();
       target =
@@ -1226,7 +1252,7 @@ const commands = {
         target,
         outcome,
         pressedAt: pressed.pressedAt,
-        clipboardBefore,
+        clipboardSaved,
         wait,
       });
 
@@ -1257,6 +1283,8 @@ const commands = {
     } finally {
       try {
         await target?.close();
+        if (clipboardSaved && restoreClipboard(clipboardSaved))
+          console.error("restored the clipboard saved before the transform");
       } finally {
         hub.close();
         await stopChildren();
@@ -1290,6 +1318,7 @@ const commands = {
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
   note <name> <text...>          append text evidence
+  clipboard save|restore         keep every type on the clipboard in a private file, then put it back
   dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]
                                  --app makes the helper report that target app for the session
   transform [--target=electron|textedit] [--shortcut=<keycode>] [--escape]
