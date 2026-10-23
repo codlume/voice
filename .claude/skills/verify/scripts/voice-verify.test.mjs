@@ -16,7 +16,21 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { runInNewContext } from "node:vm";
+
+import { clickExpression } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { keyEvents } from "./key-events.mjs";
+import {
+  expectedLanding,
+  freshLast,
+  optionShortcutTransform,
+  parseTransformFlags,
+  pillSummary,
+  resolveOutcome,
+  shouldEscape,
+  transformLogLine,
+} from "./transforms.mjs";
 import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
@@ -26,20 +40,23 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const dir = mkdtempSync(join(tmpdir(), "voice-verify-cold-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const checkout = join(dir, "checkout");
+  const sources = (directory) =>
+    readdirSync(join(worktree, directory))
+      .filter((file) => file.endsWith(".mjs") && !file.endsWith(".test.mjs"))
+      .map((file) => `${directory}/${file}`);
   const paths = [
-    ".claude/skills/verify/scripts/voice-verify.mjs",
-    ".claude/skills/verify/scripts/dictate-flags.mjs",
-    ".claude/skills/verify/scripts/scenarios.mjs",
-    "scripts/voice-app.mjs",
-    "scripts/smoke-resources.mjs",
-    "scripts/fixtures.mjs",
+    ...sources(".claude/skills/verify/scripts"),
+    ...sources("scripts"),
     "native/voice-helper/scripts/helper.mjs",
     "packages/cleanup/src/download.ts",
+    "packages/cleanup/src/apache-2.0.ts",
+    "packages/cleanup/src/transform/model.ts",
   ];
   for (const path of paths) {
     mkdirSync(dirname(join(checkout, path)), { recursive: true });
     copyFileSync(join(worktree, path), join(checkout, path));
   }
+  const verify = join(checkout, ".claude/skills/verify/scripts/voice-verify.mjs");
   for (const path of ["apps/desktop/src", "native/voice-helper/Sources"])
     mkdirSync(join(checkout, path), { recursive: true });
   writeFileSync(join(checkout, "package.json"), '{"type":"module"}');
@@ -47,7 +64,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const temp = join(dir, "temp");
   mkdirSync(temp);
   const run = (command) =>
-    spawnSync(process.execPath, [join(checkout, paths[0]), command], {
+    spawnSync(process.execPath, [verify, command], {
       env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
       encoding: "utf8",
       timeout: 5000,
@@ -60,6 +77,8 @@ test("cold doctor and help run without dependencies and leave caches untouched",
     electron: "missing: run pnpm install",
   });
   assert.equal(report.instance, "none");
+  assert.deepEqual(report.testModels, { asr: "will download", cleanup: "will download" });
+  assert.deepEqual(report.optionalTestModels, { transform: "missing" });
   assert.equal(existsSync(cache), false);
   assert.deepEqual(readdirSync(temp), []);
   const help = run("help");
@@ -68,15 +87,11 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const launch = run("launch");
   assert.notEqual(launch.status, 0);
   assert.match(launch.stderr, /Electron missing: run pnpm install/);
-  const scenario = spawnSync(
-    process.execPath,
-    [join(checkout, paths[0]), "scenario", "short-dictation"],
-    {
-      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
-      encoding: "utf8",
-      timeout: 5000,
-    },
-  );
+  const scenario = spawnSync(process.execPath, [verify, "scenario", "short-dictation"], {
+    env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+    encoding: "utf8",
+    timeout: 5000,
+  });
   assert.equal(scenario.status, 1, scenario.stderr);
   const blocked = JSON.parse(scenario.stdout);
   assert.equal(blocked.status, "BLOCKED");
@@ -230,4 +245,184 @@ test("dictate --app parses a bundle id with an optional host, and the defaults s
   }
   assert.throws(() => parseDictateFlags(["--end=later"]), /--end must be/);
   assert.throws(() => parseDictateFlags(["--key=tap"]), /--key must be/);
+});
+
+const press = (type, code, key, windowsVirtualKeyCode, modifiers) => ({
+  type,
+  code,
+  key,
+  windowsVirtualKeyCode,
+  modifiers,
+});
+
+test("key presses each modifier around the key and releases them in reverse", () => {
+  assert.deepEqual(keyEvents("Digit1", ["option"]), [
+    press("rawKeyDown", "AltLeft", "Alt", 18, 1),
+    press("rawKeyDown", "Digit1", "1", 49, 1),
+    press("keyUp", "Digit1", "1", 49, 1),
+    press("keyUp", "AltLeft", "Alt", 18, 0),
+  ]);
+  assert.deepEqual(keyEvents("KeyA", ["command", "shift"]), [
+    press("rawKeyDown", "ShiftLeft", "Shift", 16, 8),
+    press("rawKeyDown", "MetaLeft", "Meta", 91, 12),
+    press("rawKeyDown", "KeyA", "A", 65, 12),
+    press("keyUp", "KeyA", "A", 65, 12),
+    press("keyUp", "MetaLeft", "Meta", 91, 8),
+    press("keyUp", "ShiftLeft", "Shift", 16, 0),
+  ]);
+  assert.deepEqual(keyEvents("Enter"), [
+    press("rawKeyDown", "Enter", "Enter", 13, 0),
+    press("keyUp", "Enter", "Enter", 13, 0),
+  ]);
+  assert.equal(keyEvents("KeyK", ["control"])[1].key, "k");
+  assert.throws(() => keyEvents("Digit1", ["alt"]), /unknown modifier alt/);
+  assert.throws(() => keyEvents("Numpad1"), /unknown key code Numpad1/);
+});
+
+function runClick(target, elements) {
+  const calls = [];
+  const stub = ({ name, disabled = false }) => ({
+    textContent: name,
+    labels: null,
+    disabled,
+    getAttribute: () => null,
+    getClientRects: () => [{}],
+    focus: () => calls.push(`focus ${name}`),
+    click: () => calls.push(`click ${name}`),
+  });
+  const document = {
+    querySelectorAll: () => elements.map(stub),
+    getElementById: () => null,
+  };
+  const result = runInNewContext(clickExpression(target), { document });
+  return { result: JSON.parse(JSON.stringify(result)), calls };
+}
+
+test("click focuses the element before it clicks, so a picker records the keys that follow", () => {
+  assert.deepEqual(runClick("Shortcut", [{ name: "Shortcut" }, { name: "Save changes" }]), {
+    result: { clicked: "Shortcut" },
+    calls: ["focus Shortcut", "click Shortcut"],
+  });
+  assert.deepEqual(runClick("css:main button", [{ name: "Only" }]), {
+    result: { clicked: "Only" },
+    calls: ["focus Only", "click Only"],
+  });
+});
+
+test("click touches nothing when the match is missing, ambiguous, or disabled", () => {
+  assert.deepEqual(runClick("Shortcut", [{ name: "Other" }]), { result: false, calls: [] });
+  assert.deepEqual(runClick("css:button", [{ name: "A" }, { name: "B" }]), {
+    result: { ambiguous: ["A", "B"] },
+    calls: [],
+  });
+  assert.deepEqual(runClick("Shortcut", [{ name: "Shortcut", disabled: true }]), {
+    result: false,
+    calls: [],
+  });
+});
+
+test("transform flags default to Option+1 in the scratch textarea and reject typos", () => {
+  assert.deepEqual(parseTransformFlags([]), { target: "electron", keycode: 18, escape: false });
+  assert.deepEqual(parseTransformFlags(["--target=textedit", "--shortcut=19", "--escape"]), {
+    target: "textedit",
+    keycode: 19,
+    escape: true,
+  });
+  assert.throws(() => parseTransformFlags(["--target=safari"]), /--target must be/);
+  for (const bad of ["--shortcut=", "--shortcut=128", "--shortcut=1.5", "--shortcut=a"])
+    assert.throws(() => parseTransformFlags([bad]), /--shortcut must be/, bad);
+  assert.throws(() => parseTransformFlags(["--escape=yes"]), /unknown flag --escape=yes/);
+  assert.throws(() => parseTransformFlags(["--target", "textedit"]), /--target must be/);
+});
+
+const item = (name, keycode, modifiers) => ({ name, shortcut: { keycode, modifiers } });
+
+test("transform finds the item on exactly Option plus the key", () => {
+  const transforms = {
+    enabled: true,
+    items: [
+      item("Shifted", 18, ["option", "shift"]),
+      item("Polish", 18, ["option"]),
+      item("Prompt Engineer", 19, ["option"]),
+      { name: "Unbound", shortcut: null },
+    ],
+  };
+  assert.equal(optionShortcutTransform(transforms, 18).name, "Polish");
+  assert.equal(optionShortcutTransform(transforms, 19).name, "Prompt Engineer");
+  assert.throws(
+    () => optionShortcutTransform(transforms, 20),
+    /no transform is on Option with keycode 20; Option shortcuts: \[\{"name":"Polish","keycode":18\},\{"name":"Prompt Engineer","keycode":19\}\]/,
+  );
+  assert.throws(
+    () => optionShortcutTransform({ ...transforms, enabled: false }, 18),
+    /Transforms are off/,
+  );
+});
+
+test("the transform log line yields its outcome and timings without the log prefix", () => {
+  const log = [
+    "[voice] session 1a2b3c4d outcome=inserted startMs=1 asrMs=80",
+    "[voice] transform 9f8e7d6c outcome=notInserted via=copy readMs=48 generateMs=3120 insertMs=7 words=40",
+    "[voice] transform 00000000 outcome=inserted via=accessibility readMs=1 generateMs=1 insertMs=1 words=1",
+  ].join("\n");
+  assert.deepEqual(transformLogLine(log), {
+    line: "transform 9f8e7d6c outcome=notInserted via=copy readMs=48 generateMs=3120 insertMs=7 words=40",
+    fields: {
+      id: "9f8e7d6c",
+      outcome: "notInserted",
+      via: "copy",
+      readMs: 48,
+      generateMs: 3120,
+      insertMs: 7,
+      words: 40,
+    },
+  });
+  assert.equal(transformLogLine("[voice] transform model loaded in 2100 ms\n"), null);
+  assert.equal(transformLogLine(""), null);
+});
+
+test("a missed transformDone is recovered from main's log line, and no outcome stays null", () => {
+  const blocked = { kind: "notInserted", reason: "focusChanged" };
+  const done = { session: { kind: "transformDone", outcome: blocked } };
+  const idle = { session: { kind: "idle" } };
+  const logged = { line: "transform 9f8e7d6c outcome=inserted", fields: { outcome: "inserted" } };
+  assert.deepEqual(resolveOutcome(done, logged), { outcome: blocked, outcomeFrom: "pill" });
+  assert.deepEqual(resolveOutcome(idle, logged), {
+    outcome: { kind: "inserted" },
+    outcomeFrom: "log",
+  });
+  assert.deepEqual(resolveOutcome(idle, null), { outcome: null, outcomeFrom: null });
+});
+
+test("a Last transform from before the press is dropped, and the landing is awaited only for an insert", () => {
+  const last = { finishedAt: 1000, after: "Polished." };
+  assert.equal(freshLast(last, 1000), last);
+  assert.equal(freshLast(last, 1001), null);
+  assert.equal(freshLast(null, 0), null);
+  assert.equal(expectedLanding({ kind: "inserted" }, last), "Polished.");
+  assert.equal(expectedLanding({ kind: "inserted" }, null), null);
+  assert.equal(expectedLanding({ kind: "notInserted" }, last), null);
+  assert.equal(expectedLanding(null, last), null);
+});
+
+test("escape is posted only while the run is still transforming", () => {
+  assert.equal(shouldEscape(true, "transforming"), true);
+  assert.equal(shouldEscape(true, "transformDone"), false);
+  assert.equal(shouldEscape(true, "idle"), false);
+  assert.equal(shouldEscape(false, "transforming"), false);
+});
+
+const snapshot = (kind, loading) => ({ session: { kind, loading } });
+
+test("the pill summary reports whether the run loaded the model and reached transformDone", () => {
+  const done = snapshot("transformDone");
+  assert.deepEqual(
+    pillSummary([snapshot("transforming", true), snapshot("transforming", false), done], done),
+    { sawTransforming: true, sawLoading: true, sawTransformDone: true },
+  );
+  assert.deepEqual(pillSummary([snapshot("transforming", false)], snapshot("idle")), {
+    sawTransforming: true,
+    sawLoading: false,
+    sawTransformDone: false,
+  });
 });

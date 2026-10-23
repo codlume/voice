@@ -1,6 +1,7 @@
 import ApplicationServices
 import Foundation
 import VoiceHelperCore
+import os
 
 /// Owns the CGEventTap on a thread of its own. The system disables a tap whose callback
 /// stalls, and a disabled tap loses the key release that ends recording, so nothing that can
@@ -8,20 +9,23 @@ import VoiceHelperCore
 /// below the run loop is touched only on that thread; `configure` and `install` hop onto it.
 final class HotkeyTap {
     private let output: Output
-    private let captureActive: () -> Bool
+    private let activity: () -> HelperActivity
     private let runLoop: CFRunLoop
     private let thread: Thread
     private var key: HotkeyKey = .fn
     private var toggleKey: HotkeyKey?
+    private var transforms: [TransformShortcut] = []
     private var hotkeys: Hotkeys
+    private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
 
-    init(output: Output, captureActive: @escaping () -> Bool) {
+    init(output: Output, heldShortcutKey: OSAllocatedUnfairLock<Int64?>, activity: @escaping () -> HelperActivity) {
         self.output = output
-        self.captureActive = captureActive
+        self.heldShortcutKey = heldShortcutKey
+        self.activity = activity
         hotkeys = Hotkeys(key: .fn, toggleKey: nil, initialFlags: currentFlags())
         let ready = DispatchSemaphore(value: 0)
         var loop: CFRunLoop?
@@ -40,12 +44,17 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
-    func configure(key: HotkeyKey, toggleKey: HotkeyKey?) {
+    func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut]) {
         perform {
+            self.transforms = transforms
+            if key == self.key, toggleKey == self.toggleKey {
+                self.hotkeys.setTransforms(transforms)
+                return
+            }
             self.emit(self.hotkeys.reconcile(flags: 0))
             self.key = key
             self.toggleKey = toggleKey
-            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
+            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
             self.syncBackstop()
         }
     }
@@ -100,7 +109,7 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
-        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, initialFlags: currentFlags())
+        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
         syncBackstop()
         output.log(.info, "hotkey tap installed")
         return true
@@ -123,10 +132,19 @@ final class HotkeyTap {
         let keyEvent = KeyEvent(
             kind: kind,
             keycode: event.getIntegerValueField(.keyboardEventKeycode),
-            flags: event.flags.rawValue
+            flags: event.flags.rawValue,
+            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         )
-        let decision = hotkeys.handle(keyEvent, captureActive: captureActive())
-        emit(decision.action)
+        let decision = hotkeys.handle(keyEvent, activity: activity())
+        switch decision.emit {
+        case .hotkey(let action):
+            output.emit(.hotkey(action: action))
+        case .transform(let transformId):
+            heldShortcutKey.withLock { $0 = keyEvent.keycode }
+            output.emit(.transform(transformId: transformId))
+        case .nothing:
+            break
+        }
         syncBackstop()
         return decision.consume
     }

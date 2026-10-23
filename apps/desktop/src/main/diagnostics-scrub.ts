@@ -30,6 +30,7 @@ export const SESSION_MEASUREMENTS = [
 export const HELPER_LOGS = [
   "could not monitor microphone changes",
   "clipboard changed during paste; not restoring previous contents",
+  "clipboard changed during copy; not restoring previous contents",
   "asr.remove ignored while the speech model downloads",
   "asr.remove ignored while the speech model loads",
   "streaming ASR incomplete; retrying complete capture",

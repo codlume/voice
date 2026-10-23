@@ -41,9 +41,9 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { droppedBy } from "./historyView.ts";
 import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
-import { Keycap } from "./Keycap.tsx";
+import { Keys } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
-import { modelView, type ModelAction } from "./modelView.ts";
+import { activityOf, modelView, type Activity, type ModelAction } from "./modelView.ts";
 import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
@@ -99,7 +99,6 @@ export const styles = stylex.create({
     fontWeight: 500,
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
   },
-  keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
 });
@@ -877,20 +876,20 @@ function ModelSection({
   model,
   status,
   cleanupEnabled,
-  dictating,
+  activity,
 }: {
   model: Model;
   status: ModelStatus;
   cleanupEnabled: boolean;
-  dictating: boolean;
+  activity: Activity;
 }) {
   const { pending, error, run: runAction } = useAction();
   const [confirmingUninstall, setConfirmingUninstall] = useState(false);
-  const view = modelView(model, status, { cleanupEnabled, dictating });
+  const view = modelView(model, status, { cleanupEnabled, activity });
   const canUninstall = view.actions.some(
     ({ label, disabled }) => label === "Uninstall" && !disabled,
   );
-  // Dictation or a download can withdraw Uninstall while the dialog is open.
+  // Dictation, a transform or a download can withdraw Uninstall while the dialog is open.
   if (confirmingUninstall && !canUninstall) setConfirmingUninstall(false);
 
   const run = (action: ModelAction) =>
@@ -962,7 +961,7 @@ export function ModelsSettings({
   settings: Settings;
   session: PillState;
 }) {
-  const dictating = session.kind === "listening" || session.kind === "processing";
+  const activity = activityOf(session);
   return (
     <div {...stylex.props(styles.page)}>
       <h1 {...stylex.props(pageStyles.headline)}>Models</h1>
@@ -972,7 +971,7 @@ export function ModelsSettings({
           model={model}
           status={statuses[model.id]}
           cleanupEnabled={settings.cleanup.enabled}
-          dictating={dictating}
+          activity={activity}
         />
       ))}
     </div>
@@ -994,11 +993,7 @@ function ShortcutRow({
         <span {...stylex.props(styles.rowTitle)}>{title}</span>
         {detail && <p {...stylex.props(styles.rowDetail)}>{detail}</p>}
       </div>
-      <kbd {...stylex.props(styles.keys)}>
-        {keys.map((key) => (
-          <Keycap key={key}>{key}</Keycap>
-        ))}
-      </kbd>
+      <Keys keys={keys} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import type { Insights } from "../shared/insights.ts";
+import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
 
 // The tray can ask before React has mounted, for example right after it creates the hub.
@@ -61,6 +62,9 @@ const voice: HubApi = {
   getInstalledApps: () => ipcRenderer.invoke(Channel.getInstalledApps),
   getAppIcons: (bundleIds) => ipcRenderer.invoke(Channel.getAppIcons, bundleIds),
   editAssignments: (edit) => ipcRenderer.invoke(Channel.editAssignments, edit),
+  getLastTransform: () => ipcRenderer.invoke(Channel.getLastTransform),
+  onLastTransform: (listener) => subscribe<LastTransform | null>(Channel.lastTransform, listener),
+  copyLastTransform: (which) => ipcRenderer.invoke(Channel.copyLastTransform, which),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

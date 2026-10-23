@@ -18,6 +18,7 @@ import {
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
+import { idleRun } from "./transform-run.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 export const API_URL = "https://api-nightly.voice.codlume.com";
@@ -192,9 +193,14 @@ export function harness(
   });
   const store = createStore({
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "granted", accessibility: "granted" },
     loginItem: "off",
-    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+    models: {
+      asr: { state: "ready" },
+      cleanup: { state: "ready" },
+      transform: { state: "missing" },
+    },
     settings: DEFAULT_SETTINGS,
     updates: {
       version: "0.0.1",

@@ -9,8 +9,17 @@ private func json(_ line: String) throws -> [String: Any] {
 
 @Test func decodesEveryCommand() throws {
     let cases: [(String, HelperCommand)] = [
-        (#"{"type":"hotkey.configure","key":"rightOption","toggleKey":null}"#, .hotkeyConfigure(key: .rightOption, toggleKey: nil)),
-        (#"{"type":"hotkey.configure","key":"fn","toggleKey":"rightCommand"}"#, .hotkeyConfigure(key: .fn, toggleKey: .rightCommand)),
+        (#"{"type":"hotkey.configure","key":"rightOption","toggleKey":null,"transforms":[]}"#,
+         .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [])),
+        (#"{"type":"hotkey.configure","key":"fn","toggleKey":"rightCommand","transforms":[]}"#,
+         .hotkeyConfigure(key: .fn, toggleKey: .rightCommand, transforms: [])),
+        (#"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"polish","keycode":18,"modifiers":["option"]},{"id":"c1","keycode":40,"modifiers":["control","option","shift","command"]}]}"#,
+         .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [
+             TransformShortcut(id: "polish", keycode: 18, modifiers: [.option]),
+             TransformShortcut(id: "c1", keycode: 40, modifiers: [.control, .option, .shift, .command]),
+         ])),
+        (#"{"type":"selection.read","id":"r1"}"#, .selectionRead(id: "r1")),
+        (#"{"type":"transform.end","id":"r1"}"#, .transformEnd(id: "r1")),
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","muteWhileDictating":false,"detectHost":true}"#,
          .captureStart(id: "s1", language: .en, muteWhileDictating: false, microphone: nil, detectHost: true)),
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","muteWhileDictating":false,"detectHost":false}"#,
@@ -57,6 +66,23 @@ private func json(_ line: String) throws -> [String: Any] {
     let badEnum = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"leftShift"}"#)
     #expect(try unknownDescription(badEnum).contains("field \"key\""))
 
+    let withoutTransforms = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null}"#)
+    #expect(try unknownDescription(withoutTransforms).contains("missing field \"transforms\""))
+
+    let badModifier = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":["fn"]}]}"#)
+    #expect(throws: ProtocolError.self) { try badModifier.get() }
+
+    let keycodeless = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","modifiers":["option"]}]}"#)
+    #expect(try unknownDescription(keycodeless).contains("missing field \"keycode\""))
+
+    for modifiers in ["[]", #"["shift"]"#] {
+        let swallowsTyping = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":"# + modifiers + "}]}")
+        #expect(try unknownDescription(swallowsTyping).contains("field \"modifiers\": a transform shortcut needs a modifier other than shift"))
+    }
+
+    let readWithoutId = HelperCommand.decode(line: #"{"type":"selection.read"}"#)
+    #expect(try unknownDescription(readWithoutId).contains("missing field \"id\""))
+
     let invalid = HelperCommand.decode(line: "not json")
     #expect(try unknownDescription(invalid).contains("invalid JSON"))
 
@@ -84,11 +110,20 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
-        (.ready(version: 12), ["type": "ready", "version": 12]),
+        (.ready(version: 13), ["type": "ready", "version": 13]),
         (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
         (.hotkey(action: .chord), ["type": "hotkey", "action": "chord"]),
         (.hotkey(action: .cancel), ["type": "hotkey", "action": "cancel"]),
         (.hotkey(action: .toggle), ["type": "hotkey", "action": "toggle"]),
+        (.transform(transformId: "polish"), ["type": "transform", "transformId": "polish"]),
+        (.selectionResult(id: "r", result: .selected(text: "zażółć", via: .accessibility)),
+         ["type": "selection.result", "id": "r", "outcome": "selected", "text": "zażółć", "via": "accessibility"]),
+        (.selectionResult(id: "r", result: .selected(text: "x", via: .copy)),
+         ["type": "selection.result", "id": "r", "outcome": "selected", "text": "x", "via": "copy"]),
+        (.selectionResult(id: "r", result: .failed(.noSelection)),
+         ["type": "selection.result", "id": "r", "outcome": "failed", "reason": "noSelection"]),
+        (.selectionResult(id: "r", result: .failed(.keysHeld)),
+         ["type": "selection.result", "id": "r", "outcome": "failed", "reason": "keysHeld"]),
         (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
         (.captureFailed(id: "s", reason: .device, message: "gone"),
@@ -118,6 +153,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
         (.insertResult(id: "s", method: .none, reason: .focusChanged),
          ["type": "insert.result", "id": "s", "method": "none", "reason": "focusChanged"]),
+        (.insertResult(id: "r", method: .none, reason: .selectionChanged),
+         ["type": "insert.result", "id": "r", "method": "none", "reason": "selectionChanged"]),
         (.permissions(microphone: .granted, accessibility: .notDetermined),
          ["type": "permissions", "microphone": "granted", "accessibility": "notDetermined"]),
         (.asrStatus(state: .failed, message: "boom"), ["type": "asr.status", "state": "failed", "message": "boom"]),

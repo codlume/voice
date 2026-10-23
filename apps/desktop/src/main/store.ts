@@ -1,7 +1,8 @@
-import type { Snapshot } from "../shared/api.ts";
-import { toPillState, type Session } from "./session.ts";
+import type { PillState, Snapshot } from "../shared/api.ts";
+import { dictating, toPillState, type Session } from "./session.ts";
+import { toPillState as toTransformPillState, type TransformRun } from "./transform-run.ts";
 
-export type AppState = Omit<Snapshot, "session"> & { session: Session };
+export type AppState = Omit<Snapshot, "session"> & { session: Session; transform: TransformRun };
 
 export type Store = {
   readonly state: AppState;
@@ -9,8 +10,25 @@ export type Store = {
   subscribe(listener: (state: AppState, previous: AppState) => void): () => void;
 };
 
+function pill(state: AppState): PillState {
+  if (dictating(state.session)) return toPillState(state.session);
+  return (
+    toTransformPillState(state.transform, state.models.transform) ?? toPillState(state.session)
+  );
+}
+
 export function toSnapshot(state: AppState): Snapshot {
-  return { ...state, session: toPillState(state.session) };
+  return {
+    microphones: state.microphones,
+    microphoneTest: state.microphoneTest,
+    updates: state.updates,
+    session: pill(state),
+    permissions: state.permissions,
+    loginItem: state.loginItem,
+    models: state.models,
+    settings: state.settings,
+    account: state.account,
+  };
 }
 
 export function createStore(initial: AppState): Store {

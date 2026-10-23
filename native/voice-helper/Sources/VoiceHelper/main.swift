@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import VoiceHelperCore
+import os
 
 final class Helper {
     private let output: Output
@@ -9,7 +10,9 @@ final class Helper {
     private let transcriber: Transcriber
     private let capture: Capture
     private let devices: AudioInputDevices
+    private let pasteboard: Pasteboard
     private let insertion: Insertion
+    private let selection: SelectionReader
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
     private let installedApps: InstalledApps
@@ -28,8 +31,17 @@ final class Helper {
                               source: .resolve(environment: environment))
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         self.capture = capture
-        insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1")
-        let hotkeyTap = HotkeyTap(output: output) { capture.isActive }
+        let pasteboard = Pasteboard(output: output)
+        self.pasteboard = pasteboard
+        let insertion = Insertion(output: output, forcePaste: testMode && environment["VOICE_HELPER_FORCE_PASTE"] == "1", pasteboard: pasteboard)
+        self.insertion = insertion
+        let heldShortcutKey = OSAllocatedUnfairLock<Int64?>(initialState: nil)
+        let selection = SelectionReader(output: output, insertion: insertion, pasteboard: pasteboard, heldShortcutKey: heldShortcutKey,
+                                        log: testMode ? { output.log(.info, $0) } : nil)
+        self.selection = selection
+        let hotkeyTap = HotkeyTap(output: output, heldShortcutKey: heldShortcutKey) {
+            capture.isActive ? .capturing : selection.isActive ? .transforming : .idle
+        }
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
         installedApps = InstalledApps(output: output)
@@ -52,8 +64,8 @@ final class Helper {
     @MainActor
     private func dispatch(_ command: HelperCommand, receivedAt: DispatchTime) {
         switch command {
-        case .hotkeyConfigure(let key, let toggleKey):
-            hotkeyTap.configure(key: key, toggleKey: toggleKey)
+        case .hotkeyConfigure(let key, let toggleKey, let transforms):
+            hotkeyTap.configure(key: key, toggleKey: toggleKey, transforms: transforms)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
@@ -76,7 +88,11 @@ final class Helper {
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
         case .insert(let id, let text, let html):
-            insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id))
+            insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
+        case .selectionRead(let id):
+            selection.read(id: id)
+        case .transformEnd(let id):
+            selection.end(id: id)
         case .permissionsCheck:
             permissions.check()
         case .permissionsRequest(let kind):
@@ -102,7 +118,7 @@ final class Helper {
     func shutdown() {
         devices.shutdown()
         capture.shutdown()
-        insertion.shutdown()
+        pasteboard.flush()
     }
 }
 

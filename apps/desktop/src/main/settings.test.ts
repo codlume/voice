@@ -9,6 +9,14 @@ import { DEFAULT_SETTINGS, type Settings } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import {
+  BUILT_IN_TRANSFORMS,
+  DEFAULT_TRANSFORMS,
+  POLISH_ID,
+  restoreDefaults,
+  type Transform,
+  type TransformId,
+} from "../shared/transforms.ts";
+import {
   applyPatch,
   loadSettings,
   parseSettings,
@@ -55,6 +63,14 @@ const everywhere = (style: WritingStyle): CategoryStyles => ({
 });
 
 const stylesOf = (cleanup: object) => parseSettings({ cleanup }).cleanup.styles;
+
+const OPTION_1 = { keycode: 18, modifiers: ["option"] } as const;
+const bullets: Transform = {
+  id: "synthetic-bullets" as TransformId,
+  name: "Bullets",
+  instruction: "Turn this into a bulleted list.",
+  shortcut: { keycode: 11, modifiers: ["control", "option"] },
+};
 
 describe("parseSettings", () => {
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
@@ -127,6 +143,7 @@ describe("parseSettings", () => {
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
+      transforms: DEFAULT_TRANSFORMS,
     });
   });
 
@@ -136,6 +153,26 @@ describe("parseSettings", () => {
       expect(parseSettings({ diagnostics }).diagnostics).toBe("off");
     },
   );
+
+  test.each([undefined, null, "on", []])(
+    "loads transforms %j as the switched-off defaults",
+    (transforms) => {
+      expect(parseSettings({ transforms }).transforms).toEqual(DEFAULT_TRANSFORMS);
+    },
+  );
+
+  test("drops unreadable transforms and resets an auto-apply choice that names none", () => {
+    const transforms = {
+      enabled: true,
+      items: [bullets, { id: "broken", name: "", instruction: "x" }, { ...bullets, name: "Copy" }],
+      autoApply: "broken",
+    };
+    expect(parseSettings({ transforms }).transforms).toEqual({
+      enabled: true,
+      items: [bullets],
+      autoApply: null,
+    });
+  });
 
   test.each(["on", "off"] as const)("keeps a saved diagnostics choice %j", (diagnostics) => {
     expect(parseSettings({ diagnostics }).diagnostics).toBe(diagnostics);
@@ -247,6 +284,11 @@ describe("applyPatch", () => {
     { patch: { theme: "dark", volume: 11 } },
     { patch: { cleanup: { assignments: [] } } },
     { patch: { cleanup: { styles: { chat: "casual" } } } },
+    {
+      patch: {
+        transforms: { items: [...BUILT_IN_TRANSFORMS, { ...bullets, shortcut: OPTION_1 }] },
+      },
+    },
   ])("rejects malformed wire patch $patch without replacing saved settings", async ({ patch }) => {
     const dir = await mkdtemp(NodePath.join(tmpdir(), "voice-settings-patch-"));
     const file = NodePath.join(dir, "settings.json");
@@ -319,10 +361,81 @@ describe("applyPatch", () => {
       ],
       dictionary: [{ id: "d", phrase: "btw", replacement: "by the way" }],
       zoomLevel: 1.5,
+      transforms: { enabled: true, items: [bullets], autoApply: bullets.id },
     };
     const { assignments: _, ...cleanup } = changed.cleanup;
     const wire: unknown = JSON.parse(JSON.stringify({ ...changed, cleanup }));
     expect(applyPatch(DEFAULT_SETTINGS, parseSettingsPatch(wire))).toEqual(changed);
+  });
+
+  test("a transforms patch changes only the fields it names and replaces the list whole", () => {
+    const on = applyPatch(DEFAULT_SETTINGS, parseSettingsPatch({ transforms: { enabled: true } }));
+    expect(on.transforms).toEqual({ ...DEFAULT_TRANSFORMS, enabled: true });
+    const chosen = applyPatch(on, parseSettingsPatch({ transforms: { autoApply: POLISH_ID } }));
+    expect(chosen.transforms).toEqual({ ...on.transforms, autoApply: POLISH_ID });
+    const replaced = applyPatch(
+      chosen,
+      parseSettingsPatch({ transforms: { items: [...BUILT_IN_TRANSFORMS, bullets] } }),
+    );
+    expect(replaced.transforms).toEqual({
+      enabled: true,
+      items: [...BUILT_IN_TRANSFORMS, bullets],
+      autoApply: POLISH_ID,
+    });
+    const off = applyPatch(replaced, parseSettingsPatch({ transforms: { autoApply: null } }));
+    expect(off.transforms.autoApply).toBeNull();
+    expect(applyPatch(replaced, { theme: "dark" }).transforms).toEqual(replaced.transforms);
+  });
+
+  test("deleting the auto-apply transform resets the choice to none", () => {
+    const chosen = applyPatch(DEFAULT_SETTINGS, {
+      transforms: { items: [...BUILT_IN_TRANSFORMS, bullets], autoApply: bullets.id },
+    });
+    const deleted = applyPatch(
+      chosen,
+      parseSettingsPatch({ transforms: { items: BUILT_IN_TRANSFORMS } }),
+    );
+    expect(deleted.transforms).toEqual({ ...DEFAULT_TRANSFORMS, autoApply: null });
+  });
+
+  test.each([
+    ["a malformed shortcut", [{ ...bullets, shortcut: { keycode: 40, modifiers: ["shift"] } }]],
+    ["a shortcut without modifiers", [{ ...bullets, shortcut: { keycode: 40, modifiers: [] } }]],
+    ["a modifier as the key", [{ ...bullets, shortcut: { keycode: 58, modifiers: ["option"] } }]],
+    ["a duplicate shortcut", [...BUILT_IN_TRANSFORMS, { ...bullets, shortcut: OPTION_1 }]],
+    ["a repeated id", [bullets, { ...bullets, shortcut: null }]],
+    ["an empty name", [{ ...bullets, name: "" }]],
+    ["an item that is not one", [bullets, "Polish"]],
+  ])("refuses a transform list with %s", (_label, items) => {
+    expect(() => parseSettingsPatch({ transforms: { items } })).toThrow(
+      "Could not save these settings.",
+    );
+  });
+
+  test.each([
+    { transforms: null },
+    { transforms: { enabled: "true" } },
+    { transforms: { items: {} } },
+    { transforms: { autoApply: 3 } },
+    { transforms: { shortcuts: [] } },
+  ])("refuses the transforms patch %j", (patch) => {
+    expect(() => parseSettingsPatch(patch)).toThrow("Could not save these settings.");
+  });
+
+  test("restoring defaults through a patch keeps the transforms the user made", () => {
+    const onOption1 = { ...bullets, shortcut: OPTION_1 };
+    const edited = { ...DEFAULT_TRANSFORMS, enabled: true, autoApply: bullets.id };
+    const before = applyPatch(DEFAULT_SETTINGS, {
+      transforms: { ...edited, items: [onOption1] },
+    });
+    const wire: unknown = JSON.parse(
+      JSON.stringify({ transforms: { items: restoreDefaults(before.transforms.items) } }),
+    );
+    expect(applyPatch(before, parseSettingsPatch(wire)).transforms).toEqual({
+      enabled: true,
+      items: [{ ...BUILT_IN_TRANSFORMS[0], shortcut: null }, BUILT_IN_TRANSFORMS[1], onOption1],
+      autoApply: bullets.id,
+    });
   });
 
   test("mute preference survives unrelated patches and can be turned back off", () => {
@@ -369,6 +482,7 @@ describe("applyPatch", () => {
       snippets: [],
       dictionary: [],
       zoomLevel: 0,
+      transforms: DEFAULT_TRANSFORMS,
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({
       enabled: true,
@@ -643,6 +757,27 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual({ ...older, zoomLevel: 0 });
   });
 
+  test("a settings file from before Transforms loads them switched off with the built-ins", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const { transforms: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
+    await writeFile(file, JSON.stringify(older));
+    expect(loadSettings(file)).toEqual({ ...older, transforms: DEFAULT_TRANSFORMS });
+  });
+
+  test("a settings file with Option+Escape, the cancel key, loads with that shortcut nulled", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const onEscape = { ...bullets, shortcut: { keycode: 53, modifiers: ["option"] } };
+    await writeFile(file, JSON.stringify({ transforms: { enabled: true, items: [onEscape] } }));
+    expect(loadSettings(file).transforms.items).toEqual([{ ...bullets, shortcut: null }]);
+  });
+
+  test("a settings file whose transforms were all deleted loads with none", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const settings = applyPatch(DEFAULT_SETTINGS, { transforms: { items: [] } });
+    await saveSettings(file, settings);
+    expect(loadSettings(file).transforms.items).toEqual([]);
+  });
+
   test("a settings file from before snippets loads with none", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { snippets: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
@@ -741,8 +876,14 @@ describe("load and save", () => {
         { id: "2", phrase: "btw", replacement: "by the way" },
       ],
       zoomLevel: 1.5,
+      transforms: {
+        enabled: true,
+        items: [bullets, { ...BUILT_IN_TRANSFORMS[1], shortcut: null }],
+        autoApply: bullets.id,
+      },
     });
     expect(settings.cleanup.assignments).toHaveLength(2);
+    expect(settings.transforms.items).toHaveLength(2);
     await saveSettings(file, settings);
     expect(loadSettings(file)).toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);

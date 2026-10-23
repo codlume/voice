@@ -5,24 +5,45 @@ public struct KeyEvent: Equatable, Sendable {
     public var keycode: Int64
     /// Raw `CGEventFlags` bits, including the device-side left/right modifier bits.
     public var flags: UInt64
+    public var isRepeat: Bool
 
-    public init(kind: Kind, keycode: Int64, flags: UInt64) {
+    public init(kind: Kind, keycode: Int64, flags: UInt64, isRepeat: Bool = false) {
         self.kind = kind
         self.keycode = keycode
         self.flags = flags
+        self.isRepeat = isRepeat
     }
 }
 
+public enum HelperActivity: Sendable { case idle, capturing, transforming }
+
 public struct HotkeyDecision: Equatable, Sendable {
-    public var action: HotkeyAction?
+    public enum Emit: Equatable, Sendable {
+        case hotkey(HotkeyAction)
+        case transform(String)
+        case nothing
+    }
+
+    public var emit: Emit
     public var consume: Bool
 
-    public init(action: HotkeyAction?, consume: Bool) {
-        self.action = action
+    public init(emit: Emit, consume: Bool) {
+        self.emit = emit
         self.consume = consume
     }
 
-    public static let none = HotkeyDecision(action: nil, consume: false)
+    public static let none = HotkeyDecision(emit: .nothing, consume: false)
+}
+
+/// The generic modifier bits of `flags` as the families a shortcut names. Caps Lock, fn and the
+/// numeric-pad bits are ignored: arrow and function keys set the fn bit on their own.
+public func modifierFamilies(flags: UInt64) -> Set<Modifier> {
+    var families = Set<Modifier>()
+    if flags & 0x2_0000 != 0 { families.insert(.shift) }
+    if flags & 0x4_0000 != 0 { families.insert(.control) }
+    if flags & 0x8_0000 != 0 { families.insert(.option) }
+    if flags & 0x10_0000 != 0 { families.insert(.command) }
+    return families
 }
 
 extension HotkeyKey {
@@ -62,10 +83,17 @@ extension HotkeyKey {
 public struct Hotkeys: Sendable {
     private var hold: KeyHold
     private var toggle: KeyHold?
+    private var shortcuts: [TransformShortcut]
+    private var swallowed: Set<Int64> = []
 
-    public init(key: HotkeyKey, toggleKey: HotkeyKey?, initialFlags: UInt64) {
+    public init(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut] = [], initialFlags: UInt64) {
         hold = KeyHold(key: key, initialFlags: initialFlags)
         toggle = toggleKey.map { KeyHold(key: $0, initialFlags: initialFlags) }
+        shortcuts = transforms
+    }
+
+    public mutating func setTransforms(_ transforms: [TransformShortcut]) {
+        shortcuts = transforms
     }
 
     /// True while a key may still be down, so the live state deserves a periodic check.
@@ -76,22 +104,40 @@ public struct Hotkeys: Sendable {
     /// key that was down. Never emits `down` or `toggle`: a press or release seen only through
     /// polling is not a deliberate one.
     public mutating func reconcile(flags: UInt64) -> HotkeyAction? {
+        swallowed.removeAll()
         _ = toggle?.reconcile(flags: flags)
         return hold.reconcile(flags: flags)
     }
 
     /// At most one action per event: settings keep the two keys distinct, so a flagsChanged
     /// event belongs to one of them, and a keyDown chord speaks only for the hold key.
-    public mutating func handle(_ event: KeyEvent, captureActive: Bool) -> HotkeyDecision {
+    public mutating func handle(_ event: KeyEvent, activity: HelperActivity) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
-            guard captureActive else { return .none }
+            guard activity != .idle else { return .none }
             hold.cancel()
             toggle?.cancel()
-            return HotkeyDecision(action: .cancel, consume: true)
+            return HotkeyDecision(emit: .hotkey(.cancel), consume: true)
+        }
+        if event.kind == .keyUp, swallowed.remove(event.keycode) != nil {
+            return HotkeyDecision(emit: .nothing, consume: true)
+        }
+        if event.kind == .keyDown, let shortcut = matchingShortcut(event, activity: activity) {
+            if event.isRepeat { return HotkeyDecision(emit: .nothing, consume: true) }
+            swallowed.insert(event.keycode)
+            return HotkeyDecision(emit: .transform(shortcut.id), consume: true)
+        }
+        if event.kind == .keyDown, event.isRepeat, swallowed.contains(event.keycode) {
+            return HotkeyDecision(emit: .nothing, consume: true)
         }
         let tapped = toggle?.handle(event) == .up
         let action = hold.handle(event) ?? (tapped ? .toggle : nil)
-        return HotkeyDecision(action: action, consume: false)
+        return HotkeyDecision(emit: action.map(HotkeyDecision.Emit.hotkey) ?? .nothing, consume: false)
+    }
+
+    private func matchingShortcut(_ event: KeyEvent, activity: HelperActivity) -> TransformShortcut? {
+        guard activity != .capturing, !awaitingRelease else { return nil }
+        let families = modifierFamilies(flags: event.flags)
+        return shortcuts.first { $0.keycode == event.keycode && Set($0.modifiers) == families }
     }
 }
 

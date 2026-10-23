@@ -1,18 +1,18 @@
-import * as NodePath from "node:path";
-import { createInterface } from "node:readline";
-
 import type { CleanRequest, CleanResult, CleanupStyle } from "@voice/cleanup";
+import type { ModelSource } from "@voice/cleanup/download";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { createS1MiniProcess, type CleanupEngine, type ForkEngine } from "./cleanup-engine.ts";
+import { createS1MiniProcess, type CleanupEngine } from "./cleanup-engine.ts";
+import { forkUtility } from "./engine-process.ts";
 import { dictating } from "./session.ts";
 import type { AppState } from "./store.ts";
 
 export type CleanupModule = Pick<
   typeof import("@voice/cleanup/download"),
-  "downloadS1Mini" | "findS1Mini" | "removeS1Mini"
+  "downloadModel" | "findModel" | "removeModel"
 > & {
+  source: ModelSource;
   createS1Mini(options: { modelPath: string; onLost: (message: string) => void }): CleanupEngine;
 };
 
@@ -40,29 +40,19 @@ export type CleanupOptions = {
 };
 
 async function importModule(log: (message: string) => void): Promise<CleanupModule> {
-  const [{ downloadS1Mini, findS1Mini, removeS1Mini }, { utilityProcess }] = await Promise.all([
-    import("@voice/cleanup/download"),
-    import("electron"),
-  ]);
-  const fork: ForkEngine = (events) => {
-    const child = utilityProcess.fork(NodePath.join(__dirname, "cleanup-engine-worker.cjs"), [], {
-      serviceName: "Voice cleanup",
-      stdio: "pipe",
-      execArgv: [],
-    });
-    child.on("message", events.message).on("exit", (code) => {
-      log(`cleanup: exited (${code})`);
-      events.exit();
-    });
-    for (const output of [child.stdout, child.stderr]) {
-      if (output) createInterface({ input: output }).on("line", (line) => log(`cleanup: ${line}`));
-    }
-    return child;
-  };
+  const [{ downloadModel, findModel, removeModel, S1_MINI }, { utilityProcess }] =
+    await Promise.all([import("@voice/cleanup/download"), import("electron")]);
+  const fork = forkUtility(utilityProcess, {
+    entry: "cleanup-engine-worker.cjs",
+    serviceName: "Voice cleanup",
+    tag: "cleanup",
+    log,
+  });
   return {
-    downloadS1Mini,
-    findS1Mini,
-    removeS1Mini,
+    downloadModel,
+    findModel,
+    removeModel,
+    source: S1_MINI,
     createS1Mini: (options) => createS1MiniProcess({ ...options, fork }),
   };
 }
@@ -174,7 +164,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
   async function loadIfOnDisk() {
     if (!claimIdle()) return;
     const module = await loadModule();
-    const modelPath = await module.findS1Mini({ dir: options.modelsDir });
+    const modelPath = await module.findModel({ dir: options.modelsDir, source: module.source });
     if (modelPath === undefined) {
       options.onStatus({ state: "missing" });
       return;
@@ -195,8 +185,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
           if (controller.signal.aborted) return;
           let modelPath: string;
           try {
-            modelPath = await module.downloadS1Mini({
+            modelPath = await module.downloadModel({
               dir: options.modelsDir,
+              source: module.source,
               baseUrl: options.baseUrl,
               onProgress: (progress) => options.onStatus({ state: "downloading", progress }),
               signal: controller.signal,
@@ -219,7 +210,7 @@ export function createCleanup(options: CleanupOptions): Cleanup {
       return disposeThen(async () => {
         const module = await loadModule();
         try {
-          await module.removeS1Mini({ dir: options.modelsDir });
+          await module.removeModel({ dir: options.modelsDir, source: module.source });
         } catch (error) {
           options.onStatus({ state: "failed", message: message(error) });
           return;

@@ -17,9 +17,9 @@ await withHelper({}, async (helper) => {
   );
   if (mode === "toggle") {
     const holdKey = key === "fn" ? "rightOption" : "fn";
-    helper.send({ type: "hotkey.configure", key: holdKey, toggleKey: key });
+    helper.send({ type: "hotkey.configure", key: holdKey, toggleKey: key, transforms: [] });
   } else if (key !== "fn") {
-    helper.send({ type: "hotkey.configure", key, toggleKey: null });
+    helper.send({ type: "hotkey.configure", key, toggleKey: null, transforms: [] });
   }
   const before = helper.events.length;
   execFileSync(helperBinary("fnpost"), [key], { stdio: "inherit" });

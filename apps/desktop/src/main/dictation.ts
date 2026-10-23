@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { CleanupStyle } from "@voice/cleanup/style";
+import { countWords } from "@voice/cleanup/words";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
@@ -10,12 +12,19 @@ import {
 } from "../shared/dictation-language.ts";
 import type { Output } from "../shared/rewrite.ts";
 import { classify, cleanupStyleFor } from "../shared/style.ts";
+import {
+  BUILT_IN_TRANSFORMS,
+  POLISH_ID,
+  type LastTransform,
+  type TransformId,
+} from "../shared/transforms.ts";
+import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
-  dictating,
+  INSERT_TIMEOUT_MS,
   step,
   type Destination,
   type Effect as SessionEffect,
@@ -23,11 +32,17 @@ import {
   type SessionEvent,
 } from "./session.ts";
 import type { Store } from "./store.ts";
+import { budget, timingLine, type Budget } from "./timing.ts";
+import type { TransformModel } from "./transform-model.ts";
 
 export type DictationOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
   cleanup: Pick<Cleanup, "clean" | "loaded" | "keepGpuBusy" | "letGpuIdle">;
+  transform: {
+    model: Pick<TransformModel, "run" | "warm" | "onDisk">;
+    remember: (value: Omit<LastTransform, "finishedAt">) => void;
+  };
   onLevel: (level: number) => void;
   log: Log;
   onSessionDone: (report: SessionReport) => void;
@@ -37,15 +52,13 @@ export type DictationOptions = {
   now?: () => number;
 };
 
-export const CLEANUP_BASE_MS = 2000;
-export const CLEANUP_PER_WORD_MS = 20;
-export const CLEANUP_MAX_MS = 8000;
+export const CLEANUP_BUDGET: Budget = { base: 2000, perWord: 20, max: 8000 };
 export const CLEANUP_GRACE_MS = 1000;
+export const cleanupBudgetMs = (raw: string) => budget(CLEANUP_BUDGET, countWords(raw));
 
-export function cleanupBudgetMs(raw: string): number {
-  const words = raw.split(/\s+/).filter(Boolean).length;
-  return Math.min(CLEANUP_MAX_MS, CLEANUP_BASE_MS + CLEANUP_PER_WORD_MS * words);
-}
+// #311: the measured auto-apply times plus about 30% headroom.
+export const AUTO_APPLY_BUDGET: Budget = { base: 2000, perWord: 30, max: 20_000 };
+export const autoApplyBudgetMs = (raw: string) => budget(AUTO_APPLY_BUDGET, countWords(raw));
 
 type CleanupFailure = { message: string; entry: DiagnosticLog };
 
@@ -54,7 +67,6 @@ export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
-export const INSERT_TIMEOUT_MS = 5000;
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -100,6 +112,8 @@ export type Dictated = {
   destination: Destination | null;
 };
 
+type Work = { kind: "transform"; transformId: TransformId } | { kind: "style" } | null;
+
 const gaveTranscript = (outcome: Outcome) =>
   outcome.kind === "inserted" || outcome.kind === "notInserted";
 
@@ -126,14 +140,18 @@ export function createDictation(options: DictationOptions): Dictation {
   }
   let watchdog: NodeJS.Timeout | null = null;
 
-  // The language is the one captured at the start of the session, not the current setting.
-  function willCleanup(id: string): boolean {
-    return (
-      started?.id === id &&
-      supportsCleanup(started.language) &&
-      store.state.settings.cleanup.enabled &&
-      cleanup.loaded()
-    );
+  function workFor(id: string): Work {
+    if (started?.id !== id) return null;
+    const { settings } = store.state;
+    const { enabled, items, autoApply } = settings.transforms;
+    const transform = enabled ? items.find((item) => item.id === autoApply) : undefined;
+    if (transform && options.transform.model.onDisk()) {
+      return { kind: "transform", transformId: transform.id };
+    }
+    if (supportsCleanup(started.language) && settings.cleanup.enabled && cleanup.loaded()) {
+      return { kind: "style" };
+    }
+    return null;
   }
 
   function dispatch(event: SessionEvent) {
@@ -146,9 +164,11 @@ export function createDictation(options: DictationOptions): Dictation {
       if (state.phase !== before.phase || overdue) armWatchdog(state);
       // Transcription is the window to keep the GPU clocked up for the clean that follows.
       if (state.phase !== before.phase) {
-        if (state.phase === "transcribing" && willCleanup(state.id)) cleanup.keepGpuBusy();
-        else if (before.phase === "transcribing" && state.phase !== "cleaning")
+        if (state.phase === "transcribing" && workFor(state.id)?.kind === "style") {
+          cleanup.keepGpuBusy();
+        } else if (before.phase === "transcribing" && state.phase !== "cleaning") {
           cleanup.letGpuIdle();
+        }
       }
     }
     for (const effect of effects) run(effect);
@@ -198,6 +218,7 @@ export function createDictation(options: DictationOptions): Dictation {
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
         });
+        if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
         return;
       case "stopCapture":
         track(effect.id, { releasedAt: effect.releasedAt });
@@ -207,11 +228,15 @@ export function createDictation(options: DictationOptions): Dictation {
         send({ type: "capture.cancel", id: effect.id });
         return;
       case "cleanup": {
+        const { id, raw, work } = effect;
         const startedAt = now();
-        const budgetMs = cleanupBudgetMs(effect.raw);
+        const budgetMs = work.kind === "style" ? cleanupBudgetMs(raw) : autoApplyBudgetMs(raw);
         Effect.runFork(
           Effect.tryPromise({
-            try: (signal) => cleanup.clean(effect.raw, effect.style, { budgetMs, signal }),
+            try: (signal) =>
+              work.kind === "style"
+                ? clean(raw, work.style, budgetMs, signal)
+                : applyTransform(raw, work.transformId, budgetMs, signal),
             catch: (error): CleanupFailure => ({
               message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
               entry: {
@@ -234,31 +259,26 @@ export function createDictation(options: DictationOptions): Dictation {
                 }),
             }),
             Effect.match({
-              onSuccess: ({ text, chunks, cleaned }) => {
-                track(effect.id, { cleanupMs: now() - startedAt });
-                if (cleaned < chunks) {
-                  log(
-                    `cleanup partial: ${cleaned} of ${chunks} chunks cleaned, budget ${budgetMs} ms`,
-                    {
-                      message: "cleanup partial",
-                      level: "info",
-                      attributes: {
-                        "cleanup.chunks": chunks,
-                        "cleanup.cleaned": cleaned,
-                        "cleanup.budget_ms": budgetMs,
-                      },
-                    },
-                  );
-                }
-                dispatch({ type: "cleaned", id: effect.id, text });
+              onSuccess: (text) => {
+                track(id, { cleanupMs: now() - startedAt });
+                dispatch({ type: "cleaned", id, text });
               },
               onFailure: ({ message, entry }) => {
                 log(message, entry);
-                dispatch({ type: "cleanupFailed", id: effect.id });
+                dispatch({ type: "cleanupFailed", id });
               },
             }),
           ),
         );
+        return;
+      }
+      case "keepTransform": {
+        const { items } = store.state.settings.transforms;
+        options.transform.remember({
+          name: items.find((item) => item.id === effect.transformId)?.name ?? "Transform",
+          before: effect.before,
+          after: effect.after,
+        });
         return;
       }
       case "insert":
@@ -278,6 +298,56 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
+  async function clean(
+    raw: string,
+    style: CleanupStyle,
+    budgetMs: number,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const { text, chunks, cleaned } = await cleanup.clean(raw, style, { budgetMs, signal });
+    if (cleaned < chunks) {
+      log(`cleanup partial: ${cleaned} of ${chunks} chunks cleaned, budget ${budgetMs} ms`, {
+        message: "cleanup partial",
+        level: "info",
+        attributes: {
+          "cleanup.chunks": chunks,
+          "cleanup.cleaned": cleaned,
+          "cleanup.budget_ms": budgetMs,
+        },
+      });
+    }
+    return text;
+  }
+
+  async function applyTransform(
+    raw: string,
+    transformId: TransformId,
+    budgetMs: number,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const transform = store.state.settings.transforms.items.find((item) => item.id === transformId);
+    if (!transform) throw new Error("the auto-apply transform was removed");
+    const result = await options.transform.model
+      .run({
+        instruction: transform.instruction,
+        text: raw,
+        dictation: {
+          // The guard's lost-opening check was measured on the stock Polish instruction (#312).
+          instructionKeepsWords: BUILT_IN_TRANSFORMS.some(
+            (builtIn) => builtIn.id === POLISH_ID && builtIn.instruction === transform.instruction,
+          ),
+        },
+        budgetMs,
+        signal,
+      })
+      .catch((error: unknown) => {
+        // The worker's message is not ours to repeat in the log; the type is enough.
+        throw Object.assign(new Error("transform failed"), { name: errorType(error) });
+      });
+    if (!result.ok) throw new Error(`transform ${result.failure.kind}`);
+    return result.text;
+  }
+
   function finish(
     id: string,
     outcome: Outcome,
@@ -290,10 +360,7 @@ export function createDictation(options: DictationOptions): Dictation {
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
     };
-    const parts = Object.entries(capture?.timings ?? {}).flatMap(([key, value]) =>
-      value === undefined ? [] : [`${key}=${Math.round(value)}`],
-    );
-    log(`session ${id.slice(0, 8)} outcome=${outcome.kind} ${parts.join(" ")}`);
+    log(timingLine("session", id, outcome.kind, capture?.timings ?? {}));
     options.onSessionDone({ outcome, finishedAt, capture });
     options.history.settle(id, outcome.kind === "inserted");
     if (produced && gaveTranscript(outcome)) {
@@ -320,6 +387,12 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       case "hotkey": {
         const asr = store.state.models.asr.state;
+        if (
+          (event.action === "down" || event.action === "toggle") &&
+          activity(store.state) === "transform"
+        ) {
+          return;
+        }
         switch (event.action) {
           case "down":
             return dispatch({ type: "hotkeyDown", id: randomUUID(), asr });
@@ -362,13 +435,15 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);
+        const decided = workFor(event.id);
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup: willCleanup(event.id)
-            ? cleanupStyleFor(category, settings.cleanup.styles)
-            : null,
+          cleanup:
+            decided?.kind === "style"
+              ? { kind: "style", style: cleanupStyleFor(category, settings.cleanup.styles) }
+              : decided,
           destination: event.target && { bundleId: event.target.bundleId, category },
           rewrites: {
             dictionary: settings.dictionary,
@@ -436,18 +511,19 @@ export function createDictation(options: DictationOptions): Dictation {
 }
 
 /**
- * Returns a request that runs `show` now, or once the current session reaches its outcome.
- * Showing a window mid-session would take focus from the target app and fail the insertion.
+ * Returns a request that runs `show` now, or once the current session or transform run reaches
+ * its outcome. Showing a window mid-session would take focus from the target app and fail the
+ * insertion.
  */
-export function whenNotDictating(store: Store, show: () => void): () => void {
+export function whenIdle(store: Store, show: () => void): () => void {
   let pending = false;
   store.subscribe((state) => {
-    if (!pending || dictating(state.session)) return;
+    if (!pending || activity(state) !== "idle") return;
     pending = false;
     show();
   });
   return () => {
-    if (dictating(store.state.session)) pending = true;
+    if (activity(store.state) !== "idle") pending = true;
     else show();
   };
 }

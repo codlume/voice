@@ -10,7 +10,10 @@ public enum CaptureFailure: String, Codable, Sendable { case permission, device,
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
-public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, failed }
+public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
+public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
+public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
+public enum Modifier: String, Codable, Sendable { case control, option, shift, command }
 public enum AsrState: String, Codable, Sendable { case missing, downloading, loading, ready, failed }
 public enum LogLevel: String, Codable, Sendable { case info, error }
 
@@ -38,8 +41,25 @@ public struct Microphone: Codable, Equatable, Sendable {
     }
 }
 
+public struct TransformShortcut: Equatable, Sendable {
+    public let id: String
+    public let keycode: Int64
+    public let modifiers: [Modifier]
+
+    public init(id: String, keycode: Int64, modifiers: [Modifier]) {
+        self.id = id
+        self.keycode = keycode
+        self.modifiers = modifiers
+    }
+}
+
+public enum SelectionResult: Equatable, Sendable {
+    case selected(text: String, via: SelectionVia)
+    case failed(SelectionFailure)
+}
+
 public enum HelperCommand: Equatable, Sendable {
-    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?)
+    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
     case microphoneConfigure(microphone: Microphone?)
     /// `detectHost` is main's say on whether the session can use a page host at all.
     case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?, detectHost: Bool)
@@ -48,6 +68,9 @@ public enum HelperCommand: Equatable, Sendable {
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
     case insert(id: String, text: String, html: String?)
+    case selectionRead(id: String)
+    /// Ends the run; idempotent, an unknown id is ignored.
+    case transformEnd(id: String)
     case permissionsCheck
     case permissionsRequest(kind: PermissionKind)
     case asrPrepare(download: Bool)
@@ -74,13 +97,15 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 12
+public let helperProtocolVersion = 13
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
     case microphonesUnavailable(message: String)
     case ready(version: Int)
     case hotkey(action: HotkeyAction)
+    case transform(transformId: String)
+    case selectionResult(id: String, result: SelectionResult)
     case captureStarted(id: String, startMs: Double)
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
@@ -110,6 +135,7 @@ private enum Key: String, CodingKey {
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
+    case transforms, transformId, keycode, modifiers, outcome, via
 }
 
 extension HelperCommand: Decodable {
@@ -119,7 +145,8 @@ extension HelperCommand: Decodable {
         switch type {
         case "hotkey.configure":
             self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key),
-                                    toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey))
+                                    toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey),
+                                    transforms: try c.decode([TransformShortcut].self, forKey: .transforms))
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
@@ -138,6 +165,8 @@ extension HelperCommand: Decodable {
             self = .insert(id: try c.decode(String.self, forKey: .id),
                            text: try c.decode(String.self, forKey: .text),
                            html: try c.decodeIfPresent(String.self, forKey: .html))
+        case "selection.read": self = .selectionRead(id: try c.decode(String.self, forKey: .id))
+        case "transform.end": self = .transformEnd(id: try c.decode(String.self, forKey: .id))
         case "permissions.check": self = .permissionsCheck
         case "permissions.request":
             self = .permissionsRequest(kind: try c.decode(PermissionKind.self, forKey: .kind))
@@ -197,6 +226,21 @@ extension HelperEvent: Encodable {
         case .hotkey(let action):
             try c.encode("hotkey", forKey: .type)
             try c.encode(action, forKey: .action)
+        case .transform(let transformId):
+            try c.encode("transform", forKey: .type)
+            try c.encode(transformId, forKey: .transformId)
+        case .selectionResult(let id, let result):
+            try c.encode("selection.result", forKey: .type)
+            try c.encode(id, forKey: .id)
+            switch result {
+            case .selected(let text, let via):
+                try c.encode("selected", forKey: .outcome)
+                try c.encode(text, forKey: .text)
+                try c.encode(via, forKey: .via)
+            case .failed(let reason):
+                try c.encode("failed", forKey: .outcome)
+                try c.encode(reason, forKey: .reason)
+            }
         case .captureStarted(let id, let startMs):
             try c.encode("capture.started", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -278,6 +322,21 @@ extension HelperEvent: Encodable {
             return String(decoding: try encoder.encode(self), as: UTF8.self)
         } catch {
             return #"{"type":"log","level":"error","message":"event encoding failed"}"#
+        }
+    }
+}
+
+extension TransformShortcut: Decodable {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        id = try c.decode(String.self, forKey: .id)
+        keycode = try c.decode(Int64.self, forKey: .keycode)
+        modifiers = try c.decode([Modifier].self, forKey: .modifiers)
+        // The event tap swallows a matching press system-wide, so a shortcut Shift alone (or
+        // nothing) modifies would eat plain typing in every app.
+        guard modifiers.contains(where: { $0 != .shift }) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .modifiers, in: c, debugDescription: "a transform shortcut needs a modifier other than shift")
         }
     }
 }

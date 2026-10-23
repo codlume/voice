@@ -21,18 +21,41 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/helper.mjs";
+import {
+  CONTENDING_VOICE_MESSAGE,
+  runningVoiceProcesses,
+} from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
+import {
+  clipboardKept,
+  electronTarget,
+  restoreClipboard,
+  saveClipboard,
+  textEditTarget,
+} from "../../../../scripts/targets.mjs";
+import { clickExpression, visible } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { keyEvents } from "./key-events.mjs";
+import {
+  expectedLanding,
+  freshLast,
+  optionShortcutTransform,
+  parseTransformFlags,
+  pillSummary,
+  resolveOutcome,
+  shouldEscape,
+  TRANSFORM_PARAGRAPH,
+  transformLogLine,
+} from "./transforms.mjs";
 import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
 import {
-  announcedPorts,
   claimScratch,
   electronDependency,
   electronPath,
   evaluateInMain,
   landedText,
   modelFiles,
+  optionalModelFiles,
   Page,
   prepareUserData,
   processIdentity,
@@ -55,6 +78,7 @@ const worktree = realpathSync(repoDir);
 const worktreeId = worktreeIdentity(worktree);
 const userDataPath = scratchPath("voice-verify", worktree);
 const statePath = `${userDataPath}.json`;
+const savedClipboardPath = `${userDataPath}.clipboard.json`;
 const evidenceRoot = join(tmpdir(), "voice-verify-evidence", worktreeId);
 
 const [command = "help", ...args] = process.argv.slice(2);
@@ -160,25 +184,6 @@ function otherVoiceProcesses(ownUserData) {
   return runningVoiceProcesses().filter((line) => !ownUserData || !line.includes(ownUserData));
 }
 
-const ACCESSIBLE_NAME = `(el) => {
-  const ids = el.getAttribute("aria-labelledby");
-  const text = el.getAttribute("aria-label")
-    ?? (ids && ids.split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" "))
-    ?? (el.labels?.[0]?.textContent)
-    ?? el.textContent;
-  return (text ?? "").replace(/\\s+/g, " ").trim();
-}`;
-const CANDIDATES =
-  'button, a, [role="switch"], [role="radio"], [role="option"], [role="combobox"], [role="menuitem"]';
-const visible = "(el) => el.getClientRects().length > 0";
-
-function findExpression(target) {
-  if (target.startsWith("css:")) {
-    return `[...document.querySelectorAll(${show(target.slice(4))})].filter(${visible})`;
-  }
-  return `[...document.querySelectorAll(${show(CANDIDATES)})].filter(${visible}).filter((el) => (${ACCESSIBLE_NAME})(el) === ${show(target)})`;
-}
-
 async function waitOn(page, expression, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let last;
@@ -212,8 +217,6 @@ const newest = (dir) => {
   return latest;
 };
 const mtime = (path) => (existsSync(path) ? statSync(path).mtimeMs : 0);
-const osascript = (script) =>
-  execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 
 // A second copy of Voice on the instance's userData, as when the user opens Voice again.
 function openSecondCopy(state, ...extraArgs) {
@@ -221,6 +224,108 @@ function openSecondCopy(state, ...extraArgs) {
     VOICE_HELPER_TEST_AUDIO: state.fakeMicrophonePath,
   });
   return spawnSync(electronPath(), [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
+}
+
+function exclusiveDesktop(state, { recheckInstance = false } = {}) {
+  const check = () => {
+    if (recheckInstance) requireInstance();
+    const others = otherVoiceProcesses(state.userData);
+    if (others.length > 0)
+      throw new VerificationBlocked(CONTENDING_VOICE_MESSAGE, { desktop: others });
+  };
+  const fnpost = (...keys) => {
+    check();
+    execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
+  };
+  return { check, fnpost };
+}
+
+function interruptible(message) {
+  let interrupt;
+  const interrupted = new Promise((_, reject) => {
+    interrupt = () => reject(new Error(message));
+  });
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
+  return {
+    wait: (promise) => Promise.race([promise, interrupted]),
+    release() {
+      process.removeListener("SIGINT", interrupt);
+      process.removeListener("SIGTERM", interrupt);
+    },
+  };
+}
+
+async function armTransform({ hub, snapshots, target, wait }) {
+  await wait(target.open(TRANSFORM_PARAGRAPH));
+  await wait(target.selectAll());
+  const before = await wait(target.read());
+  await wait(target.front());
+  await wait(
+    waitOn(hub, "!document.hasFocus()", 3000).catch(() =>
+      fail("the Voice window kept focus, so no shortcut is registered"),
+    ),
+  );
+  await wait(
+    snapshots.waitFor((s) => s.session.kind === "idle", {
+      timeoutMs: 5000,
+      label: "an idle Flow Bar before the shortcut",
+    }),
+  );
+  return before;
+}
+
+async function pressTransform({ desktop, snapshots, keycode, escape, wait }) {
+  const pressedAt = Date.now();
+  desktop.fnpost("combo", String(keycode), "option", "--side=left");
+  const started = await wait(
+    snapshots.waitFor((s) => ["transforming", "transformDone"].includes(s.session.kind), {
+      timeoutMs: 5000,
+      label: "a transform run after the shortcut (Transforms on, target frontmost)",
+    }),
+  );
+  const runFrom = snapshots.items.indexOf(started);
+  let escapedAfterMs = null;
+  if (shouldEscape(escape, started.session.kind)) {
+    await wait(sleep(400));
+    if (shouldEscape(escape, snapshots.items.at(-1).session.kind)) {
+      desktop.fnpost("escape");
+      escapedAfterMs = Date.now() - pressedAt;
+    }
+  }
+  return { pressedAt, started, runFrom, escapedAfterMs };
+}
+
+async function followTransform({ snapshots, state, logOffset, pressed, wait }) {
+  const { started, runFrom, pressedAt } = pressed;
+  const finished =
+    started.session.kind === "transformDone"
+      ? started
+      : await wait(
+          snapshots.waitFor((s) => ["transformDone", "idle"].includes(s.session.kind), {
+            timeoutMs: 150_000,
+            label: "the transform to finish",
+          }),
+        );
+  const finishedMs = Date.now() - pressedAt;
+  const run = snapshots.items.slice(runFrom);
+  const newLog = () => readFileSync(state.logPath).subarray(logOffset).toString("utf8");
+  const logged = await wait(
+    poll(() => transformLogLine(newLog()) ?? undefined, 5000, "transform line").catch(() => null),
+  );
+  return { finished, finishedMs, run, logged };
+}
+
+async function collectTransform({ hub, target, outcome, pressedAt, clipboardSaved, wait }) {
+  const last = await wait(hub.evaluate("window.voice.getLastTransform()").catch(() => null));
+  const lastTransform = freshLast(last, pressedAt);
+  const expected = expectedLanding(outcome, lastTransform);
+  const { text: after, landedMs } =
+    expected === null
+      ? { text: await wait(target.read()), landedMs: null }
+      : await wait(landedText(() => target.read(), expected, { timeoutMs: 2000 }));
+  const clipboardUnchanged = await wait(clipboardKept(clipboardSaved));
+  return { lastTransform, after, landedMs, clipboardUnchanged };
 }
 
 const commands = {
@@ -272,6 +377,12 @@ const commands = {
         Object.entries(modelFiles).map(([id, file]) => [
           id,
           existsSync(join(cache, file)) ? "cached" : "will download",
+        ]),
+      ),
+      optionalTestModels: Object.fromEntries(
+        Object.entries(optionalModelFiles).map(([id, file]) => [
+          id,
+          existsSync(join(cache, file)) ? "cached" : "missing",
         ]),
       ),
       instance: instance
@@ -770,17 +881,7 @@ const commands = {
     if (!target) fail("usage: click <accessible name | css:selector> [hub|pill]");
     const page = await connect(which);
     try {
-      const result = await waitOn(
-        page,
-        `(() => {
-          const matches = ${findExpression(target)};
-          if (matches.length !== 1) return matches.length > 1 ? { ambiguous: matches.map(${ACCESSIBLE_NAME}) } : false;
-          if (matches[0].disabled || matches[0].getAttribute("aria-disabled") === "true") return false;
-          matches[0].click();
-          return { clicked: (${ACCESSIBLE_NAME})(matches[0]) };
-        })()`,
-        5000,
-      );
+      const result = await waitOn(page, clickExpression(target), 5000);
       if (result.ambiguous)
         fail(
           `${show(target)} matches ${result.ambiguous.length} elements: ${show(result.ambiguous)}`,
@@ -809,6 +910,24 @@ const commands = {
       // insertText goes through the browser's input pipeline, so React sees it as a paste.
       await page.call("Input.insertText", { text });
       out({ typed: text.length });
+    } finally {
+      page.close();
+    }
+  },
+
+  async key() {
+    const [code, ...modifiers] = args;
+    if (!code) fail("usage: key <code> [option|shift|control|command…]");
+    let events;
+    try {
+      events = keyEvents(code, modifiers);
+    } catch (error) {
+      fail(error.message);
+    }
+    const page = await connect("hub");
+    try {
+      for (const event of events) await page.call("Input.dispatchKeyEvent", event);
+      out({ pressed: code, modifiers });
     } finally {
       page.close();
     }
@@ -916,6 +1035,30 @@ const commands = {
     out(path);
   },
 
+  clipboard() {
+    const [action] = args;
+    if (action === "save") {
+      // A second save would replace the user's clipboard with whatever a recipe copied since.
+      try {
+        writeFileSync(savedClipboardPath, JSON.stringify(saveClipboard()), {
+          mode: 0o600,
+          flag: "wx",
+        });
+      } catch (error) {
+        if (error.code === "EEXIST") fail("a saved clipboard is waiting; run clipboard restore");
+        throw error;
+      }
+      out({ saved: true });
+    } else if (action === "restore") {
+      if (!existsSync(savedClipboardPath)) fail("no saved clipboard; run clipboard save first");
+      const restored = restoreClipboard(JSON.parse(readFileSync(savedClipboardPath, "utf8")));
+      rmSync(savedClipboardPath);
+      out({ restored });
+    } else {
+      fail("usage: clipboard save|restore");
+    }
+  },
+
   async note() {
     const [name, ...rest] = args;
     if (!name || rest.length === 0) fail("usage: note <name> <text...>");
@@ -936,22 +1079,12 @@ const commands = {
     }
     const { end, mode, app } = parsed;
     const state = requireInstance();
-    const checkAccess = () => {
-      if (scenarioOwner) requireInstance();
-      const others = otherVoiceProcesses(state.userData);
-      if (others.length > 0)
-        throw new VerificationBlocked(
-          "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.",
-          { desktop: others },
-        );
-    };
+    const { check: checkAccess, fnpost } = exclusiveDesktop(state, {
+      recheckInstance: Boolean(scenarioOwner),
+    });
     checkAccess();
     const fixture = join(fixturesDir, wav);
     if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
-    const fnpost = (...keys) => {
-      checkAccess();
-      execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
-    };
 
     const hub = await connect("hub");
     const { settings } = await hub.evaluate("window.voice.getSnapshot()");
@@ -970,38 +1103,13 @@ const commands = {
     const waitForLog = (pattern, timeoutMs, label) =>
       poll(() => logLine(pattern), timeoutMs, label);
 
-    const targetEnv = smokeEnvironment(state.userData, {
-      VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
-    });
     checkAccess();
-    const target = start(
-      electronPath(),
-      [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-      { env: targetEnv, stdio: ["ignore", "ignore", "pipe"] },
-    );
-    let interrupt;
-    const interrupted = new Promise((_, reject) => {
-      interrupt = () => reject(new Error("dictation interrupted"));
-    });
-    const wait = (promise) => Promise.race([promise, interrupted]);
-    process.on("SIGINT", interrupt);
-    process.on("SIGTERM", interrupt);
-    let targetPage;
+    const { wait, release } = interruptible("dictation interrupted");
+    let target;
     try {
-      const field = 'document.getElementById("field")';
-      const { DevTools: targetPort } = await wait(announcedPorts(target, ["DevTools"]));
-      targetPage = await wait(Page.connect(targetPort, "index.html"));
+      target = await electronTarget(state.userData, { wait });
       checkAccess();
-      osascript(
-        `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
-      );
-      await wait(
-        waitOn(
-          targetPage,
-          `${field}.focus() || (document.hasFocus() && document.activeElement.id === "field")`,
-          5000,
-        ),
-      );
+      await wait(target.open());
       const newestEntry = () =>
         hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
       const previous = await wait(newestEntry());
@@ -1056,7 +1164,7 @@ const commands = {
           }),
         );
       }
-      const read = () => targetPage.evaluate(`${field}.value`);
+      const read = () => target.read();
       // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
       const current = await wait(newestEntry());
       const latest = current?.id === previous?.id ? null : current;
@@ -1101,11 +1209,87 @@ const commands = {
     } finally {
       if (!scenarioOwner || readState()?.scenarioOwner === scenarioOwner)
         rmSync(state.fakeMicrophonePath, { force: true });
-      targetPage?.close();
+      await target?.close();
       hub.close();
       await stopChildren();
-      process.removeListener("SIGINT", interrupt);
-      process.removeListener("SIGTERM", interrupt);
+      release();
+    }
+  },
+
+  async transform() {
+    let flags;
+    try {
+      flags = parseTransformFlags(args);
+    } catch (error) {
+      fail(error.message);
+    }
+    const { target: targetKind, keycode, escape } = flags;
+    const state = requireInstance();
+    const desktop = exclusiveDesktop(state);
+    desktop.check();
+    const hub = await connect("hub");
+    const { wait, release } = interruptible("transform interrupted");
+    let target;
+    let clipboardSaved;
+    try {
+      const { settings, models } = await wait(hub.evaluate("window.voice.getSnapshot()"));
+      const transform = optionShortcutTransform(settings.transforms, keycode);
+      const snapshots = await snapshotStream(hub);
+      const logOffset = statSync(state.logPath).size;
+      clipboardSaved = saveClipboard();
+
+      desktop.check();
+      target =
+        targetKind === "textedit"
+          ? textEditTarget("transform")
+          : await electronTarget(state.userData, { wait });
+      const before = await armTransform({ hub, snapshots, target, wait });
+      const pressed = await pressTransform({ desktop, snapshots, keycode, escape, wait });
+      const followed = await followTransform({ snapshots, state, logOffset, pressed, wait });
+      const { outcome, outcomeFrom } = resolveOutcome(followed.finished, followed.logged);
+      const collected = await collectTransform({
+        hub,
+        target,
+        outcome,
+        pressedAt: pressed.pressedAt,
+        clipboardSaved,
+        wait,
+      });
+
+      const result = {
+        target: targetKind,
+        transform: transform.name,
+        shortcut: { keycode, modifiers: ["option"], side: "left" },
+        escapedAfterMs: pressed.escapedAfterMs,
+        modelAtPress: models.transform.state,
+        pill: pillSummary(followed.run, followed.finished),
+        outcome,
+        outcomeFrom,
+        finishedMs: followed.finishedMs,
+        before,
+        after: collected.after,
+        landedMs: collected.landedMs,
+        lastTransform: collected.lastTransform,
+        clipboardUnchanged: collected.clipboardUnchanged,
+        logLine: followed.logged?.line ?? null,
+      };
+      const path = join(
+        evidenceDir(),
+        `transform-${targetKind}${escape ? "-escape" : ""}-${Date.now()}.json`,
+      );
+      writeFileSync(path, JSON.stringify(result, null, 2));
+      out({ ...result, evidence: path });
+      if (!outcome) fail("the run ended without a transformDone pill or a transform log line");
+    } finally {
+      try {
+        await target?.close();
+        if (clipboardSaved && restoreClipboard(clipboardSaved))
+          console.error("restored the clipboard saved before the transform");
+      } finally {
+        hub.close();
+        await stopChildren();
+        release();
+      }
     }
   },
 
@@ -1122,6 +1306,7 @@ const commands = {
   text                           current sidebar nav and visible page text
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
+  key <code> [modifier...]       press one key in the hub, e.g. key Digit1 option (modifiers: option shift control command)
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
   callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
   menu <id>                      choose an application menu item by id, as its shortcut would
@@ -1133,8 +1318,11 @@ const commands = {
   eval <page> <expr>             evaluate in hub or pill, print the result
   shot <name> [page]             screenshot into the evidence dir
   note <name> <text...>          append text evidence
+  clipboard save|restore         keep every type on the clipboard in a private file, then put it back
   dictate [fixture.wav] [--end=audio|escape|immediate] [--key=hold|toggle] [--app=<bundleId>[@host]]
-                                 --app makes the helper report that target app for the session`);
+                                 --app makes the helper report that target app for the session
+  transform [--target=electron|textedit] [--shortcut=<keycode>] [--escape]
+                                 select a synthetic paragraph in the target, press Left Option+key, report the run`);
   },
 };
 
@@ -1142,7 +1330,7 @@ try {
   if (!Object.hasOwn(commands, command)) fail(`unknown command ${command}; try help`);
   await commands[command]();
 } catch (error) {
-  if (command === "dictate" && error instanceof VerificationBlocked)
+  if (["dictate", "transform"].includes(command) && error instanceof VerificationBlocked)
     out({ status: "BLOCKED", prerequisites: error.prerequisites, error: error.message });
   console.error(`voice-verify: ${error.stack}`);
   process.exitCode = 1;

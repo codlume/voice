@@ -27,7 +27,7 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
     stateDir: "/tmp/voice-state",
     env: process.env,
     configure: () => [
-      { type: "hotkey.configure", key: "fn", toggleKey: null },
+      { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [] },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
     ],
@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 12 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 13 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -198,17 +198,40 @@ describe("startHelper", () => {
     expect(h.exits).toEqual([]);
   });
 
+  test("a selection read answers failed until the helper can read, and a configured one as told", async () => {
+    const h = boot();
+    helper = h.helper;
+    await h.waitFor((e) => e.type === "asr.status");
+    h.helper.send({ type: "selection.read", id: "r1" });
+    await h.waitFor((e) => e.type === "selection.result");
+    expect(h.of("selection.result").map((e) => e.event)).toEqual([
+      { type: "selection.result", id: "r1", outcome: "failed", reason: "failed" },
+    ]);
+    h.helper.send({ type: "transform.end", id: "r1" });
+    await h.helper.stop();
+
+    const g = boot({ selection: { outcome: "selected", text: "Zażółć" } });
+    helper = g.helper;
+    await g.waitFor((e) => e.type === "asr.status");
+    g.helper.send({ type: "selection.read", id: "r2" });
+    await g.waitFor((e) => e.type === "selection.result");
+    expect(g.of("selection.result").map((e) => e.event)).toEqual([
+      { type: "selection.result", id: "r2", outcome: "selected", text: "Zażółć", via: "copy" },
+    ]);
+    expect(g.logs.join("\n")).not.toContain("unknown command");
+  });
+
   test("a helper speaking another protocol version is refused, never configured, and not restarted", async () => {
     const h = boot({ version: 2 });
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v12; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v13; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 12 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 13 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);

@@ -6,15 +6,17 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   processIdentity,
@@ -25,6 +27,40 @@ import {
 
 const scripts = fileURLToPath(new URL(".", import.meta.url));
 const runtime = new URL("../../../../scripts/voice-app.mjs", import.meta.url).href;
+
+// A TextEdit that answers the AppleScript the targets send: the document it was last asked to
+// open, a pid for every process, and a log of each script it ran.
+const OSASCRIPT_STUB = `
+const fs = require("node:fs");
+const path = require("node:path");
+const dir = process.env.VOICE_TEST_DIR;
+const script = process.argv[process.argv[3] === "JavaScript" ? 5 : 3] ?? "";
+fs.writeFileSync(path.join(dir, "focus"), "called");
+fs.appendFileSync(path.join(dir, "osascript.log"), script + "\\n");
+const targetFile = path.join(dir, "target.json");
+const pid = fs.existsSync(targetFile) ? JSON.parse(fs.readFileSync(targetFile, "utf8")).pid : 4242;
+const documentFile = path.join(dir, "document.json");
+const opened = /open POSIX file ("[^"]*")/.exec(script);
+if (opened) {
+  const file = JSON.parse(opened[1]);
+  fs.writeFileSync(
+    documentFile,
+    JSON.stringify({ name: path.basename(file), text: fs.readFileSync(file, "utf8") }),
+  );
+}
+const document = fs.existsSync(documentFile)
+  ? JSON.parse(fs.readFileSync(documentFile, "utf8"))
+  : { name: "", text: "" };
+const answers = [
+  ["pasteboardItems", "[]"],
+  ["is running", "false"],
+  ["unix id", String(pid)],
+  ["get name of document", document.name],
+  ["get text of", document.text],
+  ["count documents", "0"],
+];
+process.stdout.write(answers.find(([needle]) => script.includes(needle))?.[1] ?? "");
+`;
 
 function checkout(t, mode) {
   const dir = mkdtempSync(join(tmpdir(), "voice-scenario-test-"));
@@ -52,24 +88,27 @@ function checkout(t, mode) {
     "test-fixtures/audio/short.wav",
   ])
     put(path, "synthetic test placeholder");
-  for (const name of ["voice-verify.mjs", "dictate-flags.mjs", "scenarios.mjs"])
+  for (const name of readdirSync(scripts).filter((file) => /^(?!.*\.test\.).*\.mjs$/.test(file)))
     put(`.claude/skills/verify/scripts/${name}`, readFileSync(join(scripts, name), "utf8"));
   put(
+    "scripts/targets.mjs",
+    readFileSync(new URL("../../../../scripts/targets.mjs", import.meta.url), "utf8"),
+  );
+  put(
     "native/voice-helper/scripts/helper.mjs",
-    `export const runningVoiceProcesses = () =>
+    `export const CONTENDING_VOICE_MESSAGE = "synthetic contending Voice";
+    export const runningVoiceProcesses = () =>
     process.argv[2] === "dictate" && !${JSON.stringify(["dictate-signal", "replace-history", "replace-snapshot", "replace-key", "crash"])}.includes(${JSON.stringify(mode)})
       ? ["synthetic contending helper"] : [];`,
   );
-  for (const [path, marker] of [
-    ["bin/osascript", "focus"],
-    ["native/voice-helper/.build/debug/fnpost", "key"],
-  ]) {
-    put(
-      path,
-      `#!${process.execPath}\nimport("node:fs").then(fs => fs.writeFileSync(${JSON.stringify(join(dir, marker))}, "called"));\n`,
-    );
+  put("bin/osascript", `#!${process.execPath}\nimport("./osascript-impl.cjs");\n`);
+  put("bin/osascript-impl.cjs", OSASCRIPT_STUB);
+  put(
+    "native/voice-helper/.build/debug/fnpost",
+    `#!${process.execPath}\nimport("node:fs").then(fs => fs.writeFileSync(${JSON.stringify(join(dir, "key"))}, "called"));\n`,
+  );
+  for (const path of ["bin/osascript", "native/voice-helper/.build/debug/fnpost"])
     chmodSync(join(repo, path), 0o755);
-  }
   put("scripts/e2e-target/main.cjs", "setInterval(() => {}, 1000);");
   put(
     "scripts/fixtures.mjs",
@@ -94,12 +133,32 @@ function checkout(t, mode) {
       return claim.userData;
     }
     const snapshot = {
-      settings: { hotkey: "fn", toggleHotkey: "rightOption", cleanup: { enabled: true } },
+      settings: {
+        hotkey: "fn", toggleHotkey: "rightOption", cleanup: { enabled: true },
+        transforms: { enabled: true, items: [
+          { id: "polish", name: "Polish", shortcut: { keycode: 18, modifiers: ["option"] } },
+        ] },
+      },
       permissions: { accessibility: ${JSON.stringify(mode === "permission" ? "denied" : "granted")} },
-      models: { asr: { state: "ready" }, cleanup: { state: ${JSON.stringify(mode === "model" ? "failed" : "ready")} } },
+      models: {
+        asr: { state: "ready" },
+        cleanup: { state: ${JSON.stringify(mode === "model" ? "failed" : "ready")} },
+        transform: { state: "ready" },
+      },
     };
     export const snapshotStream = async () => ({
-      items: [snapshot], waitFor: async () => snapshot, skipToEnd() {},
+      items: [snapshot],
+      async waitFor(_predicate, { label }) {
+        // The shortcut has been posted and no run starts: the command is mid-transform.
+        if (${JSON.stringify(mode)}.startsWith("transform") && label.startsWith("a transform run")) {
+          writeFileSync(${JSON.stringify(join(dir, "transform-waiting"))}, "waiting");
+          // The real hub connection keeps the event loop alive while a run is awaited.
+          setInterval(() => {}, 1000);
+          return new Promise(() => {});
+        }
+        return snapshot;
+      },
+      skipToEnd() {},
     });
     async function pause() {
       writeFileSync(${JSON.stringify(join(dir, "paused"))}, "waiting");
@@ -122,6 +181,8 @@ function checkout(t, mode) {
               return process.argv[2] === "dictate" ? null : [];
             }
             if (expression.includes('document.getElementById("field").focus()')) return true;
+            if (expression.includes('document.getElementById("field")')) return "synthetic field";
+            if (expression.includes("!document.hasFocus()")) return true;
             if (expression.startsWith("window.voice.updateSettings")) {
               writeFileSync(${JSON.stringify(join(dir, "setup"))}, "ready");
               if (${JSON.stringify(mode)} === "signal") return new Promise(() => {});
@@ -160,7 +221,7 @@ function checkout(t, mode) {
       return child;
     }
     export function announcedPorts() {
-      return ["replace-key", "crash"].includes(${JSON.stringify(mode)})
+      return ["replace-key", "crash"].includes(${JSON.stringify(mode)}) || ${JSON.stringify(mode)}.startsWith("transform")
         ? Promise.resolve({ DevTools: 3 }) : new Promise(() => {});
     }
     export function launchVoice(userData) {
@@ -199,7 +260,13 @@ function checkout(t, mode) {
     trace,
     userData,
     script: join(repo, ".claude/skills/verify/scripts/voice-verify.mjs"),
-    env: { ...process.env, TMPDIR: temp, PATH: `${join(repo, "bin")}:${process.env.PATH}` },
+    temp,
+    env: {
+      ...process.env,
+      TMPDIR: temp,
+      VOICE_TEST_DIR: dir,
+      PATH: `${join(repo, "bin")}:${process.env.PATH}`,
+    },
   };
 }
 
@@ -436,6 +503,112 @@ test(
     assert.equal(existsSync(f.userData), false);
   },
 );
+
+test("clipboard save keeps one private copy until restore removes it", async (t) => {
+  const f = checkout(t, "clipboard");
+  const saved = `${f.userData}.clipboard.json`;
+  const vv = (...args) =>
+    new Promise((resolve) => {
+      execFile(
+        process.execPath,
+        [f.script, "clipboard", ...args],
+        { env: f.env },
+        (error, stdout) => resolve({ code: error?.code ?? 0, stdout }),
+      );
+    });
+
+  assert.equal((await vv("save")).code, 0);
+  assert.equal(statSync(saved).mode & 0o777, 0o600);
+  const again = await vv("save");
+  assert.equal(again.code, 1, "a second save must not replace the first copy");
+  const restore = await vv("restore");
+  assert.deepEqual(JSON.parse(restore.stdout), { restored: false });
+  assert.equal(existsSync(saved), false);
+  assert.equal((await vv("restore")).code, 1);
+});
+
+async function scratchTargets(t) {
+  const f = checkout(t, "transform-electron");
+  const targets = await import(pathToFileURL(join(f.dir, "checkout/scripts/targets.mjs")).href);
+  const scratchPid = () => JSON.parse(readFileSync(join(f.dir, "target.json"), "utf8")).pid;
+  return { ...targets, userData: mkdtempSync(join(f.dir, "target-")), scratchPid };
+}
+
+test("closing the Electron target stops the process it started", async (t) => {
+  const { electronTarget, userData, scratchPid } = await scratchTargets(t);
+  const target = await electronTarget(userData);
+  assert.notEqual(processIdentity(scratchPid()), null);
+  await target.close();
+  assert.equal(processIdentity(scratchPid()), null);
+});
+
+test("an Electron target interrupted while starting stops its process", async (t) => {
+  const { electronTarget, userData, scratchPid } = await scratchTargets(t);
+  await assert.rejects(
+    electronTarget(userData, { wait: () => Promise.reject(new Error("synthetic interrupt")) }),
+    /synthetic interrupt/,
+  );
+  assert.equal(processIdentity(scratchPid()), null);
+});
+
+for (const target of ["electron", "textedit"]) {
+  test(
+    `interrupting a transform closes its ${target} target before the instance stops`,
+    { timeout: 20_000 },
+    async (t) => {
+      const f = checkout(t, `transform-${target}`);
+      const instance = spawn(process.execPath, [f.script, "launch"], {
+        env: f.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      t.after(() => {
+        if (instance.exitCode === null) instance.kill("SIGKILL");
+      });
+      const [ready] = await once(instance.stdout, "data");
+      assert.equal(JSON.parse(ready).ready, true);
+
+      const proc = spawn(process.execPath, [f.script, "transform", `--target=${target}`], {
+        env: f.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const exited = once(proc, "exit");
+      let stderr = "";
+      proc.stderr.on("data", (data) => {
+        stderr += data;
+      });
+      proc.stdout.resume();
+      t.after(() => {
+        if (proc.exitCode === null) proc.kill("SIGKILL");
+      });
+      await waitForFile(join(f.dir, "transform-waiting"));
+      proc.kill("SIGTERM");
+      const [code] = await exited;
+      assert.equal(code, 1, stderr);
+      assert.match(stderr, /transform interrupted/);
+      assert.equal(readFileSync(join(f.dir, "key"), "utf8"), "called", "the shortcut was posted");
+
+      if (target === "electron") {
+        const scratch = JSON.parse(readFileSync(join(f.dir, "target.json"), "utf8"));
+        assert.equal(processIdentity(scratch.pid), null);
+      } else {
+        const osascriptLog = readFileSync(join(f.dir, "osascript.log"), "utf8");
+        assert.match(osascriptLog, /close document "transform-[^"]+" saving no/);
+        assert.match(osascriptLog, /tell application "TextEdit" to quit/);
+        assert.deepEqual(
+          readdirSync(f.temp).filter((name) => name.startsWith("voice-transform-")),
+          [],
+        );
+      }
+
+      await new Promise((resolve, reject) => {
+        execFile(process.execPath, [f.script, "_stop"], { env: f.env }, (error) =>
+          error ? reject(error) : resolve(),
+        );
+      });
+      assertTeardown(f);
+    },
+  );
+}
 
 test(
   "an interrupted scenario tears down while setup is still pending",

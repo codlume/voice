@@ -14,6 +14,7 @@ public enum SavedClipboard<Item> {
 }
 
 extension SavedClipboard: Equatable where Item: Equatable {}
+extension SavedClipboard: Sendable where Item: Sendable {}
 
 /// Tracks the user's clipboard across paste insertions, keyed by the pasteboard `changeCount`
 /// each paste's own write produced. Only the latest paste can restore: an earlier paste's
@@ -34,6 +35,8 @@ public struct ClipboardRestore<Contents> {
     public mutating func wrote(_ write: Int, saved: Contents) {
         pending = (write, saved)
     }
+
+    public var hasPending: Bool { pending != nil }
 
     /// The contents to put back for the paste whose write was `write`, or nil when the clipboard
     /// no longer holds that write.

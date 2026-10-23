@@ -19,8 +19,19 @@ const styles = stylex.create({
     whiteSpace: "nowrap",
     verticalAlign: "0.1em",
   },
+  keys: { display: "flex", flexShrink: 0, gap: 4, fontFamily: "inherit" },
 });
 
 export function Keycap({ children }: { children: string }) {
   return <kbd {...stylex.props(styles.keycap)}>{children}</kbd>;
+}
+
+export function Keys({ keys }: { keys: readonly string[] }) {
+  return (
+    <kbd {...stylex.props(styles.keys)}>
+      {keys.map((key) => (
+        <Keycap key={key}>{key}</Keycap>
+      ))}
+    </kbd>
+  );
 }

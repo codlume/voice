@@ -5,6 +5,7 @@ import { START_TIMEOUT_MS } from "./dictation.ts";
 import { MICROPHONE_TEST_MAX_MS, createMicrophoneTest } from "./microphone-test.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
+import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 
 const usb = { uid: "usb", name: "USB Microphone" };
@@ -18,9 +19,14 @@ function harness() {
       status: { kind: "disabled", reason: "Test" },
     },
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "granted", accessibility: "granted" },
     loginItem: "off",
-    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+    models: {
+      asr: { state: "ready" },
+      cleanup: { state: "ready" },
+      transform: { state: "missing" },
+    },
     settings: { ...DEFAULT_SETTINGS, microphone: usb },
     microphones: { kind: "ready", devices: [usb], defaultUid: "usb" },
     microphoneTest: { kind: "off" },

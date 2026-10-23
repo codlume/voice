@@ -1,6 +1,5 @@
-import type { Llama, LlamaCompletion, LlamaModel } from "node-llama-cpp";
-
 import { type Chunk, chunkTranscript, stitch } from "./chunk.ts";
+import { llamaHost, openLlama } from "./llama-host.ts";
 import { assertPlausibleCleanup, MAX_OUTPUT_RATIO } from "./plausibility.ts";
 import { buildS1MiniPrompt, s1Control, type S1Control } from "./prompt.ts";
 import { type CleanupStyle, finishOutputs } from "./style.ts";
@@ -36,31 +35,18 @@ export type S1Mini = {
   dispose(): Promise<void>;
 };
 
-type Engine = { llama: Llama; model: LlamaModel; completion: LlamaCompletion };
-
 export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
-  let engine: Promise<Engine> | undefined;
-  let queue: Promise<unknown> = Promise.resolve();
-  let disposal = new AbortController();
+  const host = llamaHost(
+    () =>
+      openLlama({ modelPath, contextSize: CONTEXT_SIZE }, (llamaCpp, context) => ({
+        completion: new llamaCpp.LlamaCompletion({ contextSequence: context.getSequence() }),
+      })),
+    "Cleanup model disposed",
+  );
+  const { load, serialize, withdrawal } = host;
   let msPerToken: number | undefined;
   let busyUntil = 0;
   let busy = false;
-
-  function load(): Promise<Engine> {
-    if (engine) return engine;
-    const loading: Promise<Engine> = openEngine(modelPath).catch((error: unknown) => {
-      if (engine === loading) engine = undefined;
-      throw error;
-    });
-    engine = loading;
-    return loading;
-  }
-
-  function serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = queue.then(task);
-    queue = run.catch(() => undefined);
-    return run;
-  }
 
   // Real work ends the busy loop, so it never queues behind it.
   function work<T>(task: () => Promise<T>): Promise<T> {
@@ -68,10 +54,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     return serialize(task);
   }
 
-  const withdrawal = (signal: AbortSignal | undefined) =>
-    signal ? AbortSignal.any([signal, disposal.signal]) : disposal.signal;
-
-  const busyEngine = () => (Date.now() < busyUntil ? engine : undefined);
+  const busyEngine = () => (Date.now() < busyUntil ? host.current() : undefined);
 
   // The GPU clocks down while the user speaks: a clean after 5 s of idle measured 216 ms against
   // 155 ms right after another. Without the gap the loop slowed the speech model by ~10 ms.
@@ -85,7 +68,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           const { model, completion } = await current;
           await completion.generateCompletionWithMeta(
             model.tokenize(buildS1MiniPrompt("ok", BUSY_CONTROL), true),
-            { signal: disposal.signal, temperature: 0, maxTokens: 1 },
+            { signal: withdrawal(), temperature: 0, maxTokens: 1 },
           );
         }).catch(() => {
           busyUntil = 0;
@@ -124,7 +107,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
       await load();
     },
     keepGpuBusy: (ms) => {
-      if (!engine) return;
+      if (!host.current()) return;
       busyUntil = Date.now() + ms;
       if (!busy) void busyLoop();
     },
@@ -175,15 +158,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         return generations;
       }),
     dispose: () => {
-      disposal.abort(new Error("Cleanup model disposed"));
-      return work(async () => {
-        const pending = engine;
-        engine = undefined;
-        disposal = new AbortController();
-        const loaded = await pending?.catch(() => undefined);
-        await loaded?.model.dispose();
-        await loaded?.llama.dispose();
-      });
+      busyUntil = 0;
+      return host.dispose();
     },
   };
 }
@@ -194,23 +170,5 @@ function guarded(input: string, { output, truncated }: Output): string | undefin
     return output;
   } catch {
     return undefined;
-  }
-}
-
-async function openEngine(modelPath: string): Promise<Engine> {
-  // A static import breaks the CJS Electron bundle, because node-llama-cpp uses top-level await.
-  const { getLlama, LlamaCompletion } = await import("node-llama-cpp");
-  const llama = await getLlama();
-  try {
-    const model = await llama.loadModel({ modelPath });
-    const context = await model.createContext({ contextSize: CONTEXT_SIZE });
-    return {
-      llama,
-      model,
-      completion: new LlamaCompletion({ contextSequence: context.getSequence() }),
-    };
-  } catch (error) {
-    await llama.dispose();
-    throw error;
   }
 }

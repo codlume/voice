@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { ModelStatus, Snapshot } from "../shared/api.ts";
+import { DEFAULT_TRANSFORMS } from "../shared/transforms.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { DEFAULT_STYLES } from "../shared/style.ts";
 import { checklist } from "./checklist.ts";
@@ -15,7 +16,11 @@ const fresh: Snapshot = {
   session: { kind: "idle" },
   permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
   loginItem: "off",
-  models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
+  models: {
+    asr: { state: "missing" },
+    cleanup: { state: "missing" },
+    transform: { state: "missing" },
+  },
   settings: {
     hotkey: "fn",
     toggleHotkey: null,
@@ -33,6 +38,7 @@ const fresh: Snapshot = {
     snippets: [],
     dictionary: [],
     zoomLevel: 0,
+    transforms: DEFAULT_TRANSFORMS,
   },
   microphones: {
     kind: "ready",
@@ -49,7 +55,7 @@ const fresh: Snapshot = {
 const allReady: Snapshot = {
   ...fresh,
   permissions: { microphone: "granted", accessibility: "granted" },
-  models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+  models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
 };
 
 const row = (snapshot: Snapshot, id: string) => {
@@ -164,6 +170,22 @@ describe("checklist", () => {
       expect(checklist(snapshot).rows.map((r) => r.id)).not.toContain("cleanup");
     },
   );
+
+  test("the transform model joins the checklist only while Transforms are on", () => {
+    expect(checklist(allReady).rows.map((r) => r.id)).not.toContain("transform");
+    const on: Snapshot = {
+      ...allReady,
+      settings: { ...allReady.settings, transforms: { ...DEFAULT_TRANSFORMS, enabled: true } },
+    };
+    const list = checklist(on);
+    expect(list.ready).toBe(false);
+    expect(row(on, "transform")).toMatchObject({
+      title: "Transform model",
+      subtitle: "Gemma 4 E2B by Google",
+      status: { kind: "needed", text: "Not downloaded" },
+      actions: [{ label: "Download", command: { type: "installModel", id: "transform" } }],
+    });
+  });
 
   test("with cleanup off, the cleanup model neither shows nor blocks readiness", () => {
     const cleanupOff: Snapshot = {

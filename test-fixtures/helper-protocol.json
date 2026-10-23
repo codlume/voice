@@ -1,5 +1,6 @@
 {
-  "protocolVersion": 12,
+  "protocolVersion": 13,
+  "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
     "en",
@@ -30,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 11,
+      "version": 12,
       "compatible": false
     },
     {
-      "version": 12,
+      "version": 13,
       "compatible": true
     },
     {
-      "version": 13,
+      "version": 14,
       "compatible": false
     }
   ],
@@ -48,18 +49,41 @@
       "wire": {
         "type": "hotkey.configure",
         "key": "fn",
-        "toggleKey": null
+        "toggleKey": null,
+        "transforms": []
       },
-      "required": ["type", "key", "toggleKey"]
+      "required": ["type", "key", "toggleKey", "transforms"]
     },
     {
       "name": "hotkey.configure.toggle",
       "wire": {
         "type": "hotkey.configure",
         "key": "rightOption",
-        "toggleKey": "rightCommand"
+        "toggleKey": "rightCommand",
+        "transforms": []
       },
-      "required": ["type", "key", "toggleKey"]
+      "required": ["type", "key", "toggleKey", "transforms"]
+    },
+    {
+      "name": "hotkey.configure.transforms",
+      "wire": {
+        "type": "hotkey.configure",
+        "key": "rightOption",
+        "toggleKey": null,
+        "transforms": [
+          {
+            "id": "polish",
+            "keycode": 18,
+            "modifiers": ["option"]
+          },
+          {
+            "id": "c1",
+            "keycode": 40,
+            "modifiers": ["control", "option", "command"]
+          }
+        ]
+      },
+      "required": ["type", "key", "toggleKey", "transforms"]
     },
     {
       "name": "microphone.configure",
@@ -171,6 +195,22 @@
         "html": "Hi <strong>Ada</strong>"
       },
       "required": ["type", "id", "text"]
+    },
+    {
+      "name": "selection.read",
+      "wire": {
+        "type": "selection.read",
+        "id": "r1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "transform.end",
+      "wire": {
+        "type": "transform.end",
+        "id": "r1"
+      },
+      "required": ["type", "id"]
     },
     {
       "name": "permissions.check",
@@ -323,11 +363,31 @@
     },
     {
       "name": "unknown-hotkey",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null,\"transforms\":[]}"
     },
     {
       "name": "unknown-toggle",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\"}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\",\"transforms\":[]}"
+    },
+    {
+      "name": "missing-transforms",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null}"
+    },
+    {
+      "name": "unknown-modifier",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"fn\"]}]}"
+    },
+    {
+      "name": "fractional-keycode",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}]}"
+    },
+    {
+      "name": "unmodified-transform",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}]}"
+    },
+    {
+      "name": "shift-only-transform",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}]}"
     },
     {
       "name": "unknown-permission",
@@ -405,11 +465,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 12
+        "version": 13
       },
       "parsed": {
         "type": "ready",
-        "version": 12
+        "version": 13
       },
       "required": ["type", "version"]
     },
@@ -472,6 +532,86 @@
         "action": "toggle"
       },
       "required": ["type", "action"]
+    },
+    {
+      "name": "transform",
+      "wire": {
+        "type": "transform",
+        "transformId": "polish"
+      },
+      "parsed": {
+        "type": "transform",
+        "transformId": "polish"
+      },
+      "required": ["type", "transformId"]
+    },
+    {
+      "name": "selection.result.selected",
+      "wire": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "selected",
+        "text": "Zażółć /tmp/synthetic\nAda 42",
+        "via": "copy"
+      },
+      "parsed": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "selected",
+        "text": "Zażółć /tmp/synthetic\nAda 42",
+        "via": "copy"
+      },
+      "required": ["type", "id", "outcome", "text", "via"]
+    },
+    {
+      "name": "selection.result.accessibility",
+      "wire": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "selected",
+        "text": "Synthetic selection",
+        "via": "accessibility"
+      },
+      "parsed": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "selected",
+        "text": "Synthetic selection",
+        "via": "accessibility"
+      },
+      "required": ["type", "id", "outcome", "text", "via"]
+    },
+    {
+      "name": "selection.result.failed",
+      "wire": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "failed",
+        "reason": "noSelection"
+      },
+      "parsed": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "failed",
+        "reason": "noSelection"
+      },
+      "required": ["type", "id", "outcome", "reason"]
+    },
+    {
+      "name": "selection.result.keysHeld",
+      "wire": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "failed",
+        "reason": "keysHeld"
+      },
+      "parsed": {
+        "type": "selection.result",
+        "id": "r1",
+        "outcome": "failed",
+        "reason": "keysHeld"
+      },
+      "required": ["type", "id", "outcome", "reason"]
     },
     {
       "name": "capture.started",
@@ -742,6 +882,22 @@
         "id": "s1",
         "method": "none",
         "reason": "focusChanged"
+      },
+      "required": ["type", "id", "method"]
+    },
+    {
+      "name": "insert.result.selectionChanged",
+      "wire": {
+        "type": "insert.result",
+        "id": "r1",
+        "method": "none",
+        "reason": "selectionChanged"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "r1",
+        "method": "none",
+        "reason": "selectionChanged"
       },
       "required": ["type", "id", "method"]
     },
@@ -1137,6 +1293,18 @@
     {
       "name": "unknown-permission",
       "line": "{\"type\":\"permissions\",\"microphone\":\"maybe\",\"accessibility\":\"granted\"}"
+    },
+    {
+      "name": "unknown-selection-outcome",
+      "line": "{\"type\":\"selection.result\",\"id\":\"r1\",\"outcome\":\"partial\"}"
+    },
+    {
+      "name": "unknown-selection-reason",
+      "line": "{\"type\":\"selection.result\",\"id\":\"r1\",\"outcome\":\"failed\",\"reason\":\"future\"}"
+    },
+    {
+      "name": "unknown-selection-via",
+      "line": "{\"type\":\"selection.result\",\"id\":\"r1\",\"outcome\":\"selected\",\"text\":\"x\",\"via\":\"ocr\"}"
     },
     {
       "name": "unknown-asr-state",

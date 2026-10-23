@@ -1,8 +1,15 @@
 import type { CleanupStyle } from "@voice/cleanup/style";
 
-import type { ModelStatus, Outcome, PillState } from "../shared/api.ts";
+import type {
+  InsertFailure,
+  InsertMethod,
+  ModelStatus,
+  Outcome,
+  PillState,
+} from "../shared/api.ts";
 import type { BundleId, Category } from "../shared/app-categories.ts";
 import type { Transcript } from "../shared/history.ts";
+import type { TransformId } from "../shared/transforms.ts";
 import {
   finalRewrite,
   rewrite,
@@ -16,6 +23,10 @@ export type DictationMode = "hold" | "toggle";
 
 /** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };
+
+export type CleanupWork =
+  | { kind: "style"; style: CleanupStyle }
+  | { kind: "transform"; transformId: TransformId };
 
 export type Session =
   | { phase: "idle" }
@@ -33,6 +44,7 @@ export type Session =
       phase: "cleaning";
       id: string;
       raw: string;
+      work: CleanupWork;
       rewrites: Rewrites;
       destination: Destination | null;
     }
@@ -47,9 +59,6 @@ export type Session =
     }
   | { phase: "done"; id: string; outcome: Outcome };
 
-export type InsertMethod = "accessibility" | "paste" | "none";
-export type InsertFailure = "focusChanged" | "noFocusedField" | "secureInput" | "failed";
-
 export type SessionEvent =
   | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
   | { type: "hotkeyUp" }
@@ -63,7 +72,7 @@ export type SessionEvent =
       type: "transcript";
       id: string;
       text: string;
-      cleanup: CleanupStyle | null;
+      cleanup: CleanupWork | null;
       rewrites: Rewrites;
       destination: Destination | null;
     }
@@ -79,7 +88,8 @@ export type Effect =
   | { type: "startCapture"; id: string }
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
-  | { type: "cleanup"; id: string; raw: string; style: CleanupStyle }
+  | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
+  | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
   | { type: "scheduleIdle"; id: string; ms: number };
@@ -89,6 +99,7 @@ type Step = { state: Session; effects: Effect[] };
 const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
+export const INSERT_TIMEOUT_MS = 5000;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
@@ -240,12 +251,13 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           phase: "cleaning",
           id: state.id,
           raw,
+          work: event.cleanup,
           rewrites: event.rewrites,
           destination: event.destination,
         },
         effects: [
           { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
-          { type: "cleanup", id: state.id, raw, style: event.cleanup },
+          { type: "cleanup", id: state.id, raw, work: event.cleanup },
         ],
       };
     }
@@ -260,13 +272,21 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (final.text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
-      return insert(
+      const inserting = insert(
         state.id,
         state.raw,
         final,
-        final.source === "cleaned" ? cleaned : null,
+        final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
         state.destination,
       );
+      if (state.work.kind === "style") return inserting;
+      const keep: Effect = {
+        type: "keepTransform",
+        transformId: state.work.transformId,
+        before: state.raw,
+        after: final.text,
+      };
+      return { ...inserting, effects: [keep, ...inserting.effects] };
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;

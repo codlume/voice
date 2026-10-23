@@ -48,6 +48,25 @@ import Testing
     #expect(restore.restore(write: 2, changeCount: 2) == nil)
 }
 
+@Test func aSelectionReadSavesBeforeTheCopyAndRestoresRightAfterIt() {
+    var restore = ClipboardRestore<String>()
+    let saved = restore.contentsToSave(changeCount: 5) { "user" }
+    restore.wrote(6, saved: saved)
+    #expect(restore.hasPending)
+    #expect(restore.restore(write: 6, changeCount: 6) == "user")
+    #expect(!restore.hasPending)
+}
+
+@Test func aSelectionReadInsideAPendingPasteRestoreCarriesTheUserClipboardOver() {
+    var restore = ClipboardRestore<String>()
+    restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
+    let saved = restore.contentsToSave(changeCount: 2) { "transcript" }
+    #expect(saved == "user")
+    restore.wrote(3, saved: saved)
+    #expect(restore.restore(write: 3, changeCount: 3) == "user")
+    #expect(restore.restore(write: 2, changeCount: 3) == nil)
+}
+
 @Test func plainContentsAreSavedForTheRestore() {
     let saved = SavedClipboard(types: ["public.utf8-plain-text", "public.rtf"]) { ["user"] }
     #expect(saved == .items(["user"]))

@@ -21,6 +21,7 @@ import {
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
+import { parseTransformSettings } from "../shared/transforms.ts";
 import type { Category } from "../shared/app-categories.ts";
 import { DEFAULT_STYLES, parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import { SettingsPatchSchema } from "../shared/settings-patch.ts";
@@ -102,6 +103,7 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     snippets: parseSnippets(r.snippets),
     dictionary: parseDictionary(r.dictionary),
     zoomLevel: parseZoomLevel(r.zoomLevel),
+    transforms: parseTransformSettings(r.transforms),
   };
 }
 
@@ -112,7 +114,10 @@ export function parseSettingsPatch(raw: unknown): SettingsPatch {
   return Option.getOrThrowWith(decodePatch(raw), () => new Error("Could not save these settings."));
 }
 
-export function applyPatch(settings: Settings, { cleanup, ...patch }: SettingsPatch): Settings {
+export function applyPatch(
+  settings: Settings,
+  { cleanup, transforms, ...patch }: SettingsPatch,
+): Settings {
   const next: Settings = {
     ...settings,
     ...patch,
@@ -121,6 +126,7 @@ export function applyPatch(settings: Settings, { cleanup, ...patch }: SettingsPa
       ...cleanup,
       styles: { ...settings.cleanup.styles, ...cleanup?.styles },
     },
+    transforms: { ...settings.transforms, ...transforms },
   };
   // Parsing again settles what one field cannot check alone, like a toggle key that is also the
   // hold key.

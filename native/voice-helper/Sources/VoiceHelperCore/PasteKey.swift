@@ -7,6 +7,7 @@ import Foundation
 /// and Cyrillic layouts map to Latin, so the unmodified table would pick the wrong key.
 public enum PasteKey {
     public static let ansiV: CGKeyCode = 9
+    public static let ansiC: CGKeyCode = 8
 
     private static let commandModifierState = UInt32((cmdKey >> 8) & 0xFF)
 

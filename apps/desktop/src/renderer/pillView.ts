@@ -1,4 +1,4 @@
-import type { Outcome, PillState } from "../shared/api.ts";
+import type { InsertFailure, Outcome, PillState, TransformOutcome } from "../shared/api.ts";
 
 type PillView =
   | { kind: "idle" }
@@ -7,10 +7,7 @@ type PillView =
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
   | { kind: "message"; text: string };
 
-const notInsertedText: Record<
-  Extract<Outcome, { kind: "notInserted" }>["reason"],
-  { copyOff: string; copyOn: string }
-> = {
+const notInsertedText: Record<InsertFailure, { copyOff: string; copyOn: string }> = {
   focusChanged: {
     copyOff: "Not inserted. Focus changed",
     copyOn: "Focus changed. Copied to clipboard",
@@ -22,6 +19,10 @@ const notInsertedText: Record<
   secureInput: {
     copyOff: "Not inserted. Secure field",
     copyOn: "Secure field. Copied to clipboard",
+  },
+  selectionChanged: {
+    copyOff: "Not inserted. Text changed",
+    copyOn: "Text changed. Copied to clipboard",
   },
   failed: {
     copyOff: "Not inserted. Copy it from Voice",
@@ -46,17 +47,71 @@ function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
   }
 }
 
+const transformNotInsertedText: Record<InsertFailure, string> = {
+  focusChanged: "Focus changed. Result is in Voice",
+  noFocusedField: "Can't write here. Result is in Voice",
+  secureInput: "Secure field. Result is in Voice",
+  selectionChanged: "Text changed. Result is in Voice",
+  failed: "Not replaced. Result is in Voice",
+};
+
+function transformModelText(outcome: Extract<TransformOutcome, { kind: "modelUnavailable" }>) {
+  switch (outcome.state) {
+    case "missing":
+      return "Set up the transform model in Voice";
+    case "downloading":
+      return outcome.progress === undefined
+        ? "Transform model downloading"
+        : `Transform model downloading ${Math.round(outcome.progress * 100)}%`;
+    case "failed":
+      return "Transform model failed. See Models";
+  }
+}
+
+function transformOutcomeView(outcome: TransformOutcome): PillView {
+  switch (outcome.kind) {
+    case "inserted":
+      return { kind: "inserted", method: outcome.method };
+    case "notInserted":
+      return { kind: "message", text: transformNotInsertedText[outcome.reason] };
+    case "noSelection":
+      return { kind: "message", text: "Select text first" };
+    case "secureInput":
+      return { kind: "message", text: "Can't read a secure field" };
+    case "noFocusedField":
+      return { kind: "message", text: "Click into the text first" };
+    case "keysHeld":
+      return { kind: "message", text: "Release the keys, then try again" };
+    case "tooLong":
+      return { kind: "message", text: `Too long. Select up to ${outcome.maxWords} words` };
+    case "modelUnavailable":
+      return { kind: "message", text: transformModelText(outcome) };
+    case "cancelled":
+      return { kind: "message", text: "Cancelled. Text unchanged" };
+    case "failed":
+      return { kind: "message", text: outcome.message };
+  }
+}
+
 export function pillView(
   session: PillState,
   { copyToClipboard }: { copyToClipboard: boolean },
 ): PillView {
-  if (session.kind === "done") return outcomeView(session.outcome, copyToClipboard);
-  if (session.kind === "processing") {
-    return session.overdue
-      ? { kind: "message", text: "Still transcribing" }
-      : { kind: "processing" };
+  switch (session.kind) {
+    case "done":
+      return outcomeView(session.outcome, copyToClipboard);
+    case "processing":
+      return session.overdue
+        ? { kind: "message", text: "Still transcribing" }
+        : { kind: "processing" };
+    case "transformDone":
+      return transformOutcomeView(session.outcome);
+    case "transforming":
+      return session.loading ? { kind: "message", text: "Loading model" } : { kind: "processing" };
+    case "idle":
+    case "listening":
+      return session;
   }
-  return session;
 }
 
 export const BAR_COUNT = 11;

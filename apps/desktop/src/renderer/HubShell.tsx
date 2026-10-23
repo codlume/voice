@@ -14,6 +14,7 @@ import {
   SlidersHorizontalIcon,
   TextQuoteIcon,
   UserIcon,
+  WandSparklesIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -45,6 +46,7 @@ import {
 } from "./shortcuts.ts";
 import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
+import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
@@ -56,6 +58,7 @@ const appPageGroups = [
     { id: "home", label: "Home", icon: HouseIcon },
     { id: "insights", label: "Insights", icon: ChartColumnIcon },
     { id: "style", label: "Style", icon: PenLineIcon },
+    { id: "transforms", label: "Transforms", icon: WandSparklesIcon },
     { id: "snippets", label: "Snippets", icon: TextQuoteIcon },
     { id: "dictionary", label: "Dictionary", icon: BookAIcon },
   ],
@@ -84,6 +87,7 @@ type PageView = {
   snapshot: Snapshot;
   history: HistoryState;
   openPage: (id: AppPage) => void;
+  openSettingsPage: (id: SettingsPage) => void;
 };
 
 const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> = {
@@ -92,6 +96,13 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
   ),
   insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
+  transforms: ({ snapshot, openSettingsPage }) => (
+    <Transforms
+      settings={snapshot.settings}
+      model={snapshot.models.transform}
+      onOpenModels={() => openSettingsPage("models")}
+    />
+  ),
   snippets: ({ snapshot }) => (
     <Snippets snippets={snapshot.settings.snippets} dictionary={snapshot.settings.dictionary} />
   ),
@@ -593,7 +604,12 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
       </SidebarTooltip>
       <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
         <div key={page} {...stylex.props(styles.column, shown.motion && pageMotion[shown.motion])}>
-          <Page snapshot={snapshot} history={history} openPage={selectAppPage} />
+          <Page
+            snapshot={snapshot}
+            history={history}
+            openPage={selectAppPage}
+            openSettingsPage={selectSettingsPage}
+          />
         </div>
       </main>
     </div>

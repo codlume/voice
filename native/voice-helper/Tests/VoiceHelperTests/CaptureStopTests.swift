@@ -32,7 +32,6 @@ struct CaptureStopTests {
         #expect(!capture.isActive)
         #expect(capture.takeLastTarget(id: "another-session") == nil)
         #expect(capture.takeLastTarget(id: "s1") == nil)
-        #expect(capture.lastTarget == nil)
 
         capture.stop(id: "s1")
         try await Task.sleep(for: .milliseconds(300))

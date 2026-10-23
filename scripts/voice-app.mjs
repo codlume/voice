@@ -6,7 +6,8 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
-import { downloadS1Mini, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import { downloadModel, S1_MINI, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import { GEMMA_4_E2B } from "../packages/cleanup/src/transform/model.ts";
 import {
   claimScratch,
   releaseScratch,
@@ -244,6 +245,17 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
+export const optionalModelFiles = { transform: GEMMA_4_E2B.file };
+
+export function linkTestModels(userData, cache) {
+  const models = join(userData, "models");
+  mkdirSync(models, { recursive: true });
+  const link = (file) => symlinkSync(join(cache, file), join(models, file));
+  for (const file of Object.values(modelFiles)) link(file);
+  for (const file of Object.values(optionalModelFiles)) {
+    if (existsSync(join(cache, file))) link(file);
+  }
+}
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
@@ -253,17 +265,13 @@ export async function prepareUserData(name) {
     const cache = modelsDir();
     console.error(`preparing test models in ${cache}`);
     await Promise.all([
-      downloadS1Mini({ dir: cache }),
+      downloadModel({ dir: cache, source: S1_MINI }),
       withHelper({ env: smokeEnvironment(userData) }, (helper) =>
         prepareAsr(helper, { download: true }),
       ),
     ]);
     claim.reset();
-    const models = join(userData, "models");
-    mkdirSync(models, { recursive: true });
-    for (const file of Object.values(modelFiles)) {
-      symlinkSync(join(cache, file), join(models, file));
-    }
+    linkTestModels(userData, cache);
     return userData;
   } catch (error) {
     await claim.release();

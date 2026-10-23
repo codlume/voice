@@ -1,5 +1,8 @@
 /// AX elements can be reused by chat composers. Compare the window and its title too,
-/// accepting a refusal when a title changes for reasons other than navigation.
+/// accepting a refusal when a title changes for reasons other than navigation. A target with a
+/// selection origin has its own guard against a composer switch (the selected text and range,
+/// or the press stamp, move), so it can skip the title and survive unread counts and other
+/// live titles ticking while a transform runs.
 public struct TargetFocus<Element: Equatable>: Equatable {
     public let element: Element?
     public let window: Element
@@ -9,6 +12,10 @@ public struct TargetFocus<Element: Equatable>: Equatable {
         self.element = element
         self.window = window
         self.title = title
+    }
+
+    public func matches(_ other: Self, comparingTitle: Bool) -> Bool {
+        element == other.element && window == other.window && (!comparingTitle || title == other.title)
     }
 }
 
@@ -36,10 +43,10 @@ public enum CapturedFocus<Element: Equatable>: Equatable {
         self = .captured(focus)
     }
 
-    public func validate(_ current: FocusReread<Element>) -> FocusValidation {
+    public func validate(_ current: FocusReread<Element>, comparingTitle: Bool) -> FocusValidation {
         guard case .captured(let focus) = self else { return .unverifiable }
         switch current {
-        case .focused(let now): return focus == now ? .unchanged : .changed
+        case .focused(let now): return focus.matches(now, comparingTitle: comparingTitle) ? .unchanged : .changed
         case .nothingFocused: return .changed
         case .noAnswer: return .unverifiable
         }

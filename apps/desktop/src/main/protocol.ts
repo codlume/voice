@@ -11,12 +11,18 @@ import { MicrophoneSchema } from "../shared/microphone.ts";
 import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { Target } from "../shared/style.ts";
+import type { HelperShortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 12;
+export const HELPER_PROTOCOL_VERSION = 13;
 
 export type HelperCommand =
-  | { type: "hotkey.configure"; key: Hotkey; toggleKey: Hotkey | null }
+  | {
+      type: "hotkey.configure";
+      key: Hotkey;
+      toggleKey: Hotkey | null;
+      transforms: readonly HelperShortcut[];
+    }
   | { type: "microphone.configure"; microphone: Microphone | null }
   | {
       type: "capture.start";
@@ -32,6 +38,8 @@ export type HelperCommand =
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
   | { type: "insert"; id: string; text: string; html: string | null }
+  | { type: "selection.read"; id: string }
+  | { type: "transform.end"; id: string }
   | { type: "permissions.check" }
   | { type: "permissions.request"; kind: PermissionKind }
   | { type: "asr.prepare"; download: boolean }
@@ -48,7 +56,7 @@ const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
     Schema.withDecodingDefaultType(Effect.succeed(null)),
   );
 const insertFailure = nullOnInvalid(
-  Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "failed"]),
+  Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "selectionChanged", "failed"]),
 );
 const statusMessage = nullOnInvalid(Schema.String);
 const parsedBy = <T extends string>(parse: (input: string) => T | null) =>
@@ -104,6 +112,20 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("hotkey"),
     action: Schema.Literals(["down", "up", "chord", "cancel", "toggle"]),
+  }),
+  Schema.Struct({ type: Schema.Literal("transform"), transformId: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("selection.result"),
+    id: Schema.String,
+    outcome: Schema.Literal("selected"),
+    text: Schema.String,
+    via: Schema.Literals(["accessibility", "copy"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("selection.result"),
+    id: Schema.String,
+    outcome: Schema.Literal("failed"),
+    reason: Schema.Literals(["noSelection", "secureInput", "noFocusedField", "keysHeld", "failed"]),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.started"),

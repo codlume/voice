@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import * as NodePath from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   app,
@@ -23,19 +24,17 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
-  parseTranscriptVersion,
   toPillSnapshot,
-  type HubApi,
   type LoginItem,
   type PermissionKind,
   type PillApi,
+  type RestartRequest,
   type Settings,
   VOICE_URL_SCHEME,
 } from "../shared/api.ts";
-import { parseBundleIds } from "../shared/app-categories.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
-import { copyText, parseHistoryRetention } from "../shared/history.ts";
-import { models, type Model, type ModelId } from "../shared/models.ts";
+import { copyText } from "../shared/history.ts";
+import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored } from "./account-storage.ts";
@@ -43,17 +42,19 @@ import {
   SIGN_IN_TIMEOUT_MS,
   callbackUrlFromArgv,
   createAccount,
-  parseAccountName,
   resolveApiUrl,
 } from "./account.ts";
+import { activity } from "./activity.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
-import { createDictation, whenNotDictating, type Dictation } from "./dictation.ts";
+import { createDictation, whenIdle, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
+import { hotkeyConfigure } from "./hotkey-config.ts";
+import { registerHubCommands, type HubCommandDeps } from "./hub-commands.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
 import { createInsights } from "./insights.ts";
@@ -64,17 +65,15 @@ import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
 import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
-import { dictating, idle } from "./session.ts";
-import { createSettingsQueue, editAssignments, type SettingsQueue } from "./settings-queue.ts";
-import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
+import { idle } from "./session.ts";
+import { createSettingsQueue, type SettingsQueue } from "./settings-queue.ts";
+import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
-import {
-  createUpdates,
-  parseReleaseConfig,
-  parseRestartRequest,
-  restartRefusal,
-} from "./updates.ts";
+import { createTransformModel } from "./transform-model.ts";
+import { createTransforms, followTransformSettings, type Transforms } from "./transforms.ts";
+import { idleRun } from "./transform-run.ts";
+import { createUpdates, parseReleaseConfig, restartRefusal } from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -83,13 +82,14 @@ const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
 const DIAGNOSTICS_FLUSH_MS = 1000;
 
-const LOGIN_ITEMS_PANE = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
+const FINISH_FIRST: Record<BusyDuring, string> = {
+  dictation: "Finish dictating",
+  transform: "Finish the transform",
+};
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 };
-const isPermissionKind = (kind: unknown): kind is PermissionKind =>
-  typeof kind === "string" && Object.hasOwn(PERMISSION_PANES, kind);
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
 // only. A packaged app ignores them and never hands them to its helper.
@@ -272,9 +272,14 @@ async function main() {
 
   const store = createStore({
     session: idle,
+    transform: idleRun,
     permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
     loginItem: "unavailable",
-    models: { asr: { state: "missing" }, cleanup: { state: "missing" } },
+    models: {
+      asr: { state: "missing" },
+      cleanup: { state: "missing" },
+      transform: { state: "missing" },
+    },
     settings,
     updates: {
       version: app.getVersion(),
@@ -341,14 +346,31 @@ async function main() {
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
     log,
   });
+  const transformModel = createTransformModel({
+    modelsDir,
+    baseUrl: testMode ? process.env.VOICE_TRANSFORM_MODEL_URL : undefined,
+    onStatus: (status) =>
+      store.update((s) => ({ ...s, models: { ...s.models, transform: status } })),
+    log,
+  });
 
   let hub: BrowserWindow | undefined;
   const pill = createPillWindow(webPreferencesFor);
   positionPill(pill);
 
   let dictation: Dictation;
+  let transforms: Transforms;
   let microphoneTest: MicrophoneTest;
   let installedApps: InstalledApps;
+  let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
+  const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
+  const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
+  function syncHotkeys() {
+    const next = hotkeys();
+    if (sentHotkeys && isDeepStrictEqual(next, sentHotkeys)) return;
+    sentHotkeys = next;
+    helper.send(next);
+  }
   const helper: Helper = startHelper({
     binary: helperBinary(),
     modelsDir,
@@ -357,6 +379,7 @@ async function main() {
     onEvent: (event) => {
       if (lifecycle !== "running") return;
       dictation.onHelperEvent(event);
+      transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
       installedApps.onHelperEvent(event);
     },
@@ -371,19 +394,19 @@ async function main() {
           },
         }));
         dictation.dispatch({ type: "helperExited" });
+        transforms.dispatch({ type: "helperExited" });
         microphoneTest.helperExited();
       }
     },
-    configure: () => [
-      {
-        type: "hotkey.configure",
-        key: store.state.settings.hotkey,
-        toggleKey: store.state.settings.toggleHotkey,
-      },
-      { type: "microphone.configure", microphone: store.state.settings.microphone },
-      { type: "permissions.check" },
-      { type: "asr.prepare", download: false },
-    ],
+    configure: () => {
+      sentHotkeys = hotkeys();
+      return [
+        sentHotkeys,
+        { type: "microphone.configure", microphone: store.state.settings.microphone },
+        { type: "permissions.check" },
+        { type: "asr.prepare", download: false },
+      ];
+    },
     log,
   });
   // The tray reads the newest entry when clicked, so it is rebuilt only when it goes from none to
@@ -413,6 +436,7 @@ async function main() {
     store,
     send: helper.send,
     cleanup,
+    transform: { model: transformModel, remember: (value) => transforms.remember(value) },
     onLevel: (level) => {
       if (!pill.isDestroyed()) pill.webContents.send(Channel.level, level);
     },
@@ -427,6 +451,16 @@ async function main() {
         : clipboard.write([
             new ClipboardItem({ "text/plain": text, "text/html": `<meta charset="utf-8">${html}` }),
           ]),
+  });
+  transforms = createTransforms({
+    store,
+    send: helper.send,
+    model: transformModel,
+    log,
+    copy: (text) => clipboard.writeText(text),
+    onLastTransform: (value) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.lastTransform, value);
+    },
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
   microphoneTest = createMicrophoneTest({
@@ -449,7 +483,7 @@ async function main() {
     onChange: (value) => store.update((s) => ({ ...s, updates: value })),
     canRestart: () =>
       lifecycle === "running" &&
-      !dictating(store.state.session) &&
+      activity(store.state) === "idle" &&
       store.state.settings.updateChannel === store.state.updates.channel,
     prepareRestart: async () => {
       lifecycle = "stopping";
@@ -522,7 +556,10 @@ async function main() {
       refreshLoginItem();
       void account.refresh();
       history.expire();
+      syncHotkeys();
     });
+    hub.on("blur", syncHotkeys);
+    hub.on("closed", syncHotkeys);
     hub.on("show", syncPermissionPolling);
     hub.on("hide", syncPermissionPolling);
     hub.on("minimize", syncPermissionPolling);
@@ -536,7 +573,7 @@ async function main() {
     // Restore loads Better Auth and reads the Keychain, so it waits until the window has loaded.
     // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
     hub.webContents.once("did-finish-load", () => void account.restore());
-    handleHubCommands(hub.webContents.ipc);
+    registerHubCommands(hub.webContents.ipc, hubCommandDeps);
     loadPage(hub, "hub");
     return hub;
   }
@@ -613,6 +650,7 @@ async function main() {
     if (state.updates !== previous.updates) refreshTray(state);
     if (state.permissions !== previous.permissions) syncPermissionPolling();
     followSettings(cleanup, state, previous);
+    followTransformSettings(transformModel, transforms, state, previous);
   });
 
   // A restart request holds the history still from the moment it starts draining it, so what it
@@ -625,6 +663,26 @@ async function main() {
       store.state.updates.status.kind === "installing"
     )
       throw new Error("Voice is restarting.");
+  }
+  async function restartForUpdate(request: RestartRequest) {
+    assertNotRestarting();
+    restartRequested = true;
+    try {
+      // An accepted channel change must reach the updater before it installs.
+      await settingsQueue.settled();
+      await history.settled();
+      const state = history.state();
+      const refusal = restartRefusal(request, state);
+      if (refusal) throw new Error(refusal);
+      const [latest] = state.entries;
+      await updates.restart(
+        request.choice === "copyTranscriptAndRestart" && latest
+          ? () => clipboard.writeText(copyText(latest))
+          : undefined,
+      );
+    } finally {
+      restartRequested = false;
+    }
   }
 
   settingsQueue = createSettingsQueue({
@@ -639,8 +697,7 @@ async function main() {
     },
     applied: (next, previous) => {
       store.update((s) => ({ ...s, settings: next }));
-      if (next.hotkey !== previous.hotkey || next.toggleHotkey !== previous.toggleHotkey)
-        helper.send({ type: "hotkey.configure", key: next.hotkey, toggleKey: next.toggleHotkey });
+      syncHotkeys();
       if (next.microphone?.uid !== previous.microphone?.uid)
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
@@ -675,6 +732,10 @@ async function main() {
       install: () => void cleanup.install(),
       uninstall: () => cleanup.uninstall(),
     },
+    transform: {
+      install: () => void transformModel.install(),
+      uninstall: () => transformModel.uninstall(),
+    },
   };
 
   function assertCanUninstall(model: Model) {
@@ -683,8 +744,10 @@ async function main() {
     if (state === "loading" || (state === "downloading" && !model.cancelableDownload)) {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    if (model.neededWhileDictating && dictating(store.state.session)) {
-      throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
+    if (model.busyDuring && activity(store.state) === model.busyDuring) {
+      throw new Error(
+        `${FINISH_FIRST[model.busyDuring]}, then uninstall the ${model.kind.toLowerCase()}.`,
+      );
     }
   }
 
@@ -693,148 +756,31 @@ async function main() {
   const pillCommands: Commands<PillApi> = pill.webContents.ipc;
   pillCommands.handle(Channel.getPillSnapshot, () => toPillSnapshot(toSnapshot(store.state)));
 
-  function handleHubCommands(hubCommands: Commands<HubApi>) {
-    hubCommands.handle(Channel.getSnapshot, () => toSnapshot(store.state));
-    hubCommands.handle(Channel.checkForUpdates, () => updates.check());
-    hubCommands.handle(Channel.downloadUpdate, () => updates.download());
-    hubCommands.handle(Channel.restartForUpdate, async (_event, value: unknown) => {
-      const request = parseRestartRequest(value);
-      if (!request) return;
-      assertNotRestarting();
-      restartRequested = true;
-      try {
-        // An accepted channel change must reach the updater before it installs.
-        await settingsQueue.settled();
-        await history.settled();
-        const state = history.state();
-        const refusal = restartRefusal(request, state);
-        if (refusal) throw new Error(refusal);
-        const [latest] = state.entries;
-        await updates.restart(
-          request.choice === "copyTranscriptAndRestart" && latest
-            ? () => clipboard.writeText(copyText(latest))
-            : undefined,
-        );
-      } finally {
-        restartRequested = false;
-      }
-    });
-    hubCommands.handle(Channel.openRelease, () => {
-      const url = updates.releaseUrl();
-      if (url) void shell.openExternal(url);
-    });
-    hubCommands.handle(Channel.updateSettings, (_event, raw) => {
-      const patch = parseSettingsPatch(raw);
-      return updateSettings((previous) => applyPatch(previous, patch));
-    });
-    hubCommands.handle(Channel.requestPermission, (_event, kind) => {
-      if (isPermissionKind(kind)) requestPermission(kind);
-    });
-    hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
-      if (development) return;
-      const openAtLogin = on === true;
-      // Registering again does not approve the item. Only the user can, in Login Items.
-      if (openAtLogin && store.state.loginItem === "needsApproval") {
-        void shell.openExternal(LOGIN_ITEMS_PANE);
-        return;
-      }
-      app.setLoginItemSettings({ openAtLogin });
-      refreshLoginItem();
-    });
-    hubCommands.handle(Channel.startMicrophoneTest, () => {
-      if (lifecycle === "running") microphoneTest.start();
-    });
-    hubCommands.handle(Channel.stopMicrophoneTest, () => microphoneTest.stop());
-    hubCommands.handle(Channel.installModel, (_event, id: unknown) => {
-      const model = models.find((candidate) => candidate.id === id);
-      if (model && lifecycle === "running") modelControls[model.id].install();
-    });
-    hubCommands.handle(Channel.uninstallModel, (_event, id: unknown) => {
-      const model = models.find((candidate) => candidate.id === id);
-      if (!model) return;
-      assertCanUninstall(model);
-      return modelControls[model.id].uninstall();
-    });
-    // The first list the hub sees is the loaded one, so an empty list means empty, not pending.
-    hubCommands.handle(Channel.getHistory, () => history.loaded().then(history.state));
-    hubCommands.handle(Channel.copyHistoryEntry, (_event, id: unknown, value: unknown) => {
-      const version = parseTranscriptVersion(value);
-      if (typeof id !== "string" || version === null) return;
-      const entry = history.entries().find((candidate) => candidate.id === id);
-      if (!entry) throw new Error("This transcript is no longer in your history.");
-      clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
-    });
-    hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
-      if (typeof id !== "string") return;
-      try {
-        await history.remove(id);
-      } catch (error) {
-        log(`history: delete failed (${String(error)})`);
-        throw new Error("Could not delete this transcript from the saved history. Try again.", {
-          cause: error,
-        });
-      }
-    });
-    hubCommands.handle(Channel.clearHistory, async () => {
-      try {
-        await history.clear();
-      } catch (error) {
-        log(`history: clear failed (${String(error)})`);
-        throw new Error("Could not clear the saved history. Try again.", { cause: error });
-      }
-    });
-    hubCommands.handle(Channel.setHistoryRetention, async (_event, value: unknown) => {
-      const retention = parseHistoryRetention(value);
-      if (retention === null) return;
-      assertNotRestarting();
-      try {
-        await history.setRetention(retention);
-      } catch (error) {
-        log(`history: retention change failed (${String(error)})`);
-        throw new Error("Could not change where your history is kept. Try again.", {
-          cause: error,
-        });
-      }
-    });
-    hubCommands.handle(Channel.signIn, () => {
-      assertNotRestarting();
-      return account.signIn();
-    });
-    hubCommands.handle(Channel.submitSignInCode, (_event, code: unknown) =>
-      account.submitSignInCode(typeof code === "string" ? code : ""),
-    );
-    hubCommands.handle(Channel.cancelSignIn, () => account.cancelSignIn());
-    hubCommands.handle(Channel.signOut, () => account.signOut());
-    hubCommands.handle(Channel.dismissAccountError, () => account.dismissError());
-    hubCommands.handle(Channel.updateAccountName, (_event, name: unknown) =>
-      account.updateName(parseAccountName(name)),
-    );
-    hubCommands.handle(Channel.requestAccountDeletion, () => account.requestDeletion());
-    hubCommands.handle(Channel.confirmAccountDeletion, () => account.confirmDeletion());
-    hubCommands.handle(Channel.cancelAccountDeletion, () => account.cancelDeletion());
-    hubCommands.handle(Channel.retryAccountDeletion, () => account.retryDeletion());
-    hubCommands.handle(Channel.getInsights, () => insights.get());
-    hubCommands.handle(Channel.getInstalledApps, () => installedApps.list());
-    hubCommands.handle(Channel.getAppIcons, (_event, raw: unknown) =>
-      installedApps.icons(parseBundleIds(raw)),
-    );
-    hubCommands.handle(Channel.editAssignments, async (_event, raw: unknown) => {
-      assertNotRestarting();
-      await editAssignments(settingsQueue, raw);
-    });
-    hubCommands.handle(Channel.clearInsights, async () => {
-      try {
-        await insights.clear();
-      } catch (error) {
-        log(`insights: clear failed (${String(error)})`);
-        throw new Error("Could not clear insights. Try again.", { cause: error });
-      }
-    });
-  }
+  const hubCommandDeps: HubCommandDeps = {
+    store,
+    development,
+    running: () => lifecycle === "running",
+    assertNotRestarting,
+    updates,
+    restartForUpdate,
+    updateSettings,
+    requestPermission,
+    refreshLoginItem,
+    microphoneTest,
+    modelControls,
+    assertCanUninstall,
+    history,
+    transforms,
+    account,
+    insights,
+    installedApps,
+    settingsQueue,
+    log,
+  };
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
   // target app must keep focus until insertion. A launch by URL shows the hub anyway.
-  const showHubWhenIdle = whenNotDictating(store, showHub);
+  const showHubWhenIdle = whenIdle(store, showHub);
   handleCallbackUrl = (url) => {
     if (account.handleCallbackUrl(url) !== "ignored") showHubWhenIdle();
   };
@@ -857,19 +803,21 @@ async function main() {
   app.on("window-all-closed", () => {});
 
   // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
-  // settings save, the Insights and history writes, the helper, and the cleanup process get to
+  // settings save, the Insights and history writes, the helper, and the model processes get to
   // finish, and their logs get sent. The quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
+    transforms.dispose();
     const stopped = Promise.allSettled([
       settingsQueue.settled(),
       insights.settled(),
       history.settled(),
       helper.stop(),
       cleanup.dispose(),
+      transformModel.dispose(),
     ]);
     const result = await Promise.race([stopped, timeout]);
     clearTimeout(timer);
@@ -912,6 +860,7 @@ async function main() {
   }
   updates.start();
   void cleanup.loadIfDownloaded();
+  void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
   // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
   // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press.
@@ -919,6 +868,7 @@ async function main() {
     Object.assign(globalThis, {
       voiceTest: {
         cleanup,
+        transformModel,
         openUrl: (url: string) => app.emit("open-url", { preventDefault() {} }, url),
         clickMenuItem: (id: string) => {
           const item = Menu.getApplicationMenu()?.getMenuItemById(id);

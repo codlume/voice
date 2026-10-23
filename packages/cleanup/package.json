@@ -14,6 +14,14 @@
     "./style": {
       "types": "./src/style.ts",
       "import": "./src/style.ts"
+    },
+    "./transform": {
+      "types": "./src/transform/index.ts",
+      "import": "./src/transform/index.ts"
+    },
+    "./words": {
+      "types": "./src/words.ts",
+      "import": "./src/words.ts"
     }
   },
   "scripts": {

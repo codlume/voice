@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { Channel, DEFAULT_SETTINGS } from "../shared/api.ts";
 import { publish } from "./publish.ts";
 import { createStore, type AppState } from "./store.ts";
+import { idleRun } from "./transform-run.ts";
 
 const identity = {
   id: "user-1",
@@ -30,9 +31,14 @@ function harness() {
       status: { kind: "idle" },
     },
     session: { phase: "idle" },
+    transform: idleRun,
     permissions: { microphone: "granted", accessibility: "granted" },
     loginItem: "off",
-    models: { asr: { state: "ready" }, cleanup: { state: "ready" } },
+    models: {
+      asr: { state: "ready" },
+      cleanup: { state: "ready" },
+      transform: { state: "missing" },
+    },
     settings: DEFAULT_SETTINGS,
     microphones: { kind: "loading" },
     microphoneTest: { kind: "off" },
@@ -78,7 +84,11 @@ describe("publish", () => {
     update({ loginItem: "on" });
     update({ account: { kind: "signedOut" } });
     update({
-      models: { asr: { state: "ready" }, cleanup: { state: "downloading", progress: 0.5 } },
+      models: {
+        asr: { state: "ready" },
+        cleanup: { state: "downloading", progress: 0.5 },
+        transform: { state: "missing" },
+      },
     });
 
     expect(pill.sent).toEqual([]);
