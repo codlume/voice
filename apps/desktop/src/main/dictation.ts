@@ -4,7 +4,6 @@ import type { CleanupStyle } from "@voice/cleanup/style";
 import * as Effect from "effect/Effect";
 
 import type { Outcome } from "../shared/api.ts";
-import type { Category } from "../shared/app-categories.ts";
 import {
   supportsCleanup,
   wantsCleanup,
@@ -20,7 +19,6 @@ import type { History } from "./history.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import {
   step,
-  type CleanupWork,
   type Destination,
   type Effect as SessionEffect,
   type Session,
@@ -120,6 +118,8 @@ export type Dictated = {
   destination: Destination | null;
 };
 
+type Work = { kind: "transform"; transformId: TransformId } | { kind: "style" } | null;
+
 const gaveTranscript = (outcome: Outcome) =>
   outcome.kind === "inserted" || outcome.kind === "notInserted";
 
@@ -146,10 +146,10 @@ export function createDictation(options: DictationOptions): Dictation {
   }
   let watchdog: NodeJS.Timeout | null = null;
 
-  // The auto-apply transform when one is set and its model is on disk, else S1-mini cleanup in the
-  // target's style. The English gate is S1-mini's alone. The language is the one captured at the
-  // start of the session, not the current setting.
-  function cleanupWork(id: string, category: Category): CleanupWork | null {
+  // The auto-apply transform when one is set and its model is on disk, else S1-mini cleanup. The
+  // English gate is S1-mini's alone. The language is the one captured at the start of the session,
+  // not the current setting. The style comes from the target, which only the transcript has.
+  function workFor(id: string): Work {
     if (started?.id !== id) return null;
     const { settings } = store.state;
     const { enabled, items, autoApply } = settings.transforms;
@@ -158,12 +158,10 @@ export function createDictation(options: DictationOptions): Dictation {
       return { kind: "transform", transformId: transform.id };
     }
     if (supportsCleanup(started.language) && settings.cleanup.enabled && cleanup.loaded()) {
-      return { kind: "style", style: cleanupStyleFor(category, settings.cleanup.styles) };
+      return { kind: "style" };
     }
     return null;
   }
-  // Which work runs does not depend on the target, only its style does.
-  const workKind = (id: string) => cleanupWork(id, "other")?.kind;
 
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
@@ -175,9 +173,11 @@ export function createDictation(options: DictationOptions): Dictation {
       if (state.phase !== before.phase || overdue) armWatchdog(state);
       // Transcription is the window to keep the GPU clocked up for the clean that follows.
       if (state.phase !== before.phase) {
-        if (state.phase === "transcribing" && workKind(state.id) === "style") cleanup.keepGpuBusy();
-        else if (before.phase === "transcribing" && state.phase !== "cleaning")
+        if (state.phase === "transcribing" && workFor(state.id)?.kind === "style") {
+          cleanup.keepGpuBusy();
+        } else if (before.phase === "transcribing" && state.phase !== "cleaning") {
           cleanup.letGpuIdle();
+        }
       }
     }
     for (const effect of effects) run(effect);
@@ -228,7 +228,7 @@ export function createDictation(options: DictationOptions): Dictation {
           detectHost: wantsCleanup(store.state.settings),
         });
         // Loading starts while the user speaks, after the capture command is on its way.
-        if (workKind(effect.id) === "transform") {
+        if (workFor(effect.id)?.kind === "transform") {
           queueMicrotask(() => options.transform.model.warm());
         }
         return;
@@ -443,11 +443,15 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);
+        const decided = workFor(event.id);
         dispatch({
           type: "transcript",
           id: event.id,
           text: event.text,
-          cleanup: cleanupWork(event.id, category),
+          cleanup:
+            decided?.kind === "style"
+              ? { kind: "style", style: cleanupStyleFor(category, settings.cleanup.styles) }
+              : decided,
           destination: event.target && { bundleId: event.target.bundleId, category },
           rewrites: {
             dictionary: settings.dictionary,
