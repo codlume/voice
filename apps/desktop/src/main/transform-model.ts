@@ -21,7 +21,10 @@ export type TransformModel = {
   refresh(): Promise<void>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
-  /** Loads on demand. The budget counts from the call, so a load spends part of it. */
+  /**
+   * Loads on demand. The load has its own bound (`LOAD_TIMEOUT_MS`), and the budget counts from
+   * the moment the engine is ready, so a cold start never eats the generation time.
+   */
   run(request: TransformRequest): Promise<TransformResult>;
   /** Fire and forget. Starts a load if the weights are on disk. Safe to call on every press. */
   warm(): void;
@@ -30,6 +33,9 @@ export type TransformModel = {
 };
 
 export const IDLE_UNLOAD_MS = 5 * 60_000;
+// A first-ever load measured 28.6 s in Electron; three times that is a stuck process.
+export const LOAD_TIMEOUT_MS = 90_000;
+export const LOAD_TIMED_OUT_MESSAGE = "The transform model took too long to load.";
 
 export type TransformModule = Pick<
   typeof import("@voice/cleanup/download"),
@@ -205,12 +211,13 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     },
     run: async (request) => {
       request.signal.throwIfAborted();
-      const deadline = Date.now() + request.budgetMs;
       let withdraw: (() => void) | undefined;
+      let loadTimer: NodeJS.Timeout | undefined;
       running += 1;
       clearTimeout(idleTimer);
       try {
-        // A run withdrawn while the model loads leaves the load going for the next one.
+        // A run withdrawn while the model loads leaves the load going for the next one. A load
+        // that overruns its bound is a stuck process: it is stopped so the next run starts fresh.
         const loading = loadedEngine();
         loading.catch(() => undefined);
         const engine = await Promise.race([
@@ -219,11 +226,18 @@ export function createTransformModel(options: TransformModelOptions): TransformM
             withdraw = () => reject(request.signal.reason);
             request.signal.addEventListener("abort", withdraw, { once: true });
           }),
+          new Promise<"loadTimedOut">((resolve) => {
+            loadTimer = setTimeout(resolve, LOAD_TIMEOUT_MS, "loadTimedOut");
+          }),
         ]);
-        const budgetMs = deadline - Date.now();
-        if (budgetMs <= 0) return { ok: false, failure: { kind: "timedOut" } };
-        return await engine.transform({ ...request, budgetMs });
+        if (engine === "loadTimedOut") {
+          void stop();
+          options.onStatus({ state: "failed", message: LOAD_TIMED_OUT_MESSAGE });
+          return { ok: false, failure: { kind: "timedOut" } };
+        }
+        return await engine.transform(request);
       } finally {
+        clearTimeout(loadTimer);
         if (withdraw) request.signal.removeEventListener("abort", withdraw);
         running -= 1;
         armIdle();

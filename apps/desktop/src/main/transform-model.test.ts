@@ -5,7 +5,13 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { createTransformProcess, serve } from "./transform-engine.ts";
-import { createTransformModel, IDLE_UNLOAD_MS, type TransformModule } from "./transform-model.ts";
+import {
+  createTransformModel,
+  IDLE_UNLOAD_MS,
+  LOAD_TIMED_OUT_MESSAGE,
+  LOAD_TIMEOUT_MS,
+  type TransformModule,
+} from "./transform-model.ts";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -210,21 +216,34 @@ describe("transform model", () => {
     expect(last()).toEqual({ state: "ready" });
   });
 
-  test("the time a load takes comes out of the run's budget", async () => {
+  test("a load, however long, leaves the run's whole budget for generation", async () => {
     idleTimers();
     const { model, workers, release } = harness({ holdLoad: true });
     await model.refresh();
 
     const running = model.run(request({ budgetMs: 10_000 }));
     await vi.waitFor(() => expect(workers[0]?.loads).toBe(1));
-    vi.advanceTimersByTime(3_000);
+    // Three times the budget, and vi.waitFor moved the fake clock some more.
+    vi.advanceTimersByTime(30_000);
     release();
 
     await expect(running).resolves.toEqual(RESULT);
-    // vi.waitFor moves the fake clock too, so the load took at least the 3 s advanced here.
-    const budgetMs = workers[0]?.runs[0]?.request.budgetMs ?? Infinity;
-    expect(budgetMs).toBeLessThanOrEqual(7_000);
-    expect(budgetMs).toBeGreaterThan(6_000);
+    expect(workers[0]?.runs[0]?.request.budgetMs).toBe(10_000);
+  });
+
+  test("a load past its bound ends the run timed out, stops the process and reports failed", async () => {
+    idleTimers();
+    const { model, workers, last } = harness({ holdLoad: true });
+    await model.refresh();
+
+    const running = model.run(request({ budgetMs: 10_000 }));
+    await vi.waitFor(() => expect(workers[0]?.loads).toBe(1));
+    await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS);
+
+    await expect(running).resolves.toEqual({ ok: false, failure: { kind: "timedOut" } });
+    await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+    expect(workers[0]?.runs).toEqual([]);
+    expect(last()).toEqual({ state: "failed", message: LOAD_TIMED_OUT_MESSAGE });
   });
 
   test("the process is killed after 5 idle minutes, and the next run loads a new one", async () => {
