@@ -131,6 +131,15 @@ export type SelectionFailure =
   | "keysHeld"
   | "failed";
 
+// Fixed sentences only, so neither the selection nor model output can reach the pill.
+export type TransformFailureMessage =
+  | "Could not read the selection"
+  | "The transform took too long. Text unchanged"
+  | "The transform gave no usable result. Text unchanged"
+  | "The transform model stopped. Text unchanged"
+  | "Voice helper stopped"
+  | "Voice helper did not respond";
+
 export type TransformOutcome =
   | Inserted
   | NotInserted
@@ -138,7 +147,7 @@ export type TransformOutcome =
   | { kind: "tooLong"; maxWords: number }
   | { kind: "modelUnavailable"; state: "missing" | "failed" }
   | { kind: "modelUnavailable"; state: "downloading"; progress?: number }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: TransformFailureMessage };
 
 export type PillState =
   | { kind: "idle" }

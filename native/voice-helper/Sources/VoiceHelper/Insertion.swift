@@ -222,10 +222,10 @@ let axMessagingTimeout: Float = 0.3
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
 /// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
 /// would refuse insertions whose focus never changed.
-func focusInputStamp() -> [UInt32] {
-    [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
+func focusInputStamp() -> PressStamp {
+    PressStamp(counts: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
         CGEventSource.counterForEventType(.combinedSessionState, eventType: $0)
-    }
+    })
 }
 
 private enum FocusAttribute {

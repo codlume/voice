@@ -12,9 +12,15 @@ public enum AXSelectionAnswer: Equatable, Sendable {
     case noAnswer
 }
 
+/// The system-wide key and mouse press counters at one moment. Any press moves it.
+public struct PressStamp: Equatable, Sendable {
+    public let counts: [UInt32]
+    public init(counts: [UInt32]) { self.counts = counts }
+}
+
 public enum SelectionOrigin: Equatable, Sendable {
     case accessibility(text: String, range: AXTextRange?)
-    case copy(inputStamp: [UInt32])
+    case copy(pressStamp: PressStamp)
 }
 
 public enum ReadPlan: Equatable, Sendable {
@@ -37,7 +43,7 @@ public func planRead(secureInput: Bool, answer: AXSelectionAnswer) -> ReadPlan {
 
 public enum WriteVerdict: Equatable, Sendable { case proceed, refuseSelectionChanged }
 
-public func writeVerdict(origin: SelectionOrigin, readAX: () -> AXSelectionAnswer, readStamp: () -> [UInt32]) -> WriteVerdict {
+public func writeVerdict(origin: SelectionOrigin, readAX: () -> AXSelectionAnswer, readStamp: () -> PressStamp) -> WriteVerdict {
     switch origin {
     case .accessibility(let text, let range):
         return readAX() == .text(text, range: range) ? .proceed : .refuseSelectionChanged

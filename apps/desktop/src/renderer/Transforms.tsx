@@ -387,14 +387,11 @@ function useLastTransform(): LastTransform | null {
       answerStale = true;
       setLast(next);
     });
-    hubApi()
+    void hubApi()
       .getLastTransform()
-      .then(
-        (first) => {
-          if (!answerStale) setLast(first);
-        },
-        () => {},
-      );
+      .then((first) => {
+        if (!answerStale) setLast(first);
+      });
     return () => {
       answerStale = true;
       unsubscribe();

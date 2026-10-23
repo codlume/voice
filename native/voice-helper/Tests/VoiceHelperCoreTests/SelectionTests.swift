@@ -34,7 +34,7 @@ private let fnBit: UInt64 = 0x80_0000
 }
 
 private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [UInt32]) -> WriteVerdict {
-    writeVerdict(origin: origin, readAX: { ax }, readStamp: { stamp })
+    writeVerdict(origin: origin, readAX: { ax }, readStamp: { PressStamp(counts: stamp) })
 }
 
 @Test func accessibilityOriginProceedsOnlyWhenTextAndRangeStillMatch() {
@@ -47,7 +47,7 @@ private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [U
 }
 
 @Test func copyOriginProceedsOnlyWhileNoPressHappenedSinceTheRead() {
-    let origin = SelectionOrigin.copy(inputStamp: [10, 2, 0, 0])
+    let origin = SelectionOrigin.copy(pressStamp: PressStamp(counts: [10, 2, 0, 0]))
     #expect(verdict(origin, ax: .noAnswer, stamp: [10, 2, 0, 0]) == .proceed)
     #expect(verdict(origin, ax: .noAnswer, stamp: [11, 2, 0, 0]) == .refuseSelectionChanged)
     #expect(verdict(origin, ax: .noAnswer, stamp: [10, 3, 0, 0]) == .refuseSelectionChanged)

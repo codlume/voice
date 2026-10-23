@@ -8,6 +8,9 @@ import { stopChildren } from "../../../scripts/voice-app.mjs";
 import { electronTarget, textEditTarget } from "../../../scripts/targets.mjs";
 import { assert, helperBinary, refuseIfVoiceIsRunning, withHelper } from "./helper.mjs";
 
+// CopyWait.lateCheck in the helper: an unanswered copy may still restore until then.
+const HELPER_LATE_RESTORE_MS = 1000;
+
 const target = process.argv[2];
 assert(
   target === "textedit" || target === "electron",
@@ -206,7 +209,7 @@ try {
       `collapsed selection gave ${JSON.stringify(empty.result)}`,
     );
     helper.send({ type: "transform.end", id: "run-2" });
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    await new Promise((resolve) => setTimeout(resolve, HELPER_LATE_RESTORE_MS + 100));
     const countAfterEmpty = clipboardChangeCount();
     assert(
       countAfterEmpty === countBeforeEmpty,

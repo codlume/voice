@@ -101,14 +101,14 @@ const resident = (state: Phase): state is Extract<Phase, Resident> =>
 async function withinLoadBound(
   loading: Promise<TransformEngine>,
   signal: AbortSignal,
-): Promise<TransformEngine | undefined> {
+): Promise<TransformEngine | "overran"> {
   let timer: NodeJS.Timeout | undefined;
   let withdraw: (() => void) | undefined;
   try {
     return await Promise.race([
       loading,
-      new Promise<undefined>((resolve, reject) => {
-        timer = setTimeout(() => resolve(undefined), LOAD_TIMEOUT_MS);
+      new Promise<"overran">((resolve, reject) => {
+        timer = setTimeout(() => resolve("overran"), LOAD_TIMEOUT_MS);
         withdraw = () => reject(signal.reason);
         signal.addEventListener("abort", withdraw, { once: true });
       }),
@@ -238,7 +238,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       clearTimeout(idleTimer);
       try {
         const engine = await withinLoadBound(loadedEngine(), request.signal);
-        if (!engine) {
+        if (engine === "overran") {
           options.log("transform: the model took too long to load");
           if (resident(state)) void set({ phase: "installed", path: state.path });
           return TIMED_OUT;

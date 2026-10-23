@@ -6,6 +6,7 @@ import type {
   ModelStatus,
   PillState,
   SelectionFailure,
+  TransformFailureMessage,
   TransformOutcome,
 } from "../shared/api.ts";
 import type { TransformId } from "../shared/transforms.ts";
@@ -81,7 +82,10 @@ function finish(id: string, outcome: TransformOutcome): Step {
   };
 }
 
-const failed = (message: string): TransformOutcome => ({ kind: "failed", message });
+const failed = (message: TransformFailureMessage): TransformOutcome => ({
+  kind: "failed",
+  message,
+});
 
 function generateFailure(failure: GenerateFailure): TransformOutcome {
   switch (failure.kind) {

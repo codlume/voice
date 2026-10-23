@@ -54,7 +54,7 @@ final class Pasteboard {
         let wait = CopyWait(startChangeCount: pasteboard.changeCount)
         postCommand(typing: "c", fallback: PasteKey.ansiC)
         let postedAt = DispatchTime.now()
-        return await Task { @MainActor [self] in
+        let watchThatOutlivesCancellation = Task { @MainActor [self] () -> CopyOutcome in
             while true {
                 switch wait.step(changeCount: pasteboard.changeCount, elapsed: elapsed(since: postedAt)) {
                 case .wait:
@@ -74,7 +74,8 @@ final class Pasteboard {
                     return concealed ? .concealed : .text(text)
                 }
             }
-        }.value
+        }
+        return await watchThatOutlivesCancellation.value
     }
 
     /// Runs a restore still waiting on its timer, so an exit inside the window does not leave

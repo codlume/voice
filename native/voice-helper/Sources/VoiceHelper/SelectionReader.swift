@@ -90,7 +90,7 @@ final class SelectionReader {
             return .failed(.secureInput)
         case .text(let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failed(.noSelection) }
-            target.origin = .copy(inputStamp: focusInputStamp())
+            target.origin = .copy(pressStamp: focusInputStamp())
             shelf.put(id: id, target)
             return .selected(text: text, via: .copy)
         }

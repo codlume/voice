@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import { keycodeForCode } from "./keycodes.ts";
+
 import {
   BUILT_IN_TRANSFORMS,
   DEFAULT_TRANSFORMS,
@@ -30,8 +32,12 @@ const other = "c2" as TransformId;
 describe("built-in transforms", () => {
   test("ship Polish on Option+1 and Prompt Engineer on Option+2, switched off", () => {
     expect(BUILT_IN_TRANSFORMS.map(({ id, name, shortcut }) => [id, name, shortcut])).toEqual([
-      [POLISH_ID, "Polish", { keycode: 18, modifiers: ["option"] }],
-      [PROMPT_ENGINEER_ID, "Prompt Engineer", { keycode: 19, modifiers: ["option"] }],
+      [POLISH_ID, "Polish", { keycode: keycodeForCode("Digit1"), modifiers: ["option"] }],
+      [
+        PROMPT_ENGINEER_ID,
+        "Prompt Engineer",
+        { keycode: keycodeForCode("Digit2"), modifiers: ["option"] },
+      ],
     ]);
     expect(DEFAULT_TRANSFORMS).toEqual({
       enabled: false,
