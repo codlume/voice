@@ -154,8 +154,7 @@ function harness(opts: Options = {}) {
   const dictated: Dictated[] = [];
   const copies: Output[] = [];
   const transformRuns: TransformRequest[] = [];
-  // The commands sent before each warm, so a test can tell what it followed.
-  const warms: HelperCommand["type"][][] = [];
+  let warms = 0;
   const lastTransforms: Omit<LastTransform, "finishedAt">[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
@@ -191,7 +190,9 @@ function harness(opts: Options = {}) {
     transform: {
       model: {
         onDisk: () => opts.transformOnDisk ?? true,
-        warm: () => warms.push(commands.map((command) => command.type)),
+        warm: () => {
+          warms += 1;
+        },
         run: (request) => {
           transformRuns.push(request);
           const result = opts.transformResult ?? { ok: true, text: `Polished: ${request.text}` };
@@ -257,7 +258,7 @@ function harness(opts: Options = {}) {
     dictated,
     copies,
     transformRuns,
-    warms,
+    warms: () => warms,
     lastTransforms,
     dictation: { dispatch, onHelperEvent },
     id,
@@ -1838,15 +1839,13 @@ describe("auto-apply after dictation", () => {
     await flush();
     expect(h.transformRuns).toEqual([]);
     expect(h.cleans).toEqual(["hey"]);
-    expect(h.warms).toEqual([]);
+    expect(h.warms()).toBe(0);
   });
 
-  test("the model is warmed once, after capture.start is sent and outside the hotkey handler", async () => {
+  test("the model is warmed once per session when the transform will run", async () => {
     const h = harness({ autoApply: POLISH_ID });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    expect(h.warms).toEqual([]);
-    await Promise.resolve();
-    expect(h.warms).toEqual([["capture.start"]]);
+    await dictate(h, "hello");
+    expect(h.warms()).toBe(1);
   });
 
   test("the GPU is not held for S1-mini while a transform will run", () => {

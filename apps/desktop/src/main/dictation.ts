@@ -227,10 +227,9 @@ export function createDictation(options: DictationOptions): Dictation {
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
         });
-        // Loading starts while the user speaks, after the capture command is on its way.
-        if (workFor(effect.id)?.kind === "transform") {
-          queueMicrotask(() => options.transform.model.warm());
-        }
+        // Loading starts while the user speaks. warm() only schedules the load, so the capture
+        // command above is on its way before any heavy work.
+        if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
         return;
       case "stopCapture":
         track(effect.id, { releasedAt: effect.releasedAt });
