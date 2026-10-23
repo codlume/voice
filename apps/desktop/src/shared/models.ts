@@ -1,3 +1,9 @@
+import type { Settings } from "./api.ts";
+import { wantsCleanup } from "./dictation-language.ts";
+
+/** The activity an uninstall must wait for, because the run would lose the model under it. */
+export type BusyDuring = "dictation" | "transform";
+
 export const models = [
   {
     id: "asr",
@@ -7,8 +13,9 @@ export const models = [
     vendor: "NVIDIA",
     size: "480 MB",
     lostUntilReinstalled: "Dictation stops working",
-    neededWhileDictating: true,
+    busyDuring: "dictation",
     cancelableDownload: false,
+    wanted: () => true,
   },
   {
     id: "cleanup",
@@ -19,8 +26,9 @@ export const models = [
     size: "480 MB",
     lostUntilReinstalled: "Text cleanup stops",
     // Dictation falls back to the raw transcript without it.
-    neededWhileDictating: false,
+    busyDuring: null,
     cancelableDownload: true,
+    wanted: (settings: Settings) => wantsCleanup(settings),
   },
   {
     id: "transform",
@@ -30,10 +38,17 @@ export const models = [
     vendor: "Google",
     size: "3.1 GB",
     lostUntilReinstalled: "Transforms stop working",
-    neededWhileDictating: false,
+    busyDuring: "transform",
     cancelableDownload: true,
+    wanted: (settings: Settings) => settings.transforms.enabled,
   },
 ] as const;
 
 export type Model = (typeof models)[number];
 export type ModelId = Model["id"];
+
+export const modelById: { [Id in ModelId]: Extract<Model, { id: Id }> } = {
+  asr: models[0],
+  cleanup: models[1],
+  transform: models[2],
+};

@@ -34,7 +34,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
-import type { Model, ModelId } from "../shared/models.ts";
+import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored } from "./account-storage.ts";
@@ -82,6 +82,10 @@ const PERMISSION_POLL_MS = 2000;
 const SHUTDOWN_TIMEOUT_MS = 3000;
 const DIAGNOSTICS_FLUSH_MS = 1000;
 
+const FINISH_FIRST: Record<BusyDuring, string> = {
+  dictation: "Finish dictating",
+  transform: "Finish the transform",
+};
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
@@ -738,12 +742,10 @@ async function main() {
     if (state === "loading" || (state === "downloading" && !model.cancelableDownload)) {
       throw new Error(`Wait for the ${model.kind.toLowerCase()} to finish ${state}.`);
     }
-    const busy = activity(store.state);
-    if (model.neededWhileDictating && busy === "dictation") {
-      throw new Error(`Finish dictating, then uninstall the ${model.kind.toLowerCase()}.`);
-    }
-    if (model.id === "transform" && busy === "transform") {
-      throw new Error(`Finish the transform, then uninstall the ${model.kind.toLowerCase()}.`);
+    if (model.busyDuring && activity(store.state) === model.busyDuring) {
+      throw new Error(
+        `${FINISH_FIRST[model.busyDuring]}, then uninstall the ${model.kind.toLowerCase()}.`,
+      );
     }
   }
 

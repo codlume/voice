@@ -1,6 +1,5 @@
 import type { ModelStatus, PermissionKind, PermissionState, Snapshot } from "../shared/api.ts";
 
-import { wantsCleanup } from "../shared/dictation-language.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 
 export type SetupCommand =
@@ -100,8 +99,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     },
   ];
   for (const model of models) {
-    if (model.id === "cleanup" && !wantsCleanup(settings)) continue;
-    if (model.id === "transform" && !settings.transforms.enabled) continue;
+    if (!model.wanted(settings)) continue;
     rows.push({
       id: model.id,
       title: model.kind,

@@ -171,6 +171,22 @@ describe("checklist", () => {
     },
   );
 
+  test("the transform model joins the checklist only while Transforms are on", () => {
+    expect(checklist(allReady).rows.map((r) => r.id)).not.toContain("transform");
+    const on: Snapshot = {
+      ...allReady,
+      settings: { ...allReady.settings, transforms: { ...DEFAULT_TRANSFORMS, enabled: true } },
+    };
+    const list = checklist(on);
+    expect(list.ready).toBe(false);
+    expect(row(on, "transform")).toMatchObject({
+      title: "Transform model",
+      subtitle: "Gemma 4 E2B by Google",
+      status: { kind: "needed", text: "Not downloaded" },
+      actions: [{ label: "Download", command: { type: "installModel", id: "transform" } }],
+    });
+  });
+
   test("with cleanup off, the cleanup model neither shows nor blocks readiness", () => {
     const cleanupOff: Snapshot = {
       ...allReady,

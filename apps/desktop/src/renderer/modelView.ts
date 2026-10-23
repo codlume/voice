@@ -18,7 +18,7 @@ export function modelView(
   const cancel = { label: "Cancel", disabled: false } as const;
   const uninstall = {
     label: "Uninstall",
-    disabled: model.neededWhileDictating && dictating,
+    disabled: model.busyDuring === "dictation" && dictating,
   } as const;
   switch (status.state) {
     case "missing":

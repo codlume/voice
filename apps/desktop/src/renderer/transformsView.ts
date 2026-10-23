@@ -1,6 +1,6 @@
 // What the Transforms page says, without React.
 import type { ModelStatus } from "../shared/api.ts";
-import { models } from "../shared/models.ts";
+import { modelById } from "../shared/models.ts";
 import {
   BUILT_IN_TRANSFORMS,
   customHolderOf,
@@ -9,7 +9,7 @@ import {
 } from "../shared/transforms.ts";
 import { shortcutLabel, type KeyboardLayout } from "./shortcutCapture.ts";
 
-export const TRANSFORM_MODEL_SIZE = models.find(({ id }) => id === "transform")?.size ?? "";
+export const TRANSFORM_MODEL_SIZE = modelById.transform.size;
 
 /** The Select needs a string for None; no transform id is empty. */
 export const NO_AUTO_APPLY = "";
