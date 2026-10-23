@@ -90,7 +90,7 @@ describe("pillView for transforms", () => {
   });
 
   const cases: [TransformOutcome, string][] = [
-    [{ kind: "notInserted", reason: "focusChanged" }, "App changed. Result is in Voice"],
+    [{ kind: "notInserted", reason: "focusChanged" }, "Focus changed. Result is in Voice"],
     [{ kind: "notInserted", reason: "noFocusedField" }, "Can't write here. Result is in Voice"],
     [{ kind: "notInserted", reason: "secureInput" }, "Secure field. Result is in Voice"],
     [{ kind: "notInserted", reason: "selectionChanged" }, "Text changed. Result is in Voice"],

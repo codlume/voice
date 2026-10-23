@@ -49,7 +49,7 @@ function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
 
 // The pill takes no clicks, so every kept result points at the Voice window.
 const transformNotInsertedText: Record<InsertFailure, string> = {
-  focusChanged: "App changed. Result is in Voice",
+  focusChanged: "Focus changed. Result is in Voice",
   noFocusedField: "Can't write here. Result is in Voice",
   secureInput: "Secure field. Result is in Voice",
   selectionChanged: "Text changed. Result is in Voice",
