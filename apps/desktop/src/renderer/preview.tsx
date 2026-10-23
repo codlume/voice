@@ -8,6 +8,7 @@ import {
   type Outcome,
   type PillState,
   type Snapshot,
+  type TransformOutcome,
   type HubApi,
   type PillApi,
   type ReleaseNotes,
@@ -74,6 +75,10 @@ const ready: Snapshot = {
 const historySaved: HubScene = { ...ready, retention: "month" };
 
 const done = (outcome: Outcome): PillState => ({ kind: "done", outcome });
+const transformDone = (outcome: TransformOutcome): PillState => ({
+  kind: "transformDone",
+  outcome,
+});
 
 const pillScenes: Record<string, PillState> = {
   idle: { kind: "idle" },
@@ -90,6 +95,10 @@ const pillScenes: Record<string, PillState> = {
     kind: "failed",
     message: "The speech model stopped unexpectedly while transcribing this recording",
   }),
+  transforming: { kind: "transforming", loading: false },
+  transformLoading: { kind: "transforming", loading: true },
+  transformTooLong: transformDone({ kind: "tooLong", maxWords: 1000 }),
+  transformNotInserted: transformDone({ kind: "notInserted", reason: "noFocusedField" }),
 };
 
 const releaseItems = [
@@ -573,7 +582,7 @@ function fakeVoice(
           snippets: patch.snippets ?? snapshot.settings.snippets,
           dictionary: patch.dictionary ?? snapshot.settings.dictionary,
           zoomLevel: patch.zoomLevel ?? snapshot.settings.zoomLevel,
-          transforms: snapshot.settings.transforms,
+          transforms: { ...snapshot.settings.transforms, ...patch.transforms },
         },
         updates: patch.updateChannel
           ? {
