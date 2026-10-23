@@ -31,6 +31,7 @@ type Behavior =
   | "trickle"
   | "short"
   | "stall"
+  | "drop"
   | "silent"
   | "missing"
   | "corrupt";
@@ -92,6 +93,11 @@ beforeEach(async () => {
       res.writeHead(200, { "content-length": BYTES });
       res.write(MODEL.subarray(0, BYTES / 2));
       stalled.push(res);
+      return;
+    }
+    if (behavior === "drop") {
+      res.writeHead(200, { "content-length": BYTES });
+      res.write(MODEL.subarray(0, BYTES / 2), () => res.destroy());
       return;
     }
     if (behavior === "silent") {
@@ -198,6 +204,20 @@ test("a download that stops sending bytes rejects as stalled, keeps the .part, a
   expect(progress.at(-1)).toBe(1);
   expect(await readdir(dir)).not.toContain("model.gguf.part");
 }, 2_000);
+
+test("a dropped connection rejects as interrupted, keeps the .part, and the next run resumes it", async () => {
+  behavior = "drop";
+
+  await expect(download()).rejects.toThrow(
+    "Download interrupted. Check your connection and try again.",
+  );
+  expect((await stat(join(dir, "model.gguf.part"))).size).toBeGreaterThan(0);
+
+  behavior = "complete";
+  const path = await download();
+  expect(ranges.at(-1)).toMatch(/^bytes=\d+-$/);
+  expect((await readFile(path)).equals(MODEL)).toBe(true);
+});
 
 test("a server that ignores Range sends the whole file again, which replaces the .part", async () => {
   await writeFile(join(dir, "model.gguf.part"), Buffer.alloc(BYTES / 2, 0xff));

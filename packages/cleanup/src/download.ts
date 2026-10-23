@@ -220,6 +220,12 @@ async function fetchToFile(
       await handle.close().catch(() => undefined);
     }
     await install(url, part, path, { received, hash, expected });
+  } catch (error) {
+    // fetch reports a refused or dropped connection as a TypeError such as "terminated".
+    if (signal?.aborted || stall.signal.aborted || !(error instanceof TypeError)) throw error;
+    throw new Error("Download interrupted. Check your connection and try again.", {
+      cause: error,
+    });
   } finally {
     clearTimeout(timer);
   }
