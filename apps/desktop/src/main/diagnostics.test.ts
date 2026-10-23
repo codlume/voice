@@ -14,6 +14,7 @@ import type { HelperCrash } from "./helper-crash.ts";
 import { idle } from "./session.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
+import { noAutoApply } from "./testing/no-auto-apply.ts";
 
 // The Sentry SDK's main module parses the Electron version at load.
 type IpcHandler = (event: { sender: unknown }, data: unknown) => void;
@@ -189,6 +190,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       letGpuIdle: () => {},
       clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1 }),
     },
+    transform: noAutoApply,
     onLevel: () => {},
     log: () => {},
     onSessionDone: diagnostics.sessionDone,

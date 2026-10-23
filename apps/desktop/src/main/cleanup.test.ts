@@ -14,6 +14,7 @@ import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
+import { noAutoApply } from "./testing/no-auto-apply.ts";
 
 const style: CleanupStyle = { style: "veryCasual", layout: "email" };
 const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
@@ -622,6 +623,7 @@ describe("followSettings", () => {
       store,
       send: (command) => commands.push(command),
       cleanup,
+      transform: noAutoApply,
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},

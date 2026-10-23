@@ -36,6 +36,7 @@ import {
   withStoredAuthSession,
 } from "./account.test-harness.ts";
 import { idle } from "./session.ts";
+import { noAutoApply } from "./testing/no-auto-apply.ts";
 
 describe("resolveApiUrl", () => {
   const release = { channel: "nightly" as const, updateUrl: "https://downloads.example.com" };
@@ -596,6 +597,7 @@ describe("createAccount", () => {
         letGpuIdle: () => {},
         clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
       },
+      transform: noAutoApply,
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},
@@ -679,6 +681,7 @@ describe("createAccount", () => {
         letGpuIdle: () => {},
         clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
       },
+      transform: noAutoApply,
       onLevel: () => {},
       log: () => {},
       onSessionDone: () => {},

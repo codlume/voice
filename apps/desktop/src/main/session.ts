@@ -9,6 +9,7 @@ import type {
 } from "../shared/api.ts";
 import type { BundleId, Category } from "../shared/app-categories.ts";
 import type { Transcript } from "../shared/history.ts";
+import type { TransformId } from "../shared/transforms.ts";
 import {
   finalRewrite,
   rewrite,
@@ -22,6 +23,11 @@ export type DictationMode = "hold" | "toggle";
 
 /** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };
+
+/** What runs on a transcript before insertion: S1-mini cleanup in a style, or an auto-apply transform. */
+export type CleanupWork =
+  | { kind: "style"; style: CleanupStyle }
+  | { kind: "transform"; transformId: TransformId };
 
 export type Session =
   | { phase: "idle" }
@@ -39,6 +45,7 @@ export type Session =
       phase: "cleaning";
       id: string;
       raw: string;
+      work: CleanupWork;
       rewrites: Rewrites;
       destination: Destination | null;
     }
@@ -66,7 +73,7 @@ export type SessionEvent =
       type: "transcript";
       id: string;
       text: string;
-      cleanup: CleanupStyle | null;
+      cleanup: CleanupWork | null;
       rewrites: Rewrites;
       destination: Destination | null;
     }
@@ -82,7 +89,7 @@ export type Effect =
   | { type: "startCapture"; id: string }
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
-  | { type: "cleanup"; id: string; raw: string; style: CleanupStyle }
+  | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
   | { type: "scheduleIdle"; id: string; ms: number };
@@ -243,12 +250,13 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           phase: "cleaning",
           id: state.id,
           raw,
+          work: event.cleanup,
           rewrites: event.rewrites,
           destination: event.destination,
         },
         effects: [
           { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
-          { type: "cleanup", id: state.id, raw, style: event.cleanup },
+          { type: "cleanup", id: state.id, raw, work: event.cleanup },
         ],
       };
     }
@@ -267,7 +275,8 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         state.id,
         state.raw,
         final,
-        final.source === "cleaned" ? cleaned : null,
+        // Insights counts the words cleanup corrected. A transform rewrites, so it counts none.
+        final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
         state.destination,
       );
     }

@@ -440,6 +440,7 @@ async function main() {
     store,
     send: helper.send,
     cleanup,
+    transform: { model: transformModel, remember: (value) => transforms.remember(value) },
     onLevel: (level) => {
       if (!pill.isDestroyed()) pill.webContents.send(Channel.level, level);
     },

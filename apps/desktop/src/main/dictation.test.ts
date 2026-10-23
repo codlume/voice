@@ -10,7 +10,12 @@ import { dictationLanguages, type DictationLanguage } from "../shared/dictation-
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Output } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
-import { POLISH_ID } from "../shared/transforms.ts";
+import {
+  BUILT_IN_TRANSFORMS,
+  POLISH_ID,
+  type LastTransform,
+  type TransformId,
+} from "../shared/transforms.ts";
 import {
   DEFAULT_STYLES,
   parseAssignments,
@@ -24,11 +29,15 @@ import {
   CLEANUP_GRACE_MS,
   CLEANUP_MAX_MS,
   CLEANUP_PER_WORD_MS,
+  AUTO_APPLY_BASE_MS,
+  AUTO_APPLY_MAX_MS,
+  AUTO_APPLY_PER_WORD_MS,
   INSERT_TIMEOUT_MS,
   START_TIMEOUT_MS,
   TRANSCRIBE_OVERDUE_MIN_MS,
   TRANSCRIBE_TIMEOUT_MS,
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
+  autoApplyBudgetMs,
   cleanupBudgetMs,
   createDictation,
   whenNotDictating,
@@ -46,6 +55,7 @@ import {
   type SessionEvent,
 } from "./session.ts";
 import { idleRun } from "./transform-run.ts";
+import type { TransformRequest, TransformResult } from "./transform-model.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
 type Options = {
@@ -61,6 +71,10 @@ type Options = {
   copyToClipboard?: boolean;
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
+  autoApply?: TransformId;
+  transformsEnabled?: boolean;
+  transformOnDisk?: boolean;
+  transformResult?: TransformResult | "rejects" | "hangs";
 };
 
 const formattedName: Snippet = {
@@ -104,6 +118,11 @@ function harness(opts: Options = {}) {
       copyToClipboard: opts.copyToClipboard ?? DEFAULT_SETTINGS.copyToClipboard,
       snippets: opts.snippets ?? DEFAULT_SETTINGS.snippets,
       dictionary: opts.dictionary ?? DEFAULT_SETTINGS.dictionary,
+      transforms: {
+        ...DEFAULT_SETTINGS.transforms,
+        enabled: opts.transformsEnabled ?? opts.autoApply !== undefined,
+        autoApply: opts.autoApply ?? null,
+      },
       cleanup: {
         enabled: opts.cleanupEnabled ?? true,
         styles: { ...DEFAULT_STYLES, ...opts.styles },
@@ -134,6 +153,10 @@ function harness(opts: Options = {}) {
   const reports: SessionReport[] = [];
   const dictated: Dictated[] = [];
   const copies: Output[] = [];
+  const transformRuns: TransformRequest[] = [];
+  // The commands sent before each warm, so a test can tell what it followed.
+  const warms: HelperCommand["type"][][] = [];
+  const lastTransforms: Omit<LastTransform, "finishedAt">[] = [];
   store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
   const dictation = createDictation({
     store,
@@ -164,6 +187,24 @@ function harness(opts: Options = {}) {
         const chunks = opts.cleanPartial ? 3 : 1;
         return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1 });
       },
+    },
+    transform: {
+      model: {
+        onDisk: () => opts.transformOnDisk ?? true,
+        warm: () => warms.push(commands.map((command) => command.type)),
+        run: (request) => {
+          transformRuns.push(request);
+          const result = opts.transformResult ?? { ok: true, text: `Polished: ${request.text}` };
+          if (result === "rejects") return Promise.reject(new Error("The transform model stopped"));
+          if (result === "hangs") {
+            return new Promise((_, reject) =>
+              request.signal.addEventListener("abort", () => reject(request.signal.reason)),
+            );
+          }
+          return Promise.resolve(result);
+        },
+      },
+      remember: (value) => lastTransforms.push(value),
     },
     onLevel: (level) => levels.push(level),
     log: (message, entry) => {
@@ -215,6 +256,9 @@ function harness(opts: Options = {}) {
     reports,
     dictated,
     copies,
+    transformRuns,
+    warms,
+    lastTransforms,
     dictation: { dispatch, onHelperEvent },
     id,
   };
@@ -1680,5 +1724,136 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ ...denied, microphone: "granted" });
     expect(h.phases).toHaveLength(2);
     expect(h.store.state.permissions).toEqual({ microphone: "granted", accessibility: "granted" });
+  });
+});
+
+describe("auto-apply after dictation", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const polish = BUILT_IN_TRANSFORMS.find((item) => item.id === POLISH_ID)!;
+  const hadrys: DictionaryEntry = { id: "1", phrase: "Hadryś", replacement: null };
+
+  test("runs the transform on the transcript in dictation mode and inserts its result", async () => {
+    const h = harness({ autoApply: POLISH_ID });
+    const raw = "um so ask kenji about friday";
+    const id = await dictate(h, raw);
+    expect(h.cleans).toEqual([]);
+    expect(h.transformRuns).toMatchObject([
+      {
+        instruction: polish.instruction,
+        text: raw,
+        dictation: true,
+        budgetMs: autoApplyBudgetMs(raw),
+      },
+    ]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: `Polished: ${raw}`, html: null });
+    expect(h.latest()).toMatchObject({ raw, text: `Polished: ${raw}` });
+    expect(h.lastTransforms).toEqual([{ name: "Polish", before: raw, after: `Polished: ${raw}` }]);
+
+    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    expect(h.dictated).toMatchObject([{ raw, insertedCleanup: null }]);
+    expect(h.logs.at(-1)).toMatch(/^session \S+ outcome=inserted .*cleanupMs=\d+/);
+  });
+
+  test("applies the dictionary to the result", async () => {
+    const h = harness({ autoApply: POLISH_ID, dictionary: [hadrys] });
+    const id = await dictate(h, "ask hadrys");
+    expect(h.transformRuns.map((r) => r.text)).toEqual(["ask hadrys"]);
+    expect(h.commands.at(-1)).toEqual({
+      type: "insert",
+      id,
+      text: "Polished: ask Hadryś",
+      html: null,
+    });
+  });
+
+  test.each<[string, TransformResult | "rejects"]>([
+    ["refuses the result", { ok: false, failure: { kind: "rejected" } }],
+    ["runs out of time", { ok: false, failure: { kind: "timedOut" } }],
+    ["finds the text too long", { ok: false, failure: { kind: "tooLong", maxWords: 1000 } }],
+    ["stops", "rejects"],
+  ])(
+    "inserts the transcript with the dictionary applied when the transform %s",
+    async (_, transformResult) => {
+      const h = harness({ autoApply: POLISH_ID, transformResult, dictionary: [hadrys] });
+      const id = await dictate(h, "keep hadrys");
+      expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "keep Hadryś", html: null });
+      expect(h.latest()).toMatchObject({ raw: "keep hadrys", text: "keep Hadryś" });
+      expect(h.lastTransforms).toEqual([]);
+      expect(h.logs).toContainEqual(expect.stringMatching(/^cleanup failed: /));
+    },
+  );
+
+  test("a transform that never settles is aborted after its budget and a grace, and the transcript goes in", async () => {
+    const h = harness({ autoApply: POLISH_ID, transformResult: "hangs" });
+    const raw = "one two three";
+    const id = await dictate(h, raw);
+    const budgetMs = autoApplyBudgetMs(raw);
+    await vi.advanceTimersByTimeAsync(budgetMs + CLEANUP_GRACE_MS - 1);
+    expect(h.transformRuns[0]!.signal.aborted).toBe(false);
+    expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.transformRuns[0]!.signal.aborted).toBe(true);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: raw, html: null });
+    expect(h.logs).toContainEqual(expect.stringContaining("cleanup timed out"));
+  });
+
+  test("a dictation of only a trigger inserts the expansion without the transform", async () => {
+    const expansion = "Best,\nAlex";
+    const h = harness({
+      autoApply: POLISH_ID,
+      snippets: [{ id: "1", trigger: "sign off", expansion, expansionHtml: null, enabled: true }],
+    });
+    const id = await dictate(h, "Sign off.");
+    expect(h.transformRuns).toEqual([]);
+    expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: expansion, html: null });
+  });
+
+  test.each<[string, Options]>([
+    ["the language has no cleanup", { dictationLanguage: "de" }],
+    ["cleanup is off", { cleanupEnabled: false }],
+    ["the cleanup model is not loaded", { cleanupLoaded: false }],
+  ])("the transform runs when %s", async (_, opts) => {
+    const h = harness({ ...opts, autoApply: POLISH_ID });
+    await dictate(h, "hallo welt");
+    expect(h.transformRuns.map((r) => r.text)).toEqual(["hallo welt"]);
+    expect(h.cleans).toEqual([]);
+  });
+
+  test.each<[string, Options]>([
+    ["Transforms are off", { autoApply: POLISH_ID, transformsEnabled: false }],
+    ["the transform model is not on disk", { autoApply: POLISH_ID, transformOnDisk: false }],
+    ["no transform is set", {}],
+    ["the set transform no longer exists", { autoApply: "gone" as TransformId }],
+  ])("S1-mini cleans as before when %s", async (_, opts) => {
+    const h = harness(opts);
+    const id = release(h, 800);
+    expect(h.gpu).toEqual(["busy"]);
+    h.helper.transcript(id, "hey");
+    await flush();
+    expect(h.transformRuns).toEqual([]);
+    expect(h.cleans).toEqual(["hey"]);
+    expect(h.warms).toEqual([]);
+  });
+
+  test("the model is warmed once, after capture.start is sent and outside the hotkey handler", async () => {
+    const h = harness({ autoApply: POLISH_ID });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    expect(h.warms).toEqual([]);
+    await Promise.resolve();
+    expect(h.warms).toEqual([["capture.start"]]);
+  });
+
+  test("the GPU is not held for S1-mini while a transform will run", () => {
+    const h = harness({ autoApply: POLISH_ID });
+    release(h, 800);
+    expect(h.gpu).toEqual([]);
+  });
+
+  test("the auto-apply budget grows with the input and is capped", () => {
+    expect(autoApplyBudgetMs("")).toBe(AUTO_APPLY_BASE_MS);
+    expect(autoApplyBudgetMs("a b c")).toBe(AUTO_APPLY_BASE_MS + 3 * AUTO_APPLY_PER_WORD_MS);
+    expect(autoApplyBudgetMs("w ".repeat(1000))).toBe(AUTO_APPLY_MAX_MS);
   });
 });

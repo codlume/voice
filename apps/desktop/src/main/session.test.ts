@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { CleanupStyle } from "@voice/cleanup/style";
-
 import type { ModelStatus } from "../shared/api.ts";
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import type { Rewrites } from "../shared/rewrite.ts";
 import type { Snippet } from "../shared/snippets.ts";
+import { POLISH_ID } from "../shared/transforms.ts";
 
 import {
   ASR_DOWNLOADING_MESSAGE,
@@ -18,6 +17,7 @@ import {
   idle,
   step,
   toPillState,
+  type CleanupWork,
   type Effect,
   type Session,
   type SessionEvent,
@@ -46,8 +46,8 @@ const escape = (now: number) => [{ type: "cancel" }, now] as [SessionEvent, numb
 const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
 const NONE: Rewrites = { dictionary: [], snippets: [] };
-const STYLE: CleanupStyle = { style: "casual", layout: "general" };
-const transcript = (text: string, cleanup: CleanupStyle | null, now = 2000, rewrites = NONE) =>
+const STYLE: CleanupWork = { kind: "style", style: { style: "casual", layout: "general" } };
+const transcript = (text: string, cleanup: CleanupWork | null, now = 2000, rewrites = NONE) =>
   [{ type: "transcript", id: ID, text, cleanup, rewrites, destination: null }, now] as [
     SessionEvent,
     number,
@@ -347,7 +347,7 @@ describe("transcript", () => {
     expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       remembered("hello um world", "hello um world"),
-      { type: "cleanup", id: ID, raw: "hello um world", style: STYLE },
+      { type: "cleanup", id: ID, raw: "hello um world", work: STYLE },
     ]);
   });
 
@@ -503,6 +503,26 @@ describe("cleanup", () => {
     });
   });
 
+  test("an auto-apply transform gets the raw transcript, and its result is inserted but not counted as cleanup", () => {
+    const POLISH: CleanupWork = { kind: "transform", transformId: POLISH_ID };
+    const toTransforming = [...toTranscribing, transcript("hello um world", POLISH)];
+    expect(run(toTransforming).effects).toEqual([
+      remembered("hello um world", "hello um world"),
+      { type: "cleanup", id: ID, raw: "hello um world", work: POLISH },
+    ]);
+
+    const { state, effects } = run([
+      ...toTransforming,
+      [{ type: "cleaned", id: ID, text: "Hello, world." }, 2300],
+    ]);
+    expect(state).toMatchObject({
+      phase: "inserting",
+      output: { text: "Hello, world.", html: null },
+      insertedCleanup: null,
+    });
+    expect(effects).toContainEqual(remembered("hello um world", "Hello, world."));
+  });
+
   test("cleanup returning empty for filler input ends empty and keeps the raw transcript", () => {
     const { state, effects, all } = run([
       ...toCleaning,
@@ -564,7 +584,7 @@ describe("snippets", () => {
     expect(state.phase).toBe("cleaning");
     expect(effects).toEqual([
       remembered("send it to my email", `send it to ${EMAIL}`),
-      { type: "cleanup", id: ID, raw: "send it to my email", style: STYLE },
+      { type: "cleanup", id: ID, raw: "send it to my email", work: STYLE },
     ]);
   });
 
@@ -694,7 +714,7 @@ describe("dictionary", () => {
   const FIXED = "by the way ask Hadryś about Wispr Flow";
   const cleaned = (text: string) =>
     [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
-  const said = (text: string, cleanup: CleanupStyle | null) =>
+  const said = (text: string, cleanup: CleanupWork | null) =>
     transcript(text, cleanup, 2000, { dictionary, snippets });
   const cleaning = [...toTranscribing, said(RAW, STYLE)];
 
@@ -710,7 +730,7 @@ describe("dictionary", () => {
     const { effects: sent } = run(cleaning);
     expect(sent).toEqual([
       remembered(RAW, FIXED),
-      { type: "cleanup", id: ID, raw: RAW, style: STYLE },
+      { type: "cleanup", id: ID, raw: RAW, work: STYLE },
     ]);
     const { effects } = run([...cleaning, cleaned("BTW, ask hadrys about wispr  flow.")]);
     expect(effects).toEqual([
