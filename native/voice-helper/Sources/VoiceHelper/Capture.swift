@@ -68,7 +68,7 @@ final class Capture {
     /// the user picks "Later".
     private var microphoneAuthorized = false
     private let authorizationStatus: @Sendable () -> AVAuthorizationStatus
-    private(set) var lastTarget: (id: String, target: InsertTarget)?
+    private var lastTarget = SelectionShelf<InsertTarget>()
     private(set) var source: CaptureSource
     var testAudioPath: String? {
         get {
@@ -118,7 +118,7 @@ final class Capture {
             output.emit(.captureFailed(id: id, reason: .busy, message: "capture is busy with another session"))
             return false
         }
-        lastTarget = nil
+        lastTarget.clear()
         adopt(microphone)
         let session = CaptureSession(id: id, language: language, target: target, commandedAt: receivedAt)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
@@ -202,10 +202,7 @@ final class Capture {
     }
 
     func cancel(id: String) {
-        if lastTarget?.id == id {
-            lastTarget = nil
-            return
-        }
+        if lastTarget.take(id: id) != nil { return }
         switch state {
         case .starting(let session) where session.id == id:
             _ = session.input.drain(closing: true)
@@ -233,7 +230,7 @@ final class Capture {
     }
 
     func shutdown() {
-        lastTarget = nil
+        lastTarget.clear()
         stopSource()
         disposeMic()
         switch state {
@@ -252,9 +249,7 @@ final class Capture {
     }
 
     func takeLastTarget(id: String) -> InsertTarget? {
-        guard let lastTarget, lastTarget.id == id else { return nil }
-        self.lastTarget = nil
-        return lastTarget.target
+        lastTarget.take(id: id)
     }
 
     func startTest(id: String, microphone: Microphone?) {
@@ -468,9 +463,7 @@ final class Capture {
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
         if case .transcript(_, let text, _, _, _, _) = event, !text.isEmpty {
-            lastTarget = (session.id, session.target)
-        } else {
-            lastTarget = nil
+            lastTarget.put(id: session.id, session.target)
         }
         output.emit(event)
         state = .idle

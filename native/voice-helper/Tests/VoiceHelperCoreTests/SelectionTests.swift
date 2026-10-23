@@ -100,3 +100,10 @@ private let fnBit: UInt64 = 0x80_0000
     shelf.clear(id: "c")
     #expect(shelf.take(id: "c") == nil)
 }
+
+@Test func clearWithoutAnIdDropsWhateverRunIsShelved() {
+    var shelf = SelectionShelf<String>()
+    shelf.put(id: "a", "first")
+    shelf.clear()
+    #expect(shelf.take(id: "a") == nil)
+}

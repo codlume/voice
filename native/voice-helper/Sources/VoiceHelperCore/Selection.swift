@@ -95,8 +95,9 @@ public struct CopyWait: Equatable, Sendable {
     }
 }
 
-/// One slot, take-once, keyed by the run id. A new read replaces it, an insert takes it, and
-/// `transform.end` drops only its own run's entry.
+/// One slot, take-once, keyed by the run id: the one target an `insert` may claim, from a
+/// finished dictation or a selection read. A new entry replaces it, an insert takes it, and a
+/// run's end drops only its own entry.
 public struct SelectionShelf<Entry> {
     private var slot: (id: String, entry: Entry)?
 
@@ -114,5 +115,9 @@ public struct SelectionShelf<Entry> {
 
     public mutating func clear(id: String) {
         if slot?.id == id { slot = nil }
+    }
+
+    public mutating func clear() {
+        slot = nil
     }
 }
