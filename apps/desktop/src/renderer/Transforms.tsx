@@ -181,8 +181,9 @@ export function Transforms({
               After dictation
             </label>
             <p {...stylex.props(settingsStyles.rowDetail)}>
-              Runs on every dictation in place of cleanup. It can shorten what you said; History
-              keeps the original when it is on.
+              Runs on every dictation in place of cleanup. It can shorten what you said. Your
+              original words stay in History when History is on, and in Last transform until Voice
+              quits.
             </p>
           </div>
           <Select
