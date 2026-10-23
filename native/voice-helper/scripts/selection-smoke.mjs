@@ -6,18 +6,16 @@ import { join } from "node:path";
 
 import { stopChildren } from "../../../scripts/voice-app.mjs";
 import { electronTarget, textEditTarget } from "../../../scripts/targets.mjs";
-import { assert, helperBinary, runningVoiceProcesses, withHelper } from "./helper.mjs";
+import { assert, helperBinary, refuseIfVoiceIsRunning, withHelper } from "./helper.mjs";
 
 const target = process.argv[2];
 assert(
   target === "textedit" || target === "electron",
   `usage: selection-smoke.mjs textedit|electron (got ${target})`,
 );
-// Other Voice instances may run; this smoke posts no dictation key, Escape or Cmd+V of its own,
-// and their helpers register no transform shortcut, so nothing here reaches them.
-const others = runningVoiceProcesses();
-if (others.length > 0)
-  console.error(`note: other Voice processes are running:\n${others.join("\n")}`);
+// The smoke posts Option+1 as a keyboard would, and any Voice that registers a transform shortcut
+// would run a transform on the smoke's paragraph.
+refuseIfVoiceIsRunning();
 
 const transformId = "polish";
 const oneKeycode = 18;
