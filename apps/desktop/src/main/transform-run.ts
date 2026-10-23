@@ -58,7 +58,7 @@ export type TransformEffect =
 
 export type Step = { state: TransformRun; effects: TransformEffect[] };
 
-export const READ_TIMEOUT_MS = 4000;
+export const READ_TIMEOUT_MS = 5500;
 export const GENERATE_GRACE_MS = 2000;
 
 export const GENERATE_BUDGET: Budget = { base: 15_000, perWord: 40, max: 60_000 };

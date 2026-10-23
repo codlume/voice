@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import type { TransformId } from "../shared/transforms.ts";
 import { startHelper } from "./helper.ts";
+import { READ_TIMEOUT_MS } from "./transform-run.ts";
 import {
   decodeTarget,
   HELPER_PROTOCOL_VERSION,
@@ -380,6 +381,7 @@ const ParsedCaseSchema = Schema.Struct({ ...WireCaseSchema.fields, parsed: Schem
 const InvalidCaseSchema = Schema.Struct({ name: Schema.String, line: Schema.String });
 const CorpusSchema = Schema.Struct({
   protocolVersion: Schema.Int,
+  selectionReadMaxMs: Schema.Finite,
   languages: Schema.Array(Schema.String),
   versions: Schema.Array(Schema.Struct({ version: Schema.Int, compatible: Schema.Boolean })),
   commands: Schema.Array(RequiredCaseSchema),
@@ -518,6 +520,10 @@ function startContractHelper(configure: () => HelperCommand[] = () => []) {
 }
 
 describe("shared helper protocol corpus", () => {
+  test("main waits for a selection read longer than the helper can take to answer", () => {
+    expect(READ_TIMEOUT_MS).toBeGreaterThan(corpus.selectionReadMaxMs);
+  });
+
   test("covers every command, event and language without duplicate cases", () => {
     expect(corpus.protocolVersion).toBe(HELPER_PROTOCOL_VERSION);
     expect(corpus.languages.toSorted()).toEqual(

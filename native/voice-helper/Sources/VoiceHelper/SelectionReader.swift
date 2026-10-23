@@ -127,4 +127,8 @@ final class SelectionReader {
     }
 }
 
-private let focusDeadline: TimeInterval = 2
+let focusDeadline: TimeInterval = 2
+
+/// The longest a read can take before it answers; main's read watchdog must outlast it.
+let selectionReadMaxDuration = ReleaseWait.deadline + focusDeadline + 3 * TimeInterval(axMessagingTimeout)
+    + CopyWait.deadline

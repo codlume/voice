@@ -1,5 +1,6 @@
 {
   "protocolVersion": 13,
+  "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
     "en",
