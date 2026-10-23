@@ -246,6 +246,30 @@ describe("transform model", () => {
     expect(last()).toEqual({ state: "failed", message: LOAD_TIMED_OUT_MESSAGE });
   });
 
+  test("unload stops an idle process and reports installed, but leaves a run in flight alone", async () => {
+    const { model, workers, nextRun, last } = harness({ holdRuns: true });
+    await model.refresh();
+    const started = nextRun();
+    const running = model.run(request());
+    await started;
+
+    await model.unload();
+    expect(workers[0]?.closed).toBe(false);
+    workers[0]?.runs[0]?.finish(RESULT);
+    await expect(running).resolves.toEqual(RESULT);
+
+    await model.unload();
+
+    await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+    expect(last()).toEqual({ state: "installed" });
+    const again = nextRun();
+    const next = model.run(request());
+    await again;
+    workers[1]?.runs[0]?.finish(RESULT);
+    await expect(next).resolves.toEqual(RESULT);
+    expect(workers).toHaveLength(2);
+  });
+
   test("the process is killed after 5 idle minutes, and the next run loads a new one", async () => {
     idleTimers();
     const { model, workers, last } = harness();

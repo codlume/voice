@@ -28,6 +28,8 @@ export type TransformModel = {
   run(request: TransformRequest): Promise<TransformResult>;
   /** Fire and forget. Starts a load if the weights are on disk. Safe to call on every press. */
   warm(): void;
+  /** Frees the Metal memory now. A run in flight keeps its process; the idle unload follows it. */
+  unload(): Promise<void>;
   onDisk(): boolean;
   dispose(): Promise<void>;
 };
@@ -247,6 +249,11 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       if (modelPath === undefined || disposed) return;
       loadedEngine().catch(() => undefined);
       armIdle();
+    },
+    unload: async () => {
+      if (!worker || running > 0 || disposed) return;
+      await stop();
+      options.onStatus(restingStatus());
     },
     onDisk: () => modelPath !== undefined,
     dispose: async () => {
