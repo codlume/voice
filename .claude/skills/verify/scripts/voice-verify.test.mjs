@@ -410,8 +410,9 @@ test("escape is posted only while the run is still transforming", () => {
   assert.equal(shouldEscape(false, "transforming"), false);
 });
 
+const snapshot = (kind, loading) => ({ session: { kind, loading } });
+
 test("the pill summary reports whether the run loaded the model and reached transformDone", () => {
-  const snapshot = (kind, loading) => ({ session: { kind, loading } });
   const done = snapshot("transformDone");
   assert.deepEqual(
     pillSummary([snapshot("transforming", true), snapshot("transforming", false), done], done),
