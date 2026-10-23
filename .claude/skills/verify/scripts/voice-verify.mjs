@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { keyEvents } from "./key-events.mjs";
 import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
 import {
   announcedPorts,
@@ -814,6 +815,24 @@ const commands = {
     }
   },
 
+  async key() {
+    const [code, ...modifiers] = args;
+    if (!code) fail("usage: key <code> [option|shift|control|command…]");
+    let events;
+    try {
+      events = keyEvents(code, modifiers);
+    } catch (error) {
+      fail(error.message);
+    }
+    const page = await connect("hub");
+    try {
+      for (const event of events) await page.call("Input.dispatchKeyEvent", event);
+      out({ pressed: code, modifiers });
+    } finally {
+      page.close();
+    }
+  },
+
   async browser() {
     const [googleCode = "ada-lovelace"] = args;
     const urlFile = join(requireInstance().userData, "sign-in-url.txt");
@@ -1122,6 +1141,7 @@ const commands = {
   text                           current sidebar nav and visible page text
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
+  key <code> [modifier...]       press one key in the hub, e.g. key Digit1 option (modifiers: option shift control command)
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
   callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
   menu <id>                      choose an application menu item by id, as its shortcut would

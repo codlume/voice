@@ -52,7 +52,7 @@ function checkout(t, mode) {
     "test-fixtures/audio/short.wav",
   ])
     put(path, "synthetic test placeholder");
-  for (const name of ["voice-verify.mjs", "dictate-flags.mjs", "scenarios.mjs"])
+  for (const name of ["voice-verify.mjs", "dictate-flags.mjs", "key-events.mjs", "scenarios.mjs"])
     put(`.claude/skills/verify/scripts/${name}`, readFileSync(join(scripts, name), "utf8"));
   put(
     "native/voice-helper/scripts/helper.mjs",

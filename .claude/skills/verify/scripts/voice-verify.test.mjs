@@ -17,6 +17,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseDictateFlags } from "./dictate-flags.mjs";
+import { keyEvents } from "./key-events.mjs";
 import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs";
 
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
@@ -29,6 +30,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const paths = [
     ".claude/skills/verify/scripts/voice-verify.mjs",
     ".claude/skills/verify/scripts/dictate-flags.mjs",
+    ".claude/skills/verify/scripts/key-events.mjs",
     ".claude/skills/verify/scripts/scenarios.mjs",
     "scripts/voice-app.mjs",
     "scripts/smoke-resources.mjs",
@@ -231,4 +233,35 @@ test("dictate --app parses a bundle id with an optional host, and the defaults s
   }
   assert.throws(() => parseDictateFlags(["--end=later"]), /--end must be/);
   assert.throws(() => parseDictateFlags(["--key=tap"]), /--key must be/);
+});
+
+test("key presses each modifier around the key and releases them in reverse", () => {
+  const press = (type, code, key, windowsVirtualKeyCode, modifiers) => ({
+    type,
+    code,
+    key,
+    windowsVirtualKeyCode,
+    modifiers,
+  });
+  assert.deepEqual(keyEvents("Digit1", ["option"]), [
+    press("rawKeyDown", "AltLeft", "Alt", 18, 1),
+    press("rawKeyDown", "Digit1", "1", 49, 1),
+    press("keyUp", "Digit1", "1", 49, 1),
+    press("keyUp", "AltLeft", "Alt", 18, 0),
+  ]);
+  assert.deepEqual(keyEvents("KeyA", ["command", "shift"]), [
+    press("rawKeyDown", "ShiftLeft", "Shift", 16, 8),
+    press("rawKeyDown", "MetaLeft", "Meta", 91, 12),
+    press("rawKeyDown", "KeyA", "A", 65, 12),
+    press("keyUp", "KeyA", "A", 65, 12),
+    press("keyUp", "MetaLeft", "Meta", 91, 8),
+    press("keyUp", "ShiftLeft", "Shift", 16, 0),
+  ]);
+  assert.deepEqual(keyEvents("Enter"), [
+    press("rawKeyDown", "Enter", "Enter", 13, 0),
+    press("keyUp", "Enter", "Enter", 13, 0),
+  ]);
+  assert.equal(keyEvents("KeyK", ["control"])[1].key, "k");
+  assert.throws(() => keyEvents("Digit1", ["alt"]), /unknown modifier alt/);
+  assert.throws(() => keyEvents("Numpad1"), /unknown key code Numpad1/);
 });
