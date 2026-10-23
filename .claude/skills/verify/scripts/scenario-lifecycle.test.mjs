@@ -543,9 +543,9 @@ for (const target of ["electron", "textedit"]) {
         const scratch = JSON.parse(readFileSync(join(f.dir, "target.json"), "utf8"));
         assert.equal(processIdentity(scratch.pid), null);
       } else {
-        const scripts = readFileSync(join(f.dir, "osascript.log"), "utf8");
-        assert.match(scripts, /close document "transform-[^"]+" saving no/);
-        assert.match(scripts, /tell application "TextEdit" to quit/);
+        const osascriptLog = readFileSync(join(f.dir, "osascript.log"), "utf8");
+        assert.match(osascriptLog, /close document "transform-[^"]+" saving no/);
+        assert.match(osascriptLog, /tell application "TextEdit" to quit/);
         assert.deepEqual(
           readdirSync(f.temp).filter((name) => name.startsWith("voice-transform-")),
           [],
