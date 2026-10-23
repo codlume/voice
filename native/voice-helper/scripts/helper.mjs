@@ -155,10 +155,15 @@ export class Helper {
 }
 
 export async function withHelper(options, body) {
+  // Imported here so scripts that never start a helper, such as a cold doctor, need no dependencies.
+  const { HELPER_PROTOCOL_VERSION } = await import("../../../apps/desktop/src/main/protocol.ts");
   const helper = new Helper(options);
   try {
     const ready = await helper.waitForType("ready");
-    assert(ready.version === 13, `ready.version is ${ready.version}`);
+    assert(
+      ready.version === HELPER_PROTOCOL_VERSION,
+      `ready.version is ${ready.version}, not ${HELPER_PROTOCOL_VERSION}`,
+    );
     return await body(helper);
   } finally {
     await helper.close();

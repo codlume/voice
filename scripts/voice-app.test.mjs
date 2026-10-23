@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 
+import { HELPER_PROTOCOL_VERSION } from "../apps/desktop/src/main/protocol.ts";
 import { withHelper } from "../native/voice-helper/scripts/helper.mjs";
 import {
   announcedPorts,
@@ -24,6 +25,9 @@ import {
   electronDependency,
   landedText,
   launchVoice,
+  linkTestModels,
+  modelFiles,
+  optionalModelFiles,
   Page,
   processIdentity,
   smokeEnvironment,
@@ -141,6 +145,37 @@ setInterval(() => {}, 1000);
   }
 });
 
+test("the required test models are linked always and the optional ones only when cached", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "voice-link-models-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cache = join(dir, "cache");
+  mkdirSync(cache);
+  for (const file of Object.values(modelFiles)) writeFileSync(join(cache, file), "model");
+
+  linkTestModels(join(dir, "without"), cache);
+  assert.deepEqual(linkedModels(join(dir, "without")), {
+    asr: true,
+    cleanup: true,
+    transform: false,
+  });
+
+  for (const file of Object.values(optionalModelFiles)) writeFileSync(join(cache, file), "model");
+  linkTestModels(join(dir, "with"), cache);
+  assert.deepEqual(linkedModels(join(dir, "with")), {
+    asr: true,
+    cleanup: true,
+    transform: true,
+  });
+});
+
+const linkedModels = (userData) =>
+  Object.fromEntries(
+    Object.entries({ ...modelFiles, ...optionalModelFiles }).map(([id, file]) => [
+      id,
+      existsSync(join(userData, "models", file)),
+    ]),
+  );
+
 test("preparation helpers cannot restore an inherited fixture path", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "voice-helper-environment-test-"));
   const binary = join(dir, "helper.mjs");
@@ -153,7 +188,7 @@ test("preparation helpers cannot restore an inherited fixture path", async (t) =
   writeFileSync(
     binary,
     `#!/usr/bin/env node
-console.log(JSON.stringify({ type: "ready", version: 13 }));
+console.log(JSON.stringify({ type: "ready", version: ${HELPER_PROTOCOL_VERSION} }));
 console.log(JSON.stringify({ type: "log", env: Object.fromEntries(${JSON.stringify(names)}.map(name => [name, process.env[name]])) }));
 process.stdin.resume();
 `,

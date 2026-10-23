@@ -245,8 +245,20 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
-// Transforms are off by default and their model is 3.1 GB, so it is linked only when cached.
+// Transforms are off by default and their model is several GB, so it is linked only when cached.
 export const optionalModelFiles = { transform: GEMMA_4_E2B.file };
+
+// Links the shared cache's models into a scratch userData. The required ones must exist, and the
+// optional ones are linked when the cache has them.
+export function linkTestModels(userData, cache) {
+  const models = join(userData, "models");
+  mkdirSync(models, { recursive: true });
+  const link = (file) => symlinkSync(join(cache, file), join(models, file));
+  for (const file of Object.values(modelFiles)) link(file);
+  for (const file of Object.values(optionalModelFiles)) {
+    if (existsSync(join(cache, file))) link(file);
+  }
+}
 
 // A stable path: CoreML caches compiled models by path, and a fresh path costs ~40 s per run.
 export async function prepareUserData(name) {
@@ -262,14 +274,7 @@ export async function prepareUserData(name) {
       ),
     ]);
     claim.reset();
-    const models = join(userData, "models");
-    mkdirSync(models, { recursive: true });
-    for (const file of Object.values(modelFiles)) {
-      symlinkSync(join(cache, file), join(models, file));
-    }
-    for (const file of Object.values(optionalModelFiles)) {
-      if (existsSync(join(cache, file))) symlinkSync(join(cache, file), join(models, file));
-    }
+    linkTestModels(userData, cache);
     return userData;
   } catch (error) {
     await claim.release();
