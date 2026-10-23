@@ -210,6 +210,13 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: node scripts/release-preflight.mjs
+      # stapler reaches Apple over HTTP/3, which GitHub's macOS runners drop; blocking UDP 443
+      # forces TCP. https://github.com/actions/runner-images/issues/14924
+      - name: Force stapler onto TCP
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          echo "block return out quick proto udp from any to any port 443" | sudo pfctl -f -
+          sudo pfctl -E
       - name: Import Developer ID certificate
         if: steps.preflight.outputs.skip != 'true'
         env:
@@ -275,6 +282,13 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: node scripts/release-preflight.mjs
+      # stapler reaches Apple over HTTP/3, which GitHub's macOS runners drop; blocking UDP 443
+      # forces TCP. https://github.com/actions/runner-images/issues/14924
+      - name: Force stapler onto TCP
+        if: steps.preflight.outputs.skip != 'true'
+        run: |
+          echo "block return out quick proto udp from any to any port 443" | sudo pfctl -f -
+          sudo pfctl -E
       - name: Import Developer ID certificate
         if: steps.preflight.outputs.skip != 'true'
         env:
