@@ -3,8 +3,7 @@ import type { ModelStatus } from "../shared/api.ts";
 import { models } from "../shared/models.ts";
 import {
   BUILT_IN_TRANSFORMS,
-  restoreDefaults,
-  sameShortcut,
+  customHolderOf,
   type Transform,
   type TransformId,
 } from "../shared/transforms.ts";
@@ -95,16 +94,11 @@ export const firstLine = (text: string) => text.trim().split("\n", 1)[0] ?? "";
 
 /** The Restore defaults confirm, naming each shortcut a built-in cannot take back. */
 export function restoreDescription(items: readonly Transform[], layout: KeyboardLayout | null) {
-  const restored = restoreDefaults(items);
-  const withheld = BUILT_IN_TRANSFORMS.flatMap(({ id, name, shortcut }) => {
-    if (shortcut === null || restored.find((t) => t.id === id)?.shortcut) return [];
-    const holder = items.find(
-      (t) => t.id !== id && t.shortcut !== null && sameShortcut(t.shortcut, shortcut),
-    );
-    if (!holder) return [];
-    return [
-      `${name} comes back without ${shortcutLabel(shortcut, layout)}, which ${holder.name} uses.`,
-    ];
+  const withheld = BUILT_IN_TRANSFORMS.flatMap((builtIn) => {
+    const holder = customHolderOf(builtIn, items);
+    if (builtIn.shortcut === null || holder === null) return [];
+    const label = shortcutLabel(builtIn.shortcut, layout);
+    return [`${builtIn.name} comes back without ${label}, which ${holder.name} uses.`];
   });
   const names = BUILT_IN_TRANSFORMS.map(({ name }) => name).join(" and ");
   return [

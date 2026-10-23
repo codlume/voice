@@ -191,17 +191,26 @@ export function isValidTransformList(
  * built-in comes back without one: restoring never edits what the user made.
  */
 export function restoreDefaults(items: readonly Transform[]): Transform[] {
-  const builtInIds = new Set(BUILT_IN_TRANSFORMS.map(({ id }) => id));
-  const custom = items.filter(({ id }) => !builtInIds.has(id));
   const restored = new Map(
-    BUILT_IN_TRANSFORMS.map((builtIn) => {
-      const { shortcut } = builtIn;
-      const taken = custom.some(
-        (other) => other.shortcut && shortcut && sameShortcut(other.shortcut, shortcut),
-      );
-      return [builtIn.id, taken ? { ...builtIn, shortcut: null } : builtIn];
-    }),
+    BUILT_IN_TRANSFORMS.map((builtIn) => [
+      builtIn.id,
+      customHolderOf(builtIn, items) ? { ...builtIn, shortcut: null } : builtIn,
+    ]),
   );
   const missing = [...restored.values()].filter(({ id }) => !items.some((t) => t.id === id));
   return [...missing, ...items.map((t) => restored.get(t.id) ?? t)];
+}
+
+/** The custom transform holding a built-in's shipped shortcut, which Restore defaults never takes. */
+export function customHolderOf(builtIn: Transform, items: readonly Transform[]): Transform | null {
+  const { shortcut } = builtIn;
+  if (shortcut === null) return null;
+  return (
+    items.find(
+      (item) =>
+        !BUILT_IN_TRANSFORMS.some(({ id }) => id === item.id) &&
+        item.shortcut !== null &&
+        sameShortcut(item.shortcut, shortcut),
+    ) ?? null
+  );
 }
