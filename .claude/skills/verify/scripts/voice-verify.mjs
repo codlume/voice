@@ -21,8 +21,12 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { runningVoiceProcesses } from "../../../../native/voice-helper/scripts/helper.mjs";
+import {
+  CONTENDING_VOICE_MESSAGE,
+  runningVoiceProcesses,
+} from "../../../../native/voice-helper/scripts/helper.mjs";
 import { fixturesDir } from "../../../../scripts/fixtures.mjs";
+import { electronTarget, textEditTarget } from "../../../../scripts/targets.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
 import {
@@ -33,7 +37,6 @@ import {
 } from "./transforms.mjs";
 import { scenarioNamed, scenarioPrerequisites, scenarioSettings } from "./scenarios.mjs";
 import {
-  announcedPorts,
   claimScratch,
   electronDependency,
   electronPath,
@@ -220,8 +223,6 @@ const newest = (dir) => {
   return latest;
 };
 const mtime = (path) => (existsSync(path) ? statSync(path).mtimeMs : 0);
-const osascript = (script) =>
-  execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim();
 
 // A second copy of Voice on the instance's userData, as when the user opens Voice again.
 function openSecondCopy(state, ...extraArgs) {
@@ -232,15 +233,13 @@ function openSecondCopy(state, ...extraArgs) {
 }
 
 // Synthetic key presses reach every running helper's tap, so they need the desktop to themselves.
-function exclusiveDesktop(state) {
+// A scenario's dictation also rechecks that it still owns its instance before each check.
+function exclusiveDesktop(state, { recheckInstance = false } = {}) {
   const check = () => {
-    if (scenarioOwner) requireInstance();
+    if (recheckInstance) requireInstance();
     const others = otherVoiceProcesses(state.userData);
     if (others.length > 0)
-      throw new VerificationBlocked(
-        "refusing: another Voice is running, and its hotkey tap would hear the synthetic key press. If it is the user's Voice.app or a pnpm dev session, it would record the real microphone; ask the user to quit it. If it is another session's verify instance, model download, e2e, or smoke run, wait for it to finish.",
-        { desktop: others },
-      );
+      throw new VerificationBlocked(CONTENDING_VOICE_MESSAGE, { desktop: others });
   };
   const fnpost = (...keys) => {
     check();
@@ -249,96 +248,20 @@ function exclusiveDesktop(state) {
   return { check, fnpost };
 }
 
-async function startScratchTarget(state, wait) {
-  const env = smokeEnvironment(state.userData, {
-    VOICE_E2E_TARGET_USER_DATA: join(state.userData, "target"),
+// An interrupt rejects whatever wait() is racing, so the command's finally blocks run. release()
+// removes the handlers once the command is done.
+function interruptible(message) {
+  let interrupt;
+  const interrupted = new Promise((_, reject) => {
+    interrupt = () => reject(new Error(message));
   });
-  const target = start(
-    electronPath(),
-    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-    { env, stdio: ["ignore", "ignore", "pipe"] },
-  );
-  const { DevTools: port } = await wait(announcedPorts(target, ["DevTools"]));
-  return { pid: target.pid, page: await wait(Page.connect(port, "index.html")) };
-}
-
-async function bringToFront(pid, name) {
-  osascript(
-    `tell application "System Events" to set frontmost of (first process whose unix id is ${pid}) to true`,
-  );
-  const frontmostPid = () =>
-    Number(
-      osascript(
-        'tell application "System Events" to unix id of first process whose frontmost is true',
-      ),
-    );
-  const deadline = Date.now() + 5000;
-  while (frontmostPid() !== pid) {
-    if (Date.now() > deadline) fail(`${name} (pid ${pid}) did not become frontmost`);
-    await sleep(50);
-  }
-}
-
-const FIELD = 'document.getElementById("field")';
-
-async function electronTransformTarget(state, wait) {
-  const { pid, page } = await startScratchTarget(state, wait);
-  const front = () => bringToFront(pid, "the scratch target");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
   return {
-    async open(text) {
-      await front();
-      await waitOn(
-        page,
-        `(${FIELD}.value = ${show(text)}, ${FIELD}.focus(), document.hasFocus() && document.activeElement.id === "field")`,
-        5000,
-      );
-    },
-    selectAll: () => page.evaluate(`${FIELD}.select(), ${FIELD}.selectionEnd`),
-    read: () => page.evaluate(`${FIELD}.value`),
-    front,
-    close: () => page.close(),
-  };
-}
-
-// A named file, as in native/voice-helper/scripts/selection-smoke.mjs: an untitled document can
-// fail to appear on a cold launch, and closing one can raise a save sheet that blocks AppleEvents.
-function textEditTransformTarget() {
-  const wasRunning = osascript('application "TextEdit" is running') === "true";
-  const dir = mkdtempSync(join(tmpdir(), "voice-verify-transform-"));
-  const name = `transform-${randomUUID()}.txt`;
-  const file = join(dir, name);
-  const document = `document ${show(name)}`;
-  const read = async () => osascript(`tell application "TextEdit" to get text of ${document}`);
-  let front;
-  return {
-    async open(text) {
-      writeFileSync(file, text);
-      osascript(`tell application "TextEdit"\nopen POSIX file ${show(file)}\nactivate\nend tell`);
-      const pid = Number(
-        osascript('tell application "System Events" to unix id of process "TextEdit"'),
-      );
-      front = () => bringToFront(pid, "TextEdit");
-      await front();
-      const deadline = Date.now() + 3000;
-      while ((await read()) !== text) {
-        if (Date.now() > deadline) fail("the TextEdit document did not open with the paragraph");
-        await sleep(50);
-      }
-    },
-    selectAll: () =>
-      osascript('tell application "System Events" to keystroke "a" using command down'),
-    read,
-    front: () => front(),
-    close() {
-      try {
-        osascript(`tell application "TextEdit" to close ${document} saving no`);
-        // Quitting over a document this run did not open raises a save sheet, so TextEdit stays up
-        // unless this run launched it and nothing else is open.
-        const remaining = Number(osascript('tell application "TextEdit" to count documents'));
-        if (!wasRunning && remaining === 0) osascript('tell application "TextEdit" to quit');
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
+    wait: (promise) => Promise.race([promise, interrupted]),
+    release() {
+      process.removeListener("SIGINT", interrupt);
+      process.removeListener("SIGTERM", interrupt);
     },
   };
 }
@@ -1082,7 +1005,9 @@ const commands = {
     }
     const { end, mode, app } = parsed;
     const state = requireInstance();
-    const { check: checkAccess, fnpost } = exclusiveDesktop(state);
+    const { check: checkAccess, fnpost } = exclusiveDesktop(state, {
+      recheckInstance: Boolean(scenarioOwner),
+    });
     checkAccess();
     const fixture = join(fixturesDir, wav);
     if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
@@ -1105,29 +1030,12 @@ const commands = {
       poll(() => logLine(pattern), timeoutMs, label);
 
     checkAccess();
-    let interrupt;
-    const interrupted = new Promise((_, reject) => {
-      interrupt = () => reject(new Error("dictation interrupted"));
-    });
-    const wait = (promise) => Promise.race([promise, interrupted]);
-    process.on("SIGINT", interrupt);
-    process.on("SIGTERM", interrupt);
-    let targetPage;
+    const { wait, release } = interruptible("dictation interrupted");
+    let target;
     try {
-      const field = 'document.getElementById("field")';
-      const target = await startScratchTarget(state, wait);
-      targetPage = target.page;
+      target = await electronTarget(state.userData, { wait });
       checkAccess();
-      osascript(
-        `tell application "System Events" to set frontmost of (first process whose unix id is ${target.pid}) to true`,
-      );
-      await wait(
-        waitOn(
-          targetPage,
-          `${field}.focus() || (document.hasFocus() && document.activeElement.id === "field")`,
-          5000,
-        ),
-      );
+      await wait(target.open());
       const newestEntry = () =>
         hub.evaluate("window.voice.getHistory().then((h) => h.entries[0] ?? null)");
       const previous = await wait(newestEntry());
@@ -1182,7 +1090,7 @@ const commands = {
           }),
         );
       }
-      const read = () => targetPage.evaluate(`${field}.value`);
+      const read = () => target.read();
       // A session without a transcript (escape, tooShort, empty) leaves the previous entry newest.
       const current = await wait(newestEntry());
       const latest = current?.id === previous?.id ? null : current;
@@ -1227,11 +1135,10 @@ const commands = {
     } finally {
       if (!scenarioOwner || readState()?.scenarioOwner === scenarioOwner)
         rmSync(state.fakeMicrophonePath, { force: true });
-      targetPage?.close();
+      target?.close();
       hub.close();
       await stopChildren();
-      process.removeListener("SIGINT", interrupt);
-      process.removeListener("SIGTERM", interrupt);
+      release();
     }
   },
 
@@ -1247,13 +1154,7 @@ const commands = {
     const desktop = exclusiveDesktop(state);
     desktop.check();
     const hub = await connect("hub");
-    let interrupt;
-    const interrupted = new Promise((_, reject) => {
-      interrupt = () => reject(new Error("transform interrupted"));
-    });
-    const wait = (promise) => Promise.race([promise, interrupted]);
-    process.on("SIGINT", interrupt);
-    process.on("SIGTERM", interrupt);
+    const { wait, release } = interruptible("transform interrupted");
     let target;
     try {
       const { settings, models } = await wait(hub.evaluate("window.voice.getSnapshot()"));
@@ -1273,8 +1174,8 @@ const commands = {
       desktop.check();
       target =
         targetKind === "textedit"
-          ? textEditTransformTarget()
-          : await electronTransformTarget(state, wait);
+          ? textEditTarget("transform")
+          : await electronTarget(state.userData, { wait });
       await wait(target.open(TRANSFORM_PARAGRAPH));
       await wait(target.selectAll());
       const before = await wait(target.read());
@@ -1386,8 +1287,7 @@ const commands = {
       } finally {
         hub.close();
         await stopChildren();
-        process.removeListener("SIGINT", interrupt);
-        process.removeListener("SIGTERM", interrupt);
+        release();
       }
     }
   },

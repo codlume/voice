@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -25,6 +26,39 @@ import {
 
 const scripts = fileURLToPath(new URL(".", import.meta.url));
 const runtime = new URL("../../../../scripts/voice-app.mjs", import.meta.url).href;
+
+// A TextEdit that answers the AppleScript the targets send: the document it was last asked to
+// open, a pid for every process, and a log of each script it ran.
+const OSASCRIPT_STUB = `
+const fs = require("node:fs");
+const path = require("node:path");
+const dir = process.env.VOICE_TEST_DIR;
+const script = process.argv[3] ?? "";
+fs.writeFileSync(path.join(dir, "focus"), "called");
+fs.appendFileSync(path.join(dir, "osascript.log"), script + "\\n");
+const targetFile = path.join(dir, "target.json");
+const pid = fs.existsSync(targetFile) ? JSON.parse(fs.readFileSync(targetFile, "utf8")).pid : 4242;
+const documentFile = path.join(dir, "document.json");
+const opened = /open POSIX file ("[^"]*")/.exec(script);
+if (opened) {
+  const file = JSON.parse(opened[1]);
+  fs.writeFileSync(
+    documentFile,
+    JSON.stringify({ name: path.basename(file), text: fs.readFileSync(file, "utf8") }),
+  );
+}
+const document = fs.existsSync(documentFile)
+  ? JSON.parse(fs.readFileSync(documentFile, "utf8"))
+  : { name: "", text: "" };
+const answers = [
+  ["is running", "false"],
+  ["unix id", String(pid)],
+  ["get name of document", document.name],
+  ["get text of", document.text],
+  ["count documents", "0"],
+];
+process.stdout.write(answers.find(([needle]) => script.includes(needle))?.[1] ?? "");
+`;
 
 function checkout(t, mode) {
   const dir = mkdtempSync(join(tmpdir(), "voice-scenario-test-"));
@@ -52,30 +86,28 @@ function checkout(t, mode) {
     "test-fixtures/audio/short.wav",
   ])
     put(path, "synthetic test placeholder");
-  for (const name of [
-    "voice-verify.mjs",
-    "dictate-flags.mjs",
-    "key-events.mjs",
-    "scenarios.mjs",
-    "transforms.mjs",
-  ])
+  for (const name of readdirSync(scripts).filter((file) => /^(?!.*\.test\.).*\.mjs$/.test(file)))
     put(`.claude/skills/verify/scripts/${name}`, readFileSync(join(scripts, name), "utf8"));
   put(
+    "scripts/targets.mjs",
+    readFileSync(new URL("../../../../scripts/targets.mjs", import.meta.url), "utf8"),
+  );
+  put(
     "native/voice-helper/scripts/helper.mjs",
-    `export const runningVoiceProcesses = () =>
+    `export const CONTENDING_VOICE_MESSAGE = "synthetic contending Voice";
+    export const runningVoiceProcesses = () =>
     process.argv[2] === "dictate" && !${JSON.stringify(["dictate-signal", "replace-history", "replace-snapshot", "replace-key", "crash"])}.includes(${JSON.stringify(mode)})
       ? ["synthetic contending helper"] : [];`,
   );
-  for (const [path, marker] of [
-    ["bin/osascript", "focus"],
-    ["native/voice-helper/.build/debug/fnpost", "key"],
-  ]) {
-    put(
-      path,
-      `#!${process.execPath}\nimport("node:fs").then(fs => fs.writeFileSync(${JSON.stringify(join(dir, marker))}, "called"));\n`,
-    );
+  put("bin/osascript", `#!${process.execPath}\nimport("./osascript-impl.cjs");\n`);
+  put("bin/osascript-impl.cjs", OSASCRIPT_STUB);
+  put("bin/pbpaste", `#!${process.execPath}\nprocess.stdout.write("synthetic clipboard");\n`);
+  put(
+    "native/voice-helper/.build/debug/fnpost",
+    `#!${process.execPath}\nimport("node:fs").then(fs => fs.writeFileSync(${JSON.stringify(join(dir, "key"))}, "called"));\n`,
+  );
+  for (const path of ["bin/osascript", "bin/pbpaste", "native/voice-helper/.build/debug/fnpost"])
     chmodSync(join(repo, path), 0o755);
-  }
   put("scripts/e2e-target/main.cjs", "setInterval(() => {}, 1000);");
   put(
     "scripts/fixtures.mjs",
@@ -128,6 +160,8 @@ function checkout(t, mode) {
               return process.argv[2] === "dictate" ? null : [];
             }
             if (expression.includes('document.getElementById("field").focus()')) return true;
+            if (expression.includes('document.getElementById("field")')) return "synthetic field";
+            if (expression.includes("!document.hasFocus()")) return true;
             if (expression.startsWith("window.voice.updateSettings")) {
               writeFileSync(${JSON.stringify(join(dir, "setup"))}, "ready");
               if (${JSON.stringify(mode)} === "signal") return new Promise(() => {});
@@ -205,7 +239,13 @@ function checkout(t, mode) {
     trace,
     userData,
     script: join(repo, ".claude/skills/verify/scripts/voice-verify.mjs"),
-    env: { ...process.env, TMPDIR: temp, PATH: `${join(repo, "bin")}:${process.env.PATH}` },
+    temp,
+    env: {
+      ...process.env,
+      TMPDIR: temp,
+      VOICE_TEST_DIR: dir,
+      PATH: `${join(repo, "bin")}:${process.env.PATH}`,
+    },
   };
 }
 

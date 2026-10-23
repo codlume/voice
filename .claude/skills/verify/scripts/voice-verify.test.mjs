@@ -33,15 +33,13 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const dir = mkdtempSync(join(tmpdir(), "voice-verify-cold-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const checkout = join(dir, "checkout");
+  const sources = (directory) =>
+    readdirSync(join(worktree, directory))
+      .filter((file) => file.endsWith(".mjs") && !file.endsWith(".test.mjs"))
+      .map((file) => `${directory}/${file}`);
   const paths = [
-    ".claude/skills/verify/scripts/voice-verify.mjs",
-    ".claude/skills/verify/scripts/dictate-flags.mjs",
-    ".claude/skills/verify/scripts/key-events.mjs",
-    ".claude/skills/verify/scripts/transforms.mjs",
-    ".claude/skills/verify/scripts/scenarios.mjs",
-    "scripts/voice-app.mjs",
-    "scripts/smoke-resources.mjs",
-    "scripts/fixtures.mjs",
+    ...sources(".claude/skills/verify/scripts"),
+    ...sources("scripts"),
     "native/voice-helper/scripts/helper.mjs",
     "packages/cleanup/src/download.ts",
     "packages/cleanup/src/apache-2.0.ts",
@@ -51,6 +49,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
     mkdirSync(dirname(join(checkout, path)), { recursive: true });
     copyFileSync(join(worktree, path), join(checkout, path));
   }
+  const verify = join(checkout, ".claude/skills/verify/scripts/voice-verify.mjs");
   for (const path of ["apps/desktop/src", "native/voice-helper/Sources"])
     mkdirSync(join(checkout, path), { recursive: true });
   writeFileSync(join(checkout, "package.json"), '{"type":"module"}');
@@ -58,7 +57,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const temp = join(dir, "temp");
   mkdirSync(temp);
   const run = (command) =>
-    spawnSync(process.execPath, [join(checkout, paths[0]), command], {
+    spawnSync(process.execPath, [verify, command], {
       env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
       encoding: "utf8",
       timeout: 5000,
@@ -81,15 +80,11 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   const launch = run("launch");
   assert.notEqual(launch.status, 0);
   assert.match(launch.stderr, /Electron missing: run pnpm install/);
-  const scenario = spawnSync(
-    process.execPath,
-    [join(checkout, paths[0]), "scenario", "short-dictation"],
-    {
-      env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
-      encoding: "utf8",
-      timeout: 5000,
-    },
-  );
+  const scenario = spawnSync(process.execPath, [verify, "scenario", "short-dictation"], {
+    env: { ...process.env, TMPDIR: temp, VOICE_TEST_MODELS_DIR: cache },
+    encoding: "utf8",
+    timeout: 5000,
+  });
   assert.equal(scenario.status, 1, scenario.stderr);
   const blocked = JSON.parse(scenario.stdout);
   assert.equal(blocked.status, "BLOCKED");
