@@ -35,6 +35,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
     "scripts/fixtures.mjs",
     "native/voice-helper/scripts/helper.mjs",
     "packages/cleanup/src/download.ts",
+    "packages/cleanup/src/apache-2.0.ts",
   ];
   for (const path of paths) {
     mkdirSync(dirname(join(checkout, path)), { recursive: true });
