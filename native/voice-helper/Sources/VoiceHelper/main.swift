@@ -90,12 +90,7 @@ final class Helper {
             capture.stopTest(id: id)
         case .insert(let id, let text, let html):
             // Run ids never collide: a dictation id names a capture, a transform id names a read.
-            if let target = capture.takeLastTarget(id: id) {
-                insertion.insert(id: id, text: text, html: html, target: target)
-            } else {
-                let shelved = selection.take(id: id)
-                insertion.insert(id: id, text: text, html: html, target: shelved?.target, origin: shelved?.origin)
-            }
+            insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
         case .selectionRead(let id):
             selection.read(id: id)
         case .transformEnd(let id):

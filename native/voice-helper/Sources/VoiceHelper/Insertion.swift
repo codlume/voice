@@ -14,6 +14,9 @@ final class InsertTarget {
     let pid: pid_t?
     let bundleId: String?
     var focus = CapturedFocus<FocusElement>.pending
+    /// Set when the target came from a selection read: the selection read then must still be
+    /// the one under the caret, or the result would land somewhere the user did not mean.
+    var origin: SelectionOrigin?
     let host: OSAllocatedUnfairLock<HostRead>
 
     init(pid: pid_t?, bundleId: String?, host: HostRead = .pending) {
@@ -76,11 +79,9 @@ final class Insertion {
         return target
     }
 
-    /// `origin` is set for a transform run: the selection read earlier must still be the one
-    /// under the caret, or the result would land somewhere the user did not mean.
-    func insert(id: String, text: String, html: String?, target: InsertTarget?, origin: SelectionOrigin? = nil) {
+    func insert(id: String, text: String, html: String?, target: InsertTarget?) {
         let focused: AXUIElement?
-        switch check(id: id, target: target, origin: origin) {
+        switch check(id: id, target: target) {
         case .refused(let reason):
             output.emit(.insertResult(id: id, method: .none, reason: reason))
             return
@@ -123,7 +124,7 @@ final class Insertion {
         case refused(InsertFailure)
     }
 
-    private func check(id: String, target destination: InsertTarget?, origin: SelectionOrigin?) -> TargetCheck {
+    private func check(id: String, target destination: InsertTarget?) -> TargetCheck {
         guard let destination else {
             output.log(.error, "insert \(id) refused: no finished capture or read with that id")
             return .refused(.failed)
@@ -139,7 +140,7 @@ final class Insertion {
         }
         switch destination.focus.validate(readTargetFocus(pid: pid)) {
         case .unchanged:
-            if let origin, selectionMoved(origin, element: captured.element?.value) {
+            if let origin = destination.origin, selectionMoved(origin, element: captured.element?.value) {
                 output.log(.info, "insert refused: selection changed since the read")
                 return .refused(.selectionChanged)
             }

@@ -9,8 +9,6 @@ import os
 /// Owned by the main thread. Every wait is a 10 ms timer hop, never a blocking wait, so the
 /// helper keeps answering commands and `transform.end` can cancel the run at any tick.
 final class SelectionReader {
-    typealias Shelved = (target: InsertTarget, origin: SelectionOrigin)
-
     private final class Run {
         let id: String
         var cancelled = false
@@ -25,7 +23,7 @@ final class SelectionReader {
     private let log: ((String) -> Void)?
     private let activeFlag = OSAllocatedUnfairLock(initialState: false)
     private var run: Run?
-    private var shelf = SelectionShelf<Shelved>()
+    private var shelf = SelectionShelf<InsertTarget>()
 
     init(output: Output, insertion: Insertion, pasteboard: Pasteboard, firedKey: OSAllocatedUnfairLock<Int64?>, log: ((String) -> Void)?) {
         self.output = output
@@ -71,7 +69,7 @@ final class SelectionReader {
         activeFlag.withLock { $0 = false }
     }
 
-    func take(id: String) -> Shelved? {
+    func take(id: String) -> InsertTarget? {
         shelf.take(id: id)
     }
 
@@ -121,7 +119,8 @@ final class SelectionReader {
                 case .fail(let reason):
                     finish(run, .failed(reason))
                 case .selected(let text, let origin):
-                    shelf.put(id: run.id, (target, origin))
+                    target.origin = origin
+                    shelf.put(id: run.id, target)
                     finish(run, .selected(text: text, via: .accessibility))
                 case .copyFallback:
                     copy(run, target: target)
@@ -158,7 +157,8 @@ final class SelectionReader {
                 } else if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     finish(run, .failed(.noSelection))
                 } else if !run.cancelled {
-                    shelf.put(id: run.id, (target, .copy(inputStamp: focusInputStamp())))
+                    target.origin = .copy(inputStamp: focusInputStamp())
+                    shelf.put(id: run.id, target)
                     finish(run, .selected(text: text, via: .copy))
                 }
             }
