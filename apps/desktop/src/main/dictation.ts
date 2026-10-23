@@ -284,6 +284,16 @@ export function createDictation(options: DictationOptions): Dictation {
         );
         return;
       }
+      case "keepTransform": {
+        // With History off, Last transform is where the user's own words can be recovered.
+        const { items } = store.state.settings.transforms;
+        options.transform.remember({
+          name: items.find((item) => item.id === effect.transformId)?.name ?? "Transform",
+          before: effect.before,
+          after: effect.after,
+        });
+        return;
+      }
       case "insert":
         track(effect.id, { insertStartedAt: now() });
         send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
@@ -339,8 +349,6 @@ export function createDictation(options: DictationOptions): Dictation {
       signal,
     });
     if (!result.ok) throw new Error(`transform ${result.failure.kind}`);
-    // With History off, Last transform is where the user's own words can be recovered.
-    options.transform.remember({ name: transform.name, before: raw, after: result.text });
     return result.text;
   }
 

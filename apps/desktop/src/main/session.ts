@@ -90,6 +90,8 @@ export type Effect =
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
+  // Sets Last transform from the final text, before the write, so a refused write keeps it.
+  | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
   | { type: "scheduleIdle"; id: string; ms: number };
@@ -271,7 +273,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (final.text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
-      return insert(
+      const inserting = insert(
         state.id,
         state.raw,
         final,
@@ -279,6 +281,14 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
         state.destination,
       );
+      if (state.work.kind === "style") return inserting;
+      const keep: Effect = {
+        type: "keepTransform",
+        transformId: state.work.transformId,
+        before: state.raw,
+        after: final.text,
+      };
+      return { ...inserting, effects: [keep, ...inserting.effects] };
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
