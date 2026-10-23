@@ -3,7 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { models } from "../shared/models.ts";
 import { modelView } from "./modelView.ts";
 
-const [asr, cleanup] = models;
+const [asr, cleanup, transform] = models;
 
 const idle = { cleanupEnabled: true, dictating: false };
 const install = { label: "Install", disabled: false };
@@ -58,6 +58,15 @@ describe("modelView", () => {
     expect(modelView(cleanup, { state: "installed" }, off).text).toBe(
       "Installed. Loads when text cleanup is on.",
     );
+  });
+
+  test("an installed transform model says it loads on use, whatever cleanup is set to", () => {
+    for (const cleanupEnabled of [true, false]) {
+      expect(modelView(transform, { state: "installed" }, { ...idle, cleanupEnabled })).toEqual({
+        text: "Installed. Loads when you run a transform.",
+        actions: [uninstall],
+      });
+    }
   });
 
   test("a failure shows its message and offers Retry or Uninstall", () => {

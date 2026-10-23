@@ -36,13 +36,21 @@ export function modelView(
     case "ready":
       return { text: "Installed", actions: [uninstall] };
     case "installed":
-      return {
-        text: cleanupEnabled
-          ? "Installed. Loads when you dictate in English."
-          : "Installed. Loads when text cleanup is on.",
-        actions: [uninstall],
-      };
+      return { text: installedText(model, cleanupEnabled), actions: [uninstall] };
     case "failed":
       return { text: status.message, actions: [retry, uninstall] };
+  }
+}
+
+// An installed model is on disk but not loaded. What loads it differs per model.
+function installedText(model: Model, cleanupEnabled: boolean): string {
+  switch (model.id) {
+    case "transform":
+      return "Installed. Loads when you run a transform.";
+    case "asr":
+    case "cleanup":
+      return cleanupEnabled
+        ? "Installed. Loads when you dictate in English."
+        : "Installed. Loads when text cleanup is on.";
   }
 }

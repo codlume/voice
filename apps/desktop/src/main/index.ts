@@ -71,6 +71,7 @@ import { createSettingsQueue, editAssignments, type SettingsQueue } from "./sett
 import { applyPatch, loadSettings, parseSettingsPatch, saveSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
+import { createTransformModel } from "./transform-model.ts";
 import { idleRun } from "./transform-run.ts";
 import {
   createUpdates,
@@ -347,6 +348,13 @@ async function main() {
     baseUrl: testMode ? process.env.VOICE_CLEANUP_MODEL_URL : undefined,
     shouldLoad: () => wantsCleanup(store.state.settings),
     onStatus: (status) => store.update((s) => ({ ...s, models: { ...s.models, cleanup: status } })),
+    log,
+  });
+  const transformModel = createTransformModel({
+    modelsDir,
+    baseUrl: testMode ? process.env.VOICE_TRANSFORM_MODEL_URL : undefined,
+    onStatus: (status) =>
+      store.update((s) => ({ ...s, models: { ...s.models, transform: status } })),
     log,
   });
 
@@ -679,10 +687,9 @@ async function main() {
       install: () => void cleanup.install(),
       uninstall: () => cleanup.uninstall(),
     },
-    // The transform model arrives with its engine; until then the row only reports missing.
     transform: {
-      install: () => {},
-      uninstall: async () => {},
+      install: () => void transformModel.install(),
+      uninstall: () => transformModel.uninstall(),
     },
   };
 
@@ -866,7 +873,7 @@ async function main() {
   app.on("window-all-closed", () => {});
 
   // Electron quits without waiting on promises, so the first quit only starts the shutdown: a
-  // settings save, the Insights and history writes, the helper, and the cleanup process get to
+  // settings save, the Insights and history writes, the helper, and the model processes get to
   // finish, and their logs get sent. The quit that follows it passes.
   async function shutdown(forUpdate = false) {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -879,6 +886,7 @@ async function main() {
       history.settled(),
       helper.stop(),
       cleanup.dispose(),
+      transformModel.dispose(),
     ]);
     const result = await Promise.race([stopped, timeout]);
     clearTimeout(timer);
@@ -921,13 +929,15 @@ async function main() {
   }
   updates.start();
   void cleanup.loadIfDownloaded();
+  void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
-  // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
+  // verify skill run the transform model without a shortcut, deliver a sign-in callback URL, which macOS does not route to the stock
   // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press.
   if (testMode) {
     Object.assign(globalThis, {
       voiceTest: {
         cleanup,
+        transformModel,
         openUrl: (url: string) => app.emit("open-url", { preventDefault() {} }, url),
         clickMenuItem: (id: string) => {
           const item = Menu.getApplicationMenu()?.getMenuItemById(id);
