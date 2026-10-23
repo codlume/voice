@@ -1,12 +1,20 @@
-// The one place that names the transform model. Swapping it edits this constant, the chat
-// wrapper switch in engine.ts and the display row in the desktop app's models list.
-import { GEMMA_4_E2B, type ModelSource } from "../download.ts";
+// The one place that names the transform model. Swapping it edits this file, the chat wrapper
+// in engine.ts and the display row in the desktop app's models list.
+import { APACHE_2_0_LICENSE } from "../apache-2.0.ts";
+import type { ModelSource } from "../download.ts";
 
-export type ChatFlavour = "gemma4";
+// Gemma 4 is Apache 2.0, and the pinned unsloth/gemma-4-E2B-it-GGUF commit ships no LICENSE.
+export const GEMMA_4_E2B: ModelSource = {
+  baseUrl:
+    "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/0314792d7f1f7e229411f620751375812bb9faf2",
+  file: "gemma-4-E2B-it-Q4_K_M.gguf",
+  bytes: 3_106_738_272,
+  sha256: "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
+  legal: [{ name: "LICENSE", from: "bundled", text: APACHE_2_0_LICENSE }],
+};
 
 export type TransformModelSpec = {
   readonly source: ModelSource;
-  readonly chat: ChatFlavour;
   // Tokens in the one context sequence the engine reuses for every run.
   readonly contextSize: number;
   // The most words a selection may have, whatever its tokens.
@@ -17,7 +25,6 @@ export type TransformModelSpec = {
 // for a rewrite twice as long (measured, #312).
 export const TRANSFORM_MODEL: TransformModelSpec = {
   source: GEMMA_4_E2B,
-  chat: "gemma4",
   contextSize: 8192,
   maxWords: 1000,
 };

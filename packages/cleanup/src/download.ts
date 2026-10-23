@@ -4,8 +4,6 @@ import { access, mkdir, open, rename, rm, stat, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 
-import { APACHE_2_0_LICENSE } from "./apache-2.0.ts";
-
 // Saved next to the weights as `${file}.${name}`. Downloaded from the source's base URL, or
 // written from text Voice ships when the source repository has no such file.
 export type LegalFile =
@@ -35,16 +33,6 @@ export const S1_MINI: ModelSource = {
     { name: "LICENSE", from: "download" },
     { name: "NOTICE", from: "download" },
   ],
-};
-
-// Gemma 4 is Apache 2.0, and the pinned unsloth/gemma-4-E2B-it-GGUF commit ships no LICENSE.
-export const GEMMA_4_E2B: ModelSource = {
-  baseUrl:
-    "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/0314792d7f1f7e229411f620751375812bb9faf2",
-  file: "gemma-4-E2B-it-Q4_K_M.gguf",
-  bytes: 3_106_738_272,
-  sha256: "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
-  legal: [{ name: "LICENSE", from: "bundled", text: APACHE_2_0_LICENSE }],
 };
 
 type ModelOptions = { dir: string; source: ModelSource };

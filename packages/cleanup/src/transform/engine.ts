@@ -4,7 +4,7 @@ import type { ChatWrapper, Llama, LlamaChatSession, LlamaModel } from "node-llam
 
 import { budget, countWords } from "./budget.ts";
 import { guard } from "./guard.ts";
-import { TRANSFORM_MODEL, type ChatFlavour } from "./model.ts";
+import { TRANSFORM_MODEL } from "./model.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 
 export type TransformFailure =
@@ -142,20 +142,14 @@ function promptTokens(chatWrapper: ChatWrapper, model: LlamaModel, user: string)
 async function openEngine(modelPath: string): Promise<Engine> {
   // A static import breaks the CJS Electron bundle, because node-llama-cpp uses top-level await.
   const { getLlama, Gemma4ChatWrapper, LlamaChatSession } = await import("node-llama-cpp");
-  const chatWrapper = (flavour: ChatFlavour) => {
-    switch (flavour) {
-      // Thinking off, as #311 measured it.
-      case "gemma4":
-        return new Gemma4ChatWrapper({ reasoning: false });
-    }
-  };
   const llama = await getLlama();
   try {
     const model = await llama.loadModel({ modelPath });
     const context = await model.createContext({ contextSize: TRANSFORM_MODEL.contextSize });
     const session = new LlamaChatSession({
       contextSequence: context.getSequence(),
-      chatWrapper: chatWrapper(TRANSFORM_MODEL.chat),
+      // Thinking off, as #311 measured it.
+      chatWrapper: new Gemma4ChatWrapper({ reasoning: false }),
       systemPrompt: SYSTEM_PROMPT,
     });
     return { llama, model, session };

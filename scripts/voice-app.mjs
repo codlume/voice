@@ -6,12 +6,8 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
-import {
-  downloadModel,
-  GEMMA_4_E2B,
-  S1_MINI,
-  S1_MINI_FILE,
-} from "../packages/cleanup/src/download.ts";
+import { downloadModel, S1_MINI, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
+import { GEMMA_4_E2B } from "../packages/cleanup/src/transform/model.ts";
 import {
   claimScratch,
   releaseScratch,

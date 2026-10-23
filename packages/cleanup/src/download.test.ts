@@ -10,12 +10,12 @@ import { APACHE_2_0_LICENSE } from "./apache-2.0.ts";
 import {
   downloadModel,
   findModel,
-  GEMMA_4_E2B,
   removeModel,
   S1_MINI,
   type LegalFile,
   type ModelSource,
 } from "./download.ts";
+import { GEMMA_4_E2B } from "./transform/model.ts";
 
 const BYTES = 256 * 1024;
 const MODEL = Buffer.from(Array.from({ length: BYTES }, (_, i) => (i * 31 + 7) % 256));
