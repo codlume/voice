@@ -48,8 +48,11 @@ import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
+import { shortcutKeys } from "./shortcutCapture.ts";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
+import { shortcutsHint } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
+import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -101,6 +104,7 @@ export const styles = stylex.create({
   },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  link: { textDecoration: "underline" },
 });
 
 const motionStyles = stylex.create({
@@ -985,7 +989,7 @@ function ShortcutRow({
 }: {
   title: string;
   detail?: string | undefined;
-  keys: readonly string[];
+  keys: readonly string[] | null;
 }) {
   return (
     <div {...stylex.props(styles.row)}>
@@ -998,8 +1002,18 @@ function ShortcutRow({
   );
 }
 
-export function ShortcutsSettings({ settings }: { settings: Settings }) {
+export function ShortcutsSettings({
+  settings,
+  transformModel,
+  onOpenTransforms,
+}: {
+  settings: Settings;
+  transformModel: ModelStatus;
+  onOpenTransforms: () => void;
+}) {
   const hotkeyAction = useAction();
+  const layout = useKeyboardLayout();
+  const transforms = settings.transforms;
   const changeHotkey = (hotkey: Hotkey) => update(hotkeyAction, { hotkey });
   const toggleChoice: ToggleChoice = settings.toggleHotkey ?? TOGGLE_OFF;
   const changeToggle = (choice: ToggleChoice) =>
@@ -1050,6 +1064,26 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           </p>
         )}
         {dictatesWithFn(settings) && <GlobeHint />}
+      </Section>
+
+      <Section label="Transforms">
+        {transforms.items.length > 0 && (
+          <Card style={!transforms.enabled && styles.disabled}>
+            {transforms.items.map((transform) => (
+              <ShortcutRow
+                key={transform.id}
+                title={transform.name}
+                keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)}
+              />
+            ))}
+          </Card>
+        )}
+        <p {...stylex.props(styles.hint)}>
+          {shortcutsHint(transforms, transformModel)}{" "}
+          <Button variant="text" onClick={onOpenTransforms}>
+            <span {...stylex.props(styles.link)}>Open Transforms</span>
+          </Button>
+        </p>
       </Section>
 
       <Section label="Voice window">

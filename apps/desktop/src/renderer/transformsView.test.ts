@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import type { ModelStatus } from "../shared/api.ts";
 import {
   BUILT_IN_TRANSFORMS,
   POLISH_ID,
@@ -18,6 +19,7 @@ import {
   NO_AUTO_APPLY,
   openEditor,
   restoreDescription,
+  shortcutsHint,
   TRANSFORM_MODEL_SIZE,
 } from "./transformsView.ts";
 
@@ -105,5 +107,57 @@ describe("Delete from the editor", () => {
   test("confirming closes the editor for good, though the confirm closes after it", () => {
     const deleted = cancelDelete(confirmDelete(askToDelete(editing)));
     expect(deleted).toEqual({ ...editing, open: false, deletion: "confirmed" });
+  });
+});
+
+const transforms = (enabled: boolean, items: readonly Transform[] = BUILT_IN_TRANSFORMS) => ({
+  enabled,
+  items,
+  autoApply: null,
+});
+const ready: ModelStatus = { state: "ready" };
+
+describe("Settings > Shortcuts", () => {
+  test("says the shortcuts do nothing while Transforms is off, even without the model", () => {
+    expect(shortcutsHint(transforms(false), ready)).toBe(
+      "Transforms are off, so these shortcuts do nothing.",
+    );
+    expect(shortcutsHint(transforms(false), { state: "missing" })).toBe(
+      "Transforms are off, so these shortcuts do nothing.",
+    );
+    expect(shortcutsHint(transforms(true), ready)).toBe(
+      "Select text in any app and press a shortcut.",
+    );
+  });
+
+  test("says when the shortcuts cannot run yet because of the model", () => {
+    expect(shortcutsHint(transforms(true), { state: "missing" })).toBe(
+      "The transform model is not installed.",
+    );
+    expect(shortcutsHint(transforms(true), { state: "downloading", progress: 0.42 })).toBe(
+      "Downloading the transform model, 42%.",
+    );
+  });
+
+  test("never says to press a shortcut when no transform has one", () => {
+    const unbound: Transform[] = [
+      {
+        id: "synthetic-unbound" as TransformId,
+        name: "Bullets",
+        instruction: "Turn this into a bulleted list.",
+        shortcut: null,
+      },
+    ];
+    for (const enabled of [true, false]) {
+      expect(shortcutsHint(transforms(enabled, unbound), ready)).toBe(
+        "None of your transforms has a shortcut.",
+      );
+    }
+  });
+
+  test("an empty list says so whether Transforms is on or off", () => {
+    for (const enabled of [true, false]) {
+      expect(shortcutsHint(transforms(enabled, []), ready)).toBe("You have no transforms.");
+    }
   });
 });

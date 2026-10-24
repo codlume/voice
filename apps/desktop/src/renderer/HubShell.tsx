@@ -132,7 +132,13 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
   privacy: ({ snapshot, history }) => (
     <DataPrivacySettings settings={snapshot.settings} history={history} />
   ),
-  shortcuts: ({ snapshot }) => <ShortcutsSettings settings={snapshot.settings} />,
+  shortcuts: ({ snapshot, openPage }) => (
+    <ShortcutsSettings
+      settings={snapshot.settings}
+      transformModel={snapshot.models.transform}
+      onOpenTransforms={() => openPage("transforms")}
+    />
+  ),
 };
 
 const sidebarCollapsedKey = "voice.sidebarCollapsed";
@@ -467,6 +473,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
 
   function selectAppPage(id: AppPage) {
     setAppPage(id);
+    setSettingsPage(null);
     focusMain();
   }
 

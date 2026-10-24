@@ -19,7 +19,6 @@ import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
 import { styles as settingsStyles } from "./Settings.tsx";
 import { shortcutKeys } from "./shortcutCapture.ts";
-import { useKeyboardLayout } from "./ShortcutPicker.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { TransformFields } from "./TransformFields.tsx";
@@ -40,6 +39,7 @@ import {
   type Modal,
 } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
+import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -48,7 +48,6 @@ const styles = stylex.create({
   subtitle: { margin: 0, color: color.mutedForeground },
   sectionHead: { display: "flex", alignItems: "center", gap: space.sm },
   sectionTitle: { flexGrow: 1 },
-  link: { fontSize: 12.5, textDecoration: "underline" },
   grid: {
     display: "grid",
     gridTemplateColumns: {
@@ -88,7 +87,6 @@ const styles = stylex.create({
     WebkitBoxOrient: "vertical",
     WebkitLineClamp: 2,
   },
-  noShortcut: { color: color.mutedForeground, fontSize: 12 },
   last: {
     display: "grid",
     gridTemplateColumns: {
@@ -190,7 +188,7 @@ export function Transforms({
               {line.text}{" "}
               {line.linksToModels && (
                 <Button variant="text" onClick={onOpenModels}>
-                  <span {...stylex.props(styles.link)}>Open Models</span>
+                  <span {...stylex.props(settingsStyles.link)}>Open Models</span>
                 </Button>
               )}
             </p>
@@ -258,11 +256,7 @@ export function Transforms({
               >
                 <span {...stylex.props(styles.cardHeader)}>
                   <span {...stylex.props(styles.cardTitle)}>{transform.name}</span>
-                  {transform.shortcut ? (
-                    <Keys keys={shortcutKeys(transform.shortcut, layout)} />
-                  ) : (
-                    <span {...stylex.props(styles.noShortcut)}>No shortcut</span>
-                  )}
+                  <Keys keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)} />
                 </span>
                 <span {...stylex.props(styles.instruction)}>
                   {firstLine(transform.instruction)}
