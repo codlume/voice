@@ -75,7 +75,11 @@ public final class OutputSuppression {
 
     /// Lowers every output to `scale`, the fraction of its level to keep; 0 mutes.
     public func begin(scale: Float) {
-        if self.scale == nil, saved != nil { restore() }
+        if self.scale == nil {
+            if saved != nil { restore() }
+        } else if self.scale != scale {
+            seen.removeAll()
+        }
         self.scale = scale
         reconcile()
     }

@@ -552,3 +552,17 @@ private let half = OutputControl.volume(element: 0, value: 0.5)
     #expect(outputs.values["dock"] == [half])
     #expect(!suppression.needsDeviceListener)
 }
+
+@Test func beginAtANewScaleWhileLoweringReplansFromTheHeldOriginal() {
+    let outputs = FakeOutputs(values: ["dock": [half]])
+    let store = MemoryOriginalsStore()
+    let suppression = OutputSuppression(controls: outputs, store: store, onError: { _ in })
+    suppression.begin(scale: 0.5)
+    #expect(outputs.values["dock"] == [.volume(element: 0, value: 0.25)])
+    suppression.begin(scale: 0.1)
+    #expect(outputs.values["dock"] == [.volume(element: 0, value: 0.05)])
+    #expect(store.saved == ["dock": [half]])
+    suppression.end()
+    #expect(outputs.values["dock"] == [half])
+    #expect(store.saved.isEmpty)
+}
