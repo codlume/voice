@@ -21,7 +21,7 @@ struct CaptureIdleTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: AudioInputDevices(output: output),
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            outputLowering: OutputLowering(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             source: .microphone
         ) {
             onMain.withLock { $0 = $0 || Thread.isMainThread }
@@ -57,7 +57,7 @@ struct CaptureIdleTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: AudioInputDevices(output: output),
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            outputLowering: OutputLowering(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             source: .fixture(try silentFixture())
         ) {
             probes.withLock { $0 += 1 }

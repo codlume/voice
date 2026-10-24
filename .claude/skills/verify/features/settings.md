@@ -42,5 +42,5 @@ Preconditions: baseline.
 - On the System page the nav item and the Theme radio are both named `System`, so `vv click System` fails there. Leave the page first, or reset the theme with its reset button.
 - The microphone test reads the fixture file, which exists only during `dictate`. In the verify instance the test fails by design. Testing a real microphone needs a human.
 - Turning `Share crash reports` on takes effect only at the next launch.
-- Lowering audio changes the Mac's real output devices, even in test mode. `node native/voice-helper/scripts/output-mute-smoke.mjs` proves lowering, muting, and restoring on the real default output without the app, and puts the original volume back when it ends.
+- Lowering audio changes the Mac's real output devices, even in test mode. `node native/voice-helper/scripts/output-lowering-smoke.mjs` proves lowering, muting, and restoring on the real default output without the app, and puts the original volume back when it ends.
 - Hotkey and dictation-language changes affect the next `dictate`. Restore the defaults before running a dictation recipe.

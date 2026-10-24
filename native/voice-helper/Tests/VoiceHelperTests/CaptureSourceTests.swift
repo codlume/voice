@@ -25,7 +25,7 @@ struct CaptureSourceTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: devices,
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            outputLowering: OutputLowering(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             source: source
         ) {
             probe.fulfill()
@@ -60,7 +60,7 @@ struct CaptureSourceTests {
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
         let capture = Capture(output: output, transcriber: Transcriber(modelsDir: dir, output: output), devices: devices,
-                              outputSilencer: OutputSilencer(output: output, stateDir: dir), source: .fixture(fixture.path)) {
+                              outputLowering: OutputLowering(output: output, stateDir: dir), source: .fixture(fixture.path)) {
             Issue.record("fixture capture must not query microphone permission")
             return .denied
         }

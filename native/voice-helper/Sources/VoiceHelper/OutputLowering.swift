@@ -6,7 +6,7 @@ private let deviceListAddress = AudioObjectPropertyAddress(
     mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
     mElement: kAudioObjectPropertyElementMain)
 
-final class OutputSilencer {
+final class OutputLowering {
     private let output: Output
     private let suppression: OutputSuppression
     private var listener: AudioObjectPropertyListenerBlock?

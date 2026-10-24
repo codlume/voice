@@ -25,9 +25,9 @@ final class Helper {
         transcriber = Transcriber(modelsDir: modelsDir, output: output)
         let devices = AudioInputDevices(output: output)
         self.devices = devices
-        let outputSilencer = OutputSilencer(output: output, stateDir: stateDir)
-        outputSilencer.recover()
-        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputSilencer: outputSilencer,
+        let outputLowering = OutputLowering(output: output, stateDir: stateDir)
+        outputLowering.recover()
+        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputLowering: outputLowering,
                               source: .resolve(environment: environment))
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         self.capture = capture

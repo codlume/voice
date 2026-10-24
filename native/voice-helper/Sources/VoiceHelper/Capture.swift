@@ -49,7 +49,7 @@ final class Capture {
     private let transcriber: Transcriber
     private let devices: AudioInputDevices
     private var microphone: Microphone?
-    private let outputSilencer: OutputSilencer
+    private let outputLowering: OutputLowering
     private var state: CaptureState = .idle {
         didSet {
             let active: Bool
@@ -87,7 +87,7 @@ final class Capture {
     private let maxSamples: Int
 
     init(
-        output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputSilencer: OutputSilencer,
+        output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputLowering: OutputLowering,
         maxSamples: Int = 600 * 16_000,
         source: CaptureSource,
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
@@ -98,7 +98,7 @@ final class Capture {
         self.output = output
         self.transcriber = transcriber
         self.authorizationStatus = authorizationStatus
-        self.outputSilencer = outputSilencer
+        self.outputLowering = outputLowering
     }
 
     var isActive: Bool { activeFlag.withLock { $0 } }
@@ -132,7 +132,7 @@ final class Capture {
                 }
                 state = .starting(session)
                 self.file = file
-                lowerOutput(to: outputVolumeScale)
+                setOutputLowering(outputVolumeScale)
                 file.start()
                 return true
             case .microphone:
@@ -144,7 +144,7 @@ final class Capture {
             let mic = try self.mic ?? makeMic()
             self.mic = mic
             state = .starting(session)
-            lowerOutput(to: outputVolumeScale)
+            setOutputLowering(outputVolumeScale)
             try mic.start(sink: sink)
             return true
         } catch let error as CaptureError {
@@ -322,7 +322,7 @@ final class Capture {
     }
 
     private func beginTest(id: String) {
-        lowerOutput(to: nil)
+        outputLowering.end()
         let sink: ([Float]) -> Void = { [weak self] chunk in
             let level = perceptualLevel(rms: rms(chunk))
             DispatchQueue.main.async { self?.meter(level, for: id) }
@@ -470,8 +470,8 @@ final class Capture {
         prepareIdleMic()
     }
 
-    private func lowerOutput(to volume: Float?) {
-        if let volume { outputSilencer.begin(scale: volume) } else { outputSilencer.end() }
+    private func setOutputLowering(_ scale: Float?) {
+        if let scale { outputLowering.begin(scale: scale) } else { outputLowering.end() }
     }
 
     private func stopSourceAfterTranscriptionStarts() {
@@ -488,7 +488,7 @@ final class Capture {
         file?.stop()
         file = nil
         mic?.stop()
-        outputSilencer.end()
+        outputLowering.end()
     }
 }
 
