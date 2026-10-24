@@ -727,9 +727,7 @@ async function main() {
   const modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }> = {
     asr: {
       install: () => helper.send({ type: "asr.prepare", download: true }),
-      uninstall: async () => {
-        helper.send({ type: "asr.remove" });
-      },
+      uninstall: async () => void helper.send({ type: "asr.remove" }),
     },
     cleanup: {
       install: () => void cleanup.install(),

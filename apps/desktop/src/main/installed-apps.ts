@@ -17,7 +17,6 @@ export type InstalledApps = {
 export const ICONS_PER_HELPER_LINE = 32;
 
 export function createInstalledApps(options: {
-  /** False when no helper is running to receive the command, so no reply will come. */
   send: (command: HelperCommand) => boolean;
 }): InstalledApps {
   const { send } = options;
@@ -28,8 +27,7 @@ export function createInstalledApps(options: {
   let renderId = 0;
   let inFlight: Promise<InstalledApp[]> | null = null;
 
-  // The scan can take seconds on the first launch of a new build, so there is no deadline. Null
-  // means no reply can come: the helper was not running to receive the command, or exited first.
+  // The scan can take seconds on the first launch of a new build, so there is no deadline.
   function reply<T>(wait: (resolve: (value: T | null) => void) => void, command: HelperCommand) {
     return new Promise<T | null>((resolve) => {
       wait(resolve);
