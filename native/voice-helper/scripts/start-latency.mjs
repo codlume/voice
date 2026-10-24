@@ -35,6 +35,7 @@ try {
       language: "en",
       id,
       outputVolumeScale: null,
+      detectHost: false,
     });
     const started = await helper.waitFor(
       (event) => ["capture.started", "capture.failed"].includes(event.type) && event.id === id,

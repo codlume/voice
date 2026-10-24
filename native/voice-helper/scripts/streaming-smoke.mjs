@@ -13,6 +13,7 @@ await withHelper({}, async (helper) => {
       id,
       language: "en",
       outputVolumeScale: null,
+      detectHost: false,
     });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
     await helper.waitFor(
