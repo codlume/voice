@@ -88,7 +88,7 @@ export function createInstalledApps(options: {
   return {
     list,
     async icons(bundleIds) {
-      if (latest === null || inFlight !== null) await list().catch(() => null);
+      if (latest === null) await list().catch(() => null);
       if (latest === null) return {};
       const { pathsById, stamps } = latest;
       const paths = new Map<BundleId, string>();
