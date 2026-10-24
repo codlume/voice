@@ -47,28 +47,21 @@ const dataUrl = (app: Listed) => `data:image/png;base64,${png(app)}`;
 
 function setup(options: {
   apps: Listed[];
-  /** False stands for a helper that is not running: the command is dropped. */
-  delivered?: boolean;
-  answer?: boolean;
+  /** A silent helper takes the command and never replies; a down helper is not running to take it. */
+  helper?: "answers" | "silent" | "down";
   renders?: boolean;
-  replyAfterMs?: number;
 }) {
   const sent: HelperCommand[] = [];
   const state = {
     apps: options.apps,
-    answer: options.answer ?? true,
+    helper: options.helper ?? "answers",
     renders: options.renders ?? true,
   };
-  const later =
-    options.replyAfterMs === undefined
-      ? queueMicrotask
-      : (reply: () => void) => void setTimeout(reply, options.replyAfterMs);
   const installed = createInstalledApps({
     send: (command) => {
       sent.push(command);
-      if (options.delivered === false) return false;
-      if (!state.answer) return true;
-      later(() => {
+      if (state.helper !== "answers") return state.helper === "silent";
+      queueMicrotask(() => {
         if (command.type === "apps.list") {
           installed.onHelperEvent({ type: "apps.listed", apps: state.apps });
         } else if (command.type === "icons.render" && state.renders) {
@@ -216,9 +209,10 @@ describe("installed apps", () => {
 
   test("resolves a list the helper answers after several seconds", async () => {
     vi.useFakeTimers();
-    const { installed } = setup({ apps: [MAIL], replyAfterMs: 6000 });
+    const { installed } = setup({ apps: [MAIL], helper: "silent" });
     const list = installed.list();
     await vi.advanceTimersByTimeAsync(6000);
+    installed.onHelperEvent({ type: "apps.listed", apps: [MAIL] });
     expect(await list).toEqual([{ bundleId: "com.apple.mail", name: "Mail", browser: false }]);
   });
 
@@ -230,18 +224,18 @@ describe("installed apps", () => {
   });
 
   test("rejects a list in flight when the helper exits, and a later list starts fresh", async () => {
-    const { installed, state } = setup({ apps: [MAIL], answer: false });
+    const { installed, state } = setup({ apps: [MAIL], helper: "silent" });
     const first = expect(installed.list()).rejects.toThrow();
     installed.helperExited();
     await first;
-    state.answer = true;
+    state.helper = "answers";
     expect(await installed.list()).toEqual([
       { bundleId: "com.apple.mail", name: "Mail", browser: false },
     ]);
   });
 
   test("rejects a list the helper was not running to receive", async () => {
-    const { installed, sent } = setup({ apps: [MAIL], delivered: false });
+    const { installed, sent } = setup({ apps: [MAIL], helper: "down" });
     await expect(installed.list()).rejects.toThrow();
     expect(sent.map((command) => command.type)).toEqual(["apps.list"]);
   });
@@ -260,7 +254,7 @@ describe("installed apps", () => {
   });
 
   test("returns no icons when the helper exits before the first list arrives", async () => {
-    const { installed } = setup({ apps: [MAIL], answer: false });
+    const { installed } = setup({ apps: [MAIL], helper: "silent" });
     const icons = installed.icons([id(MAIL)]);
     installed.helperExited();
     expect(await icons).toEqual({});
@@ -288,7 +282,6 @@ describe("installed apps", () => {
   });
 
   test("gives up a render when the helper exits, and a reply to it does not complete the next render", async () => {
-    vi.useFakeTimers();
     const replies = new Map<string, () => void>();
     const installed = createInstalledApps({
       send: (command) => {
@@ -317,9 +310,8 @@ describe("installed apps", () => {
       xcodeDone = true;
       return icons;
     });
-    await vi.advanceTimersByTimeAsync(0);
     replies.get(MAIL.path)?.();
-    await vi.advanceTimersByTimeAsync(0);
+    await new Promise((resolve) => setTimeout(resolve));
     expect(xcodeDone).toBe(false);
     replies.get(XCODE.path)?.();
     expect(await xcode).toEqual({ [id(XCODE)]: dataUrl(XCODE) });
