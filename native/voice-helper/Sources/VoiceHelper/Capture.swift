@@ -471,7 +471,7 @@ final class Capture {
     }
 
     private func lowerOutput(to volume: Float?) {
-        if let volume { outputSilencer.begin(volume: volume) } else { outputSilencer.end() }
+        if let volume { outputSilencer.begin(scale: volume) } else { outputSilencer.end() }
     }
 
     private func stopSourceAfterTranscriptionStarts() {

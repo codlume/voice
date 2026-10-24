@@ -18,18 +18,18 @@ public enum OutputControl: Equatable, Sendable, Codable {
         }
     }
 
-    public var isSilenced: Bool {
+    var isSilenced: Bool {
         switch self {
         case .mute(_, let value): return value != 0
         case .volume(_, let value): return value < silentVolume
         }
     }
 
-    /// `volume` is the fraction of the level to keep; a mute control can only mute.
-    func lowered(to volume: Float) -> OutputControl {
+    /// `scale` is the fraction of the level to keep; a mute control can only mute.
+    func scaled(by scale: Float) -> OutputControl {
         switch self {
         case .mute(let element, _): return .mute(element: element, value: 1)
-        case .volume(let element, let value): return .volume(element: element, value: value * volume)
+        case .volume(let element, let value): return .volume(element: element, value: value * scale)
         }
     }
 
@@ -60,8 +60,7 @@ public final class OutputSuppression {
     private let controls: any OutputControls
     private let store: any OutputOriginalsStore
     private let onError: (String) -> Void
-    private var active = false
-    private var volume: Float = 0
+    private var scale: Float?
     private var seen: Set<String> = []
     private var originals: [String: [OutputControl]] = [:]
     private var saved: [String: [OutputControl]]?
@@ -72,18 +71,17 @@ public final class OutputSuppression {
         self.onError = onError
     }
 
-    public var needsDeviceListener: Bool { active || saved == nil || !originals.isEmpty }
+    public var needsDeviceListener: Bool { scale != nil || saved == nil || !originals.isEmpty }
 
-    /// Lowers every output to `volume`, the fraction of its level to keep; 0 mutes.
-    public func begin(volume: Float) {
-        if !active, saved != nil { restore() }
-        active = true
-        self.volume = volume
+    /// Lowers every output to `scale`, the fraction of its level to keep; 0 mutes.
+    public func begin(scale: Float) {
+        if self.scale == nil, saved != nil { restore() }
+        self.scale = scale
         reconcile()
     }
 
     public func end() {
-        active = false
+        scale = nil
         seen.removeAll()
         reconcile()
     }
@@ -97,9 +95,9 @@ public final class OutputSuppression {
                 onError("could not read the output restore record: \(error)")
                 return
             }
-            if active { restore() }
+            if scale != nil { restore() }
         }
-        guard active else {
+        guard let scale else {
             restore()
             return
         }
@@ -123,28 +121,9 @@ public final class OutputSuppression {
                 onError("could not lower output: \(error)")
                 continue
             }
-            // An original the output is still below was never restored, as when a device drops
-            // out mid-session and returns. Lowering from it again keeps the target fixed instead of
-            // compounding, and recording the lowered level instead would lose the original.
-            var pending = (originals[uid] ?? []).filter { original in
-                current.first { $0.id == original.id }?.isQuieter(than: original) ?? true
-            }
-            var writes: [OutputControl] = []
-            for control in group(current) {
-                let original: OutputControl
-                if let held = pending.first(where: { $0.id == control.id }) {
-                    original = held
-                } else if control.isSilenced {
-                    continue
-                } else {
-                    original = control
-                    pending.append(control)
-                }
-                let lowered = original.lowered(to: volume)
-                if lowered.isQuieter(than: control) { writes.append(lowered) }
-            }
-            originals[uid] = pending.isEmpty ? nil : pending
-            plans.append((uid, writes))
+            let plan = Self.plan(current: current, held: originals[uid] ?? [], scale: scale)
+            originals[uid] = plan.originals.isEmpty ? nil : plan.originals
+            plans.append((uid, plan.writes))
         }
         do {
             try save()
@@ -166,13 +145,29 @@ public final class OutputSuppression {
         persist()
     }
 
-    /// Partial lowering needs volume controls and muting prefers mute controls; a device that has
+    /// What to hold as `originals` for one output and what to write to lower it to `scale`.
+    /// Partial lowering needs volume controls and muting prefers mute controls; an output that has
     /// only the other kind still gets lowered with what it has.
-    private func group(_ controls: [OutputControl]) -> [OutputControl] {
-        let mutes = controls.filter { $0.id.kind == .mute }
-        let volumes = controls.filter { $0.id.kind == .volume }
-        let (preferred, fallback) = volume == 0 ? (mutes, volumes) : (volumes, mutes)
-        return preferred.isEmpty ? fallback : preferred
+    static func plan(current: [OutputControl], held: [OutputControl], scale: Float) -> (originals: [OutputControl], writes: [OutputControl]) {
+        let mutes = current.filter { $0.id.kind == .mute }
+        let volumes = current.filter { $0.id.kind == .volume }
+        let (preferred, fallback) = scale == 0 ? (mutes, volumes) : (volumes, mutes)
+        // An original the output is still below was never restored, as when a device drops out
+        // mid-session and returns. Lowering from it again keeps the target fixed instead of
+        // compounding, and recording the lowered level instead would lose the original.
+        var originals = held.filter { original in
+            current.first { $0.id == original.id }?.isQuieter(than: original) ?? true
+        }
+        var writes: [OutputControl] = []
+        for control in preferred.isEmpty ? fallback : preferred {
+            let held = originals.first { $0.id == control.id }
+            if held == nil, control.isSilenced { continue }
+            let target = (held ?? control).scaled(by: scale)
+            guard target.isQuieter(than: control) else { continue }
+            if held == nil { originals.append(control) }
+            writes.append(target)
+        }
+        return (originals, writes)
     }
 
     private func restore() {

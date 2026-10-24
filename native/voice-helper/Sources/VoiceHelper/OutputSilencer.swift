@@ -18,9 +18,9 @@ final class OutputSilencer {
         suppression = OutputSuppression(controls: CoreAudioOutputControls(onError: { output.log(.error, $0) }), store: store) { output.log(.error, $0) }
     }
 
-    func begin(volume: Float) {
+    func begin(scale: Float) {
         installListener()
-        suppression.begin(volume: volume)
+        suppression.begin(scale: scale)
     }
 
     func recover() {
