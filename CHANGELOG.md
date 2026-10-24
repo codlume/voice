@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.21.0 (2026-10-24)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(transforms): rewrite selected text or dictation with a local model by @hadrysm in https://github.com/codlume/voice/pull/315
+* perf(transforms): cut the transform model's cold load by @hadrysm in https://github.com/codlume/voice/pull/317
+* feat(settings): show transform shortcuts in Settings > Shortcuts by @hadrysm in https://github.com/codlume/voice/pull/318
+* feat(audio): lower audio by a chosen percentage while dictating by @hadrysm in https://github.com/codlume/voice/pull/319
+* feat(hub): glide the sidebar's active highlight between pages by @hadrysm in https://github.com/codlume/voice/pull/320
+* feat(home): show top apps under the stats card by @hadrysm in https://github.com/codlume/voice/pull/321
+* fix(apps): wait for the helper's app list instead of dropping it after 5 s by @hadrysm in https://github.com/codlume/voice/pull/322
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.20.2...v0.21.0
+
 ## 0.20.2 (2026-10-23)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
