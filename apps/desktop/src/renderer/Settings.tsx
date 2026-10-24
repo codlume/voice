@@ -114,7 +114,13 @@ const motionStyles = stylex.create({
     alignItems: "center",
     gap: 16,
   },
-  duration: { display: "flex", alignItems: "center", gap: space.md },
+  reducedMotionHint: {
+    display: { default: "none", "@media (prefers-reduced-motion: reduce)": "block" },
+  },
+});
+
+const sliderStyles = stylex.create({
+  root: { display: "flex", alignItems: "center", gap: space.md },
   readout: {
     minWidth: 64,
     paddingBlock: 4,
@@ -128,14 +134,11 @@ const motionStyles = stylex.create({
     textAlign: "center",
   },
   slider: { flexGrow: 1, minWidth: 0 },
-  reducedMotionHint: {
-    display: { default: "none", "@media (prefers-reduced-motion: reduce)": "block" },
-  },
-  sliderControl: {
+  control: {
     display: "flex",
     alignItems: "center",
     height: 24,
-    cursor: "pointer",
+    cursor: { default: "pointer", ":is([data-disabled])": "default" },
     touchAction: "none",
   },
   track: {
@@ -175,43 +178,58 @@ const motionStyles = stylex.create({
 
 // Saving every drag tick would write settings.json and broadcast a snapshot per tick, so the thumb
 // holds its own value and saves once the gesture or key press commits.
-function PageAnimationSlider({
+function CommitSlider({
   saved,
   onCommit,
+  min,
+  max,
+  step,
+  readout,
+  label,
+  valueText,
+  disabled = false,
 }: {
   saved: number;
-  onCommit: (ms: number) => Promise<boolean>;
+  onCommit: (value: number) => Promise<boolean>;
+  min: number;
+  max: number;
+  step: number;
+  readout: (value: number) => string;
+  label: string;
+  valueText: (value: number) => string;
+  disabled?: boolean;
 }) {
-  const [slider, setSlider] = useState({ ms: saved, saved });
-  if (saved !== slider.saved) setSlider({ ms: saved, saved });
-  const { ms } = slider;
+  const [slider, setSlider] = useState({ value: saved, saved });
+  if (saved !== slider.saved) setSlider({ value: saved, saved });
+  const { value } = slider;
   return (
-    <div {...stylex.props(motionStyles.duration)}>
-      <span aria-hidden {...stylex.props(motionStyles.readout)}>
-        {ms} ms
+    <div {...stylex.props(sliderStyles.root)}>
+      <span aria-hidden {...stylex.props(sliderStyles.readout)}>
+        {readout(value)}
       </span>
       <Slider.Root
-        value={ms}
-        onValueChange={(next) => setSlider((current) => ({ ...current, ms: next }))}
+        value={value}
+        onValueChange={(next) => setSlider((current) => ({ ...current, value: next }))}
         onValueCommitted={(committed) => {
           void onCommit(committed).then((ok) => {
             // The updater reads the newest saved value, which another save may have changed since.
-            if (!ok) setSlider((current) => ({ ...current, ms: current.saved }));
+            if (!ok) setSlider((current) => ({ ...current, value: current.saved }));
           });
         }}
-        min={MIN_PAGE_ANIMATION_MS}
-        max={MAX_PAGE_ANIMATION_MS}
-        step={PAGE_ANIMATION_STEP_MS}
-        largeStep={4 * PAGE_ANIMATION_STEP_MS}
-        {...stylex.props(motionStyles.slider)}
+        min={min}
+        max={max}
+        step={step}
+        largeStep={4 * step}
+        disabled={disabled}
+        {...stylex.props(sliderStyles.slider)}
       >
-        <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
-          <Slider.Track {...stylex.props(motionStyles.track)}>
-            <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
+        <Slider.Control {...stylex.props(sliderStyles.control)}>
+          <Slider.Track {...stylex.props(sliderStyles.track)}>
+            <Slider.Indicator {...stylex.props(sliderStyles.indicator)} />
             <Slider.Thumb
-              aria-label="Page animation duration"
-              getAriaValueText={(_, value) => `${value} milliseconds`}
-              {...stylex.props(motionStyles.thumb)}
+              aria-label={label}
+              getAriaValueText={(_, current) => valueText(current)}
+              {...stylex.props(sliderStyles.thumb)}
             />
           </Slider.Track>
         </Slider.Control>
@@ -687,9 +705,15 @@ export function SystemSettings({
           >
             <div {...stylex.props(motionStyles.control)}>
               <PageAnimationPreview />
-              <PageAnimationSlider
+              <CommitSlider
                 saved={settings.pageAnimationMs}
                 onCommit={changePageAnimation}
+                min={MIN_PAGE_ANIMATION_MS}
+                max={MAX_PAGE_ANIMATION_MS}
+                step={PAGE_ANIMATION_STEP_MS}
+                readout={(ms) => `${ms} ms`}
+                label="Page animation duration"
+                valueText={(ms) => `${ms} milliseconds`}
               />
             </div>
           </Row>
