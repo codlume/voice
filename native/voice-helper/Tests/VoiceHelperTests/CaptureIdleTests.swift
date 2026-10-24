@@ -47,7 +47,7 @@ struct CaptureIdleTests {
         #expect(events.withLock { $0 } == ["main block", "probe done"])
         #expect(!onMain.withLock { $0 })
 
-        #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolume: nil, microphone: nil))
+        #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         #expect(!capture.isActive, "a press never starts capture while the cache says not granted")
     }
 
@@ -64,9 +64,9 @@ struct CaptureIdleTests {
             return .denied
         }
 
-        #expect(capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolume: nil, microphone: nil))
+        #expect(capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         #expect(capture.isActive)
-        #expect(!capture.start(id: "s2", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolume: nil, microphone: nil),
+        #expect(!capture.start(id: "s2", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil),
                 "a press during another session starts nothing")
         capture.cancel(id: "s1")
         capture.configure(microphone: nil)

@@ -29,7 +29,7 @@ private final class SilentCapture {
     }
 
     func start(_ target: InsertTarget) {
-        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolume: nil, microphone: nil)
+        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
     }
 
     func transcript() async throws -> [String: Any] {

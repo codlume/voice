@@ -118,7 +118,7 @@ describe("startHelper", () => {
       microphone: null,
       id: "s1",
       language: "en",
-      outputVolume: null,
+      outputVolumeScale: null,
       detectHost: true,
     });
     await h.waitFor((e) => e.type === "capture.started");
@@ -161,7 +161,7 @@ describe("startHelper", () => {
         microphone: null,
         id,
         language: "en",
-        outputVolume: null,
+        outputVolumeScale: null,
         detectHost: true,
       });
       await h.waitFor((e) => e.type === "capture.started" && e.id === id);

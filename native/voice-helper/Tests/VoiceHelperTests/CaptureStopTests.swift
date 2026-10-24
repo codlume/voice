@@ -23,7 +23,7 @@ struct CaptureStopTests {
             outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800, source: .fixture(file.path))
 
         let target = InsertTarget(pid: nil, bundleId: nil)
-        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolume: nil, microphone: nil)
+        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
         let events = sessionEvents(try await lines.wait(for: terminal))
 
         #expect(events.map { $0["type"] as? String } == ["capture.started", "capture.stopped", terminal])

@@ -403,7 +403,7 @@ const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
   type: "capture.start",
   id: "s1",
   language: "en",
-  outputVolume: null,
+  outputVolumeScale: null,
   microphone: null,
   detectHost: true,
 };
@@ -430,10 +430,11 @@ const commandCases = {
   "capture.start.pinned": {
     ...captureStart,
     language: "pl",
-    outputVolume: 0.1,
+    outputVolumeScale: 0.3,
     microphone,
     detectHost: false,
   },
+  "capture.start.muted": { ...captureStart, outputVolumeScale: 0 },
   "capture.stop": { type: "capture.stop", id: "s1" },
   "capture.cancel": { type: "capture.cancel", id: "s1" },
   "microphone.test.start": { type: "microphone.test.start", id: "t1", microphone: null },

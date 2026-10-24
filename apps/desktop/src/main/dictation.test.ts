@@ -366,7 +366,7 @@ describe("createDictation", () => {
       {
         type: "capture.start",
         id: h.id(),
-        outputVolume: null,
+        outputVolumeScale: null,
         language: value,
         microphone: null,
         detectHost: expect.any(Boolean),
@@ -421,18 +421,18 @@ describe("createDictation", () => {
   });
 
   test.each([
-    { lowerAudioWhileDictating: false, lowerAudioByPercent: 90, outputVolume: null },
-    { lowerAudioWhileDictating: true, lowerAudioByPercent: 90, outputVolume: 0.1 },
-    { lowerAudioWhileDictating: true, lowerAudioByPercent: 40, outputVolume: 0.6 },
-    { lowerAudioWhileDictating: true, lowerAudioByPercent: 100, outputVolume: 0 },
+    { lowerAudioWhileDictating: false, lowerAudioByPercent: 90, outputVolumeScale: null },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 90, outputVolumeScale: 0.1 },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 40, outputVolumeScale: 0.6 },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 100, outputVolumeScale: 0 },
   ])(
-    "asks the helper to keep $outputVolume of the output volume when lowering is $lowerAudioWhileDictating at $lowerAudioByPercent%",
-    ({ outputVolume, ...lowering }) => {
+    "asks the helper to keep $outputVolumeScale of the output volume when lowering is $lowerAudioWhileDictating at $lowerAudioByPercent%",
+    ({ outputVolumeScale, ...lowering }) => {
       const h = harness();
       h.store.update((state) => ({ ...state, settings: { ...state.settings, ...lowering } }));
       h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
       expect(h.commands).toEqual([
-        expect.objectContaining({ type: "capture.start", outputVolume }),
+        expect.objectContaining({ type: "capture.start", outputVolumeScale }),
       ]);
     },
   );
@@ -450,7 +450,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id: first,
         language: "en",
-        outputVolume: 0.3,
+        outputVolumeScale: 0.3,
         microphone: null,
         detectHost: true,
       },
@@ -467,7 +467,7 @@ describe("createDictation", () => {
       microphone: null,
       id: h.id(),
       language: "en",
-      outputVolume: null,
+      outputVolumeScale: null,
       detectHost: true,
     });
   });
@@ -481,7 +481,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        outputVolume: null,
+        outputVolumeScale: null,
         microphone: null,
         detectHost: true,
       },
@@ -540,7 +540,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        outputVolume: null,
+        outputVolumeScale: null,
         microphone: null,
         detectHost: true,
       },
@@ -1104,7 +1104,7 @@ describe("createDictation", () => {
           type: "capture.start",
           id,
           language: value,
-          outputVolume: null,
+          outputVolumeScale: null,
           microphone: null,
           detectHost: false,
         },
@@ -1639,7 +1639,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        outputVolume: null,
+        outputVolumeScale: null,
         microphone: null,
         detectHost: true,
       },

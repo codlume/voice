@@ -114,7 +114,7 @@ export type Dictated = {
 
 type Work = { kind: "transform"; transformId: TransformId } | { kind: "style" } | null;
 
-const outputVolume = (settings: Settings) =>
+const outputVolumeScale = (settings: Settings) =>
   settings.lowerAudioWhileDictating ? (100 - settings.lowerAudioByPercent) / 100 : null;
 
 const gaveTranscript = (outcome: Outcome) =>
@@ -217,7 +217,7 @@ export function createDictation(options: DictationOptions): Dictation {
           type: "capture.start",
           id: effect.id,
           language: started.language,
-          outputVolume: outputVolume(store.state.settings),
+          outputVolumeScale: outputVolumeScale(store.state.settings),
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
         });

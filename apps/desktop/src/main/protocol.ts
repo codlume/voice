@@ -28,9 +28,9 @@ export type HelperCommand =
       type: "capture.start";
       id: string;
       language: DictationLanguage;
-      // The fraction of each output's level to keep while capturing; 0 mutes and null leaves
-      // outputs alone.
-      outputVolume: number | null;
+      // The fraction of each output's level to keep while capturing, at least 0 and below 1;
+      // 0 mutes and null leaves outputs alone.
+      outputVolumeScale: number | null;
       microphone: Microphone | null;
       // False when the session cannot use a page host, so the helper never reads one.
       detectHost: boolean;

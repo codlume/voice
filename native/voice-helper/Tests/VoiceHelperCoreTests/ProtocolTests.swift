@@ -20,10 +20,10 @@ private func json(_ line: String) throws -> [String: Any] {
          ])),
         (#"{"type":"selection.read","id":"r1"}"#, .selectionRead(id: "r1")),
         (#"{"type":"transform.end","id":"r1"}"#, .transformEnd(id: "r1")),
-        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolume":null,"detectHost":true}"#,
-         .captureStart(id: "s1", language: .en, outputVolume: nil, microphone: nil, detectHost: true)),
-        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolume":null,"detectHost":false}"#,
-         .captureStart(id: "s1", language: .en, outputVolume: nil, microphone: nil, detectHost: false)),
+        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":true}"#,
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true)),
+        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":false}"#,
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: false)),
         (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
         (#"{"type":"microphone.test.start","id":"t1","microphone":null}"#, .microphoneTestStart(id: "t1", microphone: nil)),
@@ -86,7 +86,7 @@ private func json(_ line: String) throws -> [String: Any] {
     let invalid = HelperCommand.decode(line: "not json")
     #expect(try unknownDescription(invalid).contains("invalid JSON"))
 
-    let withoutDetectHost = HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolume":null}"#)
+    let withoutDetectHost = HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null}"#)
     #expect(try unknownDescription(withoutDetectHost).contains("missing field \"detectHost\""))
 
     let hostless = HelperCommand.decode(line: #"{"type":"test.target","target":{"bundleId":"com.apple.Safari"}}"#)
@@ -188,37 +188,38 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
 }
 
-@Test func captureStartRequiresAnOutputVolumeBetweenZeroAndOne() {
-    for (wire, volume) in [("null", nil), ("0", 0), ("0.1", 0.1), ("1", 1)] as [(String, Float?)] {
-        #expect(HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolume":\#(wire),"detectHost":true}"#)
-            == .success(.captureStart(id: "s", language: .en, outputVolume: volume, microphone: nil, detectHost: true)))
+@Test func captureStartRequiresAnOutputVolumeScaleFromZeroToBelowOne() {
+    for (wire, scale) in [("null", nil), ("0", 0), ("0.3", 0.3)] as [(String, Float?)] {
+        #expect(HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":\#(wire),"detectHost":true}"#)
+            == .success(.captureStart(id: "s", language: .en, outputVolumeScale: scale, microphone: nil, detectHost: true)))
     }
     for line in [
         #"{"type":"capture.start","microphone":null,"id":"s","language":"en","detectHost":true}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolume":"0.1","detectHost":true}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolume":true,"detectHost":true}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolume":-0.1,"detectHost":true}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolume":1.1,"detectHost":true}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":"0.1","detectHost":true}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":true,"detectHost":true}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":-0.1,"detectHost":true}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":1,"detectHost":true}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":1.1,"detectHost":true}"#,
         #"{"type":"capture.start","microphone":null,"id":"s","language":"en","muteWhileDictating":true,"detectHost":true}"#,
     ] {
-        if case .success = HelperCommand.decode(line: line) { Issue.record("accepted malformed output volume: \(line)") }
+        if case .success = HelperCommand.decode(line: line) { Issue.record("accepted malformed output volume scale: \(line)") }
     }
 }
 
 @Test(arguments: DictationLanguage.allCases)
 func captureStartPreservesEveryLanguage(language: DictationLanguage) {
-    let line = #"{"type":"capture.start","microphone":null,"id":"s","language":"\#(language.rawValue)","outputVolume":null,"detectHost":true}"#
+    let line = #"{"type":"capture.start","microphone":null,"id":"s","language":"\#(language.rawValue)","outputVolumeScale":null,"detectHost":true}"#
     #expect(HelperCommand.decode(line: line)
-        == .success(.captureStart(id: "s", language: language, outputVolume: nil, microphone: nil, detectHost: true)))
+        == .success(.captureStart(id: "s", language: language, outputVolumeScale: nil, microphone: nil, detectHost: true)))
 }
 
 @Test func captureStartRequiresAValidLanguage() throws {
     for line in [
-        #"{"type":"capture.start","microphone":null,"id":"s","outputVolume":null}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":null,"outputVolume":null}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":true,"outputVolume":null}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"unknown","outputVolume":null}"#,
-        #"{"type":"capture.start","microphone":null,"id":"s","language":"","outputVolume":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","outputVolumeScale":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":null,"outputVolumeScale":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":true,"outputVolumeScale":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"unknown","outputVolumeScale":null}"#,
+        #"{"type":"capture.start","microphone":null,"id":"s","language":"","outputVolumeScale":null}"#,
     ] {
         let result = HelperCommand.decode(line: line)
         #expect(throws: ProtocolError.self) { try result.get() }
@@ -232,10 +233,10 @@ func captureStartPreservesEveryLanguage(language: DictationLanguage) {
         == .success(.microphoneConfigure(microphone: microphone)))
     #expect(HelperCommand.decode(line: #"{"type":"microphone.configure","microphone":null}"#)
         == .success(.microphoneConfigure(microphone: nil)))
-    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","outputVolume":null,"microphone":{"uid":"usb","name":"USB Microphone"},"detectHost":true}"#)
-        == .success(.captureStart(id: "s", language: .en, outputVolume: nil, microphone: microphone, detectHost: true)))
+    #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","outputVolumeScale":null,"microphone":{"uid":"usb","name":"USB Microphone"},"detectHost":true}"#)
+        == .success(.captureStart(id: "s", language: .en, outputVolumeScale: nil, microphone: microphone, detectHost: true)))
     for line in [
-        #"{"type":"capture.start","id":"s","language":"en","outputVolume":null}"#,
+        #"{"type":"capture.start","id":"s","language":"en","outputVolumeScale":null}"#,
         #"{"type":"microphone.configure"}"#,
         #"{"type":"microphone.configure","microphone":"usb"}"#,
         #"{"type":"microphone.configure","microphone":{"uid":"","name":"USB"}}"#,

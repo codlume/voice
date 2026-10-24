@@ -105,7 +105,7 @@ final class Capture {
 
     /// False when no session began, so the caller schedules nothing for it.
     @discardableResult
-    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, outputVolume: Float?, microphone: Microphone?) -> Bool {
+    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, outputVolumeScale: Float?, microphone: Microphone?) -> Bool {
         // Dictation preempts a test. The mic keeps running so dictation gets audio without an
         // engine restart.
         if case .testing(let testId, _) = state {
@@ -132,7 +132,7 @@ final class Capture {
                 }
                 state = .starting(session)
                 self.file = file
-                lowerOutput(to: outputVolume)
+                lowerOutput(to: outputVolumeScale)
                 file.start()
                 return true
             case .microphone:
@@ -144,7 +144,7 @@ final class Capture {
             let mic = try self.mic ?? makeMic()
             self.mic = mic
             state = .starting(session)
-            lowerOutput(to: outputVolume)
+            lowerOutput(to: outputVolumeScale)
             try mic.start(sink: sink)
             return true
         } catch let error as CaptureError {

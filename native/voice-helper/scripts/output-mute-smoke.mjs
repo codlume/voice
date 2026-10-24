@@ -52,14 +52,14 @@ wav.writeUInt32LE(frames * 2, 40);
 await writeFile(path, wav);
 const results = [];
 
-async function session(mode, { outputVolume = 0, initiallyMuted = false } = {}) {
+async function session(mode, { outputVolumeScale = 0, initiallyMuted = false } = {}) {
   setMuted(initiallyMuted);
   const before = audioState();
-  const id = `lower-${mode}-${outputVolume}-${initiallyMuted}`;
+  const id = `lower-${mode}-${outputVolumeScale}-${initiallyMuted}`;
   const lowered =
-    outputVolume === null || outputVolume === 0
-      ? { ...before, muted: outputVolume === 0 || initiallyMuted }
-      : { ...before, volume: Math.round(before.volume * outputVolume) };
+    outputVolumeScale === null || outputVolumeScale === 0
+      ? { ...before, muted: outputVolumeScale === 0 || initiallyMuted }
+      : { ...before, volume: Math.round(before.volume * outputVolumeScale) };
   let during;
   await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: path } }, async (helper) => {
     helper.send({
@@ -67,7 +67,7 @@ async function session(mode, { outputVolume = 0, initiallyMuted = false } = {}) 
       microphone: null,
       language: "en",
       id,
-      outputVolume,
+      outputVolumeScale,
       detectHost: false,
     });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
@@ -88,7 +88,7 @@ async function session(mode, { outputVolume = 0, initiallyMuted = false } = {}) 
         microphone: null,
         language: "en",
         id: "busy",
-        outputVolume: null,
+        outputVolumeScale: null,
         detectHost: false,
       });
       await helper.waitFor((event) => event.type === "capture.failed" && event.id === "busy");
@@ -104,13 +104,13 @@ async function session(mode, { outputVolume = 0, initiallyMuted = false } = {}) 
     expectState(before, `${mode} restored`);
   });
   const after = expectState(before, `${mode} after shutdown`);
-  results.push({ mode, outputVolume, initiallyMuted, before, during, after });
+  results.push({ mode, outputVolumeScale, initiallyMuted, before, during, after });
 }
 
 try {
-  await session("stop", { outputVolume: null });
-  await session("stop", { outputVolume: 0.1 });
-  await session("sigterm", { outputVolume: 0.1 });
+  await session("stop", { outputVolumeScale: null });
+  await session("stop", { outputVolumeScale: 0.1 });
+  await session("sigterm", { outputVolumeScale: 0.1 });
   await session("stop");
   await session("cancel");
   await session("stale");
@@ -127,7 +127,7 @@ try {
         microphone: null,
         language: "en",
         id: "failure",
-        outputVolume: 0,
+        outputVolumeScale: 0,
         detectHost: false,
       });
       await helper.waitFor((event) => event.type === "capture.failed" && event.id === "failure");
