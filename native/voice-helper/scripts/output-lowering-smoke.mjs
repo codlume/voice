@@ -17,20 +17,22 @@ function setMuted(muted) {
   execFileSync("osascript", ["-e", `set volume output muted ${muted}`]);
 }
 
-function expectState(expected, label) {
+// The system volume reads back on a 0-100 scale rounded from each channel's scalar.
+function expectState(expected, label, tolerance = 0) {
   const actual = audioState();
   assert(
     actual.muted === expected.muted,
     `${label}: mute ${actual.muted}, expected ${expected.muted}`,
   );
   assert(
-    actual.volume === expected.volume,
+    Math.abs(actual.volume - expected.volume) <= tolerance,
     `${label}: volume ${actual.volume}, expected ${expected.volume}`,
   );
+  return actual;
 }
 
 const original = audioState();
-const dir = await mkdtemp(join(tmpdir(), "voice-output-mute-"));
+const dir = await mkdtemp(join(tmpdir(), "voice-output-lowering-"));
 const path = join(dir, "synthetic-silence.wav");
 process.env.VOICE_TEST_MODELS_DIR = join(dir, "models");
 const frames = 32_000;
@@ -50,20 +52,30 @@ wav.writeUInt32LE(frames * 2, 40);
 await writeFile(path, wav);
 const results = [];
 
-async function session(mode, { enabled = true, initiallyMuted = false } = {}) {
+const unchanged = (before) => before;
+const muted = (before) => ({ ...before, muted: true });
+const scaledBy = (scale) => (before) => ({
+  ...before,
+  volume: Math.round(before.volume * scale),
+});
+
+async function session(mode, { outputVolumeScale = 0, initiallyMuted = false, during: expected }) {
   setMuted(initiallyMuted);
   const before = audioState();
-  const id = `mute-${mode}-${enabled}-${initiallyMuted}`;
+  const id = `lower-${mode}-${outputVolumeScale}-${initiallyMuted}`;
+  const lowered = expected(before);
+  let during;
   await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: path } }, async (helper) => {
     helper.send({
       type: "capture.start",
       microphone: null,
       language: "en",
       id,
-      muteWhileDictating: enabled,
+      outputVolumeScale,
+      detectHost: false,
     });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
-    expectState({ ...before, muted: enabled || initiallyMuted }, `${mode} during capture`);
+    during = expectState(lowered, `${mode} during capture`, 1);
     if (mode === "stop") {
       helper.send({ type: "capture.stop", id });
       await helper.waitFor((event) => event.type === "transcript" && event.id === id);
@@ -80,13 +92,11 @@ async function session(mode, { enabled = true, initiallyMuted = false } = {}) {
         microphone: null,
         language: "en",
         id: "busy",
-        muteWhileDictating: false,
+        outputVolumeScale: null,
+        detectHost: false,
       });
       await helper.waitFor((event) => event.type === "capture.failed" && event.id === "busy");
-      expectState(
-        { ...before, muted: true },
-        "stale and busy commands preserve active suppression",
-      );
+      expectState(lowered, "stale and busy commands preserve active suppression", 1);
       helper.send({ type: "capture.cancel", id });
       await helper.waitFor((event) => event.type === "capture.cancelled" && event.id === id);
     } else if (mode === "sigterm") {
@@ -97,18 +107,20 @@ async function session(mode, { enabled = true, initiallyMuted = false } = {}) {
     }
     expectState(before, `${mode} restored`);
   });
-  expectState(before, `${mode} after shutdown`);
-  results.push({ mode, enabled, initiallyMuted, restored: true });
+  const after = expectState(before, `${mode} after shutdown`);
+  results.push({ mode, outputVolumeScale, initiallyMuted, before, during, after });
 }
 
 try {
-  await session("stop", { enabled: false });
-  await session("stop");
-  await session("cancel");
-  await session("stale");
-  await session("eof");
-  await session("sigterm");
-  await session("stop", { initiallyMuted: true });
+  await session("stop", { outputVolumeScale: null, during: unchanged });
+  await session("stop", { outputVolumeScale: 0.1, during: scaledBy(0.1) });
+  await session("sigterm", { outputVolumeScale: 0.1, during: scaledBy(0.1) });
+  await session("stop", { during: muted });
+  await session("cancel", { during: muted });
+  await session("stale", { during: muted });
+  await session("eof", { during: muted });
+  await session("sigterm", { during: muted });
+  await session("stop", { initiallyMuted: true, during: muted });
   setMuted(false);
   const before = audioState();
   await withHelper(
@@ -119,7 +131,8 @@ try {
         microphone: null,
         language: "en",
         id: "failure",
-        muteWhileDictating: true,
+        outputVolumeScale: 0,
+        detectHost: false,
       });
       await helper.waitFor((event) => event.type === "capture.failed" && event.id === "failure");
       expectState(before, "failed start leaves audio unchanged");

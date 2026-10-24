@@ -25,7 +25,7 @@ struct CaptureSourceTests {
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: URL(fileURLWithPath: "/nonexistent"), output: output),
             devices: devices,
-            outputSilencer: OutputSilencer(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+            outputLowering: OutputLowering(output: output, stateDir: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             source: source
         ) {
             probe.fulfill()
@@ -35,7 +35,7 @@ struct CaptureSourceTests {
 
         capture.prepareIdleMic()
         capture.configure(microphone: nil)
-        #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil))
+        #expect(!capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         capture.startTest(id: "m1", microphone: nil)
         let events = try await lines.wait(for: "microphone.test.failed")
         #expect(events.contains { $0["type"] as? String == "capture.failed" })
@@ -45,7 +45,7 @@ struct CaptureSourceTests {
         capture.testAudioPath = nil
         #expect(capture.source == .disabled)
         capture.prepareIdleMic()
-        #expect(!capture.start(id: "s2", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil))
+        #expect(!capture.start(id: "s2", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         capture.startTest(id: "m2", microphone: nil)
         #expect(await XCTWaiter.fulfillment(of: [probe], timeout: 0.1) == .completed)
     }
@@ -60,12 +60,12 @@ struct CaptureSourceTests {
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
         let capture = Capture(output: output, transcriber: Transcriber(modelsDir: dir, output: output), devices: devices,
-                              outputSilencer: OutputSilencer(output: output, stateDir: dir), source: .fixture(fixture.path)) {
+                              outputLowering: OutputLowering(output: output, stateDir: dir), source: .fixture(fixture.path)) {
             Issue.record("fixture capture must not query microphone permission")
             return .denied
         }
         defer { capture.shutdown() }
-        #expect(capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), muteWhileDictating: false, microphone: nil))
+        #expect(capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), outputVolumeScale: nil, microphone: nil))
         capture.testAudioPath = nil
         #expect(capture.source == .fixture(fixture.path))
         capture.cancel(id: "s1")

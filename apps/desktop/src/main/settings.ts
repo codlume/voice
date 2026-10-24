@@ -12,7 +12,10 @@ import {
   CONSENTS,
   DEFAULT_SETTINGS,
   hotkeys,
+  LOWER_AUDIO_STEP_PERCENT,
+  MAX_LOWER_AUDIO_PERCENT,
   MAX_PAGE_ANIMATION_MS,
+  MIN_LOWER_AUDIO_PERCENT,
   MIN_PAGE_ANIMATION_MS,
   PAGE_ANIMATION_STEP_MS,
   THEMES,
@@ -50,6 +53,14 @@ const pageAnimationMs = (v: unknown) =>
   v <= MAX_PAGE_ANIMATION_MS
     ? v
     : DEFAULT_SETTINGS.pageAnimationMs;
+
+const lowerAudioByPercent = (v: unknown) =>
+  typeof v === "number" &&
+  v % LOWER_AUDIO_STEP_PERCENT === 0 &&
+  v >= MIN_LOWER_AUDIO_PERCENT &&
+  v <= MAX_LOWER_AUDIO_PERCENT
+    ? v
+    : DEFAULT_SETTINGS.lowerAudioByPercent;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -90,7 +101,18 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     pageAnimationMs: pageAnimationMs(r.pageAnimationMs),
-    muteWhileDictating: flag(r.muteWhileDictating, DEFAULT_SETTINGS.muteWhileDictating),
+    // Before the amount was adjustable, the switch was `muteWhileDictating` and it silenced
+    // outputs, so a user who had it on stays fully muted.
+    lowerAudioWhileDictating: flag(
+      r.lowerAudioWhileDictating,
+      flag(r.muteWhileDictating, DEFAULT_SETTINGS.lowerAudioWhileDictating),
+    ),
+    lowerAudioByPercent:
+      r.lowerAudioWhileDictating === undefined &&
+      r.muteWhileDictating === true &&
+      r.lowerAudioByPercent === undefined
+        ? MAX_LOWER_AUDIO_PERCENT
+        : lowerAudioByPercent(r.lowerAudioByPercent),
     copyToClipboard: flag(r.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
     showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
     alwaysShowPill: flag(r.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill),

@@ -25,9 +25,9 @@ final class Helper {
         transcriber = Transcriber(modelsDir: modelsDir, output: output)
         let devices = AudioInputDevices(output: output)
         self.devices = devices
-        let outputSilencer = OutputSilencer(output: output, stateDir: stateDir)
-        outputSilencer.recover()
-        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputSilencer: outputSilencer,
+        let outputLowering = OutputLowering(output: output, stateDir: stateDir)
+        outputLowering.recover()
+        let capture = Capture(output: output, transcriber: transcriber, devices: devices, outputLowering: outputLowering,
                               source: .resolve(environment: environment))
         devices.onChange = { [weak capture] in capture?.devicesChanged() }
         self.capture = capture
@@ -68,7 +68,7 @@ final class Helper {
             hotkeyTap.configure(key: key, toggleKey: toggleKey, transforms: transforms)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
-        case .captureStart(let id, let language, let muteWhileDictating, let microphone, let detectHost):
+        case .captureStart(let id, let language, let outputVolumeScale, let microphone, let detectHost):
             let app = NSWorkspace.shared.frontmostApplication
             let override = testTarget
             testTarget = nil
@@ -76,7 +76,7 @@ final class Helper {
                 pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
                 host: override.map { .read($0.host) } ?? (detectHost ? .pending : .read(nil)),
                 log: testMode ? { [output] in output.log(.info, $0) } : nil)
-            if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, muteWhileDictating: muteWhileDictating, microphone: microphone) {
+            if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, outputVolumeScale: outputVolumeScale, microphone: microphone) {
                 target.settleHost()
             }
         case .captureStop(let id):

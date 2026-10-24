@@ -34,7 +34,8 @@ try {
       microphone: null,
       language: "en",
       id,
-      muteWhileDictating: false,
+      outputVolumeScale: null,
+      detectHost: false,
     });
     const started = await helper.waitFor(
       (event) => ["capture.started", "capture.failed"].includes(event.type) && event.id === id,

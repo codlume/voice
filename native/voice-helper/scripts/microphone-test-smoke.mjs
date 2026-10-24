@@ -63,7 +63,8 @@ await withHelper({ env: { VOICE_HELPER_TEST_AUDIO: short } }, async (helper) => 
     id: "s1",
     microphone: null,
     language: "en",
-    muteWhileDictating: false,
+    outputVolumeScale: null,
+    detectHost: false,
   });
   await helper.waitFor(forId("capture.started", "s1"), { label: "s1 capture.started" });
   const preempted = indexOf(helper, "microphone.test.ended", "t3");

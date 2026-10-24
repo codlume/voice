@@ -23,13 +23,13 @@ private final class SilentCapture {
         devices = AudioInputDevices(output: output)
         capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
-            devices: devices, outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: fileSamples / 4,
+            devices: devices, outputLowering: OutputLowering(output: output, stateDir: dir), maxSamples: fileSamples / 4,
             source: .fixture(file.path))
         insertion = Insertion(output: output, forcePaste: false, pasteboard: Pasteboard(output: output))
     }
 
     func start(_ target: InsertTarget) {
-        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
     }
 
     func transcript() async throws -> [String: Any] {

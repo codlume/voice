@@ -20,10 +20,10 @@ struct CaptureStopTests {
         let noModels = dir.appendingPathComponent("no-models")
         let capture = Capture(
             output: output, transcriber: Transcriber(modelsDir: noModels, output: output), devices: devices,
-            outputSilencer: OutputSilencer(output: output, stateDir: dir), maxSamples: 4800, source: .fixture(file.path))
+            outputLowering: OutputLowering(output: output, stateDir: dir), maxSamples: 4800, source: .fixture(file.path))
 
         let target = InsertTarget(pid: nil, bundleId: nil)
-        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), muteWhileDictating: false, microphone: nil)
+        capture.start(id: "s1", language: .en, target: target, receivedAt: .now(), outputVolumeScale: nil, microphone: nil)
         let events = sessionEvents(try await lines.wait(for: terminal))
 
         #expect(events.map { $0["type"] as? String } == ["capture.started", "capture.stopped", terminal])

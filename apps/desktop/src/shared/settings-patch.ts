@@ -7,7 +7,10 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import {
   CONSENTS,
   hotkeys,
+  LOWER_AUDIO_STEP_PERCENT,
+  MAX_LOWER_AUDIO_PERCENT,
   MAX_PAGE_ANIMATION_MS,
+  MIN_LOWER_AUDIO_PERCENT,
   MIN_PAGE_ANIMATION_MS,
   PAGE_ANIMATION_STEP_MS,
   THEMES,
@@ -47,7 +50,13 @@ export const SettingsPatchSchema = Schema.Struct({
   microphone: Schema.optionalKey(Schema.NullOr(MicrophoneSchema)),
   hotkey: Schema.optionalKey(Schema.Literals(hotkeys)),
   toggleHotkey: Schema.optionalKey(Schema.NullOr(Schema.Literals(hotkeys))),
-  muteWhileDictating: Schema.optionalKey(Schema.Boolean),
+  lowerAudioWhileDictating: Schema.optionalKey(Schema.Boolean),
+  lowerAudioByPercent: Schema.optionalKey(
+    Schema.Number.check(
+      Schema.isBetween({ minimum: MIN_LOWER_AUDIO_PERCENT, maximum: MAX_LOWER_AUDIO_PERCENT }),
+      Schema.isMultipleOf(LOWER_AUDIO_STEP_PERCENT),
+    ),
+  ),
   copyToClipboard: Schema.optionalKey(Schema.Boolean),
   showInDock: Schema.optionalKey(Schema.Boolean),
   alwaysShowPill: Schema.optionalKey(Schema.Boolean),

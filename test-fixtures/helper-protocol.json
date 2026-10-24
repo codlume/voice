@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 13,
+  "protocolVersion": 14,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 12,
+      "version": 13,
       "compatible": false
     },
     {
-      "version": 13,
+      "version": 14,
       "compatible": true
     },
     {
-      "version": 14,
+      "version": 15,
       "compatible": false
     }
   ],
@@ -110,11 +110,11 @@
         "type": "capture.start",
         "id": "s1",
         "language": "en",
-        "muteWhileDictating": false,
+        "outputVolumeScale": null,
         "microphone": null,
         "detectHost": true
       },
-      "required": ["type", "id", "language", "muteWhileDictating", "microphone", "detectHost"]
+      "required": ["type", "id", "language", "outputVolumeScale", "microphone", "detectHost"]
     },
     {
       "name": "capture.start.pinned",
@@ -122,14 +122,26 @@
         "type": "capture.start",
         "id": "s1",
         "language": "pl",
-        "muteWhileDictating": true,
+        "outputVolumeScale": 0.3,
         "microphone": {
           "uid": "usb",
           "name": "Synthetic USB"
         },
         "detectHost": false
       },
-      "required": ["type", "id", "language", "muteWhileDictating", "microphone", "detectHost"]
+      "required": ["type", "id", "language", "outputVolumeScale", "microphone", "detectHost"]
+    },
+    {
+      "name": "capture.start.muted",
+      "wire": {
+        "type": "capture.start",
+        "id": "s1",
+        "language": "en",
+        "outputVolumeScale": 0,
+        "microphone": null,
+        "detectHost": true
+      },
+      "required": ["type", "id", "language", "outputVolumeScale", "microphone", "detectHost"]
     },
     {
       "name": "capture.stop",
@@ -395,7 +407,11 @@
     },
     {
       "name": "unknown-language",
-      "line": "{\"type\":\"capture.start\",\"id\":\"s1\",\"language\":\"xx\",\"muteWhileDictating\":false,\"microphone\":null,\"detectHost\":true}"
+      "line": "{\"type\":\"capture.start\",\"id\":\"s1\",\"language\":\"xx\",\"outputVolumeScale\":null,\"microphone\":null,\"detectHost\":true}"
+    },
+    {
+      "name": "output-volume-scale-of-one",
+      "line": "{\"type\":\"capture.start\",\"id\":\"s1\",\"language\":\"en\",\"outputVolumeScale\":1,\"microphone\":null,\"detectHost\":true}"
     },
     {
       "name": "empty-microphone",
@@ -465,11 +481,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 13
+        "version": 14
       },
       "parsed": {
         "type": "ready",
-        "version": 13
+        "version": 14
       },
       "required": ["type", "version"]
     },

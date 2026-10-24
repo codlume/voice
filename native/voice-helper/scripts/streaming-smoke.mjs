@@ -12,7 +12,8 @@ await withHelper({}, async (helper) => {
       microphone: null,
       id,
       language: "en",
-      muteWhileDictating: false,
+      outputVolumeScale: null,
+      detectHost: false,
     });
     await helper.waitFor((event) => event.type === "capture.started" && event.id === id);
     await helper.waitFor(

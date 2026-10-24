@@ -74,13 +74,37 @@ const bullets: Transform = {
 
 describe("parseSettings", () => {
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
-    "defaults invalid mute preference %j to false",
-    (muteWhileDictating) => {
-      expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(false);
+    "defaults invalid lower-audio preference %j to off",
+    (lowerAudioWhileDictating) => {
+      expect(parseSettings({ lowerAudioWhileDictating }).lowerAudioWhileDictating).toBe(false);
     },
   );
-  test.each([true, false])("keeps boolean mute preference %j", (muteWhileDictating) => {
-    expect(parseSettings({ muteWhileDictating }).muteWhileDictating).toBe(muteWhileDictating);
+  test.each([true, false])(
+    "keeps boolean lower-audio preference %j",
+    (lowerAudioWhileDictating) => {
+      expect(parseSettings({ lowerAudioWhileDictating }).lowerAudioWhileDictating).toBe(
+        lowerAudioWhileDictating,
+      );
+    },
+  );
+  test.each([
+    { muteWhileDictating: true, lowerAudioByPercent: 100 },
+    { muteWhileDictating: false, lowerAudioByPercent: 70 },
+  ])(
+    "carries the earlier mute switch $muteWhileDictating over to lowering by $lowerAudioByPercent%",
+    ({ muteWhileDictating, lowerAudioByPercent }) => {
+      expect(parseSettings({ muteWhileDictating })).toEqual({
+        ...DEFAULT_SETTINGS,
+        lowerAudioWhileDictating: muteWhileDictating,
+        lowerAudioByPercent,
+      });
+    },
+  );
+  test("prefers the lower-audio switch over the earlier mute switch", () => {
+    expect(
+      parseSettings({ lowerAudioWhileDictating: false, muteWhileDictating: true })
+        .lowerAudioWhileDictating,
+    ).toBe(false);
   });
   test.each([undefined, null, "true", "false", 0, 1, {}, []])(
     "defaults missing or invalid copy-to-clipboard preference %j to off",
@@ -133,7 +157,8 @@ describe("parseSettings", () => {
       theme: "system",
       pageAnimationMs: 200,
       microphone: null,
-      muteWhileDictating: false,
+      lowerAudioWhileDictating: false,
+      lowerAudioByPercent: 70,
       copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,
@@ -244,6 +269,16 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
+  test("defaults lowering audio to 70%, keeps a saved amount on the 10% grid from 10% to 100%, and rejects anything else", () => {
+    expect(parseSettings({}).lowerAudioByPercent).toBe(70);
+    for (const percent of [10, 50, 100]) {
+      expect(parseSettings({ lowerAudioByPercent: percent }).lowerAudioByPercent).toBe(percent);
+    }
+    for (const raw of [0, 5, 55, 110, -10, 90.5, "50", null]) {
+      expect(parseSettings({ lowerAudioByPercent: raw }).lowerAudioByPercent).toBe(70);
+    }
+  });
+
   test("defaults page animations to 200 ms, keeps a saved duration on the 25 ms grid up to 400 ms, and rejects anything else", () => {
     expect(parseSettings({}).pageAnimationMs).toBe(200);
     for (const ms of [0, 25, 400]) {
@@ -268,7 +303,12 @@ describe("applyPatch", () => {
     { patch: { toggleHotkey: "bogus" } },
     { patch: { updateChannel: 1 } },
     { patch: { dictationLanguage: "bogus" } },
-    { patch: { muteWhileDictating: "false" } },
+    { patch: { lowerAudioWhileDictating: "false" } },
+    { patch: { muteWhileDictating: true } },
+    { patch: { lowerAudioByPercent: 0 } },
+    { patch: { lowerAudioByPercent: 55 } },
+    { patch: { lowerAudioByPercent: 110 } },
+    { patch: { lowerAudioByPercent: "50" } },
     { patch: { copyToClipboard: 1 } },
     { patch: { showInDock: null } },
     { patch: { alwaysShowPill: [] } },
@@ -340,7 +380,8 @@ describe("applyPatch", () => {
       microphone: { uid: "synthetic-usb", name: "Synthetic USB Mic" },
       hotkey: "rightCommand",
       toggleHotkey: "rightOption",
-      muteWhileDictating: true,
+      lowerAudioWhileDictating: true,
+      lowerAudioByPercent: 100,
       copyToClipboard: true,
       showInDock: false,
       alwaysShowPill: false,
@@ -438,10 +479,16 @@ describe("applyPatch", () => {
     });
   });
 
-  test("mute preference survives unrelated patches and can be turned back off", () => {
-    const enabled = applyPatch(DEFAULT_SETTINGS, { muteWhileDictating: true });
-    expect(applyPatch(enabled, { theme: "dark" }).muteWhileDictating).toBe(true);
-    expect(applyPatch(enabled, { muteWhileDictating: false })).toEqual(DEFAULT_SETTINGS);
+  test("lower-audio preference survives unrelated patches and can be turned back off", () => {
+    const enabled = applyPatch(DEFAULT_SETTINGS, { lowerAudioWhileDictating: true });
+    expect(applyPatch(enabled, { theme: "dark" }).lowerAudioWhileDictating).toBe(true);
+    expect(applyPatch(enabled, { lowerAudioWhileDictating: false })).toEqual(DEFAULT_SETTINGS);
+  });
+  test("the lowering amount is kept while lowering is off", () => {
+    const halved = applyPatch(DEFAULT_SETTINGS, { lowerAudioByPercent: 50 });
+    expect(halved).toEqual({ ...DEFAULT_SETTINGS, lowerAudioByPercent: 50 });
+    const on = applyPatch(halved, { lowerAudioWhileDictating: true });
+    expect(applyPatch(on, { lowerAudioWhileDictating: false }).lowerAudioByPercent).toBe(50);
   });
   test("copy-to-clipboard is off by default, survives unrelated patches, and can be turned back off", () => {
     expect(DEFAULT_SETTINGS.copyToClipboard).toBe(false);
@@ -468,7 +515,8 @@ describe("applyPatch", () => {
       theme: "system",
       pageAnimationMs: 200,
       microphone: null,
-      muteWhileDictating: false,
+      lowerAudioWhileDictating: false,
+      lowerAudioByPercent: 70,
       copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,
@@ -700,11 +748,17 @@ describe("load and save", () => {
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
   test.each([true, false])(
-    "persists mute preference %j across reloads",
-    async (muteWhileDictating) => {
+    "persists lower-audio preference %j and its amount across reloads",
+    async (lowerAudioWhileDictating) => {
       const file = NodePath.join(dir, "settings.json");
-      await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { muteWhileDictating }));
-      expect(loadSettings(file).muteWhileDictating).toBe(muteWhileDictating);
+      await saveSettings(
+        file,
+        applyPatch(DEFAULT_SETTINGS, { lowerAudioWhileDictating, lowerAudioByPercent: 40 }),
+      );
+      expect(loadSettings(file)).toMatchObject({
+        lowerAudioWhileDictating,
+        lowerAudioByPercent: 40,
+      });
     },
   );
 

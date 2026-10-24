@@ -4,23 +4,47 @@ public enum OutputControl: Equatable, Sendable, Codable {
     case mute(element: UInt32, value: UInt32)
     case volume(element: UInt32, value: Float)
 
-    public var silenced: OutputControl {
+    enum Kind: Sendable { case mute, volume }
+
+    struct ID: Hashable, Sendable {
+        let kind: Kind
+        let element: UInt32
+    }
+
+    var id: ID {
         switch self {
-        case .mute(let element, _): return .mute(element: element, value: 1)
-        case .volume(let element, _): return .volume(element: element, value: 0)
+        case .mute(let element, _): return ID(kind: .mute, element: element)
+        case .volume(let element, _): return ID(kind: .volume, element: element)
         }
     }
 
-    public var isSilenced: Bool {
+    var isSilenced: Bool {
         switch self {
         case .mute(_, let value): return value != 0
         case .volume(_, let value): return value < silentVolume
+        }
+    }
+
+    /// `scale` is the fraction of the level to keep; a mute control can only mute.
+    func scaled(by scale: Float) -> OutputControl {
+        switch self {
+        case .mute(let element, _): return .mute(element: element, value: 1)
+        case .volume(let element, let value): return .volume(element: element, value: value * scale)
+        }
+    }
+
+    func isQuieter(than other: OutputControl) -> Bool {
+        switch (self, other) {
+        case (.mute(_, let now), .mute(_, let then)): return now != 0 && then == 0
+        case (.volume(_, let now), .volume(_, let then)): return now < then
+        default: return false
         }
     }
 }
 
 public protocol OutputControls: AnyObject {
     func devices() throws -> [String]
+    /// The writable mute controls and the writable volume controls; either group may be absent.
     func snapshot(uid: String) throws -> [OutputControl]
     func write(uid: String, control: OutputControl) throws
 }
@@ -36,7 +60,7 @@ public final class OutputSuppression {
     private let controls: any OutputControls
     private let store: any OutputOriginalsStore
     private let onError: (String) -> Void
-    private var active = false
+    private var scale: Float?
     private var seen: Set<String> = []
     private var originals: [String: [OutputControl]] = [:]
     private var saved: [String: [OutputControl]]?
@@ -47,16 +71,21 @@ public final class OutputSuppression {
         self.onError = onError
     }
 
-    public var needsDeviceListener: Bool { active || saved == nil || !originals.isEmpty }
+    public var needsDeviceListener: Bool { scale != nil || saved == nil || !originals.isEmpty }
 
-    public func begin() {
-        if !active, saved != nil { restore() }
-        active = true
+    /// Lowers every output to `scale`, the fraction of its level to keep; 0 mutes.
+    public func begin(scale: Float) {
+        if self.scale == nil {
+            if saved != nil { restore() }
+        } else if self.scale != scale {
+            seen.removeAll()
+        }
+        self.scale = scale
         reconcile()
     }
 
     public func end() {
-        active = false
+        scale = nil
         seen.removeAll()
         reconcile()
     }
@@ -70,9 +99,9 @@ public final class OutputSuppression {
                 onError("could not read the output restore record: \(error)")
                 return
             }
-            if active { restore() }
+            if scale != nil { restore() }
         }
-        guard active else {
+        guard let scale else {
             restore()
             return
         }
@@ -85,7 +114,7 @@ public final class OutputSuppression {
         }
         seen.formIntersection(devices)
         let held = originals
-        var plans: [(uid: String, toSilence: [OutputControl])] = []
+        var plans: [(uid: String, writes: [OutputControl])] = []
         for uid in devices where !seen.contains(uid) {
             seen.insert(uid)
             let current: [OutputControl]
@@ -93,35 +122,56 @@ public final class OutputSuppression {
                 current = try controls.snapshot(uid: uid)
             } catch {
                 seen.remove(uid)
-                onError("could not silence output: \(error)")
+                onError("could not lower output: \(error)")
                 continue
             }
-            let toSilence = current.filter { !$0.isSilenced }
-            var pending = (originals[uid] ?? []).filter { original in
-                current.first { $0.silenced == original.silenced }?.isSilenced ?? true
-            }
-            pending.append(contentsOf: toSilence)
-            originals[uid] = pending.isEmpty ? nil : pending
-            plans.append((uid, toSilence))
+            let plan = Self.plan(current: current, held: originals[uid] ?? [], scale: scale)
+            originals[uid] = plan.originals.isEmpty ? nil : plan.originals
+            plans.append((uid, plan.writes))
         }
         do {
             try save()
         } catch {
-            onError("could not record outputs before silencing them: \(error)")
+            onError("could not record outputs before lowering them: \(error)")
             originals = held
             seen.subtract(plans.map(\.uid))
             return
         }
-        for (uid, toSilence) in plans {
+        for (uid, writes) in plans {
             do {
-                for control in toSilence { try controls.write(uid: uid, control: control.silenced) }
+                for control in writes { try controls.write(uid: uid, control: control) }
             } catch {
                 seen.remove(uid)
-                onError("could not silence output: \(error)")
+                onError("could not lower output: \(error)")
                 restore(uid: uid)
             }
         }
         persist()
+    }
+
+    /// What to hold as `originals` for one output and what to write to lower it to `scale`.
+    /// Partial lowering needs volume controls and muting prefers mute controls; an output that has
+    /// only the other kind still gets lowered with what it has.
+    static func plan(current: [OutputControl], held: [OutputControl], scale: Float) -> (originals: [OutputControl], writes: [OutputControl]) {
+        let mutes = current.filter { $0.id.kind == .mute }
+        let volumes = current.filter { $0.id.kind == .volume }
+        let (preferred, fallback) = scale == 0 ? (mutes, volumes) : (volumes, mutes)
+        // An original the output is still below was never restored, as when a device drops out
+        // mid-session and returns. Lowering from it again keeps the target fixed instead of
+        // compounding, and recording the lowered level instead would lose the original.
+        var originals = held.filter { original in
+            current.first { $0.id == original.id }?.isQuieter(than: original) ?? true
+        }
+        var writes: [OutputControl] = []
+        for control in preferred.isEmpty ? fallback : preferred {
+            let held = originals.first { $0.id == control.id }
+            if held == nil, control.isSilenced { continue }
+            let target = (held ?? control).scaled(by: scale)
+            guard target.isQuieter(than: control) else { continue }
+            if held == nil { originals.append(control) }
+            writes.append(target)
+        }
+        return (originals, writes)
     }
 
     private func restore() {
@@ -141,8 +191,10 @@ public final class OutputSuppression {
         let failed = pending.filter { original in
             // A device reports only the group of controls that is settable right now, so a missing
             // control may come back; keep its original for the next device change or session.
-            guard let now = current.first(where: { $0.silenced == original.silenced }) else { return true }
-            guard now.isSilenced else { return false }
+            guard let now = current.first(where: { $0.id == original.id }) else { return true }
+            // Restore only while the output is still below its original; a level the user raised
+            // back is theirs.
+            guard now.isQuieter(than: original) else { return false }
             do {
                 try controls.write(uid: uid, control: original)
                 return false

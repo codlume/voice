@@ -1,7 +1,6 @@
 import { Field } from "@base-ui/react/field";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
-import { Slider } from "@base-ui/react/slider";
 import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type ReactNode } from "react";
 
@@ -24,7 +23,10 @@ import type {
 import {
   DEFAULT_SETTINGS,
   hotkeys,
+  LOWER_AUDIO_STEP_PERCENT,
+  MAX_LOWER_AUDIO_PERCENT,
   MAX_PAGE_ANIMATION_MS,
+  MIN_LOWER_AUDIO_PERCENT,
   MIN_PAGE_ANIMATION_MS,
   PAGE_ANIMATION_STEP_MS,
 } from "../shared/api.ts";
@@ -38,6 +40,7 @@ import {
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
+import { CommitSlider } from "./CommitSlider.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { droppedBy } from "./historyView.ts";
 import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
@@ -107,6 +110,10 @@ export const styles = stylex.create({
   link: { textDecoration: "underline" },
 });
 
+const audioStyles = stylex.create({
+  amount: { flexShrink: 0, width: "13rem" },
+});
+
 const motionStyles = stylex.create({
   control: {
     display: "grid",
@@ -114,111 +121,10 @@ const motionStyles = stylex.create({
     alignItems: "center",
     gap: 16,
   },
-  duration: { display: "flex", alignItems: "center", gap: space.md },
-  readout: {
-    minWidth: 64,
-    paddingBlock: 4,
-    paddingInline: space.sm,
-    borderRadius: radius.small,
-    backgroundColor: color.segmentTrack,
-    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-    fontSize: 12,
-    fontWeight: 500,
-    fontVariantNumeric: "tabular-nums",
-    textAlign: "center",
-  },
-  slider: { flexGrow: 1, minWidth: 0 },
   reducedMotionHint: {
     display: { default: "none", "@media (prefers-reduced-motion: reduce)": "block" },
   },
-  sliderControl: {
-    display: "flex",
-    alignItems: "center",
-    height: 24,
-    cursor: "pointer",
-    touchAction: "none",
-  },
-  track: {
-    position: "relative",
-    width: "100%",
-    height: 6,
-    borderRadius: radius.round,
-    backgroundColor: `color-mix(in srgb, ${color.mutedForeground} 22%, transparent)`,
-    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color.border} 55%, transparent)`,
-  },
-  indicator: { borderRadius: radius.round, backgroundColor: color.primary },
-  thumb: {
-    width: 16,
-    height: 16,
-    borderWidth: 2,
-    borderStyle: "solid",
-    borderColor: color.primary,
-    borderRadius: radius.round,
-    backgroundColor: color.background,
-    boxShadow: {
-      default: "0 1px 2px rgb(0 0 0 / 12%)",
-      ":hover": "0 1px 3px rgb(0 0 0 / 20%)",
-    },
-    transform: {
-      default: null,
-      ":hover": "scale(1.08)",
-      ":active": "scale(0.94)",
-      ":is([data-dragging])": "scale(0.94)",
-    },
-    transitionProperty: "transform, box-shadow",
-    transitionDuration: { default: "120ms", "@media (prefers-reduced-motion: reduce)": "0s" },
-    transitionTimingFunction: "ease",
-    outline: { default: "none", ":has(:focus-visible)": `2px solid ${color["--ring"]}` },
-    outlineOffset: 2,
-  },
 });
-
-// Saving every drag tick would write settings.json and broadcast a snapshot per tick, so the thumb
-// holds its own value and saves once the gesture or key press commits.
-function PageAnimationSlider({
-  saved,
-  onCommit,
-}: {
-  saved: number;
-  onCommit: (ms: number) => Promise<boolean>;
-}) {
-  const [slider, setSlider] = useState({ ms: saved, saved });
-  if (saved !== slider.saved) setSlider({ ms: saved, saved });
-  const { ms } = slider;
-  return (
-    <div {...stylex.props(motionStyles.duration)}>
-      <span aria-hidden {...stylex.props(motionStyles.readout)}>
-        {ms} ms
-      </span>
-      <Slider.Root
-        value={ms}
-        onValueChange={(next) => setSlider((current) => ({ ...current, ms: next }))}
-        onValueCommitted={(committed) => {
-          void onCommit(committed).then((ok) => {
-            // The updater reads the newest saved value, which another save may have changed since.
-            if (!ok) setSlider((current) => ({ ...current, ms: current.saved }));
-          });
-        }}
-        min={MIN_PAGE_ANIMATION_MS}
-        max={MAX_PAGE_ANIMATION_MS}
-        step={PAGE_ANIMATION_STEP_MS}
-        largeStep={4 * PAGE_ANIMATION_STEP_MS}
-        {...stylex.props(motionStyles.slider)}
-      >
-        <Slider.Control {...stylex.props(motionStyles.sliderControl)}>
-          <Slider.Track {...stylex.props(motionStyles.track)}>
-            <Slider.Indicator {...stylex.props(motionStyles.indicator)} />
-            <Slider.Thumb
-              aria-label="Page animation duration"
-              getAriaValueText={(_, value) => `${value} milliseconds`}
-              {...stylex.props(motionStyles.thumb)}
-            />
-          </Slider.Track>
-        </Slider.Control>
-      </Slider.Root>
-    </div>
-  );
-}
 
 const hotkeyOptions = hotkeys.map((value) => ({ value, label: hotkeyLabel(value) }));
 const TOGGLE_OFF = "off";
@@ -570,7 +476,10 @@ export function SystemSettings({
   const audioAction = useAction();
   const appearanceAction = useAction();
   const motionAction = useAction();
-  const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
+  const changeLowerAudio = (lowerAudioWhileDictating: boolean) =>
+    update(audioAction, { lowerAudioWhileDictating });
+  const changeLowerAudioBy = (lowerAudioByPercent: number) =>
+    update(audioAction, { lowerAudioByPercent });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
   const changePageAnimation = (pageAnimationMs: number) =>
     update(motionAction, { pageAnimationMs });
@@ -614,19 +523,43 @@ export function SystemSettings({
         <Card>
           <Row
             nativeLabel
-            title="Mute all audio while dictating"
-            detail="Silences supported output devices while recording, then restores their previous audio state."
+            title="Lower audio while dictating"
+            detail="Turns down supported output devices while recording, then restores their volume."
             onReset={resetTo(
-              settings.muteWhileDictating,
-              DEFAULT_SETTINGS.muteWhileDictating,
-              changeMute,
+              settings.lowerAudioWhileDictating,
+              DEFAULT_SETTINGS.lowerAudioWhileDictating,
+              changeLowerAudio,
             )}
           >
             <Switch
-              id="setting-mute-while-dictating"
-              checked={settings.muteWhileDictating}
-              onChange={changeMute}
+              id="setting-lower-audio-while-dictating"
+              checked={settings.lowerAudioWhileDictating}
+              onChange={changeLowerAudio}
             />
+          </Row>
+          <Row
+            title="Reduce volume by"
+            detail="100% mutes. Outputs without a volume control are muted."
+            disabled={!settings.lowerAudioWhileDictating}
+            onReset={resetTo(
+              settings.lowerAudioByPercent,
+              DEFAULT_SETTINGS.lowerAudioByPercent,
+              changeLowerAudioBy,
+            )}
+          >
+            <div {...stylex.props(audioStyles.amount)}>
+              <CommitSlider
+                saved={settings.lowerAudioByPercent}
+                onCommit={changeLowerAudioBy}
+                min={MIN_LOWER_AUDIO_PERCENT}
+                max={MAX_LOWER_AUDIO_PERCENT}
+                step={LOWER_AUDIO_STEP_PERCENT}
+                readout={(percent) => `${percent}%`}
+                label="Reduce volume by"
+                valueText={(percent) => `${percent} percent`}
+                disabled={!settings.lowerAudioWhileDictating}
+              />
+            </div>
           </Row>
         </Card>
         {audioAction.error && (
@@ -686,9 +619,15 @@ export function SystemSettings({
           >
             <div {...stylex.props(motionStyles.control)}>
               <PageAnimationPreview />
-              <PageAnimationSlider
+              <CommitSlider
                 saved={settings.pageAnimationMs}
                 onCommit={changePageAnimation}
+                min={MIN_PAGE_ANIMATION_MS}
+                max={MAX_PAGE_ANIMATION_MS}
+                step={PAGE_ANIMATION_STEP_MS}
+                readout={(ms) => `${ms} ms`}
+                label="Page animation duration"
+                valueText={(ms) => `${ms} milliseconds`}
               />
             </div>
           </Row>

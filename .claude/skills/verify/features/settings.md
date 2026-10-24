@@ -1,6 +1,6 @@
 # Settings
 
-Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, muting while dictating, theme, Show in Dock, the always-visible Flow Bar, and page animations under Motion. Shortcuts has the hold-to-talk and toggle dictation keys. Data and Privacy has crash reporting, how long to keep history (see [History](./history.md)), clearing history, and clearing Insights.
+Settings holds the controls that aren't about style. General has the microphone and its test, the dictation language, copying the transcript to the clipboard, and the update channel. System has open at login, lowering audio while dictating and by how much, theme, Show in Dock, the always-visible Flow Bar, and page animations under Motion. Shortcuts has the hold-to-talk and toggle dictation keys. Data and Privacy has crash reporting, how long to keep history (see [History](./history.md)), clearing history, and clearing Insights.
 
 ## Sub-features
 
@@ -9,7 +9,7 @@ Settings holds the controls that aren't about style. General has the microphone 
 - `settings-copy-to-clipboard`: `Copy transcript to clipboard`.
 - `settings-update-channel`: Stable or Nightly.
 - `settings-open-at-login`: unavailable in development builds by design.
-- `settings-mute`: `Mute all audio while dictating`.
+- `settings-lower-audio`: `Lower audio while dictating`, and `Reduce volume by` from 10% to 100% in 10% steps (default 70%). The amount is disabled while the switch is off and keeps its value. 100% mutes.
 - `settings-theme`: System, Light, or Dark.
 - `settings-dock`: `Show in Dock`. When it's off, Voice leaves the Dock and Cmd-Tab.
 - `settings-flow-bar`: `Show Flow Bar at all times`.
@@ -31,7 +31,8 @@ Preconditions: baseline.
 - **Toggle a switch.** `vv click "Show in Dock"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.showInDock === false)'`. `settings.json` shows `"showInDock": false`. Click it again to restore.
 - **Pick from a select.** `vv click css:#setting-hotkey`, then `vv click "Right Option"`, then wait for `s.settings.hotkey === "rightOption"`. Then `vv click Back` and `vv click Home`, and `vv text` reads "Hold ⌥ Right Option, speak, and let go." Restore `fn` with `vv click "Reset Hold to talk to default"`.
 - **Language disables cleanup.** Pick a non-English option in `css:#setting-dictation-language`. Then `vv click Back` and `vv click Style`. The `Clean up text` switch is disabled.
-- **Set the Page animations slider.** Send the key from the page with `vv eval hub 'document.querySelector("input[type=range]").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))'`, then wait for `s.settings.pageAnimationMs === 400`. `vv click "Reset Page animations to default"` restores 200.
+- **Set the Reduce volume by slider.** `vv click "Lower audio while dictating"` and wait for `s.settings.lowerAudioWhileDictating === true`, because the slider is disabled while the switch is off. Focus it with `vv eval hub 'document.querySelector("input[type=range][aria-label=\"Reduce volume by\"]").focus()'`, press `vv key ArrowLeft` twice to go from 70 to 50, then wait for `s.settings.lowerAudioByPercent === 50`. The readout shows `50%`. Turning the switch off keeps 50. With the switch on, `vv click "Reset Reduce volume by to default"` restores 70.
+- **Set the Page animations slider.** Send the key from the page with `vv eval hub 'document.querySelector("input[type=range][aria-label=\"Page animation duration\"]").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))'`, then wait for `s.settings.pageAnimationMs === 400`. `vv click "Reset Page animations to default"` restores 200.
 - **Reset.** After changing `Show in Dock`, Theme (`vv click Dark`), or Update channel (`vv click css:#setting-update-channel`, `vv click Nightly`), `vv click "Reset Show in Dock to default"`, `"Reset Theme to default"`, or `"Reset Update channel to default"` restores the default, and the button disappears.
 - **Open at login.** On System, `#setting-open-at-login` is disabled, and the snapshot's `loginItem` is `unavailable`. That is correct for a development build.
 
@@ -41,4 +42,5 @@ Preconditions: baseline.
 - On the System page the nav item and the Theme radio are both named `System`, so `vv click System` fails there. Leave the page first, or reset the theme with its reset button.
 - The microphone test reads the fixture file, which exists only during `dictate`. In the verify instance the test fails by design. Testing a real microphone needs a human.
 - Turning `Share crash reports` on takes effect only at the next launch.
+- Lowering audio changes the Mac's real output devices, even in test mode. `node native/voice-helper/scripts/output-lowering-smoke.mjs` proves lowering, muting, and restoring on the real default output without the app, and puts the original volume back when it ends.
 - Hotkey and dictation-language changes affect the next `dictate`. Restore the defaults before running a dictation recipe.

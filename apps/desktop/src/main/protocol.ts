@@ -14,7 +14,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 13;
+export const HELPER_PROTOCOL_VERSION = 14;
 
 export type HelperCommand =
   | {
@@ -28,7 +28,9 @@ export type HelperCommand =
       type: "capture.start";
       id: string;
       language: DictationLanguage;
-      muteWhileDictating: boolean;
+      // The fraction of each output's level to keep while capturing, at least 0 and below 1;
+      // 0 mutes and null leaves outputs alone.
+      outputVolumeScale: number | null;
       microphone: Microphone | null;
       // False when the session cannot use a page host, so the helper never reads one.
       detectHost: boolean;

@@ -569,7 +569,9 @@ function fakeVoice(
           pageAnimationMs: patch.pageAnimationMs ?? snapshot.settings.pageAnimationMs,
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
-          muteWhileDictating: patch.muteWhileDictating ?? snapshot.settings.muteWhileDictating,
+          lowerAudioWhileDictating:
+            patch.lowerAudioWhileDictating ?? snapshot.settings.lowerAudioWhileDictating,
+          lowerAudioByPercent: patch.lowerAudioByPercent ?? snapshot.settings.lowerAudioByPercent,
           copyToClipboard: patch.copyToClipboard ?? snapshot.settings.copyToClipboard,
           showInDock: patch.showInDock ?? snapshot.settings.showInDock,
           alwaysShowPill: patch.alwaysShowPill ?? snapshot.settings.alwaysShowPill,

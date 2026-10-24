@@ -28,7 +28,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 13 },
+      { type: "ready", version: 14 },
       { type: "hotkey", action: "down" },
       { type: "hotkey", action: "up" },
       { type: "hotkey", action: "chord" },
@@ -403,7 +403,7 @@ const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
   type: "capture.start",
   id: "s1",
   language: "en",
-  muteWhileDictating: false,
+  outputVolumeScale: null,
   microphone: null,
   detectHost: true,
 };
@@ -430,10 +430,11 @@ const commandCases = {
   "capture.start.pinned": {
     ...captureStart,
     language: "pl",
-    muteWhileDictating: true,
+    outputVolumeScale: 0.3,
     microphone,
     detectHost: false,
   },
+  "capture.start.muted": { ...captureStart, outputVolumeScale: 0 },
   "capture.stop": { type: "capture.stop", id: "s1" },
   "capture.cancel": { type: "capture.cancel", id: "s1" },
   "microphone.test.start": { type: "microphone.test.start", id: "t1", microphone: null },

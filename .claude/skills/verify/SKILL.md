@@ -116,7 +116,7 @@ The hub is driven over CDP. Prefer the user path (`click`) over `window.voice.*`
 Stable handles:
 
 - **Voice nav:** `Home`, `Insights`, `Style`, `Transforms`, `Snippets`, `Dictionary`. Cmd+1 to Cmd+6 open them in that order, so `key Digit4 command` opens Transforms. The sidebar footer button `Settings` opens the Settings nav: `General`, `System`, `Models`, `Shortcuts`, then below a divider `Account` and `Data and Privacy`. Its `Back` button returns to the Voice nav.
-- **Settings rows:** each control's id is `setting-<name>`, for example `#setting-hotkey`, `#setting-microphone`, `#setting-dictation-language`, `#setting-update-channel`, `#setting-mute-while-dictating`, `#setting-show-in-dock`, `#setting-always-show-pill`, `#setting-diagnostics`, `#setting-toggle-hotkey`, `#setting-history-retention`. Switches are labelled by their row title, such as `Show in Dock`. A row whose value differs from its default shows a `Reset <row title> to default` button.
+- **Settings rows:** each control's id is `setting-<name>`, for example `#setting-hotkey`, `#setting-microphone`, `#setting-dictation-language`, `#setting-update-channel`, `#setting-lower-audio-while-dictating`, `#setting-show-in-dock`, `#setting-always-show-pill`, `#setting-diagnostics`, `#setting-toggle-hotkey`, `#setting-history-retention`. Switches are labelled by their row title, such as `Show in Dock`. A row whose value differs from its default shows a `Reset <row title> to default` button.
 - **Selects:** open with `click css:#setting-<name>`, then `click "<option label>"`.
 - **Page headline:** `document.querySelector("main h1").textContent`.
 
