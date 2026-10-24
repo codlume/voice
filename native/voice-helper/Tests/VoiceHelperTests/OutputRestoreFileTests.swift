@@ -44,3 +44,15 @@ import VoiceHelperCore
     #expect(errors.count == 1)
     #expect(!FileManager.default.fileExists(atPath: file.url.path), "an unreadable record is removed, not reported on every start")
 }
+
+@Test func outputRestoreFileReadsARecordWrittenByAnOlderHelper() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("output-restore.json")
+    try Data(#"{"speakers":[{"mute":{"element":0,"value":0}}],"headphones":[{"volume":{"element":1,"value":0.25}}]}"#.utf8).write(to: url)
+    #expect(try OutputRestoreFile(url: url) { _ in }.load() == [
+        "speakers": [.mute(element: 0, value: 0)],
+        "headphones": [.volume(element: 1, value: 0.25)],
+    ])
+}

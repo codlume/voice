@@ -18,9 +18,9 @@ final class OutputSilencer {
         suppression = OutputSuppression(controls: CoreAudioOutputControls(onError: { output.log(.error, $0) }), store: store) { output.log(.error, $0) }
     }
 
-    func begin() {
+    func begin(volume: Float) {
         installListener()
-        suppression.begin()
+        suppression.begin(volume: volume)
     }
 
     func recover() {
@@ -119,20 +119,20 @@ private final class CoreAudioOutputControls: OutputControls {
         let device = try resolve(uid)
         let channels = try channelCount(device)
         guard channels > 0 else { throw AudioOutputError(description: "output has no channels") }
-        let elements = [UInt32(0)]
-        let channelElements = Array(UInt32(1)...channels)
-        for selector in [kAudioDevicePropertyMute, kAudioDevicePropertyVolumeScalar] {
-            for group in [elements, channelElements] {
-                guard group.allSatisfy({ writable(device, selector: selector, element: $0) }) else { continue }
-                return try group.map { element in
-                    if selector == kAudioDevicePropertyMute {
-                        return .mute(element: element, value: try read(device, selector: selector, element: element, initial: UInt32(0)))
-                    }
-                    return .volume(element: element, value: try read(device, selector: selector, element: element, initial: Float32(0)))
-                }
-            }
+        let groups = [[UInt32(0)], Array(UInt32(1)...channels)]
+        func elements(_ selector: AudioObjectPropertySelector) -> [UInt32] {
+            groups.first { $0.allSatisfy { writable(device, selector: selector, element: $0) } } ?? []
         }
-        throw AudioOutputError(description: "output has no writable mute or volume controls")
+        let mutes = try elements(kAudioDevicePropertyMute).map { element in
+            OutputControl.mute(element: element, value: try read(device, selector: kAudioDevicePropertyMute, element: element, initial: UInt32(0)))
+        }
+        let volumes = try elements(kAudioDevicePropertyVolumeScalar).map { element in
+            OutputControl.volume(element: element, value: try read(device, selector: kAudioDevicePropertyVolumeScalar, element: element, initial: Float32(0)))
+        }
+        guard !mutes.isEmpty || !volumes.isEmpty else {
+            throw AudioOutputError(description: "output has no writable mute or volume controls")
+        }
+        return mutes + volumes
     }
 
     func write(uid: String, control: OutputControl) throws {

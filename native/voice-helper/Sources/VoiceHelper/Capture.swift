@@ -132,7 +132,7 @@ final class Capture {
                 }
                 state = .starting(session)
                 self.file = file
-                setOutputSilenced(muteWhileDictating)
+                lowerOutput(to: muteWhileDictating ? 0 : nil)
                 file.start()
                 return true
             case .microphone:
@@ -144,7 +144,7 @@ final class Capture {
             let mic = try self.mic ?? makeMic()
             self.mic = mic
             state = .starting(session)
-            setOutputSilenced(muteWhileDictating)
+            lowerOutput(to: muteWhileDictating ? 0 : nil)
             try mic.start(sink: sink)
             return true
         } catch let error as CaptureError {
@@ -322,7 +322,7 @@ final class Capture {
     }
 
     private func beginTest(id: String) {
-        setOutputSilenced(false)
+        lowerOutput(to: nil)
         let sink: ([Float]) -> Void = { [weak self] chunk in
             let level = perceptualLevel(rms: rms(chunk))
             DispatchQueue.main.async { self?.meter(level, for: id) }
@@ -470,8 +470,8 @@ final class Capture {
         prepareIdleMic()
     }
 
-    private func setOutputSilenced(_ silenced: Bool) {
-        if silenced { outputSilencer.begin() } else { outputSilencer.end() }
+    private func lowerOutput(to volume: Float?) {
+        if let volume { outputSilencer.begin(volume: volume) } else { outputSilencer.end() }
     }
 
     private func stopSourceAfterTranscriptionStarts() {
