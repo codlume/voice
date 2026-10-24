@@ -10,42 +10,39 @@ export type InstalledApps = {
   /** Icons of apps from the latest list; callers need not list first. Leaves out any the helper could not render. */
   icons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
   onHelperEvent(event: HelperEvent): void;
+  /** Settles every reply still awaited, since the exited helper will not send them. */
+  helperExited(): void;
 };
 
 export const ICONS_PER_HELPER_LINE = 32;
 
 export function createInstalledApps(options: {
-  send: (command: HelperCommand) => void;
-  timeoutMs?: number;
+  /** False when no helper is running to receive the command, so no reply will come. */
+  send: (command: HelperCommand) => boolean;
 }): InstalledApps {
-  const { send, timeoutMs = 5000 } = options;
+  const { send } = options;
   const iconsByPath = new Map<string, { modifiedMs: number; icon: string }>();
   let latest: { pathsById: Map<BundleId, string>; stamps: Map<string, number> } | null = null;
-  let onListed: ((apps: Listed) => void) | null = null;
-  const onRendered = new Map<string, (icons: Rendered) => void>();
+  let onListed: ((apps: Listed | null) => void) | null = null;
+  const onRendered = new Map<string, (icons: Rendered | null) => void>();
   let renderId = 0;
   let inFlight: Promise<InstalledApp[]> | null = null;
 
-  function replyBeforeDeadline<T>(
-    wait: (resolve: (value: T) => void) => void,
-    command: HelperCommand,
-  ) {
+  // The scan can take seconds on the first launch of a new build, so there is no deadline. Null
+  // means no reply can come: the helper was not running to receive the command, or exited first.
+  function reply<T>(wait: (resolve: (value: T | null) => void) => void, command: HelperCommand) {
     return new Promise<T | null>((resolve) => {
-      const timer = setTimeout(() => resolve(null), timeoutMs);
-      wait((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      });
-      send(command);
+      wait(resolve);
+      if (!send(command)) resolve(null);
     });
   }
 
   async function load(): Promise<InstalledApp[]> {
     try {
-      const listed = await replyBeforeDeadline<Listed>((resolve) => (onListed = resolve), {
+      const listed = await reply<Listed>((resolve) => (onListed = resolve), {
         type: "apps.list",
       });
-      if (listed === null) throw new Error("The helper did not list installed apps in time.");
+      if (listed === null) throw new Error("The helper did not list installed apps.");
       const apps = new Map<BundleId, { name: string; path: string; browser: boolean }>();
       for (const { bundleId: raw, name, path, browser } of listed) {
         const bundleId = parseBundleId(raw);
@@ -65,7 +62,7 @@ export function createInstalledApps(options: {
   async function render(paths: string[], stamps: ReadonlyMap<string, number>): Promise<void> {
     const id = String(++renderId);
     try {
-      const icons = await replyBeforeDeadline<Rendered>((resolve) => onRendered.set(id, resolve), {
+      const icons = await reply<Rendered>((resolve) => onRendered.set(id, resolve), {
         type: "icons.render",
         id,
         paths,
@@ -121,6 +118,10 @@ export function createInstalledApps(options: {
           onRendered.get(event.id)?.(event.icons);
           return;
       }
+    },
+    helperExited() {
+      onListed?.(null);
+      for (const resolve of onRendered.values()) resolve(null);
     },
   };
 }

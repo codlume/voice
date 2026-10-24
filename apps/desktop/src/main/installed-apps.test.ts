@@ -47,6 +47,8 @@ const dataUrl = (app: Listed) => `data:image/png;base64,${png(app)}`;
 
 function setup(options: {
   apps: Listed[];
+  /** False stands for a helper that is not running: the command is dropped. */
+  delivered?: boolean;
   answer?: boolean;
   renders?: boolean;
   replyAfterMs?: number;
@@ -62,10 +64,10 @@ function setup(options: {
       ? queueMicrotask
       : (reply: () => void) => void setTimeout(reply, options.replyAfterMs);
   const installed = createInstalledApps({
-    timeoutMs: 1000,
     send: (command) => {
       sent.push(command);
-      if (!state.answer) return;
+      if (options.delivered === false) return false;
+      if (!state.answer) return true;
       later(() => {
         if (command.type === "apps.list") {
           installed.onHelperEvent({ type: "apps.listed", apps: state.apps });
@@ -76,6 +78,7 @@ function setup(options: {
           installed.onHelperEvent({ type: "icons.rendered", id: command.id, icons });
         }
       });
+      return true;
     },
   });
   const renders = () =>
@@ -226,16 +229,21 @@ describe("installed apps", () => {
     expect(sent.filter((command) => command.type === "apps.list")).toHaveLength(1);
   });
 
-  test("rejects when the helper never lists apps, and a later list starts fresh", async () => {
-    vi.useFakeTimers();
+  test("rejects a list in flight when the helper exits, and a later list starts fresh", async () => {
     const { installed, state } = setup({ apps: [MAIL], answer: false });
     const first = expect(installed.list()).rejects.toThrow();
-    await vi.advanceTimersByTimeAsync(1000);
+    installed.helperExited();
     await first;
     state.answer = true;
     expect(await installed.list()).toEqual([
       { bundleId: "com.apple.mail", name: "Mail", browser: false },
     ]);
+  });
+
+  test("rejects a list the helper was not running to receive", async () => {
+    const { installed, sent } = setup({ apps: [MAIL], delivered: false });
+    await expect(installed.list()).rejects.toThrow();
+    expect(sent.map((command) => command.type)).toEqual(["apps.list"]);
   });
 
   test("an icon asked for while the first list is in flight waits for that list", async () => {
@@ -251,18 +259,16 @@ describe("installed apps", () => {
     expect(sent.map((command) => command.type)).toEqual(["apps.list", "icons.render"]);
   });
 
-  test("returns no icons when the first list never arrives", async () => {
-    vi.useFakeTimers();
+  test("returns no icons when the helper exits before the first list arrives", async () => {
     const { installed } = setup({ apps: [MAIL], answer: false });
     const icons = installed.icons([id(MAIL)]);
-    await vi.advanceTimersByTimeAsync(1000);
+    installed.helperExited();
     expect(await icons).toEqual({});
   });
 
   test("leaves out an icon the helper could not render, and asks for it again next time", async () => {
     const sent: HelperCommand[] = [];
     const installed = createInstalledApps({
-      timeoutMs: 1000,
       send: (command) => {
         sent.push(command);
         queueMicrotask(() => {
@@ -272,6 +278,7 @@ describe("installed apps", () => {
             installed.onHelperEvent({ type: "icons.rendered", id: command.id, icons: [] });
           }
         });
+        return true;
       },
     });
     await installed.list();
@@ -280,11 +287,10 @@ describe("installed apps", () => {
     expect(sent.filter((command) => command.type === "icons.render")).toHaveLength(2);
   });
 
-  test("returns no icons when the helper never renders, and a late reply does not complete the next render", async () => {
+  test("gives up a render when the helper exits, and a reply to it does not complete the next render", async () => {
     vi.useFakeTimers();
     const replies = new Map<string, () => void>();
     const installed = createInstalledApps({
-      timeoutMs: 1000,
       send: (command) => {
         if (command.type === "apps.list") {
           queueMicrotask(() =>
@@ -298,11 +304,12 @@ describe("installed apps", () => {
             installed.onHelperEvent({ type: "icons.rendered", id: command.id, icons }),
           );
         }
+        return true;
       },
     });
     await installed.list();
     const mail = installed.icons([id(MAIL)]);
-    await vi.advanceTimersByTimeAsync(1000);
+    installed.helperExited();
     expect(await mail).toEqual({});
 
     let xcodeDone = false;

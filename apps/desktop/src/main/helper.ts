@@ -30,7 +30,8 @@ export type HelperOptions = {
 };
 
 export type Helper = {
-  send(command: HelperCommand): void;
+  /** False when the helper is not running, so the command was dropped and no reply will come. */
+  send(command: HelperCommand): boolean;
   stop(): Promise<void>;
 };
 
@@ -112,16 +113,17 @@ export function startHelper(options: HelperOptions): Helper {
     );
   }
 
-  function send(command: HelperCommand) {
+  function send(command: HelperCommand): boolean {
     if (!child?.stdin.writable) {
       options.log(`helper: dropped ${command.type} while not running`, {
         message: "helper command dropped",
         level: "warn",
         attributes: { "command.type": command.type },
       });
-      return;
+      return false;
     }
     child.stdin.write(`${JSON.stringify(command)}\n`);
+    return true;
   }
 
   async function stop() {

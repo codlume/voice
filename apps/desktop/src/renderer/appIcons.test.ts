@@ -163,7 +163,7 @@ describe("icon loader over the installed apps service", () => {
     let app = MAIL_APP;
     const renders: string[][] = [];
     const installed = createInstalledApps({
-      send: (command) =>
+      send: (command) => {
         queueMicrotask(() => {
           if (command.type === "apps.list") {
             installed.onHelperEvent({ type: "apps.listed", apps: [app] });
@@ -175,7 +175,9 @@ describe("icon loader over the installed apps service", () => {
               icons: [{ path: app.path, png: `icon-v${app.modifiedMs}` }],
             });
           }
-        }),
+        });
+        return true;
+      },
     });
     return { installed, renders, update: () => (app = { ...app, modifiedMs: app.modifiedMs + 1 }) };
   }
