@@ -6,20 +6,24 @@ import { useId, useMemo } from "react";
 import type { Settings, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import type { DayKey } from "../shared/insights.ts";
+import type { Assignment } from "../shared/style.ts";
 import { a11y } from "./a11y.ts";
+import { AppIcon } from "./AppIcon.tsx";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { History } from "./History.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
-import { insightsView } from "./insightsView.ts";
+import { insightsView, usage, type InsightsView, type UsageView } from "./insightsView.ts";
 import { Keycap } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { GlobeHint } from "./Settings.tsx";
+import { appNames } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useInsights } from "./useInsights.ts";
+import { useInstalledApps } from "./useInstalledApps.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
@@ -41,6 +45,9 @@ const styles = stylex.create({
     minWidth: 0,
   },
   aside: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.lg,
     position: { default: "sticky", [narrow]: "static" },
     top: 0,
     flexShrink: 0,
@@ -173,6 +180,28 @@ const styles = stylex.create({
     color: color.mutedForeground,
     fontSize: 12.5,
   },
+  topApps: { display: "flex", flexDirection: "column", gap: space.md, padding: space.lg },
+  appList: {
+    display: "flex",
+    flexDirection: { default: "column", [narrow]: "row" },
+    flexWrap: "wrap",
+    gap: { default: space.sm, [narrow]: space.lg },
+  },
+  app: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
+    fontSize: 13,
+    fontVariantNumeric: "tabular-nums",
+  },
+  appName: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  appShare: { color: color.mutedForeground },
 });
 
 function greeting(hour: number): string {
@@ -324,9 +353,13 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function Stats({ today, onOpenInsights }: { today: DayKey; onOpenInsights: () => void }) {
-  const insights = useInsights();
-  const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
+function Stats({
+  view,
+  onOpenInsights,
+}: {
+  view: InsightsView | null;
+  onOpenInsights: () => void;
+}) {
   return (
     <Card>
       <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
@@ -343,6 +376,59 @@ function Stats({ today, onOpenInsights }: { today: DayKey; onOpenInsights: () =>
         )}
       </button>
     </Card>
+  );
+}
+
+function TopApps({ where, onOpenInsights }: { where: UsageView; onOpenInsights: () => void }) {
+  return (
+    <Card>
+      <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
+        <span {...stylex.props(a11y.visuallyHidden)}>Open Insights.</span>
+        <span {...stylex.props(styles.topApps)}>
+          <span {...stylex.props(styles.label)}>Top apps</span>
+          <span {...stylex.props(styles.appList)}>
+            {where.topApps.map(({ bundleId, name, share }) => (
+              <span key={bundleId} {...stylex.props(styles.app)}>
+                <AppIcon bundleId={bundleId} name={name} size={20} decorative />
+                <span title={name} {...stylex.props(styles.appName)}>
+                  {name}
+                </span>
+                <span {...stylex.props(styles.appShare)}>{share}%</span>
+              </span>
+            ))}
+          </span>
+        </span>
+        {where.appsUsed > where.topApps.length && (
+          <span {...stylex.props(styles.statFoot)}>{where.appsUsed} apps used</span>
+        )}
+      </button>
+    </Card>
+  );
+}
+
+function YourStats({
+  today,
+  assignments,
+  onOpenInsights,
+}: {
+  today: DayKey;
+  assignments: readonly Assignment[];
+  onOpenInsights: () => void;
+}) {
+  const insights = useInsights();
+  const installed = useInstalledApps();
+  const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
+  const where = useMemo(
+    () => insights && usage(insights, appNames(assignments, installed)),
+    [insights, assignments, installed],
+  );
+  return (
+    <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
+      <Stats view={view} onOpenInsights={onOpenInsights} />
+      {where && where.topApps.length > 0 && (
+        <TopApps where={where} onOpenInsights={onOpenInsights} />
+      )}
+    </aside>
   );
 }
 
@@ -381,9 +467,11 @@ export function Home({
           )}
           <History history={history} today={today} />
         </div>
-        <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
-          <Stats today={today} onOpenInsights={onOpenInsights} />
-        </aside>
+        <YourStats
+          today={today}
+          assignments={snapshot.settings.cleanup.assignments}
+          onOpenInsights={onOpenInsights}
+        />
       </div>
     </div>
   );
