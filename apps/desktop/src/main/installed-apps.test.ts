@@ -247,6 +247,15 @@ describe("installed apps", () => {
     expect(sent.filter((command) => command.type === "apps.list")).toHaveLength(1);
   });
 
+  test("serves a cached icon while a later list is still unanswered", async () => {
+    const { installed, state } = setup({ apps: [MAIL] });
+    await installed.list();
+    await installed.icons([id(MAIL)]);
+    state.helper = "silent";
+    void installed.list();
+    expect(await installed.icons([id(MAIL)])).toEqual({ [id(MAIL)]: dataUrl(MAIL) });
+  });
+
   test("an icon asked for before any list runs the list first", async () => {
     const { installed, sent } = setup({ apps: [MAIL] });
     expect(await installed.icons([id(MAIL)])).toEqual({ [id(MAIL)]: dataUrl(MAIL) });
