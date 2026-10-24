@@ -101,12 +101,18 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     pageAnimationMs: pageAnimationMs(r.pageAnimationMs),
-    // Before the amount was adjustable, the switch was `muteWhileDictating`.
+    // Before the amount was adjustable, the switch was `muteWhileDictating` and it silenced
+    // outputs, so a user who had it on stays fully muted.
     lowerAudioWhileDictating: flag(
       r.lowerAudioWhileDictating,
       flag(r.muteWhileDictating, DEFAULT_SETTINGS.lowerAudioWhileDictating),
     ),
-    lowerAudioByPercent: lowerAudioByPercent(r.lowerAudioByPercent),
+    lowerAudioByPercent:
+      r.lowerAudioWhileDictating === undefined &&
+      r.muteWhileDictating === true &&
+      r.lowerAudioByPercent === undefined
+        ? MAX_LOWER_AUDIO_PERCENT
+        : lowerAudioByPercent(r.lowerAudioByPercent),
     copyToClipboard: flag(r.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
     showInDock: flag(r.showInDock, DEFAULT_SETTINGS.showInDock),
     alwaysShowPill: flag(r.alwaysShowPill, DEFAULT_SETTINGS.alwaysShowPill),

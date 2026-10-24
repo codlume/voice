@@ -87,13 +87,16 @@ describe("parseSettings", () => {
       );
     },
   );
-  test.each([true, false])(
-    "carries the earlier mute switch %j over to lowering by the default 70%",
-    (muteWhileDictating) => {
+  test.each([
+    { muteWhileDictating: true, lowerAudioByPercent: 100 },
+    { muteWhileDictating: false, lowerAudioByPercent: 70 },
+  ])(
+    "carries the earlier mute switch $muteWhileDictating over to lowering by $lowerAudioByPercent%",
+    ({ muteWhileDictating, lowerAudioByPercent }) => {
       expect(parseSettings({ muteWhileDictating })).toEqual({
         ...DEFAULT_SETTINGS,
         lowerAudioWhileDictating: muteWhileDictating,
-        lowerAudioByPercent: 70,
+        lowerAudioByPercent,
       });
     },
   );
