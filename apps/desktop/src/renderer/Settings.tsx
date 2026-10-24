@@ -104,7 +104,7 @@ export const styles = stylex.create({
   },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
-  link: { fontSize: 12.5, textDecoration: "underline" },
+  link: { textDecoration: "underline" },
 });
 
 const motionStyles = stylex.create({
@@ -986,20 +986,18 @@ function ShortcutRow({
   title,
   detail,
   keys,
-  disabled = false,
 }: {
   title: string;
   detail?: string | undefined;
   keys: readonly string[] | null;
-  disabled?: boolean;
 }) {
   return (
-    <div {...stylex.props(styles.row, disabled && styles.disabled)}>
+    <div {...stylex.props(styles.row)}>
       <div {...stylex.props(styles.rowText)}>
         <span {...stylex.props(styles.rowTitle)}>{title}</span>
         {detail && <p {...stylex.props(styles.rowDetail)}>{detail}</p>}
       </div>
-      {keys ? <Keys keys={keys} /> : <span {...stylex.props(styles.hint)}>No shortcut</span>}
+      <Keys keys={keys} />
     </div>
   );
 }
@@ -1070,13 +1068,12 @@ export function ShortcutsSettings({
 
       <Section label="Transforms">
         {transforms.items.length > 0 && (
-          <Card>
+          <Card style={!transforms.enabled && styles.disabled}>
             {transforms.items.map((transform) => (
               <ShortcutRow
                 key={transform.id}
                 title={transform.name}
                 keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)}
-                disabled={!transforms.enabled}
               />
             ))}
           </Card>

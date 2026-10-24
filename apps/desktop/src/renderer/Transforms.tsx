@@ -87,7 +87,6 @@ const styles = stylex.create({
     WebkitBoxOrient: "vertical",
     WebkitLineClamp: 2,
   },
-  noShortcut: { color: color.mutedForeground, fontSize: 12 },
   last: {
     display: "grid",
     gridTemplateColumns: {
@@ -257,11 +256,7 @@ export function Transforms({
               >
                 <span {...stylex.props(styles.cardHeader)}>
                   <span {...stylex.props(styles.cardTitle)}>{transform.name}</span>
-                  {transform.shortcut ? (
-                    <Keys keys={shortcutKeys(transform.shortcut, layout)} />
-                  ) : (
-                    <span {...stylex.props(styles.noShortcut)}>No shortcut</span>
-                  )}
+                  <Keys keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)} />
                 </span>
                 <span {...stylex.props(styles.instruction)}>
                   {firstLine(transform.instruction)}
