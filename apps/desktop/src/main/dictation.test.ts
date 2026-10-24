@@ -450,7 +450,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id: first,
         language: "en",
-        outputVolume: 0.1,
+        outputVolume: 0.3,
         microphone: null,
         detectHost: true,
       },

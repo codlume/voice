@@ -88,12 +88,12 @@ describe("parseSettings", () => {
     },
   );
   test.each([true, false])(
-    "carries the earlier mute switch %j over to lowering by the default 90%",
+    "carries the earlier mute switch %j over to lowering by the default 70%",
     (muteWhileDictating) => {
       expect(parseSettings({ muteWhileDictating })).toEqual({
         ...DEFAULT_SETTINGS,
         lowerAudioWhileDictating: muteWhileDictating,
-        lowerAudioByPercent: 90,
+        lowerAudioByPercent: 70,
       });
     },
   );
@@ -155,7 +155,7 @@ describe("parseSettings", () => {
       pageAnimationMs: 200,
       microphone: null,
       lowerAudioWhileDictating: false,
-      lowerAudioByPercent: 90,
+      lowerAudioByPercent: 70,
       copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,
@@ -266,13 +266,13 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "purple" }).theme).toBe("system");
   });
 
-  test("defaults lowering audio to 90%, keeps a saved amount on the 10% grid from 10% to 100%, and rejects anything else", () => {
-    expect(parseSettings({}).lowerAudioByPercent).toBe(90);
+  test("defaults lowering audio to 70%, keeps a saved amount on the 10% grid from 10% to 100%, and rejects anything else", () => {
+    expect(parseSettings({}).lowerAudioByPercent).toBe(70);
     for (const percent of [10, 50, 100]) {
       expect(parseSettings({ lowerAudioByPercent: percent }).lowerAudioByPercent).toBe(percent);
     }
     for (const raw of [0, 5, 55, 110, -10, 90.5, "50", null]) {
-      expect(parseSettings({ lowerAudioByPercent: raw }).lowerAudioByPercent).toBe(90);
+      expect(parseSettings({ lowerAudioByPercent: raw }).lowerAudioByPercent).toBe(70);
     }
   });
 
@@ -513,7 +513,7 @@ describe("applyPatch", () => {
       pageAnimationMs: 200,
       microphone: null,
       lowerAudioWhileDictating: false,
-      lowerAudioByPercent: 90,
+      lowerAudioByPercent: 70,
       copyToClipboard: false,
       showInDock: true,
       alwaysShowPill: true,

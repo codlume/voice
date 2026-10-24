@@ -215,7 +215,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkey: "fn",
   toggleHotkey: null,
   lowerAudioWhileDictating: false,
-  lowerAudioByPercent: 90,
+  lowerAudioByPercent: 70,
   copyToClipboard: false,
   showInDock: true,
   alwaysShowPill: true,

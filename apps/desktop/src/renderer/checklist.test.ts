@@ -29,7 +29,7 @@ const fresh: Snapshot = {
     pageAnimationMs: 200,
     microphone: null,
     lowerAudioWhileDictating: false,
-    lowerAudioByPercent: 90,
+    lowerAudioByPercent: 70,
     copyToClipboard: false,
     showInDock: true,
     alwaysShowPill: true,
