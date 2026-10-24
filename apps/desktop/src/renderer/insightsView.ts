@@ -16,7 +16,7 @@ export type Heatmap = {
   months: readonly { column: number; label: string }[];
 };
 
-type InsightsView = {
+export type InsightsView = {
   pace: { wpm: number; sessions: number; fasterThanTyping: number | null } | null;
   totalWords: number;
   fixes: { total: number; corrected: number; dictionaryFixes: number };

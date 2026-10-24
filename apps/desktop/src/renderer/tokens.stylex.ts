@@ -65,3 +65,6 @@ export const font = stylex.defineVars({
   sans: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
   serif: 'ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif',
 });
+
+// Home's page is the inline-size container these queries measure.
+export const layout = stylex.defineConsts({ narrow: "@container (max-width: 720px)" });
