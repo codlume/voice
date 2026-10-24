@@ -17,7 +17,12 @@ const styles = stylex.create({
     display: "flex",
     flexDirection: "column",
     gap: space.lg,
-    position: { default: "sticky", [layout.narrow]: "static" },
+    position: {
+      default: "sticky",
+      [layout.narrow]: "static",
+      // Pinned with both cards, the aside needs a window about 575px tall to show whole.
+      "@media (max-height: 600px)": "static",
+    },
     top: 0,
     flexShrink: 0,
     width: { default: 250, [layout.narrow]: "auto" },
@@ -67,13 +72,15 @@ const styles = stylex.create({
   appList: {
     display: "flex",
     flexDirection: { default: "column", [layout.narrow]: "row" },
-    flexWrap: "wrap",
+    flexWrap: { default: "nowrap", [layout.narrow]: "wrap" },
     gap: { default: space.sm, [layout.narrow]: space.lg },
   },
   app: {
     display: "flex",
     alignItems: "center",
     gap: space.sm,
+    minWidth: 0,
+    maxWidth: "100%",
     fontSize: 13,
     fontVariantNumeric: "tabular-nums",
   },
