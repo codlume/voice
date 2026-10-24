@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { useEffect, useId, useState, type KeyboardEvent } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 
 import type { Hotkey } from "../shared/api.ts";
 import type { Modifier, Shortcut, Transform } from "../shared/transforms.ts";
@@ -17,13 +17,6 @@ import {
   type KeyboardLayout,
 } from "./shortcutCapture.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
-
-declare global {
-  interface Navigator {
-    // Chromium's Keyboard Map API, which TypeScript's DOM types leave out.
-    readonly keyboard?: { getLayoutMap(): Promise<KeyboardLayout> };
-  }
-}
 
 const styles = stylex.create({
   row: { display: "flex", alignItems: "center", gap: space.sm },
@@ -49,30 +42,6 @@ const styles = stylex.create({
   recording: { borderColor: { default: color.primary, ":focus": color.primary } },
   placeholder: { color: color.mutedForeground },
 });
-
-export function useKeyboardLayout(): KeyboardLayout | null {
-  const [layout, setLayout] = useState<KeyboardLayout | null>(null);
-  useEffect(() => {
-    let current = true;
-    const read = () => {
-      navigator.keyboard?.getLayoutMap().then(
-        (map) => {
-          if (current) setLayout(map);
-        },
-        () => {
-          if (current) setLayout(null);
-        },
-      );
-    };
-    read();
-    window.addEventListener("focus", read);
-    return () => {
-      current = false;
-      window.removeEventListener("focus", read);
-    };
-  }, []);
-  return layout;
-}
 
 type Recording = { modifiers: readonly Modifier[]; refusal: string | null };
 

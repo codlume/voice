@@ -19,7 +19,6 @@ import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
 import { styles as settingsStyles } from "./Settings.tsx";
 import { shortcutKeys } from "./shortcutCapture.ts";
-import { useKeyboardLayout } from "./ShortcutPicker.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { TransformFields } from "./TransformFields.tsx";
@@ -40,6 +39,7 @@ import {
   type Modal,
 } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
+import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
