@@ -110,14 +110,14 @@ describe("Delete from the editor", () => {
   });
 });
 
-describe("Settings > Shortcuts", () => {
-  const transforms = (enabled: boolean, items = BUILT_IN_TRANSFORMS) => ({
-    enabled,
-    items,
-    autoApply: null,
-  });
-  const ready: ModelStatus = { state: "ready" };
+const transforms = (enabled: boolean, items: readonly Transform[] = BUILT_IN_TRANSFORMS) => ({
+  enabled,
+  items,
+  autoApply: null,
+});
+const ready: ModelStatus = { state: "ready" };
 
+describe("Settings > Shortcuts", () => {
   test("says the shortcuts do nothing while Transforms is off, even without the model", () => {
     expect(shortcutsHint(transforms(false), ready)).toBe(
       "Transforms are off, so these shortcuts do nothing.",
@@ -137,6 +137,22 @@ describe("Settings > Shortcuts", () => {
     expect(shortcutsHint(transforms(true), { state: "downloading", progress: 0.42 })).toBe(
       "Downloading the transform model, 42%.",
     );
+  });
+
+  test("never says to press a shortcut when no transform has one", () => {
+    const unbound: Transform[] = [
+      {
+        id: "synthetic-unbound" as TransformId,
+        name: "Bullets",
+        instruction: "Turn this into a bulleted list.",
+        shortcut: null,
+      },
+    ];
+    for (const enabled of [true, false]) {
+      expect(shortcutsHint(transforms(enabled, unbound), ready)).toBe(
+        "None of your transforms has a shortcut.",
+      );
+    }
   });
 
   test("an empty list says so whether Transforms is on or off", () => {

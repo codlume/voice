@@ -52,6 +52,8 @@ export function modelLine(enabled: boolean, model: ModelStatus): ModelLine {
 
 export function shortcutsHint({ enabled, items }: TransformSettings, model: ModelStatus): string {
   if (items.length === 0) return "You have no transforms.";
+  if (items.every(({ shortcut }) => shortcut === null))
+    return "None of your transforms has a shortcut.";
   if (!enabled) return "Transforms are off, so these shortcuts do nothing.";
   return modelLine(enabled, model).text;
 }
