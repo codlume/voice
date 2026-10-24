@@ -48,8 +48,11 @@ import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
+import { shortcutKeys } from "./shortcutCapture.ts";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
+import { shortcutsHint } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
+import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -101,6 +104,7 @@ export const styles = stylex.create({
   },
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
+  link: { fontSize: 12.5, textDecoration: "underline" },
 });
 
 const motionStyles = stylex.create({
@@ -982,24 +986,36 @@ function ShortcutRow({
   title,
   detail,
   keys,
+  disabled = false,
 }: {
   title: string;
   detail?: string | undefined;
-  keys: readonly string[];
+  keys: readonly string[] | null;
+  disabled?: boolean;
 }) {
   return (
-    <div {...stylex.props(styles.row)}>
+    <div {...stylex.props(styles.row, disabled && styles.disabled)}>
       <div {...stylex.props(styles.rowText)}>
         <span {...stylex.props(styles.rowTitle)}>{title}</span>
         {detail && <p {...stylex.props(styles.rowDetail)}>{detail}</p>}
       </div>
-      <Keys keys={keys} />
+      {keys ? <Keys keys={keys} /> : <span {...stylex.props(styles.hint)}>No shortcut</span>}
     </div>
   );
 }
 
-export function ShortcutsSettings({ settings }: { settings: Settings }) {
+export function ShortcutsSettings({
+  settings,
+  transformModel,
+  onOpenTransforms,
+}: {
+  settings: Settings;
+  transformModel: ModelStatus;
+  onOpenTransforms: () => void;
+}) {
   const hotkeyAction = useAction();
+  const layout = useKeyboardLayout();
+  const transforms = settings.transforms;
   const changeHotkey = (hotkey: Hotkey) => update(hotkeyAction, { hotkey });
   const toggleChoice: ToggleChoice = settings.toggleHotkey ?? TOGGLE_OFF;
   const changeToggle = (choice: ToggleChoice) =>
@@ -1050,6 +1066,27 @@ export function ShortcutsSettings({ settings }: { settings: Settings }) {
           </p>
         )}
         {dictatesWithFn(settings) && <GlobeHint />}
+      </Section>
+
+      <Section label="Transforms">
+        {transforms.items.length > 0 && (
+          <Card>
+            {transforms.items.map((transform) => (
+              <ShortcutRow
+                key={transform.id}
+                title={transform.name}
+                keys={transform.shortcut && shortcutKeys(transform.shortcut, layout)}
+                disabled={!transforms.enabled}
+              />
+            ))}
+          </Card>
+        )}
+        <p {...stylex.props(styles.hint)}>
+          {shortcutsHint(transforms, transformModel)}{" "}
+          <Button variant="text" onClick={onOpenTransforms}>
+            <span {...stylex.props(styles.link)}>Open Transforms</span>
+          </Button>
+        </p>
       </Section>
 
       <Section label="Voice window">

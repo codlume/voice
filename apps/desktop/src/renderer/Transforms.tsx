@@ -48,7 +48,6 @@ const styles = stylex.create({
   subtitle: { margin: 0, color: color.mutedForeground },
   sectionHead: { display: "flex", alignItems: "center", gap: space.sm },
   sectionTitle: { flexGrow: 1 },
-  link: { fontSize: 12.5, textDecoration: "underline" },
   grid: {
     display: "grid",
     gridTemplateColumns: {
@@ -190,7 +189,7 @@ export function Transforms({
               {line.text}{" "}
               {line.linksToModels && (
                 <Button variant="text" onClick={onOpenModels}>
-                  <span {...stylex.props(styles.link)}>Open Models</span>
+                  <span {...stylex.props(settingsStyles.link)}>Open Models</span>
                 </Button>
               )}
             </p>
