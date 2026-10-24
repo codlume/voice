@@ -186,7 +186,7 @@ export async function dictateFixture(helper, name, id, language = "en") {
     microphone: null,
     id,
     language,
-    muteWhileDictating: false,
+    outputVolume: null,
     detectHost: true,
   });
   const started = await helper.waitFor(

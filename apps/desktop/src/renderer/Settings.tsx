@@ -570,7 +570,8 @@ export function SystemSettings({
   const audioAction = useAction();
   const appearanceAction = useAction();
   const motionAction = useAction();
-  const changeMute = (muteWhileDictating: boolean) => update(audioAction, { muteWhileDictating });
+  const changeLowerAudio = (lowerAudioWhileDictating: boolean) =>
+    update(audioAction, { lowerAudioWhileDictating });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
   const changePageAnimation = (pageAnimationMs: number) =>
     update(motionAction, { pageAnimationMs });
@@ -614,18 +615,18 @@ export function SystemSettings({
         <Card>
           <Row
             nativeLabel
-            title="Mute all audio while dictating"
-            detail="Silences supported output devices while recording, then restores their previous audio state."
+            title="Lower audio while dictating"
+            detail="Turns down supported output devices while recording, then restores their volume."
             onReset={resetTo(
-              settings.muteWhileDictating,
-              DEFAULT_SETTINGS.muteWhileDictating,
-              changeMute,
+              settings.lowerAudioWhileDictating,
+              DEFAULT_SETTINGS.lowerAudioWhileDictating,
+              changeLowerAudio,
             )}
           >
             <Switch
-              id="setting-mute-while-dictating"
-              checked={settings.muteWhileDictating}
-              onChange={changeMute}
+              id="setting-lower-audio-while-dictating"
+              checked={settings.lowerAudioWhileDictating}
+              onChange={changeLowerAudio}
             />
           </Row>
         </Card>

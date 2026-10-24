@@ -4,7 +4,7 @@ import type { CleanupStyle } from "@voice/cleanup/style";
 import { countWords } from "@voice/cleanup/words";
 import * as Effect from "effect/Effect";
 
-import type { Outcome } from "../shared/api.ts";
+import type { Outcome, Settings } from "../shared/api.ts";
 import {
   supportsCleanup,
   wantsCleanup,
@@ -114,6 +114,9 @@ export type Dictated = {
 
 type Work = { kind: "transform"; transformId: TransformId } | { kind: "style" } | null;
 
+const outputVolume = (settings: Settings) =>
+  settings.lowerAudioWhileDictating ? (100 - settings.lowerAudioByPercent) / 100 : null;
+
 const gaveTranscript = (outcome: Outcome) =>
   outcome.kind === "inserted" || outcome.kind === "notInserted";
 
@@ -214,7 +217,7 @@ export function createDictation(options: DictationOptions): Dictation {
           type: "capture.start",
           id: effect.id,
           language: started.language,
-          muteWhileDictating: store.state.settings.muteWhileDictating,
+          outputVolume: outputVolume(store.state.settings),
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
         });

@@ -26,6 +26,9 @@ export type Theme = (typeof THEMES)[number];
 export const MIN_PAGE_ANIMATION_MS = 0;
 export const MAX_PAGE_ANIMATION_MS = 400;
 export const PAGE_ANIMATION_STEP_MS = 25;
+export const MIN_LOWER_AUDIO_PERCENT = 10;
+export const MAX_LOWER_AUDIO_PERCENT = 100;
+export const LOWER_AUDIO_STEP_PERCENT = 10;
 export const CONSENTS = ["on", "off"] as const;
 export type DiagnosticsConsent = (typeof CONSENTS)[number];
 // "unavailable" is a development build, which never registers a login item.
@@ -184,7 +187,9 @@ export type Settings = {
   hotkey: Hotkey;
   /** Tap once to start, tap again to stop. Never equal to `hotkey`. */
   toggleHotkey: Hotkey | null;
-  muteWhileDictating: boolean;
+  lowerAudioWhileDictating: boolean;
+  /** How much the outputs drop while dictating; 100 mutes. Kept while lowering is off. */
+  lowerAudioByPercent: number;
   copyToClipboard: boolean;
   showInDock: boolean;
   alwaysShowPill: boolean;
@@ -209,7 +214,8 @@ export const DEFAULT_SETTINGS: Settings = {
   microphone: null,
   hotkey: "fn",
   toggleHotkey: null,
-  muteWhileDictating: false,
+  lowerAudioWhileDictating: false,
+  lowerAudioByPercent: 90,
   copyToClipboard: false,
   showInDock: true,
   alwaysShowPill: true,

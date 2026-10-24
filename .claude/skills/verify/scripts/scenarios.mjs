@@ -97,7 +97,7 @@ export function scenarioSettings(name) {
     toggleHotkey: "rightOption",
     dictationLanguage: "en",
     copyToClipboard: false,
-    muteWhileDictating: false,
+    lowerAudioWhileDictating: false,
     cleanup: { enabled: true },
     dictionary: [],
     snippets: [],

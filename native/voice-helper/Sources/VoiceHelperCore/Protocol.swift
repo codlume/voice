@@ -61,8 +61,10 @@ public enum SelectionResult: Equatable, Sendable {
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
     case microphoneConfigure(microphone: Microphone?)
-    /// `detectHost` is main's say on whether the session can use a page host at all.
-    case captureStart(id: String, language: DictationLanguage, muteWhileDictating: Bool, microphone: Microphone?, detectHost: Bool)
+    /// `outputVolume` is the fraction of each output's level to keep while capturing; 0 mutes and
+    /// nil leaves outputs alone. `detectHost` is main's say on whether the session can use a page
+    /// host at all.
+    case captureStart(id: String, language: DictationLanguage, outputVolume: Float?, microphone: Microphone?, detectHost: Bool)
     case captureStop(id: String)
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
@@ -97,7 +99,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 13
+public let helperProtocolVersion = 14
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -131,7 +133,7 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 }
 
 private enum Key: String, CodingKey {
-    case type, key, id, text, kind, download, path, action, muteWhileDictating, language
+    case type, key, id, text, kind, download, path, action, outputVolume, language
     case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
@@ -150,9 +152,13 @@ extension HelperCommand: Decodable {
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
-            self = .captureStart(id: try c.decode(String.self, forKey: .id),
-                                 language: try c.decode(DictationLanguage.self, forKey: .language),
-                                 muteWhileDictating: try c.decode(Bool.self, forKey: .muteWhileDictating),
+            let id = try c.decode(String.self, forKey: .id)
+            let language = try c.decode(DictationLanguage.self, forKey: .language)
+            let outputVolume = try c.decode(Float?.self, forKey: .outputVolume)
+            if let outputVolume, !(0...1).contains(outputVolume) {
+                throw DecodingError.dataCorruptedError(forKey: .outputVolume, in: c, debugDescription: "outputVolume must be between 0 and 1")
+            }
+            self = .captureStart(id: id, language: language, outputVolume: outputVolume,
                                  microphone: try c.decode(Microphone?.self, forKey: .microphone),
                                  detectHost: try c.decode(Bool.self, forKey: .detectHost))
         case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))

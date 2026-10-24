@@ -102,8 +102,8 @@ private func commandCases() -> [String: HelperCommand] {
         ]),
         "microphone.configure": .microphoneConfigure(microphone: microphone),
         "microphone.configure.default": .microphoneConfigure(microphone: nil),
-        "capture.start": .captureStart(id: "s1", language: .en, muteWhileDictating: false, microphone: nil, detectHost: true),
-        "capture.start.pinned": .captureStart(id: "s1", language: .pl, muteWhileDictating: true, microphone: microphone, detectHost: false),
+        "capture.start": .captureStart(id: "s1", language: .en, outputVolume: nil, microphone: nil, detectHost: true),
+        "capture.start.pinned": .captureStart(id: "s1", language: .pl, outputVolume: 0.1, microphone: microphone, detectHost: false),
         "capture.stop": .captureStop(id: "s1"),
         "capture.cancel": .captureCancel(id: "s1"),
         "microphone.test.start": .microphoneTestStart(id: "t1", microphone: nil),
@@ -298,7 +298,7 @@ private func eventType(_ event: HelperEvent) -> String {
             var wire = capture.wire
             wire["language"] = .string(language.rawValue)
             #expect(HelperCommand.decode(line: try line(wire)) == .success(.captureStart(
-                id: "s1", language: language, muteWhileDictating: false, microphone: nil, detectHost: true)))
+                id: "s1", language: language, outputVolume: nil, microphone: nil, detectHost: true)))
         }
     }
 

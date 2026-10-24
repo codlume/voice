@@ -366,7 +366,7 @@ describe("createDictation", () => {
       {
         type: "capture.start",
         id: h.id(),
-        muteWhileDictating: false,
+        outputVolume: null,
         language: value,
         microphone: null,
         detectHost: expect.any(Boolean),
@@ -420,11 +420,28 @@ describe("createDictation", () => {
     expect(h.commands).toEqual([]);
   });
 
-  test("snapshots the mute preference once per capture start", () => {
+  test.each([
+    { lowerAudioWhileDictating: false, lowerAudioByPercent: 90, outputVolume: null },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 90, outputVolume: 0.1 },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 40, outputVolume: 0.6 },
+    { lowerAudioWhileDictating: true, lowerAudioByPercent: 100, outputVolume: 0 },
+  ])(
+    "asks the helper to keep $outputVolume of the output volume when lowering is $lowerAudioWhileDictating at $lowerAudioByPercent%",
+    ({ outputVolume, ...lowering }) => {
+      const h = harness();
+      h.store.update((state) => ({ ...state, settings: { ...state.settings, ...lowering } }));
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      expect(h.commands).toEqual([
+        expect.objectContaining({ type: "capture.start", outputVolume }),
+      ]);
+    },
+  );
+
+  test("snapshots the output volume once per capture start", () => {
     const h = harness();
     h.store.update((state) => ({
       ...state,
-      settings: { ...state.settings, muteWhileDictating: true },
+      settings: { ...state.settings, lowerAudioWhileDictating: true },
     }));
     h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
     const first = h.id();
@@ -433,14 +450,14 @@ describe("createDictation", () => {
         type: "capture.start",
         id: first,
         language: "en",
-        muteWhileDictating: true,
+        outputVolume: 0.1,
         microphone: null,
         detectHost: true,
       },
     ]);
     h.store.update((state) => ({
       ...state,
-      settings: { ...state.settings, muteWhileDictating: false },
+      settings: { ...state.settings, lowerAudioWhileDictating: false },
     }));
     expect(h.commands).toHaveLength(1);
     h.dictation.onHelperEvent({ type: "hotkey", action: "cancel" });
@@ -450,7 +467,7 @@ describe("createDictation", () => {
       microphone: null,
       id: h.id(),
       language: "en",
-      muteWhileDictating: false,
+      outputVolume: null,
       detectHost: true,
     });
   });
@@ -464,7 +481,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        muteWhileDictating: false,
+        outputVolume: null,
         microphone: null,
         detectHost: true,
       },
@@ -523,7 +540,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        muteWhileDictating: false,
+        outputVolume: null,
         microphone: null,
         detectHost: true,
       },
@@ -1087,7 +1104,7 @@ describe("createDictation", () => {
           type: "capture.start",
           id,
           language: value,
-          muteWhileDictating: false,
+          outputVolume: null,
           microphone: null,
           detectHost: false,
         },
@@ -1622,7 +1639,7 @@ describe("createDictation", () => {
         type: "capture.start",
         id,
         language: "en",
-        muteWhileDictating: false,
+        outputVolume: null,
         microphone: null,
         detectHost: true,
       },
