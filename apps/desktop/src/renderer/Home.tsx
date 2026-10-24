@@ -1,40 +1,31 @@
 import { Progress } from "@base-ui/react/progress";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useId, useMemo } from "react";
+import { useId } from "react";
 
 import type { Settings, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
-import type { DayKey } from "../shared/insights.ts";
-import type { Assignment } from "../shared/style.ts";
-import { a11y } from "./a11y.ts";
-import { AppIcon } from "./AppIcon.tsx";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { History } from "./History.tsx";
+import { YourStats } from "./HomeStats.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
-import { insightsView, usage, type InsightsView, type UsageView } from "./insightsView.ts";
 import { Keycap } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { GlobeHint } from "./Settings.tsx";
-import { appNames } from "./styleView.ts";
 import { Switch } from "./Switch.tsx";
-import { color, font, radius, space } from "./tokens.stylex.ts";
+import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useInsights } from "./useInsights.ts";
-import { useInstalledApps } from "./useInstalledApps.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
-
-const narrow = "@container (max-width: 720px)";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl, containerType: "inline-size" },
   columns: {
     display: "flex",
-    flexDirection: { default: "row", [narrow]: "column" },
-    alignItems: { default: "flex-start", [narrow]: "stretch" },
+    flexDirection: { default: "row", [layout.narrow]: "column" },
+    alignItems: { default: "flex-start", [layout.narrow]: "stretch" },
     gap: space.lg,
   },
   main: {
@@ -43,16 +34,6 @@ const styles = stylex.create({
     gap: space.xl,
     flexGrow: 1,
     minWidth: 0,
-  },
-  aside: {
-    display: "flex",
-    flexDirection: "column",
-    gap: space.lg,
-    position: { default: "sticky", [narrow]: "static" },
-    top: 0,
-    flexShrink: 0,
-    width: { default: 250, [narrow]: "auto" },
-    order: { default: 0, [narrow]: -1 },
   },
   lede: {
     margin: 0,
@@ -141,67 +122,6 @@ const styles = stylex.create({
     resize: "vertical",
     outline: "none",
   },
-  stats: {
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "inherit",
-    backgroundColor: { default: "transparent", ":hover": color.accent },
-    color: "inherit",
-    font: "inherit",
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  statList: {
-    display: "flex",
-    flexDirection: { default: "column", [narrow]: "row" },
-    flexWrap: "wrap",
-    gap: { default: space.md, [narrow]: space.xl },
-    padding: space.lg,
-  },
-  stat: { display: "flex", alignItems: "baseline", gap: space.sm },
-  statValue: {
-    fontFamily: font.serif,
-    fontSize: 28,
-    fontWeight: 400,
-    lineHeight: 1.1,
-    letterSpacing: "-0.02em",
-    fontVariantNumeric: "tabular-nums",
-  },
-  statLabel: { color: color.mutedForeground, fontSize: 14 },
-  statFoot: {
-    paddingBlock: space.md,
-    paddingInline: space.lg,
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: color.border,
-    color: color.mutedForeground,
-    fontSize: 12.5,
-  },
-  topApps: { display: "flex", flexDirection: "column", gap: space.md, padding: space.lg },
-  appList: {
-    display: "flex",
-    flexDirection: { default: "column", [narrow]: "row" },
-    flexWrap: "wrap",
-    gap: { default: space.sm, [narrow]: space.lg },
-  },
-  app: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    fontSize: 13,
-    fontVariantNumeric: "tabular-nums",
-  },
-  appName: {
-    flexGrow: 1,
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  appShare: { color: color.mutedForeground },
 });
 
 function greeting(hour: number): string {
@@ -341,94 +261,6 @@ function TryIt({ settings }: { settings: Settings }) {
       />
       {dictatesWithFn(settings) && <GlobeHint />}
     </Card>
-  );
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <span {...stylex.props(styles.stat)}>
-      <span {...stylex.props(styles.statValue)}>{value}</span>
-      <span {...stylex.props(styles.statLabel)}>{label}</span>
-    </span>
-  );
-}
-
-function Stats({
-  view,
-  onOpenInsights,
-}: {
-  view: InsightsView | null;
-  onOpenInsights: () => void;
-}) {
-  return (
-    <Card>
-      <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
-        <span {...stylex.props(a11y.visuallyHidden)}>Open Insights.</span>
-        <span {...stylex.props(styles.statList)}>
-          <Stat value={view ? view.totalWords.toLocaleString() : "–"} label="words" />
-          <Stat value={view?.pace ? String(view.pace.wpm) : "–"} label="WPM" />
-          <Stat value={view ? String(view.streak.current) : "–"} label="day streak" />
-        </span>
-        {view?.pace?.fasterThanTyping && (
-          <span {...stylex.props(styles.statFoot)}>
-            {view.pace.fasterThanTyping.toFixed(1)}× faster than typing
-          </span>
-        )}
-      </button>
-    </Card>
-  );
-}
-
-function TopApps({ where, onOpenInsights }: { where: UsageView; onOpenInsights: () => void }) {
-  return (
-    <Card>
-      <button type="button" onClick={onOpenInsights} {...stylex.props(styles.stats)}>
-        <span {...stylex.props(a11y.visuallyHidden)}>Open Insights.</span>
-        <span {...stylex.props(styles.topApps)}>
-          <span {...stylex.props(styles.label)}>Top apps</span>
-          <span {...stylex.props(styles.appList)}>
-            {where.topApps.map(({ bundleId, name, share }) => (
-              <span key={bundleId} {...stylex.props(styles.app)}>
-                <AppIcon bundleId={bundleId} name={name} size={20} decorative />
-                <span title={name} {...stylex.props(styles.appName)}>
-                  {name}
-                </span>
-                <span {...stylex.props(styles.appShare)}>{share}%</span>
-              </span>
-            ))}
-          </span>
-        </span>
-        {where.appsUsed > where.topApps.length && (
-          <span {...stylex.props(styles.statFoot)}>{where.appsUsed} apps used</span>
-        )}
-      </button>
-    </Card>
-  );
-}
-
-function YourStats({
-  today,
-  assignments,
-  onOpenInsights,
-}: {
-  today: DayKey;
-  assignments: readonly Assignment[];
-  onOpenInsights: () => void;
-}) {
-  const insights = useInsights();
-  const installed = useInstalledApps();
-  const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
-  const where = useMemo(
-    () => insights && usage(insights, appNames(assignments, installed)),
-    [insights, assignments, installed],
-  );
-  return (
-    <aside aria-label="Your stats" {...stylex.props(styles.aside)}>
-      <Stats view={view} onOpenInsights={onOpenInsights} />
-      {where && where.topApps.length > 0 && (
-        <TopApps where={where} onOpenInsights={onOpenInsights} />
-      )}
-    </aside>
   );
 }
 
