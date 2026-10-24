@@ -24,7 +24,10 @@ import type {
 import {
   DEFAULT_SETTINGS,
   hotkeys,
+  LOWER_AUDIO_STEP_PERCENT,
+  MAX_LOWER_AUDIO_PERCENT,
   MAX_PAGE_ANIMATION_MS,
+  MIN_LOWER_AUDIO_PERCENT,
   MIN_PAGE_ANIMATION_MS,
   PAGE_ANIMATION_STEP_MS,
 } from "../shared/api.ts";
@@ -105,6 +108,10 @@ export const styles = stylex.create({
   actions: { display: "flex", gap: space.sm },
   hint: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   link: { textDecoration: "underline" },
+});
+
+const audioStyles = stylex.create({
+  amount: { flexShrink: 0, width: "13rem" },
 });
 
 const motionStyles = stylex.create({
@@ -590,6 +597,8 @@ export function SystemSettings({
   const motionAction = useAction();
   const changeLowerAudio = (lowerAudioWhileDictating: boolean) =>
     update(audioAction, { lowerAudioWhileDictating });
+  const changeLowerAudioBy = (lowerAudioByPercent: number) =>
+    update(audioAction, { lowerAudioByPercent });
   const changeTheme = (theme: Theme) => update(appearanceAction, { theme });
   const changePageAnimation = (pageAnimationMs: number) =>
     update(motionAction, { pageAnimationMs });
@@ -646,6 +655,30 @@ export function SystemSettings({
               checked={settings.lowerAudioWhileDictating}
               onChange={changeLowerAudio}
             />
+          </Row>
+          <Row
+            title="Reduce volume by"
+            detail="100% mutes. Outputs without a volume control are muted."
+            disabled={!settings.lowerAudioWhileDictating}
+            onReset={resetTo(
+              settings.lowerAudioByPercent,
+              DEFAULT_SETTINGS.lowerAudioByPercent,
+              changeLowerAudioBy,
+            )}
+          >
+            <div {...stylex.props(audioStyles.amount)}>
+              <CommitSlider
+                saved={settings.lowerAudioByPercent}
+                onCommit={changeLowerAudioBy}
+                min={MIN_LOWER_AUDIO_PERCENT}
+                max={MAX_LOWER_AUDIO_PERCENT}
+                step={LOWER_AUDIO_STEP_PERCENT}
+                readout={(percent) => `${percent}%`}
+                label="Reduce volume by"
+                valueText={(percent) => `${percent} percent`}
+                disabled={!settings.lowerAudioWhileDictating}
+              />
+            </div>
           </Row>
         </Card>
         {audioAction.error && (
