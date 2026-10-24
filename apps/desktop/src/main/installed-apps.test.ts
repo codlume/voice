@@ -45,19 +45,28 @@ const id = (app: Listed) => app.bundleId.toLowerCase() as BundleId;
 const png = ({ path, modifiedMs }: Listed) => `png-of-${path}@${modifiedMs}`;
 const dataUrl = (app: Listed) => `data:image/png;base64,${png(app)}`;
 
-function setup(options: { apps: Listed[]; answer?: boolean; renders?: boolean }) {
+function setup(options: {
+  apps: Listed[];
+  answer?: boolean;
+  renders?: boolean;
+  replyAfterMs?: number;
+}) {
   const sent: HelperCommand[] = [];
   const state = {
     apps: options.apps,
     answer: options.answer ?? true,
     renders: options.renders ?? true,
   };
+  const later =
+    options.replyAfterMs === undefined
+      ? queueMicrotask
+      : (reply: () => void) => void setTimeout(reply, options.replyAfterMs);
   const installed = createInstalledApps({
     timeoutMs: 1000,
     send: (command) => {
       sent.push(command);
       if (!state.answer) return;
-      queueMicrotask(() => {
+      later(() => {
         if (command.type === "apps.list") {
           installed.onHelperEvent({ type: "apps.listed", apps: state.apps });
         } else if (command.type === "icons.render" && state.renders) {
@@ -200,6 +209,14 @@ describe("installed apps", () => {
     expect(await installed.list()).toEqual([
       { bundleId: "com.apple.mobilesms", name: "Messages", browser: false },
     ]);
+  });
+
+  test("resolves a list the helper answers after several seconds", async () => {
+    vi.useFakeTimers();
+    const { installed } = setup({ apps: [MAIL], replyAfterMs: 6000 });
+    const list = installed.list();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(await list).toEqual([{ bundleId: "com.apple.mail", name: "Mail", browser: false }]);
   });
 
   test("asks the helper once while a list is in flight", async () => {
