@@ -148,6 +148,8 @@ const sidebarPadding = 12;
 const sidebarWidth = 196;
 const navItemSize = 36;
 const navIconSize = 18;
+const navGap = 2;
+const navDividerHeight = 1;
 const railWidth = navItemSize + 2 * sidebarPadding;
 
 const brandIconVisibleSize = 24;
@@ -213,10 +215,37 @@ const styles = stylex.create({
     height: brandIconSize,
     margin: -(brandIconSize - brandIconVisibleSize) / 2,
   },
-  nav: { display: "flex", flexDirection: "column", gap: 2 },
+  // Without isolation the highlight shows only while the nav's entrance animation runs, then
+  // drops behind the sidebar background.
+  nav: {
+    position: "relative",
+    isolation: "isolate",
+    display: "flex",
+    flexDirection: "column",
+    gap: navGap,
+    // Transform, not top, so the glide runs on the compositor while the new page renders.
+    "::after": {
+      content: "''",
+      position: "absolute",
+      top: 0,
+      insetInline: 0,
+      zIndex: -1,
+      height: navItemSize,
+      borderRadius: radius.small,
+      backgroundColor: color.sidebarRowSelected,
+      transform: `translateY(calc(var(--nav-row) * ${navItemSize + navGap}px + var(--nav-dividers) * (${navGap + navDividerHeight}px + 2 * ${space.sm})))`,
+      transitionProperty: "transform",
+      transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
+      transitionTimingFunction: easing,
+    },
+  },
+  navHighlightAt: (row: number, dividers: number) => ({
+    "--nav-row": row,
+    "--nav-dividers": dividers,
+  }),
   navDivider: {
     flexShrink: 0,
-    height: 1,
+    height: navDividerHeight,
     borderWidth: 0,
     marginBlock: space.sm,
     marginInline: (navItemSize - navIconSize) / 2,
@@ -239,7 +268,7 @@ const styles = stylex.create({
     cursor: "pointer",
   },
   navItemCurrent: {
-    backgroundColor: { default: color.sidebarRowSelected, ":hover": color.sidebarRowSelected },
+    backgroundColor: { default: "transparent", ":hover": "transparent" },
     color: color.foreground,
     fontWeight: 500,
   },
@@ -428,6 +457,16 @@ function NavItems<Id extends string>({
   ));
 }
 
+function navHighlightAt<Id extends string>(
+  groups: readonly (readonly { id: Id }[])[],
+  current: Id,
+) {
+  return styles.navHighlightAt(
+    groups.flat().findIndex(({ id }) => id === current),
+    groups.findIndex((items) => items.some(({ id }) => id === current)),
+  );
+}
+
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
   const [appPage, setAppPage] = useState<AppPage>("home");
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(() =>
@@ -551,7 +590,11 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <nav
               key="app"
               aria-label="Voice"
-              {...stylex.props(styles.nav, shown.navMotion && pageMotion[shown.navMotion])}
+              {...stylex.props(
+                styles.nav,
+                navHighlightAt(appPageGroups, appPage),
+                shown.navMotion && pageMotion[shown.navMotion],
+              )}
             >
               <NavItems
                 groups={appPageGroups}
@@ -565,7 +608,11 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <nav
               key="settings"
               aria-label="Settings"
-              {...stylex.props(styles.nav, shown.navMotion && pageMotion[shown.navMotion])}
+              {...stylex.props(
+                styles.nav,
+                navHighlightAt(settingsPageGroups, settingsPage),
+                shown.navMotion && pageMotion[shown.navMotion],
+              )}
             >
               <NavItems
                 groups={settingsPageGroups}
