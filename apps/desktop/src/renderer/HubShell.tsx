@@ -156,6 +156,7 @@ const brandIconSize = brandIconVisibleSize / (1 - 2 * macIconGridMargin);
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const easing = "cubic-bezier(0.2, 0, 0, 1)";
+const navCurrentAnchor = "--nav-current";
 
 const styles = stylex.create({
   shell: {
@@ -213,7 +214,13 @@ const styles = stylex.create({
     height: brandIconSize,
     margin: -(brandIconSize - brandIconVisibleSize) / 2,
   },
-  nav: { display: "flex", flexDirection: "column", gap: 2 },
+  nav: {
+    position: "relative",
+    isolation: "isolate",
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+  },
   navDivider: {
     flexShrink: 0,
     height: 1,
@@ -239,9 +246,24 @@ const styles = stylex.create({
     cursor: "pointer",
   },
   navItemCurrent: {
-    backgroundColor: { default: color.sidebarRowSelected, ":hover": color.sidebarRowSelected },
+    anchorName: navCurrentAnchor,
+    backgroundColor: { default: "transparent", ":hover": "transparent" },
     color: color.foreground,
     fontWeight: 500,
+  },
+  navHighlight: {
+    position: "absolute",
+    zIndex: -1,
+    positionAnchor: navCurrentAnchor,
+    top: "anchor(top)",
+    left: "anchor(left)",
+    right: "anchor(right)",
+    height: "anchor-size(height)",
+    borderRadius: radius.small,
+    backgroundColor: color.sidebarRowSelected,
+    transitionProperty: "top",
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
+    transitionTimingFunction: easing,
   },
   icon: { flexShrink: 0 },
   label: {
@@ -409,23 +431,28 @@ function NavItems<Id extends string>({
   onSelect: (id: Id) => void;
 }) {
   let index = 0;
-  return groups.map((items, groupIndex) => (
-    <Fragment key={groupIndex}>
-      {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
-      {items.map(({ id, label, icon }) => (
-        <NavItem
-          key={id}
-          label={label}
-          icon={icon}
-          shortcut={jumpShortcuts[index++]}
-          current={current === id}
-          collapsed={collapsed}
-          showShortcut={showShortcut}
-          onClick={() => onSelect(id)}
-        />
+  return (
+    <>
+      {groups.map((items, groupIndex) => (
+        <Fragment key={groupIndex}>
+          {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
+          {items.map(({ id, label, icon }) => (
+            <NavItem
+              key={id}
+              label={label}
+              icon={icon}
+              shortcut={jumpShortcuts[index++]}
+              current={current === id}
+              collapsed={collapsed}
+              showShortcut={showShortcut}
+              onClick={() => onSelect(id)}
+            />
+          ))}
+        </Fragment>
       ))}
-    </Fragment>
-  ));
+      <span {...stylex.props(styles.navHighlight)} />
+    </>
+  );
 }
 
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
