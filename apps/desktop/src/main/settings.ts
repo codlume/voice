@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { readFile, rename } from "node:fs/promises";
+import * as NodePath from "node:path";
 
 import { WRITING_STYLES, type WritingStyle } from "@voice/cleanup/style";
 import * as Option from "effect/Option";
@@ -30,6 +32,7 @@ import { DEFAULT_STYLES, parseAssignments, type CategoryStyles } from "../shared
 import { SettingsPatchSchema } from "../shared/settings-patch.ts";
 import { parseZoomLevel } from "../shared/zoom.ts";
 import { writeFileAtomic } from "./atomic-file.ts";
+import type { Log } from "./diagnostics-scrub.ts";
 
 const STYLE_BY_LEGACY_STYLING = new Map<unknown, WritingStyle>([
   ["casual", "veryCasual"],
@@ -170,6 +173,30 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
   }
 }
 
-export async function saveSettings(file: string, settings: Settings): Promise<void> {
-  await writeFileAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
+/**
+ * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
+ * A file that is not JSON is moved aside first, so its bytes outlive the defaults that replace it.
+ * A file that cannot be read fails the save rather than being overwritten.
+ */
+export async function saveSettings(file: string, settings: Settings, log?: Log): Promise<void> {
+  const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
+  await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...settings }, null, 2)}\n`);
+}
+
+async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unknown>> {
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  try {
+    return record(JSON.parse(text));
+  } catch {
+    const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
+    await rename(file, aside);
+    log?.(`settings: the saved file is not JSON, so it was moved to ${NodePath.basename(aside)}`);
+    return {};
+  }
 }
