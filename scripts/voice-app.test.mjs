@@ -36,6 +36,15 @@ import {
 
 const child = () => ({ stderr: new PassThrough() });
 
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("dependency inspection never executes Electron's installer or entry point", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "voice-electron-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -312,4 +321,28 @@ test("times out independently of a slow read and does not read again", async () 
   finishRead("Hi Anna.");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(reads, 1);
+});
+
+test("a terminal hangup stops the children a script started", async (t) => {
+  const parent = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { start, stopChildrenOnSignal } from ${JSON.stringify(import.meta.resolve("./voice-app.mjs"))};
+stopChildrenOnSignal();
+console.log(start("sleep", ["300"], { stdio: "ignore" }).pid);
+setInterval(() => {}, 1000);`,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const childPid = Number(String(await once(parent.stdout, "data")).trim());
+  t.after(() => {
+    for (const pid of [childPid, parent.pid]) if (alive(pid)) process.kill(pid, "SIGKILL");
+  });
+  assert.equal(alive(childPid), true);
+  parent.kill("SIGHUP");
+  const [code, signal] = await once(parent, "exit");
+  assert.equal(alive(childPid), false, "the child outlived the hangup");
+  assert.deepEqual({ code, signal }, { code: 129, signal: null });
 });
