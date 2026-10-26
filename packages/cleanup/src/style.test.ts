@@ -45,6 +45,9 @@ test.each([
   ["P.S. Bring snacks.", "p.s. bring snacks"],
   ["E.g. the U.S. team, I.e. Anna.", "e.g. the u.s. team, i.e. anna"],
   ["Meet at 10 A.M. Today.", "meet at 10 a.m. today"],
+  ["Rename getUserById to fetchUser.", "rename getUserById to fetchUser"],
+  ["Add the UserService class.", "add the UserService class"],
+  ["Push it to GitHub from iOS.", "push it to GitHub from iOS"],
 ])("Very casual lowercases prose but not the case-sensitive tokens in %j", (text, expected) => {
   expect(finishText("veryCasual", text)).toBe(expected);
 });
