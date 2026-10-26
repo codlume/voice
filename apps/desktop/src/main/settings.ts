@@ -175,11 +175,11 @@ export function loadSettings(file: string, defaultChannel: UpdateChannel = "stab
 
 /**
  * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
- * A file that cannot be read or parsed is moved aside first, so its bytes outlive the defaults
- * that replace it.
+ * A file that is not JSON is moved aside first, so its bytes outlive the defaults that replace it.
+ * A file that cannot be read fails the save rather than being overwritten.
  */
 export async function saveSettings(file: string, settings: Settings, log?: Log): Promise<void> {
-  const onDisk = await recordOnDisk(file, log);
+  const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
   await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...settings }, null, 2)}\n`);
 }
 
@@ -189,19 +189,14 @@ async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unk
     text = await readFile(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    await setAside(file, `could not be read (${String(error)})`, log);
-    return {};
+    throw error;
   }
   try {
     return record(JSON.parse(text));
   } catch {
-    await setAside(file, "is not JSON", log);
+    const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
+    await rename(file, aside);
+    log?.(`settings: the saved file is not JSON, so it was moved to ${NodePath.basename(aside)}`);
     return {};
   }
-}
-
-async function setAside(file: string, why: string, log?: Log): Promise<void> {
-  const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
-  await rename(file, aside);
-  log?.(`settings: the saved file ${why}, so it was moved to ${NodePath.basename(aside)}`);
 }
