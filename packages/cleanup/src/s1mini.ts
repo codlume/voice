@@ -44,7 +44,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     "Cleanup model disposed",
   );
   const { load, serialize, withdrawal } = host;
-  let msPerToken: number | undefined;
   let busyUntil = 0;
   let busy = false;
 
@@ -122,6 +121,7 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         const control = s1Control(style, raw, chunks.length);
         const stop = AbortSignal.any([withdraw, deadline.signal]);
         const outputs: (string | undefined)[] = chunks.map(() => undefined);
+        let msPerToken: number | undefined;
         for (const [index, chunk] of chunks.entries()) {
           withdraw.throwIfAborted();
           const tokens = countTokens(chunk.text);
