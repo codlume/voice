@@ -40,7 +40,7 @@ export function withShortcut(label: string, { hint }: Shortcut): string {
 
 export type Binding = { shortcut: Shortcut; run: () => void };
 
-function insideModal(target: EventTarget | null): boolean {
+function insideDialog(target: EventTarget | null): boolean {
   return (
     target instanceof Element && target.closest('[role="dialog"],[role="alertdialog"]') !== null
   );
@@ -48,7 +48,7 @@ function insideModal(target: EventTarget | null): boolean {
 
 export function useShortcuts(bindings: readonly Binding[]) {
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || insideModal(event.target)) return;
+    if (event.defaultPrevented || insideDialog(event.target)) return;
     const binding = bindings.find((candidate) => matches(candidate.shortcut, event));
     if (!binding) return;
     event.preventDefault();

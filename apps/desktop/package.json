@@ -40,6 +40,7 @@
     "@voice/cleanup": "workspace:*",
     "electron": "44.4.5",
     "electron-builder": "26.15.6",
+    "happy-dom": "20.14.6",
     "lexical": "0.52.0",
     "lucide-react": "1.52.0",
     "react": "catalog:",
