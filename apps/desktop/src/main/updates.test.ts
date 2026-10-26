@@ -469,7 +469,7 @@ describe("updates", () => {
     await updates.check();
     await updates.download();
     await updates.setChannel("nightly");
-    await updates.restart();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
     expect(snapshots.at(-1)).toMatchObject({ channel: "nightly", status: { kind: "disabled" } });
     expect(loadEngine).not.toHaveBeenCalled();
@@ -681,7 +681,7 @@ describe("updates", () => {
     prepareRestart.mockReturnValue(stopped.promise);
     const restarting = updates.restart();
     await vi.waitFor(() => expect(prepareRestart).toHaveBeenCalledOnce());
-    await updates.restart();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
     await expect(updates.setChannel("nightly")).rejects.toThrow("restarting");
     stopped.resolve();

@@ -193,17 +193,20 @@ export function createUpdates({
     }
   }
 
-  async function performCheck(feed: Feed, expectedGeneration: number) {
+  type Started = "user" | "check";
+
+  async function performCheck(feed: Feed, expectedGeneration: number, started: Started) {
     const outcome = await readFeed(feed, snapshot.channel);
     if (!stillApplies(expectedGeneration)) return;
     const next = reconcile(snapshot.status, outcome);
     publish(next);
-    if (next.kind === "downloading") await performDownload(expectedGeneration, next);
+    if (next.kind === "downloading") await performDownload(expectedGeneration, next, started);
   }
 
   async function performDownload(
     expectedGeneration: number,
     { version, notes }: Extract<UpdateStatus, { kind: "downloading" }>,
+    started: Started,
   ) {
     if (!engine) return;
     const progress = ({ percent }: { percent: number }) => {
@@ -219,7 +222,10 @@ export function createUpdates({
     try {
       await engine.downloadUpdate();
     } catch {
-      if (stillApplies(expectedGeneration)) publish(DOWNLOAD_FAILED);
+      // A failed download also drops the release electron-updater had staged, so a re-download
+      // over a ready update that fails leaves nothing to install.
+      if (stillApplies(expectedGeneration))
+        publish(started === "user" ? DOWNLOAD_FAILED : { kind: "available", version, notes });
       return;
     } finally {
       engine.removeListener("download-progress", progress);
@@ -239,7 +245,7 @@ export function createUpdates({
   function check(): Promise<void> {
     return run((feed, expectedGeneration) => {
       if (!pendingUpdate(snapshot.status)) publish({ kind: "checking" });
-      return performCheck(feed, expectedGeneration);
+      return performCheck(feed, expectedGeneration, "check");
     });
   }
 
@@ -254,7 +260,7 @@ export function createUpdates({
       // The engine downloads whatever its last check found, and the feed may have moved since
       // the user saw this offer. Re-read it first; a newer release replaces the offer.
       publish({ kind: "downloading", version: update.version, notes: update.notes, percent: 0 });
-      return performCheck(feed, expectedGeneration);
+      return performCheck(feed, expectedGeneration, "user");
     });
   }
 
@@ -294,7 +300,8 @@ export function createUpdates({
       if (expectedGeneration === generation) await check();
     },
     async restart(beforeInstall?: () => void) {
-      if (!enabled || !engine || disposed || snapshot.status.kind !== "ready") return;
+      if (!engine || disposed || snapshot.status.kind !== "ready")
+        throw new Error("No update is ready to install.");
       if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
       const { version } = snapshot.status;
       beforeInstall?.();
