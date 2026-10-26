@@ -62,10 +62,6 @@ final class Pasteboard {
                 case .wait:
                     try? await Task.sleep(for: .milliseconds(10))
                 case .timedOut:
-                    DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
-                        guard !tracker.hasPending, wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
-                        put(saved)
-                    }
                     return .nothing
                 case .changed:
                     let write = pasteboard.changeCount

@@ -108,15 +108,6 @@ private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [U
     #expect(wait.step(changeCount: 7, elapsed: CopyWait.deadline) == .timedOut)
 }
 
-/// A single write after the deadline is as likely the user's own Cmd+C as the helper's late
-/// one, so the clipboard the user had before the read must not come back over it.
-@Test func aCopySeenAfterTheDeadlineIsNeverRestored() {
-    let wait = CopyWait(startChangeCount: 7)
-    #expect(!wait.lateRestoreNeeded(changeCount: 7))
-    #expect(!wait.lateRestoreNeeded(changeCount: 8))
-    #expect(!wait.lateRestoreNeeded(changeCount: 9))
-}
-
 @Test func shelfHandsItsEntryOutOnceAndOnlyToItsRun() {
     var shelf = SelectionShelf<String>()
     shelf.put(id: "a", "first")
