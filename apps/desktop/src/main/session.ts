@@ -47,6 +47,7 @@ export type Session =
       work: CleanupWork;
       rewrites: Rewrites;
       destination: Destination | null;
+      copyToClipboard: boolean;
     }
   | {
       phase: "inserting";
@@ -56,8 +57,12 @@ export type Session =
       insertedCleanup: string | null;
       dictionaryFixes: number;
       destination: Destination | null;
+      copyToClipboard: boolean;
     }
   | { phase: "done"; id: string; outcome: Outcome };
+
+type Cleaning = Extract<Session, { phase: "cleaning" }>;
+type Inserting = Extract<Session, { phase: "inserting" }>;
 
 export type SessionEvent =
   | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
@@ -75,6 +80,7 @@ export type SessionEvent =
       cleanup: CleanupWork | null;
       rewrites: Rewrites;
       destination: Destination | null;
+      copyToClipboard: boolean;
     }
   | { type: "transcriptFailed"; id: string; message: string }
   | { type: "cleaned"; id: string; text: string }
@@ -89,9 +95,19 @@ export type Effect =
   | { type: "stopCapture"; id: string; releasedAt: number }
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
+  | { type: "cancelCleanup"; id: string }
   | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
   | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
+  | { type: "copy"; output: Output }
+  | {
+      type: "dictated";
+      id: string;
+      raw: string;
+      insertedCleanup: string | null;
+      dictionaryFixes: number;
+      destination: Destination | null;
+    }
   | { type: "scheduleIdle"; id: string; ms: number };
 
 type Step = { state: Session; effects: Effect[] };
@@ -151,21 +167,53 @@ function endCapture(
   return { state: { ...state, releasedAt: now }, effects: [] };
 }
 
-function insert(
+function inserting(
   id: string,
   raw: string,
   { text, html, dictionaryFixes }: Rewritten,
   insertedCleanup: string | null,
   destination: Destination | null,
-): Step {
-  const output = { text, html };
+  copyToClipboard: boolean,
+): Inserting {
   return {
-    state: { phase: "inserting", id, raw, output, insertedCleanup, dictionaryFixes, destination },
+    phase: "inserting",
+    id,
+    raw,
+    output: { text, html },
+    insertedCleanup,
+    dictionaryFixes,
+    destination,
+    copyToClipboard,
+  };
+}
+
+function insert(state: Inserting): Step {
+  const { id, raw, output } = state;
+  return {
+    state,
     effects: [
-      { type: "remember", id, raw, text, status: "pending" },
+      { type: "remember", id, raw, text: output.text, status: "pending" },
       { type: "insert", id, output },
     ],
   };
+}
+
+function uncleaned(state: Cleaning): Inserting {
+  const { id, raw, rewrites, destination, copyToClipboard } = state;
+  return inserting(id, raw, rewrite(raw, rewrites), null, destination, copyToClipboard);
+}
+
+function produced(
+  state: Inserting,
+  outcome: Extract<Outcome, { kind: "inserted" | "notInserted" }>,
+  ...effects: Effect[]
+): Step {
+  const { id, raw, insertedCleanup, dictionaryFixes, destination } = state;
+  const kept: Effect[] = [
+    { type: "dictated", id, raw, insertedCleanup, dictionaryFixes, destination },
+  ];
+  if (state.copyToClipboard) kept.push({ type: "copy", output: state.output });
+  return finish(id, outcome, ...effects, ...kept);
 }
 
 export function step(state: Session, event: SessionEvent, now: number): Step {
@@ -244,7 +292,9 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       const rewritten = rewrite(raw, event.rewrites);
       // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
       if (event.cleanup === null || rewritten.entireDictation) {
-        return insert(state.id, raw, rewritten, null, event.destination);
+        return insert(
+          inserting(state.id, raw, rewritten, null, event.destination, event.copyToClipboard),
+        );
       }
       return {
         state: {
@@ -254,6 +304,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           work: event.cleanup,
           rewrites: event.rewrites,
           destination: event.destination,
+          copyToClipboard: event.copyToClipboard,
         },
         effects: [
           { type: "remember", id: state.id, raw, text: rewritten.text, status: "pending" },
@@ -272,41 +323,43 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (final.text === "") {
         return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
       }
-      const inserting = insert(
-        state.id,
-        state.raw,
-        final,
-        final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
-        state.destination,
+      const next = insert(
+        inserting(
+          state.id,
+          state.raw,
+          final,
+          final.source === "cleaned" && state.work.kind === "style" ? cleaned : null,
+          state.destination,
+          state.copyToClipboard,
+        ),
       );
-      if (state.work.kind === "style") return inserting;
+      if (state.work.kind === "style") return next;
       const keep: Effect = {
         type: "keepTransform",
         transformId: state.work.transformId,
         before: state.raw,
         after: final.text,
       };
-      return { ...inserting, effects: [keep, ...inserting.effects] };
+      return { ...next, effects: [keep, ...next.effects] };
     }
     case "cleanupFailed": {
       if (state.phase !== "cleaning") return same;
-      return insert(
-        state.id,
-        state.raw,
-        rewrite(state.raw, state.rewrites),
-        null,
-        state.destination,
-      );
+      return insert(uncleaned(state));
     }
     case "insertResult": {
       if (state.phase !== "inserting") return same;
       if (event.method === "none") {
-        return finish(state.id, { kind: "notInserted", reason: event.reason ?? "failed" });
+        return produced(state, { kind: "notInserted", reason: event.reason ?? "failed" });
       }
-      return finish(state.id, { kind: "inserted", method: event.method });
+      return produced(state, { kind: "inserted", method: event.method });
     }
     case "helperExited": {
       if (state.phase === "idle" || state.phase === "done") return same;
+      const lost = { kind: "notInserted", reason: "failed" } as const;
+      if (state.phase === "cleaning") {
+        return produced(uncleaned(state), lost, { type: "cancelCleanup", id: state.id });
+      }
+      if (state.phase === "inserting") return produced(state, lost);
       return finish(state.id, { kind: "failed", message: HELPER_EXITED_MESSAGE });
     }
     case "timedOut": {
@@ -327,7 +380,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         );
       }
       if (state.phase === "inserting") {
-        return finish(state.id, { kind: "notInserted", reason: "failed" });
+        return produced(state, { kind: "notInserted", reason: "failed" });
       }
       return same;
     }

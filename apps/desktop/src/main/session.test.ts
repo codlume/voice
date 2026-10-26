@@ -87,8 +87,10 @@ const rememberedLate = (raw: string, id: string): Effect => ({
   text: raw,
   status: "notInserted",
 });
+const copy = (text: string): Effect => ({ type: "copy", output: { text, html: null } });
 const dictated = (raw: string, dictionaryFixes = 0): Effect => ({
   type: "dictated",
+  id: ID,
   raw,
   insertedCleanup: null,
   dictionaryFixes,
@@ -374,6 +376,7 @@ describe("transcript", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toEqual([
       remembered("hello world", "hello world"),
@@ -391,6 +394,7 @@ describe("transcript", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
@@ -456,6 +460,7 @@ describe("capture the helper stops on its own", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
@@ -491,6 +496,7 @@ describe("cleanup", () => {
       insertedCleanup: "Hello, world.",
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toEqual([
       remembered("hello um world", "Hello, world."),
@@ -508,6 +514,7 @@ describe("cleanup", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toContainEqual({
       type: "insert",
@@ -583,6 +590,7 @@ describe("snippets", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(effects).toEqual([
       remembered("My email.", EMAIL),
@@ -700,6 +708,7 @@ describe("snippets", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(whole.effects).toEqual([
       remembered("My name.", "Ana"),
@@ -865,7 +874,6 @@ describe("insertion", () => {
 describe("copy to clipboard", () => {
   const copying = (text: string, cleanup: CleanupWork | null, rewrites = NONE) =>
     transcript(text, cleanup, 2000, rewrites, true);
-  const copy = (text: string): Effect => ({ type: "copy", output: { text, html: null } });
 
   test.each<[string, SessionEvent]>([
     ["inserted", { type: "insertResult", id: ID, method: "paste", reason: null }],
@@ -936,6 +944,7 @@ describe("idle and stale events", () => {
       text: "late words",
       cleanup: STYLE,
       destination: null,
+      copyToClipboard: false,
       rewrites: {
         dictionary: [{ id: "1", phrase: "late", replacement: "never typed" }],
         snippets: [
@@ -964,6 +973,7 @@ describe("idle and stale events", () => {
           cleanup: null,
           rewrites: NONE,
           destination: null,
+          copyToClipboard: false,
         },
         0,
       ),
@@ -1039,6 +1049,7 @@ describe("idle and stale events", () => {
       insertedCleanup: null,
       dictionaryFixes: 0,
       destination: null,
+      copyToClipboard: false,
     });
     expect(
       run([...toOverdue, [{ type: "transcriptFailed", id: ID, message: "asr broke" }, 50_000]])
@@ -1080,6 +1091,7 @@ describe("idle and stale events", () => {
           cleanup: null,
           rewrites: NONE,
           destination: null,
+          copyToClipboard: false,
         },
         41_000,
       ),

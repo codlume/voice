@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { CleanupStyle } from "@voice/cleanup/style";
 import { countWords } from "@voice/cleanup/words";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 
 import type { Outcome, Settings } from "../shared/api.ts";
 import {
@@ -117,9 +118,6 @@ type Work = { kind: "transform"; transformId: TransformId } | { kind: "style" } 
 const outputVolumeScale = (settings: Settings) =>
   settings.lowerAudioWhileDictating ? (100 - settings.lowerAudioByPercent) / 100 : null;
 
-const gaveTranscript = (outcome: Outcome) =>
-  outcome.kind === "inserted" || outcome.kind === "notInserted";
-
 function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
   return {
     startMs: s.startMs,
@@ -142,6 +140,7 @@ export function createDictation(options: DictationOptions): Dictation {
     if (started?.id === id) Object.assign(started, patch);
   }
   let watchdog: NodeJS.Timeout | null = null;
+  let cleaning: { id: string; fiber: Fiber.Fiber<void> } | null = null;
 
   function workFor(id: string): Work {
     if (started?.id !== id) return null;
@@ -176,12 +175,7 @@ export function createDictation(options: DictationOptions): Dictation {
     }
     for (const effect of effects) run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
-      // After the outcome, so the helper's paste fallback sees a changed clipboard and skips
-      // restoring the previous contents. Copying earlier would race the helper saving them.
-      if (before.phase === "inserting" && store.state.settings.copyToClipboard) {
-        options.copy(before.output);
-      }
-      finish(state.id, state.outcome, before.phase === "inserting" ? before : null);
+      finish(state.id, state.outcome);
     }
   }
 
@@ -230,11 +224,14 @@ export function createDictation(options: DictationOptions): Dictation {
       case "cancelCapture":
         send({ type: "capture.cancel", id: effect.id });
         return;
+      case "cancelCleanup":
+        if (cleaning?.id === effect.id) Effect.runFork(Fiber.interrupt(cleaning.fiber));
+        return;
       case "cleanup": {
         const { id, raw, work } = effect;
         const startedAt = now();
         const budgetMs = work.kind === "style" ? cleanupBudgetMs(raw) : autoApplyBudgetMs(raw);
-        Effect.runFork(
+        const fiber = Effect.runFork(
           Effect.tryPromise({
             try: (signal) =>
               work.kind === "style"
@@ -273,6 +270,7 @@ export function createDictation(options: DictationOptions): Dictation {
             }),
           ),
         );
+        cleaning = { id, fiber };
         return;
       }
       case "keepTransform": {
@@ -294,6 +292,22 @@ export function createDictation(options: DictationOptions): Dictation {
           now(),
         );
         return;
+      case "copy":
+        options.copy(effect.output);
+        return;
+      case "dictated": {
+        const s = started?.id === effect.id ? started : null;
+        options.onDictated({
+          raw: effect.raw,
+          insertedCleanup: effect.insertedCleanup,
+          dictionaryFixes: effect.dictionaryFixes,
+          language: s?.language ?? "auto",
+          paceMs: s?.speechMs ?? s?.audioMs ?? null,
+          finishedAt: now(),
+          destination: effect.destination,
+        });
+        return;
+      }
       case "scheduleIdle":
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => dispatch({ type: "idleTimeout", id: effect.id }), effect.ms);
@@ -351,11 +365,7 @@ export function createDictation(options: DictationOptions): Dictation {
     return result.text;
   }
 
-  function finish(
-    id: string,
-    outcome: Outcome,
-    produced: Extract<Session, { phase: "inserting" }> | null,
-  ) {
+  function finish(id: string, outcome: Outcome) {
     const s = started?.id === id ? started : null;
     const finishedAt = now();
     const capture = s && {
@@ -366,17 +376,6 @@ export function createDictation(options: DictationOptions): Dictation {
     log(timingLine("session", id, outcome.kind, capture?.timings ?? {}));
     options.onSessionDone({ outcome, finishedAt, capture });
     options.history.settle(id, outcome.kind === "inserted");
-    if (produced && gaveTranscript(outcome)) {
-      options.onDictated({
-        raw: produced.raw,
-        insertedCleanup: produced.insertedCleanup,
-        dictionaryFixes: produced.dictionaryFixes,
-        language: s?.language ?? "auto",
-        paceMs: s?.speechMs ?? s?.audioMs ?? null,
-        finishedAt,
-        destination: produced.destination,
-      });
-    }
   }
 
   function onHelperEvent(event: HelperEvent) {
@@ -452,6 +451,7 @@ export function createDictation(options: DictationOptions): Dictation {
             dictionary: settings.dictionary,
             snippets: settings.snippets,
           },
+          copyToClipboard: settings.copyToClipboard,
         });
         return;
       }
