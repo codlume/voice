@@ -5,7 +5,7 @@ export type CleanupStyle = { style: WritingStyle; layout: (typeof LAYOUTS)[numbe
 
 type Finish = { chunk(text: string): string; last(text: string): string };
 
-const CASE_SENSITIVE = /:\/\/|[/@_=#]|\.[\p{L}\p{N}]{2,}/u;
+const CASE_SENSITIVE = /:\/\/|[/@_=#]|\.[\p{L}\p{N}]{2,}|\p{Ll}\p{Lu}/u;
 
 const same = (text: string) => text;
 const lowercase = (text: string) =>
