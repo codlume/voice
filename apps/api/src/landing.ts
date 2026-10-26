@@ -57,7 +57,8 @@ const code = document.cookie.split("; ").find((cookie) => cookie.startsWith(name
 const platforms = [navigator.userAgentData?.platform, navigator.platform].filter(Boolean);
 // iPadOS Safari reports a Mac platform, with touch points.
 const desktop = platforms.some((p) => /^Win/i.test(p)) || (platforms.some((p) => /^Mac/i.test(p)) && !(navigator.maxTouchPoints > 1));
-const view = location.hash === "#start-in-voice" ? "start-in-voice" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
+const failed = /[?&]error=/.test(location.search);
+const view = location.hash === "#start-in-voice" ? "start-in-voice" : failed ? "failed" : !code ? "expired" : desktop ? "signed-in" : "not-desktop";
 document.getElementById(view).hidden = false;
 if (code) {
   fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", keepalive: true });
@@ -112,6 +113,11 @@ export const landingPage = `<!doctype html>
 <div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
 <h1>This sign-in link has expired</h1>
 <p>Go back to Voice and sign in again. You can close this tab.</p>
+</main>
+<main id="failed" hidden>
+<div class="mark quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></div>
+<h1>Sign-in didn’t finish</h1>
+<p>Go back to Voice and try again. You can close this tab.</p>
 </main>
 <script>${script}</script>
 </body>
