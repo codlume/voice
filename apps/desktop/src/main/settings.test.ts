@@ -891,6 +891,31 @@ describe("load and save", () => {
     expect(loadSettings(file)).toEqual(DEFAULT_SETTINGS);
   });
 
+  test("the next save moves a corrupt file aside with its bytes intact", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = '{\n  "dictionary": [{ "id": "d", "phrase": "Kubernetes" }],\n}\n';
+    await writeFile(file, original);
+    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    const asides = (await readdir(dir)).filter((name) =>
+      name.startsWith("settings.json.unreadable-"),
+    );
+    expect(asides).toHaveLength(1);
+    expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
+    expect(loadSettings(file)).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+  });
+
+  test("a save keeps top-level keys this build does not know", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const futureFeature = { items: [{ id: "f", on: true }] };
+    await writeFile(file, JSON.stringify({ theme: "light", futureFeature }));
+    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+      theme: "dark",
+      futureFeature,
+    });
+  });
+
   test("a save reaches the disk before it replaces the old file", async () => {
     const file = NodePath.join(dir, "settings.json");
     disk.events = [];
