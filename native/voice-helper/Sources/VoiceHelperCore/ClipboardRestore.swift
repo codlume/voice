@@ -36,6 +36,8 @@ public struct ClipboardRestore<Contents> {
         pending = (write, saved)
     }
 
+    public var hasPending: Bool { pending != nil }
+
     /// The contents to put back for the paste whose write was `write`, or nil when the clipboard
     /// no longer holds that write.
     public mutating func restore(write: Int, changeCount: Int) -> Contents? {

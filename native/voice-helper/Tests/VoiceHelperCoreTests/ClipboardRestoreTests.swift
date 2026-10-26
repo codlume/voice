@@ -52,8 +52,9 @@ import Testing
     var restore = ClipboardRestore<String>()
     let saved = restore.contentsToSave(changeCount: 5) { "user" }
     restore.wrote(6, saved: saved)
+    #expect(restore.hasPending)
     #expect(restore.restore(write: 6, changeCount: 6) == "user")
-    #expect(restore.flush(changeCount: 6) == nil)
+    #expect(!restore.hasPending)
 }
 
 @Test func aSelectionReadInsideAPendingPasteRestoreCarriesTheUserClipboardOver() {

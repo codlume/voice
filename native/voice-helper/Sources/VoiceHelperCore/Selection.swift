@@ -82,6 +82,7 @@ public enum ReleaseWait {
 
 public struct CopyWait: Equatable, Sendable {
     public static let deadline: TimeInterval = 0.5
+    public static let lateCheck: TimeInterval = 1.0
 
     public enum Step: Equatable, Sendable { case wait, changed, timedOut }
 
@@ -94,6 +95,10 @@ public struct CopyWait: Equatable, Sendable {
     public func step(changeCount: Int, elapsed: TimeInterval) -> Step {
         if changeCount != startChangeCount { return .changed }
         return elapsed >= Self.deadline ? .timedOut : .wait
+    }
+
+    public func lateRestoreNeeded(changeCount: Int, deadlineStamp: PressStamp, stamp: PressStamp) -> Bool {
+        changeCount == startChangeCount + 1
     }
 }
 
