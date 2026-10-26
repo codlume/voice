@@ -756,9 +756,27 @@ describe("a sign-in start that a web page opened", () => {
     );
 
     expect(victim.status).toBe(302);
-    expect(victim.headers.get("location")).toContain(`${base}/api/auth/error?error=`);
+    expect(victim.headers.get("location")).toContain(`${base}/?error=`);
     expect(cookieNames(victim)).not.toContain("better-auth.electron");
     expect(await codesMinted()).toBe(before);
+  });
+});
+
+describe("a sign-in Google did not finish", () => {
+  it("sends the browser to the landing page with the error code, so the user sees Voice's own page (catches Better Auth's unstyled developer error page with its better-auth.com links)", async () => {
+    const ip = freshIp();
+    const start = await worker(startUrl(), { redirect: "manual" }, ip);
+    const google = new URL(start.headers.get("location") ?? "about:blank");
+
+    const cancelled = await worker(
+      `${base}/api/auth/callback/google?error=access_denied&state=${google.searchParams.get("state")}`,
+      { headers: { cookie: cookieHeader(storeCookies(start)) }, redirect: "manual" },
+      ip,
+    );
+
+    expect(cancelled.status).toBe(302);
+    expect(cancelled.headers.get("location")).toBe(`${base}/?error=access_denied`);
+    expect(cookieNames(cancelled)).not.toContain("better-auth.electron");
   });
 });
 

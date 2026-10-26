@@ -18,10 +18,11 @@ export function openLanding(
   {
     clipboard = () => Promise.resolve(),
     hash = "",
+    search = "",
     platform = "MacIntel",
     userAgentData,
     maxTouchPoints = 0,
-  }: Device & { clipboard?: () => Promise<void>; hash?: string } = {},
+  }: Device & { clipboard?: () => Promise<void>; hash?: string; search?: string } = {},
 ) {
   const listeners: Record<string, () => void> = {};
   const views = Object.fromEntries(
@@ -55,7 +56,7 @@ export function openLanding(
       calls.push({ fetch: url, init: structuredClone(init) });
       return Promise.resolve(new Response());
     },
-    location: { hash, replace: (url: string) => calls.push({ replace: url }) },
+    location: { hash, search, replace: (url: string) => calls.push({ replace: url }) },
   });
   const clickCopy = async () => {
     listeners.click?.();
