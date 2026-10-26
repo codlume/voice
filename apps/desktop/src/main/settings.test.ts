@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -914,6 +914,28 @@ describe("load and save", () => {
       theme: "dark",
       futureFeature,
     });
+  });
+
+  test("a save drops the mute switch it migrated, so an older build reads the new choice", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, JSON.stringify({ muteWhileDictating: true }));
+    await saveSettings(file, applyPatch(loadSettings(file), { lowerAudioWhileDictating: false }));
+    const saved = JSON.parse(await readFile(file, "utf8"));
+    expect(saved).not.toHaveProperty("muteWhileDictating");
+    expect(saved.lowerAudioWhileDictating).toBe(false);
+  });
+
+  test("a file that cannot be read stops the save and stays in place", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = JSON.stringify({ theme: "light", futureFeature: true });
+    await writeFile(file, original);
+    await chmod(file, 0o000);
+    await expect(
+      saveSettings(file, applyPatch(DEFAULT_SETTINGS, { theme: "dark" })),
+    ).rejects.toThrow();
+    await chmod(file, 0o600);
+    expect(await readFile(file, "utf8")).toBe(original);
+    expect(await readdir(dir)).toEqual(["settings.json"]);
   });
 
   test("a save reaches the disk before it replaces the old file", async () => {
