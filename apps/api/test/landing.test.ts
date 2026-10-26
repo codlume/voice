@@ -47,6 +47,18 @@ describe("landing page", () => {
     );
   });
 
+  it("is where Better Auth's error route sends a failed sign-in, with the code in the query (catches the route serving its own HTML page)", async () => {
+    const response = await exports.default.fetch(
+      new Request("http://localhost:8787/api/auth/error?error=access_denied", {
+        headers: { "cf-connecting-ip": "192.0.2.2" },
+        redirect: "manual",
+      }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("http://localhost:8787/?error=access_denied");
+  });
+
   it("does not loosen the CSP of JSON routes (catches the landing policy leaking to other routes)", async () => {
     const response = await exports.default.fetch(
       new Request("http://localhost:8787/api/auth/get-session", {

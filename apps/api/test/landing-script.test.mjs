@@ -51,6 +51,16 @@ test("says the link expired when the electron cookie is gone", () => {
   assert.deepEqual(calls, []);
 });
 
+test("says the sign-in did not finish when the callback failed, and neither opens Voice nor signs out without a code", () => {
+  for (const error of ["access_denied", "account_not_linked", "state_mismatch"]) {
+    const { elements, calls } = open("better-auth.state=s", { search: `?error=${error}` });
+
+    assert.deepEqual(shown(elements), ["failed"], error);
+    assert.equal(elements.open.href, "", error);
+    assert.deepEqual(calls, [], error);
+  }
+});
+
 test("tells a refused start to begin from Voice, and neither shows a leftover code nor opens Voice with it", () => {
   const { elements, calls } = open(cookie, { hash: "#start-in-voice" });
 

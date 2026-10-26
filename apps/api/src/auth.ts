@@ -94,6 +94,9 @@ export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void
     secret: env.BETTER_AUTH_SECRET,
     // D1 rejects interactive transactions.
     database: drizzleAdapter(db, { provider: "sqlite", schema, transaction: false }),
+    // A callback Google refused or a stale state otherwise lands on Better Auth's own error page,
+    // which is for developers and which the API's CSP leaves unstyled.
+    onAPIError: { errorURL: new URL("/", env.BETTER_AUTH_URL).href },
     advanced: { ...authOptions.advanced, backgroundTasks: { handler: waitUntil } },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
