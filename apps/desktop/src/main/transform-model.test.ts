@@ -276,6 +276,45 @@ describe("transform model", () => {
     expect(workers).toHaveLength(2);
   });
 
+  test("an unload asked for while a cancelled run settles stops the process once it has", async () => {
+    const { model, workers, nextRun, last } = harness({ holdRuns: true });
+    await model.refresh();
+    const controller = new AbortController();
+    const started = nextRun();
+    const running = model.run(request({ signal: controller.signal }));
+    await started;
+
+    controller.abort(new Error("Transform cancelled"));
+    await model.unload();
+    await expect(running).rejects.toThrow("Transform cancelled");
+
+    await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+    expect(last()).toEqual({ state: "installed" });
+  });
+
+  test("a run that starts after a deferred unload keeps the process", async () => {
+    idleTimers();
+    const { model, workers, nextRun } = harness({ holdRuns: true });
+    await model.refresh();
+    const started = nextRun();
+    const first = model.run(request());
+    await started;
+    await model.unload();
+
+    const secondStarted = nextRun();
+    const second = model.run(request());
+    await secondStarted;
+    workers[0]?.runs[0]?.finish(RESULT);
+    await first;
+    workers[0]?.runs[1]?.finish(RESULT);
+    await second;
+
+    await vi.advanceTimersByTimeAsync(IDLE_UNLOAD_MS - 1);
+    expect(workers[0]?.closed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+  });
+
   test("the process is killed after the idle wait, and the next run loads a new one", async () => {
     idleTimers();
     const { model, workers, last } = harness();
