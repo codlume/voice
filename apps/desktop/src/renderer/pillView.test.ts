@@ -1,23 +1,25 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { Outcome, TransformOutcome } from "../shared/api.ts";
+import type { InsertFailure, Outcome, TransformOutcome } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
 
-const done = (outcome: Outcome, copyToClipboard = false) =>
-  pillView({ kind: "done", outcome }, { copyToClipboard });
-const transformDone = (outcome: TransformOutcome, copyToClipboard = false) =>
-  pillView({ kind: "transformDone", outcome }, { copyToClipboard });
+const done = (outcome: Outcome) => pillView({ kind: "done", outcome });
+const transformDone = (outcome: TransformOutcome) => pillView({ kind: "transformDone", outcome });
+const kept = (reason: InsertFailure, copied: boolean): Outcome => ({
+  kind: "notInserted",
+  reason,
+  copied,
+});
 
 describe("pillView", () => {
   test("shows listening only for the listening phase", () => {
-    const off = { copyToClipboard: false };
-    expect(pillView({ kind: "listening" }, off)).toEqual({ kind: "listening" });
-    expect(pillView({ kind: "processing", overdue: false }, off)).toEqual({ kind: "processing" });
-    expect(pillView({ kind: "processing", overdue: true }, off)).toEqual({
+    expect(pillView({ kind: "listening" })).toEqual({ kind: "listening" });
+    expect(pillView({ kind: "processing", overdue: false })).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "processing", overdue: true })).toEqual({
       kind: "message",
       text: "Still transcribing",
     });
-    expect(pillView({ kind: "idle" }, off)).toEqual({ kind: "idle" });
+    expect(pillView({ kind: "idle" })).toEqual({ kind: "idle" });
   });
 
   test("shows the check only when text was inserted, and says so when it went through paste", () => {
@@ -29,17 +31,17 @@ describe("pillView", () => {
       kind: "inserted",
       method: "paste",
     });
-    expect(done({ kind: "notInserted", reason: "failed" }).kind).not.toBe("inserted");
+    expect(done({ kind: "notInserted", reason: "failed", copied: true }).kind).not.toBe("inserted");
   });
 
   test.each<[Outcome, string]>([
     [{ kind: "empty" }, "Nothing heard"],
     [{ kind: "tooShort" }, "Too short. Hold to talk"],
-    [{ kind: "notInserted", reason: "focusChanged" }, "Not inserted. Focus changed"],
-    [{ kind: "notInserted", reason: "noFocusedField" }, "Not inserted. No text field"],
-    [{ kind: "notInserted", reason: "secureInput" }, "Not inserted. Secure field"],
-    [{ kind: "notInserted", reason: "selectionChanged" }, "Not inserted. Text changed"],
-    [{ kind: "notInserted", reason: "failed" }, "Not inserted. Copy it from Voice"],
+    [kept("focusChanged", false), "Not inserted. Focus changed"],
+    [kept("noFocusedField", false), "Not inserted. No text field"],
+    [kept("secureInput", false), "Not inserted. Secure field"],
+    [kept("selectionChanged", false), "Not inserted. Text changed"],
+    [kept("failed", false), "Not inserted. Copy it from Voice"],
     [
       { kind: "failed", message: "Set up the speech model in Voice first" },
       "Set up the speech model in Voice first",
@@ -49,29 +51,20 @@ describe("pillView", () => {
   });
 
   test.each<[Outcome, string]>([
-    [{ kind: "notInserted", reason: "focusChanged" }, "Focus changed. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "noFocusedField" }, "No text field. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "secureInput" }, "Secure field. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "selectionChanged" }, "Text changed. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "failed" }, "Not inserted. Copied to clipboard"],
-  ])("with copy to clipboard on, %j reads %s", (outcome, text) => {
-    expect(done(outcome, true)).toEqual({ kind: "message", text });
-  });
-
-  test.each<Outcome>([
-    { kind: "empty" },
-    { kind: "tooShort" },
-    { kind: "failed", message: "Set up the speech model in Voice first" },
-  ])("with copy to clipboard on, %j never claims a copy", (outcome) => {
-    expect(done(outcome, true)).toEqual(done(outcome));
+    [kept("focusChanged", true), "Focus changed. Copied to clipboard"],
+    [kept("noFocusedField", true), "No text field. Copied to clipboard"],
+    [kept("secureInput", true), "Secure field. Copied to clipboard"],
+    [kept("selectionChanged", true), "Text changed. Copied to clipboard"],
+    [kept("failed", true), "Not inserted. Copied to clipboard"],
+  ])("once copied, %j reads %s", (outcome, text) => {
+    expect(done(outcome)).toEqual({ kind: "message", text });
   });
 });
 
 describe("pillView for transforms", () => {
   test("shows dots while working and names the load when the model is not ready", () => {
-    const off = { copyToClipboard: false };
-    expect(pillView({ kind: "transforming", loading: false }, off)).toEqual({ kind: "processing" });
-    expect(pillView({ kind: "transforming", loading: true }, off)).toEqual({
+    expect(pillView({ kind: "transforming", loading: false })).toEqual({ kind: "processing" });
+    expect(pillView({ kind: "transforming", loading: true })).toEqual({
       kind: "message",
       text: "Loading model",
     });
@@ -118,11 +111,10 @@ describe("pillView for transforms", () => {
     expect(transformDone(outcome)).toEqual({ kind: "message", text });
   });
 
-  test.each(cases)("%j never claims a copy, whatever the clipboard setting", (outcome) => {
+  test.each(cases)("%j never claims a copy", (outcome) => {
     const view = transformDone(outcome);
     if (view.kind !== "message") throw new Error("expected a message");
     expect(view.text).not.toContain("clipboard");
-    expect(transformDone(outcome, true)).toEqual(view);
   });
 });
 

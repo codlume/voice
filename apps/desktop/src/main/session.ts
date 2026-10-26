@@ -205,15 +205,17 @@ function uncleaned(state: Cleaning): Inserting {
 
 function produced(
   state: Inserting,
-  outcome: Extract<Outcome, { kind: "inserted" | "notInserted" }>,
+  outcome: Extract<Outcome, { kind: "inserted" }> | { kind: "notInserted"; reason: InsertFailure },
   ...effects: Effect[]
 ): Step {
-  const { id, raw, insertedCleanup, dictionaryFixes, destination } = state;
+  const { id, raw, insertedCleanup, dictionaryFixes, destination, copyToClipboard } = state;
   const kept: Effect[] = [
     { type: "dictated", id, raw, insertedCleanup, dictionaryFixes, destination },
   ];
-  if (state.copyToClipboard) kept.push({ type: "copy", output: state.output });
-  return finish(id, outcome, ...effects, ...kept);
+  if (copyToClipboard) kept.push({ type: "copy", output: state.output });
+  const settled: Outcome =
+    outcome.kind === "notInserted" ? { ...outcome, copied: copyToClipboard } : outcome;
+  return finish(id, settled, ...effects, ...kept);
 }
 
 export function step(state: Session, event: SessionEvent, now: number): Step {

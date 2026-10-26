@@ -26,7 +26,6 @@ describe("Commands", () => {
     pill.handle(Channel.getPillSnapshot, () => ({
       session: { kind: "idle" },
       alwaysShowPill: true,
-      copyToClipboard: false,
     }));
     // @ts-expect-error the Flow Bar owns getPillSnapshot
     hub.handle(Channel.getPillSnapshot, listener);

@@ -30,7 +30,7 @@ const notInsertedText: Record<InsertFailure, { copyOff: string; copyOn: string }
   },
 };
 
-function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
+function outcomeView(outcome: Outcome): PillView {
   switch (outcome.kind) {
     case "inserted":
       return { kind: "inserted", method: outcome.method };
@@ -40,7 +40,7 @@ function outcomeView(outcome: Outcome, copyToClipboard: boolean): PillView {
       return { kind: "message", text: "Too short. Hold to talk" };
     case "notInserted": {
       const text = notInsertedText[outcome.reason];
-      return { kind: "message", text: copyToClipboard ? text.copyOn : text.copyOff };
+      return { kind: "message", text: outcome.copied ? text.copyOn : text.copyOff };
     }
     case "failed":
       return { kind: "message", text: outcome.message };
@@ -93,13 +93,10 @@ function transformOutcomeView(outcome: TransformOutcome): PillView {
   }
 }
 
-export function pillView(
-  session: PillState,
-  { copyToClipboard }: { copyToClipboard: boolean },
-): PillView {
+export function pillView(session: PillState): PillView {
   switch (session.kind) {
     case "done":
-      return outcomeView(session.outcome, copyToClipboard);
+      return outcomeView(session.outcome);
     case "processing":
       return session.overdue
         ? { kind: "message", text: "Still transcribing" }

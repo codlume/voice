@@ -122,7 +122,7 @@ type NotInserted = { kind: "notInserted"; reason: InsertFailure };
 
 export type Outcome =
   | Inserted
-  | NotInserted
+  | (NotInserted & { copied: boolean })
   | { kind: "empty" }
   | { kind: "tooShort" }
   | { kind: "failed"; message: string };
@@ -245,15 +245,10 @@ export type Snapshot = {
   account: AccountState;
 };
 
-export type PillSnapshot = Pick<Snapshot, "session"> &
-  Pick<Settings, "alwaysShowPill" | "copyToClipboard">;
+export type PillSnapshot = Pick<Snapshot, "session"> & Pick<Settings, "alwaysShowPill">;
 
 export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
-  return {
-    session,
-    alwaysShowPill: settings.alwaysShowPill,
-    copyToClipboard: settings.copyToClipboard,
-  };
+  return { session, alwaysShowPill: settings.alwaysShowPill };
 }
 
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";

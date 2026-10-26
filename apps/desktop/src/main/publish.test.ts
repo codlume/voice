@@ -52,7 +52,7 @@ function harness() {
 }
 
 describe("publish", () => {
-  test("the pill gets the session and its two settings, never the account", () => {
+  test("the pill gets the session and its one setting, never the account", () => {
     const { hub, pill, update } = harness();
     update({ session: { phase: "recording", id: "s1", mode: "hold", pressedAt: 0 } });
     update({
@@ -64,12 +64,10 @@ describe("publish", () => {
       {
         session: { kind: "listening" },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
-        copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
       },
       {
         session: { kind: "done", outcome: { kind: "inserted", method: "paste" } },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
-        copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
       },
     ]);
     const sentToPill = JSON.stringify(pill.sent);
@@ -99,7 +97,6 @@ describe("publish", () => {
       {
         session: { kind: "idle" },
         alwaysShowPill: !DEFAULT_SETTINGS.alwaysShowPill,
-        copyToClipboard: DEFAULT_SETTINGS.copyToClipboard,
       },
     ]);
   });
