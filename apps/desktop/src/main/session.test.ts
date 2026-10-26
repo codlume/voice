@@ -47,11 +47,17 @@ const started = (now: number) =>
   [{ type: "captureStarted", id: ID }, now] as [SessionEvent, number];
 const NONE: Rewrites = { dictionary: [], snippets: [] };
 const STYLE: CleanupWork = { kind: "style", style: { style: "casual", layout: "general" } };
-const transcript = (text: string, cleanup: CleanupWork | null, now = 2000, rewrites = NONE) =>
-  [{ type: "transcript", id: ID, text, cleanup, rewrites, destination: null }, now] as [
-    SessionEvent,
-    number,
-  ];
+const transcript = (
+  text: string,
+  cleanup: CleanupWork | null,
+  now = 2000,
+  rewrites = NONE,
+  copyToClipboard = false,
+) =>
+  [
+    { type: "transcript", id: ID, text, cleanup, rewrites, destination: null, copyToClipboard },
+    now,
+  ] as [SessionEvent, number];
 
 const toRecording: [SessionEvent, number][] = [down(0), started(50)];
 const toTranscribing: [SessionEvent, number][] = [...toRecording, up(1000)];
@@ -80,6 +86,13 @@ const rememberedLate = (raw: string, id: string): Effect => ({
   raw,
   text: raw,
   status: "notInserted",
+});
+const dictated = (raw: string, dictionaryFixes = 0): Effect => ({
+  type: "dictated",
+  raw,
+  insertedCleanup: null,
+  dictionaryFixes,
+  destination: null,
 });
 
 describe("a second transcript for the same session", () => {
@@ -824,7 +837,10 @@ describe("insertion", () => {
         [{ type: "insertResult", id: ID, method, reason: null }, 2100],
       ]);
       expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "inserted", method } });
-      expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_INSERTED_MS }]);
+      expect(effects).toEqual([
+        dictated("hello world"),
+        { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_INSERTED_MS },
+      ]);
     },
   );
 
@@ -839,7 +855,47 @@ describe("insertion", () => {
       outcome: { kind: "notInserted", reason: "focusChanged" },
     });
     expect(all).toContainEqual(remembered("hello world", "hello world"));
-    expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+    expect(effects).toEqual([
+      dictated("hello world"),
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
+  });
+});
+
+describe("copy to clipboard", () => {
+  const copying = (text: string, cleanup: CleanupWork | null, rewrites = NONE) =>
+    transcript(text, cleanup, 2000, rewrites, true);
+  const copy = (text: string): Effect => ({ type: "copy", output: { text, html: null } });
+
+  test.each<[string, SessionEvent]>([
+    ["inserted", { type: "insertResult", id: ID, method: "paste", reason: null }],
+    ["not inserted", { type: "insertResult", id: ID, method: "none", reason: "focusChanged" }],
+    ["timed out", { type: "timedOut", id: ID }],
+    ["lost with the helper", { type: "helperExited" }],
+  ])("copies the output once the insert is %s", (_, end) => {
+    const { effects } = run([...toTranscribing, copying("hello world", null), [end, 2100]]);
+    expect(effects).toContainEqual(copy("hello world"));
+  });
+
+  test("copies the expanded raw transcript when the helper exits mid-cleanup", () => {
+    const snippets: Snippet[] = [
+      { id: "1", trigger: "my email", expansion: "a@b.c", expansionHtml: null, enabled: true },
+    ];
+    const { effects } = run([
+      ...toTranscribing,
+      copying("send it to my email", STYLE, { ...NONE, snippets }),
+      [{ type: "helperExited" }, 2300],
+    ]);
+    expect(effects).toContainEqual(copy("send it to a@b.c"));
+    expect(effects).not.toContainEqual(expect.objectContaining({ type: "insert" }));
+  });
+
+  test("copies nothing with the setting off", () => {
+    const { all } = run([
+      ...toInserting,
+      [{ type: "insertResult", id: ID, method: "none", reason: "focusChanged" }, 2100],
+    ]);
+    expect(types(all)).not.toContain("copy");
   });
 });
 
@@ -925,6 +981,33 @@ describe("idle and stale events", () => {
       outcome: { kind: "failed", message: HELPER_EXITED_MESSAGE },
     });
     expect(effects).toEqual([{ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS }]);
+  });
+
+  test("helper exit mid-cleanup ends notInserted with the uncleaned text and stops the cleanup", () => {
+    const { state, effects } = run([...toCleaning, [{ type: "helperExited" }, 2300]]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "failed" },
+    });
+    expect(effects).toEqual([
+      { type: "cancelCleanup", id: ID },
+      dictated("hello um world"),
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
+  });
+
+  test("helper exit mid-insert ends notInserted and still counts the dictation", () => {
+    const { state, effects } = run([...toInserting, [{ type: "helperExited" }, 2300]]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "failed" },
+    });
+    expect(effects).toEqual([
+      dictated("hello world"),
+      { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
+    ]);
   });
 
   test("a transcription past the watchdog becomes overdue and keeps waiting", () => {
