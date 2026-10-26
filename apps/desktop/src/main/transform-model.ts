@@ -124,6 +124,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
   const loadModule = () => (module ??= (options.loadModule ?? (() => importModule(options.log)))());
   let state: Phase = { phase: "missing" };
   let running = 0;
+  let unloadWhenSettled = false;
   let idleTimer: NodeJS.Timeout | undefined;
 
   const owns = (engine: TransformEngine) => resident(state) && state.engine === engine;
@@ -201,6 +202,16 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     }
   }
 
+  async function unload() {
+    unloadWhenSettled = false;
+    if (!resident(state)) return;
+    if (running > 0) {
+      unloadWhenSettled = true;
+      return;
+    }
+    await set({ phase: "installed", path: state.path });
+  }
+
   return {
     refresh: async () => {
       const { findModel, source } = await loadModule();
@@ -235,6 +246,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     run: async (request) => {
       request.signal.throwIfAborted();
       running += 1;
+      unloadWhenSettled = false;
       clearTimeout(idleTimer);
       try {
         const engine = await withinLoadBound(loadedEngine(), request.signal);
@@ -246,7 +258,8 @@ export function createTransformModel(options: TransformModelOptions): TransformM
         return await engine.transform(request);
       } finally {
         running -= 1;
-        armIdle();
+        if (running === 0 && unloadWhenSettled) void unload();
+        else armIdle();
       }
     },
     warm: () => {
@@ -254,10 +267,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       loadedEngine().catch(() => undefined);
       armIdle();
     },
-    unload: async () => {
-      if (!resident(state) || running > 0) return;
-      await set({ phase: "installed", path: state.path });
-    },
+    unload,
     onDisk: () => state.phase === "installed" || resident(state),
     dispose: async () => {
       const previous = state;
