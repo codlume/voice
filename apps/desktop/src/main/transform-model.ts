@@ -264,6 +264,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     },
     warm: () => {
       if (state.phase !== "installed" && !resident(state)) return;
+      unloadWhenSettled = false;
       loadedEngine().catch(() => undefined);
       armIdle();
     },
