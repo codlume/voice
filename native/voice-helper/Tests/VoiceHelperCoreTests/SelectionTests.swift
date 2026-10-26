@@ -108,11 +108,14 @@ private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [U
     #expect(wait.step(changeCount: 7, elapsed: CopyWait.deadline) == .timedOut)
 }
 
-@Test func aLateCopyIsRestoredOnlyWhenItIsTheOnlyWrite() {
+@Test func aLateCopyIsRestoredOnlyWhenItIsTheOnlyWriteAndNoPressFollowedTheDeadline() {
     let wait = CopyWait(startChangeCount: 7)
-    #expect(!wait.lateRestoreNeeded(changeCount: 7))
-    #expect(wait.lateRestoreNeeded(changeCount: 8))
-    #expect(!wait.lateRestoreNeeded(changeCount: 9))
+    let atDeadline = PressStamp(counts: [10, 2, 0, 0])
+    #expect(wait.lateRestoreNeeded(changeCount: 8, deadlineStamp: atDeadline, stamp: atDeadline))
+    #expect(!wait.lateRestoreNeeded(changeCount: 8, deadlineStamp: atDeadline, stamp: PressStamp(counts: [11, 2, 0, 0])))
+    #expect(!wait.lateRestoreNeeded(changeCount: 8, deadlineStamp: atDeadline, stamp: PressStamp(counts: [10, 3, 0, 0])))
+    #expect(!wait.lateRestoreNeeded(changeCount: 9, deadlineStamp: atDeadline, stamp: atDeadline))
+    #expect(!wait.lateRestoreNeeded(changeCount: 7, deadlineStamp: atDeadline, stamp: atDeadline))
 }
 
 @Test func shelfHandsItsEntryOutOnceAndOnlyToItsRun() {

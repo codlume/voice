@@ -62,8 +62,11 @@ final class Pasteboard {
                 case .wait:
                     try? await Task.sleep(for: .milliseconds(10))
                 case .timedOut:
+                    let deadlineStamp = focusInputStamp()
                     DispatchQueue.main.asyncAfter(deadline: postedAt + CopyWait.lateCheck) { [self] in
-                        guard !tracker.hasPending, wait.lateRestoreNeeded(changeCount: pasteboard.changeCount) else { return }
+                        guard !tracker.hasPending,
+                            wait.lateRestoreNeeded(changeCount: pasteboard.changeCount, deadlineStamp: deadlineStamp, stamp: focusInputStamp())
+                        else { return }
                         put(saved)
                     }
                     return .nothing
