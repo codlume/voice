@@ -97,8 +97,13 @@ public struct CopyWait: Equatable, Sendable {
         return elapsed >= Self.deadline ? .timedOut : .wait
     }
 
+    /// A target that answers the synthetic Cmd+C after the deadline leaves its selection on the
+    /// clipboard with no run left to restore it. The change count alone cannot tell that late
+    /// answer from a Cmd+C or Edit > Copy the user made in the window, so the press counters
+    /// decide: the user's copy moves them, the helper's late answer does not, because its
+    /// keystroke was posted before `deadlineStamp` was taken.
     public func lateRestoreNeeded(changeCount: Int, deadlineStamp: PressStamp, stamp: PressStamp) -> Bool {
-        changeCount == startChangeCount + 1
+        changeCount == startChangeCount + 1 && stamp == deadlineStamp
     }
 }
 
