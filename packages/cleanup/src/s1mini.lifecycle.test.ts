@@ -295,21 +295,19 @@ test("a learned rate skips a chunk the budget cannot fit instead of starting it"
   expect(native.events).toEqual([`generate ${first.slice(0, 12)}`, "done"]);
 });
 
-test("a short warm-up teaches no rate, so the next long clean is still attempted", async () => {
+test("a short slow first chunk teaches no rate, so the long chunks after it still run", async () => {
   vi.useFakeTimers();
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
-  native.delayMs = (raw) => (raw === "um so this is a warm up" ? 3000 : 0);
+  const warmUp = "um so this is a warm up";
+  native.delayMs = (raw) => (raw === warmUp ? 3000 : 0);
 
-  const warmUp = s1.clean("um so this is a warm up", style);
-  await vi.advanceTimersByTimeAsync(3000);
-  await warmUp;
-  const clean = s1.clean(threeChunkRaw, style, { budgetMs: 100 });
-  await vi.advanceTimersByTimeAsync(99);
+  const clean = s1.clean(`${warmUp}\n${threeChunkRaw}`, style, { budgetMs: 5000 });
+  await vi.advanceTimersByTimeAsync(3010);
 
   await expect(clean).resolves.toEqual({
-    text: threeChunkRaw.toUpperCase(),
-    chunks: 3,
-    cleaned: 3,
+    text: `${warmUp.toUpperCase()}\n${threeChunkRaw.toUpperCase()}`,
+    chunks: 4,
+    cleaned: 4,
   });
 });
 
