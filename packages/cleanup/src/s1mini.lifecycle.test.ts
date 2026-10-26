@@ -313,6 +313,25 @@ test("a short warm-up teaches no rate, so the next long clean is still attempted
   });
 });
 
+test("one slow clean does not keep a later clean from being attempted once the model is fast again", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  const slowRaw = Array.from({ length: 3 }, () => line(99)).join(" ");
+  native.delayMs = (raw) => (raw === slowRaw ? 4000 : 0);
+
+  const slow = s1.clean(slowRaw, style);
+  await vi.advanceTimersByTimeAsync(4000);
+  await expect(slow).resolves.toMatchObject({ cleaned: 1 });
+  const clean = s1.clean(threeChunkRaw, style, { budgetMs: 5000 });
+  await vi.advanceTimersByTimeAsync(10);
+
+  await expect(clean).resolves.toEqual({
+    text: threeChunkRaw.toUpperCase(),
+    chunks: 3,
+    cleaned: 3,
+  });
+});
+
 test("an aborted clean stops the generation and rejects with the reason, and the next clean runs", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   native.delayMs = () => Infinity;
