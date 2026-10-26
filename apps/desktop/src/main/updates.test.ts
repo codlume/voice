@@ -469,7 +469,7 @@ describe("updates", () => {
     await updates.check();
     await updates.download();
     await updates.setChannel("nightly");
-    await updates.restart();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
     expect(snapshots.at(-1)).toMatchObject({ channel: "nightly", status: { kind: "disabled" } });
     expect(loadEngine).not.toHaveBeenCalled();
@@ -583,6 +583,31 @@ describe("updates", () => {
     updates.dispose();
   });
 
+  test("a re-download the user did not ask for that fails offers the newer release, and nothing is left to restart into", async () => {
+    const { updates, engine, status } = setup({ nightly: true });
+    engine.feed = { version: "0.0.3-nightly.9" };
+    await updates.check();
+    await updates.download();
+    expect(status().kind).toBe("ready");
+    engine.feed = { version: "0.0.3-nightly.10" };
+    engine.download.mockRejectedValueOnce(new Error("offline"));
+    await updates.check();
+    expect(status()).toEqual({ kind: "available", version: "0.0.3-nightly.10", notes: noNotes });
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
+    expect(engine.quitAndInstall).not.toHaveBeenCalled();
+    await updates.download();
+    expect(status()).toEqual({ kind: "ready", version: "0.0.3-nightly.10", notes: noNotes });
+  });
+
+  test("restart rejects when no update is ready", async () => {
+    const { updates, engine, prepareRestart } = setup();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
+    await updates.check();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
+    expect(prepareRestart).not.toHaveBeenCalled();
+    expect(engine.quitAndInstall).not.toHaveBeenCalled();
+  });
+
   test("carries the feed's release notes from the available update to the ready one", async () => {
     const { updates, engine, snapshots, status } = setup();
     engine.feed = {
@@ -656,7 +681,7 @@ describe("updates", () => {
     prepareRestart.mockReturnValue(stopped.promise);
     const restarting = updates.restart();
     await vi.waitFor(() => expect(prepareRestart).toHaveBeenCalledOnce());
-    await updates.restart();
+    await expect(updates.restart()).rejects.toThrow("No update is ready");
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
     await expect(updates.setChannel("nightly")).rejects.toThrow("restarting");
     stopped.resolve();
