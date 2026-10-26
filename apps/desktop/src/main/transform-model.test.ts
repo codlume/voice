@@ -315,6 +315,23 @@ describe("transform model", () => {
     await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
   });
 
+  test("a warm-up after a deferred unload keeps the process", async () => {
+    idleTimers();
+    const { model, workers, nextRun } = harness({ holdRuns: true });
+    await model.refresh();
+    const started = nextRun();
+    const first = model.run(request());
+    await started;
+    await model.unload();
+
+    model.warm();
+    workers[0]?.runs[0]?.finish(RESULT);
+    await first;
+
+    await vi.advanceTimersByTimeAsync(IDLE_UNLOAD_MS - 1);
+    expect(workers[0]?.closed).toBe(false);
+  });
+
   test("the process is killed after the idle wait, and the next run loads a new one", async () => {
     idleTimers();
     const { model, workers, last } = harness();
