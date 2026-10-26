@@ -42,7 +42,8 @@ function start(command, args, options = {}) {
   });
   children.add(child);
   child.on("exit", () => children.delete(child));
-  child.on("error", () => {
+  child.on("error", (error) => {
+    console.error(`dev: ${command} failed to start: ${error.message}`);
     children.delete(child);
     stop(1);
   });
