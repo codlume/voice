@@ -861,7 +861,7 @@ describe("insertion", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged" },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
     });
     expect(all).toContainEqual(remembered("hello world", "hello world"));
     expect(effects).toEqual([
@@ -1016,7 +1016,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed" },
+      outcome: { kind: "notInserted", reason: "failed", copied: false },
     });
     expect(effects).toEqual([
       { type: "cancelCleanup", id: ID },
@@ -1030,7 +1030,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed" },
+      outcome: { kind: "notInserted", reason: "failed", copied: false },
     });
     expect(effects).toEqual([
       dictated("hello world"),
@@ -1121,7 +1121,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed" },
+      outcome: { kind: "notInserted", reason: "failed", copied: false },
     });
     expect(all).toContainEqual(remembered("hello world", "hello world"));
   });

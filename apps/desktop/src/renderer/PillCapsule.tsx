@@ -167,8 +167,8 @@ function Check({ pasted }: { pasted: boolean }) {
   );
 }
 
-export function PillCapsule({ session, alwaysShowPill, copyToClipboard }: PillSnapshot) {
-  const view = pillView(session, { copyToClipboard });
+export function PillCapsule({ session, alwaysShowPill }: PillSnapshot) {
+  const view = pillView(session);
   return (
     <div {...stylex.props(styles.frame)}>
       <div
