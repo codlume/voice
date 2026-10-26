@@ -143,7 +143,7 @@ function checkout(t, mode) {
       models: {
         asr: { state: "ready" },
         cleanup: { state: ${JSON.stringify(mode === "model" ? "failed" : "ready")} },
-        transform: { state: "ready" },
+        transform: { state: ${JSON.stringify(mode === "transform-installed" ? "installed" : "ready")} },
       },
     };
     export const snapshotStream = async () => ({
@@ -710,5 +710,25 @@ test(
     assert.equal(existsSync(f.userData), false);
     assert.equal(existsSync(f.trace), false);
     assert.equal(processIdentity(ownerPid), null);
+  },
+);
+
+test(
+  "a cached transform model that is not loaded yet does not block a scenario",
+  { timeout: 20_000 },
+  async (t) => {
+    const f = checkout(t, "transform-installed");
+    const result = await new Promise((resolve) => {
+      execFile(
+        process.execPath,
+        [f.script, "scenario", "short-dictation"],
+        { env: f.env, timeout: 15_000 },
+        (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr }),
+      );
+    });
+    const report = JSON.parse(result.stdout);
+    assert.deepEqual(report.prerequisites.models, [], result.stderr);
+    assert.notEqual(report.status, "BLOCKED");
+    assertTeardown(f);
   },
 );
