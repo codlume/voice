@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { Outcome, TransformOutcome } from "../shared/api.ts";
+import type { InsertFailure, Outcome, TransformOutcome } from "../shared/api.ts";
 import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
 
 const done = (outcome: Outcome, copyToClipboard = false) =>
@@ -29,33 +29,39 @@ describe("pillView", () => {
       kind: "inserted",
       method: "paste",
     });
-    expect(done({ kind: "notInserted", reason: "failed" }).kind).not.toBe("inserted");
+    expect(done({ kind: "notInserted", reason: "failed", copied: true }).kind).not.toBe("inserted");
+  });
+
+  const kept = (reason: InsertFailure, copied: boolean): Outcome => ({
+    kind: "notInserted",
+    reason,
+    copied,
   });
 
   test.each<[Outcome, string]>([
     [{ kind: "empty" }, "Nothing heard"],
     [{ kind: "tooShort" }, "Too short. Hold to talk"],
-    [{ kind: "notInserted", reason: "focusChanged" }, "Not inserted. Focus changed"],
-    [{ kind: "notInserted", reason: "noFocusedField" }, "Not inserted. No text field"],
-    [{ kind: "notInserted", reason: "secureInput" }, "Not inserted. Secure field"],
-    [{ kind: "notInserted", reason: "selectionChanged" }, "Not inserted. Text changed"],
-    [{ kind: "notInserted", reason: "failed" }, "Not inserted. Copy it from Voice"],
+    [kept("focusChanged", false), "Not inserted. Focus changed"],
+    [kept("noFocusedField", false), "Not inserted. No text field"],
+    [kept("secureInput", false), "Not inserted. Secure field"],
+    [kept("selectionChanged", false), "Not inserted. Text changed"],
+    [kept("failed", false), "Not inserted. Copy it from Voice"],
     [
       { kind: "failed", message: "Set up the speech model in Voice first" },
       "Set up the speech model in Voice first",
     ],
-  ])("%j reads %s", (outcome, text) => {
-    expect(done(outcome)).toEqual({ kind: "message", text });
+  ])("%j reads %s even with the copy setting on", (outcome, text) => {
+    expect(done(outcome, true)).toEqual({ kind: "message", text });
   });
 
   test.each<[Outcome, string]>([
-    [{ kind: "notInserted", reason: "focusChanged" }, "Focus changed. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "noFocusedField" }, "No text field. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "secureInput" }, "Secure field. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "selectionChanged" }, "Text changed. Copied to clipboard"],
-    [{ kind: "notInserted", reason: "failed" }, "Not inserted. Copied to clipboard"],
-  ])("with copy to clipboard on, %j reads %s", (outcome, text) => {
-    expect(done(outcome, true)).toEqual({ kind: "message", text });
+    [kept("focusChanged", true), "Focus changed. Copied to clipboard"],
+    [kept("noFocusedField", true), "No text field. Copied to clipboard"],
+    [kept("secureInput", true), "Secure field. Copied to clipboard"],
+    [kept("selectionChanged", true), "Text changed. Copied to clipboard"],
+    [kept("failed", true), "Not inserted. Copied to clipboard"],
+  ])("once copied, %j reads %s even with the copy setting off", (outcome, text) => {
+    expect(done(outcome)).toEqual({ kind: "message", text });
   });
 
   test.each<Outcome>([

@@ -899,11 +899,29 @@ describe("copy to clipboard", () => {
   });
 
   test("copies nothing with the setting off", () => {
-    const { all } = run([
+    const { state, all } = run([
       ...toInserting,
       [{ type: "insertResult", id: ID, method: "none", reason: "focusChanged" }, 2100],
     ]);
     expect(types(all)).not.toContain("copy");
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
+    });
+  });
+
+  test("the outcome records that the text was copied", () => {
+    const { state } = run([
+      ...toTranscribing,
+      copying("hello world", null),
+      [{ type: "insertResult", id: ID, method: "none", reason: "focusChanged" }, 2100],
+    ]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: true },
+    });
   });
 });
 

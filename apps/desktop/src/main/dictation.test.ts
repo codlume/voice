@@ -1429,7 +1429,7 @@ describe("createDictation", () => {
       });
       expect(h.store.state.session).toMatchObject({
         phase: "done",
-        outcome: { kind: "notInserted" },
+        outcome: { kind: "notInserted", copied: true },
       });
       expect(h.copies).toEqual([{ text: "keep me", html: null }]);
     });
@@ -1463,7 +1463,7 @@ describe("createDictation", () => {
       h.dictation.dispatch({ type: "helperExited" });
       expect(h.store.state.session).toMatchObject({
         phase: "done",
-        outcome: { kind: "notInserted", reason: "failed" },
+        outcome: { kind: "notInserted", reason: "failed", copied: true },
       });
       expect(h.copies).toEqual([{ text: "x", html: null }]);
       expect(h.signals[0]!.aborted).toBe(true);
@@ -1505,7 +1505,7 @@ describe("createDictation", () => {
     expect(h.store.state.session).toEqual({
       phase: "done",
       id,
-      outcome: { kind: "notInserted", reason: "failed" },
+      outcome: { kind: "notInserted", reason: "failed", copied: false },
     });
     expect(h.latest()).toMatchObject({ raw: "stuck", text: "stuck", status: "notInserted" });
   });
