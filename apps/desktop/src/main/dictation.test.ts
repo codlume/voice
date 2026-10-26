@@ -780,8 +780,6 @@ describe("createDictation", () => {
     release(h, 100);
     const failed = release(h, 800);
     h.dictation.onHelperEvent({ type: "transcript.failed", id: failed, message: "decoder broke" });
-    await dictate(h, "the helper quit mid insert");
-    h.dictation.dispatch({ type: "helperExited" });
     const superseded = release(h, 800);
     h.dictation.dispatch({ type: "helperExited" });
     h.dictation.onHelperEvent({
@@ -797,7 +795,6 @@ describe("createDictation", () => {
     expect(h.reports.map((report) => report.outcome.kind)).toEqual([
       "empty",
       "tooShort",
-      "failed",
       "failed",
       "failed",
     ]);
@@ -1446,12 +1443,35 @@ describe("createDictation", () => {
       expect(h.copies).toEqual([{ text: "stuck", html: null }]);
     });
 
-    test("copies the text when the helper exits mid-insert", async () => {
+    test("copies the text when the helper exits mid-insert and reports it not inserted", async () => {
       const h = harness({ copyToClipboard: true, cleanupEnabled: false });
       await dictate(h, "x");
       h.dictation.dispatch({ type: "helperExited" });
-      expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "failed" } });
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", reason: "failed" },
+      });
       expect(h.copies).toEqual([{ text: "x", html: null }]);
+      expect(h.latest()).toMatchObject({ raw: "x", text: "x", status: "notInserted" });
+      expect(h.dictated).toMatchObject([{ raw: "x", insertedCleanup: null }]);
+    });
+
+    test("copies the uncleaned text when the helper exits mid-cleanup and drops the cleanup", async () => {
+      const h = harness({ copyToClipboard: true, cleanHangs: true });
+      await dictate(h, "x");
+      expect(h.store.state.session.phase).toBe("cleaning");
+      h.dictation.dispatch({ type: "helperExited" });
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", reason: "failed" },
+      });
+      expect(h.copies).toEqual([{ text: "x", html: null }]);
+      expect(h.signals[0]!.aborted).toBe(true);
+      expect(h.latest()).toMatchObject({ raw: "x", text: "x", status: "notInserted" });
+      expect(h.dictated).toMatchObject([{ raw: "x", insertedCleanup: null }]);
+      h.hung[0]!({ text: "x.", chunks: 1, cleaned: 1 });
+      await flush();
+      expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
     });
 
     test("copies nothing when the setting is off", async () => {
