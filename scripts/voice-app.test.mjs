@@ -36,6 +36,15 @@ import {
 
 const child = () => ({ stderr: new PassThrough() });
 
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("dependency inspection never executes Electron's installer or entry point", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "voice-electron-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -327,14 +336,6 @@ setInterval(() => {}, 1000);`,
     ],
     { stdio: ["ignore", "pipe", "inherit"] },
   );
-  const alive = (pid) => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
   const childPid = Number(String(await once(parent.stdout, "data")).trim());
   t.after(() => {
     for (const pid of [childPid, parent.pid]) if (alive(pid)) process.kill(pid, "SIGKILL");

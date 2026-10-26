@@ -247,11 +247,13 @@ function interruptible(message) {
   });
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);
+  process.on("SIGHUP", interrupt);
   return {
     wait: (promise) => Promise.race([promise, interrupted]),
     release() {
       process.removeListener("SIGINT", interrupt);
       process.removeListener("SIGTERM", interrupt);
+      process.removeListener("SIGHUP", interrupt);
     },
   };
 }
@@ -447,6 +449,7 @@ const commands = {
     };
     process.on("SIGINT", () => void shutdown(130));
     process.on("SIGTERM", () => void shutdown(0));
+    process.on("SIGHUP", () => void shutdown(129));
 
     try {
       const userData = keep
@@ -608,6 +611,7 @@ const commands = {
     };
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
+    process.on("SIGHUP", interrupt);
     let state;
     let readiness;
     let hub;

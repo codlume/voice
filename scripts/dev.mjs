@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, watch } from "node:fs";
 import { createRequire } from "node:module";
+import { constants } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,6 +42,10 @@ function start(command, args, options = {}) {
   });
   children.add(child);
   child.on("exit", () => children.delete(child));
+  child.on("error", () => {
+    children.delete(child);
+    stop(1);
+  });
   return child;
 }
 
@@ -96,8 +101,9 @@ async function waitForDevServer() {
   }
 }
 
-process.on("SIGINT", () => stop(130));
-process.on("SIGTERM", () => stop(143));
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => stop(128 + constants.signals[signal]));
+}
 
 mkdirSync(distDir, { recursive: true });
 for (const args of [["dev"], ["pack", "--watch"]]) {

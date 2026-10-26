@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
+import { constants } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -377,11 +378,11 @@ export function launchVoice(
 
 export function stopChildrenOnSignal() {
   let shuttingDown = false;
-  for (const signal of ["SIGINT", "SIGTERM"]) {
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => {
       if (shuttingDown) return;
       shuttingDown = true;
-      void stopChildren().finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
+      void stopChildren().finally(() => process.exit(128 + constants.signals[signal]));
     });
   }
 }
