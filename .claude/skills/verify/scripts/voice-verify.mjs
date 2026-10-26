@@ -655,9 +655,10 @@ const commands = {
       hub = await wait(Page.connect(state.port, "hub.html"));
       const snapshot = await wait(hub.evaluate("window.voice.getSnapshot()"));
       readiness = { models: snapshot.models, permissions: snapshot.permissions };
-      prerequisites.models = Object.entries(snapshot.models).filter(
-        ([, model]) => model.state !== "ready",
-      );
+      prerequisites.models = [
+        ["asr", snapshot.models.asr],
+        ["cleanup", snapshot.models.cleanup],
+      ].filter(([, model]) => model.state !== "ready");
       prerequisites.permissions =
         snapshot.permissions.accessibility === "granted"
           ? []
