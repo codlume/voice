@@ -690,7 +690,7 @@ async function main() {
     current: () => store.state.settings,
     save: async (next) => {
       try {
-        await saveSettings(settingsFile, next);
+        await saveSettings(settingsFile, next, log);
       } catch (error) {
         log(`settings: save failed (${String(error)})`);
         throw new Error("Could not save this setting. Try again.", { cause: error });
