@@ -9,17 +9,19 @@ public struct AXTextRange: Equatable, Sendable {
 }
 
 /// What the focused element reports around an `AXSelectedText` write. Either field is nil when
-/// the app does not expose it.
+/// the app does not expose it. The text length in UTF-16 units stands in for the text itself:
+/// the verdict only needs to know whether anything moved, and copying a long document on every
+/// insert is slow.
 public struct AXTextState: Equatable, Sendable {
-    public var value: String?
+    public var length: Int?
     public var selection: AXTextRange?
 
-    public init(value: String?, selection: AXTextRange?) {
-        self.value = value
+    public init(length: Int?, selection: AXTextRange?) {
+        self.length = length
         self.selection = selection
     }
 
-    public var isObservable: Bool { value != nil && selection != nil }
+    public var isObservable: Bool { length != nil && selection != nil }
 }
 
 /// Whether a write the app reported as a success actually took. The write is doubted only when

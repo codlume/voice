@@ -190,14 +190,25 @@ final class Insertion {
     }
 
     private func textState(of element: AXUIElement) -> AXTextState {
-        var value: CFTypeRef?
-        let text = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success
-            ? value as? String : nil
         var selection: AXTextRange?
         if case .value(let range) = focusAttribute(element, kAXSelectedTextRangeAttribute) {
             selection = axTextRange(range)
         }
-        return AXTextState(value: text, selection: selection)
+        return AXTextState(length: textLength(of: element), selection: selection)
+    }
+
+    // The count answers without copying the document. An element that has no count still gets
+    // the value read, so one that was observable before the write stays observable after it and
+    // a silent no-op still reaches the paste fallback.
+    private func textLength(of element: AXUIElement) -> Int? {
+        if case .value(let count) = focusAttribute(element, kAXNumberOfCharactersAttribute), let length = count as? Int {
+            return length
+        }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success,
+            let text = value as? String
+        else { return nil }
+        return text.utf16.count
     }
 
     private func paste(id: String, text: String, html: String?) {
