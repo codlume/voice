@@ -24,8 +24,8 @@ final class InsertTarget {
         self.host = OSAllocatedUnfairLock(initialState: host)
     }
 
-    var switchGuard: SwitchGuard {
-        origin == nil ? .pressStamp(moved: focusInputStamp() != pressStamp) : .selectionOrigin
+    var comparesTitle: Bool {
+        origin == nil && focusInputStamp() != pressStamp
     }
 
     func settleHost() {
@@ -148,7 +148,7 @@ final class Insertion {
         else {
             return .refused(.failed)
         }
-        switch destination.focus.validate(readTargetFocus(pid: pid), guardedBy: destination.switchGuard) {
+        switch destination.focus.validate(readTargetFocus(pid: pid), comparingTitle: destination.comparesTitle) {
         case .unchanged:
             if let origin = destination.origin, selectionMoved(origin, element: captured.element?.value) {
                 output.log(.info, "insert refused: selection changed since the read")
