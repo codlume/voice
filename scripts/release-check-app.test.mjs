@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   asarProblems,
@@ -142,4 +143,25 @@ test("a missing runtime external is a problem", () => {
     ),
     ["app.asar lacks runtime external node-llama-cpp"],
   );
+});
+
+test("a missing dependency of a runtime external is a problem", () => {
+  const { files, readManifest } = leanAsar();
+  assert.deepEqual(
+    asarProblems(
+      files.filter((file) => !file.startsWith("node_modules/graceful-fs/")),
+      readManifest,
+    ),
+    [
+      "app.asar lacks graceful-fs, which node_modules/fs-extra needs",
+      "app.asar lacks graceful-fs, which node_modules/node-llama-cpp/node_modules/fs-extra needs",
+    ],
+  );
+});
+
+test("the desktop app depends on exactly the runtime externals", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../apps/desktop/package.json", import.meta.url), "utf8"),
+  );
+  assert.deepEqual(Object.keys(manifest.dependencies).toSorted(), RUNTIME_EXTERNALS.toSorted());
 });
