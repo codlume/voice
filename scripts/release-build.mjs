@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { appBuilderRequire, checkPackagedApp } from "./release-check-app.mjs";
 import { parseVersion } from "./release-version.mjs";
 import { releaseBaseUrl } from "./release-publish.mjs";
-import { smokePackagedApp } from "./voice-app.mjs";
+import { smokePackagedApp, stopChildrenOnSignal } from "./voice-app.mjs";
 
 const channel = process.env.RELEASE_CHANNEL;
 const version = process.env.RELEASE_VERSION;
@@ -16,6 +16,7 @@ if ((channel === "stable") !== (parseVersion(version).nightly === null)) {
   throw new Error("Release version does not match channel");
 }
 
+stopChildrenOnSignal();
 const desktop = resolve("apps/desktop");
 const config = {
   extends: "./electron-builder.yml",
