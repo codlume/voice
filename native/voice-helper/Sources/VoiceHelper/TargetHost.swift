@@ -12,8 +12,6 @@ private let browserBundleIds: Set<String> = [
 
 /// Measured walks reach the window in 10 to 11 hops; the bound only stops a runaway ancestry.
 private let webAreaMaxDepth = 64
-private let windowSearchMaxDepth = 3
-private let windowSearchMaxNodes = 64
 /// Warm reads measured under 50 ms, so a read still running after this has met a stalled browser.
 private let hostReadBudget: TimeInterval = 1
 
@@ -36,27 +34,40 @@ func readPageHost(
 }
 
 private func browserPageHost(_ focus: TargetFocus<FocusElement>, giveUp: () -> Bool) -> (host: String?, outcome: String) {
-    if let element = focus.element {
+    switch focus.anchor {
+    case .element(let element):
         let walk = outermostWebArea(above: AXNode(element.value), maxDepth: webAreaMaxDepth, giveUp: giveUp)
         guard let area = walk.node else {
             return (nil, "\(giveUp() ? "gave up" : "no web area") after \(walk.hops) hops")
         }
-        return host(of: area, "after \(walk.hops) hops")
+        return host(of: area.url, "after \(walk.hops) hops")
+    case .windowOnly(let pageURL):
+        return host(of: pageURL, "below the window")
     }
-    // Chromium reports no focused element until an assistive client switches its web accessibility
-    // on, but the view hosting the page still answers for the URL, so this finds the page without
-    // turning that tree on.
-    let window = AXNode(focus.window.value)
-    let search = pageNode(below: window, maxDepth: windowSearchMaxDepth, maxNodes: windowSearchMaxNodes, giveUp: giveUp)
-    guard let page = search.node else {
-        return (nil, "\(giveUp() ? "gave up" : "no page below the window") after \(search.visited) nodes")
-    }
-    return host(of: page, "below the window after \(search.visited) nodes")
 }
 
-private func host(of page: AXNode, _ location: String) -> (host: String?, outcome: String) {
-    guard let url = page.url, let host = pageHost(url) else { return (nil, "not http(s) \(location)") }
+private func host(of url: String?, _ location: String) -> (host: String?, outcome: String) {
+    guard let url else { return (nil, "no URL \(location)") }
+    guard let host = pageHost(url) else { return (nil, "not http(s) \(location)") }
     return (host, "found \(location)")
+}
+
+private let windowSearchMaxDepth = 3
+private let windowSearchMaxNodes = 64
+/// The insert waits on this read on main, so a stalled app gives up here instead of at the AX
+/// timeout of every node. Giving up reads as no URL, so an app that never has one (Electron) is
+/// never refused for it.
+private let windowSearchBudget: TimeInterval = 0.1
+
+/// Chromium reports no focused element until an assistive client switches its web accessibility
+/// on, but the view hosting the page still answers for the URL. Chrome has it on the group under
+/// the window. Electron has none, so the search exhausts its bounds there.
+func pageURL(below window: AXUIElement) -> String? {
+    let deadline = DispatchTime.now() + windowSearchBudget
+    return pageNode(
+        below: AXNode(window), maxDepth: windowSearchMaxDepth, maxNodes: windowSearchMaxNodes,
+        giveUp: { DispatchTime.now() >= deadline }
+    ).node?.url
 }
 
 private struct AXNode: AccessibilityNode {

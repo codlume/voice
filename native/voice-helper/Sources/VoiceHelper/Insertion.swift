@@ -150,11 +150,11 @@ final class Insertion {
         }
         switch destination.focus.validate(readTargetFocus(pid: pid), comparingTitle: destination.comparesTitle) {
         case .unchanged:
-            if let origin = destination.origin, selectionMoved(origin, element: captured.element?.value) {
+            if let origin = destination.origin, selectionMoved(origin, element: captured.anchor.element?.value) {
                 output.log(.info, "insert refused: selection changed since the read")
                 return .refused(.selectionChanged)
             }
-            return .ready(focused: captured.element?.value)
+            return .ready(focused: captured.anchor.element?.value)
         case .changed:
             output.log(.info, "insert refused: target focus changed")
             return .refused(.focusChanged)
@@ -320,7 +320,8 @@ private func readTargetFocus(pid: pid_t) -> FocusReread<FocusElement> {
     case .absent: title = nil
     case .noAnswer: return .noAnswer
     }
-    return .focused(TargetFocus(element: element, window: FocusElement(value: window), title: title))
+    let anchor = element.map(FocusAnchor.element) ?? .windowOnly(pageURL: pageURL(below: window))
+    return .focused(TargetFocus(anchor: anchor, window: FocusElement(value: window), title: title))
 }
 
 func currentLayoutData() -> Data? {

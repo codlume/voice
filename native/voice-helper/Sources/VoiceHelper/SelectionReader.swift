@@ -57,7 +57,7 @@ final class SelectionReader {
         guard try await keysReleased() else { return .failed(.keysHeld) }
         let target = insertion.recordTarget(pid: app.processIdentifier, bundleId: app.bundleIdentifier, host: .read(nil), log: nil)
         guard let focus = try await settledFocus(of: target) else { return .failed(.failed) }
-        let element = focus.element?.value
+        let element = focus.anchor.element?.value
         let answer = await Task.detached(priority: .userInitiated) { readAXSelection(element) }.value
         try Task.checkCancellation()
         switch planRead(secureInput: IsSecureEventInputEnabled(), answer: answer) {
