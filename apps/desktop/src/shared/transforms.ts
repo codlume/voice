@@ -70,6 +70,9 @@ export const sameShortcut = (a: Shortcut, b: Shortcut): boolean =>
   a.modifiers.length === b.modifiers.length &&
   a.modifiers.every((modifier, i) => modifier === b.modifiers[i]);
 
+export const autoAppliedTransform = (settings: TransformSettings): Transform | undefined =>
+  settings.enabled ? settings.items.find((item) => item.id === settings.autoApply) : undefined;
+
 export function registeredShortcuts(settings: TransformSettings): HelperShortcut[] {
   if (!settings.enabled) return [];
   return settings.items.flatMap(({ id, shortcut }) =>

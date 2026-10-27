@@ -5,6 +5,7 @@ import {
   DEFAULT_TRANSFORMS,
   POLISH_ID,
   type LastTransform,
+  type TransformId,
   type TransformSettings,
 } from "../shared/transforms.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -518,21 +519,23 @@ describe("followTransformSettings", () => {
   // Wired as index.ts wires it: every store change goes through it with the previous state.
   function followed(opts: Options & { onDisk?: boolean } = {}) {
     const h = harness(opts);
-    const calls: ("install" | "unload")[] = [];
+    const calls: ("install" | "unload" | "keepResident:on" | "keepResident:off")[] = [];
     const model = {
       onDisk: () => opts.onDisk ?? true,
       install: async () => void calls.push("install"),
       unload: async () => void calls.push("unload"),
+      keepResident: (on: boolean) => void calls.push(on ? "keepResident:on" : "keepResident:off"),
     };
     h.store.subscribe((state, previous) =>
       followTransformSettings(model, h.transforms, state, previous),
     );
-    const setEnabled = (enabled: boolean) =>
+    const setTransforms = (patch: Partial<TransformSettings>) =>
       h.store.update((s) => ({
         ...s,
-        settings: { ...s.settings, transforms: { ...s.settings.transforms, enabled } },
+        settings: { ...s.settings, transforms: { ...s.settings.transforms, ...patch } },
       }));
-    return { ...h, calls, setEnabled };
+    const setEnabled = (enabled: boolean) => setTransforms({ enabled });
+    return { ...h, calls, setEnabled, setTransforms };
   }
 
   test("turning Transforms on downloads the model once when it is missing", () => {
@@ -578,5 +581,40 @@ describe("followTransformSettings", () => {
     h.store.update((s) => ({ ...s, settings: { ...s.settings, copyToClipboard: true } }));
     h.setEnabled(true);
     expect(h.calls).toEqual([]);
+  });
+
+  test("choosing a transform to run after dictation keeps the model resident, and clearing it releases it", () => {
+    const h = followed();
+    h.setTransforms({ autoApply: POLISH_ID });
+    expect(h.calls).toEqual(["keepResident:on"]);
+
+    h.setTransforms({ autoApply: null });
+    expect(h.calls).toEqual(["keepResident:on", "keepResident:off"]);
+  });
+
+  test("turning Transforms on with a choice saved keeps the model resident before it installs", () => {
+    const h = followed({ transforms: { enabled: false, autoApply: POLISH_ID }, onDisk: false });
+    h.setEnabled(true);
+    expect(h.calls).toEqual(["keepResident:on", "install"]);
+  });
+
+  test("turning Transforms off releases the model before it unloads", () => {
+    const h = followed({ transforms: { autoApply: POLISH_ID } });
+    h.setEnabled(false);
+    expect(h.calls).toEqual(["keepResident:off", "unload"]);
+  });
+
+  test("a choice that names no transform in the list keeps nothing resident", () => {
+    const h = followed();
+    h.setTransforms({ autoApply: "gone" as TransformId });
+    expect(h.calls).toEqual([]);
+  });
+
+  test("deleting the chosen transform from the list releases the model", () => {
+    const h = followed({ transforms: { autoApply: POLISH_ID } });
+    h.setTransforms({
+      items: h.store.state.settings.transforms.items.filter((t) => t.id !== POLISH_ID),
+    });
+    expect(h.calls).toEqual(["keepResident:off"]);
   });
 });

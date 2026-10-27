@@ -451,6 +451,106 @@ describe("transform model", () => {
     expect(workers[0]?.runs).toEqual([]);
   });
 
+  describe("kept resident", () => {
+    test("loads the model as soon as a launch check finds its weights, with no run", async () => {
+      const { model, workers, statuses, last } = harness();
+
+      model.keepResident(true);
+      await model.refresh();
+
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+      expect(statuses).toEqual([{ state: "installed" }, { state: "loading" }, { state: "ready" }]);
+      expect(workers).toHaveLength(1);
+      expect(workers[0]?.runs).toEqual([]);
+    });
+
+    test("loads a model that is already installed when it is asked for", async () => {
+      const { model, workers, last } = harness();
+      await model.refresh();
+      expect(workers).toEqual([]);
+
+      model.keepResident(true);
+
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+      expect(workers[0]?.loads).toBe(1);
+    });
+
+    test("loads the model once a download it waited for finishes", async () => {
+      const { model, workers, last } = harness({ onDisk: false });
+      model.keepResident(true);
+      await model.refresh();
+      expect(workers).toEqual([]);
+
+      await model.install();
+
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+      expect(workers).toHaveLength(1);
+    });
+
+    test("never unloads after the idle wait, and the next run reuses the process", async () => {
+      idleTimers();
+      const { model, workers, last } = harness();
+      model.keepResident(true);
+      await model.refresh();
+      await model.run(request());
+
+      await vi.advanceTimersByTimeAsync(3 * IDLE_UNLOAD_MS);
+
+      expect(workers[0]?.closed).toBe(false);
+      expect(last()).toEqual({ state: "ready" });
+      await model.run(request());
+      expect(workers).toHaveLength(1);
+      expect(workers[0]?.runs).toHaveLength(2);
+    });
+
+    test("released, it unloads after one idle wait from the release", async () => {
+      idleTimers();
+      const { model, workers, last } = harness();
+      model.keepResident(true);
+      await model.refresh();
+      await model.run(request());
+      await vi.advanceTimersByTimeAsync(2 * IDLE_UNLOAD_MS);
+
+      model.keepResident(false);
+
+      await vi.advanceTimersByTimeAsync(IDLE_UNLOAD_MS - 1);
+      expect(workers[0]?.closed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+      expect(last()).toEqual({ state: "installed" });
+    });
+
+    test("a lost process is not loaded again until the next run", async () => {
+      const { model, workers, nextRun, last } = harness({ holdRuns: true });
+      model.keepResident(true);
+      await model.refresh();
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+      const started = nextRun();
+      const running = model.run(request());
+      await started;
+
+      workers[0]?.crash();
+
+      await expect(running).rejects.toThrow("stopped unexpectedly");
+      expect(last()).toEqual({ state: "installed" });
+      expect(workers).toHaveLength(1);
+    });
+
+    test("an unload still stops the process, and the next run loads it again", async () => {
+      const { model, workers, last } = harness();
+      model.keepResident(true);
+      await model.refresh();
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+
+      await model.unload();
+
+      await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+      expect(last()).toEqual({ state: "installed" });
+      await model.run(request());
+      expect(workers).toHaveLength(2);
+    });
+  });
+
   test("dispose stops the process without reporting it lost", async () => {
     const { model, workers, statuses } = harness();
     await model.refresh();

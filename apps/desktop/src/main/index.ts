@@ -36,6 +36,7 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
+import { autoAppliedTransform } from "../shared/transforms.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored } from "./account-storage.ts";
 import {
@@ -861,6 +862,7 @@ async function main() {
   }
   updates.start();
   void cleanup.loadIfDownloaded();
+  transformModel.keepResident(autoAppliedTransform(store.state.settings.transforms) !== undefined);
   void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
   // verify skill deliver a sign-in callback URL, which macOS does not route to the stock

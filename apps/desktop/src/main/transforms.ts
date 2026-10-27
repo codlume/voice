@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { TransformOutcome } from "../shared/api.ts";
-import type { LastTransform, TransformId } from "../shared/transforms.ts";
+import {
+  autoAppliedTransform,
+  type LastTransform,
+  type TransformId,
+} from "../shared/transforms.ts";
 import { activity } from "./activity.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
@@ -264,11 +268,15 @@ export function createTransforms(options: TransformsOptions): Transforms {
 }
 
 export function followTransformSettings(
-  model: Pick<TransformModel, "onDisk" | "install" | "unload">,
+  model: Pick<TransformModel, "onDisk" | "install" | "unload" | "keepResident">,
   transforms: Pick<Transforms, "dispatch" | "clearLast">,
   state: AppState,
   previous: AppState,
 ) {
+  const autoApplied = autoAppliedTransform(state.settings.transforms) !== undefined;
+  if (autoApplied !== (autoAppliedTransform(previous.settings.transforms) !== undefined)) {
+    model.keepResident(autoApplied);
+  }
   const enabled = state.settings.transforms.enabled;
   if (enabled === previous.settings.transforms.enabled) return;
   if (enabled) {
