@@ -945,6 +945,21 @@ describe("load and save", () => {
     expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
   });
 
+  test("a save after a file unreadable at launch becomes readable sets the file aside", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = `${JSON.stringify({ dictionary: [{ id: "d", phrase: "Kubernetes" }] })}\n`;
+    await writeFile(file, original);
+    await chmod(file, 0o000);
+    const store = openSettings(file);
+    await chmod(file, 0o600);
+    expect(store.settings).toEqual(DEFAULT_SETTINGS);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    const asides = (await readdir(dir)).filter((name) => name !== "settings.json");
+    expect(asides).toHaveLength(1);
+    expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+  });
+
   test("a save keeps top-level keys this build does not know", async () => {
     const file = NodePath.join(dir, "settings.json");
     const futureFeature = { items: [{ id: "f", on: true }] };
