@@ -13,6 +13,7 @@ struct FocusElement: Equatable {
 final class InsertTarget {
     let pid: pid_t?
     let bundleId: String?
+    let pressStamp = focusInputStamp()
     var focus = CapturedFocus<FocusElement>.pending
     var origin: SelectionOrigin?
     let host: OSAllocatedUnfairLock<HostRead>
@@ -21,6 +22,10 @@ final class InsertTarget {
         self.pid = pid
         self.bundleId = bundleId
         self.host = OSAllocatedUnfairLock(initialState: host)
+    }
+
+    var switchGuard: SwitchGuard {
+        origin == nil ? .pressStamp(moved: focusInputStamp() != pressStamp) : .selectionOrigin
     }
 
     func settleHost() {
@@ -57,8 +62,7 @@ final class Insertion {
         }
         let readHost = host == .pending && isBrowser(bundleId)
         if !readHost { target.settleHost() }
-        let input = focusInputStamp()
-        let inputUnchanged = { focusInputStamp() == input }
+        let inputUnchanged = { focusInputStamp() == target.pressStamp }
         DispatchQueue.global(qos: .userInitiated).async {
             guard inputUnchanged() else {
                 target.settleHost()
@@ -144,7 +148,7 @@ final class Insertion {
         else {
             return .refused(.failed)
         }
-        switch destination.focus.validate(readTargetFocus(pid: pid), comparingTitle: destination.origin == nil) {
+        switch destination.focus.validate(readTargetFocus(pid: pid), guardedBy: destination.switchGuard) {
         case .unchanged:
             if let origin = destination.origin, selectionMoved(origin, element: captured.element?.value) {
                 output.log(.info, "insert refused: selection changed since the read")
