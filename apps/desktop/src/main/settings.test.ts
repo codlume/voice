@@ -901,6 +901,27 @@ describe("load and save", () => {
     expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
   });
 
+  test("a save after a hand repair of a file that was corrupt at launch keeps the repaired data", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const repaired = {
+      dictionary: [{ id: "d", phrase: "Kubernetes", replacement: null }],
+      snippets: [
+        { id: "s", trigger: "sig", expansion: "Synthetic", expansionHtml: null, enabled: true },
+      ],
+      transforms: { enabled: true, items: [bullets], autoApply: null },
+      cleanup: { enabled: true, styles: PERSONAL_CASUAL_REST_FORMAL, assignments: [] },
+    };
+    const repairedText = `${JSON.stringify(repaired, null, 2)}\n`;
+    await writeFile(file, repairedText.replace("\n}\n", ",\n}\n"));
+    const store = openSettings(file);
+    expect(store.settings).toEqual(DEFAULT_SETTINGS);
+    await writeFile(file, repairedText);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    const kept = (await readdir(dir)).filter((name) => name !== "settings.json");
+    const survivor = kept.length === 0 ? file : NodePath.join(dir, kept[0]!);
+    expect(JSON.parse(await readFile(survivor, "utf8"))).toMatchObject(repaired);
+  });
+
   test("a save keeps top-level keys this build does not know", async () => {
     const file = NodePath.join(dir, "settings.json");
     const futureFeature = { items: [{ id: "f", on: true }] };
