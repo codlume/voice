@@ -118,6 +118,8 @@ describe("assertPlausibleCleanup", () => {
       "We need 15 more, and the first one is free.",
     ],
     ["half past three and half past four", "3:30 and 4:30."],
+    ["meet me at nine oh five", "Meet me at 9:05."],
+    ["it costs two point five million dollars", "It costs $2.5 million."],
     [
       "we have two goals this quarter the first one is to reduce onboarding time from twelve minutes to under five minutes and the second one is to ship windows support by the end of november",
       "We have two goals this quarter:\n- reduce onboarding time from 12 minutes to under 5 minutes\n- ship Windows support by the end of November",
@@ -125,6 +127,10 @@ describe("assertPlausibleCleanup", () => {
     [
       "we can't ship this on friday because the release notes and the pricing page are still missing",
       "We can't ship this on Friday because the release notes and the pricing page are still missing.",
+    ],
+    [
+      "i don't i don't think we should ship this on friday",
+      "I don't think we should ship this on Friday.",
     ],
     [
       "reply to john saying thanks i will look at it tomorrow and let him know the numbers look good and churn is down and we should celebrate on friday with the whole team",
@@ -184,6 +190,7 @@ describe("assertPlausibleCleanup", () => {
       "We need 50 more, and the first one is free.",
     ],
     ["see you at a quarter to five", "See you at 3:45."],
+    ["the rate is one point five percent", "The rate is 15%."],
     ["twenty five", ""],
     ["ten a m", ""],
   ])("rejects an output that changed the numbers in %j", (input, output) => {

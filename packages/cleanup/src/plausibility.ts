@@ -112,6 +112,12 @@ const ORDINALS = new Map(
 const NUMBER_WORDS = new Map([...CARDINALS, ...ORDINALS]);
 const isNumber = (word: string) => NUMBER_WORDS.has(word) || /^\p{N}+$/u.test(word);
 
+// Spoken between two numbers, these words belong to them: "two point five", "nine oh five".
+const BETWEEN_NUMBERS = new Map([
+  ["point", "."],
+  ["oh", "0"],
+]);
+
 // The numbers in a word stream as digit strings. Spoken words join into one number while they
 // still can, so "three thirty" is 3 and 30 and "twenty twenty six" is 20 and 26. A spoken
 // ordinal is left out: cleanup may turn "the first one is ... the second one is ..." into a
@@ -129,12 +135,23 @@ function numbers(words: string[]): string[] {
     accepts = "any";
   };
   words.forEach((word, i) => {
+    const next = words[i + 1] ?? "";
     if (/^\p{N}+$/u.test(word)) {
       flush();
-      found.push(word);
+      // "2.5 million" scales its last digits the way "two point five million" does.
+      if ((NUMBER_WORDS.get(next) ?? 0) >= 100) {
+        group = Number(word);
+        open = true;
+      } else found.push(word);
       return;
     }
-    if (word === "and" && accepts === "any" && NUMBER_WORDS.has(words[i + 1] ?? "")) return;
+    const between = BETWEEN_NUMBERS.get(word);
+    if (between && isNumber(words[i - 1] ?? "") && isNumber(next)) {
+      flush();
+      found.push(between);
+      return;
+    }
+    if (word === "and" && accepts === "any" && NUMBER_WORDS.has(next)) return;
     if (word === "one" && ORDINALS.has(words[i - 1] ?? "")) return;
     const value = NUMBER_WORDS.get(word);
     if (value === undefined) {
@@ -174,9 +191,11 @@ function numbersSurvive(input: string[], output: string[]): boolean {
   return reached.has(target.length);
 }
 
-// A dropped or added negation flips the meaning while keeping almost every word.
+// A dropped or added negation flips the meaning while keeping almost every word. A false start
+// such as "i don't i don't think" says it once.
 const NEGATIONS = new Set(["not", "no", "never"]);
-const negations = (words: string[]) => words.filter((word) => NEGATIONS.has(word)).length;
+const negations = (words: string[]) =>
+  withoutFalseStarts(words).filter((word) => NEGATIONS.has(word)).length;
 
 const PRONOUNS = "i you he she it we they that there here what who where how when";
 const MODALS = "would should could must might";
@@ -253,9 +272,10 @@ function normalize(text: string): string {
       .replaceAll(/['’]/g, "")
       // "p.m." and "U.S." read as one word, while "example.com" stays two.
       .replaceAll(/(?<!\p{L})(\p{L})\.(?=\p{L}(?!\p{L}))/gu, "$1")
-      // "14th" is the number 14 and "2,500" is one number.
+      // "14th" is the number 14, "2,500" is one number and "2.5" reads as "two point five".
       .replaceAll(/(?<=\p{N})(?:st|nd|rd|th)(?!\p{L})/gu, "")
       .replaceAll(/(?<=\p{N}),(?=\p{N}{3}(?!\p{N}))/gu, "")
+      .replaceAll(/(?<=\p{N})\.(?=\p{N})/gu, " point ")
       .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
       // "3:30pm" and "10am" count their unit as its own word, like "three thirty pm" does.
       .replaceAll(/(?<=\p{N})(?=\p{L})|(?<=\p{L})(?=\p{N})/gu, " ")
