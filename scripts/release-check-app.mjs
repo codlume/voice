@@ -64,19 +64,27 @@ export function asarProblems(files, readManifest) {
     }
   };
   const needed = new Set();
-  const visit = (name, fromDir) => {
-    const dir = locate(name, fromDir);
-    if (!dir || needed.has(dir)) return;
+  const missing = [];
+  const visit = (dir) => {
+    if (needed.has(dir)) return;
     needed.add(dir);
-    const { dependencies, optionalDependencies } = readManifest(`${dir}/package.json`);
-    for (const dep of Object.keys({ ...dependencies, ...optionalDependencies })) visit(dep, dir);
+    const { dependencies, optionalDependencies = {} } = readManifest(`${dir}/package.json`);
+    for (const name of Object.keys({ ...dependencies, ...optionalDependencies })) {
+      const found = locate(name, dir);
+      if (found) visit(found);
+      else if (!(name in optionalDependencies)) {
+        missing.push(`app.asar lacks ${name}, which ${dir} needs`);
+      }
+    }
   };
-  for (const name of RUNTIME_EXTERNALS) visit(name, "");
+  for (const name of RUNTIME_EXTERNALS) {
+    const dir = locate(name, "");
+    if (dir) visit(dir);
+    else missing.push(`app.asar lacks runtime external ${name}`);
+  }
   const maps = files.filter((file) => file.endsWith(".map"));
   return [
-    ...RUNTIME_EXTERNALS.filter((name) => !locate(name, "")).map(
-      (name) => `app.asar lacks runtime external ${name}`,
-    ),
+    ...missing,
     ...files
       .filter((file) => PACKAGE_ROOT.test(file))
       .map((file) => file.slice(0, -"/package.json".length))
