@@ -18,9 +18,12 @@ private let composer = TargetFocus(element: "composer-a", window: "window-a", ti
         #expect(CapturedFocus.captured(composer).validate(.focused(now), comparingTitle: true) == .changed)
     }
 
-    @Test func selectionGuardedTargetSurvivesATitleChangeButNotAnotherElementOrWindow() {
+    @Test func uncomparedTitleSurvivesATickButNotAnotherElementOrWindow() {
         let unreadCount = TargetFocus(element: "composer-a", window: "window-a", title: "(1) Conversation A")
         #expect(CapturedFocus.captured(composer).validate(.focused(unreadCount), comparingTitle: false) == .unchanged)
+        let windowOnly = TargetFocus<String>(element: nil, window: "window-a", title: "Conversation A")
+        let windowOnlyTicked = TargetFocus<String>(element: nil, window: "window-a", title: "(1) Conversation A")
+        #expect(CapturedFocus.captured(windowOnly).validate(.focused(windowOnlyTicked), comparingTitle: false) == .unchanged)
         let otherComposer = TargetFocus(element: "composer-b", window: "window-a", title: "Conversation A")
         #expect(CapturedFocus.captured(composer).validate(.focused(otherComposer), comparingTitle: false) == .changed)
         let otherWindow = TargetFocus(element: "composer-a", window: "window-b", title: "Conversation A")

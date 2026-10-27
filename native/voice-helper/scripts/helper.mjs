@@ -178,7 +178,7 @@ export async function prepareAsr(helper, { download = false } = {}) {
   return performance.now() - startedAt;
 }
 
-export async function dictateFixture(helper, name, id, language = "en") {
+export async function dictateFixture(helper, name, id, language = "en", { onStarted } = {}) {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;
   helper.send({
@@ -195,6 +195,7 @@ export async function dictateFixture(helper, name, id, language = "en") {
       label: "capture.started",
     },
   );
+  await onStarted?.();
   await helper.waitFor(
     (event) => event.type === "log" && event.message === "test.audioFile ended",
     {

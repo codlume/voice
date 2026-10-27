@@ -1,8 +1,8 @@
-/// AX elements can be reused by chat composers. Compare the window and its title too,
-/// accepting a refusal when a title changes for reasons other than navigation. A target with a
-/// selection origin has its own guard against a composer switch (the selected text and range,
-/// or the press stamp, move), so it can skip the title and survive unread counts and other
-/// live titles ticking while a transform runs.
+/// AX elements can be reused by chat composers, so the window and its title are compared too.
+/// Live titles tick on their own (an unread count), so the title is compared only when a press
+/// could have switched the composer. A target with a selection origin has its own guard against
+/// a composer switch (the selected text and range, or the press stamp, move), so it never
+/// compares the title.
 public struct TargetFocus<Element: Equatable>: Equatable {
     public let element: Element?
     public let window: Element
