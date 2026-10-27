@@ -31,6 +31,7 @@ import {
   Page,
   processIdentity,
   smokeEnvironment,
+  smokePackagedApp,
   stopChildren,
 } from "./voice-app.mjs";
 
@@ -345,4 +346,72 @@ setInterval(() => {}, 1000);`,
   const [code, signal] = await once(parent, "exit");
   assert.equal(alive(childPid), false, "the child outlived the hangup");
   assert.deepEqual({ code, signal }, { code: 129, signal: null });
+});
+
+function standInApp(t, body) {
+  const dir = mkdtempSync(join(tmpdir(), "voice-smoke-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const binary = join(dir, "Voice.app/Contents/MacOS/Voice");
+  mkdirSync(join(dir, "Voice.app/Contents/MacOS"), { recursive: true });
+  writeFileSync(
+    binary,
+    `#!${process.execPath}
+require("node:fs").writeFileSync(${JSON.stringify(join(dir, "pid"))}, String(process.pid));
+const userData = process.argv.find((a) => a.startsWith("--user-data-dir=")).replace("--user-data-dir=", "");
+${body}
+`,
+    { mode: 0o755 },
+  );
+  return { app: join(dir, "Voice.app"), pid: () => Number(readFileSync(join(dir, "pid"), "utf8")) };
+}
+
+test("the packaged-app smoke waits for the helper ready line, then stops the app", async (t) => {
+  const { app, pid } = standInApp(
+    t,
+    `console.log("[voice] userData " + userData);
+console.log("[voice] helper ready (protocol v9)");
+setInterval(() => {}, 1000);`,
+  );
+  await smokePackagedApp(app, { timeoutMs: 5000 });
+  assert.equal(alive(pid()), false);
+});
+
+test("a packaged app that exits before ready fails the smoke with its output", async (t) => {
+  const { app } = standInApp(
+    t,
+    `console.error("Error: Cannot find module 'does-not-exist'");
+process.exit(1);`,
+  );
+  await assert.rejects(smokePackagedApp(app, { timeoutMs: 5000 }), (error) => {
+    assert.match(error.message, /exited \(code 1, signal null\) before its helper was ready/);
+    assert.match(error.message, /Cannot find module 'does-not-exist'/);
+    return true;
+  });
+});
+
+test("a packaged app that never reports ready fails the smoke after the timeout", async (t) => {
+  const { app, pid } = standInApp(
+    t,
+    `console.log("[voice] userData " + userData);
+setInterval(() => {}, 1000);`,
+  );
+  await assert.rejects(
+    smokePackagedApp(app, { timeoutMs: 500 }),
+    /no helper ready line after 500 ms/,
+  );
+  assert.equal(alive(pid()), false);
+});
+
+test("a packaged app that keeps its userData outside the smoke directory fails the smoke", async (t) => {
+  const { app, pid } = standInApp(
+    t,
+    `console.log("[voice] userData /Users/someone/Library/Application Support/Voice");
+console.log("[voice] helper ready (protocol v9)");
+setInterval(() => {}, 1000);`,
+  );
+  await assert.rejects(
+    smokePackagedApp(app, { timeoutMs: 5000 }),
+    /kept its userData at \/Users\/someone\/Library\/Application Support\/Voice/,
+  );
+  assert.equal(alive(pid()), false);
 });

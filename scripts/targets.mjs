@@ -1,6 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,9 +11,9 @@ import {
   electronPath,
   Page,
   repoDir,
-  signalGroup,
   smokeEnvironment,
   start,
+  stopGroup,
 } from "./voice-app.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -128,15 +127,6 @@ export function textEditTarget(label) {
 }
 
 const FIELD = 'document.getElementById("field")';
-
-async function stopGroup(child) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = once(child, "exit");
-  signalGroup(child.pid, "SIGTERM");
-  const force = setTimeout(() => signalGroup(child.pid, "SIGKILL"), 3000);
-  await exited;
-  clearTimeout(force);
-}
 
 // The target is spawned detached, so it outlives this script unless close() stops it.
 export async function electronTarget(userData, { wait = (promise) => promise } = {}) {

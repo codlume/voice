@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { createRequire } from "node:module";
-import { constants } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -230,13 +238,15 @@ export function start(command, args, options) {
 }
 
 export async function stopChildren() {
-  const exits = [...children].map((child) => new Promise((resolve) => child.once("exit", resolve)));
-  for (const child of children) signalGroup(child.pid, "SIGTERM");
-  const force = setTimeout(() => {
-    for (const child of children) signalGroup(child.pid, "SIGKILL");
-  }, 3000);
-  await Promise.all(exits);
-  clearTimeout(force);
+  await Promise.all([...children].map(stopGroup));
+}
+
+export function stopGroup(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  const exit = new Promise((resolve) => child.once("exit", resolve));
+  signalGroup(child.pid, "SIGTERM");
+  const force = setTimeout(() => signalGroup(child.pid, "SIGKILL"), 3000);
+  return exit.finally(() => clearTimeout(force));
 }
 
 export function signalGroup(pid, signal) {
@@ -374,6 +384,54 @@ export function launchVoice(
     logs,
     ports: announcedPorts(child, inspect ? ["DevTools", "Debugger"] : ["DevTools"]),
   };
+}
+
+const HELPER_READY = /^\[voice\] helper ready \(protocol v\d+\)$/;
+
+export async function smokePackagedApp(app, { timeoutMs = 60_000 } = {}) {
+  const userDataDir = mkdtempSync(join(realpathSync(tmpdir()), "voice-release-smoke-"));
+  const child = start(
+    join(app, "Contents", "MacOS", "Voice"),
+    [`--user-data-dir=${userDataDir}`, "-ApplePersistenceIgnoreState", "YES"],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const recent = [];
+  let userData;
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`no helper ready line after ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+    for (const output of [child.stdout, child.stderr]) {
+      createInterface({ input: output }).on("line", (line) => {
+        recent.push(line);
+        if (recent.length > 40) recent.shift();
+        if (line.startsWith("[voice]")) console.error(line);
+        userData ??= /^\[voice\] userData (.+)$/.exec(line)?.[1];
+        if (HELPER_READY.test(line)) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    }
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      reject(new Error(`exited (code ${code}, signal ${signal}) before its helper was ready`));
+    });
+  });
+  try {
+    await ready;
+    if (userData !== userDataDir) {
+      throw new Error(
+        `kept its userData at ${userData ?? "an unreported path"}, not ${userDataDir}`,
+      );
+    }
+  } catch (error) {
+    throw new Error(`Packaged app ${app} ${error.message}\n${recent.join("\n")}`, { cause: error });
+  } finally {
+    await stopGroup(child);
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
 }
 
 export function stopChildrenOnSignal() {
