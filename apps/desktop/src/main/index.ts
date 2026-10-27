@@ -68,7 +68,7 @@ import { decodeTarget } from "./protocol.ts";
 import { publish } from "./publish.ts";
 import { idle } from "./session.ts";
 import { createSettingsQueue, type SettingsQueue } from "./settings-queue.ts";
-import { applyPatch, loadSettings, saveSettings } from "./settings.ts";
+import { applyPatch, openSettings } from "./settings.ts";
 import { createStore, toSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import { createTransformModel } from "./transform-model.ts";
@@ -233,7 +233,6 @@ const allGranted = (state: AppState) =>
 async function main() {
   const userData = app.getPath("userData");
   const modelsDir = NodePath.join(userData, "models");
-  const settingsFile = NodePath.join(userData, "settings.json");
   // Printed before diagnostics start, and a path to the user's home never leaves the machine.
   console.log(`[voice] userData ${userData}`);
 
@@ -267,7 +266,13 @@ async function main() {
     log: (message, entry) => log(message, entry),
   });
   handleCallbackUrl = account.handleCallbackUrl;
-  const settings = loadSettings(settingsFile, installedChannel);
+  // Saves happen after log exists, so the wrapper resolves it late.
+  const settingsFile = openSettings(
+    NodePath.join(userData, "settings.json"),
+    installedChannel,
+    (message, entry) => log(message, entry),
+  );
+  const { settings } = settingsFile;
   let lifecycle: "running" | "stopping" | "stopped" | "failed" = "running";
   let settingsQueue: SettingsQueue;
 
@@ -692,7 +697,7 @@ async function main() {
     current: () => store.state.settings,
     save: async (next) => {
       try {
-        await saveSettings(settingsFile, next, log);
+        await settingsFile.save(next);
       } catch (error) {
         log(`settings: save failed (${String(error)})`);
         throw new Error("Could not save this setting. Try again.", { cause: error });

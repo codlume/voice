@@ -158,29 +158,34 @@ export function applyPatch(
   return parseSettings(next);
 }
 
-// Synchronous because launch reads the diagnostics choice before Electron's ready event.
-export function loadSettings(file: string, defaultChannel: UpdateChannel = "stable"): Settings {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return parseSettings(null, defaultChannel);
-  }
-  try {
-    return parseSettings(JSON.parse(text), defaultChannel);
-  } catch {
-    return parseSettings(null, defaultChannel);
-  }
-}
+export type SettingsFile = {
+  /** What the app runs on from launch, defaults when the file is missing or not JSON. */
+  settings: Settings;
+  save(next: Settings): Promise<void>;
+};
 
-/**
- * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
- * A file that is not JSON is moved aside first, so its bytes outlive the defaults that replace it.
- * A file that cannot be read fails the save rather than being overwritten.
- */
-export async function saveSettings(file: string, settings: Settings, log?: Log): Promise<void> {
-  const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
-  await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...settings }, null, 2)}\n`);
+// Synchronous because launch reads the diagnostics choice before Electron's ready event.
+export function openSettings(
+  file: string,
+  defaultChannel: UpdateChannel = "stable",
+  log?: Log,
+): SettingsFile {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    raw = null;
+  }
+  return {
+    settings: parseSettings(raw, defaultChannel),
+    // Writes over the file's record, so top-level keys this build does not know survive a
+    // downgrade. A file that is not JSON is moved aside first, so its bytes outlive the defaults
+    // that replace it. A file that cannot be read fails the save rather than being overwritten.
+    async save(next) {
+      const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
+      await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`);
+    },
+  };
 }
 
 async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unknown>> {
