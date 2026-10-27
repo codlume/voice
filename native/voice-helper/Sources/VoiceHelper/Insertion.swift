@@ -38,7 +38,9 @@ final class Insertion {
     private let output: Output
     private let forcePaste: Bool
     private let pasteboard: Pasteboard
-    private var pasteOnlyApps = PasteOnlyApps()
+    // Apps whose AX write reported success and still changed nothing on the late re-read, as
+    // Chromium does with accessibility on. Kept in memory, so each Voice launch relearns them.
+    private var pasteOnlyApps: Set<String> = []
 
     init(output: Output, forcePaste: Bool, pasteboard: Pasteboard) {
         self.output = output
@@ -79,6 +81,7 @@ final class Insertion {
     }
 
     func insert(id: String, text: String, html: String?, target: InsertTarget?) {
+        dispatchPrecondition(condition: .onQueue(.main))
         let focused: AXUIElement?
         switch check(id: id, target: target) {
         case .refused(let reason):
@@ -95,7 +98,7 @@ final class Insertion {
         } else if html != nil {
             // The accessibility write takes plain text only; a paste keeps the formatting.
             outcome = .unverified
-        } else if pasteOnlyApps.contains(target?.bundleId) {
+        } else if let bundleId = target?.bundleId, pasteOnlyApps.contains(bundleId) {
             outcome = .unverified
         } else {
             outcome = insertViaAccessibility(focused: focused, text: text)
@@ -111,11 +114,10 @@ final class Insertion {
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
-                let late = AXWriteVerdict(before: before, after: textState(of: focused))
-                pasteOnlyApps.record(target?.bundleId, lateVerdict: late)
-                if late == .inserted {
+                if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
                     output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
                 } else {
+                    if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
                     paste(id: id, text: text, html: html)
                 }
             }
