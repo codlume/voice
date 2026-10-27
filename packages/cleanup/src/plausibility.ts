@@ -85,17 +85,98 @@ const SPOKEN_SYMBOLS = new Set([
 // a number, because an adjacency rule changed no verdict on the fixtures and costs more code.
 const ABSORBED = new Set(["a", "an", "the", "and", "of", "to", "point", "half", "quarter", "past"]);
 
-const NUMBER_WORDS = new Set(
-  (
-    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen " +
-    "fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty " +
-    "ninety hundred thousand million billion first second third fourth fifth sixth seventh " +
-    "eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth sixteenth seventeenth " +
-    "eighteenth nineteenth twentieth thirtieth fortieth fiftieth sixtieth seventieth eightieth " +
-    "ninetieth hundredth thousandth millionth billionth"
-  ).split(" "),
+const UNITS =
+  "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen";
+const TENS = "twenty thirty forty fifty sixty seventy eighty ninety";
+const SCALES = { hundred: 100, thousand: 1_000, million: 1_000_000, billion: 1_000_000_000 };
+const CARDINALS = new Map<string, number>([
+  ...UNITS.split(" ").map((word, value) => [word, value] as const),
+  ...TENS.split(" ").map((word, i) => [word, 20 + 10 * i] as const),
+  ...Object.entries(SCALES),
+]);
+const IRREGULAR_ORDINALS: Record<string, string> = {
+  one: "first",
+  two: "second",
+  three: "third",
+  five: "fifth",
+  eight: "eighth",
+  nine: "ninth",
+  twelve: "twelfth",
+};
+const ORDINALS = new Map(
+  [...CARDINALS].map(([word, value]) => [
+    IRREGULAR_ORDINALS[word] ?? `${word.replace(/y$/, "ie")}th`,
+    value,
+  ]),
 );
+const NUMBER_WORDS = new Map([...CARDINALS, ...ORDINALS]);
 const isNumber = (word: string) => NUMBER_WORDS.has(word) || /^\p{N}+$/u.test(word);
+
+// The numbers in a word stream as digit strings. Spoken words join into one number while they
+// still can, so "three thirty" is 3 and 30 and "twenty twenty six" is 20 and 26. A spoken
+// ordinal is left out: cleanup may turn "the first one is ... the second one is ..." into a
+// list, and the "one" after an ordinal is a pronoun.
+function numbers(words: string[]): string[] {
+  const found: string[] = [];
+  let total = 0;
+  let group = 0;
+  let open = false;
+  let accepts: "any" | "unit" | "none" = "any";
+  const flush = (keep = true) => {
+    if (open && keep) found.push(String(total + group));
+    total = group = 0;
+    open = false;
+    accepts = "any";
+  };
+  words.forEach((word, i) => {
+    if (/^\p{N}+$/u.test(word)) {
+      flush();
+      found.push(word);
+      return;
+    }
+    if (word === "and" && accepts === "any" && NUMBER_WORDS.has(words[i + 1] ?? "")) return;
+    if (word === "one" && ORDINALS.has(words[i - 1] ?? "")) return;
+    const value = NUMBER_WORDS.get(word);
+    if (value === undefined) {
+      flush();
+      return;
+    }
+    if (value >= 100) {
+      if (value === 100) group = (group || 1) * 100;
+      else {
+        total += (group || 1) * value;
+        group = 0;
+      }
+      accepts = "any";
+    } else {
+      const fits = accepts === "any" || (accepts === "unit" && value < 10);
+      if (!fits) flush();
+      group += value;
+      accepts = value < 20 ? "none" : "unit";
+    }
+    open = true;
+    if (ORDINALS.has(word)) flush(false);
+  });
+  flush();
+  return found;
+}
+
+// Some of the output's numbers, joined in order, spell the input's digits. Formatting may add
+// a number ("half past three" becomes "3:30") or join two ("twenty twenty six" becomes "2026").
+function numbersSurvive(input: string[], output: string[]): boolean {
+  const target = input.join("");
+  let reached = new Set([0]);
+  for (const number of output) {
+    const next = new Set(reached);
+    for (const at of reached) if (target.startsWith(number, at)) next.add(at + number.length);
+    reached = next;
+  }
+  return reached.has(target.length);
+}
+
+// A dropped or added negation flips the meaning while keeping almost every word.
+const NEGATIONS = new Set(["not", "no", "never"]);
+const negations = (words: string[]) => words.filter((word) => NEGATIONS.has(word)).length;
 
 const PRONOUNS = "i you he she it we they that there here what who where how when";
 const MODALS = "would should could must might";
@@ -172,6 +253,9 @@ function normalize(text: string): string {
       .replaceAll(/['’]/g, "")
       // "p.m." and "U.S." read as one word, while "example.com" stays two.
       .replaceAll(/(?<!\p{L})(\p{L})\.(?=\p{L}(?!\p{L}))/gu, "$1")
+      // "14th" is the number 14 and "2,500" is one number.
+      .replaceAll(/(?<=\p{N})(?:st|nd|rd|th)(?!\p{L})/gu, "")
+      .replaceAll(/(?<=\p{N}),(?=\p{N}{3}(?!\p{N}))/gu, "")
       .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
       // "3:30pm" and "10am" count their unit as its own word, like "three thirty pm" does.
       .replaceAll(/(?<=\p{N})(?=\p{L})|(?<=\p{L})(?=\p{N})/gu, " ")
@@ -274,10 +358,10 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
     throw new Error(`Cleanup output is over ${MAX_OUTPUT_RATIO}x the input length`);
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
-  const said = ` ${spokenWords(input).join(" ")} `;
-  const cleaned = ` ${spokenWords(output).join(" ")} `;
-  const opener = CHAT_OPENERS.find((phrase) => cleaned.startsWith(` ${phrase} `));
-  if (opener && !said.includes(` ${opener} `))
+  const said = spokenWords(input);
+  const cleaned = spokenWords(output);
+  const opener = CHAT_OPENERS.find((phrase) => ` ${cleaned.join(" ")} `.startsWith(` ${phrase} `));
+  if (opener && !` ${said.join(" ")} `.includes(` ${opener} `))
     throw new Error("Cleanup output reads like a chat reply");
   const { recall, head, tail } = wordSurvival(input, output);
   if (recall < MIN_WORD_RECALL) {
@@ -291,4 +375,12 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
     throw new Error(`Cleanup kept only ${Math.round(head * 100)}% of the opening words`);
   if (tail < MIN_WORD_RECALL)
     throw new Error(`Cleanup kept only ${Math.round(tail * 100)}% of the closing words`);
+  if (!numbersSurvive(numbers(said), numbers(cleaned)))
+    throw new Error("Cleanup changed a number the user said");
+  if (negations(said) !== negations(cleaned))
+    throw new Error("Cleanup changed a negation the user said");
+  const added = wordSurvival(output, input);
+  const kept = Math.min(added.recall, added.head, added.tail);
+  if (kept < MIN_WORD_RECALL)
+    throw new Error(`Cleanup added words that were not said (${Math.round(kept * 100)}% said)`);
 }
