@@ -72,6 +72,7 @@ final class Insertion {
                 target.focus.resolve(first: first, second: second, inputUnchanged: unchanged
                     && inputUnchanged()
                     && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
+                log?(target.focus == .unavailable ? "target focus unavailable" : "target focus captured")
             }
             guard readHost else { return }
             guard unchanged, case .focused(let focus) = first, first == second else { return target.settleHost() }

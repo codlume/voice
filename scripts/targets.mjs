@@ -172,6 +172,7 @@ export async function electronTarget(userData, { wait = (promise) => promise } =
     axSelectedText: () => null,
     read: () => page.evaluate(`${FIELD}.value`),
     front,
+    setTitle: (title) => page.evaluate(`document.title = ${show(title)}`),
     watchKeys: () =>
       page.evaluate(
         `window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push({ key: e.key, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey, ctrl: e.ctrlKey }), true); true`,
