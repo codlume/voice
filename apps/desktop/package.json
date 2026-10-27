@@ -12,17 +12,12 @@
     "test": "vp test run --passWithNoTests"
   },
   "dependencies": {
-    "@base-ui/react": "1.8.0",
-    "@better-auth/electron": "1.7.7",
-    "@stylexjs/stylex": "catalog:",
-    "better-auth": "1.7.7",
-    "conf": "15.1.0",
-    "effect": "4.0.1",
     "electron-updater": "6.8.9",
-    "node-llama-cpp": "3.21.1",
-    "semver": "7.7.4"
+    "node-llama-cpp": "3.21.1"
   },
   "devDependencies": {
+    "@base-ui/react": "1.8.0",
+    "@better-auth/electron": "1.7.7",
     "@lexical/headless": "0.52.0",
     "@lexical/html": "0.52.0",
     "@lexical/link": "0.52.0",
@@ -31,6 +26,7 @@
     "@lexical/react": "0.52.0",
     "@sentry/electron": "7.20.0",
     "@sentry/node": "10.75.0",
+    "@stylexjs/stylex": "catalog:",
     "@stylexjs/unplugin": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "19.3.0",
@@ -38,6 +34,9 @@
     "@types/semver": "7.7.1",
     "@vitejs/plugin-react": "catalog:",
     "@voice/cleanup": "workspace:*",
+    "better-auth": "1.7.7",
+    "conf": "15.1.0",
+    "effect": "4.0.1",
     "electron": "44.4.5",
     "electron-builder": "26.15.6",
     "happy-dom": "20.14.6",
@@ -45,6 +44,7 @@
     "lucide-react": "1.52.0",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "semver": "7.7.4",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

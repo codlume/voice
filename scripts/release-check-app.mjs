@@ -14,6 +14,7 @@ export const REQUIRED_FUSES = {
   OnlyLoadAppFromAsar: true,
 };
 export const HELPER_ENTITLEMENTS = ["com.apple.security.device.audio-input"];
+export const RUNTIME_EXTERNALS = ["electron-updater", "node-llama-cpp"];
 
 export function appBuilderRequire() {
   const desktop = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
@@ -47,6 +48,51 @@ export function packagedAppProblems({ fuses, helperEntitlements, signatures }) {
       .filter((key) => !HELPER_ENTITLEMENTS.includes(key))
       .map((key) => `voice-helper has unexpected entitlement ${key}`),
   ];
+}
+
+const PACKAGE_ROOT = /^(.*\/)?node_modules\/(@[^/]+\/)?[^/@][^/]*\/package\.json$/;
+
+export function asarProblems(files, readManifest) {
+  const present = new Set(files);
+  const locate = (name, fromDir) => {
+    const segments = fromDir ? fromDir.split("/") : [];
+    for (;;) {
+      const dir = [...segments, "node_modules", name].join("/");
+      if (present.has(`${dir}/package.json`)) return dir;
+      if (segments.length === 0) return null;
+      segments.pop();
+    }
+  };
+  const needed = new Set();
+  const visit = (name, fromDir) => {
+    const dir = locate(name, fromDir);
+    if (!dir || needed.has(dir)) return;
+    needed.add(dir);
+    const { dependencies, optionalDependencies } = readManifest(`${dir}/package.json`);
+    for (const dep of Object.keys({ ...dependencies, ...optionalDependencies })) visit(dep, dir);
+  };
+  for (const name of RUNTIME_EXTERNALS) visit(name, "");
+  const maps = files.filter((file) => file.endsWith(".map"));
+  return [
+    ...RUNTIME_EXTERNALS.filter((name) => !locate(name, "")).map(
+      (name) => `app.asar lacks runtime external ${name}`,
+    ),
+    ...files
+      .filter((file) => PACKAGE_ROOT.test(file))
+      .map((file) => file.slice(0, -"/package.json".length))
+      .filter((dir) => !needed.has(dir))
+      .map((dir) => `app.asar ships ${dir}, which ${RUNTIME_EXTERNALS.join(" and ")} do not need`),
+    ...(maps.length > 0 ? [`app.asar ships ${maps.length} source maps, such as ${maps[0]}`] : []),
+  ];
+}
+
+function readAsarProblems(app) {
+  const asar = appBuilderRequire()("@electron/asar");
+  const archive = join(app, "Contents", "Resources", "app.asar");
+  return asarProblems(
+    asar.listPackage(archive).map((file) => file.replace(/^\//, "")),
+    (file) => JSON.parse(asar.extractFile(archive, file).toString()),
+  );
 }
 
 async function readFuses(app) {
@@ -90,7 +136,7 @@ export async function checkPackagedApp(app) {
     helperEntitlements: readHelperEntitlements(app),
     signatures: { app: readSignature(app), helper: readSignature(helperPath(app)) },
   };
-  const problems = packagedAppProblems(observed);
+  const problems = [...packagedAppProblems(observed), ...readAsarProblems(app)];
   if (problems.length > 0) {
     throw new Error(`Packaged app ${app} failed checks:\n${problems.join("\n")}`);
   }

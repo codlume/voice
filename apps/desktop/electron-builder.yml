@@ -11,6 +11,7 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+  - "!**/*.map"
 asarUnpack:
   - node_modules/node-llama-cpp/**
   - node_modules/@node-llama-cpp/**
