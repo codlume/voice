@@ -36,7 +36,7 @@ import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
-import { autoAppliedTransform } from "../shared/transforms.ts";
+import { runsAfterDictation } from "../shared/transforms.ts";
 import { nextZoomLevel, zoomFactor } from "../shared/zoom.ts";
 import { authSessionStored, authStored } from "./account-storage.ts";
 import {
@@ -350,6 +350,7 @@ async function main() {
   const transformModel = createTransformModel({
     modelsDir,
     baseUrl: testMode ? process.env.VOICE_TRANSFORM_MODEL_URL : undefined,
+    keepLoaded: () => runsAfterDictation(store.state.settings.transforms),
     onStatus: (status) =>
       store.update((s) => ({ ...s, models: { ...s.models, transform: status } })),
     log,
@@ -862,7 +863,6 @@ async function main() {
   }
   updates.start();
   void cleanup.loadIfDownloaded();
-  transformModel.keepResident(autoAppliedTransform(store.state.settings.transforms) !== undefined);
   void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
   // verify skill deliver a sign-in callback URL, which macOS does not route to the stock

@@ -73,6 +73,9 @@ export const sameShortcut = (a: Shortcut, b: Shortcut): boolean =>
 export const autoAppliedTransform = (settings: TransformSettings): Transform | undefined =>
   settings.enabled ? settings.items.find((item) => item.id === settings.autoApply) : undefined;
 
+export const runsAfterDictation = (settings: TransformSettings): boolean =>
+  autoAppliedTransform(settings) !== undefined;
+
 export function registeredShortcuts(settings: TransformSettings): HelperShortcut[] {
   if (!settings.enabled) return [];
   return settings.items.flatMap(({ id, shortcut }) =>

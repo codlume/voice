@@ -54,6 +54,7 @@ function harness({
   holdLoad = false,
   holdRuns = false,
   loadError = undefined as string | undefined,
+  keepLoaded = false,
 } = {}) {
   const statuses: ModelStatus[] = [];
   const workers: FakeWorker[] = [];
@@ -132,8 +133,10 @@ function harness({
     },
   };
 
+  let kept = keepLoaded;
   const model = createTransformModel({
     modelsDir: "/models",
+    keepLoaded: () => kept,
     onStatus: (status) => statuses.push(status),
     log: () => {},
     loadModule: async () => module,
@@ -141,6 +144,10 @@ function harness({
 
   return {
     model,
+    keep: (on: boolean) => {
+      kept = on;
+      model.follow();
+    },
     statuses,
     workers,
     disk,
@@ -453,9 +460,9 @@ describe("transform model", () => {
 
   describe("kept resident", () => {
     test("loads the model as soon as a launch check finds its weights, with no run", async () => {
-      const { model, workers, statuses, last } = harness();
+      const { model, keep, workers, statuses, last } = harness();
 
-      model.keepResident(true);
+      keep(true);
       await model.refresh();
 
       await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
@@ -465,19 +472,19 @@ describe("transform model", () => {
     });
 
     test("loads a model that is already installed when it is asked for", async () => {
-      const { model, workers, last } = harness();
+      const { model, keep, workers, last } = harness();
       await model.refresh();
       expect(workers).toEqual([]);
 
-      model.keepResident(true);
+      keep(true);
 
       await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
       expect(workers[0]?.loads).toBe(1);
     });
 
     test("loads the model once a download it waited for finishes", async () => {
-      const { model, workers, last } = harness({ onDisk: false });
-      model.keepResident(true);
+      const { model, keep, workers, last } = harness({ onDisk: false });
+      keep(true);
       await model.refresh();
       expect(workers).toEqual([]);
 
@@ -489,8 +496,8 @@ describe("transform model", () => {
 
     test("never unloads after the idle wait, and the next run reuses the process", async () => {
       idleTimers();
-      const { model, workers, last } = harness();
-      model.keepResident(true);
+      const { model, keep, workers, last } = harness();
+      keep(true);
       await model.refresh();
       await model.run(request());
 
@@ -505,13 +512,13 @@ describe("transform model", () => {
 
     test("released, it unloads after one idle wait from the release", async () => {
       idleTimers();
-      const { model, workers, last } = harness();
-      model.keepResident(true);
+      const { model, keep, workers, last } = harness();
+      keep(true);
       await model.refresh();
       await model.run(request());
       await vi.advanceTimersByTimeAsync(2 * IDLE_UNLOAD_MS);
 
-      model.keepResident(false);
+      keep(false);
 
       await vi.advanceTimersByTimeAsync(IDLE_UNLOAD_MS - 1);
       expect(workers[0]?.closed).toBe(false);
@@ -521,8 +528,8 @@ describe("transform model", () => {
     });
 
     test("a lost process is not loaded again until the next run", async () => {
-      const { model, workers, nextRun, last } = harness({ holdRuns: true });
-      model.keepResident(true);
+      const { model, keep, workers, nextRun, last } = harness({ holdRuns: true });
+      keep(true);
       await model.refresh();
       await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
       const started = nextRun();
@@ -537,8 +544,8 @@ describe("transform model", () => {
     });
 
     test("an unload still stops the process, and the next run loads it again", async () => {
-      const { model, workers, last } = harness();
-      model.keepResident(true);
+      const { model, keep, workers, last } = harness();
+      keep(true);
       await model.refresh();
       await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
 
@@ -548,6 +555,36 @@ describe("transform model", () => {
       expect(last()).toEqual({ state: "installed" });
       await model.run(request());
       expect(workers).toHaveLength(2);
+    });
+    test("kept and released in the same tick, it still unloads after the idle wait", async () => {
+      idleTimers();
+      const { model, keep, workers, last } = harness();
+      await model.refresh();
+
+      keep(true);
+      keep(false);
+
+      await vi.waitFor(() => expect(last()).toEqual({ state: "ready" }));
+      await vi.advanceTimersByTimeAsync(IDLE_UNLOAD_MS);
+      await vi.waitFor(() => expect(workers[0]?.closed).toBe(true));
+      expect(last()).toEqual({ state: "installed" });
+    });
+
+    test("a load that fails while kept is not retried until the next run", async () => {
+      idleTimers();
+      const { model, keep, workers, statuses } = harness({ loadError: "bad weights" });
+      keep(true);
+      await model.refresh();
+
+      await vi.waitFor(() =>
+        expect(statuses).toEqual([
+          { state: "installed" },
+          { state: "loading" },
+          { state: "installed" },
+        ]),
+      );
+      await vi.advanceTimersByTimeAsync(3 * IDLE_UNLOAD_MS);
+      expect(workers).toHaveLength(1);
     });
   });
 

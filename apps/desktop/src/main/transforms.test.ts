@@ -519,12 +519,12 @@ describe("followTransformSettings", () => {
   // Wired as index.ts wires it: every store change goes through it with the previous state.
   function followed(opts: Options & { onDisk?: boolean } = {}) {
     const h = harness(opts);
-    const calls: ("install" | "unload" | "keepResident:on" | "keepResident:off")[] = [];
+    const calls: ("install" | "unload" | "follow")[] = [];
     const model = {
       onDisk: () => opts.onDisk ?? true,
       install: async () => void calls.push("install"),
       unload: async () => void calls.push("unload"),
-      keepResident: (on: boolean) => void calls.push(on ? "keepResident:on" : "keepResident:off"),
+      follow: () => void calls.push("follow"),
     };
     h.store.subscribe((state, previous) =>
       followTransformSettings(model, h.transforms, state, previous),
@@ -583,25 +583,25 @@ describe("followTransformSettings", () => {
     expect(h.calls).toEqual([]);
   });
 
-  test("choosing a transform to run after dictation keeps the model resident, and clearing it releases it", () => {
+  test("choosing a transform to run after dictation, and clearing it, each tell the model to follow", () => {
     const h = followed();
     h.setTransforms({ autoApply: POLISH_ID });
-    expect(h.calls).toEqual(["keepResident:on"]);
+    expect(h.calls).toEqual(["follow"]);
 
     h.setTransforms({ autoApply: null });
-    expect(h.calls).toEqual(["keepResident:on", "keepResident:off"]);
+    expect(h.calls).toEqual(["follow", "follow"]);
   });
 
-  test("turning Transforms on with a choice saved keeps the model resident before it installs", () => {
+  test("turning Transforms on with a choice saved installs the model and tells it to follow", () => {
     const h = followed({ transforms: { enabled: false, autoApply: POLISH_ID }, onDisk: false });
     h.setEnabled(true);
-    expect(h.calls).toEqual(["keepResident:on", "install"]);
+    expect(h.calls.toSorted()).toEqual(["follow", "install"]);
   });
 
-  test("turning Transforms off releases the model before it unloads", () => {
+  test("turning Transforms off with a choice saved unloads the model and tells it to follow", () => {
     const h = followed({ transforms: { autoApply: POLISH_ID } });
     h.setEnabled(false);
-    expect(h.calls).toEqual(["keepResident:off", "unload"]);
+    expect(h.calls.toSorted()).toEqual(["follow", "unload"]);
   });
 
   test("a choice that names no transform in the list keeps nothing resident", () => {
@@ -615,6 +615,6 @@ describe("followTransformSettings", () => {
     h.setTransforms({
       items: h.store.state.settings.transforms.items.filter((t) => t.id !== POLISH_ID),
     });
-    expect(h.calls).toEqual(["keepResident:off"]);
+    expect(h.calls).toEqual(["follow"]);
   });
 });
