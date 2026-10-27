@@ -159,12 +159,11 @@ export function applyPatch(
 }
 
 export type SettingsFile = {
-  /** What the app runs on from launch, defaults when the file is missing or not JSON. */
   settings: Settings;
   /**
    * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
-   * A file that is not JSON, at launch or now, is set aside first so its bytes outlive the
-   * defaults that replace it. A file that cannot be read fails the save rather than being
+   * A file that is not JSON, or that launch could not use, is set aside first so its bytes outlive
+   * the defaults that replace it. A file that cannot be read fails the save rather than being
    * overwritten.
    */
   save(next: Settings): Promise<void>;
@@ -181,22 +180,27 @@ export function openSettings(
   try {
     raw = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
-    launchIgnoredFile = error instanceof SyntaxError;
+    launchIgnoredFile = (error as NodeJS.ErrnoException).code !== "ENOENT";
   }
   return {
     settings: parseSettings(raw, defaultChannel),
     async save(next) {
-      if (launchIgnoredFile) {
-        await setAside(file, "was not JSON when Voice started", log);
-        launchIgnoredFile = false;
-      }
-      const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
+      const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(
+        file,
+        launchIgnoredFile,
+        log,
+      );
+      launchIgnoredFile = false;
       await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`);
     },
   };
 }
 
-async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unknown>> {
+async function recordOnDisk(
+  file: string,
+  launchIgnoredFile: boolean,
+  log?: Log,
+): Promise<Record<string, unknown>> {
   let text: string;
   try {
     text = await readFile(file, "utf8");
@@ -204,21 +208,14 @@ async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unk
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
-  try {
-    return record(JSON.parse(text));
-  } catch {
-    await setAside(file, "is not JSON", log);
-    return {};
+  if (!launchIgnoredFile) {
+    try {
+      return record(JSON.parse(text));
+    } catch {}
   }
-}
-
-async function setAside(file: string, why: string, log?: Log): Promise<void> {
   const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
-  try {
-    await rename(file, aside);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
+  await rename(file, aside);
+  const why = launchIgnoredFile ? "could not be used when Voice started" : "is not JSON";
   log?.(`settings: the saved file ${why}, so it was moved to ${NodePath.basename(aside)}`);
+  return {};
 }
