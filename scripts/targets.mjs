@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -128,14 +128,30 @@ export function textEditTarget(label) {
 
 const FIELD = 'document.getElementById("field")';
 
-// The target is spawned detached, so it outlives this script unless close() stops it.
-export async function electronTarget(userData, { wait = (promise) => promise } = {}) {
-  const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
-  const child = start(
-    electronPath(),
-    [join(repoDir, "scripts/e2e-target/main.cjs"), "--remote-debugging-port=0"],
-    { env, stdio: ["ignore", "ignore", "pipe"] },
+// Waits for the next document to load and focus its field. Evaluate fails while the document is
+// being swapped, so a failed poll waits.
+async function navigatePage(page, expression) {
+  const before = await page.evaluate("location.href");
+  await page.evaluate(expression);
+  await until(
+    () =>
+      page
+        .evaluate(
+          `location.href !== ${show(before)} && document.readyState === "complete" && document.activeElement.id === "field"`,
+        )
+        .catch(() => false),
+    5000,
+    "the target did not navigate",
   );
+}
+
+// Targets are spawned detached, so they outlive this script unless close() stops them. Both
+// show scripts/e2e-target/index.html and are driven over CDP.
+async function pageTarget(name, command, args, options, { wait = (promise) => promise } = {}) {
+  const child = start(command, [...args, "--remote-debugging-port=0"], {
+    stdio: ["ignore", "ignore", "pipe"],
+    ...options,
+  });
   let page;
   try {
     const { DevTools: port } = await wait(announcedPorts(child, ["DevTools"]));
@@ -144,9 +160,9 @@ export async function electronTarget(userData, { wait = (promise) => promise } =
     await stopGroup(child);
     throw error;
   }
-  const front = () => activate(child.pid, "the scratch target");
+  const front = () => activate(child.pid, `the scratch ${name}`);
   return {
-    name: "Electron target",
+    name,
     async open(text = "") {
       await front();
       await until(
@@ -163,6 +179,8 @@ export async function electronTarget(userData, { wait = (promise) => promise } =
     read: () => page.evaluate(`${FIELD}.value`),
     front,
     setTitle: (title) => page.evaluate(`document.title = ${show(title)}`),
+    url: () => page.evaluate("location.href"),
+    navigate: (expression) => navigatePage(page, expression),
     watchKeys: () =>
       page.evaluate(
         `window.__keys = []; document.addEventListener("keydown", (e) => window.__keys.push({ key: e.key, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey, ctrl: e.ctrlKey }), true); true`,
@@ -173,6 +191,32 @@ export async function electronTarget(userData, { wait = (promise) => promise } =
       await stopGroup(child);
     },
   };
+}
+
+export function electronTarget(userData, options) {
+  const env = smokeEnvironment(userData, { VOICE_E2E_TARGET_USER_DATA: join(userData, "target") });
+  return pageTarget(
+    "Electron target",
+    electronPath(),
+    [join(repoDir, "scripts/e2e-target/main.cjs")],
+    { env },
+    options,
+  );
+}
+
+const chromeBinary = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+// The Electron target exposes no page URL in its accessibility tree; page-change smokes run here.
+export function chromeTarget(userData) {
+  if (!existsSync(chromeBinary)) {
+    throw new Error(`Google Chrome is not installed at ${chromeBinary}`);
+  }
+  return pageTarget("Chrome target", chromeBinary, [
+    `--user-data-dir=${join(userData, "chrome")}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    `file://${join(repoDir, "scripts/e2e-target/index.html")}`,
+  ]);
 }
 
 const READ_CLIPBOARD = `ObjC.import("AppKit");
