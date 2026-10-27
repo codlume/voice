@@ -16,6 +16,7 @@ import { classify, cleanupStyleFor } from "../shared/style.ts";
 import {
   BUILT_IN_TRANSFORMS,
   POLISH_ID,
+  autoAppliedTransform,
   type LastTransform,
   type TransformId,
 } from "../shared/transforms.ts";
@@ -145,8 +146,7 @@ export function createDictation(options: DictationOptions): Dictation {
   function workFor(id: string): Work {
     if (started?.id !== id) return null;
     const { settings } = store.state;
-    const { enabled, items, autoApply } = settings.transforms;
-    const transform = enabled ? items.find((item) => item.id === autoApply) : undefined;
+    const transform = autoAppliedTransform(settings.transforms);
     if (transform && options.transform.model.onDisk()) {
       return { kind: "transform", transformId: transform.id };
     }

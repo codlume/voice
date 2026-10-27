@@ -10,6 +10,9 @@ export type { TransformFailure, TransformRequest, TransformResult } from "@voice
 /**
  * `run` resolves with data for every failure the text caused and rejects only on abort
  * (`signal.reason`), a model that is not installed, a load failure or a lost process.
+ *
+ * While `keepLoaded` holds, the model loads as soon as its weights are on disk and stays past the
+ * idle wait. Call `follow` when `keepLoaded` may have changed. `unload` and `uninstall` still win.
  */
 export type TransformModel = {
   refresh(): Promise<void>;
@@ -17,6 +20,7 @@ export type TransformModel = {
   uninstall(): Promise<void>;
   run(request: TransformRequest): Promise<TransformResult>;
   warm(): void;
+  follow(): void;
   unload(): Promise<void>;
   onDisk(): boolean;
   dispose(): Promise<void>;
@@ -36,6 +40,8 @@ export type TransformModule = Pick<
 export type TransformModelOptions = {
   modelsDir: string;
   baseUrl?: string | undefined;
+  /** True while a transform runs after every dictation. Read whenever residency is decided. */
+  keepLoaded: () => boolean;
   onStatus: (status: ModelStatus) => void;
   log: (message: string) => void;
   loadModule?: () => Promise<TransformModule>;
@@ -143,7 +149,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
 
   function armIdle() {
     clearTimeout(idleTimer);
-    if (running > 0 || state.phase === "disposed") return;
+    if (options.keepLoaded() || running > 0 || state.phase === "disposed") return;
     idleTimer = setTimeout(() => {
       if (resident(state)) void set({ phase: "installed", path: state.path });
     }, IDLE_UNLOAD_MS);
@@ -182,6 +188,12 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     return engine;
   }
 
+  // Called where weights arrive, never where a load fails, so a broken model cannot reload in a
+  // loop. The next run or warm retries.
+  function loadIfKept() {
+    if (options.keepLoaded() && state.phase === "installed") loadedEngine().catch(() => undefined);
+  }
+
   async function download(controller: AbortController): Promise<void> {
     try {
       const { downloadModel, source } = await loadModule();
@@ -196,7 +208,10 @@ export function createTransformModel(options: TransformModelOptions): TransformM
         },
         signal: controller.signal,
       });
-      if (!controller.signal.aborted) void set({ phase: "installed", path });
+      if (!controller.signal.aborted) {
+        void set({ phase: "installed", path });
+        loadIfKept();
+      }
     } catch (error) {
       if (!controller.signal.aborted) void set({ phase: "missing", failure: message(error) });
     }
@@ -218,6 +233,7 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       const path = await findModel({ dir: options.modelsDir, source });
       if (state.phase !== "missing" && state.phase !== "installed") return;
       void set(path === undefined ? { phase: "missing" } : { phase: "installed", path });
+      loadIfKept();
     },
     install: () => {
       if (state.phase === "downloading") return state.done;
@@ -267,6 +283,12 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       unloadWhenSettled = false;
       loadedEngine().catch(() => undefined);
       armIdle();
+    },
+    follow: () => {
+      if (!options.keepLoaded()) return armIdle();
+      unloadWhenSettled = false;
+      clearTimeout(idleTimer);
+      loadIfKept();
     },
     unload,
     onDisk: () => state.phase === "installed" || resident(state),
