@@ -38,6 +38,7 @@ final class Insertion {
     private let output: Output
     private let forcePaste: Bool
     private let pasteboard: Pasteboard
+    private var pasteOnlyApps = PasteOnlyApps()
 
     init(output: Output, forcePaste: Bool, pasteboard: Pasteboard) {
         self.output = output
@@ -94,6 +95,8 @@ final class Insertion {
         } else if html != nil {
             // The accessibility write takes plain text only; a paste keeps the formatting.
             outcome = .unverified
+        } else if pasteOnlyApps.contains(target?.bundleId) {
+            outcome = .unverified
         } else {
             outcome = insertViaAccessibility(focused: focused, text: text)
         }
@@ -108,7 +111,9 @@ final class Insertion {
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
-                if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
+                let late = AXWriteVerdict(before: before, after: textState(of: focused))
+                pasteOnlyApps.record(target?.bundleId, lateVerdict: late)
+                if late == .inserted {
                     output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
                 } else {
                     paste(id: id, text: text, html: html)
