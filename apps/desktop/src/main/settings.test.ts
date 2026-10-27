@@ -922,6 +922,29 @@ describe("load and save", () => {
     expect(JSON.parse(await readFile(survivor, "utf8"))).toMatchObject(repaired);
   });
 
+  test("later saves leave the file set aside at launch alone", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = '{\n  "dictionary": [{ "id": "d", "phrase": "Kubernetes" }],\n}\n';
+    await writeFile(file, original);
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    await store.save(applyPatch(store.settings, { theme: "light" }));
+    const asides = (await readdir(dir)).filter((name) => name !== "settings.json");
+    expect(asides).toHaveLength(1);
+    expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "light" });
+  });
+
+  test("a file corrupt at launch and deleted since does not block the save", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, "{ this is not json");
+    const store = openSettings(file);
+    await rm(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    expect(await readdir(dir)).toEqual(["settings.json"]);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+  });
+
   test("a save keeps top-level keys this build does not know", async () => {
     const file = NodePath.join(dir, "settings.json");
     const futureFeature = { items: [{ id: "f", on: true }] };

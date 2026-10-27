@@ -161,6 +161,12 @@ export function applyPatch(
 export type SettingsFile = {
   /** What the app runs on from launch, defaults when the file is missing or not JSON. */
   settings: Settings;
+  /**
+   * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
+   * A file that is not JSON, at launch or now, is set aside first so its bytes outlive the
+   * defaults that replace it. A file that cannot be read fails the save rather than being
+   * overwritten.
+   */
   save(next: Settings): Promise<void>;
 };
 
@@ -171,17 +177,19 @@ export function openSettings(
   log?: Log,
 ): SettingsFile {
   let raw: unknown = null;
+  let launchIgnoredFile = false;
   try {
     raw = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    raw = null;
+  } catch (error) {
+    launchIgnoredFile = error instanceof SyntaxError;
   }
   return {
     settings: parseSettings(raw, defaultChannel),
-    // Writes over the file's record, so top-level keys this build does not know survive a
-    // downgrade. A file that is not JSON is moved aside first, so its bytes outlive the defaults
-    // that replace it. A file that cannot be read fails the save rather than being overwritten.
     async save(next) {
+      if (launchIgnoredFile) {
+        await setAside(file, "was not JSON when Voice started", log);
+        launchIgnoredFile = false;
+      }
       const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
       await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`);
     },
@@ -199,9 +207,18 @@ async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unk
   try {
     return record(JSON.parse(text));
   } catch {
-    const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
-    await rename(file, aside);
-    log?.(`settings: the saved file is not JSON, so it was moved to ${NodePath.basename(aside)}`);
+    await setAside(file, "is not JSON", log);
     return {};
   }
+}
+
+async function setAside(file: string, why: string, log?: Log): Promise<void> {
+  const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
+  try {
+    await rename(file, aside);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  log?.(`settings: the saved file ${why}, so it was moved to ${NodePath.basename(aside)}`);
 }

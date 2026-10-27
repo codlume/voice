@@ -266,7 +266,6 @@ async function main() {
     log: (message, entry) => log(message, entry),
   });
   handleCallbackUrl = account.handleCallbackUrl;
-  // Saves happen after log exists, so the wrapper resolves it late.
   const settingsFile = openSettings(
     NodePath.join(userData, "settings.json"),
     installedChannel,
