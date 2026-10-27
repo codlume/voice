@@ -110,6 +110,28 @@ describe("assertPlausibleCleanup", () => {
     ["B two B sales are up.", "B2B sales are up."],
     ["quote hello unquote", '"Hello."'],
     ["In Q three we shipped it.", "In Q3 we shipped it."],
+    ["call me at five five five one two three four", "Call me at 555-1234."],
+    ["it costs fifteen hundred dollars", "It costs $1,500."],
+    ["the deadline is the twenty fourth", "The deadline is the 24th."],
+    [
+      "we need fifteen more and the first one is free",
+      "We need 15 more, and the first one is free.",
+    ],
+    ["half past three and half past four", "3:30 and 4:30."],
+    ["meet me at nine oh five", "Meet me at 9:05."],
+    ["it costs two point five million dollars", "It costs $2.5 million."],
+    [
+      "we have two goals this quarter the first one is to reduce onboarding time from twelve minutes to under five minutes and the second one is to ship windows support by the end of november",
+      "We have two goals this quarter:\n- reduce onboarding time from 12 minutes to under 5 minutes\n- ship Windows support by the end of November",
+    ],
+    [
+      "we can't ship this on friday because the release notes and the pricing page are still missing",
+      "We can't ship this on Friday because the release notes and the pricing page are still missing.",
+    ],
+    [
+      "i don't i don't think we should ship this on friday",
+      "I don't think we should ship this on Friday.",
+    ],
     [
       "reply to john saying thanks i will look at it tomorrow and let him know the numbers look good and churn is down and we should celebrate on friday with the whole team",
       "Reply to John saying thanks. I will look at it tomorrow and let him know the numbers look good and churn is down, and we should celebrate on Friday with the whole team.",
@@ -156,6 +178,63 @@ describe("assertPlausibleCleanup", () => {
     ],
   ])("rejects an output that dropped the words of %j", (input, output) => {
     expect(() => assertPlausibleCleanup(input, output, false)).toThrow("kept only");
+  });
+
+  test.each([
+    ["the reservation is for room 12", "The reservation is for room 21."],
+    ["it costs fifteen hundred dollars", "It costs $500."],
+    ["the meeting is at three thirty pm", "The meeting is at 5:30 pm."],
+    ["call me at five five five one two three four", "Call me at 555."],
+    [
+      "we need fifteen more and the first one is free",
+      "We need 50 more, and the first one is free.",
+    ],
+    ["see you at a quarter to five", "See you at 3:45."],
+    ["the rate is one point five percent", "The rate is 15%."],
+    ["twenty five", ""],
+    ["ten a m", ""],
+  ])("rejects an output that changed the numbers in %j", (input, output) => {
+    expect(() => assertPlausibleCleanup(input, output, false)).toThrow("number");
+  });
+
+  test.each([
+    [
+      "we can't ship this on friday because the release notes and the pricing page are still missing",
+      "We can ship this on Friday because the release notes and the pricing page are still missing.",
+    ],
+    [
+      "we can ship this on friday because the release notes and the pricing page are ready",
+      "We can't ship this on Friday because the release notes and the pricing page are ready.",
+    ],
+    [
+      "i never said the pricing page and the release notes were ready for the friday launch",
+      "I said the pricing page and the release notes were ready for the Friday launch.",
+    ],
+  ])("rejects an output that flipped a negation in %j", (input, output) => {
+    expect(() => assertPlausibleCleanup(input, output, false)).toThrow("negation");
+  });
+
+  test.each([
+    [
+      "what time is the standup tomorrow",
+      "What time is the standup tomorrow? The standup is at 9 am.",
+    ],
+    [
+      "thanks for the update i will review it tomorrow",
+      "Thanks for the update. I will review it tomorrow.\n\nBest regards,\nMateusz",
+    ],
+    [
+      "please send the report to anna by friday",
+      "Please send the report to Anna by Friday. Let me know if you need anything else.",
+    ],
+  ])("rejects an output that added content to %j", (input, output) => {
+    expect(() => assertPlausibleCleanup(input, output, false)).toThrow("added");
+  });
+
+  test("rejects a long dictation that gained a sign-off", () => {
+    const input = `${Array.from({ length: 10 }, (_, i) => meetingLine(i)).join(". ")}.`;
+    const output = `${input}\n\nBest regards,\nMateusz`;
+    expect(() => assertPlausibleCleanup(input, output, false)).toThrow("added");
   });
 
   test("rejects a long dictation whose repeated middle went missing", () => {
