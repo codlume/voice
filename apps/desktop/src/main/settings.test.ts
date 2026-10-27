@@ -16,13 +16,7 @@ import {
   type Transform,
   type TransformId,
 } from "../shared/transforms.ts";
-import {
-  applyPatch,
-  loadSettings,
-  parseSettings,
-  parseSettingsPatch,
-  saveSettings,
-} from "./settings.ts";
+import { applyPatch, openSettings, parseSettings, parseSettingsPatch } from "./settings.ts";
 import { createSettingsQueue } from "./settings-queue.ts";
 
 const disk = vi.hoisted(() => ({ events: [] as string[] }));
@@ -349,12 +343,12 @@ describe("applyPatch", () => {
       dictionary: [{ id: "d", phrase: "Voice", replacement: null }],
     });
     try {
-      await saveSettings(file, current);
+      await openSettings(file).save(current);
       const saved = await readFile(file, "utf8");
       const savedSettings = current;
       const queue = createSettingsQueue({
         current: () => current,
-        save: (next) => saveSettings(file, next),
+        save: (next) => openSettings(file).save(next),
         applied: (next) => {
           current = next;
         },
@@ -364,12 +358,12 @@ describe("applyPatch", () => {
       ).rejects.toThrow("Could not save these settings.");
       expect(await readFile(file, "utf8")).toBe(saved);
       expect(current).toBe(savedSettings);
-      expect(loadSettings(file)).toEqual(savedSettings);
+      expect(openSettings(file).settings).toEqual(savedSettings);
       const next = await queue.run((previous) =>
         applyPatch(previous, parseSettingsPatch({ copyToClipboard: true })),
       );
       expect(next).toEqual({ ...savedSettings, copyToClipboard: true });
-      expect(loadSettings(file)).toEqual(next);
+      expect(openSettings(file).settings).toEqual(next);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -751,11 +745,10 @@ describe("load and save", () => {
     "persists lower-audio preference %j and its amount across reloads",
     async (lowerAudioWhileDictating) => {
       const file = NodePath.join(dir, "settings.json");
-      await saveSettings(
-        file,
+      await openSettings(file).save(
         applyPatch(DEFAULT_SETTINGS, { lowerAudioWhileDictating, lowerAudioByPercent: 40 }),
       );
-      expect(loadSettings(file)).toMatchObject({
+      expect(openSettings(file).settings).toMatchObject({
         lowerAudioWhileDictating,
         lowerAudioByPercent: 40,
       });
@@ -766,14 +759,14 @@ describe("load and save", () => {
     const file = NodePath.join(dir, "settings.json");
     const settings = applyPatch(DEFAULT_SETTINGS, { dictationLanguage: value });
     expect(settings.dictationLanguage).toBe(value);
-    await saveSettings(file, settings);
-    expect(loadSettings(file)).toEqual(settings);
+    await openSettings(file).save(settings);
+    expect(openSettings(file).settings).toEqual(settings);
   });
 
   test("migrates a saved settings file without a language to English", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, JSON.stringify({ cleanup: { enabled: false, styling: "casual" } }));
-    expect(loadSettings(file)).toMatchObject({
+    expect(openSettings(file).settings).toMatchObject({
       dictationLanguage: "en",
       cleanup: { enabled: false, styles: everywhere("veryCasual"), assignments: [] },
     });
@@ -785,7 +778,8 @@ describe("load and save", () => {
   ] as const)("a file with %j saves %j styles and no legacy key", async (legacy, style) => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, JSON.stringify({ cleanup: { enabled: true, ...legacy } }));
-    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
     expect(JSON.parse(await readFile(file, "utf8")).cleanup).toEqual({
       enabled: true,
       styles: everywhere(style),
@@ -794,49 +788,49 @@ describe("load and save", () => {
   });
 
   test("a missing file yields defaults", () => {
-    expect(loadSettings(NodePath.join(dir, "settings.json"))).toEqual(DEFAULT_SETTINGS);
+    expect(openSettings(NodePath.join(dir, "settings.json")).settings).toEqual(DEFAULT_SETTINGS);
   });
 
   test("a settings file from before diagnostics loads as off", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { diagnostics: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, diagnostics: "off" });
+    expect(openSettings(file).settings).toEqual({ ...older, diagnostics: "off" });
   });
 
   test("a settings file from before zoom opens at 100%", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { zoomLevel: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, zoomLevel: 0 });
+    expect(openSettings(file).settings).toEqual({ ...older, zoomLevel: 0 });
   });
 
   test("a settings file from before Transforms loads them switched off with the built-ins", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { transforms: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, transforms: DEFAULT_TRANSFORMS });
+    expect(openSettings(file).settings).toEqual({ ...older, transforms: DEFAULT_TRANSFORMS });
   });
 
   test("a settings file with Option+Escape, the cancel key, loads with that shortcut nulled", async () => {
     const file = NodePath.join(dir, "settings.json");
     const onEscape = { ...bullets, shortcut: { keycode: 53, modifiers: ["option"] } };
     await writeFile(file, JSON.stringify({ transforms: { enabled: true, items: [onEscape] } }));
-    expect(loadSettings(file).transforms.items).toEqual([{ ...bullets, shortcut: null }]);
+    expect(openSettings(file).settings.transforms.items).toEqual([{ ...bullets, shortcut: null }]);
   });
 
   test("a settings file whose transforms were all deleted loads with none", async () => {
     const file = NodePath.join(dir, "settings.json");
     const settings = applyPatch(DEFAULT_SETTINGS, { transforms: { items: [] } });
-    await saveSettings(file, settings);
-    expect(loadSettings(file).transforms.items).toEqual([]);
+    await openSettings(file).save(settings);
+    expect(openSettings(file).settings.transforms.items).toEqual([]);
   });
 
   test("a settings file from before snippets loads with none", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { snippets: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, snippets: [] });
+    expect(openSettings(file).settings).toEqual({ ...older, snippets: [] });
   });
 
   test("a damaged snippet is dropped while the others load", async () => {
@@ -848,14 +842,16 @@ describe("load and save", () => {
         snippets: [valid, { id: "2", trigger: "   ", expansion: "x" }, { id: "3" }],
       }),
     );
-    expect(loadSettings(file).snippets).toEqual([{ ...valid, expansionHtml: null, enabled: true }]);
+    expect(openSettings(file).settings.snippets).toEqual([
+      { ...valid, expansionHtml: null, enabled: true },
+    ]);
   });
 
   test("a settings file from before the dictionary loads with an empty one", async () => {
     const file = NodePath.join(dir, "settings.json");
     const { dictionary: _, ...older } = applyPatch(DEFAULT_SETTINGS, { theme: "dark" });
     await writeFile(file, JSON.stringify(older));
-    expect(loadSettings(file)).toEqual({ ...older, dictionary: [] });
+    expect(openSettings(file).settings).toEqual({ ...older, dictionary: [] });
   });
 
   test("a damaged dictionary entry is dropped while the others load", async () => {
@@ -874,7 +870,7 @@ describe("load and save", () => {
         ],
       }),
     );
-    expect(loadSettings(file).dictionary).toEqual([word, replacement]);
+    expect(openSettings(file).settings.dictionary).toEqual([word, replacement]);
   });
 
   test("a dictionary phrase that matches a snippet trigger still loads", async () => {
@@ -882,33 +878,94 @@ describe("load and save", () => {
     const snippets = [{ id: "s", trigger: "my email", expansion: "name@example.com" }];
     const dictionary = [{ id: "1", phrase: "My Email", replacement: null }];
     await writeFile(file, JSON.stringify({ snippets, dictionary }));
-    expect(loadSettings(file).dictionary).toEqual(dictionary);
+    expect(openSettings(file).settings.dictionary).toEqual(dictionary);
   });
 
   test("a corrupt file yields defaults", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, "{ this is not json");
-    expect(loadSettings(file)).toEqual(DEFAULT_SETTINGS);
+    expect(openSettings(file).settings).toEqual(DEFAULT_SETTINGS);
   });
 
   test("the next save moves a corrupt file aside with its bytes intact", async () => {
     const file = NodePath.join(dir, "settings.json");
     const original = '{\n  "dictionary": [{ "id": "d", "phrase": "Kubernetes" }],\n}\n';
     await writeFile(file, original);
-    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
     const asides = (await readdir(dir)).filter((name) =>
       name.startsWith("settings.json.unreadable-"),
     );
     expect(asides).toHaveLength(1);
     expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
-    expect(loadSettings(file)).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+  });
+
+  test("a save after a hand repair of a file that was corrupt at launch keeps the repaired data", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const repaired = {
+      dictionary: [{ id: "d", phrase: "Kubernetes", replacement: null }],
+      snippets: [
+        { id: "s", trigger: "sig", expansion: "Synthetic", expansionHtml: null, enabled: true },
+      ],
+      transforms: { enabled: true, items: [bullets], autoApply: null },
+      cleanup: { enabled: true, styles: PERSONAL_CASUAL_REST_FORMAL, assignments: [] },
+    };
+    const repairedText = `${JSON.stringify(repaired, null, 2)}\n`;
+    await writeFile(file, repairedText.replace("\n}\n", ",\n}\n"));
+    const store = openSettings(file);
+    expect(store.settings).toEqual(DEFAULT_SETTINGS);
+    await writeFile(file, repairedText);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    const kept = (await readdir(dir)).filter((name) => name !== "settings.json");
+    const survivor = kept.length === 0 ? file : NodePath.join(dir, kept[0]!);
+    expect(JSON.parse(await readFile(survivor, "utf8"))).toMatchObject(repaired);
+  });
+
+  test("later saves leave the file set aside at launch alone", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = '{\n  "dictionary": [{ "id": "d", "phrase": "Kubernetes" }],\n}\n';
+    await writeFile(file, original);
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    await store.save(applyPatch(store.settings, { theme: "light" }));
+    const asides = (await readdir(dir)).filter((name) => name !== "settings.json");
+    expect(asides).toHaveLength(1);
+    expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "light" });
+  });
+
+  test("a file corrupt at launch and deleted since does not block the save", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, "{ this is not json");
+    const store = openSettings(file);
+    await rm(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    expect(await readdir(dir)).toEqual(["settings.json"]);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
+  });
+
+  test("a save after a file unreadable at launch becomes readable sets the file aside", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const original = `${JSON.stringify({ dictionary: [{ id: "d", phrase: "Kubernetes" }] })}\n`;
+    await writeFile(file, original);
+    await chmod(file, 0o000);
+    const store = openSettings(file);
+    await chmod(file, 0o600);
+    expect(store.settings).toEqual(DEFAULT_SETTINGS);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    const asides = (await readdir(dir)).filter((name) => name !== "settings.json");
+    expect(asides).toHaveLength(1);
+    expect(await readFile(NodePath.join(dir, asides[0]!), "utf8")).toBe(original);
+    expect(openSettings(file).settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark" });
   });
 
   test("a save keeps top-level keys this build does not know", async () => {
     const file = NodePath.join(dir, "settings.json");
     const futureFeature = { items: [{ id: "f", on: true }] };
     await writeFile(file, JSON.stringify({ theme: "light", futureFeature }));
-    await saveSettings(file, applyPatch(loadSettings(file), { theme: "dark" }));
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
       ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       theme: "dark",
@@ -919,7 +976,8 @@ describe("load and save", () => {
   test("a save drops the mute switch it migrated, so an older build reads the new choice", async () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, JSON.stringify({ muteWhileDictating: true }));
-    await saveSettings(file, applyPatch(loadSettings(file), { lowerAudioWhileDictating: false }));
+    const store = openSettings(file);
+    await store.save(applyPatch(store.settings, { lowerAudioWhileDictating: false }));
     const saved = JSON.parse(await readFile(file, "utf8"));
     expect(saved).not.toHaveProperty("muteWhileDictating");
     expect(saved.lowerAudioWhileDictating).toBe(false);
@@ -931,7 +989,7 @@ describe("load and save", () => {
     await writeFile(file, original);
     await chmod(file, 0o000);
     await expect(
-      saveSettings(file, applyPatch(DEFAULT_SETTINGS, { theme: "dark" })),
+      openSettings(file).save(applyPatch(DEFAULT_SETTINGS, { theme: "dark" })),
     ).rejects.toThrow();
     await chmod(file, 0o600);
     expect(await readFile(file, "utf8")).toBe(original);
@@ -941,7 +999,7 @@ describe("load and save", () => {
   test("a save reaches the disk before it replaces the old file", async () => {
     const file = NodePath.join(dir, "settings.json");
     disk.events = [];
-    await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { hotkey: "rightOption" }));
+    await openSettings(file).save(applyPatch(DEFAULT_SETTINGS, { hotkey: "rightOption" }));
     expect(disk.events).toEqual([
       "sync with data",
       expect.stringMatching(/^rename settings\.json\..+ -> settings\.json$/),
@@ -985,8 +1043,8 @@ describe("load and save", () => {
     });
     expect(settings.cleanup.assignments).toHaveLength(2);
     expect(settings.transforms.items).toHaveLength(2);
-    await saveSettings(file, settings);
-    expect(loadSettings(file)).toEqual(settings);
+    await openSettings(file).save(settings);
+    expect(openSettings(file).settings).toEqual(settings);
     await expect(readdir(NodePath.dirname(file))).resolves.toEqual(["settings.json"]);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(settings);
   });
@@ -1019,11 +1077,11 @@ describe("microphone settings", () => {
     const dir = await mkdtemp(NodePath.join(tmpdir(), "voice-microphone-settings-"));
     const file = NodePath.join(dir, "settings.json");
     try {
-      await saveSettings(file, applyPatch(DEFAULT_SETTINGS, { microphone }));
-      const loaded = loadSettings(file);
+      await openSettings(file).save(applyPatch(DEFAULT_SETTINGS, { microphone }));
+      const loaded = openSettings(file).settings;
       expect(loaded.microphone).toEqual(microphone);
-      await saveSettings(file, applyPatch(loaded, { microphone: null }));
-      expect(loadSettings(file).microphone).toBeNull();
+      await openSettings(file).save(applyPatch(loaded, { microphone: null }));
+      expect(openSettings(file).settings.microphone).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

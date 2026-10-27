@@ -158,32 +158,49 @@ export function applyPatch(
   return parseSettings(next);
 }
 
+export type SettingsFile = {
+  settings: Settings;
+  /**
+   * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
+   * A file that is not JSON, or that launch could not use, is set aside first so its bytes outlive
+   * the defaults that replace it. A file that cannot be read fails the save rather than being
+   * overwritten.
+   */
+  save(next: Settings): Promise<void>;
+};
+
 // Synchronous because launch reads the diagnostics choice before Electron's ready event.
-export function loadSettings(file: string, defaultChannel: UpdateChannel = "stable"): Settings {
-  let text: string;
+export function openSettings(
+  file: string,
+  defaultChannel: UpdateChannel = "stable",
+  log?: Log,
+): SettingsFile {
+  let raw: unknown = null;
+  let launchIgnoredFile = false;
   try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return parseSettings(null, defaultChannel);
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    launchIgnoredFile = (error as NodeJS.ErrnoException).code !== "ENOENT";
   }
-  try {
-    return parseSettings(JSON.parse(text), defaultChannel);
-  } catch {
-    return parseSettings(null, defaultChannel);
-  }
+  return {
+    settings: parseSettings(raw, defaultChannel),
+    async save(next) {
+      const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(
+        file,
+        launchIgnoredFile,
+        log,
+      );
+      launchIgnoredFile = false;
+      await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`);
+    },
+  };
 }
 
-/**
- * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
- * A file that is not JSON is moved aside first, so its bytes outlive the defaults that replace it.
- * A file that cannot be read fails the save rather than being overwritten.
- */
-export async function saveSettings(file: string, settings: Settings, log?: Log): Promise<void> {
-  const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(file, log);
-  await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...settings }, null, 2)}\n`);
-}
-
-async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unknown>> {
+async function recordOnDisk(
+  file: string,
+  launchIgnoredFile: boolean,
+  log?: Log,
+): Promise<Record<string, unknown>> {
   let text: string;
   try {
     text = await readFile(file, "utf8");
@@ -191,12 +208,14 @@ async function recordOnDisk(file: string, log?: Log): Promise<Record<string, unk
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
-  try {
-    return record(JSON.parse(text));
-  } catch {
-    const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
-    await rename(file, aside);
-    log?.(`settings: the saved file is not JSON, so it was moved to ${NodePath.basename(aside)}`);
-    return {};
+  if (!launchIgnoredFile) {
+    try {
+      return record(JSON.parse(text));
+    } catch {}
   }
+  const aside = `${file}.unreadable-${new Date().toISOString().replaceAll(":", "-")}`;
+  await rename(file, aside);
+  const why = launchIgnoredFile ? "could not be used when Voice started" : "is not JSON";
+  log?.(`settings: the saved file ${why}, so it was moved to ${NodePath.basename(aside)}`);
+  return {};
 }
