@@ -164,10 +164,12 @@ function percents(parts: readonly number[]): number[] {
     result[index] = (result[index] ?? 0) + 1;
     left -= 1;
   }
-  // Whole shares that still round to zero show two significant digits, so anything used never reads 0%.
+  // Whole shares that still round to zero show up to two decimals, floored at 0.01 so anything used never reads 0%.
   return result.map((share, index) => {
     const part = parts[index] ?? 0;
-    return share === 0 && part > 0 ? Number(((part * 100) / total).toPrecision(2)) : share;
+    return share === 0 && part > 0
+      ? Math.max(0.01, Math.round((part * 10_000) / total) / 100)
+      : share;
   });
 }
 
