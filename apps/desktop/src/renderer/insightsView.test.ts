@@ -294,6 +294,16 @@ describe("usage", () => {
     expect(view.topApps.map(({ share }) => share)).toEqual([99, 1, 0.12, 0.1]);
   });
 
+  test("a tiny share shows at most two decimals", () => {
+    const words = [99_000, 760, 216, 24, 1];
+    const apps = Object.fromEntries(words.map((n, i) => [id(`com.example.app${i}`), n]));
+    const view = usage(
+      used({ categories: categories({ other: { words: 100_001, sessions: 4 } }), apps }),
+      noNames,
+    );
+    expect(view.topApps.map(({ share }) => share)).toEqual([99, 1, 0.22, 0.02, 0.01]);
+  });
+
   test("a category with a few words never shows 0%", () => {
     const view = usage(
       used({
