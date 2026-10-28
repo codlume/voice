@@ -17,7 +17,7 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function mount(children: ReactNode): Promise<string[]> {
+async function mount(children: ReactNode, { reachAppModal = true } = {}): Promise<string[]> {
   const ran: string[] = [];
   function Shell() {
     useShortcuts(
@@ -25,6 +25,7 @@ async function mount(children: ReactNode): Promise<string[]> {
         shortcut,
         run: () => ran.push(shortcut.key),
       })),
+      { reachAppModal },
     );
     return children;
   }
@@ -111,6 +112,12 @@ test("shortcuts run while focus is inside the app modal", async () => {
   await press(input, "1", "Digit1");
   await press(input, ",", "Comma");
   expect(ran).toEqual(["1", ","]);
+});
+
+test("a page's shortcuts do not run inside the app modal", async () => {
+  const ran = await mount(<AppModal />, { reachAppModal: false });
+  await press(field("setting"), "1", "Digit1");
+  expect(ran).toEqual([]);
 });
 
 test("shortcuts do not run inside a dialog nested in the app modal", async () => {

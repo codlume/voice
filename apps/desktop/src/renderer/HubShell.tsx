@@ -360,8 +360,8 @@ const styles = stylex.create({
     paddingInline: settingsMargin,
     paddingBottom: settingsMargin,
   },
-  // Below the titlebar, so the popup never sits under the traffic lights. Dynamic because StyleX
-  // cannot read an imported constant in a static style.
+  // Dynamic because StyleX reads imported constants only from .stylex files, and main shares
+  // TITLEBAR_HEIGHT.
   belowTitlebar: (titlebarHeight: number) => ({ paddingTop: titlebarHeight }),
   settingsPopup: {
     display: "flex",
@@ -373,7 +373,7 @@ const styles = stylex.create({
     backgroundColor: color.background,
     fontSize: 14,
     lineHeight: 1.45,
-    WebkitAppRegion: "no-drag",
+    transitionDuration: { default: "var(--page-animation)", [reducedMotion]: "0s" },
   },
   settingsPopupHidden: { transform: "scale(0.96)" },
   settingsNav: {
@@ -547,7 +547,6 @@ function SettingsModal({
   onClosed: () => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
-  // The scroller holds focus so PageDown and Space scroll the section, as main does for pages.
   useLayoutEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0 });
     scrollerRef.current?.focus({ preventScroll: true });
@@ -559,7 +558,6 @@ function SettingsModal({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      // The caller restores focus. Base UI would pick the first tabbable element behind the modal.
       onOpenChangeComplete={(open) => {
         if (!open) onClosed();
       }}
@@ -567,17 +565,23 @@ function SettingsModal({
       <Dialog.Portal>
         <DialogBackdrop />
         <Dialog.Viewport
-          {...stylex.props(styles.settingsViewport, styles.belowTitlebar(TITLEBAR_HEIGHT))}
+          {...stylex.props(
+            styles.settingsViewport,
+            styles.belowTitlebar(TITLEBAR_HEIGHT),
+            // The portal leaves the shell, so the modal sets the Page animations duration again.
+            styles.pageAnimation(view.snapshot.settings.pageAnimationMs),
+          )}
         >
           <Dialog.Popup
             data-app-modal
             initialFocus={scrollerRef}
+            // Base UI swaps a non-tabbable return target, even a ref, for its first tabbable child,
+            // so onClosed focuses main.
             finalFocus={false}
             className={({ transitionStatus }) =>
               stylex.props(
                 dialogStyles.surface,
                 styles.settingsPopup,
-                styles.pageAnimation(view.snapshot.settings.pageAnimationMs),
                 transitionHidden(transitionStatus) && [
                   dialogStyles.surfaceHidden,
                   styles.settingsPopupHidden,
@@ -587,6 +591,7 @@ function SettingsModal({
           >
             <div {...stylex.props(styles.settingsNav)}>
               <Dialog.Title {...stylex.props(styles.settingsTitle)}>Settings</Dialog.Title>
+              {/* NavItem's tooltip trigger needs a root. It shows tooltips only when collapsed. */}
               <SidebarTooltip collapsed={false}>
                 <nav
                   aria-label="Settings"
@@ -627,13 +632,10 @@ function SettingsModal({
 
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
   const [appPage, setAppPage] = useState<AppPage>("home");
-  // Closing keeps the section, so the modal shows it through the close animation. The app page
-  // stays mounted under the modal.
-  const [settings, setSettings] = useState<SettingsModalState>(() =>
-    snapshot.account.kind === "error"
-      ? { open: true, section: "account" }
-      : { open: false, section: "general" },
-  );
+  const [settings, setSettings] = useState<SettingsModalState>({
+    open: false,
+    section: "general",
+  });
   const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
@@ -669,7 +671,6 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
     focusMain();
   }
 
-  // The sidebar sits behind the modal, so its toggle and jumps give way to the modal's own.
   useShortcuts(
     settings.open
       ? [
@@ -681,6 +682,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
           { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
           ...jumpBindings(appPages, selectAppPage),
         ],
+    { reachAppModal: true },
   );
   const commandHeld = useCommandHeld(snapshot.settings);
 

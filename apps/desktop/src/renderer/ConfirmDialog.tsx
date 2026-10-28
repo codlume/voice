@@ -79,7 +79,7 @@ const styles = stylex.create({
 export const transitionHidden = (status: string | undefined) =>
   status === "starting" || status === "ending";
 
-/** Rendered even over another dialog, which Base UI skips by default, so a confirm over Settings dims it. */
+/** Base UI skips a nested dialog's backdrop by default. Forced so a confirm inside Settings dims Settings. */
 export function DialogBackdrop() {
   return (
     <Dialog.Backdrop

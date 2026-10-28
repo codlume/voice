@@ -39,17 +39,20 @@ export function withShortcut(label: string, { hint }: Shortcut): string {
 
 export type Binding = { shortcut: Shortcut; run: () => void };
 
-// A dialog marked data-app-modal, such as Settings, is a page of the hub, so its shortcuts keep
-// working inside it. Any other dialog, including one opened over Settings, holds its own input.
-function insideDialog(target: EventTarget | null): boolean {
+function insideDialog(target: EventTarget | null, reachAppModal: boolean): boolean {
   const dialog =
     target instanceof Element ? target.closest('[role="dialog"],[role="alertdialog"]') : null;
-  return dialog !== null && !dialog.hasAttribute("data-app-modal");
+  return dialog !== null && !(reachAppModal && dialog.hasAttribute("data-app-modal"));
 }
 
-export function useShortcuts(bindings: readonly Binding[]) {
+/**
+ * Bindings stand down while focus is inside a dialog. With `reachAppModal`, they also run inside
+ * a dialog marked `data-app-modal`, which only the hub's own bindings use for its Settings modal.
+ * A page behind that modal stays out, and so does any dialog opened over it.
+ */
+export function useShortcuts(bindings: readonly Binding[], { reachAppModal = false } = {}) {
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || insideDialog(event.target)) return;
+    if (event.defaultPrevented || insideDialog(event.target, reachAppModal)) return;
     const binding = bindings.find((candidate) => matches(candidate.shortcut, event));
     if (!binding) return;
     event.preventDefault();

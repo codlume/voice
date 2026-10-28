@@ -1029,7 +1029,7 @@ export function ShortcutsSettings({
         <Card>
           <ShortcutRow title="Toggle sidebar" keys={shortcuts.toggleSidebar.keys} />
           <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
-          <ShortcutRow title="Close Settings" keys={["Esc"]} />
+          <ShortcutRow title="Close Settings" detail="Or ⌘, again." keys={["Esc"]} />
           <ShortcutRow
             title="Search history"
             detail="On Home."
