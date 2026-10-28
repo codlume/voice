@@ -283,4 +283,32 @@ describe("usage", () => {
       { bundleId: "com.example.app0", name: "com.example.app0", share: 5 },
     ]);
   });
+
+  test("an app with under half a percent of the words never shows 0%", () => {
+    const words = [9878, 100, 12, 10];
+    const apps = Object.fromEntries(words.map((n, i) => [id(`com.example.app${i}`), n]));
+    const view = usage(
+      used({ categories: categories({ other: { words: 10_000, sessions: 4 } }), apps }),
+      noNames,
+    );
+    expect(view.topApps.map(({ share }) => share)).toEqual([99, 1, 0.12, 0.1]);
+  });
+
+  test("a category with a few words never shows 0%", () => {
+    const view = usage(
+      used({
+        categories: categories({
+          other: { words: 9990, sessions: 460 },
+          work: { words: 10, sessions: 1 },
+        }),
+      }),
+      noNames,
+    );
+    expect(view.categories.map(({ category, share }) => [category, share])).toEqual([
+      ["other", 100],
+      ["work", 0.1],
+      ["personal", 0],
+      ["email", 0],
+    ]);
+  });
 });

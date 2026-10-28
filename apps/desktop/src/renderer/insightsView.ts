@@ -151,7 +151,7 @@ export type UsageView = {
   empty: boolean;
 };
 
-function wholePercents(parts: readonly number[]): number[] {
+function percents(parts: readonly number[]): number[] {
   const total = parts.reduce((sum, part) => sum + part, 0);
   if (total === 0) return parts.map(() => 0);
   const result = parts.map((part) => Math.floor((part * 100) / total));
@@ -164,7 +164,11 @@ function wholePercents(parts: readonly number[]): number[] {
     result[index] = (result[index] ?? 0) + 1;
     left -= 1;
   }
-  return result;
+  // Whole shares that still round to zero show two significant digits, so anything used never reads 0%.
+  return result.map((share, index) => {
+    const part = parts[index] ?? 0;
+    return share === 0 && part > 0 ? Number(((part * 100) / total).toPrecision(2)) : share;
+  });
 }
 
 export function usage(insights: Insights, name: (bundleId: BundleId) => string): UsageView {
@@ -172,14 +176,14 @@ export function usage(insights: Insights, name: (bundleId: BundleId) => string):
     const { words, sessions } = insights.categories[category];
     return { category, words, sessions };
   }).toSorted((a, b) => b.words - a.words);
-  const categoryShares = wholePercents(categories.map(({ words }) => words));
+  const categoryShares = percents(categories.map(({ words }) => words));
   const apps = Object.entries(insights.apps)
     .flatMap(([key, words]) => {
       const bundleId = parseBundleId(key);
       return bundleId !== null && words > 0 ? [{ bundleId, words }] : [];
     })
     .toSorted((a, b) => b.words - a.words);
-  const appShares = wholePercents(apps.map(({ words }) => words));
+  const appShares = percents(apps.map(({ words }) => words));
   return {
     appsUsed: apps.length,
     categories: categories.map((row, index) => ({ ...row, share: categoryShares[index] ?? 0 })),
