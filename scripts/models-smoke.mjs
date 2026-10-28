@@ -29,8 +29,8 @@ const linked = (path) => {
 
 const button = (label) =>
   `document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)})`;
-const navButton = (text) =>
-  `[...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
+const settingsNavButton = (text) =>
+  `[...document.querySelectorAll("[data-app-modal] nav button")].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
 const enabled = (find) => `(${find})?.disabled === false`;
 // Install reports 0% before it checks the file on disk, so any other download status is a fetch.
 const fetching = (status) => status.state === "downloading" && status.progress !== 0;
@@ -69,6 +69,7 @@ try {
       label,
     );
   const mainText = "document.querySelector('main').innerText";
+  const settingsText = "document.querySelector('[data-app-modal]').innerText";
   const shot = async (name) => {
     if (!shots) return;
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
@@ -89,13 +90,16 @@ try {
     "both models loaded",
   );
   await click(button("Settings"), "Settings opens");
-  await click(navButton("Models"), "Models page opens");
-  await untilPage(`${mainText}.includes("Speech recognition")`, "Models page renders");
+  await click(settingsNavButton("Models"), "Models page opens");
+  await untilPage(`${settingsText}.includes("Speech recognition")`, "Models page renders");
   await shot("installed");
 
   await page.evaluate("window.voice.updateSettings({ cleanup: { enabled: false } })");
   await untilModels((m) => m.cleanup.state === "installed", "cleanup off reports installed");
-  await untilPage(`${mainText}.includes("Loads when text cleanup is on")`, "cleanup-off row text");
+  await untilPage(
+    `${settingsText}.includes("Loads when text cleanup is on")`,
+    "cleanup-off row text",
+  );
   await shot("cleanup-off");
   await page.evaluate("window.voice.updateSettings({ cleanup: { enabled: true } })");
   await untilModels((m) => m.cleanup.state === "ready", "cleanup on loads again");
@@ -103,7 +107,7 @@ try {
   await page.evaluate('window.voice.updateSettings({ dictationLanguage: "pl" })');
   await untilModels((m) => m.cleanup.state === "installed", "a non-English language unloads");
   await untilPage(
-    `${mainText}.includes("Loads when you dictate in English")`,
+    `${settingsText}.includes("Loads when you dictate in English")`,
     "non-English row text",
   );
   await page.evaluate('window.voice.updateSettings({ dictationLanguage: "en" })');
@@ -133,14 +137,17 @@ try {
     assert(existsSync(join(cache, modelFiles[id])), `${id} cache left intact`);
     note(`${id} uninstalled, cache intact`);
   }
-  await untilPage(`${mainText}.split("Not installed").length === 3`, "both rows say Not installed");
+  await untilPage(
+    `${settingsText}.split("Not installed").length === 3`,
+    "both rows say Not installed",
+  );
   await shot("uninstalled");
 
-  await click(navButton("Back"), "Back clickable");
+  await click(button("Close settings"), "Settings closes");
   await untilPage(`${mainText}.includes("Not downloaded")`, "Home checklist offers the download");
   await shot("home-uninstalled");
   await click(button("Settings"), "Settings opens again");
-  await click(navButton("Models"), "Models page opens again");
+  await click(settingsNavButton("Models"), "Models page opens again");
 
   for (const id of ["cleanup", "asr"])
     symlinkSync(join(cache, modelFiles[id]), join(models, modelFiles[id]));
@@ -156,7 +163,7 @@ try {
     );
     note(`${id} reinstalled`);
   }
-  await untilPage(`!${mainText}.includes("Not installed")`, "both rows installed again");
+  await untilPage(`!${settingsText}.includes("Not installed")`, "both rows installed again");
   await shot("reinstalled");
   page.close();
   note("ok");

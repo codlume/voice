@@ -17,7 +17,7 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function mount(children: ReactNode): Promise<string[]> {
+async function mount(children: ReactNode, { reachAppModal = true } = {}): Promise<string[]> {
   const ran: string[] = [];
   function Shell() {
     useShortcuts(
@@ -25,6 +25,7 @@ async function mount(children: ReactNode): Promise<string[]> {
         shortcut,
         run: () => ran.push(shortcut.key),
       })),
+      { reachAppModal },
     );
     return children;
   }
@@ -89,5 +90,66 @@ test("shortcuts do not run while focus is inside an open alert dialog", async ()
     </AlertDialog.Root>,
   );
   await press(field("confirm"), "1", "Digit1");
+  expect(ran).toEqual([]);
+});
+
+function AppModal({ children }: { children?: ReactNode }) {
+  return (
+    <Dialog.Root open>
+      <Dialog.Portal>
+        <Dialog.Popup data-app-modal>
+          <input id="setting" />
+          {children}
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+test("shortcuts run while focus is inside the app modal", async () => {
+  const ran = await mount(<AppModal />);
+  const input = field("setting");
+  await press(input, "1", "Digit1");
+  await press(input, ",", "Comma");
+  expect(ran).toEqual(["1", ","]);
+});
+
+test("a page's shortcuts do not run inside the app modal", async () => {
+  const ran = await mount(<AppModal />, { reachAppModal: false });
+  await press(field("setting"), "1", "Digit1");
+  expect(ran).toEqual([]);
+});
+
+test("shortcuts do not run inside a dialog nested in the app modal", async () => {
+  const ran = await mount(
+    <AppModal>
+      <Dialog.Root open>
+        <Dialog.Portal>
+          <Dialog.Popup>
+            <input id="nested-draft" />
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </AppModal>,
+  );
+  await press(field("nested-draft"), ",", "Comma");
+  expect(ran).toEqual([]);
+});
+
+test("shortcuts do not run inside an alert dialog nested in the app modal", async () => {
+  const ran = await mount(
+    <AppModal>
+      <AlertDialog.Root open>
+        <AlertDialog.Portal>
+          <AlertDialog.Popup>
+            <button id="nested-confirm" type="button">
+              Clear
+            </button>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+    </AppModal>,
+  );
+  await press(field("nested-confirm"), "1", "Digit1");
   expect(ran).toEqual([]);
 });

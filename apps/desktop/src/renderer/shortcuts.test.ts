@@ -27,7 +27,6 @@ describe("matches", () => {
     ["b", shortcuts.toggleSidebar],
     ["B", shortcuts.toggleSidebar],
     [",", shortcuts.openSettings],
-    ["[", shortcuts.closeSettings],
   ])("⌘%s", (key, shortcut) => {
     expect(press(key)).toEqual([shortcut]);
   });

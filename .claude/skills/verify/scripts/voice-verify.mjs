@@ -767,9 +767,13 @@ const commands = {
     const hub = await connect("hub");
     out(
       await hub.evaluate(`(() => {
-        const nav = document.querySelector("aside nav");
+        const modal = document.querySelector("[data-app-modal][data-open]");
+        const nav = (modal ?? document.querySelector("aside"))?.querySelector("nav");
         const current = nav?.querySelector('[aria-current="page"]');
-        return "[" + (nav?.getAttribute("aria-label") ?? "?") + " nav" + (current ? " > " + current.textContent.trim() : "") + "]\\n" + document.querySelector("main").innerText;
+        const content = modal
+          ? [...modal.children].filter((part) => !part.contains(nav)).map((part) => part.innerText).join("\\n")
+          : document.querySelector("main").innerText;
+        return "[" + (nav?.getAttribute("aria-label") ?? "?") + " nav" + (current ? " > " + current.textContent.trim() : "") + "]\\n" + content;
       })()`),
     );
     hub.close();
@@ -1308,7 +1312,7 @@ const commands = {
   stop [--keep-user-data]        tear down this worktree's instance; evidence survives,
                                  and with the flag so does the scratch userData
   snapshot                       full app snapshot JSON
-  text                           current sidebar nav and visible page text
+  text                           current nav and visible page text, or Settings while it is open
   click <name|css:sel> [page]    click the one visible element with that accessible name
   type <css:sel> <text...>       focus the one visible hub element and insert text as a paste
   key <code> [modifier...]       press one key in the hub, e.g. key Digit1 option (modifiers: option shift control command)
