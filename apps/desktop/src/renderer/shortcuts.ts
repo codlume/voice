@@ -17,7 +17,6 @@ function shortcut(key: string): Shortcut {
 export const shortcuts = {
   toggleSidebar: shortcut("b"),
   openSettings: shortcut(","),
-  closeSettings: shortcut("["),
   searchHistory: shortcut("f"),
 };
 
@@ -40,10 +39,12 @@ export function withShortcut(label: string, { hint }: Shortcut): string {
 
 export type Binding = { shortcut: Shortcut; run: () => void };
 
+// A dialog marked data-app-modal, such as Settings, is a page of the hub, so its shortcuts keep
+// working inside it. Any other dialog, including one opened over Settings, holds its own input.
 function insideDialog(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element && target.closest('[role="dialog"],[role="alertdialog"]') !== null
-  );
+  const dialog =
+    target instanceof Element ? target.closest('[role="dialog"],[role="alertdialog"]') : null;
+  return dialog !== null && !dialog.hasAttribute("data-app-modal");
 }
 
 export function useShortcuts(bindings: readonly Binding[]) {

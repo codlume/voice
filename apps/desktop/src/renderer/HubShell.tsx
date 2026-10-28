@@ -1,7 +1,7 @@
+import { Dialog } from "@base-ui/react/dialog";
 import { Tooltip } from "@base-ui/react/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import {
-  ArrowLeftIcon,
   BookAIcon,
   BoxIcon,
   ChartColumnIcon,
@@ -15,6 +15,7 @@ import {
   TextQuoteIcon,
   UserIcon,
   WandSparklesIcon,
+  XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -24,10 +25,11 @@ import type { Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
+import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
-import { pageMotion, type PageMotion } from "./pageMotion.ts";
+import { pageMotion } from "./pageMotion.ts";
 import {
   DataPrivacySettings,
   GeneralSettings,
@@ -90,7 +92,7 @@ type PageView = {
   openSettingsPage: (id: SettingsPage) => void;
 };
 
-const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> = {
+const appPageViews: Record<AppPage, (view: PageView) => ReactNode> = {
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
@@ -109,6 +111,9 @@ const pageViews: Record<AppPage | SettingsPage, (view: PageView) => ReactNode> =
   dictionary: ({ snapshot }) => (
     <Dictionary dictionary={snapshot.settings.dictionary} snippets={snapshot.settings.snippets} />
   ),
+};
+
+const settingsPageViews: Record<SettingsPage, (view: PageView) => ReactNode> = {
   general: ({ snapshot }) => (
     <GeneralSettings
       settings={snapshot.settings}
@@ -151,6 +156,7 @@ const navIconSize = 18;
 const navGap = 2;
 const navDividerHeight = 1;
 const railWidth = navItemSize + 2 * sidebarPadding;
+const settingsMargin = 16;
 
 const brandIconVisibleSize = 24;
 const macIconGridMargin = 100 / 1024;
@@ -317,8 +323,6 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
-  back: { flex: 1 },
-  backCollapsed: { flex: "none", width: navItemSize },
   // One tooltip glides between the rail's triggers, resizing to each label.
   tooltipGlide: {
     width: "var(--positioner-width)",
@@ -347,6 +351,58 @@ const styles = stylex.create({
     borderRadius: radius.large,
   },
   column: { maxWidth: 800, marginInline: "auto" },
+  settingsViewport: {
+    position: "fixed",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingInline: settingsMargin,
+    paddingBottom: settingsMargin,
+  },
+  // Below the titlebar, so the popup never sits under the traffic lights. Dynamic because StyleX
+  // cannot read an imported constant in a static style.
+  belowTitlebar: (titlebarHeight: number) => ({ paddingTop: titlebarHeight }),
+  settingsPopup: {
+    display: "flex",
+    width: "100%",
+    height: "100%",
+    maxWidth: 1100,
+    maxHeight: 780,
+    overflow: "hidden",
+    backgroundColor: color.background,
+    fontSize: 14,
+    lineHeight: 1.45,
+    WebkitAppRegion: "no-drag",
+  },
+  settingsPopupHidden: { transform: "scale(0.96)" },
+  settingsNav: {
+    flexShrink: 0,
+    width: sidebarWidth,
+    overflowY: "auto",
+    paddingBlock: space.lg,
+    paddingInline: sidebarPadding,
+    backgroundColor: color.sidebar,
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: color.border,
+  },
+  settingsTitle: {
+    margin: 0,
+    paddingInline: (navItemSize - navIconSize) / 2,
+    paddingBottom: space.lg,
+    fontFamily: font.serif,
+    fontSize: 20,
+    fontWeight: 500,
+  },
+  settingsContent: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column" },
+  settingsHeader: { display: "flex", justifyContent: "flex-end", padding: space.md },
+  settingsScroller: {
+    flex: 1,
+    overflow: "auto",
+    paddingInline: space.xl,
+    paddingBottom: space.xxl,
+  },
 });
 
 function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
@@ -381,20 +437,18 @@ function NavItem({
   label,
   icon: Icon,
   shortcut,
-  current = false,
+  current,
   collapsed,
   showShortcut,
   onClick,
-  style,
 }: {
   label: string;
   icon: LucideIcon;
   shortcut: Shortcut | undefined;
-  current?: boolean;
+  current: boolean;
   collapsed: boolean;
   showShortcut: boolean;
   onClick: () => void;
-  style?: stylex.StyleXStyles;
 }) {
   const showHint = showShortcut && shortcut !== undefined;
   return (
@@ -403,7 +457,7 @@ function NavItem({
       type="button"
       aria-current={current ? "page" : undefined}
       onClick={onClick}
-      {...stylex.props(styles.navItem, current && styles.navItemCurrent, style)}
+      {...stylex.props(styles.navItem, current && styles.navItemCurrent)}
     >
       <Icon size={navIconSize} {...stylex.props(styles.icon)} />
       <span
@@ -467,28 +521,127 @@ function navHighlightAt<Id extends string>(
   );
 }
 
+type SettingsModalState = { open: boolean; section: SettingsPage };
+
+function jumpBindings<Id extends string>(
+  pages: readonly { id: Id }[],
+  select: (id: Id) => void,
+): Binding[] {
+  return pages.flatMap(({ id }, index): Binding[] => {
+    const shortcut = jumpShortcuts[index];
+    return shortcut ? [{ shortcut, run: () => select(id) }] : [];
+  });
+}
+
+function SettingsModal({
+  state,
+  view,
+  commandHeld,
+  onClose,
+  onClosed,
+}: {
+  state: SettingsModalState;
+  view: PageView;
+  commandHeld: boolean;
+  onClose: () => void;
+  onClosed: () => void;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  // The scroller holds focus so PageDown and Space scroll the section, as main does for pages.
+  useLayoutEffect(() => {
+    scrollerRef.current?.scrollTo({ top: 0 });
+    scrollerRef.current?.focus({ preventScroll: true });
+  }, [state.section]);
+  const SectionView = settingsPageViews[state.section];
+  return (
+    <Dialog.Root
+      open={state.open}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      // The caller restores focus. Base UI would pick the first tabbable element behind the modal.
+      onOpenChangeComplete={(open) => {
+        if (!open) onClosed();
+      }}
+    >
+      <Dialog.Portal>
+        <DialogBackdrop />
+        <Dialog.Viewport
+          {...stylex.props(styles.settingsViewport, styles.belowTitlebar(TITLEBAR_HEIGHT))}
+        >
+          <Dialog.Popup
+            data-app-modal
+            initialFocus={scrollerRef}
+            finalFocus={false}
+            className={({ transitionStatus }) =>
+              stylex.props(
+                dialogStyles.surface,
+                styles.settingsPopup,
+                styles.pageAnimation(view.snapshot.settings.pageAnimationMs),
+                transitionHidden(transitionStatus) && [
+                  dialogStyles.surfaceHidden,
+                  styles.settingsPopupHidden,
+                ],
+              ).className
+            }
+          >
+            <div {...stylex.props(styles.settingsNav)}>
+              <Dialog.Title {...stylex.props(styles.settingsTitle)}>Settings</Dialog.Title>
+              <SidebarTooltip collapsed={false}>
+                <nav
+                  aria-label="Settings"
+                  {...stylex.props(styles.nav, navHighlightAt(settingsPageGroups, state.section))}
+                >
+                  <NavItems
+                    groups={settingsPageGroups}
+                    current={state.section}
+                    collapsed={false}
+                    showShortcut={commandHeld}
+                    onSelect={view.openSettingsPage}
+                  />
+                </nav>
+              </SidebarTooltip>
+            </div>
+            <div {...stylex.props(styles.settingsContent)}>
+              <div {...stylex.props(styles.settingsHeader)}>
+                <Dialog.Close
+                  aria-label="Close settings"
+                  title="Close settings"
+                  {...stylex.props(titlebar.button)}
+                >
+                  <XIcon size={navIconSize} />
+                </Dialog.Close>
+              </div>
+              <div ref={scrollerRef} tabIndex={-1} {...stylex.props(styles.settingsScroller)}>
+                <div {...stylex.props(styles.column)}>
+                  <SectionView {...view} />
+                </div>
+              </div>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
   const [appPage, setAppPage] = useState<AppPage>("home");
-  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(() =>
-    snapshot.account.kind === "error" ? "account" : null,
+  // Closing keeps the section, so the modal shows it through the close animation. The app page
+  // stays mounted under the modal.
+  const [settings, setSettings] = useState<SettingsModalState>(() =>
+    snapshot.account.kind === "error"
+      ? { open: true, section: "account" }
+      : { open: false, section: "general" },
   );
-  const page = settingsPage ?? appPage;
-  const level = settingsPage === null ? "app" : "settings";
-  const [shown, setShown] = useState<{
-    page: typeof page;
-    level: typeof level;
-    motion: PageMotion | null;
-    navMotion: PageMotion | null;
-  }>({ page, level, motion: null, navMotion: null });
-  if (shown.page !== page) {
-    const sameLevel = shown.level === level;
-    const navMotion = sameLevel ? shown.navMotion : level === "settings" ? "forward" : "back";
-    setShown({ page, level, motion: sameLevel ? "rise" : navMotion, navMotion });
-  }
+  const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
+  const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
+  const [shown, setShown] = useState({ page: appPage, rises: false });
+  if (shown.page !== appPage) setShown({ page: appPage, rises: true });
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-  }, [page]);
+  }, [appPage]);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
   useEffect(focusMain, []);
@@ -498,7 +651,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
   const [shownAccountKind, setShownAccountKind] = useState<typeof accountKind | null>(null);
   if (accountKind !== shownAccountKind) {
     setShownAccountKind(accountKind);
-    if (accountKind === "error") setSettingsPage("account");
+    if (accountKind === "error") openSettings("account");
   }
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedKey) === "true",
@@ -512,48 +665,34 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
 
   function selectAppPage(id: AppPage) {
     setAppPage(id);
-    setSettingsPage(null);
+    closeSettings();
     focusMain();
   }
 
-  function selectSettingsPage(id: SettingsPage) {
-    setSettingsPage(id);
-    focusMain();
-  }
-
-  function closeSettings() {
-    setSettingsPage(null);
-    focusMain();
-  }
-
-  const navTargets =
-    settingsPage === null
-      ? appPages.map(
-          ({ id }) =>
-            () =>
-              selectAppPage(id),
-        )
-      : settingsPages.map(
-          ({ id }) =>
-            () =>
-              selectSettingsPage(id),
-        );
-
-  useShortcuts([
-    { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
-    settingsPage === null
-      ? { shortcut: shortcuts.openSettings, run: () => selectSettingsPage("general") }
-      : { shortcut: shortcuts.closeSettings, run: closeSettings },
-    ...navTargets.flatMap((run, index): Binding[] => {
-      const shortcut = jumpShortcuts[index];
-      return shortcut ? [{ shortcut, run }] : [];
-    }),
-  ]);
-  const showShortcut = useCommandHeld(snapshot.settings) && !collapsed;
+  // The sidebar sits behind the modal, so its toggle and jumps give way to the modal's own.
+  useShortcuts(
+    settings.open
+      ? [
+          { shortcut: shortcuts.openSettings, run: closeSettings },
+          ...jumpBindings(settingsPages, openSettings),
+        ]
+      : [
+          { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
+          { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
+          ...jumpBindings(appPages, selectAppPage),
+        ],
+  );
+  const commandHeld = useCommandHeld(snapshot.settings);
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
   const settingsLabel = withShortcut("Settings", shortcuts.openSettings);
-  const Page = pageViews[page];
+  const view: PageView = {
+    snapshot,
+    history,
+    openPage: selectAppPage,
+    openSettingsPage: openSettings,
+  };
+  const AppPageView = appPageViews[appPage];
   return (
     <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
       <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
@@ -568,10 +707,7 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
         >
           <PanelLeftIcon size={navIconSize} />
         </button>
-        <TitlebarAccount
-          account={snapshot.account}
-          onOpenAccount={() => selectSettingsPage("account")}
-        />
+        <TitlebarAccount account={snapshot.account} onOpenAccount={() => openSettings("account")} />
       </div>
       <SidebarTooltip collapsed={collapsed}>
         <aside
@@ -586,66 +722,29 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
             <img src={iconUrl} alt="" draggable={false} {...stylex.props(styles.brandIcon)} />
             <span {...stylex.props(styles.label, collapsed && styles.labelHidden)}>Voice</span>
           </p>
-          {settingsPage === null ? (
-            <nav
-              key="app"
-              aria-label="Voice"
-              {...stylex.props(
-                styles.nav,
-                navHighlightAt(appPageGroups, appPage),
-                shown.navMotion && pageMotion[shown.navMotion],
-              )}
-            >
-              <NavItems
-                groups={appPageGroups}
-                current={appPage}
-                collapsed={collapsed}
-                showShortcut={showShortcut}
-                onSelect={selectAppPage}
-              />
-            </nav>
-          ) : (
-            <nav
-              key="settings"
-              aria-label="Settings"
-              {...stylex.props(
-                styles.nav,
-                navHighlightAt(settingsPageGroups, settingsPage),
-                shown.navMotion && pageMotion[shown.navMotion],
-              )}
-            >
-              <NavItems
-                groups={settingsPageGroups}
-                current={settingsPage}
-                collapsed={collapsed}
-                showShortcut={showShortcut}
-                onSelect={selectSettingsPage}
-              />
-            </nav>
-          )}
+          <nav
+            aria-label="Voice"
+            {...stylex.props(styles.nav, navHighlightAt(appPageGroups, appPage))}
+          >
+            <NavItems
+              groups={appPageGroups}
+              current={appPage}
+              collapsed={collapsed}
+              showShortcut={commandHeld && !collapsed && !settings.open}
+              onSelect={selectAppPage}
+            />
+          </nav>
           <div {...stylex.props(styles.footer)}>
-            {settingsPage === null ? (
-              <Tooltip.Trigger
-                payload={settingsLabel}
-                type="button"
-                aria-label="Settings"
-                title={collapsed ? undefined : settingsLabel}
-                onClick={() => selectSettingsPage("general")}
-                {...stylex.props(styles.navItem, styles.footerButton)}
-              >
-                <SlidersHorizontalIcon size={navIconSize} />
-              </Tooltip.Trigger>
-            ) : (
-              <NavItem
-                label="Back"
-                icon={ArrowLeftIcon}
-                shortcut={shortcuts.closeSettings}
-                collapsed={collapsed}
-                showShortcut={showShortcut}
-                onClick={closeSettings}
-                style={[styles.back, collapsed && styles.backCollapsed]}
-              />
-            )}
+            <Tooltip.Trigger
+              payload={settingsLabel}
+              type="button"
+              aria-label="Settings"
+              title={collapsed ? undefined : settingsLabel}
+              onClick={() => openSettings("general")}
+              {...stylex.props(styles.navItem, styles.footerButton)}
+            >
+              <SlidersHorizontalIcon size={navIconSize} />
+            </Tooltip.Trigger>
             <div {...stylex.props(styles.footerUpdates, collapsed && styles.footerHidden)}>
               <SidebarUpdates
                 updates={snapshot.updates}
@@ -657,15 +756,17 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
         </aside>
       </SidebarTooltip>
       <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
-        <div key={page} {...stylex.props(styles.column, shown.motion && pageMotion[shown.motion])}>
-          <Page
-            snapshot={snapshot}
-            history={history}
-            openPage={selectAppPage}
-            openSettingsPage={selectSettingsPage}
-          />
+        <div key={appPage} {...stylex.props(styles.column, shown.rises && pageMotion.rise)}>
+          <AppPageView {...view} />
         </div>
       </main>
+      <SettingsModal
+        state={settings}
+        view={view}
+        commandHeld={commandHeld}
+        onClose={closeSettings}
+        onClosed={focusMain}
+      />
     </div>
   );
 }

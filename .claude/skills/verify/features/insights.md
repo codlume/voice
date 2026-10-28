@@ -30,8 +30,7 @@ Preconditions: baseline on a fresh userData, so the page starts at zero. `dictat
   - `--app=…@host` makes the helper's test target report the host directly (`native/voice-helper/Sources/VoiceHelper/main.swift`, the `captureStart` case), bypassing host detection. So this flow cannot prove that cleanup off or a non-English language leaves the website out. The unit tests in `apps/desktop/src/main/dictation.test.ts` cover those cases.
 - **Heatmap by keyboard.** `voice-verify` cannot press keys, so check the parts it can reach. `vv eval hub 'document.querySelectorAll("[aria-label=\"Words per day\"] [tabindex=\"0\"]").length'` prints 1, and that cell's `aria-label` names today. Focus it with `.focus()`, then dispatch a bubbling `keydown` with `key: "ArrowLeft"` on `document.activeElement`. The new `document.activeElement` names the same weekday a week earlier. The tooltip opens only on keyboard focus, so a human checks it with Tab.
 - **Persistence.** `vv stop --keep-user-data`, then `vv launch --keep-user-data`, then open Insights. The totals match the earlier shot.
-- **Clear.** `vv click Settings`, `vv click "Data and Privacy"`, `vv click "Clear insights"`, then `vv click Clear`. `ls "<userData>/insights.json"` fails. Click `Back`, then `Insights`, and the page shows zeros. `vv dictate short.wav` afterwards counts from zero.
-- **Clear resets an open page.** The Settings path leaves Insights, so with Insights open, run `vv eval hub 'window.voice.clearInsights().then(() => true)'`. The open page drops to zero without a reload.
+- **Clear.** With Insights open and counted, `vv click Settings`, `vv click "Data and Privacy"`, `vv click "Clear insights"`, then `vv click Clear`. `ls "<userData>/insights.json"` fails. `vv key Escape` closes Settings onto the same Insights page, which shows zeros without a reload. `vv dictate short.wav` afterwards counts from zero.
 
 ## Gotchas
 

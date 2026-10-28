@@ -281,12 +281,13 @@ test("key presses each modifier around the key and releases them in reverse", ()
 
 function runClick(target, elements) {
   const calls = [];
-  const stub = ({ name, disabled = false }) => ({
+  const stub = ({ name, disabled = false, behindModal = false }) => ({
     textContent: name,
     labels: null,
     disabled,
     getAttribute: () => null,
     getClientRects: () => [{}],
+    closest: (selector) => (behindModal && selector === "[data-base-ui-inert]" ? {} : null),
     focus: () => calls.push(`focus ${name}`),
     click: () => calls.push(`click ${name}`),
   });
@@ -318,6 +319,15 @@ test("click touches nothing when the match is missing, ambiguous, or disabled", 
   assert.deepEqual(runClick("Shortcut", [{ name: "Shortcut", disabled: true }]), {
     result: false,
     calls: [],
+  });
+});
+
+test("click skips the page behind an open modal and clicks the dialog's match", () => {
+  const page = { name: "Account", behindModal: true };
+  assert.deepEqual(runClick("Account", [page]), { result: false, calls: [] });
+  assert.deepEqual(runClick("Account", [page, { name: "Account" }]), {
+    result: { clicked: "Account" },
+    calls: ["focus Account", "click Account"],
   });
 });
 

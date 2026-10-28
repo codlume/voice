@@ -10,7 +10,10 @@ export const ACCESSIBLE_NAME = `(el) => {
 }`;
 const CANDIDATES =
   'button, a, [role="switch"], [role="radio"], [role="option"], [role="combobox"], [role="menuitem"]';
-export const visible = "(el) => el.getClientRects().length > 0";
+// Base UI marks everything outside an open dialog or popup (Select, Menu, Popover) inert, so
+// close the popup before clicking behind it, as a user would.
+export const visible =
+  '(el) => el.getClientRects().length > 0 && !el.closest("[data-base-ui-inert]")';
 
 function findExpression(target) {
   if (target.startsWith("css:")) {

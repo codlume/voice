@@ -10,7 +10,7 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const dark = "@media (prefers-color-scheme: dark)";
 const centered = "translate(-50%, -50%)";
 
-const styles = stylex.create({
+export const dialogStyles = stylex.create({
   backdrop: {
     position: "fixed",
     inset: 0,
@@ -21,29 +21,35 @@ const styles = stylex.create({
     transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
   backdropHidden: { opacity: 0 },
-  popup: {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    width: "min(420px, calc(100vw - 32px))",
-    padding: space.lg,
+  surface: {
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: color.border,
     borderRadius: radius.large,
-    backgroundColor: color.card,
     color: color.foreground,
     fontFamily: font.sans,
     WebkitFontSmoothing: "antialiased",
     boxShadow: "0 12px 32px -8px rgb(0 0 0 / 25%)",
     outline: "none",
     opacity: 1,
-    transform: centered,
     transitionProperty: "opacity, transform",
     transitionDuration: { default: "150ms", [reducedMotion]: "0s" },
   },
+  surfaceHidden: { opacity: 0 },
+});
+
+const styles = stylex.create({
+  popup: {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    width: "min(420px, calc(100vw - 32px))",
+    padding: space.lg,
+    backgroundColor: color.card,
+    transform: centered,
+  },
   popupWide: { width: "min(600px, calc(100vw - 32px))" },
-  popupHidden: { opacity: 0, transform: `${centered} scale(0.96)` },
+  popupHidden: { transform: `${centered} scale(0.96)` },
   title: { margin: 0, fontSize: 15, fontWeight: 600, color: color.foreground },
   description: {
     marginTop: 6,
@@ -70,7 +76,23 @@ const styles = stylex.create({
   },
 });
 
-const hidden = (status: string | undefined) => status === "starting" || status === "ending";
+export const transitionHidden = (status: string | undefined) =>
+  status === "starting" || status === "ending";
+
+/** Rendered even over another dialog, which Base UI skips by default, so a confirm over Settings dims it. */
+export function DialogBackdrop() {
+  return (
+    <Dialog.Backdrop
+      forceRender
+      className={({ transitionStatus }) =>
+        stylex.props(
+          dialogStyles.backdrop,
+          transitionHidden(transitionStatus) && dialogStyles.backdropHidden,
+        ).className
+      }
+    />
+  );
+}
 
 /**
  * Scrim, popup, title, and an action row of Cancel then `actions`, with optional `footerStart` at
@@ -93,18 +115,15 @@ export function DialogFrame({
 }) {
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop
-        className={({ transitionStatus }) =>
-          stylex.props(styles.backdrop, hidden(transitionStatus) && styles.backdropHidden).className
-        }
-      />
+      <DialogBackdrop />
       <Dialog.Popup
         finalFocus={finalFocus}
         className={({ transitionStatus }) =>
           stylex.props(
+            dialogStyles.surface,
             styles.popup,
             wide && styles.popupWide,
-            hidden(transitionStatus) && styles.popupHidden,
+            transitionHidden(transitionStatus) && [dialogStyles.surfaceHidden, styles.popupHidden],
           ).className
         }
       >

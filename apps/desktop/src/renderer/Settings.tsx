@@ -1029,7 +1029,7 @@ export function ShortcutsSettings({
         <Card>
           <ShortcutRow title="Toggle sidebar" keys={shortcuts.toggleSidebar.keys} />
           <ShortcutRow title="Open Settings" keys={shortcuts.openSettings.keys} />
-          <ShortcutRow title="Leave Settings" keys={shortcuts.closeSettings.keys} />
+          <ShortcutRow title="Close Settings" keys={["Esc"]} />
           <ShortcutRow
             title="Search history"
             detail="On Home."
@@ -1037,7 +1037,7 @@ export function ShortcutsSettings({
           />
           <ShortcutRow
             title="Go to sidebar item"
-            detail="Jump to an item in the sidebar, top to bottom."
+            detail="Jump to an item in the sidebar, or in Settings while it is open, top to bottom."
             keys={["⌘", `1–${jumpShortcuts.length}`]}
           />
           <ShortcutRow title="Zoom in" keys={["⌘", "+"]} />

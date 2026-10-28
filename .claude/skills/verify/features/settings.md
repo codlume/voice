@@ -21,16 +21,17 @@ Settings holds the controls that aren't about style. General has the microphone 
 
 ## How to get to it (user POV)
 
-- Voice window > `Settings` (sidebar footer, or Cmd-,) > `General`, `System`, `Shortcuts`, or `Data and Privacy`. `Back` (Cmd-[) returns to the Voice nav.
+- Voice window > `Settings` (sidebar footer, or Cmd-,) opens the Settings modal over the current page, on `General`. Its nav, or Cmd-1 to Cmd-6, picks `General`, `System`, `Models`, `Shortcuts`, `Account`, or `Data and Privacy`. Escape, the `Close settings` button, a click outside it, or Cmd-, closes it, and the page underneath is unchanged.
+- The titlebar account button or menu opens it on `Account`, and Transforms' model link opens it on `Models`. Shortcuts > `Open Transforms` closes it and shows Transforms.
 
 ## Driving it with voice-verify
 
 Preconditions: baseline.
 
-- **Open a page.** `vv click Settings`, then `vv click System`, then `vv wait hub 'document.querySelector("main h1")?.textContent === "System"'`.
+- **Open a page.** `vv click Settings`, then `vv click System`, then `vv wait hub 'document.querySelector("[data-app-modal] h1")?.textContent === "System"'`. `vv text` starts with `[Settings nav > System]`.
 - **Toggle a switch.** `vv click "Show in Dock"`, then `vv wait hub 'window.voice.getSnapshot().then(s => s.settings.showInDock === false)'`. `settings.json` shows `"showInDock": false`. Click it again to restore.
-- **Pick from a select.** `vv click css:#setting-hotkey`, then `vv click "Right Option"`, then wait for `s.settings.hotkey === "rightOption"`. Then `vv click Back` and `vv click Home`, and `vv text` reads "Hold ⌥ Right Option, speak, and let go." Restore `fn` with `vv click "Reset Hold to talk to default"`.
-- **Language disables cleanup.** Pick a non-English option in `css:#setting-dictation-language`. Then `vv click Back` and `vv click Style`. The `Clean up text` switch is disabled.
+- **Pick from a select.** `vv click css:#setting-hotkey`, then `vv click "Right Option"`, then wait for `s.settings.hotkey === "rightOption"`. Then `vv key Escape` and `vv click Home`, and `vv text` reads "Hold ⌥ Right Option, speak, and let go." Restore `fn` with `vv click "Reset Hold to talk to default"`.
+- **Language disables cleanup.** Pick a non-English option in `css:#setting-dictation-language`. Then `vv key Escape` and `vv click Style`. The `Clean up text` switch is disabled.
 - **Set the Reduce volume by slider.** `vv click "Lower audio while dictating"` and wait for `s.settings.lowerAudioWhileDictating === true`, because the slider is disabled while the switch is off. Focus it with `vv eval hub 'document.querySelector("input[type=range][aria-label=\"Reduce volume by\"]").focus()'`, press `vv key ArrowLeft` twice to go from 70 to 50, then wait for `s.settings.lowerAudioByPercent === 50`. The readout shows `50%`. Turning the switch off keeps 50. With the switch on, `vv click "Reset Reduce volume by to default"` restores 70.
 - **Set the Page animations slider.** Send the key from the page with `vv eval hub 'document.querySelector("input[type=range][aria-label=\"Page animation duration\"]").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }))'`, then wait for `s.settings.pageAnimationMs === 400`. `vv click "Reset Page animations to default"` restores 200.
 - **Reset.** After changing `Show in Dock`, Theme (`vv click Dark`), or Update channel (`vv click css:#setting-update-channel`, `vv click Nightly`), `vv click "Reset Show in Dock to default"`, `"Reset Theme to default"`, or `"Reset Update channel to default"` restores the default, and the button disappears.
