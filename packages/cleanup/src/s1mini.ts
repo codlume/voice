@@ -64,10 +64,15 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
 
   // The GPU clocks down while the user speaks: a clean after 5 s of idle measured 216 ms against
   // 155 ms right after another. Without the gap the loop slowed the speech model by ~10 ms.
+  // The gap comes first: a transcript decoded at a pause arrives within a millisecond of the
+  // loop's start, and its clean would otherwise wait 103 ms behind the first generation on a
+  // cold GPU for a warm-up worth 88 ms.
   async function busyLoop() {
     busy = true;
     try {
       while (busyEngine()) {
+        await new Promise((resolve) => setTimeout(resolve, BUSY_GAP_MS));
+        if (!busyEngine()) break;
         await serialize(async () => {
           const current = busyEngine();
           if (!current) return;
@@ -79,7 +84,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         }).catch(() => {
           busyUntil = 0;
         });
-        await new Promise((resolve) => setTimeout(resolve, BUSY_GAP_MS));
       }
     } finally {
       busy = false;

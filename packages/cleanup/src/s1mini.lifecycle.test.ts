@@ -293,7 +293,7 @@ test("a clean reports the wait behind the busy loop's generation apart from its 
   native.delayMs = (raw) => (raw === "ok" ? 300 : 40);
 
   s1.keepGpuBusy(1000);
-  await vi.advanceTimersByTimeAsync(10);
+  await vi.advanceTimersByTimeAsync(30);
   const clean = s1.clean("call ada", style);
   await vi.advanceTimersByTimeAsync(1000);
 
@@ -301,10 +301,31 @@ test("a clean reports the wait behind the busy loop's generation apart from its 
     text: "CALL ADA",
     chunks: 1,
     cleaned: 1,
-    queueMs: 290,
+    queueMs: 295,
     generateMs: 40,
   });
   expect(generations()).toEqual(["generate ok", "generate call ada"]);
+});
+
+test("a clean issued within the gap after keepGpuBusy runs at once, with no busy generation in front", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  await s1.load();
+  native.delayMs = (raw) => (raw === "ok" ? 300 : 40);
+
+  s1.keepGpuBusy(1000);
+  await vi.advanceTimersByTimeAsync(1);
+  const clean = s1.clean("call ada", style);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  await expect(clean).resolves.toEqual({
+    text: "CALL ADA",
+    chunks: 1,
+    cleaned: 1,
+    queueMs: 0,
+    generateMs: 40,
+  });
+  expect(generations()).toEqual(["generate call ada"]);
 });
 
 test("a learned rate skips a chunk the budget cannot fit instead of starting it", async () => {
@@ -398,7 +419,7 @@ test("keepGpuBusy generates until a clean arrives, which follows the iteration i
   native.delayMs = () => 10;
 
   s1.keepGpuBusy(1000);
-  await vi.advanceTimersByTimeAsync(75);
+  await vi.advanceTimersByTimeAsync(100);
   expect(native.active).toBe(1);
   const clean = s1.clean("call ada", style);
   await vi.advanceTimersByTimeAsync(20);
@@ -421,9 +442,9 @@ test("keepGpuBusy stops at its deadline, and a second call moves the deadline in
   s1.keepGpuBusy(50);
   await vi.advanceTimersByTimeAsync(200);
 
-  expect(generations()).toEqual(Array<string>(3).fill("generate ok"));
+  expect(generations()).toEqual(Array<string>(2).fill("generate ok"));
   await vi.advanceTimersByTimeAsync(1000);
-  expect(generations()).toHaveLength(3);
+  expect(generations()).toHaveLength(2);
   expect(native.maxActive).toBe(1);
 });
 
@@ -438,7 +459,7 @@ test("keepGpuBusy(0) stops the loop", async () => {
   s1.keepGpuBusy(0);
   await vi.advanceTimersByTimeAsync(1000);
 
-  expect(generations()).toEqual(Array<string>(2).fill("generate ok"));
+  expect(generations()).toEqual(["generate ok"]);
 });
 
 test("generate ends the busy loop", async () => {
@@ -453,7 +474,7 @@ test("generate ends the busy loop", async () => {
   await vi.advanceTimersByTimeAsync(1000);
 
   await expect(generating).resolves.toHaveLength(1);
-  expect(generations()).toEqual(["generate ok", "generate ok", "generate call ada"]);
+  expect(generations()).toEqual(["generate ok", "generate call ada"]);
 });
 
 test("a failed busy generation ends the loop instead of retrying", async () => {
@@ -490,7 +511,7 @@ test("dispose stops the busy loop for good, even when the model loads again", as
   native.delayMs = () => 10;
 
   s1.keepGpuBusy(60_000);
-  await vi.advanceTimersByTimeAsync(5);
+  await vi.advanceTimersByTimeAsync(30);
   await s1.dispose();
   await s1.load();
   await vi.advanceTimersByTimeAsync(1000);
