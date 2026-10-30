@@ -156,11 +156,16 @@ function harness(opts: Options = {}) {
   const transformRuns: TransformRequest[] = [];
   let warms = 0;
   const lastTransforms: Omit<LastTransform, "finishedAt">[] = [];
-  store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
+  const trace: string[] = [];
+  store.subscribe((state) => {
+    phases.push(toSnapshot(state).session.kind);
+    trace.push(`phase ${state.session.phase}`);
+  });
   const dictation = createDictation({
     store,
     send: (command) => {
       commands.push(command);
+      trace.push(`send ${command.type}`);
       if (command.type === "capture.stop") transcribing = command.id;
       if (command.type === "capture.cancel" && transcribing === command.id) transcribing = null;
       if (command.type === "capture.start" && transcribing !== null) {
@@ -244,6 +249,7 @@ function harness(opts: Options = {}) {
     latest: () => history.entries()[0] ?? null,
     recorded: () => history.entries(),
     commands,
+    trace,
     cleans,
     gpu,
     styles,
@@ -330,6 +336,35 @@ describe("createDictation", () => {
     }));
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
+  });
+
+  test("capture.start, capture.stop, and insert reach the helper before subscribers hear the phase", async () => {
+    const h = harness();
+
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    const id = h.id();
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
+    h.dictation.onHelperEvent(transcriptEvent(id, "hello", null));
+    await flush();
+
+    expect(h.trace).toEqual([
+      "send capture.start",
+      "phase starting",
+      "phase recording",
+      "send capture.stop",
+      "phase transcribing",
+      "phase cleaning",
+      "send insert",
+      "phase inserting",
+    ]);
   });
 
   test("a show request waits for a transform run as it waits for a dictation", async () => {

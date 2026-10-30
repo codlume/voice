@@ -28,6 +28,7 @@ import type { AsrSessionState, HelperCommand, HelperEvent, InsertRoute } from ".
 import {
   INSERT_TIMEOUT_MS,
   step,
+  type Command,
   type Destination,
   type Effect as SessionEffect,
   type Session,
@@ -185,6 +186,10 @@ export function createDictation(options: DictationOptions): Dictation {
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
+    // The helper is waiting on the commands, so they go out before the store update, whose
+    // subscribers publish the snapshot to both windows and move the pill. send() never dispatches
+    // back.
+    for (const effect of effects) if (effect.type === "send") toHelper(effect.command);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
       const overdue =
@@ -199,7 +204,7 @@ export function createDictation(options: DictationOptions): Dictation {
         }
       }
     }
-    for (const effect of effects) run(effect);
+    for (const effect of effects) if (effect.type !== "send") run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
       finish(state.id, state.outcome);
     }
@@ -224,33 +229,47 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function run(effect: SessionEffect) {
-    switch (effect.type) {
-      case "startCapture":
+  function toHelper(command: Command) {
+    switch (command.type) {
+      case "capture.start":
         if (idleTimer) clearTimeout(idleTimer);
         started = {
-          id: effect.id,
+          id: command.id,
           language: store.state.settings.dictationLanguage,
           pressedAt: now(),
         };
         send({
           type: "capture.start",
-          id: effect.id,
+          id: command.id,
           language: started.language,
           outputVolumeScale: outputVolumeScale(store.state.settings),
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
-          hotkeyUptimeMs: effect.hotkeyUptimeMs,
+          hotkeyUptimeMs: command.hotkeyUptimeMs,
         });
-        if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
+        if (workFor(command.id)?.kind === "transform") options.transform.model.warm();
         return;
-      case "stopCapture":
-        track(effect.id, { releasedAt: effect.releasedAt });
-        send({ type: "capture.stop", id: effect.id, hotkeyUptimeMs: effect.hotkeyUptimeMs });
+      case "capture.stop":
+        track(command.id, { releasedAt: command.releasedAt });
+        send({ type: "capture.stop", id: command.id, hotkeyUptimeMs: command.hotkeyUptimeMs });
         return;
-      case "cancelCapture":
-        send({ type: "capture.cancel", id: effect.id });
+      case "capture.cancel":
+        send({ type: "capture.cancel", id: command.id });
         return;
+      case "insert":
+        track(command.id, { insertStartedAt: now() });
+        send({
+          type: "insert",
+          id: command.id,
+          text: command.output.text,
+          html: command.output.html,
+        });
+        return;
+    }
+  }
+
+  function run(effect: Exclude<SessionEffect, { type: "send" }>) {
+    switch (effect.type) {
       case "cancelCleanup":
         if (cleaning?.id === effect.id) Effect.runFork(Fiber.interrupt(cleaning.fiber));
         return;
@@ -309,10 +328,6 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         return;
       }
-      case "insert":
-        track(effect.id, { insertStartedAt: now() });
-        send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
-        return;
       case "remember":
         options.history.remember(
           { id: effect.id, raw: effect.raw, text: effect.text, status: effect.status },
