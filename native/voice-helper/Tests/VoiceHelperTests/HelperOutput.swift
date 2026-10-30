@@ -47,12 +47,23 @@ final class EmittedLines: @unchecked Sendable {
 }
 
 func writeAudio(to url: URL, seconds: Double, silent: Bool) throws {
+    try writeAudio(to: url, segments: [(seconds, silent)])
+}
+
+/// A 440 Hz tone for each non-silent segment, silence for the rest, in order.
+func writeAudio(to url: URL, segments: [(seconds: Double, silent: Bool)]) throws {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
-    let frames = AVAudioFrameCount(seconds * 16_000)
+    let frames = AVAudioFrameCount(segments.reduce(0) { $0 + $1.seconds } * 16_000)
     let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
     buffer.frameLength = frames
-    if !silent, let channel = buffer.floatChannelData?[0] {
-        for i in 0..<Int(frames) { channel[i] = 0.3 * sin(Float(i) * 2 * .pi * 440 / 16_000) }
+    let channel = try #require(buffer.floatChannelData?[0])
+    var offset = 0
+    for segment in segments {
+        let count = Int(segment.seconds * 16_000)
+        for i in offset..<offset + count {
+            channel[i] = segment.silent ? 0 : 0.3 * sin(Float(i) * 2 * .pi * 440 / 16_000)
+        }
+        offset += count
     }
     let file = try AVAudioFile(forWriting: url, settings: format.settings)
     try file.write(from: buffer)

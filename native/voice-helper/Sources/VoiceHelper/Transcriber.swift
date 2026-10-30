@@ -9,8 +9,40 @@ struct TranscribeError: Error {
     let message: String
 }
 
+/// What capture needs from the speech model, so tests can stand in a fake.
 @MainActor
-final class Transcriber {
+protocol Transcribing: AnyObject {
+    func beginStreaming(language: DictationLanguage) -> StreamingTranscription?
+    func decodeAhead(_ samples: [Float], language: DictationLanguage) -> PauseDecode?
+    func transcribe(
+        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?, pauseDecode: PauseDecode?
+    ) async throws -> (text: String, asrMs: Double)
+}
+
+/// A decode of the capture so far, started at a pause. The model is an actor that runs each
+/// decode to completion, so a second decode started while one runs would queue behind it, and
+/// so would the release decode: `finished` tells capture whether another may start. `stale` is
+/// set by capture once speech follows the decoded samples. Both flags live on the main thread
+/// with Capture.
+final class PauseDecode {
+    private(set) var task: Task<String, Error>!
+    private(set) var finished = false
+    var stale = false
+
+    init(_ decode: @escaping @Sendable () async throws -> String) {
+        task = Task.detached(priority: .userInitiated) { [self] in
+            defer { DispatchQueue.main.async { self.finished = true } }
+            return try await decode()
+        }
+    }
+
+    func cancel() {
+        task.cancel()
+    }
+}
+
+@MainActor
+final class Transcriber: Transcribing {
     struct PreparedAsr {
         let manager: AsrManager
         let models: AsrModels
@@ -111,8 +143,20 @@ final class Transcriber {
         return StreamingTranscription(models: ready.models, language: language.asrLanguage)
     }
 
+    /// Decodes the capture so far during a pause. If the user releases without speaking again,
+    /// the result is the transcript a release 0.3 s after the last word would have produced; the
+    /// extra trailing silence the model did not see carries no words, though it can shift a
+    /// punctuation choice the same way the release delay already does.
+    func decodeAhead(_ samples: [Float], language: DictationLanguage) -> PauseDecode? {
+        guard case .ready(let ready) = load else { return nil }
+        let manager = ready.manager
+        let asrLanguage = language.asrLanguage
+        return PauseDecode { try await Self.decode(samples, with: manager, language: asrLanguage) }
+    }
+
+    /// `pauseDecode` is a `decodeAhead` that nothing but silence followed.
     func transcribe(
-        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?
+        _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?, pauseDecode: PauseDecode?
     ) async throws -> (text: String, asrMs: Double) {
         let started = DispatchTime.now()
         if let stream {
@@ -121,6 +165,17 @@ final class Transcriber {
                 return (text, started.millisecondsToNow())
             }
             output.log(.error, "streaming ASR incomplete; retrying complete capture")
+        }
+        if let pauseDecode {
+            do {
+                let text = try await pauseDecode.task.value
+                output.log(.info, "ASR reused the decode from the last pause")
+                return (text, started.millisecondsToNow())
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                output.log(.error, "ASR decode from the last pause failed; retrying complete capture")
+            }
         }
         let manager: AsrManager
         switch load {
@@ -137,17 +192,23 @@ final class Transcriber {
         case .failed(let message):
             throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(message)")
         }
+        do {
+            let text = try await Self.decode(samples, with: manager, language: language.asrLanguage)
+            return (text, started.millisecondsToNow())
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw TranscribeError(reason: .unknown, message: "\(error)")
+        }
+    }
+
+    nonisolated static func decode(_ samples: [Float], with manager: AsrManager, language: Language?) async throws -> String {
         // Parakeet refuses clips under 0.3 s; a short utterance should still yield a transcript.
         let minimum = ASRConstants.minimumRequiredSamples(forSampleRate: 16000)
         let padded = samples.count < minimum ? samples + [Float](repeating: 0, count: minimum - samples.count) : samples
         var state = TdtDecoderState.make()
-        do {
-            try Task.checkCancellation()
-            let result = try await manager.transcribe(padded, decoderState: &state, language: language.asrLanguage)
-            return (result.text, started.millisecondsToNow())
-        } catch {
-            throw TranscribeError(reason: .unknown, message: "\(error)")
-        }
+        try Task.checkCancellation()
+        return try await manager.transcribe(padded, decoderState: &state, language: language).text
     }
 }
 

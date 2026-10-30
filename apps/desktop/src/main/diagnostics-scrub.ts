@@ -40,6 +40,7 @@ export const HELPER_LOGS = [
   "asr.remove ignored while the speech model downloads",
   "asr.remove ignored while the speech model loads",
   "streaming ASR incomplete; retrying complete capture",
+  "ASR decode from the last pause failed; retrying complete capture",
   "hotkey tap unavailable: CGEvent.tapCreate returned nil",
   "hotkey tap unavailable: accessibility not granted",
   "hotkey tap installed",

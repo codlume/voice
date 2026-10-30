@@ -17,6 +17,8 @@ final class Recording {
     let session: CaptureSession
     var samples: [Float] = []
     var speech = SpeechSpan()
+    var pauses = PauseDetector(sampleRate: asrSampleRate)
+    var pauseDecode: PauseDecode?
     var stream: StreamingTranscription?
     var transcription: Task<Void, Never>?
     var releaseRelayMs: Double?
@@ -48,7 +50,7 @@ private let silenceFloor = 1e-4 as Float
 /// asks it before consuming Escape.
 final class Capture {
     private let output: Output
-    private let transcriber: Transcriber
+    private let transcriber: any Transcribing
     private let devices: AudioInputDevices
     private var microphone: Microphone?
     private let outputLowering: OutputLowering
@@ -89,7 +91,7 @@ final class Capture {
     private let maxSamples: Int
 
     init(
-        output: Output, transcriber: Transcriber, devices: AudioInputDevices, outputLowering: OutputLowering,
+        output: Output, transcriber: any Transcribing, devices: AudioInputDevices, outputLowering: OutputLowering,
         maxSamples: Int = 600 * 16_000,
         source: CaptureSource,
         authorizationStatus: @escaping @Sendable () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
@@ -199,13 +201,16 @@ final class Capture {
         let speechMs = recording.speech.milliseconds(sampleRate: asrSampleRate)
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
+            recording.pauseDecode?.cancel()
             finish(session, with: .transcript(Transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
                                                          relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
             return
         }
+        let pauseDecode = recording.pauseDecode.flatMap { $0.stale ? nil : $0 }
+        if pauseDecode == nil { recording.pauseDecode?.cancel() }
         recording.transcription = Task { @MainActor in
             do {
-                let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
+                let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream, pauseDecode: pauseDecode)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 finish(session, with: .transcript(Transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
                                                              relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
@@ -231,11 +236,13 @@ final class Capture {
             recording.session.target.settleHost()
             stopSource()
             recording.stream?.cancel()
+            recording.pauseDecode?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .transcribing(let recording) where recording.session.id == id:
             recording.session.target.settleHost()
             recording.stream?.cancel()
+            recording.pauseDecode?.cancel()
             recording.transcription?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
@@ -254,6 +261,7 @@ final class Capture {
             _ = recording.session.input.drain(closing: true)
             recording.session.target.settleHost()
             recording.stream?.cancel()
+            recording.pauseDecode?.cancel()
             recording.transcription?.cancel()
         case .starting(let session):
             _ = session.input.drain(closing: true)
@@ -418,10 +426,15 @@ final class Capture {
             recording.samples = chunk
             state = .recording(recording)
             output.emit(.captureStarted(id: current.id, startMs: current.startedAt.millisecondsToNow(), relayMs: current.relayMs))
-            recording.speech.add(frames: chunk.count, rms: rms(chunk))
+            let level = rms(chunk)
+            recording.speech.add(frames: chunk.count, rms: level)
+            _ = recording.pauses.add(frames: chunk.count, rms: level)
         case .recording(let recording) where recording.session.id == session.id:
             recording.samples.append(contentsOf: chunk)
-            recording.speech.add(frames: chunk.count, rms: rms(chunk))
+            let level = rms(chunk)
+            recording.speech.add(frames: chunk.count, rms: level)
+            let paused = recording.pauses.add(frames: chunk.count, rms: level)
+            if recording.pauses.speechSinceLastPause { recording.pauseDecode?.stale = true }
             if let stream = recording.stream {
                 stream.enqueue(chunk)
             } else if recording.samples.count >= StreamingTranscription.minimumSamples,
@@ -429,6 +442,11 @@ final class Capture {
             {
                 recording.stream = stream
                 stream.enqueue(recording.samples)
+                recording.pauseDecode?.cancel()
+                recording.pauseDecode = nil
+            } else if paused, recording.pauseDecode?.finished != false {
+                // A decode still running would only delay this one and the release decode behind it.
+                recording.pauseDecode = transcriber.decodeAhead(recording.samples, language: session.language)
             }
         default:
             break

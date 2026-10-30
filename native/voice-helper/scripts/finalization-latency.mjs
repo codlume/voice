@@ -15,6 +15,7 @@ const cases = [
   { name: "url", words: ["github"] },
   { name: "pauses", words: ["Friday", "onboarding"] },
   { name: "boundary", words: ["Maria", "billing", "2026"] },
+  { name: "pause-then-speech", words: ["Friday", "thanks"] },
   { name: "language-trigger", language: "auto", words: ["Анна"] },
   { name: "silence", words: [], text: "" },
 ];
