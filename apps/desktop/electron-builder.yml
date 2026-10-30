@@ -12,6 +12,9 @@ files:
   - dist-electron/**
   - package.json
   - "!**/*.map"
+  # A git bundle of llama.cpp source for building from source. Electron runs getLlama with
+  # build "never", so only the prebuilt @node-llama-cpp binary is ever loaded.
+  - "!node_modules/node-llama-cpp/llama/gitRelease.bundle"
 asarUnpack:
   - node_modules/node-llama-cpp/**
   - node_modules/@node-llama-cpp/**
