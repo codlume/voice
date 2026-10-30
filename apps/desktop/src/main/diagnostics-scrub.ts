@@ -19,7 +19,9 @@ const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as con
 export type HelperTag = (typeof HELPER_TAGS)[number];
 export const SESSION_MEASUREMENTS = [
   "startMs",
+  "pressRelayMs",
   "audioMs",
+  "releaseRelayMs",
   "asrMs",
   "cleanupMs",
   "insertMs",

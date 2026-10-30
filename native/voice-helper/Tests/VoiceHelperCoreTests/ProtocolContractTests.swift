@@ -102,10 +102,10 @@ private func commandCases() -> [String: HelperCommand] {
         ]),
         "microphone.configure": .microphoneConfigure(microphone: microphone),
         "microphone.configure.default": .microphoneConfigure(microphone: nil),
-        "capture.start": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true),
-        "capture.start.pinned": .captureStart(id: "s1", language: .pl, outputVolumeScale: 0.3, microphone: microphone, detectHost: false),
-        "capture.start.muted": .captureStart(id: "s1", language: .en, outputVolumeScale: 0, microphone: nil, detectHost: true),
-        "capture.stop": .captureStop(id: "s1"),
+        "capture.start": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: 1234.5),
+        "capture.start.pinned": .captureStart(id: "s1", language: .pl, outputVolumeScale: 0.3, microphone: microphone, detectHost: false, hotkeyUptimeMs: nil),
+        "capture.start.muted": .captureStart(id: "s1", language: .en, outputVolumeScale: 0, microphone: nil, detectHost: true, hotkeyUptimeMs: nil),
+        "capture.stop": .captureStop(id: "s1", hotkeyUptimeMs: 2345.5),
         "capture.cancel": .captureCancel(id: "s1"),
         "microphone.test.start": .microphoneTestStart(id: "t1", microphone: nil),
         "microphone.test.start.pinned": .microphoneTestStart(id: "t1", microphone: microphone),
@@ -138,17 +138,18 @@ private func eventCases() -> [String: HelperEvent] {
         "microphones.changed.empty": .microphonesChanged(devices: [], defaultUid: nil),
         "microphones.unavailable": .microphonesUnavailable(message: "Synthetic device unavailable"),
         "ready": .ready(version: helperProtocolVersion),
-        "hotkey": .hotkey(action: .down),
-        "hotkey.up": .hotkey(action: .up),
-        "hotkey.chord": .hotkey(action: .chord),
-        "hotkey.cancel": .hotkey(action: .cancel),
-        "hotkey.toggle": .hotkey(action: .toggle),
+        "hotkey": .hotkey(action: .down, uptimeMs: 1234.5),
+        "hotkey.up": .hotkey(action: .up, uptimeMs: 2345.5),
+        "hotkey.chord": .hotkey(action: .chord, uptimeMs: 1),
+        "hotkey.cancel": .hotkey(action: .cancel, uptimeMs: 1),
+        "hotkey.toggle": .hotkey(action: .toggle, uptimeMs: 1),
         "transform": .transform(transformId: "polish"),
         "selection.result.selected": .selectionResult(id: "r1", result: .selected(text: "Zażółć /tmp/synthetic\nAda 42", via: .copy)),
         "selection.result.accessibility": .selectionResult(id: "r1", result: .selected(text: "Synthetic selection", via: .accessibility)),
         "selection.result.failed": .selectionResult(id: "r1", result: .failed(.noSelection)),
         "selection.result.keysHeld": .selectionResult(id: "r1", result: .failed(.keysHeld)),
-        "capture.started": .captureStarted(id: "s1", startMs: 12.5),
+        "capture.started": .captureStarted(id: "s1", startMs: 12.5, relayMs: 3.25),
+        "capture.started.command": .captureStarted(id: "s1", startMs: 12.5, relayMs: nil),
         "capture.level": .captureLevel(id: "s1", level: 0.4),
         "capture.level.clamped": .captureLevel(id: "s1", level: 2),
         "capture.level.nonfinite": .captureLevel(id: "s1", level: .nan),
@@ -160,10 +161,10 @@ private func eventCases() -> [String: HelperEvent] {
         "microphone.test.level": .microphoneTestLevel(id: "t1", level: 0.25),
         "microphone.test.ended": .microphoneTestEnded(id: "t1"),
         "microphone.test.failed": .microphoneTestFailed(id: "t1", message: "Synthetic test failed"),
-        "transcript": .transcript(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", audioMs: 1000, asrMs: 80, speechMs: 640,
+        "transcript": .transcript(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: 4.5,
                                   target: TranscriptTarget(bundleId: "com.apple.Safari", host: "MAIL.EXAMPLE.COM")),
-        "transcript.empty": .transcript(id: "s1", text: "", audioMs: 40, asrMs: 0, speechMs: nil, target: nil),
-        "transcript.app": .transcript(id: "s1", text: "Synthetic text", audioMs: 500, asrMs: 20, speechMs: 300,
+        "transcript.empty": .transcript(id: "s1", text: "", audioMs: 40, asrMs: 0, speechMs: nil, relayMs: nil, target: nil),
+        "transcript.app": .transcript(id: "s1", text: "Synthetic text", audioMs: 500, asrMs: 20, speechMs: 300, relayMs: nil,
                                       target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil)),
         "transcript.failed": .transcriptFailed(id: "s1", reason: .asrUnavailable, message: "Synthetic ASR failure"),
         "insert.result": .insertResult(id: "s1", method: .none, reason: .focusChanged),
@@ -285,6 +286,9 @@ private func eventType(_ event: HelperEvent) -> String {
         let expected: [String: HelperCommand] = [
             "insert.html.missing": .insert(id: "s1", text: "Synthetic text", html: nil),
             "test.audioFile.missing": .testAudioFile(path: nil),
+            "capture.start.hotkey.missing": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true,
+                                                          hotkeyUptimeMs: nil),
+            "capture.stop.hotkey.missing": .captureStop(id: "s1", hotkeyUptimeMs: nil),
         ]
         #expect(Set(corpus.optionalCommands.map(\.name)) == Set(expected.keys))
         for fixture in corpus.optionalCommands {
@@ -299,7 +303,7 @@ private func eventType(_ event: HelperEvent) -> String {
             var wire = capture.wire
             wire["language"] = .string(language.rawValue)
             #expect(HelperCommand.decode(line: try line(wire)) == .success(.captureStart(
-                id: "s1", language: language, outputVolumeScale: nil, microphone: nil, detectHost: true)))
+                id: "s1", language: language, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: 1234.5)))
         }
     }
 

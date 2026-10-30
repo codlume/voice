@@ -28,18 +28,19 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 14 },
-      { type: "hotkey", action: "down" },
-      { type: "hotkey", action: "up" },
-      { type: "hotkey", action: "chord" },
-      { type: "hotkey", action: "cancel" },
-      { type: "hotkey", action: "toggle" },
+      { type: "ready", version: 15 },
+      { type: "hotkey", action: "down", uptimeMs: 1234.5 },
+      { type: "hotkey", action: "up", uptimeMs: 2345.5 },
+      { type: "hotkey", action: "chord", uptimeMs: 1 },
+      { type: "hotkey", action: "cancel", uptimeMs: 1 },
+      { type: "hotkey", action: "toggle", uptimeMs: 1 },
       { type: "transform", transformId: "polish" },
       { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "accessibility" },
       { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "copy" },
       { type: "selection.result", id: "r", outcome: "failed", reason: "noSelection" },
       { type: "selection.result", id: "r", outcome: "failed", reason: "keysHeld" },
-      { type: "capture.started", id: "a", startMs: 42 },
+      { type: "capture.started", id: "a", startMs: 42, relayMs: null },
+      { type: "capture.started", id: "a", startMs: 42, relayMs: 3.25 },
       { type: "capture.level", id: "a", level: 0.5 },
       { type: "capture.failed", id: "a", message: "denied" },
       { type: "capture.cancelled", id: "a" },
@@ -56,6 +57,7 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: 900,
+        relayMs: null,
         target: { bundleId: "com.google.chrome", host: "mail.google.com" },
       },
       {
@@ -65,6 +67,7 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: 900,
+        relayMs: null,
         target: { bundleId: "com.apple.mobilesms", host: null },
       },
       {
@@ -74,6 +77,7 @@ describe("parseHelperEvent", () => {
         audioMs: 40,
         asrMs: 0,
         speechMs: null,
+        relayMs: null,
         target: null,
       },
       { type: "transcript.failed", id: "a", message: "no model" },
@@ -201,6 +205,7 @@ describe("parseHelperEvent", () => {
         audioMs: 1200,
         asrMs: 300,
         speechMs: null,
+        relayMs: null,
         target: null,
       });
     },
@@ -243,6 +248,7 @@ describe("parseHelperEvent", () => {
       audioMs: 1,
       asrMs: 1,
       speechMs: null,
+      relayMs: null,
       target: null,
     });
   });
@@ -406,6 +412,7 @@ const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
   outputVolumeScale: null,
   microphone: null,
   detectHost: true,
+  hotkeyUptimeMs: 1234.5,
 };
 const commandCases = {
   "hotkey.configure": { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [] },
@@ -433,9 +440,10 @@ const commandCases = {
     outputVolumeScale: 0.3,
     microphone,
     detectHost: false,
+    hotkeyUptimeMs: undefined,
   },
-  "capture.start.muted": { ...captureStart, outputVolumeScale: 0 },
-  "capture.stop": { type: "capture.stop", id: "s1" },
+  "capture.start.muted": { ...captureStart, outputVolumeScale: 0, hotkeyUptimeMs: undefined },
+  "capture.stop": { type: "capture.stop", id: "s1", hotkeyUptimeMs: 2345.5 },
   "capture.cancel": { type: "capture.cancel", id: "s1" },
   "microphone.test.start": { type: "microphone.test.start", id: "t1", microphone: null },
   "microphone.test.start.pinned": { type: "microphone.test.start", id: "t1", microphone },

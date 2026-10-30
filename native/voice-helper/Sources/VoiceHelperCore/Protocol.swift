@@ -63,9 +63,11 @@ public enum HelperCommand: Equatable, Sendable {
     case microphoneConfigure(microphone: Microphone?)
     /// `outputVolumeScale` is the fraction of each output's level to keep while capturing, at least 0
     /// and below 1; 0 mutes and nil leaves outputs alone. `detectHost` is main's say on whether the
-    /// session can use a page host at all.
-    case captureStart(id: String, language: DictationLanguage, outputVolumeScale: Float?, microphone: Microphone?, detectHost: Bool)
-    case captureStop(id: String)
+    /// session can use a page host at all. `hotkeyUptimeMs` echoes the `uptimeMs` of the hotkey
+    /// event this command answers; nil when no hotkey caused it (a fixture-driven test).
+    case captureStart(id: String, language: DictationLanguage, outputVolumeScale: Float?, microphone: Microphone?, detectHost: Bool,
+                      hotkeyUptimeMs: Double?)
+    case captureStop(id: String, hotkeyUptimeMs: Double?)
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
@@ -99,16 +101,21 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 14
+public let helperProtocolVersion = 15
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
     case microphonesUnavailable(message: String)
     case ready(version: Int)
-    case hotkey(action: HotkeyAction)
+    /// `uptimeMs` is the tap's monotonic clock at the key event. Main echoes it on the command it
+    /// answers with, so the helper measures the round trip without keeping the event around.
+    case hotkey(action: HotkeyAction, uptimeMs: Double)
     case transform(transformId: String)
     case selectionResult(id: String, result: SelectionResult)
-    case captureStarted(id: String, startMs: Double)
+    /// `startMs` runs from the hotkey event that started the session, or from `capture.start`
+    /// when none did (a fixture-driven test), to the first audio. `relayMs` is the part of it
+    /// spent going through main: hotkey event out, `capture.start` back. Nil without a hotkey.
+    case captureStarted(id: String, startMs: Double, relayMs: Double?)
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
     case captureCancelled(id: String)
@@ -117,7 +124,9 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
     case microphoneTestFailed(id: String, message: String)
-    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, target: TranscriptTarget?)
+    /// `relayMs` is the release's hop through main: hotkey event out, `capture.stop` back. Nil
+    /// when the helper ended the capture itself or no hotkey released it.
+    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, relayMs: Double?, target: TranscriptTarget?)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
@@ -134,10 +143,11 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, outputVolumeScale, language
-    case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
+    case version, startMs, relayMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via
+    case uptimeMs, hotkeyUptimeMs
 }
 
 extension HelperCommand: Decodable {
@@ -160,8 +170,11 @@ extension HelperCommand: Decodable {
             }
             self = .captureStart(id: id, language: language, outputVolumeScale: outputVolumeScale,
                                  microphone: try c.decode(Microphone?.self, forKey: .microphone),
-                                 detectHost: try c.decode(Bool.self, forKey: .detectHost))
-        case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
+                                 detectHost: try c.decode(Bool.self, forKey: .detectHost),
+                                 hotkeyUptimeMs: try c.decodeIfPresent(Double.self, forKey: .hotkeyUptimeMs))
+        case "capture.stop":
+            self = .captureStop(id: try c.decode(String.self, forKey: .id),
+                                hotkeyUptimeMs: try c.decodeIfPresent(Double.self, forKey: .hotkeyUptimeMs))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
         case "microphone.test.start":
             self = .microphoneTestStart(id: try c.decode(String.self, forKey: .id),
@@ -229,9 +242,10 @@ extension HelperEvent: Encodable {
         case .ready(let version):
             try c.encode("ready", forKey: .type)
             try c.encode(version, forKey: .version)
-        case .hotkey(let action):
+        case .hotkey(let action, let uptimeMs):
             try c.encode("hotkey", forKey: .type)
             try c.encode(action, forKey: .action)
+            try c.encode(finite(uptimeMs), forKey: .uptimeMs)
         case .transform(let transformId):
             try c.encode("transform", forKey: .type)
             try c.encode(transformId, forKey: .transformId)
@@ -247,10 +261,11 @@ extension HelperEvent: Encodable {
                 try c.encode("failed", forKey: .outcome)
                 try c.encode(reason, forKey: .reason)
             }
-        case .captureStarted(let id, let startMs):
+        case .captureStarted(let id, let startMs, let relayMs):
             try c.encode("capture.started", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(finite(startMs), forKey: .startMs)
+            try c.encode(relayMs.map(finite), forKey: .relayMs)
         case .captureLevel(let id, let level):
             try c.encode("capture.level", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -281,13 +296,14 @@ extension HelperEvent: Encodable {
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
-        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs, let target):
+        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs, let relayMs, let target):
             try c.encode("transcript", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
             try c.encode(finite(audioMs), forKey: .audioMs)
             try c.encode(finite(asrMs), forKey: .asrMs)
             try c.encode(speechMs.map(finite), forKey: .speechMs)
+            try c.encode(relayMs.map(finite), forKey: .relayMs)
             try c.encode(target, forKey: .target)
         case .transcriptFailed(let id, let reason, let message):
             try c.encode("transcript.failed", forKey: .type)

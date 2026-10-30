@@ -619,11 +619,11 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     await startSignIn(h, "state2");
-    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const session = h.store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const id = session.id;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
     takeCallback(callbackUrl(SECOND_CODE));
     await flush();
     h.exchanges[0]?.resolve();
@@ -632,7 +632,7 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     vi.advanceTimersByTime(800);
-    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -640,6 +640,7 @@ describe("createAccount", () => {
       audioMs: 800,
       asrMs: 1,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();

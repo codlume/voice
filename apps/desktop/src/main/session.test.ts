@@ -119,7 +119,7 @@ describe("starting a session", () => {
       id: ID,
       mode: "hold",
       pressedAt: 0,
-      releasedAt: null,
+      released: null,
     });
     expect(effects).toEqual([{ type: "startCapture", id: ID }]);
   });
@@ -135,7 +135,7 @@ describe("starting a session", () => {
       id: "s2",
       mode: "hold",
       pressedAt: 2200,
-      releasedAt: null,
+      released: null,
     });
     expect(effects).toEqual([{ type: "startCapture", id: "s2" }]);
   });
@@ -198,12 +198,26 @@ describe("hold and release", () => {
       id: ID,
       mode: "hold",
       pressedAt: 0,
-      releasedAt: 300,
+      released: { at: 300 },
     });
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
     expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 300 }]);
+  });
+
+  test("each capture command echoes the clock of the hotkey event that caused it", () => {
+    const pressed: [SessionEvent, number] = [
+      { type: "hotkeyDown", id: ID, asr: "ready", hotkeyUptimeMs: 1000.5 },
+      0,
+    ];
+    const released: [SessionEvent, number] = [{ type: "hotkeyUp", hotkeyUptimeMs: 1300.5 }, 300];
+    const stop = { type: "stopCapture", id: ID, releasedAt: 300, hotkeyUptimeMs: 1300.5 };
+    expect(run([pressed]).effects).toEqual([
+      { type: "startCapture", id: ID, hotkeyUptimeMs: 1000.5 },
+    ]);
+    expect(run([pressed, released, started(350)]).effects).toEqual([stop]);
+    expect(run([pressed, started(50), released]).effects).toEqual([stop]);
   });
 
   test("a tap released before capture.started is tooShort once capture starts", () => {
@@ -290,7 +304,7 @@ describe("toggle dictation", () => {
 
   test("a second tap before capture starts stops once capture starts", () => {
     const tappedTwice = run([tap(0), tap(400)]);
-    expect(tappedTwice.state).toMatchObject({ phase: "starting", releasedAt: 400 });
+    expect(tappedTwice.state).toMatchObject({ phase: "starting", released: { at: 400 } });
     expect(tappedTwice.effects).toEqual([]);
     const { state, all } = run([tap(0), tap(400), tap(450), started(500)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });

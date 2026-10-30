@@ -21,10 +21,15 @@ private func json(_ line: String) throws -> [String: Any] {
         (#"{"type":"selection.read","id":"r1"}"#, .selectionRead(id: "r1")),
         (#"{"type":"transform.end","id":"r1"}"#, .transformEnd(id: "r1")),
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":true}"#,
-         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true)),
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: nil)),
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":false}"#,
-         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: false)),
-        (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1")),
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: false, hotkeyUptimeMs: nil)),
+        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":true,"hotkeyUptimeMs":1234.5}"#,
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: 1234.5)),
+        (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":true,"hotkeyUptimeMs":null}"#,
+         .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: nil)),
+        (#"{"type":"capture.stop","id":"s1"}"#, .captureStop(id: "s1", hotkeyUptimeMs: nil)),
+        (#"{"type":"capture.stop","id":"s1","hotkeyUptimeMs":2345.5}"#, .captureStop(id: "s1", hotkeyUptimeMs: 2345.5)),
         (#"{"type":"capture.cancel","id":"s1"}"#, .captureCancel(id: "s1")),
         (#"{"type":"microphone.test.start","id":"t1","microphone":null}"#, .microphoneTestStart(id: "t1", microphone: nil)),
         (#"{"type":"microphone.test.start","id":"t1","microphone":{"uid":"usb","name":"USB"}}"#,
@@ -111,10 +116,10 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 @Test func encodesEveryEventWithContractTypeStrings() throws {
     let cases: [(HelperEvent, [String: Any])] = [
         (.ready(version: 13), ["type": "ready", "version": 13]),
-        (.hotkey(action: .down), ["type": "hotkey", "action": "down"]),
-        (.hotkey(action: .chord), ["type": "hotkey", "action": "chord"]),
-        (.hotkey(action: .cancel), ["type": "hotkey", "action": "cancel"]),
-        (.hotkey(action: .toggle), ["type": "hotkey", "action": "toggle"]),
+        (.hotkey(action: .down, uptimeMs: 1234.5), ["type": "hotkey", "action": "down", "uptimeMs": 1234.5]),
+        (.hotkey(action: .chord, uptimeMs: 1), ["type": "hotkey", "action": "chord", "uptimeMs": 1]),
+        (.hotkey(action: .cancel, uptimeMs: 1), ["type": "hotkey", "action": "cancel", "uptimeMs": 1]),
+        (.hotkey(action: .toggle, uptimeMs: .nan), ["type": "hotkey", "action": "toggle", "uptimeMs": 0]),
         (.transform(transformId: "polish"), ["type": "transform", "transformId": "polish"]),
         (.selectionResult(id: "r", result: .selected(text: "zażółć", via: .accessibility)),
          ["type": "selection.result", "id": "r", "outcome": "selected", "text": "zażółć", "via": "accessibility"]),
@@ -124,7 +129,8 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
          ["type": "selection.result", "id": "r", "outcome": "failed", "reason": "noSelection"]),
         (.selectionResult(id: "r", result: .failed(.keysHeld)),
          ["type": "selection.result", "id": "r", "outcome": "failed", "reason": "keysHeld"]),
-        (.captureStarted(id: "s", startMs: 12.5), ["type": "capture.started", "id": "s", "startMs": 12.5]),
+        (.captureStarted(id: "s", startMs: 12.5, relayMs: 3.25), ["type": "capture.started", "id": "s", "startMs": 12.5, "relayMs": 3.25]),
+        (.captureStarted(id: "s", startMs: 12.5, relayMs: nil), ["type": "capture.started", "id": "s", "startMs": 12.5, "relayMs": NSNull()]),
         (.captureLevel(id: "s", level: 0.4), ["type": "capture.level", "id": "s", "level": 0.4]),
         (.captureFailed(id: "s", reason: .device, message: "gone"),
          ["type": "capture.failed", "id": "s", "reason": "device", "message": "gone"]),
@@ -139,16 +145,16 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.microphoneTestEnded(id: "t"), ["type": "microphone.test.ended", "id": "t"]),
         (.microphoneTestFailed(id: "t", message: "Finish dictating, then test again."),
          ["type": "microphone.test.failed", "id": "t", "message": "Finish dictating, then test again."]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640,
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: 4.5,
                      target: TranscriptTarget(bundleId: "com.apple.Safari", host: "mail.google.com")),
-         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640,
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640, "relayMs": 4.5,
           "target": ["bundleId": "com.apple.Safari", "host": "mail.google.com"]]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640,
+        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: nil,
                      target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil)),
-         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640,
+         ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640, "relayMs": NSNull(),
           "target": ["bundleId": "com.apple.TextEdit", "host": NSNull()]]),
-        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil, target: nil),
-         ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull(), "target": NSNull()]),
+        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil, relayMs: nil, target: nil),
+         ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull(), "relayMs": NSNull(), "target": NSNull()]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
         (.insertResult(id: "s", method: .none, reason: .focusChanged),
@@ -183,7 +189,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 }
 
 @Test func keepsFilePathsAndUnicodeReadable() throws {
-    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil, target: nil).encodeLine()
+    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil, relayMs: nil, target: nil).encodeLine()
     #expect(line.contains("/tmp/x"))
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
 }
@@ -191,7 +197,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 @Test func captureStartRequiresAnOutputVolumeScaleFromZeroToBelowOne() {
     for (wire, scale) in [("null", nil), ("0", 0), ("0.3", 0.3)] as [(String, Float?)] {
         #expect(HelperCommand.decode(line: #"{"type":"capture.start","microphone":null,"id":"s","language":"en","outputVolumeScale":\#(wire),"detectHost":true}"#)
-            == .success(.captureStart(id: "s", language: .en, outputVolumeScale: scale, microphone: nil, detectHost: true)))
+            == .success(.captureStart(id: "s", language: .en, outputVolumeScale: scale, microphone: nil, detectHost: true, hotkeyUptimeMs: nil)))
     }
     for line in [
         #"{"type":"capture.start","microphone":null,"id":"s","language":"en","detectHost":true}"#,
@@ -210,7 +216,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 func captureStartPreservesEveryLanguage(language: DictationLanguage) {
     let line = #"{"type":"capture.start","microphone":null,"id":"s","language":"\#(language.rawValue)","outputVolumeScale":null,"detectHost":true}"#
     #expect(HelperCommand.decode(line: line)
-        == .success(.captureStart(id: "s", language: language, outputVolumeScale: nil, microphone: nil, detectHost: true)))
+        == .success(.captureStart(id: "s", language: language, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: nil)))
 }
 
 @Test func captureStartRequiresAValidLanguage() throws {
@@ -234,7 +240,7 @@ func captureStartPreservesEveryLanguage(language: DictationLanguage) {
     #expect(HelperCommand.decode(line: #"{"type":"microphone.configure","microphone":null}"#)
         == .success(.microphoneConfigure(microphone: nil)))
     #expect(HelperCommand.decode(line: #"{"type":"capture.start","id":"s","language":"en","outputVolumeScale":null,"microphone":{"uid":"usb","name":"USB Microphone"},"detectHost":true}"#)
-        == .success(.captureStart(id: "s", language: .en, outputVolumeScale: nil, microphone: microphone, detectHost: true)))
+        == .success(.captureStart(id: "s", language: .en, outputVolumeScale: nil, microphone: microphone, detectHost: true, hotkeyUptimeMs: nil)))
     for line in [
         #"{"type":"capture.start","id":"s","language":"en","outputVolumeScale":null}"#,
         #"{"type":"microphone.configure"}"#,

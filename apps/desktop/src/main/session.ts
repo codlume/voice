@@ -30,13 +30,14 @@ export type CleanupWork =
 
 export type Session =
   | { phase: "idle" }
-  // `releasedAt` is when the user ended capture: the hold key's release or the second toggle tap.
+  // `released` is set once the user ended capture (the hold key's release or the second toggle
+  // tap) before capture started; the stop goes out when it does.
   | {
       phase: "starting";
       id: string;
       mode: DictationMode;
       pressedAt: number;
-      releasedAt: number | null;
+      released: Release | null;
     }
   | { phase: "recording"; id: string; mode: DictationMode; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
@@ -64,12 +65,17 @@ export type Session =
 type Cleaning = Extract<Session, { phase: "cleaning" }>;
 type Inserting = Extract<Session, { phase: "inserting" }>;
 
+// `hotkeyUptimeMs` is the helper's clock at the key event, echoed on the capture command it
+// causes so the helper can measure the round trip. Absent for an event without one.
+type HotkeyTime = { hotkeyUptimeMs?: number | undefined };
+type Release = { at: number } & HotkeyTime;
+
 export type SessionEvent =
-  | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
-  | { type: "hotkeyUp" }
+  | ({ type: "hotkeyDown"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
+  | ({ type: "hotkeyUp" } & HotkeyTime)
   | { type: "hotkeyChord" }
   | { type: "cancel" }
-  | { type: "toggle"; id: string; asr: ModelStatus["state"] }
+  | ({ type: "toggle"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
@@ -91,8 +97,8 @@ export type SessionEvent =
   | { type: "idleTimeout"; id: string };
 
 export type Effect =
-  | { type: "startCapture"; id: string }
-  | { type: "stopCapture"; id: string; releasedAt: number }
+  | ({ type: "startCapture"; id: string } & HotkeyTime)
+  | ({ type: "stopCapture"; id: string; releasedAt: number } & HotkeyTime)
   | { type: "cancelCapture"; id: string }
   | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
   | { type: "cancelCleanup"; id: string }
@@ -135,25 +141,33 @@ function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   };
 }
 
-function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
-  if (releasedAt - pressedAt < MIN_HOLD_MS) {
+function stopOrCancel(id: string, pressedAt: number, released: Release): Step {
+  if (released.at - pressedAt < MIN_HOLD_MS) {
     return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
   }
   return {
     state: { phase: "transcribing", id, overdue: false },
-    effects: [{ type: "stopCapture", id, releasedAt }],
+    effects: [
+      { type: "stopCapture", id, releasedAt: released.at, hotkeyUptimeMs: released.hotkeyUptimeMs },
+    ],
   };
 }
 
-function start(id: string, asr: ModelStatus["state"], mode: DictationMode, now: number): Step {
+function start(
+  id: string,
+  asr: ModelStatus["state"],
+  mode: DictationMode,
+  now: number,
+  hotkey: HotkeyTime,
+): Step {
   if (asr === "missing" || asr === "failed") {
     return finish(id, { kind: "failed", message: ASR_MISSING_MESSAGE });
   }
   if (asr === "downloading")
     return finish(id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
   return {
-    state: { phase: "starting", id, mode, pressedAt: now, releasedAt: null },
-    effects: [{ type: "startCapture", id }],
+    state: { phase: "starting", id, mode, pressedAt: now, released: null },
+    effects: [{ type: "startCapture", id, hotkeyUptimeMs: hotkey.hotkeyUptimeMs }],
   };
 }
 
@@ -161,10 +175,12 @@ function start(id: string, asr: ModelStatus["state"], mode: DictationMode, now: 
 function endCapture(
   state: Extract<Session, { phase: "starting" | "recording" }>,
   now: number,
+  hotkey: HotkeyTime,
 ): Step {
-  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, now);
-  if (state.releasedAt !== null) return { state, effects: [] };
-  return { state: { ...state, releasedAt: now }, effects: [] };
+  const released = { at: now, hotkeyUptimeMs: hotkey.hotkeyUptimeMs };
+  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, released);
+  if (state.released !== null) return { state, effects: [] };
+  return { state: { ...state, released }, effects: [] };
 }
 
 function inserting(
@@ -231,20 +247,20 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
   switch (event.type) {
     case "hotkeyDown": {
       if (state.phase !== "idle" && state.phase !== "done") return same;
-      return start(event.id, event.asr, "hold", now);
+      return start(event.id, event.asr, "hold", now, event);
     }
     case "toggle": {
       if (state.phase === "idle" || state.phase === "done") {
-        return start(event.id, event.asr, "toggle", now);
+        return start(event.id, event.asr, "toggle", now, event);
       }
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       if (state.mode !== "toggle") return same;
-      return endCapture(state, now);
+      return endCapture(state, now, event);
     }
     case "hotkeyUp": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       if (state.mode !== "hold") return same;
-      return endCapture(state, now);
+      return endCapture(state, now, event);
     }
     case "hotkeyChord": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
@@ -257,8 +273,8 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     }
     case "captureStarted": {
       if (state.phase !== "starting") return same;
-      if (state.releasedAt !== null) {
-        return stopOrCancel(state.id, state.pressedAt, state.releasedAt);
+      if (state.released !== null) {
+        return stopOrCancel(state.id, state.pressedAt, state.released);
       }
       return {
         state: { phase: "recording", id: state.id, mode: state.mode, pressedAt: state.pressedAt },

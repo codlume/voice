@@ -80,7 +80,9 @@ type Started = {
   language: DictationLanguage;
   pressedAt: number;
   startMs?: number;
+  pressRelayMs?: number | null;
   releasedAt?: number;
+  releaseRelayMs?: number | null;
   audioMs?: number;
   speechMs?: number | null;
   asrMs?: number;
@@ -88,9 +90,13 @@ type Started = {
   insertStartedAt?: number;
 };
 
+// pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
+// when main sees the release, so it leaves releaseRelayMs out.
 export type SessionTimings = {
   startMs?: number | undefined;
+  pressRelayMs?: number | undefined;
   audioMs?: number | undefined;
+  releaseRelayMs?: number | undefined;
   asrMs?: number | undefined;
   cleanupMs?: number | undefined;
   insertMs?: number | undefined;
@@ -122,7 +128,9 @@ const outputVolumeScale = (settings: Settings) =>
 function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
   return {
     startMs: s.startMs,
+    pressRelayMs: s.pressRelayMs ?? undefined,
     audioMs: s.audioMs,
+    releaseRelayMs: s.releaseRelayMs ?? undefined,
     asrMs: s.asrMs,
     cleanupMs: s.cleanupMs,
     insertMs: s.insertStartedAt === undefined ? undefined : finishedAt - s.insertStartedAt,
@@ -214,12 +222,13 @@ export function createDictation(options: DictationOptions): Dictation {
           outputVolumeScale: outputVolumeScale(store.state.settings),
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
+          hotkeyUptimeMs: effect.hotkeyUptimeMs,
         });
         if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
         return;
       case "stopCapture":
         track(effect.id, { releasedAt: effect.releasedAt });
-        send({ type: "capture.stop", id: effect.id });
+        send({ type: "capture.stop", id: effect.id, hotkeyUptimeMs: effect.hotkeyUptimeMs });
         return;
       case "cancelCapture":
         send({ type: "capture.cancel", id: effect.id });
@@ -395,13 +404,14 @@ export function createDictation(options: DictationOptions): Dictation {
         ) {
           return;
         }
+        const hotkeyUptimeMs = event.uptimeMs ?? undefined;
         switch (event.action) {
           case "down":
-            return dispatch({ type: "hotkeyDown", id: randomUUID(), asr });
+            return dispatch({ type: "hotkeyDown", id: randomUUID(), asr, hotkeyUptimeMs });
           case "toggle":
-            return dispatch({ type: "toggle", id: randomUUID(), asr });
+            return dispatch({ type: "toggle", id: randomUUID(), asr, hotkeyUptimeMs });
           case "up":
-            return dispatch({ type: "hotkeyUp" });
+            return dispatch({ type: "hotkeyUp", hotkeyUptimeMs });
           case "chord":
             return dispatch({ type: "hotkeyChord" });
           case "cancel":
@@ -410,7 +420,7 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "capture.started":
-        track(event.id, { startMs: event.startMs });
+        track(event.id, { startMs: event.startMs, pressRelayMs: event.relayMs });
         dispatch({ type: "captureStarted", id: event.id });
         return;
       case "capture.level":
@@ -434,6 +444,7 @@ export function createDictation(options: DictationOptions): Dictation {
           audioMs: event.audioMs,
           speechMs: event.speechMs,
           asrMs: event.asrMs,
+          releaseRelayMs: event.relayMs,
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);

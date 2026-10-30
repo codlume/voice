@@ -8,7 +8,8 @@ struct CaptureSession {
     let id: String
     let language: DictationLanguage
     let target: InsertTarget
-    let commandedAt: DispatchTime
+    let startedAt: DispatchTime
+    let relayMs: Double?
     let input = CaptureInput()
 }
 
@@ -18,6 +19,7 @@ final class Recording {
     var speech = SpeechSpan()
     var stream: StreamingTranscription?
     var transcription: Task<Void, Never>?
+    var releaseRelayMs: Double?
 
     init(session: CaptureSession) {
         self.session = session
@@ -103,9 +105,11 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    /// False when no session began, so the caller schedules nothing for it.
+    /// False when no session began, so the caller schedules nothing for it. `hotkeyUptimeMs` is the
+    /// press main answered with this command, when one did.
     @discardableResult
-    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, outputVolumeScale: Float?, microphone: Microphone?) -> Bool {
+    func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, hotkeyUptimeMs: Double? = nil,
+               outputVolumeScale: Float?, microphone: Microphone?) -> Bool {
         // Dictation preempts a test. The mic keeps running so dictation gets audio without an
         // engine restart.
         if case .testing(let testId, _) = state {
@@ -120,7 +124,9 @@ final class Capture {
         }
         lastTarget.clear()
         adopt(microphone)
-        let session = CaptureSession(id: id, language: language, target: target, commandedAt: receivedAt)
+        let relayMs = relayMs(from: hotkeyUptimeMs, to: receivedAt)
+        let session = CaptureSession(id: id, language: language, target: target,
+                                     startedAt: relayMs.map { receivedAt - .nanoseconds(Int($0 * 1e6)) } ?? receivedAt, relayMs: relayMs)
         let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
         do {
             switch source {
@@ -156,12 +162,20 @@ final class Capture {
     }
 
     // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.
-    func stop(id: String) {
+    func stop(id: String, receivedAt: DispatchTime, hotkeyUptimeMs: Double? = nil) {
         guard case .recording(let recording) = state, recording.session.id == id else {
             output.log(.error, "capture.stop \(id) ignored: no such active session")
             return
         }
+        recording.releaseRelayMs = relayMs(from: hotkeyUptimeMs, to: receivedAt)
         transcribe(recording)
+    }
+
+    /// The hop through main: hotkey event out, its command back. Nil without a hotkey, or for an
+    /// echo from after the command arrived, which no real press produces.
+    private func relayMs(from hotkeyUptimeMs: Double?, to receivedAt: DispatchTime) -> Double? {
+        guard let hotkeyUptimeMs, hotkeyUptimeMs <= receivedAt.uptimeMs else { return nil }
+        return receivedAt.uptimeMs - hotkeyUptimeMs
     }
 
     private func endRecording(_ recording: Recording, reason: CaptureStopReason) {
@@ -185,14 +199,16 @@ final class Capture {
         let speechMs = recording.speech.milliseconds(sampleRate: asrSampleRate)
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
-            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs, target: session.target.takeTranscriptTarget()))
+            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
+                                              relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget()))
             return
         }
         recording.transcription = Task { @MainActor in
             do {
                 let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs, target: session.target.takeTranscriptTarget()))
+                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
+                                                  relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget()))
             } catch let error as TranscribeError {
                 finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
             } catch {
@@ -401,7 +417,7 @@ final class Capture {
             let recording = Recording(session: current)
             recording.samples = chunk
             state = .recording(recording)
-            output.emit(.captureStarted(id: current.id, startMs: current.commandedAt.millisecondsToNow()))
+            output.emit(.captureStarted(id: current.id, startMs: current.startedAt.millisecondsToNow(), relayMs: current.relayMs))
             recording.speech.add(frames: chunk.count, rms: rms(chunk))
         case .recording(let recording) where recording.session.id == session.id:
             recording.samples.append(contentsOf: chunk)
@@ -462,7 +478,7 @@ final class Capture {
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
-        if case .transcript(_, let text, _, _, _, _) = event, !text.isEmpty {
+        if case .transcript(_, let text, _, _, _, _, _) = event, !text.isEmpty {
             lastTarget.put(id: session.id, session.target)
         }
         output.emit(event)

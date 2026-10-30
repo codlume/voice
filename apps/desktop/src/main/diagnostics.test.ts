@@ -201,13 +201,13 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   });
 
   async function dictate() {
-    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const session = store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const { id } = session;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
     clock += 800;
-    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -215,6 +215,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await expect.poll(() => store.state.session.phase).toBe("inserting");

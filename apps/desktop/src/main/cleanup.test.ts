@@ -636,15 +636,20 @@ describe("followSettings", () => {
     const setLanguage = (dictationLanguage: DictationLanguage) =>
       store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage } }));
     const record = () => {
-      dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const session = store.state.session;
       if (session.phase === "idle") throw new Error("no session");
-      dictation.onHelperEvent({ type: "capture.started", id: session.id, startMs: 40 });
+      dictation.onHelperEvent({
+        type: "capture.started",
+        id: session.id,
+        startMs: 40,
+        relayMs: null,
+      });
       return session.id;
     };
     const finish = (id: string, text: string) => {
       clock += 800;
-      dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       dictation.onHelperEvent({
         type: "transcript",
         id,
@@ -652,6 +657,7 @@ describe("followSettings", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
     };

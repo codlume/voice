@@ -267,6 +267,12 @@ private extension DictationLanguage {
 
 extension DispatchTime {
     func millisecondsToNow() -> Double {
-        Double(DispatchTime.now().uptimeNanoseconds - uptimeNanoseconds) / 1e6
+        milliseconds(from: self, to: .now())
     }
+
+    var uptimeMs: Double { Double(uptimeNanoseconds) / 1e6 }
+}
+
+func milliseconds(from start: DispatchTime, to end: DispatchTime) -> Double {
+    (Double(end.uptimeNanoseconds) - Double(start.uptimeNanoseconds)) / 1e6
 }

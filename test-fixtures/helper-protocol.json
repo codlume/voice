@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 14,
+  "protocolVersion": 15,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 13,
+      "version": 14,
       "compatible": false
     },
     {
-      "version": 14,
+      "version": 15,
       "compatible": true
     },
     {
-      "version": 15,
+      "version": 16,
       "compatible": false
     }
   ],
@@ -112,7 +112,8 @@
         "language": "en",
         "outputVolumeScale": null,
         "microphone": null,
-        "detectHost": true
+        "detectHost": true,
+        "hotkeyUptimeMs": 1234.5
       },
       "required": ["type", "id", "language", "outputVolumeScale", "microphone", "detectHost"]
     },
@@ -147,7 +148,8 @@
       "name": "capture.stop",
       "wire": {
         "type": "capture.stop",
-        "id": "s1"
+        "id": "s1",
+        "hotkeyUptimeMs": 2345.5
       },
       "required": ["type", "id"]
     },
@@ -358,6 +360,24 @@
       "wire": {
         "type": "test.audioFile"
       }
+    },
+    {
+      "name": "capture.start.hotkey.missing",
+      "wire": {
+        "type": "capture.start",
+        "id": "s1",
+        "language": "en",
+        "outputVolumeScale": null,
+        "microphone": null,
+        "detectHost": true
+      }
+    },
+    {
+      "name": "capture.stop.hotkey.missing",
+      "wire": {
+        "type": "capture.stop",
+        "id": "s1"
+      }
     }
   ],
   "invalidCommands": [
@@ -481,11 +501,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 14
+        "version": 15
       },
       "parsed": {
         "type": "ready",
-        "version": 14
+        "version": 15
       },
       "required": ["type", "version"]
     },
@@ -493,11 +513,13 @@
       "name": "hotkey",
       "wire": {
         "type": "hotkey",
-        "action": "down"
+        "action": "down",
+        "uptimeMs": 1234.5
       },
       "parsed": {
         "type": "hotkey",
-        "action": "down"
+        "action": "down",
+        "uptimeMs": 1234.5
       },
       "required": ["type", "action"]
     },
@@ -505,11 +527,13 @@
       "name": "hotkey.up",
       "wire": {
         "type": "hotkey",
-        "action": "up"
+        "action": "up",
+        "uptimeMs": 2345.5
       },
       "parsed": {
         "type": "hotkey",
-        "action": "up"
+        "action": "up",
+        "uptimeMs": 2345.5
       },
       "required": ["type", "action"]
     },
@@ -517,11 +541,13 @@
       "name": "hotkey.chord",
       "wire": {
         "type": "hotkey",
-        "action": "chord"
+        "action": "chord",
+        "uptimeMs": 1
       },
       "parsed": {
         "type": "hotkey",
-        "action": "chord"
+        "action": "chord",
+        "uptimeMs": 1
       },
       "required": ["type", "action"]
     },
@@ -529,11 +555,13 @@
       "name": "hotkey.cancel",
       "wire": {
         "type": "hotkey",
-        "action": "cancel"
+        "action": "cancel",
+        "uptimeMs": 1
       },
       "parsed": {
         "type": "hotkey",
-        "action": "cancel"
+        "action": "cancel",
+        "uptimeMs": 1
       },
       "required": ["type", "action"]
     },
@@ -541,11 +569,13 @@
       "name": "hotkey.toggle",
       "wire": {
         "type": "hotkey",
-        "action": "toggle"
+        "action": "toggle",
+        "uptimeMs": 1
       },
       "parsed": {
         "type": "hotkey",
-        "action": "toggle"
+        "action": "toggle",
+        "uptimeMs": 1
       },
       "required": ["type", "action"]
     },
@@ -634,12 +664,30 @@
       "wire": {
         "type": "capture.started",
         "id": "s1",
-        "startMs": 12.5
+        "startMs": 12.5,
+        "relayMs": 3.25
       },
       "parsed": {
         "type": "capture.started",
         "id": "s1",
-        "startMs": 12.5
+        "startMs": 12.5,
+        "relayMs": 3.25
+      },
+      "required": ["type", "id", "startMs"]
+    },
+    {
+      "name": "capture.started.command",
+      "wire": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5,
+        "relayMs": null
+      },
+      "parsed": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5,
+        "relayMs": null
       },
       "required": ["type", "id", "startMs"]
     },
@@ -801,6 +849,7 @@
         "audioMs": 1000,
         "asrMs": 80,
         "speechMs": 640,
+        "relayMs": 4.5,
         "target": {
           "bundleId": "com.apple.Safari",
           "host": "MAIL.EXAMPLE.COM"
@@ -813,6 +862,7 @@
         "audioMs": 1000,
         "asrMs": 80,
         "speechMs": 640,
+        "relayMs": 4.5,
         "target": {
           "bundleId": "com.apple.safari",
           "host": "mail.example.com"
@@ -829,6 +879,7 @@
         "audioMs": 40,
         "asrMs": 0,
         "speechMs": null,
+        "relayMs": null,
         "target": null
       },
       "parsed": {
@@ -838,6 +889,7 @@
         "audioMs": 40,
         "asrMs": 0,
         "speechMs": null,
+        "relayMs": null,
         "target": null
       },
       "required": ["type", "id", "text", "audioMs", "asrMs"]
@@ -851,6 +903,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": 300,
+        "relayMs": null,
         "target": {
           "bundleId": "com.apple.TextEdit",
           "host": null
@@ -863,6 +916,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": 300,
+        "relayMs": null,
         "target": {
           "bundleId": "com.apple.textedit",
           "host": null
@@ -1111,6 +1165,32 @@
   ],
   "normalizedEvents": [
     {
+      "name": "hotkey.uptime.missing",
+      "wire": {
+        "type": "hotkey",
+        "action": "down"
+      },
+      "parsed": {
+        "type": "hotkey",
+        "action": "down",
+        "uptimeMs": null
+      }
+    },
+    {
+      "name": "capture.started.relay.missing",
+      "wire": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5
+      },
+      "parsed": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5,
+        "relayMs": null
+      }
+    },
+    {
       "name": "insert.reason.missing",
       "wire": {
         "type": "insert.result",
@@ -1183,6 +1263,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": null,
+        "relayMs": null,
         "target": null
       }
     },
@@ -1195,6 +1276,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": "300",
+        "relayMs": "4",
         "target": {
           "bundleId": 42,
           "host": null
@@ -1207,6 +1289,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": null,
+        "relayMs": null,
         "target": null
       }
     },
@@ -1230,6 +1313,7 @@
         "audioMs": 500,
         "asrMs": 20,
         "speechMs": null,
+        "relayMs": null,
         "target": {
           "bundleId": "com.apple.safari",
           "host": null

@@ -14,7 +14,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 14;
+export const HELPER_PROTOCOL_VERSION = 15;
 
 export type HelperCommand =
   | {
@@ -34,8 +34,11 @@ export type HelperCommand =
       microphone: Microphone | null;
       // False when the session cannot use a page host, so the helper never reads one.
       detectHost: boolean;
+      // The `uptimeMs` of the hotkey event this command answers, so the helper can measure the
+      // round trip. Absent when no hotkey caused it.
+      hotkeyUptimeMs?: number | undefined;
     }
-  | { type: "capture.stop"; id: string }
+  | { type: "capture.stop"; id: string; hotkeyUptimeMs?: number | undefined }
   | { type: "capture.cancel"; id: string }
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
@@ -111,9 +114,11 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal("microphones.unavailable"), message: Schema.String }),
   Schema.Struct({ type: Schema.Literal("ready"), version: Schema.Finite }),
   // down/up/chord come from the hold key, toggle from a clean tap of the toggle key, cancel from Escape.
+  // uptimeMs is the helper's monotonic clock at the key event, echoed back on capture.start/stop.
   Schema.Struct({
     type: Schema.Literal("hotkey"),
     action: Schema.Literals(["down", "up", "chord", "cancel", "toggle"]),
+    uptimeMs: nullOnInvalid(Schema.Finite),
   }),
   Schema.Struct({ type: Schema.Literal("transform"), transformId: Schema.String }),
   Schema.Struct({
@@ -133,6 +138,7 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("capture.started"),
     id: Schema.String,
     startMs: Schema.Finite,
+    relayMs: nullOnInvalid(Schema.Finite),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.level"),
@@ -169,6 +175,7 @@ const HelperEventSchema = Schema.Union([
     audioMs: Schema.Finite,
     asrMs: Schema.Finite,
     speechMs: nullOnInvalid(Schema.Finite),
+    relayMs: nullOnInvalid(Schema.Finite),
     target,
   }),
   Schema.Struct({
