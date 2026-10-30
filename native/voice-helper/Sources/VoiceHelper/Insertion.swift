@@ -230,14 +230,13 @@ final class Insertion {
         let clipboardSaveMs = saving.millisecondsToNow()
         let write = pasteboard.write(text: text, html: html, saved: saved)
         postCommand(typing: "v", fallback: PasteKey.ansiV)
-
-        // The target handles Cmd+V asynchronously. The result gives it a moment to land but
-        // does not wait for the restore, which only protects the user's clipboard. A slow
-        // target (Electron under load, a remote desktop) can read the pasteboard well after the
-        // keystroke, so the restore waits a full second.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
-            output.emit(.insertResult(id: id, outcome: .paste(route, clipboardSaveMs: clipboardSaveMs)))
-        }
+        // The target handles Cmd+V asynchronously and nothing here can observe it land, so the
+        // result reports the keystroke, not the insertion. The restore only protects the user's
+        // clipboard. A slow target (Electron under load, a remote desktop) can read the
+        // pasteboard well after the keystroke, so the restore waits a full second. Main's copy
+        // effect writes the pasteboard right after this result, today with the same text; a
+        // different copy payload would reach a target that reads after it.
+        output.emit(.insertResult(id: id, outcome: .paste(route, clipboardSaveMs: clipboardSaveMs)))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
             pasteboard.restore(write: write)
         }
