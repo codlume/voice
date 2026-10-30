@@ -108,6 +108,7 @@ export function createUpdates({
   release,
   initial,
   onChange,
+  whenIdle,
   canRestart,
   prepareRestart,
   onRestartFailure,
@@ -116,6 +117,7 @@ export function createUpdates({
   release: ReleaseConfig | null;
   initial: UpdatesSnapshot;
   onChange: (snapshot: UpdatesSnapshot) => void;
+  whenIdle: (task: () => void) => void;
   canRestart: () => boolean;
   prepareRestart: () => Promise<void>;
   onRestartFailure: () => void;
@@ -264,18 +266,18 @@ export function createUpdates({
     });
   }
 
+  // The first check loads electron-updater, which blocks main for tens of milliseconds, and a key
+  // press on its way to capture would wait behind it. A check the user asks for runs at once: it
+  // came from the hub or the tray, so no session is under way, and a Checking status must mean it.
+  // One function for every poll, so the polls that come due during one long run fold into one check.
+  const backgroundCheck = () => void check();
+  const scheduledCheck = () => whenIdle(backgroundCheck);
+
   return {
     start() {
       if (!enabled || startupTimer || pollTimer || disposed) return;
-      startupTimer = setTimeout(() => {
-        void check();
-      }, 15_000);
-      pollTimer = setInterval(
-        () => {
-          void check();
-        },
-        60 * 60 * 1000,
-      );
+      startupTimer = setTimeout(scheduledCheck, 15_000);
+      pollTimer = setInterval(scheduledCheck, 60 * 60 * 1000);
       startupTimer.unref();
       pollTimer.unref();
     },

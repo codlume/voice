@@ -45,13 +45,13 @@ import {
   createAccount,
   resolveApiUrl,
 } from "./account.ts";
-import { activity } from "./activity.ts";
+import { activity, whenIdle } from "./activity.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
-import { createDictation, whenIdle, type Dictation } from "./dictation.ts";
+import { createDictation, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hotkeyConfigure } from "./hotkey-config.ts";
@@ -480,7 +480,9 @@ async function main() {
 
   installedApps = createInstalledApps({ send: helper.send });
 
+  const runWhenIdle = whenIdle(store);
   const updates = createUpdates({
+    whenIdle: runWhenIdle,
     loadEngine:
       store.state.updates.status.kind === "disabled"
         ? null
@@ -787,9 +789,8 @@ async function main() {
 
   // A callback that changed the account brings the hub forward, but never mid-session: the
   // target app must keep focus until insertion. A launch by URL shows the hub anyway.
-  const showHubWhenIdle = whenIdle(store, showHub);
   handleCallbackUrl = (url) => {
-    if (account.handleCallbackUrl(url) !== "ignored") showHubWhenIdle();
+    if (account.handleCallbackUrl(url) !== "ignored") runWhenIdle(showHub);
   };
   // Voice's own lock hands over a second copy's command line, which carries the callback URL
   // when the browser launched that copy.

@@ -18,7 +18,8 @@ import {
   parseSignInCode,
   resolveApiUrl,
 } from "./account.ts";
-import { createDictation, whenIdle } from "./dictation.ts";
+import { whenIdle } from "./activity.ts";
+import { createDictation } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import {
   API_URL,
@@ -607,9 +608,10 @@ describe("createAccount", () => {
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
-    const showWhenIdle = whenIdle(h.store, () => shownDuring.push(h.store.state.session.phase));
+    const runWhenIdle = whenIdle(h.store);
     const takeCallback = (url: string) => {
-      if (h.account.handleCallbackUrl(url) !== "ignored") showWhenIdle();
+      if (h.account.handleCallbackUrl(url) !== "ignored")
+        runWhenIdle(() => shownDuring.push(h.store.state.session.phase));
     };
 
     await startSignIn(h);
@@ -661,14 +663,15 @@ describe("createAccount", () => {
       "capture.stop",
       "insert",
     ]);
+    await flush();
     expect(shownDuring).toEqual(["done"]);
   });
 
   test("an interrupted callback outside a session shows Voice at once", () => {
     const h = harness();
     const shown = vi.fn();
-    const showWhenIdle = whenIdle(h.store, shown);
-    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") showWhenIdle();
+    const runWhenIdle = whenIdle(h.store);
+    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") runWhenIdle(shown);
     expect(shown).toHaveBeenCalledOnce();
     expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
   });

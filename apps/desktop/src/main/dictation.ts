@@ -563,21 +563,3 @@ export function createDictation(options: DictationOptions): Dictation {
 
   return { dispatch, onHelperEvent };
 }
-
-/**
- * Returns a request that runs `show` now, or once the current session or transform run reaches
- * its outcome. Showing a window mid-session would take focus from the target app and fail the
- * insertion.
- */
-export function whenIdle(store: Store, show: () => void): () => void {
-  let pending = false;
-  store.subscribe((state) => {
-    if (!pending || activity(state) !== "idle") return;
-    pending = false;
-    show();
-  });
-  return () => {
-    if (activity(store.state) !== "idle") pending = true;
-    else show();
-  };
-}

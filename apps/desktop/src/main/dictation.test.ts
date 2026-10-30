@@ -36,10 +36,10 @@ import {
   autoApplyBudgetMs,
   cleanupBudgetMs,
   createDictation,
-  whenIdle,
   type Dictated,
   type SessionReport,
 } from "./dictation.ts";
+import { whenIdle } from "./activity.ts";
 import { createHistory } from "./history.ts";
 import { decodeTarget, type HelperCommand, type HelperEvent } from "./protocol.ts";
 import {
@@ -320,22 +320,23 @@ describe("createDictation", () => {
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
   });
 
-  test("a show request waits for a transform run as it waits for a dictation", () => {
+  test("a show request waits for a transform run as it waits for a dictation", async () => {
     const h = harness();
     const shown: string[] = [];
-    const showWhenIdle = whenIdle(h.store, () => shown.push(h.store.state.transform.phase));
+    const runWhenIdle = whenIdle(h.store);
     h.store.update((s) => ({
       ...s,
       transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy", words: 2 },
     }));
 
-    showWhenIdle();
+    runWhenIdle(() => shown.push(h.store.state.transform.phase));
     expect(shown).toEqual([]);
 
     h.store.update((s) => ({
       ...s,
       transform: { phase: "done", id: "r1", outcome: { kind: "cancelled" } },
     }));
+    await Promise.resolve();
     expect(shown).toEqual(["done"]);
   });
 
