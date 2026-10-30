@@ -360,7 +360,11 @@ export function createHistory(options: {
       }
       const existing = entries[index]!;
       if (existing.status !== "pending") return;
-      change(entries.with(index, { ...existing, raw, text, status }));
+      // The file already holds the raw transcript or is writing it, so the cleaned text waits for
+      // the settle's write: a crash before it keeps the raw transcript and loses only the cleaned
+      // text.
+      entries = entries.with(index, { ...existing, raw, text, status });
+      publishSoon();
     },
     settle(id, inserted) {
       const index = entries.findIndex((entry) => entry.id === id && entry.status === "pending");
@@ -433,6 +437,8 @@ export function createHistory(options: {
       }),
     async settled() {
       expire();
+      // An entry still waiting to write on its settle is written now: a quit must not lose it.
+      requestSync();
       let step: Promise<void>;
       do {
         step = queue;

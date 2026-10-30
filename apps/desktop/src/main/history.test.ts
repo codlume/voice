@@ -15,6 +15,17 @@ import {
 } from "../shared/history.ts";
 import { createHistory } from "./history.ts";
 
+const writes = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./atomic-file.ts", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./atomic-file.ts")>();
+  return {
+    writeFileAtomic: (...args: Parameters<typeof real.writeFileAtomic>) => {
+      writes.count += 1;
+      return real.writeFileAtomic(...args);
+    },
+  };
+});
+
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const START = new Date(2026, 9, 14, 12, 0).getTime();
@@ -321,6 +332,45 @@ describe("saved history", () => {
     await settledTick();
     expect(changes).toEqual([
       { kind: "all", state: { entries: [], retention: "month", saveFailed: false } },
+    ]);
+  });
+
+  test("a session is two writes: the raw transcript as it arrives, and the cleaned text with the settle", async () => {
+    const { history } = harness("month");
+    await history.settled();
+    writes.count = 0;
+    history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, START);
+    await history.settled();
+    expect(writes.count).toBe(1);
+    const afterCrash = harness("month");
+    await afterCrash.history.loaded();
+    expect(afterCrash.history.entries()).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "um hi", status: "notInserted" },
+    ]);
+
+    history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    await settledTick();
+    await settledTick();
+    expect(writes.count).toBe(1);
+    expect(history.entries()[0]?.text).toBe("Hi.");
+
+    history.settle("a", true);
+    await history.settled();
+    expect(writes.count).toBe(2);
+    expect((await saved()).entries).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "inserted" },
+    ]);
+  });
+
+  test("a quit between the cleaned text and the settle writes the cleaned text", async () => {
+    const { history } = harness("month");
+    history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, START);
+    await history.settled();
+    history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    await history.settled();
+    expect(history.state().saveFailed).toBe(false);
+    expect((await saved()).entries).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "pending" },
     ]);
   });
 
