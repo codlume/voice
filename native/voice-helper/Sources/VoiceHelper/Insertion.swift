@@ -90,7 +90,7 @@ final class Insertion {
         let focused: AXUIElement?
         switch check(id: id, target: target) {
         case .refused(let reason):
-            output.emit(.insertResult(id: id, method: .none, reason: reason, route: nil))
+            output.emit(.insertResult(id: id, outcome: .refused(reason)))
             return
         case .ready(let element):
             focused = element
@@ -110,9 +110,9 @@ final class Insertion {
         }
         switch outcome {
         case .inserted:
-            output.emit(.insertResult(id: id, method: .accessibility, reason: nil, route: .direct))
+            output.emit(.insertResult(id: id, outcome: .accessibility(.direct)))
         case .notEditable:
-            output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField, route: nil))
+            output.emit(.insertResult(id: id, outcome: .refused(.noFocusedField)))
         case .paste(let route):
             paste(id: id, text: text, html: html, route: route)
         case .unchanged(let focused, let before):
@@ -120,7 +120,7 @@ final class Insertion {
             // Chromium's silent no-op before the paste fallback risks a second copy.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
-                    output.emit(.insertResult(id: id, method: .accessibility, reason: nil, route: .late))
+                    output.emit(.insertResult(id: id, outcome: .accessibility(.late)))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
                     paste(id: id, text: text, html: html, route: .unchanged)
@@ -169,7 +169,7 @@ final class Insertion {
 
     private enum AccessibilityOutcome {
         case inserted, notEditable
-        case paste(InsertRoute)
+        case paste(PasteRoute)
         case unchanged(AXUIElement, before: AXTextState)
     }
 
@@ -224,8 +224,11 @@ final class Insertion {
         return text.utf16.count
     }
 
-    private func paste(id: String, text: String, html: String?, route: InsertRoute) {
-        let write = pasteboard.write(text: text, html: html, saved: pasteboard.save())
+    private func paste(id: String, text: String, html: String?, route: PasteRoute) {
+        let saving = DispatchTime.now()
+        let saved = pasteboard.save()
+        let clipboardSaveMs = saving.millisecondsToNow()
+        let write = pasteboard.write(text: text, html: html, saved: saved)
         postCommand(typing: "v", fallback: PasteKey.ansiV)
 
         // The target handles Cmd+V asynchronously. The result gives it a moment to land but
@@ -233,7 +236,7 @@ final class Insertion {
         // target (Electron under load, a remote desktop) can read the pasteboard well after the
         // keystroke, so the restore waits a full second.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
-            output.emit(.insertResult(id: id, method: .paste, reason: nil, route: route))
+            output.emit(.insertResult(id: id, outcome: .paste(route, clipboardSaveMs: clipboardSaveMs)))
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
             pasteboard.restore(write: write)

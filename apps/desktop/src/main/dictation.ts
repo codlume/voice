@@ -75,22 +75,24 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
+// What a helper event reports as null is unknown here, so onHelperEvent turns it into undefined.
 type Started = {
   id: string;
   language: DictationLanguage;
   pressedAt: number;
-  startMs?: number;
-  pressRelayMs?: number | null;
-  releasedAt?: number;
-  releaseRelayMs?: number | null;
-  audioMs?: number;
-  speechMs?: number | null;
-  asrMs?: number;
-  cleanupMs?: number;
-  cleanupQueueMs?: number;
-  cleanupGenerateMs?: number;
-  insertStartedAt?: number;
-  insertRoute?: InsertRoute | null;
+  startMs?: number | undefined;
+  pressRelayMs?: number | undefined;
+  releasedAt?: number | undefined;
+  releaseRelayMs?: number | undefined;
+  audioMs?: number | undefined;
+  speechMs?: number | undefined;
+  asrMs?: number | undefined;
+  cleanupMs?: number | undefined;
+  cleanupQueueMs?: number | undefined;
+  cleanupGenerateMs?: number | undefined;
+  insertStartedAt?: number | undefined;
+  insertRoute?: InsertRoute | undefined;
+  clipboardSaveMs?: number | undefined;
 };
 
 // pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
@@ -105,6 +107,7 @@ export type SessionTimings = {
   cleanupQueueMs?: number | undefined;
   cleanupGenerateMs?: number | undefined;
   insertMs?: number | undefined;
+  clipboardSaveMs?: number | undefined;
   releaseToInsertMs?: number | undefined;
 };
 
@@ -138,14 +141,15 @@ const outputVolumeScale = (settings: Settings) =>
 function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
   return {
     startMs: s.startMs,
-    pressRelayMs: s.pressRelayMs ?? undefined,
+    pressRelayMs: s.pressRelayMs,
     audioMs: s.audioMs,
-    releaseRelayMs: s.releaseRelayMs ?? undefined,
+    releaseRelayMs: s.releaseRelayMs,
     asrMs: s.asrMs,
     cleanupMs: s.cleanupMs,
     cleanupQueueMs: s.cleanupQueueMs,
     cleanupGenerateMs: s.cleanupGenerateMs,
     insertMs: s.insertStartedAt === undefined ? undefined : finishedAt - s.insertStartedAt,
+    clipboardSaveMs: s.clipboardSaveMs,
     releaseToInsertMs:
       s.releasedAt === undefined || outcome !== "inserted" ? undefined : finishedAt - s.releasedAt,
   };
@@ -398,7 +402,7 @@ export function createDictation(options: DictationOptions): Dictation {
       language: s.language,
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
-      insertRoute: s.insertRoute ?? undefined,
+      insertRoute: s.insertRoute,
     };
     log(
       timingLine("session", id, outcome.kind, {
@@ -443,7 +447,7 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "capture.started":
-        track(event.id, { startMs: event.startMs, pressRelayMs: event.relayMs });
+        track(event.id, { startMs: event.startMs, pressRelayMs: event.relayMs ?? undefined });
         dispatch({ type: "captureStarted", id: event.id });
         return;
       case "capture.level":
@@ -465,9 +469,9 @@ export function createDictation(options: DictationOptions): Dictation {
       case "transcript": {
         track(event.id, {
           audioMs: event.audioMs,
-          speechMs: event.speechMs,
+          speechMs: event.speechMs ?? undefined,
           asrMs: event.asrMs,
-          releaseRelayMs: event.relayMs,
+          releaseRelayMs: event.relayMs ?? undefined,
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);
@@ -493,12 +497,24 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "transcriptFailed", id: event.id, message: event.message });
         return;
       case "insert.result":
-        track(event.id, { insertRoute: event.route });
+        switch (event.method) {
+          case "accessibility":
+            track(event.id, { insertRoute: event.route ?? undefined });
+            break;
+          case "paste":
+            track(event.id, {
+              insertRoute: event.route ?? undefined,
+              clipboardSaveMs: event.clipboardSaveMs ?? undefined,
+            });
+            break;
+          case "none":
+            break;
+        }
         dispatch({
           type: "insertResult",
           id: event.id,
           method: event.method,
-          reason: event.reason,
+          reason: event.method === "none" ? event.reason : null,
         });
         return;
       case "microphones.changed":

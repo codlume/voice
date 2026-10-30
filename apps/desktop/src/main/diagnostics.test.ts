@@ -239,8 +239,8 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
       route: "html",
+      clipboardSaveMs: 2,
     });
     expect(store.state.session.phase).toBe("done");
     dictation.dispatch({ type: "idleTimeout", id });
@@ -441,6 +441,7 @@ describe("startDiagnostics consent", () => {
                 cleanupQueueMs: { value: 3, type: "integer" },
                 cleanupGenerateMs: { value: 50, type: "integer" },
                 insertMs: { value: 30, type: "integer" },
+                clipboardSaveMs: { value: 2, type: "integer" },
                 releaseToInsertMs: { value: 30, type: "integer" },
                 "sentry.release": { value: "voice@0.0.1", type: "string" },
                 "sentry.environment": { value: "test", type: "string" },

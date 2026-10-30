@@ -951,8 +951,7 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": "focusChanged",
-        "route": null
+        "reason": "focusChanged"
       },
       "required": ["type", "id", "method"]
     },
@@ -968,8 +967,7 @@
         "type": "insert.result",
         "id": "r1",
         "method": "none",
-        "reason": "selectionChanged",
-        "route": null
+        "reason": "selectionChanged"
       },
       "required": ["type", "id", "method"]
     },
@@ -979,14 +977,15 @@
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "route": "unchanged"
+        "route": "unchanged",
+        "clipboardSaveMs": 1.5
       },
       "parsed": {
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "reason": null,
-        "route": "unchanged"
+        "route": "unchanged",
+        "clipboardSaveMs": 1.5
       },
       "required": ["type", "id", "method"]
     },
@@ -1002,7 +1001,6 @@
         "type": "insert.result",
         "id": "s1",
         "method": "accessibility",
-        "reason": null,
         "route": "direct"
       },
       "required": ["type", "id", "method"]
@@ -1207,8 +1205,7 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null,
-        "route": null
+        "reason": null
       }
     },
     {
@@ -1223,8 +1220,7 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null,
-        "route": null
+        "reason": null
       }
     },
     {
@@ -1239,8 +1235,7 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null,
-        "route": null
+        "reason": null
       }
     },
     {
@@ -1254,8 +1249,8 @@
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "reason": null,
-        "route": null
+        "route": null,
+        "clipboardSaveMs": null
       }
     },
     {
@@ -1270,8 +1265,8 @@
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "reason": null,
-        "route": null
+        "route": null,
+        "clipboardSaveMs": null
       }
     },
     {
@@ -1286,8 +1281,25 @@
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "reason": null,
-        "route": null
+        "route": null,
+        "clipboardSaveMs": null
+      }
+    },
+    {
+      "name": "insert.clipboardSave.wrongType",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "route": "html",
+        "clipboardSaveMs": "2"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "route": "html",
+        "clipboardSaveMs": null
       }
     },
     {

@@ -9,12 +9,13 @@ public enum PermissionState: String, Codable, Sendable { case granted, denied, n
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
-public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
-/// Which branch of the insertion ran. `direct` and `late` end in an accessibility write, the
-/// latter one whose effect showed only on the re-read. The rest end in a paste:
-/// formatted text, an app this launch already saw swallow a write, a write the re-read still
-/// did not show, no focused element to write to, a refused write, or test mode forcing it.
-public enum InsertRoute: String, Codable, Sendable { case direct, late, html, pasteOnlyApp, unchanged, noElement, writeFailed, forced }
+/// Which accessibility branch inserted: a write seen at once, or one whose effect showed only
+/// on the re-read.
+public enum AccessibilityRoute: String, Codable, Sendable { case direct, late }
+/// Why the insertion pasted: formatted text, an app this launch already saw swallow a write, a
+/// write the re-read still did not show, no focused element to write to, a refused write, or
+/// test mode forcing it.
+public enum PasteRoute: String, Codable, Sendable { case html, pasteOnlyApp, unchanged, noElement, writeFailed, forced }
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
 public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
@@ -61,6 +62,36 @@ public struct TransformShortcut: Equatable, Sendable {
 public enum SelectionResult: Equatable, Sendable {
     case selected(text: String, via: SelectionVia)
     case failed(SelectionFailure)
+}
+
+/// On the wire the branch is `method` (`accessibility`, `paste`, `none`) and the rest its fields.
+public enum InsertOutcome: Equatable, Sendable {
+    case accessibility(AccessibilityRoute)
+    /// `clipboardSaveMs` is how long saving the user's clipboard took before Cmd+V.
+    case paste(PasteRoute, clipboardSaveMs: Double)
+    case refused(InsertFailure)
+}
+
+/// `relayMs` is the release's hop through main: hotkey event out, `capture.stop` back. Nil when
+/// the helper ended the capture itself or no hotkey released it.
+public struct Transcript: Equatable, Sendable {
+    public let id: String
+    public let text: String
+    public let audioMs: Double
+    public let asrMs: Double
+    public let speechMs: Double?
+    public let relayMs: Double?
+    public let target: TranscriptTarget?
+
+    public init(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, relayMs: Double?, target: TranscriptTarget?) {
+        self.id = id
+        self.text = text
+        self.audioMs = audioMs
+        self.asrMs = asrMs
+        self.speechMs = speechMs
+        self.relayMs = relayMs
+        self.target = target
+    }
 }
 
 public enum HelperCommand: Equatable, Sendable {
@@ -129,12 +160,9 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
     case microphoneTestFailed(id: String, message: String)
-    /// `relayMs` is the release's hop through main: hotkey event out, `capture.stop` back. Nil
-    /// when the helper ended the capture itself or no hotkey released it.
-    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, relayMs: Double?, target: TranscriptTarget?)
+    case transcript(Transcript)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
-    /// `reason` goes out with `.none`, `route` with the other two methods.
-    case insertResult(id: String, method: InsertMethod, reason: InsertFailure?, route: InsertRoute?)
+    case insertResult(id: String, outcome: InsertOutcome)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
@@ -152,7 +180,7 @@ private enum Key: String, CodingKey {
     case version, startMs, relayMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
-    case transforms, transformId, keycode, modifiers, outcome, via, route
+    case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs
 }
 
@@ -302,28 +330,34 @@ extension HelperEvent: Encodable {
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
-        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs, let relayMs, let target):
+        case .transcript(let transcript):
             try c.encode("transcript", forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(text, forKey: .text)
-            try c.encode(finite(audioMs), forKey: .audioMs)
-            try c.encode(finite(asrMs), forKey: .asrMs)
-            try c.encode(speechMs.map(finite), forKey: .speechMs)
-            try c.encode(relayMs.map(finite), forKey: .relayMs)
-            try c.encode(target, forKey: .target)
+            try c.encode(transcript.id, forKey: .id)
+            try c.encode(transcript.text, forKey: .text)
+            try c.encode(finite(transcript.audioMs), forKey: .audioMs)
+            try c.encode(finite(transcript.asrMs), forKey: .asrMs)
+            try c.encode(transcript.speechMs.map(finite), forKey: .speechMs)
+            try c.encode(transcript.relayMs.map(finite), forKey: .relayMs)
+            try c.encode(transcript.target, forKey: .target)
         case .transcriptFailed(let id, let reason, let message):
             try c.encode("transcript.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(reason, forKey: .reason)
             try c.encode(message, forKey: .message)
-        case .insertResult(let id, let method, let reason, let route):
+        case .insertResult(let id, let outcome):
             try c.encode("insert.result", forKey: .type)
             try c.encode(id, forKey: .id)
-            try c.encode(method, forKey: .method)
-            if method == .none {
-                try c.encodeIfPresent(reason, forKey: .reason)
-            } else {
-                try c.encodeIfPresent(route, forKey: .route)
+            switch outcome {
+            case .accessibility(let route):
+                try c.encode("accessibility", forKey: .method)
+                try c.encode(route, forKey: .route)
+            case .paste(let route, let clipboardSaveMs):
+                try c.encode("paste", forKey: .method)
+                try c.encode(route, forKey: .route)
+                try c.encode(finite(clipboardSaveMs), forKey: .clipboardSaveMs)
+            case .refused(let reason):
+                try c.encode("none", forKey: .method)
+                try c.encode(reason, forKey: .reason)
             }
         case .permissions(let microphone, let accessibility):
             try c.encode("permissions", forKey: .type)

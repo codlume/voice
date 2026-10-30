@@ -199,16 +199,16 @@ final class Capture {
         let speechMs = recording.speech.milliseconds(sampleRate: asrSampleRate)
         if samples.count < chunkFrames || rms(samples) < silenceFloor {
             recording.stream?.cancel()
-            finish(session, with: .transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
-                                              relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget()))
+            finish(session, with: .transcript(Transcript(id: session.id, text: "", audioMs: audioMs, asrMs: 0, speechMs: speechMs,
+                                                         relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
             return
         }
         recording.transcription = Task { @MainActor in
             do {
                 let result = try await transcriber.transcribe(samples, language: session.language, stream: recording.stream)
                 let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                finish(session, with: .transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
-                                                  relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget()))
+                finish(session, with: .transcript(Transcript(id: session.id, text: text, audioMs: audioMs, asrMs: result.asrMs, speechMs: speechMs,
+                                                             relayMs: recording.releaseRelayMs, target: session.target.takeTranscriptTarget())))
             } catch let error as TranscribeError {
                 finish(session, with: .transcriptFailed(id: session.id, reason: error.reason, message: error.message))
             } catch {
@@ -478,7 +478,7 @@ final class Capture {
 
     private func finish(_ session: CaptureSession, with event: HelperEvent) {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
-        if case .transcript(_, let text, _, _, _, _, _) = event, !text.isEmpty {
+        if case .transcript(let transcript) = event, !transcript.text.isEmpty {
             lastTarget.put(id: session.id, session.target)
         }
         output.emit(event)

@@ -119,7 +119,10 @@ function handle(command: Record<string, unknown>) {
       target = command.target;
       return;
     case "insert":
-      setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);
+      setTimeout(
+        () => emit({ type: "insert.result", id, method: "accessibility", route: "direct" }),
+        10,
+      );
       return;
     case "selection.read": {
       const selection = config.selection ?? { outcome: "failed", reason: "failed" };

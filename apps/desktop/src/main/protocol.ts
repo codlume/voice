@@ -63,19 +63,16 @@ const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
 const insertFailure = nullOnInvalid(
   Schema.Literals(["focusChanged", "noFocusedField", "secureInput", "selectionChanged", "failed"]),
 );
-const insertRoute = nullOnInvalid(
-  Schema.Literals([
-    "direct",
-    "late",
-    "html",
-    "pasteOnlyApp",
-    "unchanged",
-    "noElement",
-    "writeFailed",
-    "forced",
-  ]),
-);
-export type InsertRoute = NonNullable<typeof insertRoute.Type>;
+const accessibilityRoute = Schema.Literals(["direct", "late"]);
+const pasteRoute = Schema.Literals([
+  "html",
+  "pasteOnlyApp",
+  "unchanged",
+  "noElement",
+  "writeFailed",
+  "forced",
+]);
+export type InsertRoute = typeof accessibilityRoute.Type | typeof pasteRoute.Type;
 const statusMessage = nullOnInvalid(Schema.String);
 const parsedBy = <T extends string>(parse: (input: string) => T | null) =>
   Schema.String.pipe(
@@ -199,9 +196,21 @@ const HelperEventSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("insert.result"),
     id: Schema.String,
-    method: Schema.Literals(["accessibility", "paste", "none"]),
+    method: Schema.Literal("accessibility"),
+    route: nullOnInvalid(accessibilityRoute),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("insert.result"),
+    id: Schema.String,
+    method: Schema.Literal("paste"),
+    route: nullOnInvalid(pasteRoute),
+    clipboardSaveMs: nullOnInvalid(Schema.Finite),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("insert.result"),
+    id: Schema.String,
+    method: Schema.Literal("none"),
     reason: insertFailure,
-    route: insertRoute,
   }),
   Schema.Struct({
     type: Schema.Literal("permissions"),

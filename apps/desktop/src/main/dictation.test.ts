@@ -518,7 +518,6 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "accessibility",
-      reason: null,
       route: "direct",
     });
     expect(h.latest()).toMatchObject({ id, status: "inserted" });
@@ -597,8 +596,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
       route: "unchanged",
+      clipboardSaveMs: 3,
     });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
     expect(h.reports).toEqual([
@@ -619,13 +618,14 @@ describe("createDictation", () => {
             cleanupQueueMs: 2,
             cleanupGenerateMs: 5,
             insertMs: 30,
+            clipboardSaveMs: 3,
             releaseToInsertMs: 30,
           },
         },
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 releaseToInsertMs=30 insertRoute=unchanged`,
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged`,
     );
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
@@ -641,7 +641,6 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "accessibility",
-        reason: null,
         route: "direct",
       });
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
@@ -670,8 +669,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.styles).toEqual([]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
@@ -688,8 +687,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
       { bundleId: "com.apple.mail", category: "email" },
@@ -710,8 +709,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.styles).toEqual([{ style: "formal", layout: "general" }]);
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
@@ -740,8 +739,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
@@ -771,8 +770,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
   });
@@ -798,8 +797,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: first,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     const firstAt = Date.now();
     const second = await dictate(h, "hello there", mailApp);
@@ -808,7 +807,6 @@ describe("createDictation", () => {
       id: second,
       method: "none",
       reason: "secureInput",
-      route: null,
     });
     expect(h.dictated).toEqual([
       {
@@ -877,8 +875,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     const off = harness({ cleanupEnabled: false });
     const offId = await dictate(off, "um hello");
@@ -886,8 +884,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: offId,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     const failing = harness({ cleanFails: "rejects" });
     const failingId = await dictate(failing, "um hello");
@@ -895,8 +893,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: failingId,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     for (const h of [lost, off, failing]) {
       expect(h.dictated).toHaveLength(1);
@@ -927,8 +925,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.dictated[0]?.paceMs).toBe(900);
   });
@@ -1203,7 +1201,6 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "accessibility",
-        reason: null,
         route: "direct",
       });
       expect(toSnapshot(h.store.state).session).toEqual({
@@ -1254,8 +1251,8 @@ describe("createDictation", () => {
         type: "insert.result",
         id: first,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const second = h.id();
@@ -1446,8 +1443,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: first,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
 
@@ -1489,8 +1486,8 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
@@ -1514,8 +1511,8 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       expect(h.copies).toEqual([{ text: "send it to name@example.com.", html: null }]);
     });
@@ -1527,8 +1524,8 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       expect(h.copies).toEqual([{ text: "sign it Ana.", html: "sign it <em>Ana</em>." }]);
     });
@@ -1541,7 +1538,6 @@ describe("createDictation", () => {
         id,
         method: "none",
         reason: "noFocusedField",
-        route: null,
       });
       expect(h.store.state.session).toMatchObject({
         phase: "done",
@@ -1597,8 +1593,8 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "inserted" } });
       expect(h.copies).toEqual([]);
@@ -1759,8 +1755,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.store.state.session).toMatchObject({
       phase: "done",
@@ -1865,8 +1861,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: first,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS - 100);
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
@@ -1930,8 +1926,8 @@ describe("auto-apply after dictation", () => {
       type: "insert.result",
       id,
       method: "paste",
-      reason: null,
-      route: "direct",
+      route: "forced",
+      clipboardSaveMs: null,
     });
     expect(h.dictated).toMatchObject([{ raw, insertedCleanup: null }]);
     expect(h.logs.at(-1)).toMatch(/^session \S+ outcome=inserted .*cleanupMs=\d+/);

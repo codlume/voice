@@ -234,7 +234,7 @@ export function createTransforms(options: TransformsOptions): Transforms {
           type: "insertResult",
           id: event.id,
           method: event.method,
-          reason: event.reason,
+          reason: event.method === "none" ? event.reason : null,
         });
         return;
       case "hotkey":

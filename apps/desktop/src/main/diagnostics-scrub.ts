@@ -28,6 +28,7 @@ export const SESSION_MEASUREMENTS = [
   "cleanupQueueMs",
   "cleanupGenerateMs",
   "insertMs",
+  "clipboardSaveMs",
   "releaseToInsertMs",
 ] as const satisfies readonly (keyof SessionTimings)[];
 

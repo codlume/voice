@@ -686,8 +686,8 @@ describe("followSettings", () => {
         type: "insert.result",
         id,
         method: "paste",
-        reason: null,
-        route: "direct",
+        route: "forced",
+        clipboardSaveMs: null,
       });
       await expect.poll(() => a.store.state.models.cleanup.state).toBe("installed");
       expect(a.cleanup.loaded()).toBe(false);

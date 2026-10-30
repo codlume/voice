@@ -81,11 +81,37 @@ describe("parseHelperEvent", () => {
         target: null,
       },
       { type: "transcript.failed", id: "a", message: "no model" },
-      { type: "insert.result", id: "a", method: "accessibility", reason: null, route: "direct" },
-      { type: "insert.result", id: "a", method: "accessibility", reason: null, route: "late" },
-      { type: "insert.result", id: "a", method: "paste", reason: null, route: "pasteOnlyApp" },
-      { type: "insert.result", id: "a", method: "none", reason: "focusChanged", route: null },
-      { type: "insert.result", id: "a", method: "none", reason: "selectionChanged", route: null },
+      {
+        type: "insert.result",
+        id: "a",
+        method: "accessibility",
+        route: "direct",
+      },
+      {
+        type: "insert.result",
+        id: "a",
+        method: "accessibility",
+        route: "late",
+      },
+      {
+        type: "insert.result",
+        id: "a",
+        method: "paste",
+        route: "pasteOnlyApp",
+        clipboardSaveMs: 1.5,
+      },
+      {
+        type: "insert.result",
+        id: "a",
+        method: "none",
+        reason: "focusChanged",
+      },
+      {
+        type: "insert.result",
+        id: "a",
+        method: "none",
+        reason: "selectionChanged",
+      },
       { type: "permissions", microphone: "granted", accessibility: "denied" },
       { type: "asr.status", state: "ready", message: null },
       { type: "log", level: "info", message: "hello" },
@@ -124,8 +150,8 @@ describe("parseHelperEvent", () => {
       type: "insert.result",
       id: "a",
       method: "paste",
-      reason: null,
       route: null,
+      clipboardSaveMs: null,
     });
     expect(
       parseHelperEvent(line({ type: "asr.status", state: "failed", message: "boom" })),
@@ -142,7 +168,6 @@ describe("parseHelperEvent", () => {
       id: "a",
       method: "none",
       reason: null,
-      route: null,
     });
     expect(
       parseHelperEvent(line({ type: "capture.failed", id: "a", reason: "novel", message: "m" })),
@@ -180,7 +205,12 @@ describe("parseHelperEvent", () => {
     (reason) => {
       expect(
         parseHelperEvent(line({ type: "insert.result", id: "a", method: "none", reason })),
-      ).toEqual({ type: "insert.result", id: "a", method: "none", reason: null, route: null });
+      ).toEqual({
+        type: "insert.result",
+        id: "a",
+        method: "none",
+        reason: null,
+      });
     },
   );
 

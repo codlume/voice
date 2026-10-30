@@ -144,7 +144,6 @@ describe("startHelper", () => {
       type: "insert.result",
       id: "s1",
       method: "accessibility",
-      reason: null,
       route: "direct",
     });
     expect(h.exits).toEqual([]);

@@ -109,13 +109,11 @@ function harness(opts: Options = {}) {
       if (command.type === "insert" && !opts.insertNeverAnswers) {
         const reason = opts.insertReason ?? null;
         setTimeout(() => {
-          transforms.onHelperEvent({
-            type: "insert.result",
-            id: command.id,
-            method: reason === null ? "accessibility" : "none",
-            reason,
-            route: reason === null ? "direct" : null,
-          });
+          transforms.onHelperEvent(
+            reason === null
+              ? { type: "insert.result", id: command.id, method: "accessibility", route: "direct" }
+              : { type: "insert.result", id: command.id, method: "none", reason },
+          );
         }, 10);
       }
     },

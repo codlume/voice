@@ -145,26 +145,28 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.microphoneTestEnded(id: "t"), ["type": "microphone.test.ended", "id": "t"]),
         (.microphoneTestFailed(id: "t", message: "Finish dictating, then test again."),
          ["type": "microphone.test.failed", "id": "t", "message": "Finish dictating, then test again."]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: 4.5,
-                     target: TranscriptTarget(bundleId: "com.apple.Safari", host: "mail.google.com")),
+        (.transcript(Transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: 4.5,
+                                target: TranscriptTarget(bundleId: "com.apple.Safari", host: "mail.google.com"))),
          ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640, "relayMs": 4.5,
           "target": ["bundleId": "com.apple.Safari", "host": "mail.google.com"]]),
-        (.transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: nil,
-                     target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil)),
+        (.transcript(Transcript(id: "s", text: "hello", audioMs: 1000, asrMs: 80, speechMs: 640, relayMs: nil,
+                                target: TranscriptTarget(bundleId: "com.apple.TextEdit", host: nil))),
          ["type": "transcript", "id": "s", "text": "hello", "audioMs": 1000, "asrMs": 80, "speechMs": 640, "relayMs": NSNull(),
           "target": ["bundleId": "com.apple.TextEdit", "host": NSNull()]]),
-        (.transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil, relayMs: nil, target: nil),
+        (.transcript(Transcript(id: "s", text: "", audioMs: 50, asrMs: 0, speechMs: nil, relayMs: nil, target: nil)),
          ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull(), "relayMs": NSNull(), "target": NSNull()]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
-        (.insertResult(id: "s", method: .none, reason: .focusChanged, route: nil),
+        (.insertResult(id: "s", outcome: .refused(.focusChanged)),
          ["type": "insert.result", "id": "s", "method": "none", "reason": "focusChanged"]),
-        (.insertResult(id: "r", method: .none, reason: .selectionChanged, route: nil),
+        (.insertResult(id: "r", outcome: .refused(.selectionChanged)),
          ["type": "insert.result", "id": "r", "method": "none", "reason": "selectionChanged"]),
-        (.insertResult(id: "s", method: .accessibility, reason: nil, route: .late),
+        (.insertResult(id: "s", outcome: .accessibility(.late)),
          ["type": "insert.result", "id": "s", "method": "accessibility", "route": "late"]),
-        (.insertResult(id: "s", method: .paste, reason: nil, route: .pasteOnlyApp),
-         ["type": "insert.result", "id": "s", "method": "paste", "route": "pasteOnlyApp"]),
+        (.insertResult(id: "s", outcome: .paste(.pasteOnlyApp, clipboardSaveMs: 1.5)),
+         ["type": "insert.result", "id": "s", "method": "paste", "route": "pasteOnlyApp", "clipboardSaveMs": 1.5]),
+        (.insertResult(id: "s", outcome: .paste(.html, clipboardSaveMs: .nan)),
+         ["type": "insert.result", "id": "s", "method": "paste", "route": "html", "clipboardSaveMs": 0]),
         (.permissions(microphone: .granted, accessibility: .notDetermined),
          ["type": "permissions", "microphone": "granted", "accessibility": "notDetermined"]),
         (.asrStatus(state: .failed, message: "boom"), ["type": "asr.status", "state": "failed", "message": "boom"]),
@@ -188,13 +190,19 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func omitsOptionalFieldsWhenAbsent() throws {
     #expect(try json(HelperEvent.asrStatus(state: .ready, message: nil).encodeLine())["message"] == nil)
-    #expect(try json(HelperEvent.insertResult(id: "s", method: .paste, reason: nil, route: .html).encodeLine())["reason"] == nil)
-    #expect(try json(HelperEvent.insertResult(id: "s", method: .accessibility, reason: .failed, route: .direct).encodeLine())["reason"] == nil)
-    #expect(try json(HelperEvent.insertResult(id: "s", method: .none, reason: .failed, route: .direct).encodeLine())["route"] == nil)
+}
+
+@Test func insertResultCarriesOnlyItsMethodsFields() throws {
+    let paste = try json(HelperEvent.insertResult(id: "s", outcome: .paste(.html, clipboardSaveMs: 1)).encodeLine())
+    #expect(Set(paste.keys) == ["type", "id", "method", "route", "clipboardSaveMs"])
+    let accessibility = try json(HelperEvent.insertResult(id: "s", outcome: .accessibility(.direct)).encodeLine())
+    #expect(Set(accessibility.keys) == ["type", "id", "method", "route"])
+    let refused = try json(HelperEvent.insertResult(id: "s", outcome: .refused(.failed)).encodeLine())
+    #expect(Set(refused.keys) == ["type", "id", "method", "reason"])
 }
 
 @Test func keepsFilePathsAndUnicodeReadable() throws {
-    let line = HelperEvent.transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil, relayMs: nil, target: nil).encodeLine()
+    let line = HelperEvent.transcript(Transcript(id: "s", text: "zażółć /tmp/x", audioMs: 0, asrMs: 0, speechMs: nil, relayMs: nil, target: nil)).encodeLine()
     #expect(line.contains("/tmp/x"))
     #expect(try json(line)["text"] as? String == "zażółć /tmp/x")
 }

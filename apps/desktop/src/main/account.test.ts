@@ -649,7 +649,6 @@ describe("createAccount", () => {
       type: "insert.result",
       id,
       method: "accessibility",
-      reason: null,
       route: "direct",
     });
     expect(h.store.state.session).toEqual({
