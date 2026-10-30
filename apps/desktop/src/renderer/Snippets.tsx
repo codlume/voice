@@ -1,6 +1,6 @@
 import { Field } from "@base-ui/react/field";
 import * as stylex from "@stylexjs/stylex";
-import { useId } from "react";
+import { lazy, Suspense, useEffect, useId } from "react";
 
 import type { DictionaryEntry } from "../shared/dictionary.ts";
 import {
@@ -10,14 +10,27 @@ import {
   type Snippet,
 } from "../shared/snippets.ts";
 import { CountedField, RecordList, styles, type Copy } from "./RecordList.tsx";
-import { SnippetEditor } from "./SnippetEditor.tsx";
 import { Switch } from "./Switch.tsx";
-import { space } from "./tokens.stylex.ts";
+import { color, radius, snippetEditor, space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
+
+// The editor is the hub's only Lexical user, so it loads with the Snippets page, not the hub.
+const loadSnippetEditor = () => import("./SnippetEditor.tsx");
+const SnippetEditor = lazy(() =>
+  loadSnippetEditor().then((module) => ({ default: module.SnippetEditor })),
+);
 
 const local = stylex.create({
   footerSwitch: { display: "flex", alignItems: "center", gap: space.sm },
   footerSwitchLabel: { fontSize: 13 },
+  editorLoading: {
+    minHeight: snippetEditor.minHeight,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: color.border,
+    borderRadius: radius.medium,
+    backgroundColor: color.card,
+  },
 });
 
 const copy: Copy = {
@@ -40,6 +53,9 @@ export function Snippets({
   snippets: readonly Snippet[];
   dictionary: readonly DictionaryEntry[];
 }) {
+  useEffect(() => {
+    void loadSnippetEditor();
+  }, []);
   return (
     <RecordList
       copy={copy}
@@ -87,12 +103,14 @@ export function Snippets({
             max={EXPANSION_MAX_LENGTH}
             problem={message("expansion")}
           >
-            <SnippetEditor
-              defaultValue={draft}
-              invalid={shown?.field === "expansion"}
-              onChange={edit}
-              onSave={submit}
-            />
+            <Suspense fallback={<div aria-busy {...stylex.props(local.editorLoading)} />}>
+              <SnippetEditor
+                defaultValue={draft}
+                invalid={shown?.field === "expansion"}
+                onChange={edit}
+                onSave={submit}
+              />
+            </Suspense>
           </CountedField>
         </>
       )}

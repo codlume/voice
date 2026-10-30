@@ -63,12 +63,13 @@ import {
   snippetNodes,
   type SnippetText,
 } from "./snippetText.ts";
-import { color, radius } from "./tokens.stylex.ts";
+import { color, radius, snippetEditor } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
   box: {
     display: "flex",
     flexDirection: "column",
+    minHeight: snippetEditor.minHeight,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: { default: color.border, ":focus-within": color.input },
