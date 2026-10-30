@@ -102,9 +102,15 @@ describe("cleanup engine process", () => {
     await proxy.load();
     const cleaning = proxy.clean("um hello there", style, { budgetMs: 4200 });
     const clean = await engine.cleanStarted;
-    clean.finish({ text: "Hello there.", chunks: 2, cleaned: 1 });
+    clean.finish({ text: "Hello there.", chunks: 2, cleaned: 1, queueMs: 0, generateMs: 0 });
 
-    await expect(cleaning).resolves.toEqual({ text: "Hello there.", chunks: 2, cleaned: 1 });
+    await expect(cleaning).resolves.toEqual({
+      text: "Hello there.",
+      chunks: 2,
+      cleaned: 1,
+      queueMs: 0,
+      generateMs: 0,
+    });
     expect(engine.calls.modelPaths).toEqual([modelPath]);
     expect(engine.calls.loads).toBe(1);
     expect(clean.raw).toBe("um hello there");
@@ -118,9 +124,15 @@ describe("cleanup engine process", () => {
 
     const cleaning = proxy.clean("warm up", style);
     const clean = await engine.cleanStarted;
-    clean.finish({ text: "Warm up.", chunks: 1, cleaned: 1 });
+    clean.finish({ text: "Warm up.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
 
-    await expect(cleaning).resolves.toEqual({ text: "Warm up.", chunks: 1, cleaned: 1 });
+    await expect(cleaning).resolves.toEqual({
+      text: "Warm up.",
+      chunks: 1,
+      cleaned: 1,
+      queueMs: 0,
+      generateMs: 0,
+    });
     expect(clean.request).not.toHaveProperty("budgetMs");
   });
 
@@ -155,9 +167,15 @@ describe("cleanup engine process", () => {
     received.length = 0;
     port1?.postMessage({ type: "clean", id: "x", raw: "boom", style });
     port1?.postMessage({ type: "load", id: 99 });
-    clean.finish({ text: "Hello.", chunks: 1, cleaned: 1 });
+    clean.finish({ text: "Hello.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
 
-    await expect(cleaning).resolves.toEqual({ text: "Hello.", chunks: 1, cleaned: 1 });
+    await expect(cleaning).resolves.toEqual({
+      text: "Hello.",
+      chunks: 1,
+      cleaned: 1,
+      queueMs: 0,
+      generateMs: 0,
+    });
     await vi.waitFor(() => expect(received).toHaveLength(2));
     expect(engine.calls.cleans).toHaveLength(1);
     expect(engine.calls.loads).toBe(1);

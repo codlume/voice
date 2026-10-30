@@ -24,6 +24,8 @@ export const SESSION_MEASUREMENTS = [
   "releaseRelayMs",
   "asrMs",
   "cleanupMs",
+  "cleanupQueueMs",
+  "cleanupGenerateMs",
   "insertMs",
   "releaseToInsertMs",
 ] as const satisfies readonly (keyof SessionTimings)[];

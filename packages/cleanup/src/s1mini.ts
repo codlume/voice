@@ -16,7 +16,15 @@ export type Generation = { chunk: string; output: string; truncated: boolean };
 type Output = Omit<Generation, "chunk">;
 
 export type CleanRequest = { budgetMs?: number; signal?: AbortSignal };
-export type CleanResult = { text: string; chunks: number; cleaned: number };
+export type CleanResult = {
+  text: string;
+  chunks: number;
+  cleaned: number;
+  // Waiting for the model, behind an earlier clean or the busy loop's generation in flight.
+  queueMs: number;
+  // Running once the model was ours: tokenizing, chunking, and the generations.
+  generateMs: number;
+};
 
 export type S1Mini = {
   load(): Promise<void>;
@@ -112,10 +120,12 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     },
     clean: (raw, style, { budgetMs, signal } = {}) => {
       const deadline = new AbortController();
-      const deadlineAt = budgetMs === undefined ? Infinity : Date.now() + budgetMs;
+      const calledAt = Date.now();
+      const deadlineAt = budgetMs === undefined ? Infinity : calledAt + budgetMs;
       const timer =
         budgetMs === undefined ? undefined : setTimeout(() => deadline.abort(), budgetMs);
       return work(async () => {
+        const workStartedAt = Date.now();
         const withdraw = withdrawal(signal);
         const { chunks, countTokens, run } = await prepare(raw, withdraw);
         const control = s1Control(style, raw, chunks.length);
@@ -143,6 +153,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           text: stitch(raw, chunks, finishOutputs(style.style, outputs)),
           chunks: chunks.length,
           cleaned: outputs.filter((output) => output !== undefined).length,
+          queueMs: workStartedAt - calledAt,
+          generateMs: Date.now() - workStartedAt,
         };
       }).finally(() => clearTimeout(timer));
     },

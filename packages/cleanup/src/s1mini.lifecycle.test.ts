@@ -73,7 +73,8 @@ vi.mock("node-llama-cpp", () => {
 
 const style: CleanupStyle = { style: "formal", layout: "general" };
 const control: S1Control = { styling: "semi-formal", context: "general" };
-const whole = (text: string): CleanResult => ({ text, chunks: 1, cleaned: 1 });
+const timed = { queueMs: expect.any(Number), generateMs: expect.any(Number) };
+const whole = (text: string): CleanResult => ({ text, chunks: 1, cleaned: 1, ...timed });
 const generations = () => native.events.filter((e) => e.startsWith("generate"));
 
 const line = (i: number) =>
@@ -143,6 +144,7 @@ test("a chat reply fails the guard and the user's words come back verbatim", asy
     text: "what time is it",
     chunks: 1,
     cleaned: 0,
+    ...timed,
   });
   await expect(s1.clean("call ada", style)).resolves.toEqual(whole("call ada"));
 });
@@ -155,6 +157,7 @@ test("output cut off at the token limit stays verbatim", async () => {
     text: "call ada",
     chunks: 1,
     cleaned: 0,
+    ...timed,
   });
 });
 
@@ -170,6 +173,7 @@ test("long input is cleaned in sentence chunks and rejoined", async () => {
     text: raw.toUpperCase(),
     chunks: generations().length,
     cleaned: generations().length,
+    ...timed,
   });
 });
 
@@ -205,6 +209,7 @@ test("generate returns what the model said even when the guard rejects it", asyn
     text: "test test",
     chunks: 1,
     cleaned: 0,
+    ...timed,
   });
   await expect(s1.generate("test test", control)).resolves.toEqual([
     { chunk: "test test", output: "", truncated: false },
@@ -219,6 +224,7 @@ test("a chunk that comes back empty stays verbatim while the others are cleaned"
     text: `${first.toUpperCase()} ${second} ${third.toUpperCase()}`,
     chunks: 3,
     cleaned: 2,
+    ...timed,
   });
   expect(generations()).toHaveLength(3);
 });
@@ -244,6 +250,7 @@ test("the budget ends the clean with the finished chunks cleaned and the rest ve
     text: `${first.toUpperCase()} ${second} ${third}`,
     chunks: 3,
     cleaned: 1,
+    ...timed,
   });
   expect(native.events.at(-1)).toBe("aborted");
   expect(generations()).toHaveLength(2);
@@ -275,8 +282,29 @@ test("the budget counts from the call, so a clean queued behind a long one gets 
   await vi.advanceTimersByTimeAsync(3000);
 
   await expect(slow).resolves.toEqual(whole("SLOW"));
-  await expect(queued).resolves.toEqual({ text: "call ada", chunks: 1, cleaned: 0 });
+  await expect(queued).resolves.toEqual({ text: "call ada", chunks: 1, cleaned: 0, ...timed });
   expect(generations()).toEqual(["generate slow"]);
+});
+
+test("a clean reports the wait behind the busy loop's generation apart from its own", async () => {
+  vi.useFakeTimers();
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  await s1.load();
+  native.delayMs = (raw) => (raw === "ok" ? 300 : 40);
+
+  s1.keepGpuBusy(1000);
+  await vi.advanceTimersByTimeAsync(10);
+  const clean = s1.clean("call ada", style);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  await expect(clean).resolves.toEqual({
+    text: "CALL ADA",
+    chunks: 1,
+    cleaned: 1,
+    queueMs: 290,
+    generateMs: 40,
+  });
+  expect(generations()).toEqual(["generate ok", "generate call ada"]);
 });
 
 test("a learned rate skips a chunk the budget cannot fit instead of starting it", async () => {
@@ -291,6 +319,7 @@ test("a learned rate skips a chunk the budget cannot fit instead of starting it"
     text: `${first.toUpperCase()} ${second} ${third}`,
     chunks: 3,
     cleaned: 1,
+    ...timed,
   });
   expect(native.events).toEqual([`generate ${first.slice(0, 12)}`, "done"]);
 });
@@ -308,6 +337,7 @@ test("a short slow first chunk teaches no rate, so the long chunks after it stil
     text: `${warmUp.toUpperCase()}\n${threeChunkRaw.toUpperCase()}`,
     chunks: 4,
     cleaned: 4,
+    ...timed,
   });
 });
 
@@ -327,6 +357,7 @@ test("one slow clean does not keep a later clean from being attempted once the m
     text: threeChunkRaw.toUpperCase(),
     chunks: 3,
     cleaned: 3,
+    ...timed,
   });
 });
 
@@ -518,7 +549,7 @@ test("a last chunk of only fillers that cleans to nothing still lets Casual drop
 
   await expect(
     s1.clean("let's do that.\num uh", { style: "casual", layout: "general" }),
-  ).resolves.toEqual({ text: "Let's do that", chunks: 2, cleaned: 2 });
+  ).resolves.toEqual({ text: "Let's do that", chunks: 2, cleaned: 2, ...timed });
 });
 
 test("an email dictation that needs two chunks is cleaned in the general layout", async () => {

@@ -41,7 +41,13 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   });
 
   test("returns an empty string for filler-only speech", async () => {
-    expect(await timed("filler", "um uh", formal)).toEqual({ text: "", chunks: 1, cleaned: 1 });
+    expect(await timed("filler", "um uh", formal)).toEqual({
+      text: "",
+      chunks: 1,
+      cleaned: 1,
+      queueMs: expect.any(Number),
+      generateMs: expect.any(Number),
+    });
   });
 
   test("cleans a transcript long enough to chunk, keeps both ends and every rejected chunk verbatim", async () => {

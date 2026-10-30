@@ -27,6 +27,8 @@ const ResultSchema = Schema.Struct({
   text: Schema.String,
   chunks: Schema.Finite,
   cleaned: Schema.Finite,
+  queueMs: Schema.Finite,
+  generateMs: Schema.Finite,
 });
 
 const decodeClean = Schema.decodeUnknownOption(CleanSchema);

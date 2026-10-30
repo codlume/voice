@@ -184,7 +184,7 @@ function harness(opts: Options = {}) {
         if (opts.cleanFails === "rejects") return Promise.reject(new Error("model crashed"));
         if (opts.cleanHangs) return new Promise<CleanResult>((resolve) => hung.push(resolve));
         const chunks = opts.cleanPartial ? 3 : 1;
-        return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1 });
+        return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1, queueMs: 2, generateMs: 5 });
       },
     },
     transform: {
@@ -528,7 +528,7 @@ describe("createDictation", () => {
     expect(h.levels).toEqual([0.4]);
     const timing = h.logs.find((line) => line.startsWith("session "));
     expect(timing).toMatch(
-      /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ insertMs=\d+ releaseToInsertMs=\d+/,
+      /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=\d+ releaseToInsertMs=\d+/,
     );
     expect(timing).not.toContain("hello");
   });
@@ -603,6 +603,8 @@ describe("createDictation", () => {
             releaseRelayMs: 4,
             asrMs: 120,
             cleanupMs: 0,
+            cleanupQueueMs: 2,
+            cleanupGenerateMs: 5,
             insertMs: 30,
             releaseToInsertMs: 30,
           },
@@ -610,7 +612,7 @@ describe("createDictation", () => {
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 insertMs=30 releaseToInsertMs=30`,
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 releaseToInsertMs=30`,
     );
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
@@ -700,7 +702,7 @@ describe("createDictation", () => {
         },
       },
     }));
-    h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
@@ -818,7 +820,7 @@ describe("createDictation", () => {
     };
     const lost = harness({ cleanHangs: true, snippets: [email] });
     const id = await dictate(lost, "send it to my email");
-    lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1 });
+    lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     lost.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
     const off = harness({ cleanupEnabled: false });
@@ -1325,7 +1327,7 @@ describe("createDictation", () => {
         attributes: { "cleanup.budget_ms": budgetMs },
       },
     ]);
-    h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([
       { type: "insert", id, text: "one two three", html: null },
@@ -1395,8 +1397,8 @@ describe("createDictation", () => {
     expect(h.cleans).toEqual(["one", "two"]);
     expect(h.signals.map((s) => s.aborted)).toEqual([true, false]);
 
-    h.hung[0]!({ text: "ONE", chunks: 1, cleaned: 1 });
-    h.hung[1]!({ text: "Two.", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "ONE", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
+    h.hung[1]!({ text: "Two.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert").map((c) => c.text)).toEqual([
       "one",
@@ -1491,7 +1493,7 @@ describe("createDictation", () => {
       expect(h.signals[0]!.aborted).toBe(true);
       expect(h.latest()).toMatchObject({ raw: "x", text: "x", status: "notInserted" });
       expect(h.dictated).toMatchObject([{ raw: "x", insertedCleanup: null }]);
-      h.hung[0]!({ text: "x.", chunks: 1, cleaned: 1 });
+      h.hung[0]!({ text: "x.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
       await flush();
       expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
     });

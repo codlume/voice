@@ -87,6 +87,8 @@ type Started = {
   speechMs?: number | null;
   asrMs?: number;
   cleanupMs?: number;
+  cleanupQueueMs?: number;
+  cleanupGenerateMs?: number;
   insertStartedAt?: number;
 };
 
@@ -99,6 +101,8 @@ export type SessionTimings = {
   releaseRelayMs?: number | undefined;
   asrMs?: number | undefined;
   cleanupMs?: number | undefined;
+  cleanupQueueMs?: number | undefined;
+  cleanupGenerateMs?: number | undefined;
   insertMs?: number | undefined;
   releaseToInsertMs?: number | undefined;
 };
@@ -133,6 +137,8 @@ function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number
     releaseRelayMs: s.releaseRelayMs ?? undefined,
     asrMs: s.asrMs,
     cleanupMs: s.cleanupMs,
+    cleanupQueueMs: s.cleanupQueueMs,
+    cleanupGenerateMs: s.cleanupGenerateMs,
     insertMs: s.insertStartedAt === undefined ? undefined : finishedAt - s.insertStartedAt,
     releaseToInsertMs:
       s.releasedAt === undefined || outcome !== "inserted" ? undefined : finishedAt - s.releasedAt,
@@ -244,7 +250,7 @@ export function createDictation(options: DictationOptions): Dictation {
           Effect.tryPromise({
             try: (signal) =>
               work.kind === "style"
-                ? clean(raw, work.style, budgetMs, signal)
+                ? clean(id, raw, work.style, budgetMs, signal)
                 : applyTransform(raw, work.transformId, budgetMs, signal),
             catch: (error): CleanupFailure => ({
               message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -325,12 +331,17 @@ export function createDictation(options: DictationOptions): Dictation {
   }
 
   async function clean(
+    id: string,
     raw: string,
     style: CleanupStyle,
     budgetMs: number,
     signal: AbortSignal,
   ): Promise<string> {
-    const { text, chunks, cleaned } = await cleanup.clean(raw, style, { budgetMs, signal });
+    const { text, chunks, cleaned, queueMs, generateMs } = await cleanup.clean(raw, style, {
+      budgetMs,
+      signal,
+    });
+    track(id, { cleanupQueueMs: queueMs, cleanupGenerateMs: generateMs });
     if (cleaned < chunks) {
       log(`cleanup partial: ${cleaned} of ${chunks} chunks cleaned, budget ${budgetMs} ms`, {
         message: "cleanup partial",

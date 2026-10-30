@@ -18,7 +18,7 @@ import { noAutoApply } from "./testing/no-auto-apply.ts";
 
 const style: CleanupStyle = { style: "veryCasual", layout: "email" };
 const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
-const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
+const whole = (text: string) => ({ text, chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
 
 type Behavior = {
   loadError?: string;
