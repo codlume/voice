@@ -514,7 +514,13 @@ describe("createDictation", () => {
       text: "hello world.",
       status: "pending",
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "accessibility",
+      reason: null,
+      route: "direct",
+    });
     expect(h.latest()).toMatchObject({ id, status: "inserted" });
     expect(h.store.state.session).toEqual({
       phase: "done",
@@ -587,7 +593,13 @@ describe("createDictation", () => {
     });
     await flush();
     vi.advanceTimersByTime(30);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "unchanged",
+    });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
     expect(h.reports).toEqual([
       {
@@ -596,6 +608,7 @@ describe("createDictation", () => {
         capture: {
           language: "en",
           pressedAt,
+          insertRoute: "unchanged",
           timings: {
             startMs: 40,
             pressRelayMs: 6,
@@ -612,7 +625,7 @@ describe("createDictation", () => {
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 releaseToInsertMs=30`,
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 releaseToInsertMs=30 insertRoute=unchanged`,
     );
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
@@ -629,6 +642,7 @@ describe("createDictation", () => {
         id,
         method: "accessibility",
         reason: null,
+        route: "direct",
       });
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
     }
@@ -652,7 +666,13 @@ describe("createDictation", () => {
   test("hands Insights the category of the app even with cleanup off", async () => {
     const h = harness({ cleanupEnabled: false });
     const id = await dictate(h, "hello world", mailApp);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.styles).toEqual([]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
@@ -664,7 +684,13 @@ describe("createDictation", () => {
       transcriptEvent(id, "hello world", target("com.tinyspeck.slackmacgap")),
     );
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
       { bundleId: "com.apple.mail", category: "email" },
     ]);
@@ -680,7 +706,13 @@ describe("createDictation", () => {
     h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
     transcript(target("com.tinyspeck.slackmacgap"));
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.styles).toEqual([{ style: "formal", layout: "general" }]);
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
       { bundleId: "com.tinyspeck.slackmacgap", category: "work" },
@@ -704,7 +736,13 @@ describe("createDictation", () => {
     }));
     h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
@@ -729,7 +767,13 @@ describe("createDictation", () => {
       target: null,
     });
     vi.advanceTimersByTime(100);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
   });
 
@@ -750,7 +794,13 @@ describe("createDictation", () => {
   test("hands each session with a usable transcript to Insights, inserted or not, with where it went when known", async () => {
     const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
     const first = await dictate(h, "ask hadrys");
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     const firstAt = Date.now();
     const second = await dictate(h, "hello there", mailApp);
     h.dictation.onHelperEvent({
@@ -758,6 +808,7 @@ describe("createDictation", () => {
       id: second,
       method: "none",
       reason: "secureInput",
+      route: null,
     });
     expect(h.dictated).toEqual([
       {
@@ -822,7 +873,13 @@ describe("createDictation", () => {
     const id = await dictate(lost, "send it to my email");
     lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
-    lost.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    lost.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     const off = harness({ cleanupEnabled: false });
     const offId = await dictate(off, "um hello");
     off.dictation.onHelperEvent({
@@ -830,6 +887,7 @@ describe("createDictation", () => {
       id: offId,
       method: "paste",
       reason: null,
+      route: "direct",
     });
     const failing = harness({ cleanFails: "rejects" });
     const failingId = await dictate(failing, "um hello");
@@ -838,6 +896,7 @@ describe("createDictation", () => {
       id: failingId,
       method: "paste",
       reason: null,
+      route: "direct",
     });
     for (const h of [lost, off, failing]) {
       expect(h.dictated).toHaveLength(1);
@@ -864,7 +923,13 @@ describe("createDictation", () => {
       relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.dictated[0]?.paceMs).toBe(900);
   });
 
@@ -1139,6 +1204,7 @@ describe("createDictation", () => {
         id,
         method: "accessibility",
         reason: null,
+        route: "direct",
       });
       expect(toSnapshot(h.store.state).session).toEqual({
         kind: "done",
@@ -1189,6 +1255,7 @@ describe("createDictation", () => {
         id: first,
         method: "paste",
         reason: null,
+        route: "direct",
       });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const second = h.id();
@@ -1375,7 +1442,13 @@ describe("createDictation", () => {
       target: null,
     });
     await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one") + CLEANUP_GRACE_MS);
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
 
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
@@ -1412,7 +1485,13 @@ describe("createDictation", () => {
       const id = await dictate(h, "hello world");
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
       expect(h.copies).toEqual([]);
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        reason: null,
+        route: "direct",
+      });
       expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
       expect(h.store.state.session).toEqual(idle);
@@ -1431,14 +1510,26 @@ describe("createDictation", () => {
       ];
       const h = harness({ copyToClipboard: true, snippets });
       const id = await dictate(h, "send it to my email");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        reason: null,
+        route: "direct",
+      });
       expect(h.copies).toEqual([{ text: "send it to name@example.com.", html: null }]);
     });
 
     test("copies both the plain text and the HTML of a formatted snippet", async () => {
       const h = harness({ copyToClipboard: true, snippets: [formattedName] });
       const id = await dictate(h, "sign it my name");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        reason: null,
+        route: "direct",
+      });
       expect(h.copies).toEqual([{ text: "sign it Ana.", html: "sign it <em>Ana</em>." }]);
     });
 
@@ -1450,6 +1541,7 @@ describe("createDictation", () => {
         id,
         method: "none",
         reason: "noFocusedField",
+        route: null,
       });
       expect(h.store.state.session).toMatchObject({
         phase: "done",
@@ -1501,7 +1593,13 @@ describe("createDictation", () => {
     test("copies nothing when the setting is off", async () => {
       const h = harness();
       const id = await dictate(h, "hello world");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        reason: null,
+        route: "direct",
+      });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "inserted" } });
       expect(h.copies).toEqual([]);
     });
@@ -1657,7 +1755,13 @@ describe("createDictation", () => {
       relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.store.state.session).toMatchObject({
       phase: "done",
       id,
@@ -1757,7 +1861,13 @@ describe("createDictation", () => {
       relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS - 100);
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const second = h.id();
@@ -1816,7 +1926,13 @@ describe("auto-apply after dictation", () => {
     expect(h.latest()).toMatchObject({ raw, text: `Polished: ${raw}` });
     expect(h.lastTransforms).toEqual([{ name: "Polish", before: raw, after: `Polished: ${raw}` }]);
 
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      reason: null,
+      route: "direct",
+    });
     expect(h.dictated).toMatchObject([{ raw, insertedCleanup: null }]);
     expect(h.logs.at(-1)).toMatch(/^session \S+ outcome=inserted .*cleanupMs=\d+/);
   });

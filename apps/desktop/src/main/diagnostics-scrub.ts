@@ -11,6 +11,7 @@ export const SESSION_TRANSACTION = "dictation.session";
 const SESSION_ATTRIBUTES = [
   "outcome",
   "insert.method",
+  "insert.route",
   "insert.reason",
   "dictation.language",
 ] as const;

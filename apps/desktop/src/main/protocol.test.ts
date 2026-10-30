@@ -81,9 +81,11 @@ describe("parseHelperEvent", () => {
         target: null,
       },
       { type: "transcript.failed", id: "a", message: "no model" },
-      { type: "insert.result", id: "a", method: "accessibility", reason: null },
-      { type: "insert.result", id: "a", method: "none", reason: "focusChanged" },
-      { type: "insert.result", id: "a", method: "none", reason: "selectionChanged" },
+      { type: "insert.result", id: "a", method: "accessibility", reason: null, route: "direct" },
+      { type: "insert.result", id: "a", method: "accessibility", reason: null, route: "late" },
+      { type: "insert.result", id: "a", method: "paste", reason: null, route: "pasteOnlyApp" },
+      { type: "insert.result", id: "a", method: "none", reason: "focusChanged", route: null },
+      { type: "insert.result", id: "a", method: "none", reason: "selectionChanged", route: null },
       { type: "permissions", microphone: "granted", accessibility: "denied" },
       { type: "asr.status", state: "ready", message: null },
       { type: "log", level: "info", message: "hello" },
@@ -123,6 +125,7 @@ describe("parseHelperEvent", () => {
       id: "a",
       method: "paste",
       reason: null,
+      route: null,
     });
     expect(
       parseHelperEvent(line({ type: "asr.status", state: "failed", message: "boom" })),
@@ -139,6 +142,7 @@ describe("parseHelperEvent", () => {
       id: "a",
       method: "none",
       reason: null,
+      route: null,
     });
     expect(
       parseHelperEvent(line({ type: "capture.failed", id: "a", reason: "novel", message: "m" })),
@@ -176,7 +180,7 @@ describe("parseHelperEvent", () => {
     (reason) => {
       expect(
         parseHelperEvent(line({ type: "insert.result", id: "a", method: "none", reason })),
-      ).toEqual({ type: "insert.result", id: "a", method: "none", reason: null });
+      ).toEqual({ type: "insert.result", id: "a", method: "none", reason: null, route: null });
     },
   );
 

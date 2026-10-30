@@ -157,10 +157,14 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
          ["type": "transcript", "id": "s", "text": "", "audioMs": 50, "asrMs": 0, "speechMs": NSNull(), "relayMs": NSNull(), "target": NSNull()]),
         (.transcriptFailed(id: "s", reason: .asrUnavailable, message: "no model"),
          ["type": "transcript.failed", "id": "s", "reason": "asrUnavailable", "message": "no model"]),
-        (.insertResult(id: "s", method: .none, reason: .focusChanged),
+        (.insertResult(id: "s", method: .none, reason: .focusChanged, route: nil),
          ["type": "insert.result", "id": "s", "method": "none", "reason": "focusChanged"]),
-        (.insertResult(id: "r", method: .none, reason: .selectionChanged),
+        (.insertResult(id: "r", method: .none, reason: .selectionChanged, route: nil),
          ["type": "insert.result", "id": "r", "method": "none", "reason": "selectionChanged"]),
+        (.insertResult(id: "s", method: .accessibility, reason: nil, route: .late),
+         ["type": "insert.result", "id": "s", "method": "accessibility", "route": "late"]),
+        (.insertResult(id: "s", method: .paste, reason: nil, route: .pasteOnlyApp),
+         ["type": "insert.result", "id": "s", "method": "paste", "route": "pasteOnlyApp"]),
         (.permissions(microphone: .granted, accessibility: .notDetermined),
          ["type": "permissions", "microphone": "granted", "accessibility": "notDetermined"]),
         (.asrStatus(state: .failed, message: "boom"), ["type": "asr.status", "state": "failed", "message": "boom"]),
@@ -184,8 +188,9 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
 
 @Test func omitsOptionalFieldsWhenAbsent() throws {
     #expect(try json(HelperEvent.asrStatus(state: .ready, message: nil).encodeLine())["message"] == nil)
-    #expect(try json(HelperEvent.insertResult(id: "s", method: .paste, reason: nil).encodeLine())["reason"] == nil)
-    #expect(try json(HelperEvent.insertResult(id: "s", method: .accessibility, reason: .failed).encodeLine())["reason"] == nil)
+    #expect(try json(HelperEvent.insertResult(id: "s", method: .paste, reason: nil, route: .html).encodeLine())["reason"] == nil)
+    #expect(try json(HelperEvent.insertResult(id: "s", method: .accessibility, reason: .failed, route: .direct).encodeLine())["reason"] == nil)
+    #expect(try json(HelperEvent.insertResult(id: "s", method: .none, reason: .failed, route: .direct).encodeLine())["route"] == nil)
 }
 
 @Test func keepsFilePathsAndUnicodeReadable() throws {

@@ -645,7 +645,13 @@ describe("createAccount", () => {
     });
     await flush();
     expect(shownDuring).toEqual([]);
-    dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "accessibility",
+      reason: null,
+      route: "direct",
+    });
     expect(h.store.state.session).toEqual({
       phase: "done",
       id,

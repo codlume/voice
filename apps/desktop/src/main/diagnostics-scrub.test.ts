@@ -120,6 +120,7 @@ const transactionEvent: Event = {
       data: {
         outcome: "inserted",
         "insert.method": "paste",
+        "insert.route": "unchanged",
         "dictation.language": "en",
         "sentry.op": "dictation.session",
         "sentry.origin": "manual",
@@ -229,6 +230,7 @@ describe("scrubEvent", () => {
           data: {
             outcome: "inserted",
             "insert.method": "paste",
+            "insert.route": "unchanged",
             "dictation.language": "en",
             "sentry.op": "dictation.session",
             "sentry.origin": "manual",

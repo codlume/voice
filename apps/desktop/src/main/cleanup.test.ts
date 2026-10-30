@@ -682,7 +682,13 @@ describe("followSettings", () => {
           html: null,
         });
       expect(a.store.state.models.cleanup.state).toBe("ready");
-      a.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      a.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        reason: null,
+        route: "direct",
+      });
       await expect.poll(() => a.store.state.models.cleanup.state).toBe("installed");
       expect(a.cleanup.loaded()).toBe(false);
     },

@@ -114,6 +114,7 @@ function harness(opts: Options = {}) {
             id: command.id,
             method: reason === null ? "accessibility" : "none",
             reason,
+            route: reason === null ? "direct" : null,
           });
         }, 10);
       }

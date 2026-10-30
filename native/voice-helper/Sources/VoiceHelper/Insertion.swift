@@ -90,40 +90,40 @@ final class Insertion {
         let focused: AXUIElement?
         switch check(id: id, target: target) {
         case .refused(let reason):
-            output.emit(.insertResult(id: id, method: .none, reason: reason))
+            output.emit(.insertResult(id: id, method: .none, reason: reason, route: nil))
             return
         case .ready(let element):
             focused = element
         }
         let outcome: AccessibilityOutcome
         if forcePaste {
-            outcome = .unverified
+            outcome = .paste(.forced)
         } else if !takesText(focused) {
             outcome = .notEditable
         } else if html != nil {
             // The accessibility write takes plain text only; a paste keeps the formatting.
-            outcome = .unverified
+            outcome = .paste(.html)
         } else if let bundleId = target?.bundleId, pasteOnlyApps.contains(bundleId) {
-            outcome = .unverified
+            outcome = .paste(.pasteOnlyApp)
         } else {
             outcome = insertViaAccessibility(focused: focused, text: text)
         }
         switch outcome {
         case .inserted:
-            output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
+            output.emit(.insertResult(id: id, method: .accessibility, reason: nil, route: .direct))
         case .notEditable:
-            output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField))
-        case .unverified:
-            paste(id: id, text: text, html: html)
+            output.emit(.insertResult(id: id, method: .none, reason: .noFocusedField, route: nil))
+        case .paste(let route):
+            paste(id: id, text: text, html: html, route: route)
         case .unchanged(let focused, let before):
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
-                    output.emit(.insertResult(id: id, method: .accessibility, reason: nil))
+                    output.emit(.insertResult(id: id, method: .accessibility, reason: nil, route: .late))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
-                    paste(id: id, text: text, html: html)
+                    paste(id: id, text: text, html: html, route: .unchanged)
                 }
             }
         }
@@ -168,7 +168,8 @@ final class Insertion {
     }
 
     private enum AccessibilityOutcome {
-        case inserted, notEditable, unverified
+        case inserted, notEditable
+        case paste(InsertRoute)
         case unchanged(AXUIElement, before: AXTextState)
     }
 
@@ -184,11 +185,11 @@ final class Insertion {
     }
 
     private func insertViaAccessibility(focused: AXUIElement?, text: String) -> AccessibilityOutcome {
-        guard let focused else { return .unverified }
+        guard let focused else { return .paste(.noElement) }
         let before = textState(of: focused)
         guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
         else {
-            return .unverified
+            return .paste(.writeFailed)
         }
         switch AXWriteVerdict(before: before, after: textState(of: focused)) {
         case .inserted: return .inserted
@@ -223,7 +224,7 @@ final class Insertion {
         return text.utf16.count
     }
 
-    private func paste(id: String, text: String, html: String?) {
+    private func paste(id: String, text: String, html: String?, route: InsertRoute) {
         let write = pasteboard.write(text: text, html: html, saved: pasteboard.save())
         postCommand(typing: "v", fallback: PasteKey.ansiV)
 
@@ -232,7 +233,7 @@ final class Insertion {
         // target (Electron under load, a remote desktop) can read the pasteboard well after the
         // keystroke, so the restore waits a full second.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [output] in
-            output.emit(.insertResult(id: id, method: .paste, reason: nil))
+            output.emit(.insertResult(id: id, method: .paste, reason: nil, route: route))
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
             pasteboard.restore(write: write)

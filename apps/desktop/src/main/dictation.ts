@@ -24,7 +24,7 @@ import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
-import type { HelperCommand, HelperEvent } from "./protocol.ts";
+import type { HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
 import {
   INSERT_TIMEOUT_MS,
   step,
@@ -90,6 +90,7 @@ type Started = {
   cleanupQueueMs?: number;
   cleanupGenerateMs?: number;
   insertStartedAt?: number;
+  insertRoute?: InsertRoute | null;
 };
 
 // pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
@@ -111,7 +112,12 @@ export type SessionTimings = {
 export type SessionReport = {
   outcome: Outcome;
   finishedAt: number;
-  capture: { language: DictationLanguage; pressedAt: number; timings: SessionTimings } | null;
+  capture: {
+    language: DictationLanguage;
+    pressedAt: number;
+    timings: SessionTimings;
+    insertRoute?: InsertRoute | undefined;
+  } | null;
 };
 
 export type Dictated = {
@@ -392,8 +398,14 @@ export function createDictation(options: DictationOptions): Dictation {
       language: s.language,
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
+      insertRoute: s.insertRoute ?? undefined,
     };
-    log(timingLine("session", id, outcome.kind, capture?.timings ?? {}));
+    log(
+      timingLine("session", id, outcome.kind, {
+        ...capture?.timings,
+        insertRoute: capture?.insertRoute,
+      }),
+    );
     options.onSessionDone({ outcome, finishedAt, capture });
     options.history.settle(id, outcome.kind === "inserted");
   }
@@ -481,6 +493,7 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "transcriptFailed", id: event.id, message: event.message });
         return;
       case "insert.result":
+        track(event.id, { insertRoute: event.route });
         dispatch({
           type: "insertResult",
           id: event.id,

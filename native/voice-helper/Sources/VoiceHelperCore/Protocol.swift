@@ -10,6 +10,11 @@ public enum CaptureFailure: String, Codable, Sendable { case permission, device,
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
 public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
+/// Which branch of the insertion ran. `direct` and `late` end in an accessibility write, the
+/// latter one whose effect showed only on the re-read. The rest end in a paste:
+/// formatted text, an app this launch already saw swallow a write, a write the re-read still
+/// did not show, no focused element to write to, a refused write, or test mode forcing it.
+public enum InsertRoute: String, Codable, Sendable { case direct, late, html, pasteOnlyApp, unchanged, noElement, writeFailed, forced }
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
 public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
@@ -128,7 +133,8 @@ public enum HelperEvent: Equatable, Sendable {
     /// when the helper ended the capture itself or no hotkey released it.
     case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, relayMs: Double?, target: TranscriptTarget?)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
-    case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
+    /// `reason` goes out with `.none`, `route` with the other two methods.
+    case insertResult(id: String, method: InsertMethod, reason: InsertFailure?, route: InsertRoute?)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
@@ -146,7 +152,7 @@ private enum Key: String, CodingKey {
     case version, startMs, relayMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
-    case transforms, transformId, keycode, modifiers, outcome, via
+    case transforms, transformId, keycode, modifiers, outcome, via, route
     case uptimeMs, hotkeyUptimeMs
 }
 
@@ -310,11 +316,15 @@ extension HelperEvent: Encodable {
             try c.encode(id, forKey: .id)
             try c.encode(reason, forKey: .reason)
             try c.encode(message, forKey: .message)
-        case .insertResult(let id, let method, let reason):
+        case .insertResult(let id, let method, let reason, let route):
             try c.encode("insert.result", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(method, forKey: .method)
-            if method == .none { try c.encodeIfPresent(reason, forKey: .reason) }
+            if method == .none {
+                try c.encodeIfPresent(reason, forKey: .reason)
+            } else {
+                try c.encodeIfPresent(route, forKey: .route)
+            }
         case .permissions(let microphone, let accessibility):
             try c.encode("permissions", forKey: .type)
             try c.encode(microphone, forKey: .microphone)

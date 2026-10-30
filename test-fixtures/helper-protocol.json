@@ -951,7 +951,8 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": "focusChanged"
+        "reason": "focusChanged",
+        "route": null
       },
       "required": ["type", "id", "method"]
     },
@@ -967,7 +968,8 @@
         "type": "insert.result",
         "id": "r1",
         "method": "none",
-        "reason": "selectionChanged"
+        "reason": "selectionChanged",
+        "route": null
       },
       "required": ["type", "id", "method"]
     },
@@ -976,13 +978,15 @@
       "wire": {
         "type": "insert.result",
         "id": "s1",
-        "method": "paste"
+        "method": "paste",
+        "route": "unchanged"
       },
       "parsed": {
         "type": "insert.result",
         "id": "s1",
         "method": "paste",
-        "reason": null
+        "reason": null,
+        "route": "unchanged"
       },
       "required": ["type", "id", "method"]
     },
@@ -991,13 +995,15 @@
       "wire": {
         "type": "insert.result",
         "id": "s1",
-        "method": "accessibility"
+        "method": "accessibility",
+        "route": "direct"
       },
       "parsed": {
         "type": "insert.result",
         "id": "s1",
         "method": "accessibility",
-        "reason": null
+        "reason": null,
+        "route": "direct"
       },
       "required": ["type", "id", "method"]
     },
@@ -1201,7 +1207,8 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null
+        "reason": null,
+        "route": null
       }
     },
     {
@@ -1216,7 +1223,8 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null
+        "reason": null,
+        "route": null
       }
     },
     {
@@ -1231,7 +1239,55 @@
         "type": "insert.result",
         "id": "s1",
         "method": "none",
-        "reason": null
+        "reason": null,
+        "route": null
+      }
+    },
+    {
+      "name": "insert.route.missing",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "reason": null,
+        "route": null
+      }
+    },
+    {
+      "name": "insert.route.unknown",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "route": "future"
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "reason": null,
+        "route": null
+      }
+    },
+    {
+      "name": "insert.route.wrongType",
+      "wire": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "route": 7
+      },
+      "parsed": {
+        "type": "insert.result",
+        "id": "s1",
+        "method": "paste",
+        "reason": null,
+        "route": null
       }
     },
     {
