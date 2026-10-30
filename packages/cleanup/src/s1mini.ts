@@ -55,7 +55,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
   let busyUntil = 0;
   let busy = false;
 
-  // Real work ends the busy loop, so it never queues behind it.
   function work<T>(task: () => Promise<T>): Promise<T> {
     busyUntil = 0;
     return serialize(task);
