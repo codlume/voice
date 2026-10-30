@@ -17,6 +17,7 @@ import {
 import { parseBundleId, type BundleId } from "../shared/app-categories.ts";
 import { applyAssignmentEdit } from "../shared/style.ts";
 import type {
+  HistoryChange,
   HistoryEntry,
   HistoryRetention,
   HistoryState,
@@ -466,14 +467,14 @@ function fakeVoice(
   let snapshot: Snapshot = initial;
   let history = initialHistory;
   let retention = initialRetention;
-  const historyListeners = new Set<(history: HistoryState) => void>();
+  const historyListeners = new Set<(change: HistoryChange) => void>();
   const historyState = (): HistoryState => ({
     entries: history,
     retention,
     saveFailed,
   });
   const publishHistory = () => {
-    for (const listener of historyListeners) listener(historyState());
+    for (const listener of historyListeners) listener({ kind: "all", state: historyState() });
   };
   const setHistory = (next: readonly HistoryEntry[]) => {
     history = next;

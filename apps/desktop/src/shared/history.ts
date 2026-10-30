@@ -45,6 +45,40 @@ export type HistoryState = {
   saveFailed: boolean;
 };
 
+/**
+ * What main tells the hub after a change. `all` carries the whole state: the first list of the
+ * run, and one where more entries left than stayed, as after a clear. `patch` names only the
+ * entries that moved since the last change, so a long history costs the main process nothing
+ * per session; the hub applies it to the list it holds.
+ */
+export type HistoryChange =
+  | { kind: "all"; state: HistoryState }
+  | ({ kind: "patch"; upsert: readonly HistoryEntry[]; remove: readonly string[] } & Omit<
+      HistoryState,
+      "entries"
+    >);
+
+/** `entries` with `entry` at its place, newest first. */
+export function insertEntry(
+  entries: readonly HistoryEntry[],
+  entry: HistoryEntry,
+): readonly HistoryEntry[] {
+  const after = entries.findIndex((other) => other.at <= entry.at);
+  return after < 0 ? [...entries, entry] : entries.toSpliced(after, 0, entry);
+}
+
+export function applyHistoryChange(
+  state: HistoryState | null,
+  change: HistoryChange,
+): HistoryState | null {
+  if (change.kind === "all") return change.state;
+  if (state === null) return null;
+  const touched = new Set([...change.remove, ...change.upsert.map((entry) => entry.id)]);
+  let entries: readonly HistoryEntry[] = state.entries.filter((entry) => !touched.has(entry.id));
+  for (const entry of change.upsert) entries = insertEntry(entries, entry);
+  return { entries, retention: change.retention, saveFailed: change.saveFailed };
+}
+
 export const historySurvivesQuit = (retention: HistoryRetention, saveFailed: boolean) =>
   retention !== "memory" && !saveFailed;
 

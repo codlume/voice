@@ -422,9 +422,9 @@ async function main() {
   const history = createHistory({
     file: NodePath.join(userData, "history.json"),
     log,
-    onChange: (state) => {
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, state);
-      const hasEntry = state.entries.length > 0;
+    onChange: (change) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, change);
+      const hasEntry = history.entries().length > 0;
       if (hasEntry === trayHasEntry) return;
       trayHasEntry = hasEntry;
       refreshTray(store.state);

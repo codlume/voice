@@ -3,7 +3,9 @@ import * as NodePath from "node:path";
 
 import {
   historyRetentions,
+  insertEntry,
   retentionMs,
+  type HistoryChange,
   type HistoryEntry,
   type HistoryRetention,
   type HistoryState,
@@ -69,7 +71,7 @@ class LeftAlone extends Error {}
 export function createHistory(options: {
   file: string;
   log: Log;
-  onChange: (state: HistoryState) => void;
+  onChange: (change: HistoryChange) => void;
   now?: () => number;
 }): History {
   const { file, log } = options;
@@ -92,7 +94,10 @@ export function createHistory(options: {
   let expiry: NodeJS.Timeout | null = null;
   // The hub hears nothing before the launch read: an early list would look complete.
   let ready = false;
-  let published: { entries: readonly HistoryEntry[]; state: HistoryState } | null = null;
+  let published: Omit<HistoryState, "entries"> | null = null;
+  // The list the hub holds. Entries are immutable and an untouched one keeps its object, so a
+  // publish finds what moved by identity.
+  let hubHolds: readonly HistoryEntry[] = [];
   let publishQueued = false;
   let syncQueued = false;
   let queue: Promise<void> = Promise.resolve();
@@ -123,17 +128,49 @@ export function createHistory(options: {
     publishQueued = true;
     setImmediate(() => {
       publishQueued = false;
-      const next = state();
-      if (
-        published &&
-        published.entries === entries &&
-        published.state.retention === next.retention &&
-        published.state.saveFailed === next.saveFailed
-      )
-        return;
-      published = { entries, state: next };
-      options.onChange(next);
+      const { entries: list, ...next } = state();
+      const message = changeSince(list, next);
+      if (message === null) return;
+      published = next;
+      options.onChange(message);
     });
+  }
+
+  /**
+   * What moved since the last publish. Both lists are newest first and keep their untouched
+   * entries in the same order, so what moved sits between a shared head and a shared tail: there,
+   * an entry the hub does not hold as the same object is an upsert, and an id the hub holds that
+   * the list lost is a remove. The whole list goes instead before the first publish, and when
+   * more entries left than stayed, as after a clear.
+   */
+  function changeSince(
+    list: readonly HistoryEntry[],
+    next: Omit<HistoryState, "entries">,
+  ): HistoryChange | null {
+    const held = hubHolds;
+    // A publish for the window or a save finds the same list and walks nothing.
+    let head = held === list ? list.length : 0;
+    while (head < list.length && head < held.length && list[head] === held[head]) head += 1;
+    let tail = 0;
+    while (
+      tail < list.length - head &&
+      tail < held.length - head &&
+      list[list.length - 1 - tail] === held[held.length - 1 - tail]
+    ) {
+      tail += 1;
+    }
+    const before = new Map(held.slice(head, held.length - tail).map((entry) => [entry.id, entry]));
+    const after = list.slice(head, list.length - tail);
+    const upsert = after.filter((entry) => before.get(entry.id) !== entry);
+    const stayed = new Set(after.map((entry) => entry.id));
+    const remove = [...before.keys()].filter((id) => !stayed.has(id));
+    hubHolds = list;
+    if (published === null || remove.length > list.length) {
+      return { kind: "all", state: { entries: list, ...next } };
+    }
+    const same = published.retention === next.retention && published.saveFailed === next.saveFailed;
+    if (same && upsert.length === 0 && remove.length === 0) return null;
+    return { kind: "patch", upsert, remove, ...next };
   }
 
   function requestSync() {
@@ -318,9 +355,7 @@ export function createHistory(options: {
       if (tombstones.has(id)) return;
       const index = entries.findIndex((entry) => entry.id === id);
       if (index < 0) {
-        const after = entries.findIndex((entry) => entry.at <= at);
-        const entry = { id, at, raw, text, status };
-        change(after < 0 ? [...entries, entry] : entries.toSpliced(after, 0, entry));
+        change(insertEntry(entries, { id, at, raw, text, status }));
         return;
       }
       const existing = entries[index]!;
@@ -330,7 +365,7 @@ export function createHistory(options: {
     settle(id, inserted) {
       const index = entries.findIndex((entry) => entry.id === id && entry.status === "pending");
       if (index < 0) return;
-      const status = inserted ? "inserted" : "notInserted";
+      const status: HistoryStatus = inserted ? "inserted" : "notInserted";
       change(entries.with(index, { ...entries[index]!, status }));
     },
     entries: () => pruned(entries),

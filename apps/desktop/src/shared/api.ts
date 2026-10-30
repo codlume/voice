@@ -3,7 +3,7 @@ import type { Microphone } from "./microphone.ts";
 import type { DictationLanguage } from "./dictation-language.ts";
 import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
-import type { HistoryRetention, HistoryState } from "./history.ts";
+import type { HistoryChange, HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
@@ -296,8 +296,8 @@ export type HubApi = WindowApi & {
   installModel(id: ModelId): Promise<void>;
   uninstallModel(id: ModelId): Promise<void>;
   getHistory(): Promise<HistoryState>;
-  /** Fires after every change to the history, with the whole list, newest first. */
-  onHistory(listener: (history: HistoryState) => void): () => void;
+  /** Fires after every change to the history with what changed; `applyHistoryChange` folds it in. */
+  onHistory(listener: (change: HistoryChange) => void): () => void;
   copyHistoryEntry(id: string, version: TranscriptVersion): Promise<void>;
   deleteHistoryEntry(id: string): Promise<void>;
   clearHistory(): Promise<void>;
