@@ -28,6 +28,18 @@ const fixtures = [
     voice: "Milena",
     speech: "Хеллоу, май нейм из Анна. Плиз сенд зе репорт бай Фрайдей.",
   },
+  {
+    name: "pauses.wav",
+    speech:
+      "Okay so first thing, [[slnc 700]] we need to ship the release by Friday. " +
+      "[[slnc 900]] Then we can start on the onboarding flow.",
+  },
+  {
+    name: "boundary.wav",
+    speech:
+      "Email Maria Kowalski at acme dot com slash billing, [[slnc 800]] " +
+      "forty two thousand dollars, due March twelfth, [[slnc 700]] twenty twenty six.",
+  },
 ];
 
 function run(command, args) {
