@@ -73,6 +73,15 @@ const pasteRoute = Schema.Literals([
   "forced",
 ]);
 export type InsertRoute = typeof accessibilityRoute.Type | typeof pasteRoute.Type;
+const asrSessionState = Schema.Literals([
+  "warm",
+  "cold",
+  "loading",
+  "downloading",
+  "missing",
+  "failed",
+]);
+export type AsrSessionState = typeof asrSessionState.Type;
 const statusMessage = nullOnInvalid(Schema.String);
 const parsedBy = <T extends string>(parse: (input: string) => T | null) =>
   Schema.String.pipe(
@@ -144,11 +153,14 @@ const HelperEventSchema = Schema.Union([
     outcome: Schema.Literal("failed"),
     reason: Schema.Literals(["noSelection", "secureInput", "noFocusedField", "keysHeld", "failed"]),
   }),
+  // asrState is the speech model at the session's start: warm and cold are both loaded, cold
+  // having not decoded for a while and so liable to pay a reload on this decode.
   Schema.Struct({
     type: Schema.Literal("capture.started"),
     id: Schema.String,
     startMs: Schema.Finite,
     relayMs: nullOnInvalid(Schema.Finite),
+    asrState: nullOnInvalid(asrSessionState),
   }),
   Schema.Struct({
     type: Schema.Literal("capture.level"),

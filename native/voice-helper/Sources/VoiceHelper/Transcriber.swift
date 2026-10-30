@@ -12,6 +12,7 @@ struct TranscribeError: Error {
 /// What capture needs from the speech model, so tests can stand in a fake.
 @MainActor
 protocol Transcribing: AnyObject {
+    var sessionState: AsrSessionState { get }
     func beginStreaming(language: DictationLanguage) -> StreamingTranscription?
     func decodeAhead(_ samples: [Float], language: DictationLanguage) -> PauseDecode?
     func transcribe(
@@ -59,6 +60,22 @@ final class Transcriber: Transcribing {
     private let directory: URL
     private let output: Output
     private var load: AsrLoad = .missing
+    private var lastDecodeFinishedAt: DispatchTime?
+    private static let warmSeconds = 300.0
+
+    /// A model that has not decoded for a while may pay a reload on its next decode, and the
+    /// session metrics alone cannot tell that from a slow decode.
+    var sessionState: AsrSessionState {
+        switch load {
+        case .ready:
+            let idle = lastDecodeFinishedAt.map { $0.millisecondsToNow() / 1000 } ?? .infinity
+            return idle < Self.warmSeconds ? .warm : .cold
+        case .loading: return .loading
+        case .downloading: return .downloading
+        case .missing: return .missing
+        case .failed: return .failed
+        }
+    }
 
     init(modelsDir: URL, output: Output) {
         directory = modelsDir.appendingPathComponent("parakeet-tdt-0.6b-v3")
@@ -103,6 +120,7 @@ final class Transcriber: Transcribing {
             do {
                 let manager = try await task.value
                 load = .ready(manager)
+                lastDecodeFinishedAt = .now()
                 output.emit(.asrStatus(state: .ready, message: nil))
             } catch {
                 let message = "\(error)"
@@ -159,6 +177,7 @@ final class Transcriber: Transcribing {
         _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?, pauseDecode: PauseDecode?
     ) async throws -> (text: String, asrMs: Double) {
         let started = DispatchTime.now()
+        defer { lastDecodeFinishedAt = .now() }
         if let stream {
             if let text = try await stream.finish(sampleCount: samples.count) {
                 output.log(.info, "streaming ASR finalized \(samples.count) samples")

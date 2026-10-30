@@ -51,6 +51,7 @@ const capture = {
   pressedAt: 1_790_000_000_000,
   timings,
   insertRoute: "late" as const,
+  asrState: "warm" as const,
 };
 
 const report = (
@@ -71,6 +72,7 @@ describe("sessionSpan", () => {
         "insert.method": "accessibility",
         "insert.route": "late",
         "dictation.language": "en",
+        "asr.state": "warm",
       },
     ],
     [
@@ -80,20 +82,29 @@ describe("sessionSpan", () => {
         "insert.method": "paste",
         "insert.route": "late",
         "dictation.language": "en",
+        "asr.state": "warm",
       },
     ],
     ...(["focusChanged", "noFocusedField", "secureInput", "failed"] as const).map(
       (reason): [Outcome, Record<string, string>] => [
         { kind: "notInserted", reason, copied: false },
-        { outcome: "notInserted", "insert.reason": reason, "dictation.language": "en" },
+        {
+          outcome: "notInserted",
+          "insert.reason": reason,
+          "dictation.language": "en",
+          "asr.state": "warm",
+        },
       ],
     ),
     [
       { kind: "failed", message: `Transcription failed for "${RAW}"` },
-      { outcome: "failed", "dictation.language": "en" },
+      { outcome: "failed", "dictation.language": "en", "asr.state": "warm" },
     ],
-    [{ kind: "empty" }, { outcome: "empty", "dictation.language": "en" }],
-    [{ kind: "tooShort" }, { outcome: "tooShort", "dictation.language": "en" }],
+    [{ kind: "empty" }, { outcome: "empty", "dictation.language": "en", "asr.state": "warm" }],
+    [
+      { kind: "tooShort" },
+      { outcome: "tooShort", "dictation.language": "en", "asr.state": "warm" },
+    ],
   ])("%j carries exactly its outcome attributes", (outcome, attributes) => {
     const span = sessionSpan(report(outcome));
     expect(span.attributes).toEqual(attributes);
@@ -112,7 +123,7 @@ describe("sessionSpan", () => {
       op: "dictation.session",
       startTime: 1_790_000_000_000,
       endTime: 1_790_000_001_050,
-      attributes: { outcome: "empty", "dictation.language": "pl" },
+      attributes: { outcome: "empty", "dictation.language": "pl", "asr.state": "warm" },
       measurements: { startMs: 40 },
     });
     expect(sessionSpan(report({ kind: "failed", message: "No model" }, null))).toEqual({
@@ -220,7 +231,13 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     const session = store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const { id } = session;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: "warm",
+    });
     clock += 800;
     dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     dictation.onHelperEvent({
@@ -434,6 +451,7 @@ describe("startDiagnostics consent", () => {
                 "insert.method": { value: "paste", type: "string" },
                 "insert.route": { value: "html", type: "string" },
                 "dictation.language": { value: "en", type: "string" },
+                "asr.state": { value: "warm", type: "string" },
                 startMs: { value: 40, type: "integer" },
                 audioMs: { value: 800, type: "integer" },
                 asrMs: { value: 120, type: "integer" },

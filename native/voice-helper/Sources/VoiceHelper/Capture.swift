@@ -425,7 +425,8 @@ final class Capture {
             let recording = Recording(session: current)
             recording.samples = chunk
             state = .recording(recording)
-            output.emit(.captureStarted(id: current.id, startMs: current.startedAt.millisecondsToNow(), relayMs: current.relayMs))
+            output.emit(.captureStarted(id: current.id, startMs: current.startedAt.millisecondsToNow(), relayMs: current.relayMs,
+                                        asrState: transcriber.sessionState))
             let level = rms(chunk)
             recording.speech.add(frames: chunk.count, rms: level)
             _ = recording.pauses.add(frames: chunk.count, rms: level)

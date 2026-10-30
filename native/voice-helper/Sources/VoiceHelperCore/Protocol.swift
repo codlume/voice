@@ -21,6 +21,9 @@ public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
 public enum Modifier: String, Codable, Sendable { case control, option, shift, command }
 public enum AsrState: String, Codable, Sendable { case missing, downloading, loading, ready, failed }
+/// The speech model as a session starts. `warm` and `cold` are both loaded; a cold model has
+/// not decoded for a while and may pay a reload on this session's decode.
+public enum AsrSessionState: String, Codable, Sendable { case warm, cold, loading, downloading, missing, failed }
 public enum LogLevel: String, Codable, Sendable { case info, error }
 
 public enum DictationLanguage: String, Codable, CaseIterable, Sendable {
@@ -151,7 +154,7 @@ public enum HelperEvent: Equatable, Sendable {
     /// `startMs` runs from the hotkey event that started the session, or from `capture.start`
     /// when none did (a fixture-driven test), to the first audio. `relayMs` is the part of it
     /// spent going through main: hotkey event out, `capture.start` back. Nil without a hotkey.
-    case captureStarted(id: String, startMs: Double, relayMs: Double?)
+    case captureStarted(id: String, startMs: Double, relayMs: Double?, asrState: AsrSessionState)
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
     case captureCancelled(id: String)
@@ -181,7 +184,7 @@ private enum Key: String, CodingKey {
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
-    case uptimeMs, hotkeyUptimeMs
+    case uptimeMs, hotkeyUptimeMs, asrState
 }
 
 extension HelperCommand: Decodable {
@@ -295,11 +298,12 @@ extension HelperEvent: Encodable {
                 try c.encode("failed", forKey: .outcome)
                 try c.encode(reason, forKey: .reason)
             }
-        case .captureStarted(let id, let startMs, let relayMs):
+        case .captureStarted(let id, let startMs, let relayMs, let asrState):
             try c.encode("capture.started", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(finite(startMs), forKey: .startMs)
             try c.encode(relayMs.map(finite), forKey: .relayMs)
+            try c.encode(asrState, forKey: .asrState)
         case .captureLevel(let id, let level):
             try c.encode("capture.level", forKey: .type)
             try c.encode(id, forKey: .id)

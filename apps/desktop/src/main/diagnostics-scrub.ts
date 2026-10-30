@@ -14,6 +14,7 @@ const SESSION_ATTRIBUTES = [
   "insert.route",
   "insert.reason",
   "dictation.language",
+  "asr.state",
 ] as const;
 export type SessionAttribute = (typeof SESSION_ATTRIBUTES)[number];
 const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as const;

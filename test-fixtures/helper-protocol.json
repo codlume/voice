@@ -665,13 +665,15 @@
         "type": "capture.started",
         "id": "s1",
         "startMs": 12.5,
-        "relayMs": 3.25
+        "relayMs": 3.25,
+        "asrState": "warm"
       },
       "parsed": {
         "type": "capture.started",
         "id": "s1",
         "startMs": 12.5,
-        "relayMs": 3.25
+        "relayMs": 3.25,
+        "asrState": "warm"
       },
       "required": ["type", "id", "startMs"]
     },
@@ -681,13 +683,15 @@
         "type": "capture.started",
         "id": "s1",
         "startMs": 12.5,
-        "relayMs": null
+        "relayMs": null,
+        "asrState": "loading"
       },
       "parsed": {
         "type": "capture.started",
         "id": "s1",
         "startMs": 12.5,
-        "relayMs": null
+        "relayMs": null,
+        "asrState": "loading"
       },
       "required": ["type", "id", "startMs"]
     },
@@ -1191,7 +1195,25 @@
         "type": "capture.started",
         "id": "s1",
         "startMs": 12.5,
-        "relayMs": null
+        "relayMs": null,
+        "asrState": null
+      }
+    },
+    {
+      "name": "capture.started.asr.unknown",
+      "wire": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5,
+        "relayMs": null,
+        "asrState": "future"
+      },
+      "parsed": {
+        "type": "capture.started",
+        "id": "s1",
+        "startMs": 12.5,
+        "relayMs": null,
+        "asrState": null
       }
     },
     {

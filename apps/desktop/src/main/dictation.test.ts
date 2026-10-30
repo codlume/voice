@@ -277,7 +277,13 @@ const chromeAt = (host: string) => target("com.google.Chrome", host);
 async function dictate(h: ReturnType<typeof harness>, text: string, to: Target | null = null) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
   const id = h.id();
-  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+  h.dictation.onHelperEvent({
+    type: "capture.started",
+    id,
+    startMs: 40,
+    relayMs: null,
+    asrState: null,
+  });
   vi.advanceTimersByTime(800);
   h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
   h.dictation.onHelperEvent(transcriptEvent(id, text, to));
@@ -288,7 +294,13 @@ async function dictate(h: ReturnType<typeof harness>, text: string, to: Target |
 function release(h: ReturnType<typeof harness>, holdMs: number) {
   h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
   const id = h.id();
-  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+  h.dictation.onHelperEvent({
+    type: "capture.started",
+    id,
+    startMs: 40,
+    relayMs: null,
+    asrState: null,
+  });
   vi.advanceTimersByTime(holdMs);
   h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
   return id;
@@ -488,7 +500,13 @@ describe("createDictation", () => {
         detectHost: true,
       },
     ]);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     h.dictation.onHelperEvent({ type: "capture.level", id, level: 0.4 });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
@@ -553,7 +571,13 @@ describe("createDictation", () => {
         detectHost: true,
       },
     ]);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(5000);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({ type: "hotkey", action: "chord", uptimeMs: null });
@@ -578,7 +602,13 @@ describe("createDictation", () => {
     const pressedAt = Date.now();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: 6 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: 6,
+      asrState: "cold",
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -609,6 +639,7 @@ describe("createDictation", () => {
           language: "en",
           pressedAt,
           insertRoute: "unchanged",
+          asrState: "cold",
           timings: {
             startMs: 40,
             pressRelayMs: 6,
@@ -626,7 +657,7 @@ describe("createDictation", () => {
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged`,
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged asrState=cold`,
     );
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
@@ -703,7 +734,13 @@ describe("createDictation", () => {
     const transcript = (to: Target | null) =>
       h.dictation.onHelperEvent(transcriptEvent(id, "hello world", to));
     transcript(mailApp);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     transcript(target("com.tinyspeck.slackmacgap"));
     await flush();
     h.dictation.onHelperEvent({
@@ -754,7 +791,13 @@ describe("createDictation", () => {
     vi.advanceTimersByTime(300);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     vi.advanceTimersByTime(200);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 500, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 500,
+      relayMs: null,
+      asrState: null,
+    });
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
     h.dictation.onHelperEvent({
       type: "transcript",
@@ -781,7 +824,13 @@ describe("createDictation", () => {
     const h = harness({ dictationLanguage: "pl" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 25, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 25,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({ type: "transcript.failed", id, message: "decoder broke" });
@@ -936,7 +985,13 @@ describe("createDictation", () => {
     const h = harness({ dictationLanguage: "pl" });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 25, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 25,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({ type: "transcript.failed", id: first, message: "decoder broke" });
@@ -1029,7 +1084,13 @@ describe("createDictation", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
     expect(h.gpu).toEqual(["busy"]);
@@ -1146,7 +1207,13 @@ describe("createDictation", () => {
     const h = harness(opts);
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1181,7 +1248,13 @@ describe("createDictation", () => {
           detectHost: false,
         },
       ]);
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
@@ -1227,7 +1300,13 @@ describe("createDictation", () => {
         language: before,
         microphone: null,
       });
-      h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40, relayMs: null });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id: first,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       h.store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage: after } }));
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
@@ -1267,6 +1346,7 @@ describe("createDictation", () => {
         id: second,
         startMs: 40,
         relayMs: null,
+        asrState: null,
       });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
@@ -1296,7 +1376,13 @@ describe("createDictation", () => {
     h.store.update((s) => ({ ...s, models: { ...s.models, cleanup: { state: "loading" } } }));
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1323,7 +1409,13 @@ describe("createDictation", () => {
       });
       h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const id = h.id();
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       vi.advanceTimersByTime(800);
       h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
@@ -1361,7 +1453,13 @@ describe("createDictation", () => {
     const h = harness({ cleanHangs: true });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1426,7 +1524,13 @@ describe("createDictation", () => {
     const h = harness({ cleanHangs: true });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1451,7 +1555,13 @@ describe("createDictation", () => {
 
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const second = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: second,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1606,7 +1716,13 @@ describe("createDictation", () => {
     const h = harness({ cleanupEnabled: false });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
@@ -1662,7 +1778,13 @@ describe("createDictation", () => {
     const next = h.id();
     expect(next).not.toBe(id);
     expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", id: next });
-    h.dictation.onHelperEvent({ type: "capture.started", id: next, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: next,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     expect(h.store.state.session).toMatchObject({ phase: "recording", id: next });
   });
 
@@ -1713,7 +1835,13 @@ describe("createDictation", () => {
     const h = harness({ cleanupEnabled: false });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
     expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing", overdue: false });
@@ -1739,7 +1867,13 @@ describe("createDictation", () => {
     const h = harness({ cleanupEnabled: false });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "deviceChanged" });
     h.dictation.onHelperEvent({
@@ -1810,7 +1944,13 @@ describe("createDictation", () => {
     const h = harness({ asrModel: { state: "loading" } });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
@@ -1845,7 +1985,13 @@ describe("createDictation", () => {
     const h = harness({ cleanupEnabled: false });
     h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40, relayMs: null });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({

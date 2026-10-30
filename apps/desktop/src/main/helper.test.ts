@@ -127,6 +127,7 @@ describe("startHelper", () => {
       id: "s1",
       startMs: 20,
       relayMs: null,
+      asrState: null,
     });
     await sleep(120);
     h.helper.send({ type: "capture.stop", id: "s1" });

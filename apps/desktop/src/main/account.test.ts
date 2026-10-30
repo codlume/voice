@@ -625,7 +625,13 @@ describe("createAccount", () => {
     const session = h.store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const id = session.id;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40, relayMs: null });
+    dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     takeCallback(callbackUrl(SECOND_CODE));
     await flush();
     h.exchanges[0]?.resolve();

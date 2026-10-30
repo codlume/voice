@@ -644,6 +644,7 @@ describe("followSettings", () => {
         id: session.id,
         startMs: 40,
         relayMs: null,
+        asrState: null,
       });
       return session.id;
     };

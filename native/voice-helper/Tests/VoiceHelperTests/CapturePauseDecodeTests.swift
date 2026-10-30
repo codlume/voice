@@ -9,6 +9,7 @@ import os
 @MainActor
 private final class FakeTranscriber: Transcribing {
     var hold = false
+    let sessionState = AsrSessionState.warm
     private(set) var decodes: [PauseDecode] = []
     private(set) var releases: [(samples: Int, reused: Bool)] = []
     private let gates = OSAllocatedUnfairLock<[CheckedContinuation<Void, Never>]>(initialState: [])

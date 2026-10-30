@@ -24,7 +24,7 @@ import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
-import type { HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
+import type { AsrSessionState, HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
 import {
   INSERT_TIMEOUT_MS,
   step,
@@ -93,6 +93,7 @@ type Started = {
   insertStartedAt?: number | undefined;
   insertRoute?: InsertRoute | undefined;
   clipboardSaveMs?: number | undefined;
+  asrState?: AsrSessionState | undefined;
 };
 
 // pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
@@ -120,6 +121,7 @@ export type SessionReport = {
     pressedAt: number;
     timings: SessionTimings;
     insertRoute?: InsertRoute | undefined;
+    asrState?: AsrSessionState | undefined;
   } | null;
 };
 
@@ -403,11 +405,13 @@ export function createDictation(options: DictationOptions): Dictation {
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
       insertRoute: s.insertRoute,
+      asrState: s.asrState,
     };
     log(
       timingLine("session", id, outcome.kind, {
         ...capture?.timings,
         insertRoute: capture?.insertRoute,
+        asrState: capture?.asrState,
       }),
     );
     options.onSessionDone({ outcome, finishedAt, capture });
@@ -447,7 +451,11 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "capture.started":
-        track(event.id, { startMs: event.startMs, pressRelayMs: event.relayMs ?? undefined });
+        track(event.id, {
+          startMs: event.startMs,
+          pressRelayMs: event.relayMs ?? undefined,
+          asrState: event.asrState ?? undefined,
+        });
         dispatch({ type: "captureStarted", id: event.id });
         return;
       case "capture.level":
