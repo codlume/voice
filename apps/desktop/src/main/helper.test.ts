@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 14 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 15 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -126,6 +126,8 @@ describe("startHelper", () => {
       type: "capture.started",
       id: "s1",
       startMs: 20,
+      relayMs: null,
+      asrState: null,
     });
     await sleep(120);
     h.helper.send({ type: "capture.stop", id: "s1" });
@@ -143,7 +145,7 @@ describe("startHelper", () => {
       type: "insert.result",
       id: "s1",
       method: "accessibility",
-      reason: null,
+      route: "direct",
     });
     expect(h.exits).toEqual([]);
   });
@@ -226,12 +228,12 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v14; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v15; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 14 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 15 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);

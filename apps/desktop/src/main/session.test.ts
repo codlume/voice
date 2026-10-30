@@ -72,7 +72,8 @@ const toCleaning: [SessionEvent, number][] = [
 ];
 const toInserting: [SessionEvent, number][] = [...toTranscribing, transcript("hello world", null)];
 
-const types = (effects: Effect[]) => effects.map((effect) => effect.type);
+const types = (effects: Effect[]) =>
+  effects.map((effect) => (effect.type === "send" ? effect.command.type : effect.type));
 const remembered = (raw: string, text: string, id = ID): Effect => ({
   type: "remember",
   id,
@@ -119,9 +120,9 @@ describe("starting a session", () => {
       id: ID,
       mode: "hold",
       pressedAt: 0,
-      releasedAt: null,
+      released: null,
     });
-    expect(effects).toEqual([{ type: "startCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.start", id: ID } }]);
   });
 
   test("hotkey down while done starts a new session", () => {
@@ -135,9 +136,9 @@ describe("starting a session", () => {
       id: "s2",
       mode: "hold",
       pressedAt: 2200,
-      releasedAt: null,
+      released: null,
     });
-    expect(effects).toEqual([{ type: "startCapture", id: "s2" }]);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.start", id: "s2" } }]);
   });
 
   test.each(["missing", "failed"] as const)(
@@ -149,7 +150,7 @@ describe("starting a session", () => {
         id: ID,
         outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
       });
-      expect(types(all)).not.toContain("startCapture");
+      expect(types(all)).not.toContain("capture.start");
       expect(all).toContainEqual({ type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS });
     },
   );
@@ -161,11 +162,13 @@ describe("starting a session", () => {
       id: ID,
       outcome: { kind: "failed", message: ASR_DOWNLOADING_MESSAGE },
     });
-    expect(types(all)).not.toContain("startCapture");
+    expect(types(all)).not.toContain("capture.start");
   });
 
   test("hotkey down with ASR loading starts capture", () => {
-    expect(run([down(0, "loading")]).effects).toEqual([{ type: "startCapture", id: ID }]);
+    expect(run([down(0, "loading")]).effects).toEqual([
+      { type: "send", command: { type: "capture.start", id: ID } },
+    ]);
   });
 
   test("a second hotkey down mid-session is ignored", () => {
@@ -198,22 +201,41 @@ describe("hold and release", () => {
       id: ID,
       mode: "hold",
       pressedAt: 0,
-      releasedAt: 300,
+      released: { at: 300 },
     });
     expect(afterUp.effects).toEqual([]);
     const { state, effects } = run([down(0), up(300), started(350)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 300 }]);
+    expect(effects).toEqual([
+      { type: "send", command: { type: "capture.stop", id: ID, releasedAt: 300 } },
+    ]);
+  });
+
+  test("each capture command echoes the clock of the hotkey event that caused it", () => {
+    const pressed: [SessionEvent, number] = [
+      { type: "hotkeyDown", id: ID, asr: "ready", hotkeyUptimeMs: 1000.5 },
+      0,
+    ];
+    const released: [SessionEvent, number] = [{ type: "hotkeyUp", hotkeyUptimeMs: 1300.5 }, 300];
+    const stop = {
+      type: "send",
+      command: { type: "capture.stop", id: ID, releasedAt: 300, hotkeyUptimeMs: 1300.5 },
+    };
+    expect(run([pressed]).effects).toEqual([
+      { type: "send", command: { type: "capture.start", id: ID, hotkeyUptimeMs: 1000.5 } },
+    ]);
+    expect(run([pressed, released, started(350)]).effects).toEqual([stop]);
+    expect(run([pressed, started(50), released]).effects).toEqual([stop]);
   });
 
   test("a tap released before capture.started is tooShort once capture starts", () => {
     const { state, effects } = run([down(0), up(249), started(400)]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
     expect(effects).toEqual([
-      { type: "cancelCapture", id: ID },
+      { type: "send", command: { type: "capture.cancel", id: ID } },
       { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
     ]);
-    expect(types(effects)).not.toContain("stopCapture");
+    expect(types(effects)).not.toContain("capture.stop");
   });
 
   test("capture that never starts times out failed and cancels the helper", () => {
@@ -224,7 +246,7 @@ describe("hold and release", () => {
       outcome: { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
     });
     expect(effects).toEqual([
-      { type: "cancelCapture", id: ID },
+      { type: "send", command: { type: "capture.cancel", id: ID } },
       { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
     ]);
   });
@@ -233,7 +255,7 @@ describe("hold and release", () => {
     const { state, effects } = run([down(0), started(50), up(249)]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
     expect(effects).toEqual([
-      { type: "cancelCapture", id: ID },
+      { type: "send", command: { type: "capture.cancel", id: ID } },
       { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
     ]);
   });
@@ -241,19 +263,21 @@ describe("hold and release", () => {
   test("a hold of 250 ms or more stops capture and transcribes", () => {
     const { state, effects } = run([down(0), started(50), up(250)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 250 }]);
+    expect(effects).toEqual([
+      { type: "send", command: { type: "capture.stop", id: ID, releasedAt: 250 } },
+    ]);
   });
 
   test("Escape during starting cancels capture and returns straight to idle", () => {
     const { state, effects } = run([down(0), escape(100)]);
     expect(state).toEqual(idle);
-    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
   });
 
   test("Escape during recording cancels capture and returns straight to idle", () => {
     const { state, effects } = run([...toRecording, escape(800)]);
     expect(state).toEqual(idle);
-    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
   });
 
   test("Escape while processing is ignored", () => {
@@ -282,27 +306,29 @@ describe("toggle dictation", () => {
   test("a tap starts capture and a second tap stops and transcribes", () => {
     const recording = run(toToggleRecording);
     expect(recording.state).toEqual({ phase: "recording", id: ID, mode: "toggle", pressedAt: 0 });
-    expect(recording.all).toEqual([{ type: "startCapture", id: ID }]);
+    expect(recording.all).toEqual([{ type: "send", command: { type: "capture.start", id: ID } }]);
     const { state, effects } = run([...toToggleRecording, tap(4000)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(effects).toEqual([{ type: "stopCapture", id: ID, releasedAt: 4000 }]);
+    expect(effects).toEqual([
+      { type: "send", command: { type: "capture.stop", id: ID, releasedAt: 4000 } },
+    ]);
   });
 
   test("a second tap before capture starts stops once capture starts", () => {
     const tappedTwice = run([tap(0), tap(400)]);
-    expect(tappedTwice.state).toMatchObject({ phase: "starting", releasedAt: 400 });
+    expect(tappedTwice.state).toMatchObject({ phase: "starting", released: { at: 400 } });
     expect(tappedTwice.effects).toEqual([]);
     const { state, all } = run([tap(0), tap(400), tap(450), started(500)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
-    expect(all.filter((effect) => effect.type === "stopCapture")).toEqual([
-      { type: "stopCapture", id: ID, releasedAt: 400 },
-    ]);
+    expect(
+      all.filter((effect) => effect.type === "send" && effect.command.type === "capture.stop"),
+    ).toEqual([{ type: "send", command: { type: "capture.stop", id: ID, releasedAt: 400 } }]);
   });
 
   test("a double tap under 250 ms cancels as tooShort", () => {
     const { state, effects } = run([tap(0), started(50), tap(200)]);
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "tooShort" } });
-    expect(types(effects)).toEqual(["cancelCapture", "scheduleIdle"]);
+    expect(types(effects)).toEqual(["capture.cancel", "scheduleIdle"]);
   });
 
   test("a tap with no usable model fails the way a hold press does", () => {
@@ -313,7 +339,9 @@ describe("toggle dictation", () => {
   test("a tap after a finished session starts a new one", () => {
     const done = run([...toToggleRecording, tap(100)]).state;
     expect(done.phase).toBe("done");
-    expect(step(done, tap(5000)[0], 5000).effects).toEqual([{ type: "startCapture", id: ID }]);
+    expect(step(done, tap(5000)[0], 5000).effects).toEqual([
+      { type: "send", command: { type: "capture.start", id: ID } },
+    ]);
   });
 
   test("the hold key's press, release, or chord leaves a toggle session recording", () => {
@@ -329,7 +357,7 @@ describe("toggle dictation", () => {
     for (const events of [[tap(0)], toToggleRecording]) {
       const { state, effects } = run([...events, escape(5000)]);
       expect(state).toEqual(idle);
-      expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+      expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
     }
   });
 
@@ -345,7 +373,7 @@ describe("toggle dictation", () => {
   test("a chord on the hold key cancels a hold session", () => {
     const { state, effects } = run([...toRecording, chord(600)]);
     expect(state).toEqual(idle);
-    expect(effects).toEqual([{ type: "cancelCapture", id: ID }]);
+    expect(effects).toEqual([{ type: "send", command: { type: "capture.cancel", id: ID } }]);
   });
 });
 
@@ -380,7 +408,10 @@ describe("transcript", () => {
     });
     expect(effects).toEqual([
       remembered("hello world", "hello world"),
-      { type: "insert", id: ID, output: { text: "hello world", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "hello world", html: null } },
+      },
     ]);
   });
 
@@ -398,7 +429,10 @@ describe("transcript", () => {
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
-      { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+      },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({
       state,
@@ -464,7 +498,10 @@ describe("capture the helper stops on its own", () => {
     });
     expect(effects).toEqual([
       remembered("long dictation", "long dictation"),
-      { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+      },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({
       state,
@@ -500,7 +537,10 @@ describe("cleanup", () => {
     });
     expect(effects).toEqual([
       remembered("hello um world", "Hello, world."),
-      { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+      },
     ]);
   });
 
@@ -517,9 +557,8 @@ describe("cleanup", () => {
       copyToClipboard: false,
     });
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: "hello um world", html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: "hello um world", html: null } },
     });
   });
 
@@ -549,7 +588,10 @@ describe("cleanup", () => {
         after: "Hello, world.",
       },
       remembered("hello um world", "Hello, world."),
-      { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+      },
     ]);
   });
 
@@ -561,7 +603,7 @@ describe("cleanup", () => {
     expect(state).toEqual({ phase: "done", id: ID, outcome: { kind: "empty" } });
     expect(types(all)).not.toContain("insert");
     expect(all).toContainEqual(remembered("hello um world", "hello um world"));
-    expect(effects).toContainEqual({ type: "cancelCapture", id: ID });
+    expect(effects).toContainEqual({ type: "send", command: { type: "capture.cancel", id: ID } });
   });
 });
 
@@ -594,7 +636,7 @@ describe("snippets", () => {
     });
     expect(effects).toEqual([
       remembered("My email.", EMAIL),
-      { type: "insert", id: ID, output: { text: EMAIL, html: null } },
+      { type: "send", command: { type: "insert", id: ID, output: { text: EMAIL, html: null } } },
     ]);
   });
 
@@ -604,9 +646,8 @@ describe("snippets", () => {
       transcript("send it to my email", null, 2000, { ...NONE, snippets }),
     ]);
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: `send it to ${EMAIL}`, html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
     });
   });
 
@@ -622,9 +663,8 @@ describe("snippets", () => {
   test("cleaned text is expanded", () => {
     const { effects } = run([...cleaningSentence, cleaned(" Send it to my email. ")]);
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: `Send it to ${EMAIL}.`, html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: `Send it to ${EMAIL}.`, html: null } },
     });
   });
 
@@ -633,7 +673,10 @@ describe("snippets", () => {
     expect(state).toMatchObject({ phase: "inserting", insertedCleanup: null });
     expect(effects).toEqual([
       remembered("send it to my email", `send it to ${EMAIL}`),
-      { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+      },
     ]);
   });
 
@@ -643,25 +686,26 @@ describe("snippets", () => {
       transcript("um my email", STYLE, 2000, { ...NONE, snippets }),
       cleaned("My email."),
     ]);
-    expect(effects).toContainEqual({ type: "insert", id: ID, output: { text: EMAIL, html: null } });
+    expect(effects).toContainEqual({
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: EMAIL, html: null } },
+    });
   });
 
   test("a cleanup that returned nothing for a transcript with a trigger inserts the expanded raw", () => {
     const { state, effects } = run([...cleaningSentence, cleaned("  ")]);
     expect(state.phase).toBe("inserting");
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: `send it to ${EMAIL}`, html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
     });
   });
 
   test("a cleanup failure inserts the expanded raw transcript", () => {
     const { effects } = run([...cleaningSentence, [{ type: "cleanupFailed", id: ID }, 2300]]);
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: `send it to ${EMAIL}`, html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
     });
   });
 
@@ -680,9 +724,8 @@ describe("snippets", () => {
       transcript("Sign off.", null, 2000, { ...NONE, snippets: signature }),
     ]);
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: "Best,\nAlex\n", html: null },
+      type: "send",
+      command: { type: "insert", id: ID, output: { text: "Best,\nAlex\n", html: null } },
     });
   });
 
@@ -712,7 +755,10 @@ describe("snippets", () => {
     });
     expect(whole.effects).toEqual([
       remembered("My name.", "Ana"),
-      { type: "insert", id: ID, output: { text: "Ana", html: "<em>Ana</em>" } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "Ana", html: "<em>Ana</em>" } },
+      },
     ]);
     const cleanedSentence = run([
       ...toTranscribing,
@@ -721,7 +767,14 @@ describe("snippets", () => {
     ]);
     expect(cleanedSentence.effects).toEqual([
       remembered("sign it my name", "Sign it, Ana."),
-      { type: "insert", id: ID, output: { text: "Sign it, Ana.", html: "Sign it, <em>Ana</em>." } },
+      {
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "Sign it, Ana.", html: "Sign it, <em>Ana</em>." },
+        },
+      },
     ]);
   });
 });
@@ -754,7 +807,7 @@ describe("dictionary", () => {
     const { effects } = run([...toTranscribing, said(RAW, null)]);
     expect(effects).toEqual([
       remembered(RAW, FIXED),
-      { type: "insert", id: ID, output: { text: FIXED, html: null } },
+      { type: "send", command: { type: "insert", id: ID, output: { text: FIXED, html: null } } },
     ]);
   });
 
@@ -768,9 +821,12 @@ describe("dictionary", () => {
     expect(effects).toEqual([
       remembered(RAW, "by the way, ask Hadryś about Wispr Flow."),
       {
-        type: "insert",
-        id: ID,
-        output: { text: "by the way, ask Hadryś about Wispr Flow.", html: null },
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "by the way, ask Hadryś about Wispr Flow.", html: null },
+        },
       },
     ]);
   });
@@ -798,7 +854,7 @@ describe("dictionary", () => {
     const { effects } = run([...cleaning, [{ type: "cleanupFailed", id: ID }, 2300]]);
     expect(effects).toEqual([
       remembered(RAW, FIXED),
-      { type: "insert", id: ID, output: { text: FIXED, html: null } },
+      { type: "send", command: { type: "insert", id: ID, output: { text: FIXED, html: null } } },
     ]);
   });
 
@@ -809,9 +865,12 @@ describe("dictionary", () => {
       cleaned("Hadrys wants it."),
     ]);
     expect(effects).toContainEqual({
-      type: "insert",
-      id: ID,
-      output: { text: "Hadryś wants wispr flow, btw, hadrys", html: null },
+      type: "send",
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: "Hadryś wants wispr flow, btw, hadrys", html: null },
+      },
     });
   });
 
@@ -819,17 +878,34 @@ describe("dictionary", () => {
     const { effects } = run([...toTranscribing, said("My signature.", STYLE)]);
     expect(effects).toEqual([
       remembered("My signature.", "wispr flow, btw, hadrys"),
-      { type: "insert", id: ID, output: { text: "wispr flow, btw, hadrys", html: null } },
+      {
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "wispr flow, btw, hadrys", html: null },
+        },
+      },
     ]);
   });
 
   test("a replacement whose text contains a trigger is typed as saved on every path", () => {
     const inserts = (events: [SessionEvent, number][]) =>
-      run(events).all.filter((effect) => effect.type === "insert");
-    const typed = [{ type: "insert", id: ID, output: { text: "see my signature", html: null } }];
+      run(events).all.filter(
+        (effect) => effect.type === "send" && effect.command.type === "insert",
+      );
+    const typed = [
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "see my signature", html: null } },
+      },
+    ];
     expect(inserts([...toTranscribing, said("idk", null)])).toEqual(typed);
     expect(inserts([...toTranscribing, said("idk", STYLE), cleaned("Idk.")])).toEqual([
-      { type: "insert", id: ID, output: { text: "see my signature.", html: null } },
+      {
+        type: "send",
+        command: { type: "insert", id: ID, output: { text: "see my signature.", html: null } },
+      },
     ]);
     expect(
       inserts([...toTranscribing, said("idk", STYLE), [{ type: "cleanupFailed", id: ID }, 2300]]),
@@ -895,7 +971,12 @@ describe("copy to clipboard", () => {
       [{ type: "helperExited" }, 2300],
     ]);
     expect(effects).toContainEqual(copy("send it to a@b.c"));
-    expect(effects).not.toContainEqual(expect.objectContaining({ type: "insert" }));
+    expect(effects).not.toContainEqual(
+      expect.objectContaining({
+        type: "send",
+        command: expect.objectContaining({ type: "insert" }),
+      }),
+    );
   });
 
   test("copies nothing with the setting off", () => {
@@ -1053,7 +1134,7 @@ describe("idle and stale events", () => {
       outcome: { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
     });
     expect(effects).toEqual([
-      { type: "cancelCapture", id: ID },
+      { type: "send", command: { type: "capture.cancel", id: ID } },
       { type: "scheduleIdle", id: ID, ms: IDLE_AFTER_OTHER_MS },
     ]);
   });

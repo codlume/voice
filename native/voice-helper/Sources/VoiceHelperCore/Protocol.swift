@@ -9,12 +9,21 @@ public enum PermissionState: String, Codable, Sendable { case granted, denied, n
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
-public enum InsertMethod: String, Codable, Sendable { case accessibility, paste, none }
+/// Which accessibility branch inserted: a write seen at once, or one whose effect showed only
+/// on the re-read.
+public enum AccessibilityRoute: String, Codable, Sendable { case direct, late }
+/// Why the insertion pasted: formatted text, an app this launch already saw swallow a write, a
+/// write the re-read still did not show, no focused element to write to, a refused write, or
+/// test mode forcing it.
+public enum PasteRoute: String, Codable, Sendable { case html, pasteOnlyApp, unchanged, noElement, writeFailed, forced }
 public enum InsertFailure: String, Codable, Sendable { case focusChanged, noFocusedField, secureInput, selectionChanged, failed }
 public enum SelectionVia: String, Codable, Sendable { case accessibility, copy }
 public enum SelectionFailure: String, Codable, Sendable { case noSelection, secureInput, noFocusedField, keysHeld, failed }
 public enum Modifier: String, Codable, Sendable { case control, option, shift, command }
 public enum AsrState: String, Codable, Sendable { case missing, downloading, loading, ready, failed }
+/// The speech model as a session starts. `warm` and `cold` are both loaded; a cold model has
+/// not decoded for a while and may pay a reload on this session's decode.
+public enum AsrSessionState: String, Codable, Sendable { case warm, cold, loading, downloading, missing, failed }
 public enum LogLevel: String, Codable, Sendable { case info, error }
 
 public enum DictationLanguage: String, Codable, CaseIterable, Sendable {
@@ -58,14 +67,46 @@ public enum SelectionResult: Equatable, Sendable {
     case failed(SelectionFailure)
 }
 
+/// On the wire the branch is `method` (`accessibility`, `paste`, `none`) and the rest its fields.
+public enum InsertOutcome: Equatable, Sendable {
+    case accessibility(AccessibilityRoute)
+    /// `clipboardSaveMs` is how long saving the user's clipboard took before Cmd+V.
+    case paste(PasteRoute, clipboardSaveMs: Double)
+    case refused(InsertFailure)
+}
+
+/// `relayMs` is the release's hop through main: hotkey event out, `capture.stop` back. Nil when
+/// the helper ended the capture itself or no hotkey released it.
+public struct Transcript: Equatable, Sendable {
+    public let id: String
+    public let text: String
+    public let audioMs: Double
+    public let asrMs: Double
+    public let speechMs: Double?
+    public let relayMs: Double?
+    public let target: TranscriptTarget?
+
+    public init(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, relayMs: Double?, target: TranscriptTarget?) {
+        self.id = id
+        self.text = text
+        self.audioMs = audioMs
+        self.asrMs = asrMs
+        self.speechMs = speechMs
+        self.relayMs = relayMs
+        self.target = target
+    }
+}
+
 public enum HelperCommand: Equatable, Sendable {
     case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
     case microphoneConfigure(microphone: Microphone?)
     /// `outputVolumeScale` is the fraction of each output's level to keep while capturing, at least 0
     /// and below 1; 0 mutes and nil leaves outputs alone. `detectHost` is main's say on whether the
-    /// session can use a page host at all.
-    case captureStart(id: String, language: DictationLanguage, outputVolumeScale: Float?, microphone: Microphone?, detectHost: Bool)
-    case captureStop(id: String)
+    /// session can use a page host at all. `hotkeyUptimeMs` echoes the `uptimeMs` of the hotkey
+    /// event this command answers; nil when no hotkey caused it (a fixture-driven test).
+    case captureStart(id: String, language: DictationLanguage, outputVolumeScale: Float?, microphone: Microphone?, detectHost: Bool,
+                      hotkeyUptimeMs: Double?)
+    case captureStop(id: String, hotkeyUptimeMs: Double?)
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
@@ -99,16 +140,21 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 14
+public let helperProtocolVersion = 15
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
     case microphonesUnavailable(message: String)
     case ready(version: Int)
-    case hotkey(action: HotkeyAction)
+    /// `uptimeMs` is the tap's monotonic clock at the key event. Main echoes it on the command it
+    /// answers with, so the helper measures the round trip without keeping the event around.
+    case hotkey(action: HotkeyAction, uptimeMs: Double)
     case transform(transformId: String)
     case selectionResult(id: String, result: SelectionResult)
-    case captureStarted(id: String, startMs: Double)
+    /// `startMs` runs from the hotkey event that started the session, or from `capture.start`
+    /// when none did (a fixture-driven test), to the first audio. `relayMs` is the part of it
+    /// spent going through main: hotkey event out, `capture.start` back. Nil without a hotkey.
+    case captureStarted(id: String, startMs: Double, relayMs: Double?, asrState: AsrSessionState)
     case captureLevel(id: String, level: Double)
     case captureFailed(id: String, reason: CaptureFailure, message: String)
     case captureCancelled(id: String)
@@ -117,9 +163,9 @@ public enum HelperEvent: Equatable, Sendable {
     case microphoneTestLevel(id: String, level: Double)
     case microphoneTestEnded(id: String)
     case microphoneTestFailed(id: String, message: String)
-    case transcript(id: String, text: String, audioMs: Double, asrMs: Double, speechMs: Double?, target: TranscriptTarget?)
+    case transcript(Transcript)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
-    case insertResult(id: String, method: InsertMethod, reason: InsertFailure?)
+    case insertResult(id: String, outcome: InsertOutcome)
     case permissions(microphone: PermissionState, accessibility: PermissionState)
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
@@ -134,10 +180,11 @@ public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable
 
 private enum Key: String, CodingKey {
     case type, key, id, text, kind, download, path, action, outputVolumeScale, language
-    case version, startMs, level, reason, message, audioMs, asrMs, speechMs, method, html
+    case version, startMs, relayMs, level, reason, message, audioMs, asrMs, speechMs, method, html
     case microphone, accessibility, state, devices, defaultUid, toggleKey, target, bundleId, host, detectHost
     case paths, apps, name, icons, png, modifiedMs, browser
-    case transforms, transformId, keycode, modifiers, outcome, via
+    case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
+    case uptimeMs, hotkeyUptimeMs, asrState
 }
 
 extension HelperCommand: Decodable {
@@ -160,8 +207,11 @@ extension HelperCommand: Decodable {
             }
             self = .captureStart(id: id, language: language, outputVolumeScale: outputVolumeScale,
                                  microphone: try c.decode(Microphone?.self, forKey: .microphone),
-                                 detectHost: try c.decode(Bool.self, forKey: .detectHost))
-        case "capture.stop": self = .captureStop(id: try c.decode(String.self, forKey: .id))
+                                 detectHost: try c.decode(Bool.self, forKey: .detectHost),
+                                 hotkeyUptimeMs: try c.decodeIfPresent(Double.self, forKey: .hotkeyUptimeMs))
+        case "capture.stop":
+            self = .captureStop(id: try c.decode(String.self, forKey: .id),
+                                hotkeyUptimeMs: try c.decodeIfPresent(Double.self, forKey: .hotkeyUptimeMs))
         case "capture.cancel": self = .captureCancel(id: try c.decode(String.self, forKey: .id))
         case "microphone.test.start":
             self = .microphoneTestStart(id: try c.decode(String.self, forKey: .id),
@@ -229,9 +279,10 @@ extension HelperEvent: Encodable {
         case .ready(let version):
             try c.encode("ready", forKey: .type)
             try c.encode(version, forKey: .version)
-        case .hotkey(let action):
+        case .hotkey(let action, let uptimeMs):
             try c.encode("hotkey", forKey: .type)
             try c.encode(action, forKey: .action)
+            try c.encode(finite(uptimeMs), forKey: .uptimeMs)
         case .transform(let transformId):
             try c.encode("transform", forKey: .type)
             try c.encode(transformId, forKey: .transformId)
@@ -247,10 +298,12 @@ extension HelperEvent: Encodable {
                 try c.encode("failed", forKey: .outcome)
                 try c.encode(reason, forKey: .reason)
             }
-        case .captureStarted(let id, let startMs):
+        case .captureStarted(let id, let startMs, let relayMs, let asrState):
             try c.encode("capture.started", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(finite(startMs), forKey: .startMs)
+            try c.encode(relayMs.map(finite), forKey: .relayMs)
+            try c.encode(asrState, forKey: .asrState)
         case .captureLevel(let id, let level):
             try c.encode("capture.level", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -281,24 +334,35 @@ extension HelperEvent: Encodable {
             try c.encode("microphone.test.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
-        case .transcript(let id, let text, let audioMs, let asrMs, let speechMs, let target):
+        case .transcript(let transcript):
             try c.encode("transcript", forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(text, forKey: .text)
-            try c.encode(finite(audioMs), forKey: .audioMs)
-            try c.encode(finite(asrMs), forKey: .asrMs)
-            try c.encode(speechMs.map(finite), forKey: .speechMs)
-            try c.encode(target, forKey: .target)
+            try c.encode(transcript.id, forKey: .id)
+            try c.encode(transcript.text, forKey: .text)
+            try c.encode(finite(transcript.audioMs), forKey: .audioMs)
+            try c.encode(finite(transcript.asrMs), forKey: .asrMs)
+            try c.encode(transcript.speechMs.map(finite), forKey: .speechMs)
+            try c.encode(transcript.relayMs.map(finite), forKey: .relayMs)
+            try c.encode(transcript.target, forKey: .target)
         case .transcriptFailed(let id, let reason, let message):
             try c.encode("transcript.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(reason, forKey: .reason)
             try c.encode(message, forKey: .message)
-        case .insertResult(let id, let method, let reason):
+        case .insertResult(let id, let outcome):
             try c.encode("insert.result", forKey: .type)
             try c.encode(id, forKey: .id)
-            try c.encode(method, forKey: .method)
-            if method == .none { try c.encodeIfPresent(reason, forKey: .reason) }
+            switch outcome {
+            case .accessibility(let route):
+                try c.encode("accessibility", forKey: .method)
+                try c.encode(route, forKey: .route)
+            case .paste(let route, let clipboardSaveMs):
+                try c.encode("paste", forKey: .method)
+                try c.encode(route, forKey: .route)
+                try c.encode(finite(clipboardSaveMs), forKey: .clipboardSaveMs)
+            case .refused(let reason):
+                try c.encode("none", forKey: .method)
+                try c.encode(reason, forKey: .reason)
+            }
         case .permissions(let microphone, let accessibility):
             try c.encode("permissions", forKey: .type)
             try c.encode(microphone, forKey: .microphone)

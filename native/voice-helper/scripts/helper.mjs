@@ -88,8 +88,8 @@ export class Helper {
   #cursor = 0;
   #waiters = [];
 
-  constructor({ env = {} } = {}) {
-    this.child = spawn(helperBinary(), ["--models-dir", modelsDir(), "--state-dir", stateDir()], {
+  constructor({ env = {}, binary = helperBinary() } = {}) {
+    this.child = spawn(binary, ["--models-dir", modelsDir(), "--state-dir", stateDir()], {
       env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
       stdio: ["pipe", "pipe", "inherit"],
     });

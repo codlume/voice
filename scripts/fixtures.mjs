@@ -28,6 +28,28 @@ const fixtures = [
     voice: "Milena",
     speech: "Хеллоу, май нейм из Анна. Плиз сенд зе репорт бай Фрайдей.",
   },
+  // `say` ends on the last word; a person releases the key a beat later, so these two trail off.
+  {
+    name: "pauses.wav",
+    trailingSilenceSeconds: 0.5,
+    speech:
+      "Okay so first thing, [[slnc 700]] we need to ship the release by Friday. " +
+      "[[slnc 900]] Then we can start on the onboarding flow.",
+  },
+  {
+    name: "boundary.wav",
+    trailingSilenceSeconds: 0.8,
+    speech:
+      "Email Maria Kowalski at acme dot com slash billing, [[slnc 800]] " +
+      "forty two thousand dollars, due March twelfth, [[slnc 700]] twenty twenty six.",
+  },
+  // A pause, two more words, and a release right after them: the decode started at the pause
+  // is stale by the time the key comes up.
+  {
+    name: "pause-then-speech.wav",
+    trailingSilenceSeconds: 0.05,
+    speech: "We need to ship the release by Friday. [[slnc 500]] Thanks everyone.",
+  },
 ];
 
 function run(command, args) {
@@ -56,7 +78,22 @@ function generate(fixture) {
   const aiff = join(tmpdir(), `voice-fixture-${process.pid}-${fixture.name}.aiff`);
   try {
     run("say", [...(fixture.voice ? ["-v", fixture.voice] : []), "-o", aiff, fixture.speech]);
-    run("ffmpeg", [...encode, "-i", aiff, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", target]);
+    const pad = fixture.trailingSilenceSeconds
+      ? ["-af", `apad=pad_dur=${fixture.trailingSilenceSeconds}`]
+      : [];
+    run("ffmpeg", [
+      ...encode,
+      "-i",
+      aiff,
+      ...pad,
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-c:a",
+      "pcm_s16le",
+      target,
+    ]);
   } finally {
     rmSync(aiff, { force: true });
   }

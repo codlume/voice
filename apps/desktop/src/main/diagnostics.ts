@@ -77,8 +77,10 @@ export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   const attributes: { [K in SessionAttribute]?: string | undefined } = {
     outcome: outcome.kind,
     "insert.method": outcome.kind === "inserted" ? outcome.method : undefined,
+    "insert.route": outcome.kind === "inserted" ? capture?.insertRoute : undefined,
     "insert.reason": outcome.kind === "notInserted" ? outcome.reason : undefined,
     "dictation.language": capture?.language,
+    "asr.state": capture?.asrState,
   };
   const measurements: Partial<Record<(typeof SESSION_MEASUREMENTS)[number], number>> = {};
   for (const name of SESSION_MEASUREMENTS) {

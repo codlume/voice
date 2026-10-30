@@ -6,8 +6,25 @@ import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
+import {
+  applyHistoryChange,
+  type HistoryChange,
+  type HistoryEntry,
+  type HistoryRetention,
+  type HistoryState,
+} from "../shared/history.ts";
 import { createHistory } from "./history.ts";
+
+const writes = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./atomic-file.ts", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./atomic-file.ts")>();
+  return {
+    writeFileAtomic: (...args: Parameters<typeof real.writeFileAtomic>) => {
+      writes.count += 1;
+      return real.writeFileAtomic(...args);
+    },
+  };
+});
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -36,16 +53,23 @@ const envelope = (retention: HistoryRetention, entries: readonly unknown[]) =>
 function harness(retention: HistoryRetention = "memory", options: { file?: string } = {}) {
   const path = options.file ?? file;
   if (retention !== "memory" && !existsSync(path)) writeFileSync(path, envelope(retention, []));
+  const changes: HistoryChange[] = [];
   const published: HistoryState[] = [];
+  let hub: HistoryState | null = null;
   const logs: string[] = [];
   const state = { now: START };
   const history = createHistory({
     file: path,
     log: (message) => logs.push(message),
-    onChange: (entries) => published.push(entries),
+    onChange: (change) => {
+      changes.push(change);
+      hub = applyHistoryChange(hub, change);
+      expect(hub).toEqual(history.state());
+      if (hub) published.push(hub);
+    },
     now: () => state.now,
   });
-  return { history, published, logs, state };
+  return { history, changes, published, logs, state };
 }
 
 const settledTick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -58,6 +82,13 @@ const saved = async () =>
   JSON.parse(await readFile(file, "utf8")) as { retention: string; entries: HistoryEntry[] };
 const ids = (entries: readonly HistoryEntry[]) => entries.map((entry) => entry.id);
 const savedEntry = (id: string, at: number) => ({ id, at, raw: id, text: id, status: "inserted" });
+const patch = (entry: HistoryEntry): HistoryChange => ({
+  kind: "patch",
+  upsert: [entry],
+  remove: [],
+  retention: "month",
+  saveFailed: false,
+});
 const tempFiles = async () =>
   (await readdir(dir)).filter((name) => name.startsWith("history.json.") && name.endsWith(".tmp"));
 const blockWrites = async () => {
@@ -109,14 +140,24 @@ describe("history in memory", () => {
   });
 
   test("tells the hub after the caller's turn, once for changes made together", async () => {
-    const { history, published } = harness();
+    const { history, changes, published } = harness();
     await history.settled();
     await settledTick();
+    changes.length = 0;
     published.length = 0;
     history.remember({ id: "a", raw: "hi", text: "hi", status: "pending" }, 1000);
     history.settle("a", true);
     expect(published).toEqual([]);
     await settledTick();
+    expect(changes).toEqual([
+      {
+        kind: "patch",
+        upsert: [{ id: "a", at: 1000, raw: "hi", text: "hi", status: "inserted" }],
+        remove: [],
+        retention: "memory",
+        saveFailed: false,
+      },
+    ]);
     expect(published).toEqual([
       {
         entries: [{ id: "a", at: 1000, raw: "hi", text: "hi", status: "inserted" }],
@@ -254,6 +295,109 @@ describe("saved history", () => {
     expect(second.history.entries()).toEqual([
       { id: "b", at: START + 1, raw: "cut", text: "cut", status: "notInserted" },
       { id: "a", at: START, raw: "um hi", text: "Hi.", status: "inserted" },
+    ]);
+  });
+
+  test("a session reaches the hub as its entry alone, a delete as its id, and a clear as the whole list", async () => {
+    await writeFile(file, envelope("month", [savedEntry("old", START - HOUR)]));
+    const { history, changes, published } = harness();
+    await history.settled();
+    await settledTick();
+    expect(changes.map((change) => change.kind)).toEqual(["all"]);
+    changes.length = 0;
+
+    history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, START);
+    await settledTick();
+    history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    await settledTick();
+    history.settle("a", true);
+    await settledTick();
+    expect(changes).toEqual([
+      patch({ id: "a", at: START, raw: "um hi", text: "um hi", status: "pending" }),
+      patch({ id: "a", at: START, raw: "um hi", text: "Hi.", status: "pending" }),
+      patch({ id: "a", at: START, raw: "um hi", text: "Hi.", status: "inserted" }),
+    ]);
+    expect(ids(published.at(-1)?.entries ?? [])).toEqual(["a", "old"]);
+
+    changes.length = 0;
+    await history.remove("a");
+    await settledTick();
+    expect(changes).toEqual([
+      { kind: "patch", upsert: [], remove: ["a"], retention: "month", saveFailed: false },
+    ]);
+    expect(ids(published.at(-1)?.entries ?? [])).toEqual(["old"]);
+
+    changes.length = 0;
+    await history.clear();
+    await settledTick();
+    expect(changes).toEqual([
+      { kind: "all", state: { entries: [], retention: "month", saveFailed: false } },
+    ]);
+  });
+
+  test("a session is two writes: the raw transcript as it arrives, and the cleaned text with the settle", async () => {
+    const { history } = harness("month");
+    await history.settled();
+    writes.count = 0;
+    history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, START);
+    await history.settled();
+    expect(writes.count).toBe(1);
+    const afterCrash = harness("month");
+    await afterCrash.history.loaded();
+    expect(afterCrash.history.entries()).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "um hi", status: "notInserted" },
+    ]);
+
+    history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    await settledTick();
+    await settledTick();
+    expect(writes.count).toBe(1);
+    expect(history.entries()[0]?.text).toBe("Hi.");
+
+    history.settle("a", true);
+    await history.settled();
+    expect(writes.count).toBe(2);
+    expect((await saved()).entries).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "inserted" },
+    ]);
+  });
+
+  test("a quit between the cleaned text and the settle writes the cleaned text", async () => {
+    const { history } = harness("month");
+    history.remember({ id: "a", raw: "um hi", text: "um hi", status: "pending" }, START);
+    await history.settled();
+    history.remember({ id: "a", raw: "um hi", text: "Hi.", status: "pending" }, START);
+    await history.settled();
+    expect(history.state().saveFailed).toBe(false);
+    expect((await saved()).entries).toEqual([
+      { id: "a", at: START, raw: "um hi", text: "Hi.", status: "pending" },
+    ]);
+  });
+
+  test("a window that ends reaches the hub as the ids that left, or the whole list once more left than stayed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { history, state, changes, published } = harness("day");
+    history.remember({ id: "a", raw: "a", text: "a", status: "notInserted" }, START);
+    history.remember({ id: "b", raw: "b", text: "b", status: "notInserted" }, START + HOUR);
+    history.remember({ id: "c", raw: "c", text: "c", status: "notInserted" }, START + 2 * HOUR);
+    await history.settled();
+    await settledTick();
+    changes.length = 0;
+
+    state.now = START + DAY + 1;
+    history.expire();
+    await settledTick();
+    expect(changes).toEqual([
+      { kind: "patch", upsert: [], remove: ["a"], retention: "day", saveFailed: false },
+    ]);
+    expect(ids(published.at(-1)?.entries ?? [])).toEqual(["c", "b"]);
+
+    changes.length = 0;
+    state.now = START + DAY + 2 * HOUR + 1;
+    history.expire();
+    await settledTick();
+    expect(changes).toEqual([
+      { kind: "all", state: { entries: [], retention: "day", saveFailed: false } },
     ]);
   });
 
@@ -656,12 +800,13 @@ describe("saved history", () => {
     const history = createHistory({
       file,
       log: () => {},
-      onChange: (state) => {
+      onChange: (change) => {
         let fifo = false;
         try {
           fifo = statSync(file).isFIFO();
         } catch {}
-        claims.push({ retention: state.retention, fifo });
+        const { retention } = change.kind === "all" ? change.state : change;
+        claims.push({ retention, fifo });
       },
       now: () => START,
     });

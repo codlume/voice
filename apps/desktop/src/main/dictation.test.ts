@@ -36,10 +36,10 @@ import {
   autoApplyBudgetMs,
   cleanupBudgetMs,
   createDictation,
-  whenIdle,
   type Dictated,
   type SessionReport,
 } from "./dictation.ts";
+import { whenIdle } from "./activity.ts";
 import { createHistory } from "./history.ts";
 import { decodeTarget, type HelperCommand, type HelperEvent } from "./protocol.ts";
 import {
@@ -90,6 +90,7 @@ const transcriptEvent = (id: string, text: string, target: Target | null): Helpe
   audioMs: 800,
   asrMs: 100,
   speechMs: 600,
+  relayMs: null,
   target,
 });
 
@@ -155,11 +156,16 @@ function harness(opts: Options = {}) {
   const transformRuns: TransformRequest[] = [];
   let warms = 0;
   const lastTransforms: Omit<LastTransform, "finishedAt">[] = [];
-  store.subscribe((state) => phases.push(toSnapshot(state).session.kind));
+  const trace: string[] = [];
+  store.subscribe((state) => {
+    phases.push(toSnapshot(state).session.kind);
+    trace.push(`phase ${state.session.phase}`);
+  });
   const dictation = createDictation({
     store,
     send: (command) => {
       commands.push(command);
+      trace.push(`send ${command.type}`);
       if (command.type === "capture.stop") transcribing = command.id;
       if (command.type === "capture.cancel" && transcribing === command.id) transcribing = null;
       if (command.type === "capture.start" && transcribing !== null) {
@@ -183,7 +189,7 @@ function harness(opts: Options = {}) {
         if (opts.cleanFails === "rejects") return Promise.reject(new Error("model crashed"));
         if (opts.cleanHangs) return new Promise<CleanResult>((resolve) => hung.push(resolve));
         const chunks = opts.cleanPartial ? 3 : 1;
-        return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1 });
+        return Promise.resolve({ text: `${raw}.`, chunks, cleaned: 1, queueMs: 2, generateMs: 5 });
       },
     },
     transform: {
@@ -243,6 +249,7 @@ function harness(opts: Options = {}) {
     latest: () => history.entries()[0] ?? null,
     recorded: () => history.entries(),
     commands,
+    trace,
     cleans,
     gpu,
     styles,
@@ -274,22 +281,34 @@ const mailApp = target("com.apple.mail");
 const chromeAt = (host: string) => target("com.google.Chrome", host);
 
 async function dictate(h: ReturnType<typeof harness>, text: string, to: Target | null = null) {
-  h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+  h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
   const id = h.id();
-  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+  h.dictation.onHelperEvent({
+    type: "capture.started",
+    id,
+    startMs: 40,
+    relayMs: null,
+    asrState: null,
+  });
   vi.advanceTimersByTime(800);
-  h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+  h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
   h.dictation.onHelperEvent(transcriptEvent(id, text, to));
   await flush();
   return id;
 }
 
 function release(h: ReturnType<typeof harness>, holdMs: number) {
-  h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+  h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
   const id = h.id();
-  h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+  h.dictation.onHelperEvent({
+    type: "capture.started",
+    id,
+    startMs: 40,
+    relayMs: null,
+    asrState: null,
+  });
   vi.advanceTimersByTime(holdMs);
-  h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+  h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
   return id;
 }
 
@@ -304,8 +323,8 @@ describe("createDictation", () => {
       transform: { phase: "reading", id: "r1", transformId: POLISH_ID },
     }));
 
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle", uptimeMs: null });
 
     expect(h.commands).toEqual([]);
     expect(h.store.state.session).toEqual(idle);
@@ -315,26 +334,56 @@ describe("createDictation", () => {
       ...s,
       transform: { phase: "done", id: "r1", outcome: { kind: "noSelection" } },
     }));
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start"]);
   });
 
-  test("a show request waits for a transform run as it waits for a dictation", () => {
+  test("capture.start, capture.stop, and insert reach the helper before subscribers hear the phase", async () => {
+    const h = harness();
+
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    const id = h.id();
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
+    vi.advanceTimersByTime(800);
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
+    h.dictation.onHelperEvent(transcriptEvent(id, "hello", null));
+    await flush();
+
+    expect(h.trace).toEqual([
+      "send capture.start",
+      "phase starting",
+      "phase recording",
+      "send capture.stop",
+      "phase transcribing",
+      "phase cleaning",
+      "send insert",
+      "phase inserting",
+    ]);
+  });
+
+  test("a show request waits for a transform run as it waits for a dictation", async () => {
     const h = harness();
     const shown: string[] = [];
-    const showWhenIdle = whenIdle(h.store, () => shown.push(h.store.state.transform.phase));
+    const runWhenIdle = whenIdle(h.store);
     h.store.update((s) => ({
       ...s,
       transform: { phase: "generating", id: "r1", transformId: POLISH_ID, via: "copy", words: 2 },
     }));
 
-    showWhenIdle();
+    runWhenIdle(() => shown.push(h.store.state.transform.phase));
     expect(shown).toEqual([]);
 
     h.store.update((s) => ({
       ...s,
       transform: { phase: "done", id: "r1", outcome: { kind: "cancelled" } },
     }));
+    await Promise.resolve();
     expect(shown).toEqual(["done"]);
   });
 
@@ -361,7 +410,7 @@ describe("createDictation", () => {
 
   test.each(dictationLanguages)("passes $label to speech recognition", ({ value }) => {
     const h = harness({ dictationLanguage: value });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands).toEqual([
       {
         type: "capture.start",
@@ -380,7 +429,7 @@ describe("createDictation", () => {
     ["the language has no cleanup", { dictationLanguage: "pl" }, false],
   ])("asks the helper for the page host only when %s", (_, opts, detectHost) => {
     const h = harness(opts);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands).toEqual([expect.objectContaining({ type: "capture.start", detectHost })]);
   });
 
@@ -388,13 +437,13 @@ describe("createDictation", () => {
     const h = harness();
     const microphone = { uid: "usb", name: "USB Microphone" };
     h.store.update((state) => ({ ...state, settings: { ...state.settings, microphone } }));
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", microphone });
     h.store.update((state) => ({ ...state, settings: { ...state.settings, microphone: null } }));
     expect(h.commands).toHaveLength(1);
     expect(h.commands[0]).toMatchObject({ microphone });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel", uptimeMs: null });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", microphone: null });
   });
 
@@ -430,7 +479,7 @@ describe("createDictation", () => {
     ({ outputVolumeScale, ...lowering }) => {
       const h = harness();
       h.store.update((state) => ({ ...state, settings: { ...state.settings, ...lowering } }));
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       expect(h.commands).toEqual([
         expect.objectContaining({ type: "capture.start", outputVolumeScale }),
       ]);
@@ -443,7 +492,7 @@ describe("createDictation", () => {
       ...state,
       settings: { ...state.settings, lowerAudioWhileDictating: true },
     }));
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
     expect(h.commands).toEqual([
       {
@@ -460,8 +509,8 @@ describe("createDictation", () => {
       settings: { ...state.settings, lowerAudioWhileDictating: false },
     }));
     expect(h.commands).toHaveLength(1);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "cancel", uptimeMs: null });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands.at(-1)).toEqual({
       type: "capture.start",
       microphone: null,
@@ -474,7 +523,7 @@ describe("createDictation", () => {
 
   test("drives a full session from hotkey down to inserted and back to idle", async () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
     expect(h.commands).toEqual([
       {
@@ -486,10 +535,16 @@ describe("createDictation", () => {
         detectHost: true,
       },
     ]);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     h.dictation.onHelperEvent({ type: "capture.level", id, level: 0.4 });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
     h.dictation.onHelperEvent({
       type: "transcript",
@@ -498,6 +553,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
@@ -512,7 +568,12 @@ describe("createDictation", () => {
       text: "hello world.",
       status: "pending",
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "accessibility",
+      route: "direct",
+    });
     expect(h.latest()).toMatchObject({ id, status: "inserted" });
     expect(h.store.state.session).toEqual({
       phase: "done",
@@ -526,14 +587,14 @@ describe("createDictation", () => {
     expect(h.levels).toEqual([0.4]);
     const timing = h.logs.find((line) => line.startsWith("session "));
     expect(timing).toMatch(
-      /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ insertMs=\d+ releaseToInsertMs=\d+/,
+      /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=\d+ releaseToInsertMs=\d+/,
     );
     expect(timing).not.toContain("hello");
   });
 
   test("a toggle starts a session and the next toggle stops it, while the hold key's release and chord are ignored", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle", uptimeMs: null });
     const id = h.id();
     expect(h.commands).toEqual([
       {
@@ -545,22 +606,28 @@ describe("createDictation", () => {
         detectHost: true,
       },
     ]);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(5000);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "chord" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "chord", uptimeMs: null });
     expect(h.commands).toHaveLength(1);
     expect(h.store.state.session).toMatchObject({ phase: "recording", id, mode: "toggle" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "toggle", uptimeMs: null });
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
     expect(h.store.state.session).toMatchObject({ phase: "transcribing", id });
   });
 
   test("a chord on the hold key cancels its capture", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "chord" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "chord", uptimeMs: null });
     expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
     expect(h.store.state.session).toEqual(idle);
   });
@@ -568,11 +635,17 @@ describe("createDictation", () => {
   test("reports a finished session once, with the logged timings and no text or id", async () => {
     const h = harness({ dictationLanguage: "en" });
     const pressedAt = Date.now();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: 6,
+      asrState: "cold",
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -580,11 +653,18 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      relayMs: 4,
       target: null,
     });
     await flush();
     vi.advanceTimersByTime(30);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "unchanged",
+      clipboardSaveMs: 3,
+    });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
     expect(h.reports).toEqual([
       {
@@ -593,19 +673,26 @@ describe("createDictation", () => {
         capture: {
           language: "en",
           pressedAt,
+          insertRoute: "unchanged",
+          asrState: "cold",
           timings: {
             startMs: 40,
+            pressRelayMs: 6,
             audioMs: 800,
+            releaseRelayMs: 4,
             asrMs: 120,
             cleanupMs: 0,
+            cleanupQueueMs: 2,
+            cleanupGenerateMs: 5,
             insertMs: 30,
+            clipboardSaveMs: 3,
             releaseToInsertMs: 30,
           },
         },
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=0 insertMs=30 releaseToInsertMs=30`,
+      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged asrState=cold`,
     );
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
@@ -621,7 +708,7 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "accessibility",
-        reason: null,
+        route: "direct",
       });
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
     }
@@ -645,7 +732,13 @@ describe("createDictation", () => {
   test("hands Insights the category of the app even with cleanup off", async () => {
     const h = harness({ cleanupEnabled: false });
     const id = await dictate(h, "hello world", mailApp);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.styles).toEqual([]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
@@ -657,7 +750,13 @@ describe("createDictation", () => {
       transcriptEvent(id, "hello world", target("com.tinyspeck.slackmacgap")),
     );
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
       { bundleId: "com.apple.mail", category: "email" },
     ]);
@@ -665,15 +764,27 @@ describe("createDictation", () => {
 
   test("a transcript that arrives before capture starts does not decide where the session counts", async () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
     const transcript = (to: Target | null) =>
       h.dictation.onHelperEvent(transcriptEvent(id, "hello world", to));
     transcript(mailApp);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     transcript(target("com.tinyspeck.slackmacgap"));
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.styles).toEqual([{ style: "formal", layout: "general" }]);
     expect(h.dictated.map(({ destination }) => destination)).toEqual([
       { bundleId: "com.tinyspeck.slackmacgap", category: "work" },
@@ -695,21 +806,33 @@ describe("createDictation", () => {
         },
       },
     }));
-    h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "Hello world.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.styles).toEqual([{ style: "formal", layout: "email" }]);
     expect(h.dictated[0]?.destination).toEqual({ bundleId: "com.apple.mail", category: "email" });
   });
 
   test("releaseToInsertMs counts from the release even when capture caught up later", () => {
     const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
     vi.advanceTimersByTime(300);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     vi.advanceTimersByTime(200);
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 500 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 500,
+      relayMs: null,
+      asrState: null,
+    });
     expect(h.commands.at(-1)).toEqual({ type: "capture.stop", id });
     h.dictation.onHelperEvent({
       type: "transcript",
@@ -718,20 +841,33 @@ describe("createDictation", () => {
       audioMs: 0,
       asrMs: 10,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     vi.advanceTimersByTime(100);
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.reports[0]?.capture?.timings.releaseToInsertMs).toBe(300);
   });
 
   test("reports a failed session once, with its language", () => {
     const h = harness({ dictationLanguage: "pl" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 25 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 25,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({ type: "transcript.failed", id, message: "decoder broke" });
     expect(h.reports).toHaveLength(1);
     expect(h.reports[0]).toMatchObject({ capture: { language: "pl", timings: { startMs: 25 } } });
@@ -742,7 +878,13 @@ describe("createDictation", () => {
   test("hands each session with a usable transcript to Insights, inserted or not, with where it went when known", async () => {
     const h = harness({ dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }] });
     const first = await dictate(h, "ask hadrys");
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     const firstAt = Date.now();
     const second = await dictate(h, "hello there", mailApp);
     h.dictation.onHelperEvent({
@@ -789,6 +931,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
@@ -811,16 +954,23 @@ describe("createDictation", () => {
     };
     const lost = harness({ cleanHangs: true, snippets: [email] });
     const id = await dictate(lost, "send it to my email");
-    lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1 });
+    lost.hung[0]!({ text: "Send it.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
-    lost.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    lost.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     const off = harness({ cleanupEnabled: false });
     const offId = await dictate(off, "um hello");
     off.dictation.onHelperEvent({
       type: "insert.result",
       id: offId,
       method: "paste",
-      reason: null,
+      route: "forced",
+      clipboardSaveMs: null,
     });
     const failing = harness({ cleanFails: "rejects" });
     const failingId = await dictate(failing, "um hello");
@@ -828,7 +978,8 @@ describe("createDictation", () => {
       type: "insert.result",
       id: failingId,
       method: "paste",
-      reason: null,
+      route: "forced",
+      clipboardSaveMs: null,
     });
     for (const h of [lost, off, failing]) {
       expect(h.dictated).toHaveLength(1);
@@ -852,23 +1003,36 @@ describe("createDictation", () => {
       audioMs: 900,
       asrMs: 100,
       speechMs: null,
+      relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.dictated[0]?.paceMs).toBe(900);
   });
 
   test("reports a session that ended before capture without the previous session's data", () => {
     const h = harness({ dictationLanguage: "pl" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 25 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 25,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({ type: "transcript.failed", id: first, message: "decoder broke" });
     vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS);
     h.store.update((s) => ({ ...s, models: { ...s.models, asr: { state: "missing" } } }));
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.reports).toHaveLength(2);
     expect(h.reports[1]).toEqual({
       outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
@@ -879,10 +1043,10 @@ describe("createDictation", () => {
 
   test("reports a second refused press while the first refusal is still shown", () => {
     const h = harness({ asrModel: { state: "missing" } });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.reports).toHaveLength(1);
     vi.advanceTimersByTime(IDLE_AFTER_OTHER_MS - 500);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.store.state.session).toMatchObject({
       phase: "done",
       outcome: { kind: "failed", message: ASR_MISSING_MESSAGE },
@@ -953,9 +1117,15 @@ describe("createDictation", () => {
 
   test("a capture the helper stops on its own keeps the GPU busy", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
     expect(h.gpu).toEqual(["busy"]);
@@ -1070,11 +1240,17 @@ describe("createDictation", () => {
     ["the cleanup model is not loaded", { cleanupLoaded: false }],
   ])("inserts the raw transcript when %s", async (_name, opts) => {
     const h = harness(opts);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -1082,6 +1258,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
@@ -1094,7 +1271,7 @@ describe("createDictation", () => {
     async ({ value }) => {
       const h = harness({ dictationLanguage: value });
       const raw = "Zażółć gęślą jaźń.\nПривіт, світе! Café à 15:30.";
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const id = h.id();
       expect(h.commands).toEqual([
         {
@@ -1106,9 +1283,15 @@ describe("createDictation", () => {
           detectHost: false,
         },
       ]);
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
         type: "transcript",
         id,
@@ -1116,6 +1299,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
       await flush();
@@ -1126,7 +1310,7 @@ describe("createDictation", () => {
         type: "insert.result",
         id,
         method: "accessibility",
-        reason: null,
+        route: "direct",
       });
       expect(toSnapshot(h.store.state).session).toEqual({
         kind: "done",
@@ -1144,17 +1328,23 @@ describe("createDictation", () => {
     "changing $before to $after during recording applies to the next session",
     async ({ before, after, firstCleaned }) => {
       const h = harness({ dictationLanguage: before });
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const first = h.id();
       expect(h.commands.at(-1)).toMatchObject({
         type: "capture.start",
         language: before,
         microphone: null,
       });
-      h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id: first,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       h.store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage: after } }));
       vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
         type: "transcript",
         id: first,
@@ -1162,6 +1352,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
       await flush();
@@ -1175,18 +1366,25 @@ describe("createDictation", () => {
         type: "insert.result",
         id: first,
         method: "paste",
-        reason: null,
+        route: "forced",
+        clipboardSaveMs: null,
       });
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const second = h.id();
       expect(h.commands.at(-1)).toMatchObject({
         type: "capture.start",
         language: after,
         microphone: null,
       });
-      h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40 });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id: second,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
         type: "transcript",
         id: second,
@@ -1194,6 +1392,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
       await flush();
@@ -1210,11 +1409,17 @@ describe("createDictation", () => {
   test("a transcript during the cleanup warm-up is cleaned, not inserted raw", async () => {
     const h = harness();
     h.store.update((s) => ({ ...s, models: { ...s.models, cleanup: { state: "loading" } } }));
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -1222,6 +1427,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
@@ -1236,11 +1442,17 @@ describe("createDictation", () => {
         cleanFails,
         dictionary: [{ id: "1", phrase: "Hadryś", replacement: null }],
       });
-      h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const id = h.id();
-      h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+      h.dictation.onHelperEvent({
+        type: "capture.started",
+        id,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       vi.advanceTimersByTime(800);
-      h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       h.dictation.onHelperEvent({
         type: "transcript",
         id,
@@ -1248,6 +1460,7 @@ describe("createDictation", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
       await flush();
@@ -1273,11 +1486,17 @@ describe("createDictation", () => {
 
   test("a cleanup that never settles is aborted after the budget and a grace, inserts the raw text, and ignores the late result", async () => {
     const h = harness({ cleanHangs: true });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -1285,6 +1504,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
@@ -1305,7 +1525,7 @@ describe("createDictation", () => {
         attributes: { "cleanup.budget_ms": budgetMs },
       },
     ]);
-    h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "late polished text", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert")).toEqual([
       { type: "insert", id, text: "one two three", html: null },
@@ -1337,11 +1557,17 @@ describe("createDictation", () => {
 
   test("the next session is cleaned even when the earlier aborted cleanup has not settled yet", async () => {
     const h = harness({ cleanHangs: true });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id: first,
@@ -1349,17 +1575,30 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await vi.advanceTimersByTimeAsync(cleanupBudgetMs("one") + CLEANUP_GRACE_MS);
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
 
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const second = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: second, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: second,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id: second,
@@ -1367,14 +1606,15 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
     expect(h.cleans).toEqual(["one", "two"]);
     expect(h.signals.map((s) => s.aborted)).toEqual([true, false]);
 
-    h.hung[0]!({ text: "ONE", chunks: 1, cleaned: 1 });
-    h.hung[1]!({ text: "Two.", chunks: 1, cleaned: 1 });
+    h.hung[0]!({ text: "ONE", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
+    h.hung[1]!({ text: "Two.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
     await flush();
     expect(h.commands.filter((c) => c.type === "insert").map((c) => c.text)).toEqual([
       "one",
@@ -1388,7 +1628,13 @@ describe("createDictation", () => {
       const id = await dictate(h, "hello world");
       expect(h.commands.at(-1)).toEqual({ type: "insert", id, text: "hello world.", html: null });
       expect(h.copies).toEqual([]);
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        route: "forced",
+        clipboardSaveMs: null,
+      });
       expect(h.copies).toEqual([{ text: "hello world.", html: null }]);
       vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS);
       expect(h.store.state.session).toEqual(idle);
@@ -1407,14 +1653,26 @@ describe("createDictation", () => {
       ];
       const h = harness({ copyToClipboard: true, snippets });
       const id = await dictate(h, "send it to my email");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        route: "forced",
+        clipboardSaveMs: null,
+      });
       expect(h.copies).toEqual([{ text: "send it to name@example.com.", html: null }]);
     });
 
     test("copies both the plain text and the HTML of a formatted snippet", async () => {
       const h = harness({ copyToClipboard: true, snippets: [formattedName] });
       const id = await dictate(h, "sign it my name");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        route: "forced",
+        clipboardSaveMs: null,
+      });
       expect(h.copies).toEqual([{ text: "sign it Ana.", html: "sign it <em>Ana</em>." }]);
     });
 
@@ -1469,7 +1727,7 @@ describe("createDictation", () => {
       expect(h.signals[0]!.aborted).toBe(true);
       expect(h.latest()).toMatchObject({ raw: "x", text: "x", status: "notInserted" });
       expect(h.dictated).toMatchObject([{ raw: "x", insertedCleanup: null }]);
-      h.hung[0]!({ text: "x.", chunks: 1, cleaned: 1 });
+      h.hung[0]!({ text: "x.", chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
       await flush();
       expect(h.commands.filter((c) => c.type === "insert")).toEqual([]);
     });
@@ -1477,7 +1735,13 @@ describe("createDictation", () => {
     test("copies nothing when the setting is off", async () => {
       const h = harness();
       const id = await dictate(h, "hello world");
-      h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        route: "forced",
+        clipboardSaveMs: null,
+      });
       expect(h.store.state.session).toMatchObject({ phase: "done", outcome: { kind: "inserted" } });
       expect(h.copies).toEqual([]);
     });
@@ -1485,11 +1749,17 @@ describe("createDictation", () => {
 
   test("an insert the helper never answers ends notInserted after the watchdog", () => {
     const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -1497,6 +1767,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     vi.advanceTimersByTime(INSERT_TIMEOUT_MS - 1);
@@ -1538,11 +1809,17 @@ describe("createDictation", () => {
     expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
     h.helper.transcript(id, "ghost");
     expect(h.latest()).toBeNull();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const next = h.id();
     expect(next).not.toBe(id);
     expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", id: next });
-    h.dictation.onHelperEvent({ type: "capture.started", id: next, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: next,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     expect(h.store.state.session).toMatchObject({ phase: "recording", id: next });
   });
 
@@ -1561,8 +1838,8 @@ describe("createDictation", () => {
     const id = release(h, 800);
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
     const sent = h.commands.length;
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     expect(h.commands.length).toBe(sent);
     expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: true });
   });
@@ -1581,6 +1858,7 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     expect(h.latest()).toMatchObject({ raw: "late", text: "late" });
@@ -1590,9 +1868,15 @@ describe("createDictation", () => {
 
   test("a capture the helper stops on its own shows processing, logs why, and gets the transcription watchdog", () => {
     const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "maxDuration" });
     expect(toSnapshot(h.store.state).session).toEqual({ kind: "processing", overdue: false });
@@ -1616,9 +1900,15 @@ describe("createDictation", () => {
 
   test("after a helper-side stop the held key's release changes nothing and the next press starts a new capture", async () => {
     const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
     h.dictation.onHelperEvent({ type: "capture.stopped", id, reason: "deviceChanged" });
     h.dictation.onHelperEvent({
@@ -1628,19 +1918,26 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.store.state.session).toMatchObject({
       phase: "done",
       id,
       outcome: { kind: "inserted" },
     });
     expect(h.latest()).toMatchObject({ raw: "so far", text: "so far" });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     expect(h.commands.map((c) => c.type)).toEqual(["capture.start", "insert"]);
     await vi.advanceTimersByTimeAsync(IDLE_AFTER_INSERTED_MS);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.store.state.session.phase).toBe("starting");
     expect(h.id()).not.toBe(id);
     expect(h.commands.at(-1)).toMatchObject({ type: "capture.start", id: h.id() });
@@ -1648,7 +1945,7 @@ describe("createDictation", () => {
 
   test("a capture the helper never starts ends failed and cancels it after the watchdog", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
     vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
     expect(h.store.state.session.phase).toBe("starting");
@@ -1669,10 +1966,10 @@ describe("createDictation", () => {
 
   test("a release while capture is still starting does not extend the start watchdog", () => {
     const h = harness();
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
     vi.advanceTimersByTime(START_TIMEOUT_MS - 1);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     vi.advanceTimersByTime(1);
     expect(h.store.state.session).toMatchObject({ phase: "done", id, outcome: { kind: "failed" } });
     expect(h.commands.at(-1)).toEqual({ type: "capture.cancel", id });
@@ -1680,11 +1977,17 @@ describe("createDictation", () => {
 
   test("the transcription watchdog waits longer while the speech model is still loading", () => {
     const h = harness({ asrModel: { state: "loading" } });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const id = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     vi.advanceTimersByTime(TRANSCRIBE_TIMEOUT_MS);
     expect(h.store.state.session).toEqual({ phase: "transcribing", id, overdue: false });
     vi.advanceTimersByTime(TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS - TRANSCRIBE_TIMEOUT_MS);
@@ -1694,7 +1997,7 @@ describe("createDictation", () => {
 
   test("hotkey down while the speech model downloads sends nothing and names the download", () => {
     const h = harness({ asrModel: { state: "downloading", progress: 0.3 } });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands).toEqual([]);
     expect(toSnapshot(h.store.state).session).toEqual({
       kind: "done",
@@ -1705,7 +2008,7 @@ describe("createDictation", () => {
   test("hotkey down with the ASR model missing sends nothing to the helper", () => {
     const h = harness();
     h.dictation.onHelperEvent({ type: "asr.status", state: "missing", message: null });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     expect(h.commands).toEqual([]);
     expect(toSnapshot(h.store.state).session).toEqual({
       kind: "done",
@@ -1715,11 +2018,17 @@ describe("createDictation", () => {
 
   test("a new session cancels the pending idle timer of the previous one", () => {
     const h = harness({ cleanupEnabled: false });
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const first = h.id();
-    h.dictation.onHelperEvent({ type: "capture.started", id: first, startMs: 40 });
+    h.dictation.onHelperEvent({
+      type: "capture.started",
+      id: first,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     vi.advanceTimersByTime(800);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     h.dictation.onHelperEvent({
       type: "transcript",
       id: first,
@@ -1727,11 +2036,18 @@ describe("createDictation", () => {
       audioMs: 800,
       asrMs: 100,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
-    h.dictation.onHelperEvent({ type: "insert.result", id: first, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id: first,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     vi.advanceTimersByTime(IDLE_AFTER_INSERTED_MS - 100);
-    h.dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    h.dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const second = h.id();
     expect(second).not.toBe(first);
     vi.advanceTimersByTime(500);
@@ -1788,7 +2104,13 @@ describe("auto-apply after dictation", () => {
     expect(h.latest()).toMatchObject({ raw, text: `Polished: ${raw}` });
     expect(h.lastTransforms).toEqual([{ name: "Polish", before: raw, after: `Polished: ${raw}` }]);
 
-    h.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "forced",
+      clipboardSaveMs: null,
+    });
     expect(h.dictated).toMatchObject([{ raw, insertedCleanup: null }]);
     expect(h.logs.at(-1)).toMatch(/^session \S+ outcome=inserted .*cleanupMs=\d+/);
   });

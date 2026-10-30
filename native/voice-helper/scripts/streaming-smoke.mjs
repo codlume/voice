@@ -4,9 +4,14 @@ import { assert, dictateFixture, fixture, prepareAsr, withHelper } from "./helpe
 ensureFixtures();
 await withHelper({}, async (helper) => {
   await prepareAsr(helper);
-  for (const stopFirst of [false, true]) {
-    const id = stopFirst ? "cancel-finalization" : "cancel-recording";
-    helper.send({ type: "test.audioFile", path: fixture("long.wav") });
+  // 140 levels into long.wav the sliding window is streaming; 17 levels into pauses.wav the decode
+  // started at its first pause is running or just done.
+  for (const { id, name, levels, stopFirst } of [
+    { id: "cancel-recording", name: "long.wav", levels: 140, stopFirst: false },
+    { id: "cancel-finalization", name: "long.wav", levels: 140, stopFirst: true },
+    { id: "cancel-pause-decode", name: "pauses.wav", levels: 17, stopFirst: false },
+  ]) {
+    helper.send({ type: "test.audioFile", path: fixture(name) });
     helper.send({
       type: "capture.start",
       microphone: null,
@@ -21,8 +26,8 @@ await withHelper({}, async (helper) => {
         event.type === "capture.level" &&
         event.id === id &&
         helper.events.filter((item) => item.type === "capture.level" && item.id === id).length >=
-          140,
-      { timeoutMs: 20_000, label: "14 seconds of fixture audio" },
+          levels,
+      { timeoutMs: 20_000, label: `${levels / 10} seconds of fixture audio` },
     );
     if (stopFirst) helper.send({ type: "capture.stop", id });
     helper.send({ type: "capture.cancel", id });
@@ -57,6 +62,7 @@ await withHelper({}, async (helper) => {
     JSON.stringify({
       cancelledRecording: true,
       cancelledFinalization: true,
+      cancelledPauseDecode: true,
       auto: true,
       silence: true,
     }),

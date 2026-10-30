@@ -66,5 +66,10 @@ export const font = stylex.defineVars({
   serif: 'ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif',
 });
 
+// The snippet editor's empty height: a 140 px text area under the 32 px toolbar, inside its
+// border. The editor loads lazily, and its placeholder takes this height so the dialog does not
+// grow when the editor arrives.
+export const snippetEditor = stylex.defineConsts({ minHeight: "174px" });
+
 // Home's page is the inline-size container these queries measure.
 export const layout = stylex.defineConsts({ narrow: "@container (max-width: 720px)" });

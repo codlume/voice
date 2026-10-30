@@ -11,18 +11,25 @@ export const SESSION_TRANSACTION = "dictation.session";
 const SESSION_ATTRIBUTES = [
   "outcome",
   "insert.method",
+  "insert.route",
   "insert.reason",
   "dictation.language",
+  "asr.state",
 ] as const;
 export type SessionAttribute = (typeof SESSION_ATTRIBUTES)[number];
 const HELPER_TAGS = ["helper.exit_code", "helper.signal", "helper.error"] as const;
 export type HelperTag = (typeof HELPER_TAGS)[number];
 export const SESSION_MEASUREMENTS = [
   "startMs",
+  "pressRelayMs",
   "audioMs",
+  "releaseRelayMs",
   "asrMs",
   "cleanupMs",
+  "cleanupQueueMs",
+  "cleanupGenerateMs",
   "insertMs",
+  "clipboardSaveMs",
   "releaseToInsertMs",
 ] as const satisfies readonly (keyof SessionTimings)[];
 
@@ -34,6 +41,7 @@ export const HELPER_LOGS = [
   "asr.remove ignored while the speech model downloads",
   "asr.remove ignored while the speech model loads",
   "streaming ASR incomplete; retrying complete capture",
+  "ASR decode from the last pause failed; retrying complete capture",
   "hotkey tap unavailable: CGEvent.tapCreate returned nil",
   "hotkey tap unavailable: accessibility not granted",
   "hotkey tap installed",

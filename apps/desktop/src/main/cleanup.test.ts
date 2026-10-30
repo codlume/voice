@@ -18,7 +18,7 @@ import { noAutoApply } from "./testing/no-auto-apply.ts";
 
 const style: CleanupStyle = { style: "veryCasual", layout: "email" };
 const request: Required<CleanRequest> = { budgetMs: 1000, signal: new AbortController().signal };
-const whole = (text: string) => ({ text, chunks: 1, cleaned: 1 });
+const whole = (text: string) => ({ text, chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 });
 
 type Behavior = {
   loadError?: string;
@@ -636,15 +636,21 @@ describe("followSettings", () => {
     const setLanguage = (dictationLanguage: DictationLanguage) =>
       store.update((s) => ({ ...s, settings: { ...s.settings, dictationLanguage } }));
     const record = () => {
-      dictation.onHelperEvent({ type: "hotkey", action: "down" });
+      dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
       const session = store.state.session;
       if (session.phase === "idle") throw new Error("no session");
-      dictation.onHelperEvent({ type: "capture.started", id: session.id, startMs: 40 });
+      dictation.onHelperEvent({
+        type: "capture.started",
+        id: session.id,
+        startMs: 40,
+        relayMs: null,
+        asrState: null,
+      });
       return session.id;
     };
     const finish = (id: string, text: string) => {
       clock += 800;
-      dictation.onHelperEvent({ type: "hotkey", action: "up" });
+      dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
       dictation.onHelperEvent({
         type: "transcript",
         id,
@@ -652,6 +658,7 @@ describe("followSettings", () => {
         audioMs: 800,
         asrMs: 100,
         speechMs: 600,
+        relayMs: null,
         target: null,
       });
     };
@@ -676,7 +683,13 @@ describe("followSettings", () => {
           html: null,
         });
       expect(a.store.state.models.cleanup.state).toBe("ready");
-      a.dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+      a.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "paste",
+        route: "forced",
+        clipboardSaveMs: null,
+      });
       await expect.poll(() => a.store.state.models.cleanup.state).toBe("installed");
       expect(a.cleanup.loaded()).toBe(false);
     },

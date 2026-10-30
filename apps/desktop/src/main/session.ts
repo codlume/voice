@@ -30,13 +30,14 @@ export type CleanupWork =
 
 export type Session =
   | { phase: "idle" }
-  // `releasedAt` is when the user ended capture: the hold key's release or the second toggle tap.
+  // `released` is set once the user ended capture (the hold key's release or the second toggle
+  // tap) before capture started; the stop goes out when it does.
   | {
       phase: "starting";
       id: string;
       mode: DictationMode;
       pressedAt: number;
-      releasedAt: number | null;
+      released: Release | null;
     }
   | { phase: "recording"; id: string; mode: DictationMode; pressedAt: number }
   | { phase: "transcribing"; id: string; overdue: boolean }
@@ -64,12 +65,17 @@ export type Session =
 type Cleaning = Extract<Session, { phase: "cleaning" }>;
 type Inserting = Extract<Session, { phase: "inserting" }>;
 
+// `hotkeyUptimeMs` is the helper's clock at the key event, echoed on the capture command it
+// causes so the helper can measure the round trip. Absent for an event without one.
+type HotkeyTime = { hotkeyUptimeMs?: number | undefined };
+type Release = { at: number } & HotkeyTime;
+
 export type SessionEvent =
-  | { type: "hotkeyDown"; id: string; asr: ModelStatus["state"] }
-  | { type: "hotkeyUp" }
+  | ({ type: "hotkeyDown"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
+  | ({ type: "hotkeyUp" } & HotkeyTime)
   | { type: "hotkeyChord" }
   | { type: "cancel" }
-  | { type: "toggle"; id: string; asr: ModelStatus["state"] }
+  | ({ type: "toggle"; id: string; asr: ModelStatus["state"] } & HotkeyTime)
   | { type: "captureStarted"; id: string }
   | { type: "captureFailed"; id: string; message: string }
   | { type: "captureStopped"; id: string }
@@ -90,14 +96,21 @@ export type SessionEvent =
   | { type: "timedOut"; id: string }
   | { type: "idleTimeout"; id: string };
 
+/**
+ * What the helper is asked to do. It is waiting on these, so dictation sends them before it
+ * updates the store, and fills in what capture.start takes from the settings.
+ */
+export type Command =
+  | ({ type: "capture.start"; id: string } & HotkeyTime)
+  | ({ type: "capture.stop"; id: string; releasedAt: number } & HotkeyTime)
+  | { type: "capture.cancel"; id: string }
+  | { type: "insert"; id: string; output: Output };
+
 export type Effect =
-  | { type: "startCapture"; id: string }
-  | { type: "stopCapture"; id: string; releasedAt: number }
-  | { type: "cancelCapture"; id: string }
+  | { type: "send"; command: Command }
   | { type: "cleanup"; id: string; raw: string; work: CleanupWork }
   | { type: "cancelCleanup"; id: string }
   | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
-  | { type: "insert"; id: string; output: Output }
   | ({ type: "remember" } & Transcript)
   | { type: "copy"; output: Output }
   | {
@@ -111,6 +124,8 @@ export type Effect =
   | { type: "scheduleIdle"; id: string; ms: number };
 
 type Step = { state: Session; effects: Effect[] };
+
+const send = (command: Command): Effect => ({ type: "send", command });
 
 const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
@@ -135,25 +150,38 @@ function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
   };
 }
 
-function stopOrCancel(id: string, pressedAt: number, releasedAt: number): Step {
-  if (releasedAt - pressedAt < MIN_HOLD_MS) {
-    return finish(id, { kind: "tooShort" }, { type: "cancelCapture", id });
+function stopOrCancel(id: string, pressedAt: number, released: Release): Step {
+  if (released.at - pressedAt < MIN_HOLD_MS) {
+    return finish(id, { kind: "tooShort" }, send({ type: "capture.cancel", id }));
   }
   return {
     state: { phase: "transcribing", id, overdue: false },
-    effects: [{ type: "stopCapture", id, releasedAt }],
+    effects: [
+      send({
+        type: "capture.stop",
+        id,
+        releasedAt: released.at,
+        hotkeyUptimeMs: released.hotkeyUptimeMs,
+      }),
+    ],
   };
 }
 
-function start(id: string, asr: ModelStatus["state"], mode: DictationMode, now: number): Step {
+function start(
+  id: string,
+  asr: ModelStatus["state"],
+  mode: DictationMode,
+  now: number,
+  hotkey: HotkeyTime,
+): Step {
   if (asr === "missing" || asr === "failed") {
     return finish(id, { kind: "failed", message: ASR_MISSING_MESSAGE });
   }
   if (asr === "downloading")
     return finish(id, { kind: "failed", message: ASR_DOWNLOADING_MESSAGE });
   return {
-    state: { phase: "starting", id, mode, pressedAt: now, releasedAt: null },
-    effects: [{ type: "startCapture", id }],
+    state: { phase: "starting", id, mode, pressedAt: now, released: null },
+    effects: [send({ type: "capture.start", id, hotkeyUptimeMs: hotkey.hotkeyUptimeMs })],
   };
 }
 
@@ -161,10 +189,12 @@ function start(id: string, asr: ModelStatus["state"], mode: DictationMode, now: 
 function endCapture(
   state: Extract<Session, { phase: "starting" | "recording" }>,
   now: number,
+  hotkey: HotkeyTime,
 ): Step {
-  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, now);
-  if (state.releasedAt !== null) return { state, effects: [] };
-  return { state: { ...state, releasedAt: now }, effects: [] };
+  const released = { at: now, hotkeyUptimeMs: hotkey.hotkeyUptimeMs };
+  if (state.phase === "recording") return stopOrCancel(state.id, state.pressedAt, released);
+  if (state.released !== null) return { state, effects: [] };
+  return { state: { ...state, released }, effects: [] };
 }
 
 function inserting(
@@ -193,7 +223,7 @@ function insert(state: Inserting): Step {
     state,
     effects: [
       { type: "remember", id, raw, text: output.text, status: "pending" },
-      { type: "insert", id, output },
+      send({ type: "insert", id, output }),
     ],
   };
 }
@@ -231,34 +261,34 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
   switch (event.type) {
     case "hotkeyDown": {
       if (state.phase !== "idle" && state.phase !== "done") return same;
-      return start(event.id, event.asr, "hold", now);
+      return start(event.id, event.asr, "hold", now, event);
     }
     case "toggle": {
       if (state.phase === "idle" || state.phase === "done") {
-        return start(event.id, event.asr, "toggle", now);
+        return start(event.id, event.asr, "toggle", now, event);
       }
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       if (state.mode !== "toggle") return same;
-      return endCapture(state, now);
+      return endCapture(state, now, event);
     }
     case "hotkeyUp": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       if (state.mode !== "hold") return same;
-      return endCapture(state, now);
+      return endCapture(state, now, event);
     }
     case "hotkeyChord": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
       if (state.mode !== "hold") return same;
-      return { state: idle, effects: [{ type: "cancelCapture", id: state.id }] };
+      return { state: idle, effects: [send({ type: "capture.cancel", id: state.id })] };
     }
     case "cancel": {
       if (state.phase !== "starting" && state.phase !== "recording") return same;
-      return { state: idle, effects: [{ type: "cancelCapture", id: state.id }] };
+      return { state: idle, effects: [send({ type: "capture.cancel", id: state.id })] };
     }
     case "captureStarted": {
       if (state.phase !== "starting") return same;
-      if (state.releasedAt !== null) {
-        return stopOrCancel(state.id, state.pressedAt, state.releasedAt);
+      if (state.released !== null) {
+        return stopOrCancel(state.id, state.pressedAt, state.released);
       }
       return {
         state: { phase: "recording", id: state.id, mode: state.mode, pressedAt: state.pressedAt },
@@ -323,7 +353,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       const cleaned = event.text.trim();
       const final = finalRewrite(state.raw, cleaned, state.rewrites);
       if (final.text === "") {
-        return finish(state.id, { kind: "empty" }, { type: "cancelCapture", id: state.id });
+        return finish(state.id, { kind: "empty" }, send({ type: "capture.cancel", id: state.id }));
       }
       const next = insert(
         inserting(
@@ -369,7 +399,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         return finish(
           state.id,
           { kind: "failed", message: HELPER_TIMEOUT_MESSAGE },
-          { type: "cancelCapture", id: state.id },
+          send({ type: "capture.cancel", id: state.id }),
         );
       }
       // A cancel makes the helper discard the audio, so the first deadline only tells the user.
@@ -378,7 +408,7 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         return finish(
           state.id,
           { kind: "failed", message: TRANSCRIBE_GAVE_UP_MESSAGE },
-          { type: "cancelCapture", id: state.id },
+          send({ type: "capture.cancel", id: state.id }),
         );
       }
       if (state.phase === "inserting") {

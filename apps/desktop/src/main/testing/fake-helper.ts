@@ -119,7 +119,10 @@ function handle(command: Record<string, unknown>) {
       target = command.target;
       return;
     case "insert":
-      setTimeout(() => emit({ type: "insert.result", id, method: "accessibility" }), 10);
+      setTimeout(
+        () => emit({ type: "insert.result", id, method: "accessibility", route: "direct" }),
+        10,
+      );
       return;
     case "selection.read": {
       const selection = config.selection ?? { outcome: "failed", reason: "failed" };
@@ -151,7 +154,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 14 });
+const ready = () => emit({ type: "ready", version: config.version ?? 15 });
 
 if (config.control) {
   const path = config.control;

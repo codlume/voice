@@ -16,7 +16,15 @@ export type Generation = { chunk: string; output: string; truncated: boolean };
 type Output = Omit<Generation, "chunk">;
 
 export type CleanRequest = { budgetMs?: number; signal?: AbortSignal };
-export type CleanResult = { text: string; chunks: number; cleaned: number };
+export type CleanResult = {
+  text: string;
+  chunks: number;
+  cleaned: number;
+  // Waiting for the model, behind an earlier clean or the busy loop's generation in flight.
+  queueMs: number;
+  // Running once the model was ours: tokenizing, chunking, and the generations.
+  generateMs: number;
+};
 
 export type S1Mini = {
   load(): Promise<void>;
@@ -47,7 +55,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
   let busyUntil = 0;
   let busy = false;
 
-  // Real work ends the busy loop, so it never queues behind it.
   function work<T>(task: () => Promise<T>): Promise<T> {
     busyUntil = 0;
     return serialize(task);
@@ -57,10 +64,15 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
 
   // The GPU clocks down while the user speaks: a clean after 5 s of idle measured 216 ms against
   // 155 ms right after another. Without the gap the loop slowed the speech model by ~10 ms.
+  // The gap comes first: a transcript decoded at a pause arrives within a millisecond of the
+  // loop's start, and its clean would otherwise wait 103 ms behind the first generation on a
+  // cold GPU for a warm-up worth 88 ms.
   async function busyLoop() {
     busy = true;
     try {
       while (busyEngine()) {
+        await new Promise((resolve) => setTimeout(resolve, BUSY_GAP_MS));
+        if (!busyEngine()) break;
         await serialize(async () => {
           const current = busyEngine();
           if (!current) return;
@@ -72,7 +84,6 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         }).catch(() => {
           busyUntil = 0;
         });
-        await new Promise((resolve) => setTimeout(resolve, BUSY_GAP_MS));
       }
     } finally {
       busy = false;
@@ -112,10 +123,12 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
     },
     clean: (raw, style, { budgetMs, signal } = {}) => {
       const deadline = new AbortController();
-      const deadlineAt = budgetMs === undefined ? Infinity : Date.now() + budgetMs;
+      const calledAt = Date.now();
+      const deadlineAt = budgetMs === undefined ? Infinity : calledAt + budgetMs;
       const timer =
         budgetMs === undefined ? undefined : setTimeout(() => deadline.abort(), budgetMs);
       return work(async () => {
+        const workStartedAt = Date.now();
         const withdraw = withdrawal(signal);
         const { chunks, countTokens, run } = await prepare(raw, withdraw);
         const control = s1Control(style, raw, chunks.length);
@@ -143,6 +156,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
           text: stitch(raw, chunks, finishOutputs(style.style, outputs)),
           chunks: chunks.length,
           cleaned: outputs.filter((output) => output !== undefined).length,
+          queueMs: workStartedAt - calledAt,
+          generateMs: Date.now() - workStartedAt,
         };
       }).finally(() => clearTimeout(timer));
     },

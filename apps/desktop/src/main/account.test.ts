@@ -18,7 +18,8 @@ import {
   parseSignInCode,
   resolveApiUrl,
 } from "./account.ts";
-import { createDictation, whenIdle } from "./dictation.ts";
+import { whenIdle } from "./activity.ts";
+import { createDictation } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import {
   API_URL,
@@ -595,7 +596,7 @@ describe("createAccount", () => {
         loaded: () => true,
         keepGpuBusy: () => {},
         letGpuIdle: () => {},
-        clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
+        clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 }),
       },
       transform: noAutoApply,
       onLevel: () => {},
@@ -607,9 +608,10 @@ describe("createAccount", () => {
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
-    const showWhenIdle = whenIdle(h.store, () => shownDuring.push(h.store.state.session.phase));
+    const runWhenIdle = whenIdle(h.store);
     const takeCallback = (url: string) => {
-      if (h.account.handleCallbackUrl(url) !== "ignored") showWhenIdle();
+      if (h.account.handleCallbackUrl(url) !== "ignored")
+        runWhenIdle(() => shownDuring.push(h.store.state.session.phase));
     };
 
     await startSignIn(h);
@@ -619,11 +621,17 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     await startSignIn(h, "state2");
-    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const session = h.store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const id = session.id;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: null,
+    });
     takeCallback(callbackUrl(SECOND_CODE));
     await flush();
     h.exchanges[0]?.resolve();
@@ -632,7 +640,7 @@ describe("createAccount", () => {
     expect(shownDuring).toEqual([]);
 
     vi.advanceTimersByTime(800);
-    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -640,11 +648,17 @@ describe("createAccount", () => {
       audioMs: 800,
       asrMs: 1,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await flush();
     expect(shownDuring).toEqual([]);
-    dictation.onHelperEvent({ type: "insert.result", id, method: "accessibility", reason: null });
+    dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "accessibility",
+      route: "direct",
+    });
     expect(h.store.state.session).toEqual({
       phase: "done",
       id,
@@ -655,14 +669,15 @@ describe("createAccount", () => {
       "capture.stop",
       "insert",
     ]);
+    await flush();
     expect(shownDuring).toEqual(["done"]);
   });
 
   test("an interrupted callback outside a session shows Voice at once", () => {
     const h = harness();
     const shown = vi.fn();
-    const showWhenIdle = whenIdle(h.store, shown);
-    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") showWhenIdle();
+    const runWhenIdle = whenIdle(h.store);
+    if (h.account.handleCallbackUrl(callbackUrl(CODE)) !== "ignored") runWhenIdle(shown);
     expect(shown).toHaveBeenCalledOnce();
     expect(h.state).toEqual({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
   });
@@ -677,7 +692,7 @@ describe("createAccount", () => {
         loaded: () => true,
         keepGpuBusy: () => {},
         letGpuIdle: () => {},
-        clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1 }),
+        clean: async (raw) => ({ text: raw, chunks: 1, cleaned: 1, queueMs: 0, generateMs: 0 }),
       },
       transform: noAutoApply,
       onLevel: () => {},

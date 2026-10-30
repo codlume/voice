@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import * as NodeURL from "node:url";
 
 import stylex from "@stylexjs/unplugin";
@@ -109,6 +110,15 @@ export default defineConfig({
       // Baked in at build time so a packaged app never reads it from its environment. Empty
       // (the default) builds an app that cannot send diagnostics at all.
       env: { VOICE_SENTRY_DSN: process.env.VOICE_SENTRY_DSN ?? "" },
+      // Main's `import()`s (the Better Auth account client, model downloads) become their own
+      // chunks, so launch parses only what runs at launch. They get a folder of their own, which
+      // this build empties first: the other entries write to dist-electron too, so no entry can
+      // clean the whole of it.
+      outputOptions: { codeSplitting: true, chunkFileNames: "chunks/[name].cjs" },
+      hooks: {
+        "build:prepare": () =>
+          rm(`${appDir}dist-electron/chunks`, { recursive: true, force: true }),
+      },
     },
     electronEntry("hub-preload", "src/preload/hub.ts"),
     electronEntry("pill-preload", "src/preload/pill.ts"),

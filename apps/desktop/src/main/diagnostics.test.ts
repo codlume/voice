@@ -46,7 +46,13 @@ const timings = {
   releaseToInsertMs: 215,
 };
 
-const capture = { language: "en" as const, pressedAt: 1_790_000_000_000, timings };
+const capture = {
+  language: "en" as const,
+  pressedAt: 1_790_000_000_000,
+  timings,
+  insertRoute: "late" as const,
+  asrState: "warm" as const,
+};
 
 const report = (
   outcome: Outcome,
@@ -61,24 +67,44 @@ describe("sessionSpan", () => {
   test.each<[Outcome, Record<string, string>]>([
     [
       { kind: "inserted", method: "accessibility" },
-      { outcome: "inserted", "insert.method": "accessibility", "dictation.language": "en" },
+      {
+        outcome: "inserted",
+        "insert.method": "accessibility",
+        "insert.route": "late",
+        "dictation.language": "en",
+        "asr.state": "warm",
+      },
     ],
     [
       { kind: "inserted", method: "paste" },
-      { outcome: "inserted", "insert.method": "paste", "dictation.language": "en" },
+      {
+        outcome: "inserted",
+        "insert.method": "paste",
+        "insert.route": "late",
+        "dictation.language": "en",
+        "asr.state": "warm",
+      },
     ],
     ...(["focusChanged", "noFocusedField", "secureInput", "failed"] as const).map(
       (reason): [Outcome, Record<string, string>] => [
         { kind: "notInserted", reason, copied: false },
-        { outcome: "notInserted", "insert.reason": reason, "dictation.language": "en" },
+        {
+          outcome: "notInserted",
+          "insert.reason": reason,
+          "dictation.language": "en",
+          "asr.state": "warm",
+        },
       ],
     ),
     [
       { kind: "failed", message: `Transcription failed for "${RAW}"` },
-      { outcome: "failed", "dictation.language": "en" },
+      { outcome: "failed", "dictation.language": "en", "asr.state": "warm" },
     ],
-    [{ kind: "empty" }, { outcome: "empty", "dictation.language": "en" }],
-    [{ kind: "tooShort" }, { outcome: "tooShort", "dictation.language": "en" }],
+    [{ kind: "empty" }, { outcome: "empty", "dictation.language": "en", "asr.state": "warm" }],
+    [
+      { kind: "tooShort" },
+      { outcome: "tooShort", "dictation.language": "en", "asr.state": "warm" },
+    ],
   ])("%j carries exactly its outcome attributes", (outcome, attributes) => {
     const span = sessionSpan(report(outcome));
     expect(span.attributes).toEqual(attributes);
@@ -97,7 +123,7 @@ describe("sessionSpan", () => {
       op: "dictation.session",
       startTime: 1_790_000_000_000,
       endTime: 1_790_000_001_050,
-      attributes: { outcome: "empty", "dictation.language": "pl" },
+      attributes: { outcome: "empty", "dictation.language": "pl", "asr.state": "warm" },
       measurements: { startMs: 40 },
     });
     expect(sessionSpan(report({ kind: "failed", message: "No model" }, null))).toEqual({
@@ -188,7 +214,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       loaded: () => true,
       keepGpuBusy: () => {},
       letGpuIdle: () => {},
-      clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1 }),
+      clean: async () => ({ text: CLEANED, chunks: 1, cleaned: 1, queueMs: 3, generateMs: 50 }),
     },
     transform: noAutoApply,
     onLevel: () => {},
@@ -201,13 +227,19 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
   });
 
   async function dictate() {
-    dictation.onHelperEvent({ type: "hotkey", action: "down" });
+    dictation.onHelperEvent({ type: "hotkey", action: "down", uptimeMs: null });
     const session = store.state.session;
     if (session.phase === "idle") throw new Error("no session");
     const { id } = session;
-    dictation.onHelperEvent({ type: "capture.started", id, startMs: 40 });
+    dictation.onHelperEvent({
+      type: "capture.started",
+      id,
+      startMs: 40,
+      relayMs: null,
+      asrState: "warm",
+    });
     clock += 800;
-    dictation.onHelperEvent({ type: "hotkey", action: "up" });
+    dictation.onHelperEvent({ type: "hotkey", action: "up", uptimeMs: null });
     dictation.onHelperEvent({
       type: "transcript",
       id,
@@ -215,11 +247,18 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
       audioMs: 800,
       asrMs: 120,
       speechMs: 600,
+      relayMs: null,
       target: null,
     });
     await expect.poll(() => store.state.session.phase).toBe("inserting");
     clock += 30;
-    dictation.onHelperEvent({ type: "insert.result", id, method: "paste", reason: null });
+    dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "html",
+      clipboardSaveMs: 2,
+    });
     expect(store.state.session.phase).toBe("done");
     dictation.dispatch({ type: "idleTimeout", id });
     return id;
@@ -410,12 +449,17 @@ describe("startDiagnostics consent", () => {
               attributes: {
                 outcome: { value: "inserted", type: "string" },
                 "insert.method": { value: "paste", type: "string" },
+                "insert.route": { value: "html", type: "string" },
                 "dictation.language": { value: "en", type: "string" },
+                "asr.state": { value: "warm", type: "string" },
                 startMs: { value: 40, type: "integer" },
                 audioMs: { value: 800, type: "integer" },
                 asrMs: { value: 120, type: "integer" },
                 cleanupMs: { value: 0, type: "integer" },
+                cleanupQueueMs: { value: 3, type: "integer" },
+                cleanupGenerateMs: { value: 50, type: "integer" },
                 insertMs: { value: 30, type: "integer" },
+                clipboardSaveMs: { value: 2, type: "integer" },
                 releaseToInsertMs: { value: 30, type: "integer" },
                 "sentry.release": { value: "voice@0.0.1", type: "string" },
                 "sentry.environment": { value: "test", type: "string" },

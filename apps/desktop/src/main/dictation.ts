@@ -24,10 +24,11 @@ import { activity } from "./activity.ts";
 import type { Cleanup } from "./cleanup.ts";
 import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnostics-scrub.ts";
 import type { History } from "./history.ts";
-import type { HelperCommand, HelperEvent } from "./protocol.ts";
+import type { AsrSessionState, HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
 import {
   INSERT_TIMEOUT_MS,
   step,
+  type Command,
   type Destination,
   type Effect as SessionEffect,
   type Session,
@@ -75,25 +76,40 @@ export type Dictation = {
   onHelperEvent(event: HelperEvent): void;
 };
 
+// What a helper event reports as null is unknown here, so onHelperEvent turns it into undefined.
 type Started = {
   id: string;
   language: DictationLanguage;
   pressedAt: number;
-  startMs?: number;
-  releasedAt?: number;
-  audioMs?: number;
-  speechMs?: number | null;
-  asrMs?: number;
-  cleanupMs?: number;
-  insertStartedAt?: number;
-};
-
-export type SessionTimings = {
   startMs?: number | undefined;
+  pressRelayMs?: number | undefined;
+  releasedAt?: number | undefined;
+  releaseRelayMs?: number | undefined;
   audioMs?: number | undefined;
+  speechMs?: number | undefined;
   asrMs?: number | undefined;
   cleanupMs?: number | undefined;
+  cleanupQueueMs?: number | undefined;
+  cleanupGenerateMs?: number | undefined;
+  insertStartedAt?: number | undefined;
+  insertRoute?: InsertRoute | undefined;
+  clipboardSaveMs?: number | undefined;
+  asrState?: AsrSessionState | undefined;
+};
+
+// pressRelayMs is the part of startMs spent on the hop through main. releaseToInsertMs starts
+// when main sees the release, so it leaves releaseRelayMs out.
+export type SessionTimings = {
+  startMs?: number | undefined;
+  pressRelayMs?: number | undefined;
+  audioMs?: number | undefined;
+  releaseRelayMs?: number | undefined;
+  asrMs?: number | undefined;
+  cleanupMs?: number | undefined;
+  cleanupQueueMs?: number | undefined;
+  cleanupGenerateMs?: number | undefined;
   insertMs?: number | undefined;
+  clipboardSaveMs?: number | undefined;
   releaseToInsertMs?: number | undefined;
 };
 
@@ -101,7 +117,13 @@ export type SessionTimings = {
 export type SessionReport = {
   outcome: Outcome;
   finishedAt: number;
-  capture: { language: DictationLanguage; pressedAt: number; timings: SessionTimings } | null;
+  capture: {
+    language: DictationLanguage;
+    pressedAt: number;
+    timings: SessionTimings;
+    insertRoute?: InsertRoute | undefined;
+    asrState?: AsrSessionState | undefined;
+  } | null;
 };
 
 export type Dictated = {
@@ -122,10 +144,15 @@ const outputVolumeScale = (settings: Settings) =>
 function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number): SessionTimings {
   return {
     startMs: s.startMs,
+    pressRelayMs: s.pressRelayMs,
     audioMs: s.audioMs,
+    releaseRelayMs: s.releaseRelayMs,
     asrMs: s.asrMs,
     cleanupMs: s.cleanupMs,
+    cleanupQueueMs: s.cleanupQueueMs,
+    cleanupGenerateMs: s.cleanupGenerateMs,
     insertMs: s.insertStartedAt === undefined ? undefined : finishedAt - s.insertStartedAt,
+    clipboardSaveMs: s.clipboardSaveMs,
     releaseToInsertMs:
       s.releasedAt === undefined || outcome !== "inserted" ? undefined : finishedAt - s.releasedAt,
   };
@@ -159,6 +186,10 @@ export function createDictation(options: DictationOptions): Dictation {
   function dispatch(event: SessionEvent) {
     const before = store.state.session;
     const { state, effects } = step(before, event, now());
+    // The helper is waiting on the commands, so they go out before the store update, whose
+    // subscribers publish the snapshot to both windows and move the pill. send() never dispatches
+    // back.
+    for (const effect of effects) if (effect.type === "send") toHelper(effect.command);
     if (state !== before) {
       store.update((s) => ({ ...s, session: state }));
       const overdue =
@@ -173,7 +204,7 @@ export function createDictation(options: DictationOptions): Dictation {
         }
       }
     }
-    for (const effect of effects) run(effect);
+    for (const effect of effects) if (effect.type !== "send") run(effect);
     if (state.phase === "done" && (before.phase !== "done" || before.id !== state.id)) {
       finish(state.id, state.outcome);
     }
@@ -198,32 +229,47 @@ export function createDictation(options: DictationOptions): Dictation {
     }
   }
 
-  function run(effect: SessionEffect) {
-    switch (effect.type) {
-      case "startCapture":
+  function toHelper(command: Command) {
+    switch (command.type) {
+      case "capture.start":
         if (idleTimer) clearTimeout(idleTimer);
         started = {
-          id: effect.id,
+          id: command.id,
           language: store.state.settings.dictationLanguage,
           pressedAt: now(),
         };
         send({
           type: "capture.start",
-          id: effect.id,
+          id: command.id,
           language: started.language,
           outputVolumeScale: outputVolumeScale(store.state.settings),
           microphone: store.state.settings.microphone,
           detectHost: wantsCleanup(store.state.settings),
+          hotkeyUptimeMs: command.hotkeyUptimeMs,
         });
-        if (workFor(effect.id)?.kind === "transform") options.transform.model.warm();
+        if (workFor(command.id)?.kind === "transform") options.transform.model.warm();
         return;
-      case "stopCapture":
-        track(effect.id, { releasedAt: effect.releasedAt });
-        send({ type: "capture.stop", id: effect.id });
+      case "capture.stop":
+        track(command.id, { releasedAt: command.releasedAt });
+        send({ type: "capture.stop", id: command.id, hotkeyUptimeMs: command.hotkeyUptimeMs });
         return;
-      case "cancelCapture":
-        send({ type: "capture.cancel", id: effect.id });
+      case "capture.cancel":
+        send({ type: "capture.cancel", id: command.id });
         return;
+      case "insert":
+        track(command.id, { insertStartedAt: now() });
+        send({
+          type: "insert",
+          id: command.id,
+          text: command.output.text,
+          html: command.output.html,
+        });
+        return;
+    }
+  }
+
+  function run(effect: Exclude<SessionEffect, { type: "send" }>) {
+    switch (effect.type) {
       case "cancelCleanup":
         if (cleaning?.id === effect.id) Effect.runFork(Fiber.interrupt(cleaning.fiber));
         return;
@@ -235,7 +281,7 @@ export function createDictation(options: DictationOptions): Dictation {
           Effect.tryPromise({
             try: (signal) =>
               work.kind === "style"
-                ? clean(raw, work.style, budgetMs, signal)
+                ? clean(id, raw, work.style, budgetMs, signal)
                 : applyTransform(raw, work.transformId, budgetMs, signal),
             catch: (error): CleanupFailure => ({
               message: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -282,10 +328,6 @@ export function createDictation(options: DictationOptions): Dictation {
         });
         return;
       }
-      case "insert":
-        track(effect.id, { insertStartedAt: now() });
-        send({ type: "insert", id: effect.id, text: effect.output.text, html: effect.output.html });
-        return;
       case "remember":
         options.history.remember(
           { id: effect.id, raw: effect.raw, text: effect.text, status: effect.status },
@@ -316,12 +358,17 @@ export function createDictation(options: DictationOptions): Dictation {
   }
 
   async function clean(
+    id: string,
     raw: string,
     style: CleanupStyle,
     budgetMs: number,
     signal: AbortSignal,
   ): Promise<string> {
-    const { text, chunks, cleaned } = await cleanup.clean(raw, style, { budgetMs, signal });
+    const { text, chunks, cleaned, queueMs, generateMs } = await cleanup.clean(raw, style, {
+      budgetMs,
+      signal,
+    });
+    track(id, { cleanupQueueMs: queueMs, cleanupGenerateMs: generateMs });
     if (cleaned < chunks) {
       log(`cleanup partial: ${cleaned} of ${chunks} chunks cleaned, budget ${budgetMs} ms`, {
         message: "cleanup partial",
@@ -372,8 +419,16 @@ export function createDictation(options: DictationOptions): Dictation {
       language: s.language,
       pressedAt: s.pressedAt,
       timings: sessionTimings(s, outcome.kind, finishedAt),
+      insertRoute: s.insertRoute,
+      asrState: s.asrState,
     };
-    log(timingLine("session", id, outcome.kind, capture?.timings ?? {}));
+    log(
+      timingLine("session", id, outcome.kind, {
+        ...capture?.timings,
+        insertRoute: capture?.insertRoute,
+        asrState: capture?.asrState,
+      }),
+    );
     options.onSessionDone({ outcome, finishedAt, capture });
     options.history.settle(id, outcome.kind === "inserted");
   }
@@ -395,13 +450,14 @@ export function createDictation(options: DictationOptions): Dictation {
         ) {
           return;
         }
+        const hotkeyUptimeMs = event.uptimeMs ?? undefined;
         switch (event.action) {
           case "down":
-            return dispatch({ type: "hotkeyDown", id: randomUUID(), asr });
+            return dispatch({ type: "hotkeyDown", id: randomUUID(), asr, hotkeyUptimeMs });
           case "toggle":
-            return dispatch({ type: "toggle", id: randomUUID(), asr });
+            return dispatch({ type: "toggle", id: randomUUID(), asr, hotkeyUptimeMs });
           case "up":
-            return dispatch({ type: "hotkeyUp" });
+            return dispatch({ type: "hotkeyUp", hotkeyUptimeMs });
           case "chord":
             return dispatch({ type: "hotkeyChord" });
           case "cancel":
@@ -410,7 +466,11 @@ export function createDictation(options: DictationOptions): Dictation {
         return;
       }
       case "capture.started":
-        track(event.id, { startMs: event.startMs });
+        track(event.id, {
+          startMs: event.startMs,
+          pressRelayMs: event.relayMs ?? undefined,
+          asrState: event.asrState ?? undefined,
+        });
         dispatch({ type: "captureStarted", id: event.id });
         return;
       case "capture.level":
@@ -432,8 +492,9 @@ export function createDictation(options: DictationOptions): Dictation {
       case "transcript": {
         track(event.id, {
           audioMs: event.audioMs,
-          speechMs: event.speechMs,
+          speechMs: event.speechMs ?? undefined,
           asrMs: event.asrMs,
+          releaseRelayMs: event.relayMs ?? undefined,
         });
         const { settings } = store.state;
         const category = classify(event.target, settings.cleanup.assignments);
@@ -459,11 +520,24 @@ export function createDictation(options: DictationOptions): Dictation {
         dispatch({ type: "transcriptFailed", id: event.id, message: event.message });
         return;
       case "insert.result":
+        switch (event.method) {
+          case "accessibility":
+            track(event.id, { insertRoute: event.route ?? undefined });
+            break;
+          case "paste":
+            track(event.id, {
+              insertRoute: event.route ?? undefined,
+              clipboardSaveMs: event.clipboardSaveMs ?? undefined,
+            });
+            break;
+          case "none":
+            break;
+        }
         dispatch({
           type: "insertResult",
           id: event.id,
           method: event.method,
-          reason: event.reason,
+          reason: event.method === "none" ? event.reason : null,
         });
         return;
       case "microphones.changed":
@@ -511,22 +585,4 @@ export function createDictation(options: DictationOptions): Dictation {
   }
 
   return { dispatch, onHelperEvent };
-}
-
-/**
- * Returns a request that runs `show` now, or once the current session or transform run reaches
- * its outcome. Showing a window mid-session would take focus from the target app and fail the
- * insertion.
- */
-export function whenIdle(store: Store, show: () => void): () => void {
-  let pending = false;
-  store.subscribe((state) => {
-    if (!pending || activity(state) !== "idle") return;
-    pending = false;
-    show();
-  });
-  return () => {
-    if (activity(store.state) !== "idle") pending = true;
-    else show();
-  };
 }

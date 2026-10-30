@@ -138,7 +138,7 @@ final class HotkeyTap {
         let decision = hotkeys.handle(keyEvent, activity: activity())
         switch decision.emit {
         case .hotkey(let action):
-            output.emit(.hotkey(action: action))
+            emit(action)
         case .transform(let transformId):
             heldShortcutKey.withLock { $0 = keyEvent.keycode }
             output.emit(.transform(transformId: transformId))
@@ -155,7 +155,8 @@ final class HotkeyTap {
     }
 
     private func emit(_ action: HotkeyAction?) {
-        if let action { output.emit(.hotkey(action: action)) }
+        guard let action else { return }
+        output.emit(.hotkey(action: action, uptimeMs: DispatchTime.now().uptimeMs))
     }
 
     /// While a key may be down, a cheap poll of the live modifier state catches a release the

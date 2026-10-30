@@ -109,12 +109,11 @@ function harness(opts: Options = {}) {
       if (command.type === "insert" && !opts.insertNeverAnswers) {
         const reason = opts.insertReason ?? null;
         setTimeout(() => {
-          transforms.onHelperEvent({
-            type: "insert.result",
-            id: command.id,
-            method: reason === null ? "accessibility" : "none",
-            reason,
-          });
+          transforms.onHelperEvent(
+            reason === null
+              ? { type: "insert.result", id: command.id, method: "accessibility", route: "direct" }
+              : { type: "insert.result", id: command.id, method: "none", reason },
+          );
         }, 10);
       }
     },
@@ -262,7 +261,7 @@ describe("createTransforms", () => {
     const h = harness();
     const run = await startGenerating(h);
 
-    h.event({ type: "hotkey", action: "cancel" });
+    h.event({ type: "hotkey", action: "cancel", uptimeMs: null });
     await flush();
 
     expect(run.request.signal.aborted).toBe(true);
@@ -285,7 +284,7 @@ describe("createTransforms", () => {
     await flush();
     expect(h.store.state.transform.phase).toBe("inserting");
 
-    h.event({ type: "hotkey", action: "cancel" });
+    h.event({ type: "hotkey", action: "cancel", uptimeMs: null });
 
     expect(h.store.state.transform.phase).toBe("inserting");
     expect(h.of("transform.end")).toEqual([]);
@@ -498,7 +497,7 @@ describe("createTransforms", () => {
 
     h.store.update((s) => ({
       ...s,
-      session: { phase: "starting", id: "s1", mode: "hold", pressedAt: 0, releasedAt: null },
+      session: { phase: "starting", id: "s1", mode: "hold", pressedAt: 0, released: null },
     }));
 
     expect(h.store.state.transform).toEqual(idleRun);

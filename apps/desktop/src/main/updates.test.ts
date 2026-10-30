@@ -78,6 +78,17 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
   if (options.nightly) engine.installed = "0.0.3-nightly.8";
   const loadEngine = vi.fn(() => engine);
   const snapshots: UpdatesSnapshot[] = [];
+  let busy = false;
+  const waiting: (() => void)[] = [];
+  const session = {
+    start: () => {
+      busy = true;
+    },
+    end: () => {
+      busy = false;
+      for (const task of waiting.splice(0)) task();
+    },
+  };
   const canRestart = vi.fn(() => true);
   const prepareRestart = vi.fn(async () => {});
   const onRestartFailure = vi.fn();
@@ -95,6 +106,10 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
     },
     initial,
     onChange: (snapshot) => snapshots.push(snapshot),
+    whenIdle: (task) => {
+      if (busy) waiting.push(task);
+      else task();
+    },
     canRestart,
     prepareRestart,
     onRestartFailure,
@@ -103,6 +118,7 @@ function setup(options: { disabled?: boolean; nightly?: boolean } = {}) {
     engine,
     loadEngine,
     snapshots,
+    session,
     updates,
     status: () => (snapshots.at(-1) ?? initial).status,
     canRestart,
@@ -238,6 +254,39 @@ describe("updates", () => {
     await updates.check();
     expect(loadEngine).toHaveBeenCalledOnce();
     updates.dispose();
+  });
+
+  test("a scheduled check that comes due mid-session waits for the session to end", async () => {
+    vi.useFakeTimers();
+    const { updates, engine, loadEngine, session, status } = setup();
+    updates.start();
+    session.start();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(loadEngine).not.toHaveBeenCalled();
+    expect(status().kind).toBe("idle");
+
+    session.end();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(loadEngine).toHaveBeenCalledOnce();
+    expect(engine.check).toHaveBeenCalledOnce();
+    expect(status().kind).toBe("available");
+    updates.dispose();
+  });
+
+  test("a check the user asks for mid-session runs at once, and one due after dispose never runs", async () => {
+    vi.useFakeTimers();
+    const { updates, engine, loadEngine, session } = setup();
+    updates.start();
+    session.start();
+    await updates.check();
+    expect(loadEngine).toHaveBeenCalledOnce();
+    expect(engine.check).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    updates.dispose();
+    session.end();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(engine.check).toHaveBeenCalledOnce();
   });
 
   test("keeps one error listener across every kind of check and none after dispose", async () => {
