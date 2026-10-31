@@ -1,5 +1,6 @@
 import {
   closedMs,
+  isCapturing,
   noticeText,
   type Meeting,
   type MeetingBanner,
@@ -81,13 +82,13 @@ function stillApplies(prompt: MeetingPrompt, meeting: Meeting): boolean {
   if (prompt.kind === "silence" || prompt.kind === "maxLengthSoon") {
     return meeting.status.kind === "recording";
   }
-  return !isLive(meeting);
+  return !isCapturing(meeting);
 }
 
 // A failed start has no meeting; it is moot once one records. A failed summary goes once it is
 // tried again, and a failed final pass stays.
 function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
-  if (banner.kind === "startFailed") return !meetings.some(isLive);
+  if (banner.kind === "startFailed") return !meetings.some(isCapturing);
   const meeting = meetings.find(({ id }) => id === banner.id);
   if (!meeting) return false;
   switch (banner.kind) {
@@ -96,11 +97,9 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
     default:
-      return !isLive(meeting);
+      return !isCapturing(meeting);
   }
 }
-
-const isLive = ({ status }: Meeting) => status.kind === "recording" || status.kind === "starting";
 
 /** Follows the meetings: picks the current one and drops prompts and notices that stopped applying. */
 export function follow(focus: MeetingFocus, meetings: readonly Meeting[]): MeetingFocus {

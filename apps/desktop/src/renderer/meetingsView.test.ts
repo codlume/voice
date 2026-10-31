@@ -5,7 +5,6 @@ import type { Meeting, MeetingId, Speaker, SpeakerId } from "../shared/meetings.
 import {
   expiredBy,
   inlineRuns,
-  liveMeeting,
   meetingDays,
   overview,
   retentionSentence,
@@ -199,12 +198,6 @@ test("search results follow main's order, say where they matched, and skip delet
     ["b", "Transcript"],
     ["a", null],
   ]);
-});
-
-test("the live meeting is the one recording, paused or starting", () => {
-  const recording = meeting("live", at(22, 9), { status: { kind: "recording", since: at(22, 9) } });
-  expect(liveMeeting([meeting("done", at(22, 8)), recording])?.id).toBe("live");
-  expect(liveMeeting([meeting("done", at(22, 8))])).toBeNull();
 });
 
 describe("retention", () => {

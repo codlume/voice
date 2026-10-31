@@ -6,8 +6,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DayKey } from "../shared/insights.ts";
 import { clock } from "../shared/meeting-markdown.ts";
 import {
+  liveMeeting,
   recordedMs,
   titleText,
+  type LiveMeeting,
   type Meeting,
   type MeetingCommandResult,
   type MeetingId,
@@ -27,12 +29,10 @@ import { MeetingsSettingsDialog } from "./MeetingsSettingsDialog.tsx";
 import { Inline } from "./MeetingSummary.tsx";
 import {
   CONSENT_REMINDER,
-  liveMeeting,
   meetingDays,
   meetingWhen,
   overview,
   searchResults,
-  type LiveMeeting,
 } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcutLabel } from "./shortcutCapture.ts";

@@ -209,17 +209,28 @@ export function applyMeetingsChange(
 /** Option+M, on the "M" key's position whatever the layout types there. */
 export const DEFAULT_MEETING_SHORTCUT: Shortcut = { keycode: 46, modifiers: ["option"] };
 
+/** Statuses that hold a capture open or can resume one. At most one meeting is live. */
+export type LiveStatus = Extract<MeetingStatus, { kind: "starting" | "recording" | "paused" }>;
+export type LiveMeeting = Meeting & { status: LiveStatus };
+
+/** A capture is open or opening. */
+export const isCapturing = ({ status }: Meeting): boolean =>
+  status.kind === "starting" || status.kind === "recording";
+
+export const isLive = (meeting: Meeting): meeting is LiveMeeting =>
+  isCapturing(meeting) || meeting.status.kind === "paused";
+
+export const liveMeeting = (meetings: readonly Meeting[]): LiveMeeting | null =>
+  meetings.find(isLive) ?? null;
+
 /**
- * What the meeting shortcut and the menu bar item do now: stop the meeting that records or is
- * paused, wait while one starts, or start one.
+ * What the meeting shortcut and the menu bar item do now: stop the live meeting, wait while it
+ * starts, or start one.
  */
 export type MeetingToggle = { kind: "start" } | { kind: "stop" | "wait"; id: MeetingId };
 
 export function meetingToggle(meetings: readonly Meeting[]): MeetingToggle {
-  const live = meetings.find(
-    ({ status }) =>
-      status.kind === "starting" || status.kind === "recording" || status.kind === "paused",
-  );
+  const live = liveMeeting(meetings);
   if (!live) return { kind: "start" };
   return { kind: live.status.kind === "starting" ? "wait" : "stop", id: live.id };
 }
