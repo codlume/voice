@@ -188,9 +188,17 @@ test("search results follow main's order, say where they matched, and skip delet
   const results = searchResults(
     [a, b],
     [
-      { id: b.id, field: "transcript", snippet: "…the export bug…" },
-      { id: "gone" as MeetingId, field: "title", snippet: "gone" },
-      { id: a.id, field: "title", snippet: "a" },
+      {
+        id: b.id,
+        field: "transcript",
+        snippet: { before: "…the ", match: "export", after: " bug…" },
+      },
+      {
+        id: "gone" as MeetingId,
+        field: "title",
+        snippet: { before: "", match: "gone", after: "" },
+      },
+      { id: a.id, field: "title", snippet: { before: "", match: "a", after: "" } },
     ],
   );
   expect(results.map((result) => [result.meeting.id, result.where])).toEqual([

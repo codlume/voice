@@ -3,7 +3,13 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
 import { useState, type MouseEvent, type ReactNode } from "react";
 
-import { titleText, type Folder, type Meeting, type MeetingId } from "../shared/meetings.ts";
+import {
+  titleText,
+  type Folder,
+  type Meeting,
+  type MeetingId,
+  type MeetingSnippet,
+} from "../shared/meetings.ts";
 import { Card } from "./Card.tsx";
 import { FolderDialog } from "./FolderDialog.tsx";
 import { timeLabel } from "./historyView.ts";
@@ -122,6 +128,7 @@ const styles = stylex.create({
     whiteSpace: "nowrap",
   },
   where: { color: color.foreground },
+  match: { backgroundColor: "transparent", color: color.foreground, fontWeight: 600 },
   folderButton: {
     display: "inline-flex",
     alignItems: "center",
@@ -248,7 +255,7 @@ function Row({
 }: {
   meeting: Meeting;
   folders: readonly Folder[];
-  snippet: { where: string | null; text: string } | undefined;
+  snippet: { where: string | null; text: MeetingSnippet } | undefined;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
@@ -282,7 +289,9 @@ function Row({
         {snippet && (
           <p {...stylex.props(styles.snippet)}>
             {snippet.where && <span {...stylex.props(styles.where)}>{snippet.where}: </span>}
-            {snippet.text}
+            {snippet.text.before}
+            <mark {...stylex.props(styles.match)}>{snippet.text.match}</mark>
+            {snippet.text.after}
           </p>
         )}
       </div>
@@ -310,7 +319,7 @@ export function MeetingList({
 }: {
   days: readonly MeetingDay[];
   folders: readonly Folder[];
-  snippets: ReadonlyMap<MeetingId, { where: string | null; text: string }> | null;
+  snippets: ReadonlyMap<MeetingId, { where: string | null; text: MeetingSnippet }> | null;
   selectedId: MeetingId | null;
   onSelect: (id: MeetingId) => void;
   onOpen: (id: MeetingId) => void;

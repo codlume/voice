@@ -16,6 +16,7 @@ import {
   type MeetingRetention,
   type MeetingSearchField,
   type MeetingSearchHit,
+  type MeetingSnippet,
   type MeetingSource,
   type MeetingStatus,
   type Speaker,
@@ -272,7 +273,7 @@ const hitLabels: Record<MeetingSearchField, string | null> = {
   transcript: "Transcript",
 };
 
-export type SearchResult = { meeting: Meeting; where: string | null; snippet: string };
+export type SearchResult = { meeting: Meeting; where: string | null; snippet: MeetingSnippet };
 
 /** Hits in main's order, paired with their meetings; a hit for a meeting just deleted drops out. */
 export function searchResults(
