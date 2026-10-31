@@ -6,6 +6,7 @@ import type {
   TransformResult,
 } from "@voice/cleanup/transform";
 import type { ModelSource } from "@voice/cleanup/download";
+import { transformsFirst } from "@voice/cleanup/transform/preempt";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { forkUtility } from "./engine-process.ts";
@@ -31,7 +32,10 @@ export type TransformModel = {
   install(): Promise<void>;
   uninstall(): Promise<void>;
   run(request: TransformRequest): Promise<TransformResult>;
-  /** One step on the same loaded model, queued with transforms, such as a meeting summary step. */
+  /**
+   * One step on the same loaded model, such as a meeting summary step. A Transform stops it and
+   * goes first, and the step then runs again, so it must be safe to repeat.
+   */
   generate(request: GenerateRequest): Promise<GenerateResult>;
   warm(): void;
   follow(): void;
@@ -264,6 +268,11 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     }
   }
 
+  const turns = transformsFirst(
+    (request: TransformRequest) => onLoaded(request.signal, (engine) => engine.transform(request)),
+    (request: GenerateRequest) => onLoaded(request.signal, (engine) => engine.generate(request)),
+  );
+
   return {
     refresh: async () => {
       const { findModel, source } = await loadModule();
@@ -296,8 +305,8 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       }
       void set({ phase: "missing" });
     },
-    run: (request) => onLoaded(request.signal, (engine) => engine.transform(request)),
-    generate: (request) => onLoaded(request.signal, (engine) => engine.generate(request)),
+    run: turns.transform,
+    generate: turns.generate,
     warm: () => {
       if (state.phase !== "installed" && !resident(state)) return;
       unloadWhenSettled = false;

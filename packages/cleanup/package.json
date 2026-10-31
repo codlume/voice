@@ -23,6 +23,10 @@
       "types": "./src/transform/index.ts",
       "import": "./src/transform/index.ts"
     },
+    "./transform/preempt": {
+      "types": "./src/transform/preempt.ts",
+      "import": "./src/transform/preempt.ts"
+    },
     "./words": {
       "types": "./src/words.ts",
       "import": "./src/words.ts"

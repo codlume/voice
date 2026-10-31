@@ -38,8 +38,9 @@ export type TitleOutcome =
 
 /**
  * Summaries and titles for meetings, written to the meeting as they finish. Both run after Stop,
- * never on the dictation path, one model step at a time, so a Transform waits for one step at
- * most. Aborting rejects with the signal's reason and writes nothing.
+ * never on the dictation path, one model step at a time, and a Transform stops the running step
+ * and goes first (`TransformModel.generate`). Aborting rejects with the signal's reason and
+ * writes nothing.
  */
 export type MeetingSummarizer = {
   /**
@@ -54,7 +55,7 @@ export type MeetingSummarizer = {
   generateTitle(id: MeetingId, options: { signal: AbortSignal }): Promise<TitleOutcome>;
 };
 
-/** A 12,000-token step took up to 52 s on an M1 Pro (measured); slower Macs and a queued Transform get room. */
+/** A 12,000-token step took up to 52 s on an M1 Pro (measured); slower Macs get room. A step a Transform stopped gets a new budget when it runs again. */
 export const STEP_BUDGET_MS = 240_000;
 
 export const summaryFailureMessage: Record<SummaryOutcomeFailure["kind"], string> = {

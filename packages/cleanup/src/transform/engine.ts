@@ -1,4 +1,4 @@
-import type { ChatWrapper, GbnfJsonObjectSchema, LlamaModel } from "node-llama-cpp";
+import type { ChatWrapper, GbnfJsonObjectSchema, LlamaModel, Token } from "node-llama-cpp";
 
 import { llamaHost, openLlama } from "../llama-host.ts";
 
@@ -52,10 +52,21 @@ export type TransformEngine = {
 
 const TIMED_OUT = { ok: false, failure: { kind: "timedOut" } } as const;
 
-export function createTransformEngine({ modelPath }: { modelPath: string }): TransformEngine {
+/** With these, a Transform waited at most 0.87 s for a summary step to stop (M1 Pro, transform-wait.mts). */
+const PREFILL_SLICE_TOKENS = 512;
+
+export function createTransformEngine({
+  modelPath,
+  contextSize = TRANSFORM_MODEL.contextSize,
+}: {
+  modelPath: string;
+  /** For measurements; the app uses the spec's. */
+  contextSize?: number;
+}): TransformEngine {
+  const spec = { ...TRANSFORM_MODEL, contextSize };
   const { load, serialize, withdrawal, dispose } = llamaHost(
     () =>
-      openLlama({ modelPath, contextSize: TRANSFORM_MODEL.contextSize }, (llamaCpp, context) => ({
+      openLlama({ modelPath, contextSize }, (llamaCpp, context) => ({
         session: new llamaCpp.LlamaChatSession({
           contextSequence: context.getSequence(),
           // Thinking off, as #311 measured it.
@@ -86,7 +97,7 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
         textTokens: model.tokenize(request.text).length,
         promptTokens: promptTokens(session.chatWrapper, model, SYSTEM_PROMPT, user),
       },
-      TRANSFORM_MODEL,
+      spec,
     );
     if (!plan.ok) return { ok: false, failure: { kind: "tooLong", maxWords: plan.maxWords } };
 
@@ -124,19 +135,29 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
 
     await session.sequence.clearHistory();
     session.setChatHistory([{ type: "system", text: request.system }]);
-    const prompt = promptTokens(session.chatWrapper, model, request.system, request.user);
-    if (prompt + request.maxTokens > TRANSFORM_MODEL.contextSize) {
+    const prompt = contextTokens(session.chatWrapper, model, request.system, request.user);
+    if (prompt.length + request.maxTokens > contextSize) {
       return { ok: false, failure: { kind: "tooLong" } };
     }
     const grammar = request.jsonSchema
       ? await llama.createGrammarForJsonSchema(request.jsonSchema)
       : undefined;
+    const stop = AbortSignal.any([withdraw, deadline]);
     try {
+      // node-llama-cpp reads a whole prompt in one call that never checks the signal, about 15 s
+      // for 12,000 tokens. Read in slices first, a step stops within one slice when a Transform
+      // goes first, and the prompt call below reuses what the slices read.
+      for (let start = 0; start < prompt.length - 1; start += PREFILL_SLICE_TOKENS) {
+        stop.throwIfAborted();
+        await session.sequence.evaluateWithoutGeneratingNewTokens(
+          prompt.slice(start, Math.min(start + PREFILL_SLICE_TOKENS, prompt.length - 1)),
+        );
+      }
       const output = await session.promptWithMeta(request.user, {
         temperature: request.temperature,
         maxTokens: request.maxTokens,
         ...(grammar && { grammar }),
-        signal: AbortSignal.any([withdraw, deadline]),
+        signal: stop,
       });
       withdraw.throwIfAborted();
       return { ok: true, text: output.responseText, truncated: output.stopReason === "maxTokens" };
@@ -172,6 +193,15 @@ function promptTokens(
   system: string,
   user: string,
 ): number {
+  return contextTokens(chatWrapper, model, system, user).length;
+}
+
+function contextTokens(
+  chatWrapper: ChatWrapper,
+  model: LlamaModel,
+  system: string,
+  user: string,
+): Token[] {
   const { contextText } = chatWrapper.generateContextState({
     chatHistory: [
       { type: "system", text: system },
@@ -179,5 +209,5 @@ function promptTokens(
       { type: "model", response: [] },
     ],
   });
-  return contextText.tokenize(model.tokenizer).length;
+  return contextText.tokenize(model.tokenizer);
 }

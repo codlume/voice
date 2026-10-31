@@ -59,6 +59,7 @@ function harness({
   onDisk = true,
   holdLoad = false,
   holdRuns = false,
+  holdFirstGenerate = false,
   loadError = undefined as string | undefined,
   keepLoaded = false,
 } = {}) {
@@ -114,10 +115,15 @@ function harness({
             runStarted.shift()?.();
             if (!holdRuns) resolve(RESULT);
           }),
-        generate: async ({ signal: _signal, ...received }) => {
-          worker.generated.push(received);
-          return { ok: true, text: '{"answer": "no"}', truncated: false };
-        },
+        generate: ({ signal, ...received }) =>
+          new Promise((resolve, reject) => {
+            worker.generated.push(received);
+            if (holdFirstGenerate && worker.generated.length === 1) {
+              signal.addEventListener("abort", () => reject(signal.reason));
+              return;
+            }
+            resolve({ ok: true, text: '{"answer": "no"}', truncated: false });
+          }),
         dispose: async () => {
           worker.disposes += 1;
         },
@@ -245,6 +251,34 @@ describe("transform model", () => {
     expect(result).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
     expect(workers).toHaveLength(1);
     expect(workers[0]!.generated).toEqual([step]);
+  });
+
+  test("a Transform stops a running generate step, goes first, and the step runs again", async () => {
+    const { model, workers } = harness({ holdFirstGenerate: true });
+    await model.refresh();
+    const step = {
+      system: "You are a meeting notes tool.",
+      user: "Part 1 of 2.",
+      maxTokens: 20,
+      temperature: 0,
+      budgetMs: 60_000,
+    };
+    const order: string[] = [];
+    const generating = model
+      .generate({ ...step, signal: new AbortController().signal })
+      .then((result) => {
+        order.push("generate");
+        return result;
+      });
+    await vi.waitFor(() => expect(workers[0]?.generated).toHaveLength(1));
+
+    expect(await model.run(request())).toEqual(RESULT);
+    order.push("transform");
+
+    expect(await generating).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
+    expect(order).toEqual(["transform", "generate"]);
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.generated).toEqual([step, step]);
   });
 
   test("warm loads once however often it is called, and a run reuses that process", async () => {
