@@ -205,6 +205,7 @@ async function waitOn(page, expression, timeoutMs) {
 const MEETING_FIXTURE_SPEED = 8;
 
 const meetingWords = (text) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+const share = (words, heard) => words.filter((word) => heard.has(word)).length / words.length;
 
 // A user turn survives when the mic segments around it hold most of its words. A system turn of
 // four or more words is echo kept when mic segments that start while it plays repeat most of its
@@ -214,7 +215,6 @@ function scoreMeeting(turns, segments) {
     segments
       .filter((entry) => entry.source === "mic" && filter(entry))
       .flatMap((entry) => meetingWords(entry.text));
-  const share = (words, heard) => words.filter((word) => heard.has(word)).length / words.length;
   const userTurns = turns.filter((turn) => turn.source === "mic");
   const lost = userTurns
     .filter((turn) => {

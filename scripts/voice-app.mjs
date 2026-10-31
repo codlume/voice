@@ -261,10 +261,10 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
-// `speakers` is FluidAudio's folder for the offline diarizer, absent below macOS 15.
+// `speakers` is the offline diarizer's folder (FluidAudio's `Repo.diarizer.folderName`), absent below macOS 15.
 export const optionalModelFiles = {
   transform: GEMMA_4_E2B.file,
-  speakers: "speaker-diarization-coreml",
+  speakers: "speaker-diarization",
 };
 
 export function linkTestModels(userData, cache) {
