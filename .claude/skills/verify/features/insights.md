@@ -16,7 +16,7 @@ The Insights page shows how much a user dictates: words dictated, speaking pace 
 
 - Voice window sidebar: `Insights`, after Home.
 - Home's `Your stats` card: `vv click 'css:aside[aria-label="Your stats"] button'`. Its accessible name is the card's text, so click it by selector.
-- Keyboard: Cmd-2 in the Voice nav.
+- Keyboard: Cmd-3 in the Voice nav.
 - Clearing: Voice window > `Settings` > `Data and Privacy` > Insights > `Clear…`.
 
 ## Driving it with voice-verify

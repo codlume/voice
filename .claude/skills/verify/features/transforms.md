@@ -17,7 +17,7 @@ The user selects text in any app and presses a transform shortcut. Voice reads t
 
 ## How to get to it (user POV)
 
-- The Voice nav item `Transforms`, between Style and Snippets, or Cmd+4 in the Voice window.
+- The Voice nav item `Transforms`, between Style and Snippets, or Cmd+5 in the Voice window.
 - In any other app, select text and press Option+1 or Option+2, or the shortcut set in the editor.
 - Settings > Models lists the transform model with the speech and cleanup models.
 

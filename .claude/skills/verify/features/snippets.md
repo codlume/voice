@@ -16,7 +16,7 @@ Snippets let a user save a spoken trigger, such as "my email", and the exact tex
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Snippets`, after Style.
-- Keyboard: Cmd-4 in the Voice nav.
+- Keyboard: Cmd-6 in the Voice nav.
 
 ## Driving it with voice-verify
 
