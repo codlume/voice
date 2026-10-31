@@ -20,12 +20,17 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meeting-stop`: `stopMeeting(id)` leads to `ready`, and the folder holds only `meeting.json` and `transcript.ndjson`.
 - `meeting-short`: under ten transcribed words the meeting waits in `confirmingShort`; `keepMeeting` finishes it and `discardMeeting` deletes its folder.
 - `meeting-dictated`: dictating while a meeting records inserts as usual and adds a `dictated` marker to the meeting transcript instead of the dictated words.
+- `meetings-setup`: `Set up Meetings` at the top of the page (Microphone, System Audio Recording, Try Meetings) until all are done; System Audio Recording below macOS 14.4 reads "Needs macOS 14.4 or later" and does not hold it open. A `Summaries` row offers the transform model while it is not on disk.
+- `meeting-toggle`: the meeting shortcut (default ⌥M, Settings > Shortcuts > Meetings) and the tray's `meeting` item stop the meeting that records or is paused, or start one; while one starts the tray reads `Starting meeting…` and a press does nothing.
+- `meetings-privacy-settings`: Settings > Data and Privacy > Meetings states the retention and `Meeting settings…` opens the Meetings page's dialog.
 - `meeting-recovery`: a meeting left `recording` by a quit becomes `ready` on the next launch, its leg closed at the last audio write, and the helper plays no fixture and opens no device.
 
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Meetings`, after Home.
 - Keyboard: Cmd-2 in the Voice nav.
+- ⌥M in any app, or the shortcut set in Settings > Shortcuts. The helper's tap answers it, except while the Voice window has focus, where the hub does.
+- Menu bar: `Start meeting` / `Stop meeting`.
 
 ## Driving it with voice-verify
 
@@ -37,6 +42,9 @@ Preconditions: baseline. A fresh userData has no meetings.
 - **Layout with meetings.** The renderer preview harness has `preview.html?hub=meetings` (five synthetic meetings over three days, one in Polish, a stale summary, a failed summary, a short meeting without a summary, two folders), `preview.html?hub=meetings-recording` (the live card) and `preview.html?hub=meetings-empty`. It runs on a fake `window.voice`, so it proves layout and interaction, not storage or recording.
 - `vv meeting [meeting-mic.wav|meeting-mic-speakers.wav] [--no-system]` copies the synthetic fixtures into the userData, starts a meeting through the hub API, waits until both fixtures have played (8x real time), stops it, keeps it if asked, and prints the transcript, the files left in the meeting's folder, and timings. Evidence JSON goes to the evidence dir.
 - Dictation mid-meeting: copy both fixtures to `<userData>/meeting-mic.wav` and `meeting-system.wav`, `vv eval hub 'window.voice.startMeeting()'`, run `vv dictate short.wav`, stop the meeting, and read its transcript for the `dictated` marker.
+- **Tray.** Copy both fixtures into the userData, then `vv tray meeting` starts a meeting and `vv tray` shows the item as `Stop meeting`; `vv tray meeting` again stops it.
+- **Shortcut in the Voice window.** With the fixtures in place, `vv front`, then `vv key KeyM option` starts a meeting and the same key stops it.
+- **Shortcut in another app.** Needs an exclusive desktop, as `dictate` does. Bring another app to the front so the helper's tap holds the shortcut, then run `.build/debug/fnpost combo 46 option --side=left` from `native/voice-helper`.
 - Recovery: start a meeting as above, `vv stop --keep-user-data` while it records, `vv launch --keep-user-data`, then `vv wait hub` for the meeting's status to be `ready` and list its folder.
 
 ## Gotchas
