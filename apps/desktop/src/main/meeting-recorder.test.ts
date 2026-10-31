@@ -186,7 +186,7 @@ describe("meeting recorder", () => {
       baseMs: 0,
       fromMs: { mic: 3000, system: 0 },
     });
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "unavailable" });
+    h.emit({ type: "meeting.started", id, atMs: 60_000, mic: "active", system: "unavailable" });
     await h.settle();
     expect(h.store.get(id)?.status.kind).toBe("recording");
     const markers = (await h.store.transcript(id)).filter((entry) => entry.kind === "marker");
@@ -311,7 +311,7 @@ describe("meeting recorder", () => {
     }));
 
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 1000);
     await h.recorder.stop(id);
@@ -639,7 +639,7 @@ describe("meeting recorder", () => {
     await h.settle();
     h.advance(1000);
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 8000, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 16_000);
     await h.segment(id, "mic", 9000, "After the resume");
@@ -735,7 +735,7 @@ describe("meeting recorder", () => {
       "meeting.stop",
     ]);
 
-    h.emit({ type: "meeting.started", id, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
     await h.settle();
     expect(h.store.get(id)?.status).toEqual({ kind: "paused" });
     expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
@@ -750,7 +750,7 @@ describe("meeting recorder", () => {
     await h.settle();
     expect(h.store.get(result.id)).toBeNull();
     expect(h.notices).toEqual(["startFailed"]);
-    h.emit({ type: "meeting.started", id: result.id, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id: result.id, atMs: 0, mic: "active", system: "active" });
     await h.settle();
     expect(h.sent.at(-1)).toEqual({ type: "meeting.cancel", id: result.id });
   });
@@ -817,7 +817,12 @@ describe("meeting recorder", () => {
     await first.segment(id, "mic", 0, TEN_WORDS);
     await first.recorder.stop(id);
     await first.drained(id);
-    first.emit({ type: "meeting.finalizeFailed", id, message: "diarizer crashed" });
+    first.emit({
+      type: "meeting.finalizeFailed",
+      id,
+      reason: "speakers",
+      message: "diarizer crashed",
+    });
     await first.settle();
     expect(first.store.get(id)?.finalPassFailed).toBe(true);
 
@@ -827,7 +832,7 @@ describe("meeting recorder", () => {
     expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
     await h.settle();
     expect(h.sentTypes()).toEqual(["meeting.finalize"]);
-    h.emit({ type: "meeting.finalizeFailed", id, message: "diarizer crashed" });
+    h.emit({ type: "meeting.finalizeFailed", id, reason: "speakers", message: "diarizer crashed" });
     await h.settle();
     expect(h.store.get(id)?.finalPassFailed).toBe(true);
 
@@ -896,7 +901,7 @@ describe("meeting recorder", () => {
     const h = harness({
       summarizer: {
         summarizeMeeting: async (_id, { signal, onProgress }) => {
-          onProgress?.({ done: 0, total: 2 });
+          onProgress?.({ step: 1, total: 2 });
           started();
           await new Promise((_resolve, reject) =>
             signal.addEventListener("abort", () => reject(signal.reason)),

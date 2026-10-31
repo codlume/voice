@@ -132,7 +132,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const timers = new Map<MeetingId, Map<Timer, NodeJS.Timeout>>();
   const watchdogs = new Map<MeetingId, Watchdog>();
   const silence = new Map<MeetingId, NodeJS.Timeout>();
-  // Where a resumed leg starts in audio time, read before the helper starts writing it.
+  // Where the open leg's audio starts, from the helper's `meeting.started`.
   const legStart = new Map<MeetingId, number>();
   // False while speech recognition loads, as after a launch, when it cannot report yet.
   let recognizing = false;
@@ -243,7 +243,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
             { mode: 0o600 },
           );
         }
-        legStart.set(id, baseMs + (length ?? 0));
         const sent = deps.send({
           type: "meeting.start",
           id,
@@ -358,10 +357,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       try {
         ({ ok } = await deps.summarizer.summarizeMeeting(id, {
           signal,
-          onProgress: ({ done, total }) => {
+          onProgress: (progress) => {
             if (signal.aborted) return;
-            const reached = { step: Math.min(done + 1, total), total };
-            const event = { type: "summaryProgress", progress: reached } as const;
+            const event = { type: "summaryProgress", progress } as const;
             background("summary progress", dispatch(id, event));
           },
         }));
@@ -625,6 +623,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
             deps.send({ type: "meeting.cancel", id });
             return;
           }
+          legStart.set(id, event.atMs);
           background(
             event.type,
             dispatch(id, { type: "captureStarted", leg: meeting.spans.length }),
@@ -667,7 +666,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           for (const [id, watchdog] of watchdogs) if (watchdog.watch === "finalPass") progress(id);
           const id = event.id as MeetingId;
           if (event.type === "meeting.finalizeFailed") {
-            log(`meetings: ${id} final pass failed (${event.message})`);
+            log(`meetings: ${id} final pass failed: ${event.reason} (${event.message})`);
             background("final pass", dispatch(id, { type: "finalizeFailed" }));
           } else {
             const arrived = { type: "finalPass", segments: event.segments } as const;

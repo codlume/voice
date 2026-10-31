@@ -332,7 +332,6 @@ extension HelperCommand: Decodable {
             self = .meetingFinalize(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
                                     baseMs: try c.decode(Double.self, forKey: .baseMs),
                                     language: try c.decode(DictationLanguage.self, forKey: .language))
-        case "meeting.models.download": self = .meetingModelsDownload
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
