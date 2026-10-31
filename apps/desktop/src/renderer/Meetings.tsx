@@ -4,7 +4,7 @@ import { AudioLinesIcon, CircleDotIcon, SearchIcon, SettingsIcon } from "lucide-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DayKey } from "../shared/insights.ts";
-import { clock } from "../shared/meeting-markdown.ts";
+import { clock, shownSummary } from "../shared/meeting-markdown.ts";
 import {
   commandRefusal,
   liveMeeting,
@@ -316,13 +316,7 @@ function emptyOverview(meeting: Meeting): string {
 }
 
 function OverviewPanel({ meeting }: { meeting: Meeting }) {
-  const { summary } = meeting;
-  const shown =
-    summary.kind === "ready"
-      ? summary.summary
-      : summary.kind === "failed"
-        ? summary.previous
-        : null;
+  const shown = shownSummary(meeting);
   const text = shown && overview(shown.markdown);
   return (
     <aside aria-label="Meeting overview" {...stylex.props(styles.aside)}>

@@ -93,6 +93,17 @@ describe("meeting markdown", () => {
     );
   });
 
+  test("keeps the previous summary a failed update left, as the page shows it", () => {
+    if (meeting.summary.kind !== "ready") throw new Error("the fixture has a summary");
+    const failed: Meeting = {
+      ...meeting,
+      summary: { kind: "failed", message: "The model stopped.", previous: meeting.summary.summary },
+    };
+    expect(meetingMarkdown(failed, [], { locale: "en-US", timeZone: "UTC" })).toContain(
+      "## Summary\n\n*Previous summary. Updating it failed.*\n\nWe agreed to ship on Friday.",
+    );
+  });
+
   test("leaves out the sections a meeting does not have yet", () => {
     const bare: Meeting = { ...meeting, title: null, notes: " ", summary: { kind: "none" } };
     expect(meetingMarkdown(bare, [], { locale: "en-US", timeZone: "UTC" })).toBe(

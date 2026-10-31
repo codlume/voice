@@ -19,6 +19,7 @@ import {
   type Summary,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
+import { shownSummary } from "../shared/meeting-markdown.ts";
 import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
@@ -374,12 +375,7 @@ function SummaryPanel({
       }, "Could not start the summary."),
   });
   const { summary, status } = meeting;
-  const previous =
-    summary.kind === "ready"
-      ? summary.summary
-      : summary.kind === "failed"
-        ? summary.previous
-        : null;
+  const previous = shownSummary(meeting);
   const short = "Short meetings get a summary only when you ask for one.";
   const notice = (() => {
     if (status.kind === "summarizing") {
