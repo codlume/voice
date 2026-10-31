@@ -6,7 +6,7 @@ import {
   decisionStatuses,
   describeLedger,
   describeItem,
-  dropReplaced,
+  dropConfirmed,
   emptyLedger,
   taskStatuses,
   UNASSIGNED,
@@ -98,7 +98,24 @@ ${CLOSING}`;
 const OVERVIEW_RULE =
   'one paragraph of 2 or 3 sentences that says what was decided and what happens next. State the outcomes themselves with the names and numbers. Do not list the topics and do not start with "The meeting".';
 
-const pairPrompt = ({ earlier, later }: Pair) => `<task>
+// Asked whether a later task changed an earlier one's owner, or whether two items say the same,
+// Gemma said "no" even to one task reworded or handed over. Asked whether both are the same
+// decision or piece of work, owners left out, it judged 19 of 19 en-90-like pairs right (probe).
+const samePrompt = ({ earlier, later }: Pair) => `<task>
+Below are two items from the notes of one meeting. Do both describe the same decision or the same piece of work, such as the same vendor, document or plan? Answer "yes" when they are the same one said in other words, and "no" when they are different ones.
+</task>
+
+<first>
+${earlier.text}
+</first>
+
+<second>
+${later.text}
+</second>
+
+${CLOSING}`;
+
+const changePrompt = ({ earlier, later }: Pair) => `<task>
 Below are two items from the notes of one meeting: one from earlier in the meeting and one from later. Does the later item change the earlier one, so the earlier one no longer holds? That is the case only when both are about the same thing and the later one gives it a new owner, date or amount, or decides the opposite. When they are about different things, or the later one only adds to the earlier one, the answer is "no".
 </task>
 
@@ -113,7 +130,7 @@ ${describeItem(later)}
 ${CLOSING}`;
 
 const overviewPrompt = (ledger: string, userNotes: string) => `<task>
-Below is what one meeting discussed and settled. Write ${OVERVIEW_RULE} Write it in the language of the meeting notes.
+Below is what one meeting discussed and settled. Write ${OVERVIEW_RULE} Say it in your own words, not by copying the notes. Write it in the language of the meeting notes.
 </task>
 
 <meeting_notes>
@@ -439,19 +456,26 @@ export function createGemmaSummaryProvider({
         (merged, part, index) => applyPart(merged, index + 1, part, owners),
         ledger,
       );
+    }
 
+    // One step per pair: judged in one list, Gemma gave every pair the first pair's answer.
+    const pairs = candidatePairs(ledger);
+    if (whole === null || pairs.length > 0) {
+      // A meeting read in parts planned this step for its overview.
+      if (whole !== null) progress.add(1);
       progress.start();
-      // One step per pair: judged in one list, Gemma gave every pair the first pair's answer.
-      const pairs = candidatePairs(ledger);
-      const replaced = new Set<string>();
+      const confirmed = new Set<string>();
       for (const pair of pairs) {
-        const reply = await ask(pairPrompt(pair), signal, {
+        const prompt = pair.question === "same" ? samePrompt(pair) : changePrompt(pair);
+        const reply = await ask(prompt, signal, {
           maxTokens: PAIR_MAX_TOKENS,
           jsonSchema: pairSchema,
         });
-        if (!("tooLong" in reply) && reply.text.includes('"yes"')) replaced.add(pair.id);
+        if (!("tooLong" in reply) && reply.text.includes('"yes"')) confirmed.add(pair.id);
       }
-      ledger = dropReplaced(ledger, pairs, replaced);
+      ledger = dropConfirmed(ledger, pairs, confirmed);
+    }
+    if (whole === null) {
       const reply = await ask(overviewPrompt(describeLedger(ledger), notes), signal, {
         maxTokens: OVERVIEW_MAX_TOKENS,
       });

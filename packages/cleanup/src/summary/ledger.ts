@@ -1,8 +1,9 @@
 /**
  * What the meeting settled, merged part by part. Within a part the model gives every item a
  * status, so an idea that part rejected, left open or moved never counts. An item that repeats
- * another merges into it. Across parts, a later item replaces an earlier one when the reconcile
- * step confirms that it changed it: the later mention is the meeting's last word.
+ * another word for word merges into it. The reconcile step then judges items that share a subject:
+ * a later part's change or hand-over replaces the earlier item, since the later mention is the
+ * meeting's last word, and one item said twice keeps its fuller wording.
  */
 
 export const UNASSIGNED = "Unassigned";
@@ -131,40 +132,60 @@ export function applyPart(
 
 type Item = Decision | Task;
 
-/** An earlier item a later one may have changed: same kind, a later part, a shared subject. */
-export type Pair = { id: string; earlier: Item; later: Item };
+/**
+ * Two items of one kind that share a subject, and what a "yes" means. `changed`: the later part
+ * changed the earlier item. `same`: both are one decision or one piece of work, said twice in a
+ * part or handed to a new owner in a later one. A "yes" drops `drop`.
+ */
+export type Pair = {
+  id: string;
+  question: "changed" | "same";
+  earlier: Item;
+  later: Item;
+  drop: Item;
+};
 
 const MAX_PAIRS = 40;
 
+const owner = (item: Item) => ("owner" in item ? item.owner : null);
+
+function pairOf(earlier: Item, later: Item): Omit<Pair, "id"> | null {
+  const subjects = subjectWords(later.text);
+  const shared = [...subjectWords(earlier.text)].filter((word) => subjects.has(word));
+  if (shared.length < SHARED_SUBJECT_WORDS) return null;
+  const sameOwner = owner(earlier) === owner(later);
+  if (earlier.part < later.part) {
+    return { question: sameOwner ? "changed" : "same", earlier, later, drop: earlier };
+  }
+  // In one part, two owners of similar work are each doing their own.
+  if (!sameOwner) return null;
+  const fuller = contentWords(earlier.text).size >= contentWords(later.text).size;
+  return { question: "same", earlier, later, drop: fuller ? later : earlier };
+}
+
 export function candidatePairs({ decisions, tasks }: Ledger): Pair[] {
   const of = (items: readonly Item[]) =>
-    items.flatMap((later) =>
-      items
-        .filter((earlier) => {
-          if (earlier.part >= later.part) return false;
-          const subjects = subjectWords(later.text);
-          const shared = [...subjectWords(earlier.text)].filter((word) => subjects.has(word));
-          return shared.length >= SHARED_SUBJECT_WORDS;
-        })
-        .map((earlier) => ({ earlier, later })),
+    items.flatMap((later, at) =>
+      items.slice(0, at).flatMap((earlier) => pairOf(earlier, later) ?? []),
     );
-  return [...of(decisions), ...of(tasks)]
+  // Decisions come first but leave tasks half the room: a hand-over is the most common change.
+  const tasked = of(tasks);
+  const share = Math.max(MAX_PAIRS / 2, MAX_PAIRS - tasked.length);
+  return [...of(decisions).slice(0, share), ...tasked]
     .slice(0, MAX_PAIRS)
-    .map(({ earlier, later }, index) => ({ id: `P${index + 1}`, earlier, later }));
+    .map((pair, index) => Object.assign(pair, { id: `P${index + 1}` }));
 }
 
 export const describeItem = (item: Item) =>
   "owner" in item ? `${item.owner}: ${item.text}` : item.text;
 
-/** Drops the earlier item of each pair the model says the later one replaced. */
-export function dropReplaced(
+/** Drops each confirmed pair's `drop`. */
+export function dropConfirmed(
   ledger: Ledger,
   pairs: readonly Pair[],
-  replaced: ReadonlySet<string>,
+  confirmed: ReadonlySet<string>,
 ): Ledger {
-  const dropped = new Set(
-    pairs.filter(({ id }) => replaced.has(id)).map(({ earlier }) => earlier.ref),
-  );
+  const dropped = new Set(pairs.filter(({ id }) => confirmed.has(id)).map(({ drop }) => drop.ref));
   return {
     ...ledger,
     decisions: ledger.decisions.filter(({ ref }) => !dropped.has(ref)),
