@@ -1,6 +1,11 @@
 import { MessageChannel, type MessagePort } from "node:worker_threads";
 
-import type { TransformEngine, TransformRequest, TransformResult } from "@voice/cleanup/transform";
+import type {
+  GenerateRequest,
+  TransformEngine,
+  TransformRequest,
+  TransformResult,
+} from "@voice/cleanup/transform";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
@@ -30,6 +35,7 @@ type FakeWorker = {
   loads: number;
   disposes: number;
   runs: Run[];
+  generated: Omit<GenerateRequest, "signal">[];
   closed: boolean;
   crash(): void;
 };
@@ -89,6 +95,7 @@ function harness({
         loads: 0,
         disposes: 0,
         runs: [],
+        generated: [],
         closed: false,
         crash: () => port2.close(),
       };
@@ -107,6 +114,10 @@ function harness({
             runStarted.shift()?.();
             if (!holdRuns) resolve(RESULT);
           }),
+        generate: async ({ signal: _signal, ...received }) => {
+          worker.generated.push(received);
+          return { ok: true, text: '{"answer": "no"}', truncated: false };
+        },
         dispose: async () => {
           worker.disposes += 1;
         },
@@ -214,6 +225,26 @@ describe("transform model", () => {
       text: "so um the launch moved to friday",
       dictation: { instructionKeepsWords: true },
     });
+  });
+
+  test("a generate step crosses to the same process with its JSON schema, and its result comes back", async () => {
+    const { model, workers } = harness();
+    await model.refresh();
+    const step = {
+      system: "You are a meeting notes tool.",
+      user: "Part 1 of 2.",
+      maxTokens: 20,
+      temperature: 0,
+      jsonSchema: { type: "object", properties: { answer: { enum: ["yes", "no"] } } },
+      budgetMs: 60_000,
+    } as const;
+
+    await model.run(request());
+    const result = await model.generate({ ...step, signal: new AbortController().signal });
+
+    expect(result).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.generated).toEqual([step]);
   });
 
   test("warm loads once however often it is called, and a run reuses that process", async () => {

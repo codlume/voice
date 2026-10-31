@@ -1,5 +1,7 @@
 export {
   createTransformEngine,
+  type GenerateRequest,
+  type GenerateResult,
   type TransformEngine,
   type TransformFailure,
   type TransformRequest,

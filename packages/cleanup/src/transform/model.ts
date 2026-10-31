@@ -18,9 +18,10 @@ export type TransformModelSpec = {
 };
 
 // 8,192 tokens cost 23 MB more Metal memory than 4,096 and fit 1,000 words of Polish with room
-// for a rewrite twice as long (measured, #312).
+// for a rewrite twice as long (measured, #312). A meeting summary reads up to 12,000 tokens of
+// transcript in one step, and 16,384 cost 48 MB more than 8,192 (measured, meetings summary spike).
 export const TRANSFORM_MODEL: TransformModelSpec = {
   source: GEMMA_4_E2B,
-  contextSize: 8192,
+  contextSize: 16_384,
   maxWords: 1000,
 };
