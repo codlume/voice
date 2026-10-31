@@ -169,6 +169,9 @@ function requireInstance(owner = scenarioOwner) {
   return state;
 }
 
+// The meeting notepad exists only while it is open.
+const PAGES = new Set(["hub", "pill", "notepad"]);
+
 async function connect(which) {
   const state = requireInstance();
   return Page.connect(state.port, `${which}.html`, { timeoutMs: 5000 });
@@ -803,8 +806,7 @@ const commands = {
 
   async eval() {
     const [which, expression] = args;
-    if (!["hub", "pill"].includes(which) || !expression)
-      fail("usage: eval <hub|pill> <expression>");
+    if (!PAGES.has(which) || !expression) fail("usage: eval <hub|pill|notepad> <expression>");
     const page = await connect(which);
     out(await page.evaluate(expression));
     page.close();
@@ -897,8 +899,8 @@ const commands = {
 
   async wait() {
     const [which, expression, timeout = "10000"] = args;
-    if (!["hub", "pill"].includes(which) || !expression)
-      fail("usage: wait <hub|pill> <expression> [timeoutMs]");
+    if (!PAGES.has(which) || !expression)
+      fail("usage: wait <hub|pill|notepad> <expression> [timeoutMs]");
     const page = await connect(which);
     try {
       out(await waitOn(page, expression, Number(timeout)));
@@ -909,7 +911,7 @@ const commands = {
 
   async click() {
     const [target, which = "hub"] = args;
-    if (!target) fail("usage: click <accessible name | css:selector> [hub|pill]");
+    if (!target) fail("usage: click <accessible name | css:selector> [hub|pill|notepad]");
     const page = await connect(which);
     try {
       const result = await waitOn(page, clickExpression(target), 5000);
@@ -1057,7 +1059,7 @@ const commands = {
 
   async shot() {
     const [name, which = "hub"] = args;
-    if (!name) fail("usage: shot <name> [hub|pill]");
+    if (!name) fail("usage: shot <name> [hub|pill|notepad]");
     const page = await connect(which);
     const { data } = await page.call("Page.captureScreenshot", { format: "png" });
     page.close();
