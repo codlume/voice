@@ -84,7 +84,7 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     async start() {
       const result = await recorder.start();
       if (result.kind !== "ok") throw new Error(`start refused: ${JSON.stringify(result)}`);
-      h.emit({ type: "meeting.started", id: result.id, mic: "active", system: "active" });
+      h.emit({ type: "meeting.started", id: result.id, atMs: 0, mic: "active", system: "active" });
       await h.settle();
       await h.audio(result.id);
       return result.id;
@@ -180,7 +180,7 @@ describe("meeting recorder", () => {
       baseMs: 0,
       fromMs: { mic: 3000, system: 0 },
     });
-    h.emit({ type: "meeting.started", id, mic: "active", system: "unavailable" });
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "unavailable" });
     await h.settle();
     expect(h.store.get(id)?.status.kind).toBe("recording");
     const markers = (await h.store.transcript(id)).filter((entry) => entry.kind === "marker");
@@ -259,7 +259,12 @@ describe("meeting recorder", () => {
   test("a final pass the helper fails, or that finds nothing the live one heard, keeps the live transcript and the audio", async () => {
     for (const fail of [
       (h: ReturnType<typeof harness>, id: MeetingId) =>
-        h.emit({ type: "meeting.finalizeFailed", id, message: "speech model is not downloaded" }),
+        h.emit({
+          type: "meeting.finalizeFailed",
+          id,
+          reason: "transcript",
+          message: "speech model is not downloaded",
+        }),
       (h: ReturnType<typeof harness>, id: MeetingId) => h.finalized(id, []),
     ]) {
       const h = harness();
@@ -305,7 +310,7 @@ describe("meeting recorder", () => {
     }));
 
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 1000);
     await h.recorder.stop(id);
@@ -511,7 +516,7 @@ describe("meeting recorder", () => {
     });
     expect(h.sentTypes()).toEqual(["meeting.start"]);
 
-    h.emit({ type: "meeting.started", id: started.id, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id: started.id, atMs: 0, mic: "active", system: "active" });
     await h.settle();
     expect(await h.recorder.toggle()).toEqual({ kind: "ok", id: started.id });
     expect(h.store.get(started.id)?.status.kind).toBe("finishing");
@@ -631,7 +636,7 @@ describe("meeting recorder", () => {
     await h.settle();
     h.advance(1000);
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 16_000);
     await h.segment(id, "mic", 9000, "After the resume");

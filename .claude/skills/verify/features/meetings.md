@@ -19,7 +19,7 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meeting-live-transcript`: segments land in `transcript.ndjson` while recording (`getMeeting(id).transcript`), mic as `source: "mic"`, system as `source: "system"` with `speakerId: null`.
 - `meeting-echo`: with `meeting-mic-speakers.wav` the mic also hears the other side; those words appear once, as system segments, and main.log has `meeting echo dropped a N-word mic segment`.
 - `meeting-stop`: `stopMeeting(id)` leads to `ready`, and the folder holds only `meeting.json` and `transcript.ndjson`.
-- `meeting-final-pass`: after Stop main sends `meeting.finalize`; the transcript's system segments then carry `speakerId` (`s1`, `s2`, …) and `getMeeting(id).meeting.speakers` lists `{ id, label: "Speaker N", name: null }`. Without the diarizer (macOS 14, or no models and no network) system segments keep `speakerId: null` and read Others.
+- `meeting-final-pass`: after Stop main sends `meeting.finalize`; the transcript's system segments then carry `speakerId` (`s1`, `s2`, …) and `getMeeting(id).meeting.speakers` lists `{ id, label: "Speaker N", name: null }`. On macOS 14 system segments keep `speakerId: null` and read Others. Without the speaker detection models the pass fails with `meeting.finalizeFailed` reason `speakerModels`, and the live transcript and the audio stay.
 - `meeting-speakers`: `renameMeetingSpeaker(id, speakerId, name)` (the Transcript tab's field) sets `name: { text, source: "user" }`; the transcript, the summary's `{{speaker:<id>}}` tokens, the overview and the Markdown export show it. A blank name clears it.
 - `meeting-short`: under ten transcribed words the meeting waits in `confirmingShort`; `keepMeeting` finishes it and `discardMeeting` deletes its folder.
 - `meeting-dictated`: dictating while a meeting records inserts as usual and adds a `dictated` marker to the meeting transcript instead of the dictated words.
@@ -58,7 +58,7 @@ Preconditions: baseline. A fresh userData has no meetings.
 
 ## Gotchas
 
-- The diarizer's 21 MB of models download into `<userData>/models/speaker-diarization` at the first Stop that needs them, so the first final pass in a fresh userData needs the network.
+- The speaker detection models (21 MB) download only on the helper's `meeting.models.download`, never at Stop. `launch` prepares them once in the test-model cache and links them into the userData as `models/speaker-diarization-coreml`.
 - Automatic folders only collect a meeting when a title is set. Making or editing an automatic folder, or turning Automatic folders on, files existing meetings whose title matches; editing a rule takes out meetings only the old rule matched, and keeps ones added by hand.
 - Test mode never opens the microphone or a system audio tap. Without the fixture files in the userData, `meeting.start` fails with "meeting capture disabled" or reports system audio `unavailable`. A fixture run proves files, transcription, echo filtering, and lifecycle, not device or permission behavior.
 - The silence prompt needs ten minutes of real time and the length warning at least 25 minutes, so a run proves them only by waiting; the unit tests in `meeting-focus.test.ts` and `MeetingNotepad.test.tsx` cover them.

@@ -28,7 +28,8 @@ final class MeetingCapture {
     private var fixtures: [FileSource] = []
     private var stopped = false
     private let startedAt = DispatchTime.now()
-    private var startFrames = 0
+    /// Where this leg's audio starts in the files.
+    private(set) var startFrames = 0
     private var route: MeetingOutput?
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,

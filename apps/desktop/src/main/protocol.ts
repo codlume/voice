@@ -15,7 +15,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 18;
+export const HELPER_PROTOCOL_VERSION = 19;
 
 export type HelperCommand =
   | {
@@ -87,7 +87,9 @@ export type HelperCommand =
       dir: string;
       baseMs: number;
       language: DictationLanguage;
-    };
+    }
+  // Downloads the speaker detection models; meeting.models.status reports the progress.
+  | { type: "meeting.models.download" };
 
 export type MeetingCursor = Record<MeetingSource, number>;
 
@@ -292,9 +294,11 @@ const HelperEventSchema = Schema.Union([
     id: Schema.String,
     icons: validEntries(Schema.Struct({ path: Schema.String, png: Schema.String })),
   }),
+  // `atMs` is the meeting time where this leg's audio starts.
   Schema.Struct({
     type: Schema.Literal("meeting.started"),
     id: Schema.String,
+    atMs: Schema.Finite,
     mic: meetingSourceState,
     system: meetingSourceState,
   }),
@@ -346,10 +350,20 @@ const HelperEventSchema = Schema.Union([
       }),
     ),
   }),
+  // The live transcript and the audio stay. `speakerModels`: the speaker detection models are
+  // not downloaded; `speakers`: speaker detection failed; `transcript`: decoding failed.
   Schema.Struct({
     type: Schema.Literal("meeting.finalizeFailed"),
     id: Schema.String,
+    reason: Schema.Literals(["transcript", "speakerModels", "speakers"]),
     message: Schema.String,
+  }),
+  // The speaker detection models, once after ready and on every change. `unavailable` below
+  // macOS 15, where a final pass leaves the other side as one voice.
+  Schema.Struct({
+    type: Schema.Literal("meeting.models.status"),
+    state: Schema.Literals(["unavailable", "missing", "downloading", "ready", "failed"]),
+    message: statusMessage,
   }),
   Schema.Struct({
     type: Schema.Literal("log"),
