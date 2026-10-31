@@ -123,8 +123,6 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
 }
 
 @Suite struct EchoPolicyTests {
-    private let speakers = OutputTimeline()
-
     private func echoes(_ mic: [TimedWord], _ system: [TimedWord], output: OutputTimeline = OutputTimeline()) -> [String] {
         zip(mic, EchoPolicy.echoes(mic: mic, system: system, output: output)).filter(\.1).map(\.0.text)
     }
@@ -132,13 +130,12 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
     @Test func wordsTheMicHearsAMomentAfterTheSpeakersPlayThemAreEcho() {
         let system = said("Let's ship the beta on Friday, okay?", at: 1000)
         #expect(echoes(said("Let's ship the beta on Friday.", at: 1060), system) == ["Let's", "ship", "the", "beta", "on", "Friday."])
-        #expect(EchoPolicy.isEcho(said("Let's ship the beta on Friday.", at: 1060), system: system, output: speakers))
     }
 
     @Test func shortRepliesAlwaysStayTheUsers() {
         let system = said("Is that okay?", at: 3000)
         #expect(echoes(said("Okay.", at: 3600), system).isEmpty)
-        #expect(!EchoPolicy.isEcho(said("Is that okay", at: 3050), system: system, output: speakers), "under four words")
+        #expect(echoes(said("Is that okay", at: 3050), system).isEmpty, "under four words")
     }
 
     @Test func repeatingTheOtherSideABeatLaterIsNotEcho() {
@@ -162,7 +159,20 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         let system = said("legal review is with Victor until the twelfth", at: 1000)
         let mic = said("sorry who owns that", at: 100) + said("is with Victor until the twelfth", at: 1640)
         #expect(echoes(mic, system) == ["is", "with", "Victor", "until", "the", "twelfth"])
-        #expect(!EchoPolicy.isEcho(mic, system: system, output: speakers), "a segment that mixes both stays whole")
+    }
+
+    @Test func theUsersWordInPlaceOfOneTheyTalkedOverStays() {
+        // Crosstalk: "Sorry," lands where the speakers said "and".
+        let system = said("the biggest deal this quarter and the legal team still has not", at: 1000)
+        let mic = said("the biggest deal this quarter sorry the legal team still has not", at: 1040)
+        #expect(!echoes(mic, system).contains("sorry"))
+    }
+
+    @Test func aReplyBetweenTwoEchoesStaysTheUsers() {
+        // "So we agree on the plan?" "Yes." "And Victor owns the legal review."
+        let system = said("so we agree on the plan", at: 1000) + said("and Victor owns the legal review", at: 4000)
+        let mic = said("so we agree on the plan", at: 1040) + said("yes", at: 3000) + said("and Victor owns the legal review", at: 4040)
+        #expect(!echoes(mic, system).contains("yes"))
     }
 
     @Test func withHeadphonesNothingIsEcho() {
@@ -196,33 +206,42 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
 
     @Test func dropsMicTextThatEchoesSystemAudioOnceSystemPassesIt() {
         var filter = EchoFilter()
-        filter.add(mic(1_050, 2_800, "Let's ship the beta on Friday."), words: said("Let's ship the beta on Friday.", at: 1_050))
-        filter.add(system(1_000, 2_800, "Let's ship the beta on Friday, okay?"), words: said("Let's ship the beta on Friday, okay?", at: 1_000))
-        #expect(filter.release(systemMs: 2_900, micMs: 3_000, output: OutputTimeline())
+        filter.add(mic(1_050, 2_800, "Let's ship the beta on Friday."), words: said("Let's ship the beta on Friday.", at: 1_050), nowMs: 0)
+        filter.add(system(1_000, 2_800, "Let's ship the beta on Friday, okay?"), words: said("Let's ship the beta on Friday, okay?", at: 1_000), nowMs: 0)
+        #expect(filter.release(systemMs: 2_900, nowMs: 0, output: OutputTimeline())
             == [system(1_000, 2_800, "Let's ship the beta on Friday, okay?")], "mic waits for system to pass it")
-        #expect(filter.release(systemMs: 6_000, micMs: 6_000, output: OutputTimeline()).isEmpty)
+        #expect(filter.release(systemMs: 6_000, nowMs: 0, output: OutputTimeline()).isEmpty)
         #expect(filter.takeDropped() == [mic(1_050, 2_800, "Let's ship the beta on Friday.")])
         #expect(filter.takeDropped().isEmpty)
     }
 
+    @Test func onlyTheEchoInAMicSegmentGoesAndTheUsersReplyStays() {
+        var filter = EchoFilter()
+        filter.add(system(1_000, 2_800, "So we agree on the plan?"), words: said("So we agree on the plan?", at: 1_000), nowMs: 0)
+        let mine = said("So we agree on the plan?", at: 1_040) + said("Yes.", at: 3_200)
+        filter.add(mic(1_040, 3_500, "So we agree on the plan? Yes."), words: mine, nowMs: 0)
+        #expect(filter.release(systemMs: 5_000, nowMs: 0, output: OutputTimeline()).map(\.text) == ["So we agree on the plan?", "Yes."])
+        #expect(filter.takeDropped().map(\.text) == ["So we agree on the plan?"])
+    }
+
     @Test func theUsersLineWaitsOnlyBrieflyForTheOtherSide() {
         var filter = EchoFilter()
-        filter.add(mic(0, 2_000, "Morning everyone, shall we start?"), words: said("Morning everyone, shall we start?", at: 0))
-        #expect(filter.release(systemMs: 0, micMs: 4_000, output: OutputTimeline()).isEmpty)
-        #expect(filter.release(systemMs: 0, micMs: 5_000, output: OutputTimeline()) == [mic(0, 2_000, "Morning everyone, shall we start?")])
+        filter.add(mic(0, 2_000, "Morning everyone, shall we start?"), words: said("Morning everyone, shall we start?", at: 0), nowMs: 0)
+        #expect(filter.release(systemMs: 0, nowMs: 2_900, output: OutputTimeline()).isEmpty)
+        #expect(filter.release(systemMs: 0, nowMs: 3_000, output: OutputTimeline()) == [mic(0, 2_000, "Morning everyone, shall we start?")])
     }
 
     @Test func withHeadphonesTheUsersLineShowsAtOnce() {
         var filter = EchoFilter()
-        filter.add(mic(0, 2_000, "Morning everyone"), words: said("Morning everyone", at: 0))
-        #expect(filter.release(systemMs: 0, micMs: 2_000, output: OutputTimeline([(0, .headphones)])) == [mic(0, 2_000, "Morning everyone")])
+        filter.add(mic(0, 2_000, "Morning everyone"), words: said("Morning everyone", at: 0), nowMs: 0)
+        #expect(filter.release(systemMs: 0, nowMs: 0, output: OutputTimeline([(0, .headphones)])) == [mic(0, 2_000, "Morning everyone")])
     }
 
     @Test func releasesEveryMicSegmentWhenNoSystemAudioIsComing() {
         var filter = EchoFilter()
-        filter.add(mic(0, 2_000, "hello"), words: said("hello", at: 0))
-        #expect(filter.release(systemMs: 0, micMs: 2_000, output: OutputTimeline()).isEmpty)
-        #expect(filter.release(systemMs: .infinity, micMs: 2_000, output: OutputTimeline()) == [mic(0, 2_000, "hello")])
+        filter.add(mic(0, 2_000, "hello"), words: said("hello", at: 0), nowMs: 0)
+        #expect(filter.release(systemMs: 0, nowMs: 0, output: OutputTimeline()).isEmpty)
+        #expect(filter.release(systemMs: .infinity, nowMs: 0, output: OutputTimeline()) == [mic(0, 2_000, "hello")])
     }
 }
 

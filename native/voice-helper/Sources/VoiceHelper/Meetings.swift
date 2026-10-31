@@ -253,7 +253,7 @@ final class MeetingTranscription {
                 heard = true
                 filter.add(TimedText(source: window.source, startMs: meetingMs(window.offset + speech.lowerBound),
                                      endMs: meetingMs(window.offset + speech.upperBound), text: Self.text(words)),
-                           words: words)
+                           words: words, nowMs: Self.nowMs)
             }
         }
         cursor[window.source] = window.offset + window.samples.count
@@ -297,7 +297,7 @@ final class MeetingTranscription {
     private func publish(systemDone: Bool = false) {
         let systemMissing = !FileManager.default.fileExists(atPath: file(.system).path) || (recording && !systemActive)
         let released = filter.release(systemMs: systemDone || systemMissing ? .infinity : meetingMs(cursor[.system] ?? 0),
-                                      micMs: meetingMs(PcmFile.frames(at: file(.mic))),
+                                      nowMs: Self.nowMs,
                                       output: OutputTimeline.read(dir: dir, baseMs: baseMs))
         // Counts only: transcript text never goes to the log.
         for echo in filter.takeDropped() {
@@ -313,6 +313,10 @@ final class MeetingTranscription {
 
     private func meetingMs(_ frames: Int) -> Double {
         baseMs + PcmFile.milliseconds(frames)
+    }
+
+    private static var nowMs: Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000
     }
 
     private static func text(_ words: [TimedWord]) -> String {
