@@ -24,6 +24,16 @@ import type {
   HistoryStatus,
 } from "../shared/history.ts";
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
+import {
+  DEFAULT_MEETINGS_SETTINGS,
+  retitle,
+  searchMeeting,
+  type Folder,
+  type FolderId,
+  type Meeting,
+  type MeetingsChange,
+  type MeetingsState,
+} from "../shared/meetings.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell } from "./HubShell.tsx";
@@ -454,6 +464,83 @@ function sampleInsights(): Insights {
   };
 }
 
+type MeetingsApi = Pick<
+  HubApi,
+  Extract<keyof HubApi, `${string}Meeting${string}` | `${string}Folder${string}`>
+>;
+
+const unavailable = async () => ({ kind: "unavailable" }) as const;
+
+// Holds what the page sets in memory. Recording waits for the real recorder, like main.
+function fakeMeetings(): MeetingsApi {
+  let state: MeetingsState = {
+    meetings: [],
+    folders: [],
+    settings: DEFAULT_MEETINGS_SETTINGS,
+  };
+  const listeners = new Set<(change: MeetingsChange) => void>();
+  const set = (next: Partial<MeetingsState>) => {
+    state = { ...state, ...next };
+    for (const listener of listeners) listener({ kind: "all", state });
+  };
+  const editMeeting = (id: string, change: (meeting: Meeting) => Meeting) =>
+    set({
+      meetings: state.meetings.map((meeting) => (meeting.id === id ? change(meeting) : meeting)),
+    });
+  const editFolders = (change: (folders: readonly Folder[]) => readonly Folder[]) =>
+    set({ folders: change(state.folders) });
+  return {
+    getMeetings: async () => state,
+    onMeetings: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getMeeting: async (id) => {
+      const meeting = state.meetings.find((candidate) => candidate.id === id);
+      return meeting ? { meeting, transcript: [] } : null;
+    },
+    renameMeeting: async (id, title) =>
+      editMeeting(id, (meeting) => retitle(meeting, title, state.folders, state.settings)),
+    updateMeetingNotes: async (id, notes) => editMeeting(id, (meeting) => ({ ...meeting, notes })),
+    deleteMeeting: async (id) =>
+      set({ meetings: state.meetings.filter((meeting) => meeting.id !== id) }),
+    createFolder: async (draft) => {
+      const folder: Folder = {
+        ...draft,
+        id: crypto.randomUUID() as FolderId,
+        createdAt: Date.now(),
+      };
+      editFolders((folders) => [...folders, folder]);
+      return folder;
+    },
+    updateFolder: async (id, draft) =>
+      editFolders((folders) =>
+        folders.map((folder) => (folder.id === id ? { ...folder, ...draft } : folder)),
+      ),
+    deleteFolder: async (id) =>
+      editFolders((folders) => folders.filter((folder) => folder.id !== id)),
+    setMeetingInFolder: async (meetingId, folderId, inFolder) =>
+      editMeeting(meetingId, (meeting) => ({
+        ...meeting,
+        folderIds: inFolder
+          ? [...new Set([...meeting.folderIds, folderId])]
+          : meeting.folderIds.filter((id) => id !== folderId),
+      })),
+    searchMeetings: async (query) =>
+      state.meetings.flatMap((meeting) => searchMeeting(meeting, [], query) ?? []),
+    updateMeetingsSettings: async (patch) => set({ settings: { ...state.settings, ...patch } }),
+    copyMeetingMarkdown: async (id) => {
+      console.info("copyMeetingMarkdown", id);
+    },
+    exportMeetingMarkdown: async () => "cancelled",
+    startMeeting: unavailable,
+    pauseMeeting: unavailable,
+    resumeMeeting: unavailable,
+    stopMeeting: unavailable,
+    generateMeetingSummary: unavailable,
+  };
+}
+
 function fakeVoice(
   {
     history: initialHistory = sampleHistory(),
@@ -501,6 +588,7 @@ function fakeVoice(
   }
 
   return {
+    ...fakeMeetings(),
     diagnosticsStartedAtLaunch: false,
     checkForUpdates: async () => {
       set({ ...snapshot, updates: { ...snapshot.updates, status: { kind: "checking" } } });

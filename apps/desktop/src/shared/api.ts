@@ -5,6 +5,18 @@ import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryChange, HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
+import type {
+  Folder,
+  FolderDraft,
+  FolderId,
+  MeetingCommandResult,
+  MeetingDetail,
+  MeetingId,
+  MeetingSearchHit,
+  MeetingsChange,
+  MeetingsSettingsPatch,
+  MeetingsState,
+} from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
 import { DEFAULT_TRANSFORMS, type LastTransform, type TransformSettings } from "./transforms.ts";
@@ -331,6 +343,32 @@ export type HubApi = WindowApi & {
   /** Fires after every change, with the whole value; null once Transforms are turned off. */
   onLastTransform(listener: (value: LastTransform | null) => void): () => void;
   copyLastTransform(which: "before" | "after"): Promise<void>;
+  /** Waits for the launch read, so an empty list means no meetings. */
+  getMeetings(): Promise<MeetingsState>;
+  /** Fires after every change to a meeting, the folders or the settings; `applyMeetingsChange` folds it in. */
+  onMeetings(listener: (change: MeetingsChange) => void): () => void;
+  /** Null when the meeting is gone. */
+  getMeeting(id: MeetingId): Promise<MeetingDetail | null>;
+  /** A blank title clears it, so the summary can generate one. */
+  renameMeeting(id: MeetingId, title: string): Promise<void>;
+  updateMeetingNotes(id: MeetingId, notes: string): Promise<void>;
+  /** Deletes the meeting with its transcript, notes and any audio. */
+  deleteMeeting(id: MeetingId): Promise<void>;
+  createFolder(draft: FolderDraft): Promise<Folder>;
+  updateFolder(id: FolderId, draft: FolderDraft): Promise<void>;
+  deleteFolder(id: FolderId): Promise<void>;
+  setMeetingInFolder(meetingId: MeetingId, folderId: FolderId, inFolder: boolean): Promise<void>;
+  /** Titles, summaries, notes and full transcripts, in list order. */
+  searchMeetings(query: string): Promise<MeetingSearchHit[]>;
+  updateMeetingsSettings(patch: MeetingsSettingsPatch): Promise<void>;
+  copyMeetingMarkdown(id: MeetingId): Promise<void>;
+  /** Opens a save dialog for a .md file. */
+  exportMeetingMarkdown(id: MeetingId): Promise<"saved" | "cancelled">;
+  startMeeting(): Promise<MeetingCommandResult>;
+  pauseMeeting(id: MeetingId): Promise<MeetingCommandResult>;
+  resumeMeeting(id: MeetingId): Promise<MeetingCommandResult>;
+  stopMeeting(id: MeetingId): Promise<MeetingCommandResult>;
+  generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -378,4 +416,23 @@ export const Channel = {
   getLastTransform: "voice:getLastTransform",
   lastTransform: "voice:lastTransform",
   copyLastTransform: "voice:copyLastTransform",
+  getMeetings: "voice:getMeetings",
+  meetings: "voice:meetings",
+  getMeeting: "voice:getMeeting",
+  renameMeeting: "voice:renameMeeting",
+  updateMeetingNotes: "voice:updateMeetingNotes",
+  deleteMeeting: "voice:deleteMeeting",
+  createFolder: "voice:createFolder",
+  updateFolder: "voice:updateFolder",
+  deleteFolder: "voice:deleteFolder",
+  setMeetingInFolder: "voice:setMeetingInFolder",
+  searchMeetings: "voice:searchMeetings",
+  updateMeetingsSettings: "voice:updateMeetingsSettings",
+  copyMeetingMarkdown: "voice:copyMeetingMarkdown",
+  exportMeetingMarkdown: "voice:exportMeetingMarkdown",
+  startMeeting: "voice:startMeeting",
+  pauseMeeting: "voice:pauseMeeting",
+  resumeMeeting: "voice:resumeMeeting",
+  stopMeeting: "voice:stopMeeting",
+  generateMeetingSummary: "voice:generateMeetingSummary",
 } as const;

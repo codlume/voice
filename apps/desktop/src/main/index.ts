@@ -58,6 +58,8 @@ import { hotkeyConfigure } from "./hotkey-config.ts";
 import { registerHubCommands, type HubCommandDeps } from "./hub-commands.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
+import { unavailableRecorder } from "./meeting-recorder.ts";
+import { createMeetingsStore } from "./meetings-store.ts";
 import { createInsights } from "./insights.ts";
 import { createInstalledApps, type InstalledApps } from "./installed-apps.ts";
 import type { Commands } from "./ipc.ts";
@@ -432,6 +434,16 @@ async function main() {
   });
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", history.expire);
+  const meetings = createMeetingsStore({
+    dir: NodePath.join(userData, "meetings"),
+    log,
+    onChange: (change) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetings, change);
+    },
+  });
+  powerMonitor.on("resume", () => {
+    meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));
+  });
   const insights = createInsights({
     file: NodePath.join(userData, "insights.json"),
     log,
@@ -784,6 +796,8 @@ async function main() {
     insights,
     installedApps,
     settingsQueue,
+    meetings,
+    meetingRecorder: unavailableRecorder,
     log,
   };
 
@@ -823,6 +837,7 @@ async function main() {
       settingsQueue.settled(),
       insights.settled(),
       history.settled(),
+      meetings.settled(),
       helper.stop(),
       cleanup.dispose(),
       transformModel.dispose(),

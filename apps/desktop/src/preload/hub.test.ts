@@ -43,38 +43,57 @@ describe("hub preload", () => {
       "confirmAccountDeletion",
       "copyHistoryEntry",
       "copyLastTransform",
+      "copyMeetingMarkdown",
+      "createFolder",
+      "deleteFolder",
       "deleteHistoryEntry",
+      "deleteMeeting",
       "diagnosticsStartedAtLaunch",
       "dismissAccountError",
       "downloadUpdate",
       "editAssignments",
+      "exportMeetingMarkdown",
+      "generateMeetingSummary",
       "getAppIcons",
       "getHistory",
       "getInsights",
       "getInstalledApps",
       "getLastTransform",
+      "getMeeting",
+      "getMeetings",
       "getSnapshot",
       "installModel",
       "onHistory",
       "onInsights",
       "onLastTransform",
       "onLevel",
+      "onMeetings",
       "onRestartRequest",
       "onSnapshot",
       "openRelease",
+      "pauseMeeting",
+      "renameMeeting",
       "requestAccountDeletion",
       "requestPermission",
       "restartForUpdate",
+      "resumeMeeting",
       "retryAccountDeletion",
+      "searchMeetings",
       "setHistoryRetention",
+      "setMeetingInFolder",
       "setOpenAtLogin",
       "signIn",
       "signOut",
+      "startMeeting",
       "startMicrophoneTest",
+      "stopMeeting",
       "stopMicrophoneTest",
       "submitSignInCode",
       "uninstallModel",
       "updateAccountName",
+      "updateFolder",
+      "updateMeetingNotes",
+      "updateMeetingsSettings",
       "updateSettings",
     ]);
   });
@@ -88,12 +107,14 @@ describe("hub preload", () => {
     api.onRestartRequest(() => {});
     api.onInsights(() => {});
     api.onHistory(() => {});
+    api.onMeetings(() => {});
     const channels = new Set(listened);
     const known = new Set<string>(Object.values(Channel));
     expect([...channels].filter((channel) => !known.has(channel))).toEqual([]);
     expect([...channels].filter((channel) => channel.startsWith("better-auth"))).toEqual([]);
     expect(channels.has(Channel.snapshot)).toBe(true);
     expect(channels.has(Channel.history)).toBe(true);
+    expect(channels.has(Channel.meetings)).toBe(true);
     expect(channels.has(Channel.pillSnapshot)).toBe(false);
   });
 
