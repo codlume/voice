@@ -202,6 +202,10 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   } as Partial<HubApi> as HubApi;
   return {
     ...api,
+    /** Plays main publishing a new version of a meeting. */
+    publish(changed: Meeting) {
+      set({ meetings: state.meetings.map((m) => (m.id === changed.id ? changed : m)) });
+    },
     /** Plays main pushing a saved line or an unconfirmed one to the open meeting. */
     async push(event: MeetingTranscriptChange | MeetingPartial) {
       await act(async () => {
@@ -458,6 +462,43 @@ describe("a meeting", () => {
     await main.push({ id: id(4), source: "mic", text: "and the import" });
     await waitForText("and the import");
     expect(lineClass("and the import")).not.toBe(lineClass("So the export works."));
+  });
+
+  test("a line saved while the meeting is read again still shows, without reopening", async () => {
+    const live = meeting(4, "Live sync", hoursAgo(0), {
+      spans: [],
+      status: { kind: "recording", since: Date.now() },
+    });
+    const main = fakeMain([live]);
+    await render();
+    await click(byText("Live sync"));
+    await click(byText("Transcript"));
+    await waitForText("No transcript yet.");
+    // Main read the transcript file before the line was written, and answers after pushing it.
+    const answers: (() => void)[] = [];
+    const read = window.voice as HubApi;
+    const getMeeting = read.getMeeting;
+    read.getMeeting = (meetingId) =>
+      getMeeting(meetingId).then(
+        (detail) => new Promise((resolve) => answers.push(() => resolve(detail))),
+      );
+    await act(async () => main.publish({ ...live, notes: "edited in the notepad" }));
+    await main.push({
+      id: id(4),
+      entries: [
+        {
+          kind: "segment",
+          id: "y",
+          startMs: 0,
+          endMs: 1000,
+          text: "Pushed during the read.",
+          final: true,
+          source: "mic",
+        },
+      ],
+    });
+    await act(async () => answers.forEach((answer) => answer()));
+    await waitForText("Pushed during the read.");
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {

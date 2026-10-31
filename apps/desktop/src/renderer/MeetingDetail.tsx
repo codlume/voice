@@ -35,7 +35,7 @@ import {
 import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useMeetingDetail, useMeetingPartials } from "./useMeetings.ts";
+import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
 import { useThoughts } from "./useThoughts.ts";
 import { hubApi } from "./voice.ts";
 
@@ -422,10 +422,10 @@ function Transcript({
   transcript,
 }: {
   meeting: Meeting;
-  transcript: readonly TranscriptEntry[] | undefined;
+  transcript: readonly TranscriptEntry[] | null | undefined;
 }) {
   const partials = useMeetingPartials(hubApi(), meeting.id, meeting.status.kind === "recording");
-  if (transcript === undefined) return null;
+  if (!transcript) return null;
   const rows = [...transcriptRows(transcript, meeting.speakers), ...partialRows(partials)];
   if (rows.length === 0) {
     return (
@@ -489,8 +489,7 @@ export function MeetingDetail({
   summaryModel: ChecklistRow | null;
   onBack: () => void;
 }) {
-  const detail = useMeetingDetail(meeting);
-  const transcript = detail?.transcript;
+  const transcript = useMeetingTranscript(hubApi(), meeting);
   const [tab, setTab] = useState<DetailTab>("summary");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [feedback, setFeedback] = useState<keyof typeof feedbackText | null>(null);

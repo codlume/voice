@@ -3,17 +3,10 @@ import * as stylex from "@stylexjs/stylex";
 import { PauseIcon, PlayIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type {
-  MeetingCommandResult,
-  Meeting,
-  MeetingId,
-  NotepadState,
-  TranscriptEntry,
-} from "../shared/meetings.ts";
+import type { MeetingCommandResult, Meeting, MeetingId, NotepadState } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
 import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
 import {
-  mergeTranscript,
   notepadStatus,
   notepadTicks,
   promptView,
@@ -23,7 +16,7 @@ import {
 import { pageStyles } from "./pageStyles.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useMeetingPartials } from "./useMeetings.ts";
+import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
 import { useThoughts } from "./useThoughts.ts";
 import { notepadApi } from "./voice.ts";
@@ -188,39 +181,9 @@ function useNotepadState(): NotepadState | null | undefined {
   return state;
 }
 
-/**
- * The meeting's transcript, read and then followed line by line while it records, with each
- * source's unconfirmed text after it. Like the Voice window, it reads again whenever main
- * publishes a new version of the meeting, which is how the final pass's rewrite after Stop
- * arrives; until that read lands the last one stays on screen.
- */
+/** The meeting's transcript as it is followed, with each source's unconfirmed text after it. */
 function useLiveTranscript(meeting: Meeting) {
-  const [lines, setLines] = useState<{
-    read: readonly TranscriptEntry[] | null;
-    live: readonly TranscriptEntry[];
-  }>({ read: null, live: [] });
-  useEffect(() => {
-    let current = true;
-    // Lines pushed after this read was asked for; the lines pushed before it belong to the last one.
-    let pending: TranscriptEntry[] | null = [];
-    const unsubscribe = notepadApi().onMeetingTranscript((change) => {
-      if (change.id !== meeting.id) return;
-      if (pending) pending.push(...change.entries);
-      else setLines((was) => ({ ...was, live: [...was.live, ...change.entries] }));
-    });
-    void notepadApi()
-      .getMeeting(meeting.id)
-      .then((detail) => {
-        if (!current || !pending) return;
-        const live = pending;
-        pending = null;
-        setLines({ read: detail?.transcript ?? [], live });
-      });
-    return () => {
-      current = false;
-      unsubscribe();
-    };
-  }, [meeting]);
+  const transcript = useMeetingTranscript(notepadApi(), meeting);
   const partials = useMeetingPartials(
     notepadApi(),
     meeting.id,
@@ -228,14 +191,8 @@ function useLiveTranscript(meeting: Meeting) {
   );
   const { speakers } = meeting;
   return useMemo(
-    () =>
-      lines.read === null
-        ? null
-        : [
-            ...transcriptRows(mergeTranscript(lines.read, lines.live), speakers),
-            ...partialRows(partials),
-          ],
-    [lines, speakers, partials],
+    () => (transcript ? [...transcriptRows(transcript, speakers), ...partialRows(partials)] : null),
+    [transcript, speakers, partials],
   );
 }
 
