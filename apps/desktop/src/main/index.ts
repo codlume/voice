@@ -35,7 +35,13 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
-import type { MeetingId, NotepadState } from "../shared/meetings.ts";
+import {
+  meetingToggle,
+  meetingToggleLabels,
+  type MeetingId,
+  type MeetingToggle,
+  type NotepadState,
+} from "../shared/meetings.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { runsAfterDictation } from "../shared/transforms.ts";
@@ -465,6 +471,8 @@ async function main() {
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", history.expire);
   const meetingsDir = NodePath.join(userData, "meetings");
+  // The tray names what its meeting item does, so it is rebuilt when that changes.
+  let trayMeeting: MeetingToggle["kind"] = "start";
   const meetings = createMeetingsStore({
     dir: meetingsDir,
     log,
@@ -472,6 +480,10 @@ async function main() {
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetings, change);
       store.update((s) => ({ ...s, meeting: follow(s.meeting, meetings.state().meetings) }));
       syncNotepad();
+      const next = meetingToggle(meetings.state().meetings).kind;
+      if (next === trayMeeting) return;
+      trayMeeting = next;
+      refreshTray(store.state);
     },
   });
   meetingRecorder = createMeetingRecorder({
@@ -741,42 +753,46 @@ async function main() {
 
   const tray = new Tray(createTrayIcon());
   tray.setToolTip("Voice");
+  let trayMenu: Menu | null = null;
   function refreshTray(state: AppState) {
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "Open Voice", click: showHub },
-        {
-          label: "Copy last transcript",
-          enabled: trayHasEntry,
-          click: () => {
-            const [latest] = history.entries();
-            if (latest) clipboard.writeText(copyText(latest));
-          },
+    trayMenu = Menu.buildFromTemplate([
+      { label: "Open Voice", click: showHub },
+      {
+        id: "meeting",
+        label: meetingToggleLabels[trayMeeting],
+        enabled: trayMeeting !== "wait",
+        click: () => toggleMeeting("tray"),
+      },
+      {
+        label: "Copy last transcript",
+        enabled: trayHasEntry,
+        click: () => {
+          const [latest] = history.entries();
+          if (latest) clipboard.writeText(copyText(latest));
         },
-        { type: "separator" },
-        {
-          label:
-            state.updates.status.kind === "available"
-              ? "Download update…"
-              : state.updates.status.kind === "ready"
-                ? "Restart to update…"
-                : "Check for updates…",
-          enabled:
-            state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
-          click: () => {
-            if (state.updates.status.kind === "ready") {
-              requestRestart();
-            } else {
-              showHub();
-              void (state.updates.status.kind === "available"
-                ? updates.download()
-                : updates.check());
-            }
-          },
+      },
+      { type: "separator" },
+      {
+        label:
+          state.updates.status.kind === "available"
+            ? "Download update…"
+            : state.updates.status.kind === "ready"
+              ? "Restart to update…"
+              : "Check for updates…",
+        enabled:
+          state.updates.status.kind !== "disabled" && state.updates.status.kind !== "installing",
+        click: () => {
+          if (state.updates.status.kind === "ready") {
+            requestRestart();
+          } else {
+            showHub();
+            void (state.updates.status.kind === "available" ? updates.download() : updates.check());
+          }
         },
-        { label: "Quit", role: "quit" },
-      ]),
-    );
+      },
+      { label: "Quit", role: "quit" },
+    ]);
+    tray.setContextMenu(trayMenu);
   }
   refreshTray(store.state);
 
@@ -1042,7 +1058,8 @@ async function main() {
   void transformModel.refresh();
   // Lets scripts/quit-smoke.mjs start a cleanup through the inspector and quit during it, and the
   // verify skill deliver a sign-in callback URL, which macOS does not route to the stock
-  // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press.
+  // Electron.app the verify instance runs, and choose menu items, whose shortcuts CDP cannot press,
+  // and tray items, which no script can click.
   if (testMode) {
     Object.assign(globalThis, {
       voiceTest: {
@@ -1052,6 +1069,13 @@ async function main() {
         clickMenuItem: (id: string) => {
           const item = Menu.getApplicationMenu()?.getMenuItemById(id);
           if (!item) throw new Error(`no menu item ${id}`);
+          item.click();
+        },
+        trayItems: () =>
+          trayMenu?.items.map(({ id, label, enabled, type }) => ({ id, label, enabled, type })),
+        clickTrayItem: (id: string) => {
+          const item = trayMenu?.getMenuItemById(id);
+          if (!item) throw new Error(`no tray item ${id}`);
           item.click();
         },
         setTarget: (raw: unknown) => {

@@ -207,6 +207,12 @@ export function meetingToggle(meetings: readonly Meeting[]): MeetingToggle {
   return { kind: live.status.kind === "starting" ? "wait" : "stop", id: live.id };
 }
 
+export const meetingToggleLabels: Record<MeetingToggle["kind"], string> = {
+  start: "Start meeting",
+  stop: "Stop meeting",
+  wait: "Starting meeting…",
+};
+
 /** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
 export type MeetingCommandResult =
   | { kind: "ok"; id: MeetingId }
