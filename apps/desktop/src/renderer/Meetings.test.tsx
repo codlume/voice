@@ -729,6 +729,33 @@ describe("Folders", () => {
     await waitForText("No folders yet");
   });
 
+  test("editing one folder after cancelling another shows only the second folder", async () => {
+    const alpha: Folder = {
+      id: "00000000-0000-4000-9000-000000000001" as FolderId,
+      name: "Alpha",
+      createdAt: 0,
+      kind: "auto",
+      rule: { kind: "titleContains", text: "alpha" },
+    };
+    const beta: Folder = {
+      id: "00000000-0000-4000-9000-000000000002" as FolderId,
+      name: "Beta",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [alpha, beta]);
+    await render();
+    await click(byText("Folders"));
+    await click(document.querySelector("[aria-label='Edit folder Alpha']")!);
+    await type(document.querySelector<HTMLInputElement>("[role=dialog] input")!, "Alpha typed");
+    await click(byText("Cancel"));
+    await click(document.querySelector("[aria-label='Edit folder Beta']")!);
+    const fields = document.querySelectorAll<HTMLInputElement>("[role=dialog] input[placeholder]");
+    expect([...fields].map((field) => field.value)).toEqual(["Beta"]);
+    await click(byText("Save"));
+    expect(main.updateFolder).toHaveBeenCalledWith(beta.id, { name: "Beta", kind: "manual" });
+  });
+
   test("an automatic folder needs a word to look for", async () => {
     const main = fakeMain([]);
     await render();
