@@ -15,10 +15,27 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
             tokens: [(" Zaż", 0, 100), ("ółć", 100, 200), (",", 200, 220), (" Ada", 400, 500), (" 42", 600, 700), (".", 700, 720)],
             offsetMs: 1000)
         #expect(words == [
-            TimedWord(text: "Zażółć,", startMs: 1000, endMs: 1220),
+            TimedWord(text: "Zażółć,", startMs: 1000, endMs: 1200),
             TimedWord(text: "Ada", startMs: 1400, endMs: 1500),
-            TimedWord(text: "42.", startMs: 1600, endMs: 1720),
+            TimedWord(text: "42.", startMs: 1600, endMs: 1700),
         ])
+    }
+
+    @Test func aBareSpaceTokenStartsTheNextWord() {
+        let words = FinalTranscript.words(tokens: [(" fixed", 0, 200), (" ", 200, 240), ("4", 240, 300), ("2", 300, 360), (" bugs", 400, 600)],
+                                          offsetMs: 0)
+        #expect(words.map(\.text) == ["fixed", "42", "bugs"])
+    }
+
+    @Test func lateOrLongTokensDoNotBridgeTheSilenceAfterASentence() {
+        // As Parakeet decodes a TTS meeting: the period comes 4 s after its word, a second one
+        // later still, and a word token the model gave no duration ends at the next token.
+        let tokens = [(" Friday", 0.0, 300.0), (".", 4000, 4080), (".", 5360, 5440), (" Per", 5440, 5700), ("fect", 5700, 9000),
+                      (" Yes", 10_000, 10_300)]
+        let words = FinalTranscript.words(tokens: tokens, offsetMs: 0)
+        #expect(words.map(\.text) == ["Friday.", "Perfect", "Yes"])
+        let segments = FinalTranscript.segments(mic: words, system: [], turns: nil)
+        #expect(segments.map(\.text) == ["Friday.", "Perfect", "Yes"])
     }
 
     @Test func diarizedSystemVoicesNumberInTheOrderTheyFirstSpeak() {
@@ -64,6 +81,13 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         let segments = FinalTranscript.segments(mic: mic, system: system, turns: [])
         #expect(segments.map(\.text) == ["we ship on friday after review", "sounds good to me"])
         #expect(segments.map(\.source) == [.system, .mic])
+    }
+
+    @Test func theUsersWordsStayWhenTheEchoFollowsThemWithoutAPause() {
+        let system = said("the beta build is ready", at: 3000)
+        let mic = said("morning everyone", at: 0) + said("yes the plan", at: 600) + said("the beta build is ready", at: 1500)
+        let segments = FinalTranscript.segments(mic: mic, system: system, turns: nil)
+        #expect(segments.filter { $0.source == .mic }.map(\.text) == ["morning everyone yes the plan"])
     }
 
     @Test func pausesAndLongRunsEndSegments() {
