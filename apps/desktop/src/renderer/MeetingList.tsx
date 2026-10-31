@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useState, type MouseEvent, type ReactNode } from "react";
 
 import {
   titleText,
@@ -246,7 +246,9 @@ export function FolderMenu({
   );
 }
 
-function Row({
+// Memoized with the list's callbacks passed through as they are, so hovering a row, or scrolling
+// rows under the pointer, renders the two rows whose selection changed rather than all of them.
+const Row = memo(function Row({
   meeting,
   folders,
   snippet,
@@ -258,8 +260,8 @@ function Row({
   folders: readonly Folder[];
   snippet: { where: string | null; text: MeetingSnippet } | undefined;
   selected: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
+  onSelect: (id: MeetingId) => void;
+  onOpen: (id: MeetingId) => void;
 }) {
   const status = statusLabel(meeting);
   const at = meetingAt(meeting);
@@ -267,20 +269,20 @@ function Row({
   const open = (event: MouseEvent<HTMLLIElement>) => {
     const { target, currentTarget } = event;
     if (!(target instanceof Element) || !currentTarget.contains(target)) return;
-    if (!target.closest("button")) onOpen();
+    if (!target.closest("button")) onOpen(meeting.id);
   };
   return (
     <li
       onClick={open}
-      onPointerEnter={onSelect}
-      onFocus={onSelect}
+      onPointerEnter={() => onSelect(meeting.id)}
+      onFocus={() => onSelect(meeting.id)}
       {...stylex.props(stylex.defaultMarker(), styles.row, selected && styles.rowSelected)}
     >
       <span aria-hidden="true" {...stylex.props(styles.docIcon)}>
         <FileTextIcon size={16} />
       </span>
       <div {...stylex.props(styles.body)}>
-        <button type="button" onClick={onOpen} {...stylex.props(styles.title)}>
+        <button type="button" onClick={() => onOpen(meeting.id)} {...stylex.props(styles.title)}>
           {titleText(meeting)}
         </button>
         <span {...stylex.props(styles.meta)}>
@@ -307,7 +309,7 @@ function Row({
       </FolderMenu>
     </li>
   );
-}
+});
 
 /** Meetings grouped by day, with the search snippet under a row that `snippets` has one for. */
 export function MeetingList({
@@ -339,8 +341,8 @@ export function MeetingList({
                   folders={folders}
                   snippet={snippets?.get(meeting.id)}
                   selected={meeting.id === selectedId}
-                  onSelect={() => onSelect(meeting.id)}
-                  onOpen={() => onOpen(meeting.id)}
+                  onSelect={onSelect}
+                  onOpen={onOpen}
                 />
               ))}
             </ul>
