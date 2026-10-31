@@ -664,7 +664,7 @@ describe("a meeting", () => {
       getMeeting(meetingId).then(
         (detail) => new Promise((resolve) => answers.push(() => resolve(detail))),
       );
-    await act(async () => main.publish({ ...live, notes: "edited in the notepad" }));
+    await act(async () => main.publish({ ...live, status: { kind: "transcribing" } }));
     await main.push({
       id: id(4),
       entries: [
@@ -680,6 +680,20 @@ describe("a meeting", () => {
     });
     await act(async () => answers.forEach((answer) => answer()));
     await waitForText("Pushed during the read.");
+  });
+
+  test("an edit to the meeting does not read its transcript again", async () => {
+    const main = await openSync();
+    await click(byText("Transcript"));
+    await waitForText("I will draft the email");
+    const reads = vi.spyOn(window.voice as HubApi, "getMeeting");
+    const [synced] = sample();
+    await act(async () => main.publish({ ...synced!, notes: "edited in the notepad" }));
+    await act(async () => main.renameMeetingSpeaker(id(1), TOM, "Tom Becker"));
+    await waitForText("Tom Becker");
+    expect(reads).not.toHaveBeenCalled();
+    await act(async () => main.publish({ ...synced!, status: { kind: "summarizing" } }));
+    expect(reads).toHaveBeenCalledOnce();
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {
