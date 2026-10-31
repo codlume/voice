@@ -7,7 +7,8 @@ import { titleText, type Folder, type Meeting, type MeetingId } from "../shared/
 import { Card } from "./Card.tsx";
 import { FolderDialog } from "./FolderDialog.tsx";
 import { timeLabel } from "./historyView.ts";
-import { meetingAt, statusLabel, type MeetingDay } from "./meetingsView.ts";
+import { meetingAt, type MeetingDay } from "./meetingsView.ts";
+import { statusLabel } from "./meetingStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { useAction } from "./useAction.ts";

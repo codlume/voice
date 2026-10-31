@@ -202,6 +202,7 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
       return { kind: "ok", id: meetingId } as const;
     }),
     startMeeting: vi.fn(async () => ({ kind: "unavailable" }) as const),
+    pauseMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
   };
   (window as { voice?: HubApi }).voice = {
     getSnapshot: () => Promise.reject(new Error("not needed")),
@@ -582,6 +583,39 @@ describe("a meeting", () => {
     await type(area, "Ask Tom about drivers today");
     await click(byText("All meetings"));
     expect(main.updateMeetingNotes).toHaveBeenLastCalledWith(id(1), "Ask Tom about drivers today");
+  });
+
+  test("a live meeting's page offers the same controls and words as the notepad", async () => {
+    const recording = meeting(4, "Live sync", hoursAgo(0), {
+      spans: [],
+      status: { kind: "recording", since: Date.now() },
+    });
+    const main = fakeMain([recording]);
+    await render();
+    await click(byText("Live sync"));
+    await waitForText("All meetings");
+    await click(document.querySelector("[aria-label='Pause']")!);
+    expect(main.pauseMeeting).toHaveBeenCalledWith(id(4));
+    await act(async () => main.publish({ ...recording, status: { kind: "finishing" } }));
+    expect(text()).toContain("Wrapping up…");
+    expect(document.querySelector("[aria-label='Stop']")).toBeNull();
+  });
+
+  test("a short meeting's overview and page say the same about its missing summary", async () => {
+    const at = hoursAgo(1);
+    fakeMain([
+      meeting(7, "Quick check", at, { spans: [{ startedAt: at, endedAt: at + 3 * MINUTE }] }),
+    ]);
+    await render();
+    const row = [...document.querySelectorAll("li")].find((li) =>
+      li.textContent?.includes("Quick check"),
+    )!;
+    await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
+    const short = "Short meetings get a summary only when you ask for one.";
+    expect(document.querySelector("aside")?.textContent).toContain(short);
+    await click(byText("Quick check"));
+    await waitForText("All meetings");
+    expect(text()).toContain(short);
   });
 
   test("asks before deleting, then returns to the list", async () => {
