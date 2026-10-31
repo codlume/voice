@@ -227,19 +227,24 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
 }
 
 @Suite struct MeetingWatchTests {
-    @Test func aRevokedPermissionOrASilentMicrophoneEndsTheLeg() {
-        let fine = MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: 200)
-        #expect(fine == nil)
-        #expect(MeetingWatch.loss(micAllowed: false, systemRecording: true, systemAllowed: true, msSinceMicAudio: 200)
-                == AudioLoss(source: .mic, reason: .permission))
-        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: false, msSinceMicAudio: 200)
-                == AudioLoss(source: .system, reason: .permission))
-        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: 6000)
-                == AudioLoss(source: .mic, reason: .device))
+    private func check(mic: Bool = true, system: Bool = true, micMs: Double? = 200, systemMs: Double? = 200) -> MeetingWatch.Finding? {
+        MeetingWatch.check(micAllowed: mic, systemAllowed: system, msSinceMicAudio: micMs, msSinceSystemAudio: systemMs)
     }
 
-    @Test func quietSystemAudioAMicReopeningAndAnUnrecordedSourceAreNotLosses() {
-        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: false, systemAllowed: false, msSinceMicAudio: 0) == nil)
-        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: nil) == nil)
+    @Test func aRevokedPermissionOrASilentMicrophoneEndsTheLeg() {
+        #expect(check() == nil)
+        #expect(check(mic: false) == .lost(AudioLoss(source: .mic, reason: .permission)))
+        #expect(check(system: false) == .lost(AudioLoss(source: .system, reason: .permission)))
+        #expect(check(micMs: 6000) == .lost(AudioLoss(source: .mic, reason: .device)))
+    }
+
+    @Test func aTapThatStopsDeliveringFramesHasStalled() {
+        #expect(check(systemMs: 2000) == nil)
+        #expect(check(systemMs: 3500) == .systemStalled)
+    }
+
+    @Test func aMicReopeningAndAnUnrecordedSourceAreNotLosses() {
+        #expect(check(system: false, micMs: 0, systemMs: nil) == nil)
+        #expect(check(micMs: nil) == nil)
     }
 }

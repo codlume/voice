@@ -18,6 +18,9 @@ final class SystemAudioSource {
     private var pump: DispatchSourceTimer?
     private var sink: (([Float]) -> Void)?
     private var processListener: AudioObjectPropertyListenerBlock?
+    private var formatListener: AudioObjectPropertyListenerBlock?
+    private let sampleRate: Double
+    private var lastAudio = DispatchTime.now()
 
     init() throws(CaptureError) {
         description = CATapDescription(monoGlobalTapButExcludeProcesses: voiceProcessObjects())
@@ -32,6 +35,7 @@ final class SystemAudioSource {
             Self.destroy(tap: tap, aggregate: aggregate)
             throw CaptureError(reason: .device, message: "Could not open system audio.")
         }
+        self.sampleRate = sampleRate
         let config: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Voice meeting",
             kAudioAggregateDeviceUIDKey: "com.voice.meeting.tap." + UUID().uuidString,
@@ -58,9 +62,13 @@ final class SystemAudioSource {
         watchProcesses()
     }
 
-    func start(sink deliver: @escaping ([Float]) -> Void) throws(CaptureError) {
+    /// `onFormatChange` runs on main when the tap's sample rate changes, as when Bluetooth
+    /// headphones switch to their headset mode; the converter is built for one rate, so the
+    /// source has to be recreated.
+    func start(sink deliver: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
         pipeline.start()
         sink = deliver
+        lastAudio = .now()
         guard AudioDeviceStart(aggregate, ioProc) == noErr else {
             sink = nil
             pipeline.discard()
@@ -71,13 +79,25 @@ final class SystemAudioSource {
         pump.setEventHandler { [weak self] in
             guard let self else { return }
             let chunk = pipeline.pull()
-            if !chunk.isEmpty { sink?(chunk) }
+            guard !chunk.isEmpty else { return }
+            lastAudio = .now()
+            sink?(chunk)
         }
         self.pump = pump
         pump.resume()
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, tap != kAudioObjectUnknown,
+                  let rate = readValue(tap, kAudioTapPropertyFormat, AudioStreamBasicDescription()).map({ $0.mSampleRate }),
+                  rate != sampleRate
+            else { return }
+            onFormatChange()
+        }
+        var address = propertyAddress(kAudioTapPropertyFormat)
+        if AudioObjectAddPropertyListenerBlock(tap, &address, .main, listener) == noErr { formatListener = listener }
     }
 
-    var droppedFrames: Int { pipeline.droppedFrames }
+    /// The tap delivers frames through silence, so a long gap means it stalled.
+    var msSinceAudio: Double { lastAudio.millisecondsToNow() }
 
     /// Delivers the tail and releases the tap; the source cannot start again.
     func stop() {
@@ -96,6 +116,11 @@ final class SystemAudioSource {
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, processListener)
         }
         processListener = nil
+        if let formatListener {
+            var address = propertyAddress(kAudioTapPropertyFormat)
+            AudioObjectRemovePropertyListenerBlock(tap, &address, .main, formatListener)
+        }
+        formatListener = nil
         Self.destroy(tap: tap, aggregate: aggregate)
         tap = AudioObjectID(kAudioObjectUnknown)
         aggregate = AudioObjectID(kAudioObjectUnknown)

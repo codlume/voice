@@ -24,6 +24,7 @@ final class MeetingCapture {
     private var system: PcmWriter?
     private var micSource: MicSource?
     private var systemSource: AnyObject?
+    private var systemRestarts = 0
     private var fixtures: [FileSource] = []
     private var stopped = false
     private let startedAt = DispatchTime.now()
@@ -159,26 +160,54 @@ final class MeetingCapture {
     private func startSystem() -> MeetingSourceState {
         guard #available(macOS 14.4, *) else { return .unavailable }
         if SystemAudioAccess.state == .denied { return .denied }
-        let source: SystemAudioSource
-        do throws(CaptureError) {
-            source = try SystemAudioSource()
-        } catch {
-            output.log(.error, "meeting system audio unavailable: \(error.message)")
-            return .unavailable
-        }
         do throws(CaptureError) {
             system = try open(systemURL)
-            try source.start { [weak self] in self?.receiveSystem($0) }
-            systemSource = source
+            try openSystem()
             return .active
         } catch {
             output.log(.error, "meeting system audio unavailable: \(error.message)")
-            source.stop()
             try? system?.close()
             system = nil
             return .unavailable
         }
     }
+
+    @available(macOS 14.4, *)
+    private func openSystem() throws(CaptureError) {
+        let source = try SystemAudioSource()
+        do throws(CaptureError) {
+            try source.start(sink: { [weak self] in self?.receiveSystem($0) }, onFormatChange: { [weak self] in
+                self?.restartSystem(because: "its format changed")
+            })
+        } catch {
+            source.stop()
+            throw error
+        }
+        systemSource = source
+    }
+
+    // A tap that stopped delivering, or whose sample rate changed, is recreated in place; the
+    // file gets silence for the moments it missed. A tap that keeps stalling ends the leg.
+    private func restartSystem(because reason: String) {
+        guard #available(macOS 14.4, *), !stopped, let old = systemSource as? SystemAudioSource else { return }
+        old.stop()
+        systemSource = nil
+        systemRestarts += 1
+        guard systemRestarts <= Self.systemRestartLimit else {
+            output.log(.error, "meeting system audio stalled again after \(Self.systemRestartLimit) restarts")
+            return lose(AudioLoss(source: .system, reason: .device))
+        }
+        do {
+            try system?.pad(to: elapsedFrames)
+            try openSystem()
+            output.log(.info, "meeting system audio restarted: \(reason)")
+        } catch {
+            output.log(.error, "meeting system audio did not restart: \(error)")
+            lose(AudioLoss(source: .system, reason: .device))
+        }
+    }
+
+    private static let systemRestartLimit = 3
 
     // Permissions can be taken away mid-meeting, and macOS then hands the app silence, not an
     // error, so the leg checks every two seconds.
@@ -188,11 +217,17 @@ final class MeetingCapture {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             note(OutputRoute.current)
-            let loss = MeetingWatch.loss(
+            var msSinceSystemAudio: Double?
+            if #available(macOS 14.4, *), system { msSinceSystemAudio = (systemSource as? SystemAudioSource)?.msSinceAudio }
+            switch MeetingWatch.check(
                 micAllowed: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-                systemRecording: system, systemAllowed: SystemAudioAccess.state != .denied,
-                msSinceMicAudio: micSource == nil ? nil : lastMicAudio.millisecondsToNow())
-            if let loss { lose(loss) }
+                systemAllowed: SystemAudioAccess.state != .denied,
+                msSinceMicAudio: micSource == nil ? nil : lastMicAudio.millisecondsToNow(),
+                msSinceSystemAudio: msSinceSystemAudio) {
+            case .lost(let loss): lose(loss)
+            case .systemStalled: restartSystem(because: "it delivered nothing for \(Int(MeetingWatch.systemStallMs)) ms")
+            case nil: break
+            }
         }
         watch = timer
         timer.resume()
