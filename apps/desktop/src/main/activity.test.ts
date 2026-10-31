@@ -38,6 +38,7 @@ const busy: AppState = {
   transform: reading,
   meeting: noMeetingFocus,
   permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+  speakerModel: "ready",
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
   settings: DEFAULT_SETTINGS,

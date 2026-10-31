@@ -30,6 +30,7 @@ export function toSnapshot(state: AppState): Snapshot {
     session: pill(state),
     permissions: state.permissions,
     loginItem: state.loginItem,
+    speakerModel: state.speakerModel,
     models: state.models,
     settings: state.settings,
     account: state.account,

@@ -79,6 +79,8 @@ export type HelperCommand =
       fromMs: MeetingCursor;
       language: DictationLanguage;
     }
+  // Downloads the models that tell the system voices apart; meeting.models.status follows.
+  | { type: "meeting.models.download" }
   // Transcribes both files again in full and tells the system voices apart; meeting.finalized
   // or meeting.finalizeFailed follows. The files are only read.
   | {
@@ -350,6 +352,11 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("meeting.finalizeFailed"),
     id: Schema.String,
     message: Schema.String,
+  }),
+  // Whether the speaker models are on disk, sent at launch and whenever it changes.
+  Schema.Struct({
+    type: Schema.Literal("meeting.models.status"),
+    state: Schema.Literals(["missing", "downloading", "ready", "failed", "unavailable"]),
   }),
   Schema.Struct({
     type: Schema.Literal("log"),

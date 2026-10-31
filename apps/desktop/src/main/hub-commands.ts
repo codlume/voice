@@ -57,6 +57,7 @@ export type HubCommandDeps = {
   restartForUpdate: (request: RestartRequest) => Promise<void>;
   updateSettings: (change: (settings: Settings) => Settings) => Promise<void>;
   requestPermission: (kind: PermissionKind) => void;
+  downloadSpeakerModel: () => void;
   refreshLoginItem: () => void;
   microphoneTest: Pick<MicrophoneTest, "start" | "stop">;
   modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }>;
@@ -100,6 +101,7 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
   hubCommands.handle(Channel.requestPermission, (_event, kind) => {
     if (isPermissionKind(kind)) deps.requestPermission(kind);
   });
+  hubCommands.handle(Channel.downloadSpeakerModel, () => deps.downloadSpeakerModel());
   hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
     if (deps.development) return;
     const openAtLogin = on === true;

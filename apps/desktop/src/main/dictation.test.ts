@@ -107,6 +107,7 @@ function harness(opts: Options = {}) {
     transform: idleRun,
     meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+    speakerModel: "ready",
     loginItem: "off",
     models: {
       asr: opts.asrModel ?? { state: "ready" },

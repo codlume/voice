@@ -49,6 +49,12 @@ export type Permissions = {
   accessibility: PermissionState;
   systemAudio: SystemAudioPermission;
 };
+/**
+ * The on-device models that tell the voices on system audio apart. They download only when the
+ * user asks; without them a meeting's other side stays one voice. Unavailable before macOS 15.
+ */
+export type SpeakerModelState = "missing" | "downloading" | "ready" | "failed" | "unavailable";
+
 export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export const UPDATE_CHANNELS = ["stable", "nightly"] as const;
@@ -276,6 +282,7 @@ export type Snapshot = {
   permissions: Permissions;
   loginItem: LoginItem;
   models: Record<ModelId, ModelStatus>;
+  speakerModel: SpeakerModelState;
   settings: Settings;
   account: AccountState;
   meetingNotices: readonly MeetingBanner[];
@@ -342,6 +349,8 @@ export type HubApi = WindowApi & {
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
+  /** Downloads the models that tell meeting speakers apart. */
+  downloadSpeakerModel(): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
   startMicrophoneTest(): Promise<void>;
   stopMicrophoneTest(): Promise<void>;
@@ -472,6 +481,7 @@ export const Channel = {
   level: "voice:level",
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
+  downloadSpeakerModel: "voice:downloadSpeakerModel",
   setOpenAtLogin: "voice:setOpenAtLogin",
   startMicrophoneTest: "voice:startMicrophoneTest",
   stopMicrophoneTest: "voice:stopMicrophoneTest",

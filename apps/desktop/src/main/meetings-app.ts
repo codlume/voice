@@ -207,6 +207,10 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       if (event.type === "meeting.shortcut" && store.state.settings.meetingShortcut !== null) {
         toggle("shortcut");
       }
+      if (event.type === "meeting.models.status") {
+        const speakerModel = event.state;
+        store.update((s) => (s.speakerModel === speakerModel ? s : { ...s, speakerModel }));
+      }
       recorder.onHelperEvent(event);
     },
     helperExited: recorder.helperExited,

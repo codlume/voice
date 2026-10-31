@@ -70,6 +70,7 @@ const base: Snapshot = {
     accessibility: "notDetermined",
     systemAudio: "notDetermined",
   },
+  speakerModel: "ready",
   loginItem: "off",
   models: {
     asr: { state: "missing" },
@@ -986,6 +987,9 @@ function fakeVoice(
             }
           : snapshot.updates,
       });
+    },
+    downloadSpeakerModel: async () => {
+      set({ ...snapshot, speakerModel: "ready" });
     },
     requestPermission: async (kind) => {
       // macOS never prompts again once access is denied.

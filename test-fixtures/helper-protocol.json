@@ -422,6 +422,13 @@
       "required": ["type", "id", "dir", "baseMs", "language"]
     },
     {
+      "name": "meeting.models.download",
+      "wire": {
+        "type": "meeting.models.download"
+      },
+      "required": ["type"]
+    },
+    {
       "name": "permissions.request.systemAudio",
       "wire": {
         "type": "permissions.request",
@@ -1613,6 +1620,66 @@
         "message": "speech model is not downloaded"
       },
       "required": ["type", "id", "message"]
+    },
+    {
+      "name": "meeting.models.status.missing",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "missing"
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "missing"
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "meeting.models.status.downloading",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "downloading"
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "downloading"
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "meeting.models.status.ready",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "ready"
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "ready"
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "meeting.models.status.failed",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "failed"
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "failed"
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "meeting.models.status.unavailable",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "unavailable"
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "unavailable"
+      },
+      "required": ["type", "state"]
     }
   ],
   "normalizedEvents": [
@@ -1956,6 +2023,10 @@
     {
       "name": "unknown-asr-state",
       "line": "{\"type\":\"asr.status\",\"state\":\"sleeping\"}"
+    },
+    {
+      "name": "unknown-meeting-models-state",
+      "line": "{\"type\":\"meeting.models.status\",\"state\":\"sleeping\"}"
     },
     {
       "name": "nonfinite-version",

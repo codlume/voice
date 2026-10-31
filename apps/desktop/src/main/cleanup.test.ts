@@ -604,6 +604,7 @@ describe("followSettings", () => {
         accessibility: "granted",
         systemAudio: "notDetermined",
       },
+      speakerModel: "ready",
       loginItem: "off",
       models: {
         asr: { state: "ready" },

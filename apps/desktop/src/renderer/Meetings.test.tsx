@@ -115,6 +115,7 @@ const setUp: Snapshot = {
   },
   session: { kind: "idle" },
   permissions: { microphone: "granted", accessibility: "granted", systemAudio: "granted" },
+  speakerModel: "ready",
   loginItem: "off",
   models: {
     asr: { state: "ready" },
@@ -186,6 +187,7 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     ),
     updateMeetingsSettings: vi.fn(async () => {}),
     requestPermission: vi.fn(async () => {}),
+    downloadSpeakerModel: vi.fn(async () => {}),
     installModel: vi.fn(async () => {}),
     generateMeetingSummary: vi.fn(async (meetingId: MeetingId) => {
       const index = state.meetings.findIndex((m) => m.id === meetingId);
@@ -757,8 +759,10 @@ describe("Set up Meetings", () => {
     await render({
       ...setUp,
       permissions: { microphone: "notDetermined", accessibility: "granted", systemAudio: "denied" },
+      speakerModel: "missing",
     });
-    expect(text()).toContain("Set up Meetings0 of 3 done");
+    expect(text()).toContain("Set up Meetings0 of 4 done");
+    expect(text()).toContain("Speaker detection");
     expect(text()).toContain("System Audio RecordingHears the other participants");
     expect(text()).toContain("Allow Voice in System Settings");
     expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
@@ -767,6 +771,8 @@ describe("Set up Meetings", () => {
     expect(main.requestPermission).toHaveBeenCalledWith("microphone");
     await click(byText("Open"));
     expect(main.requestPermission).toHaveBeenLastCalledWith("systemAudio");
+    await click(byText("Download"));
+    expect(main.downloadSpeakerModel).toHaveBeenCalledOnce();
   });
 
   test("below macOS 14.4 it says only the microphone is recorded and goes once a meeting exists", async () => {
@@ -778,7 +784,7 @@ describe("Set up Meetings", () => {
     await render(unavailable);
     expect(text()).toContain("Meetings record only your microphone on this Mac");
     expect(text()).toContain("Needs macOS 14.4 or later");
-    expect(text()).toContain("2 of 3 done");
+    expect(text()).toContain("3 of 4 done");
     await act(async () => root?.unmount());
     document.body.replaceChildren();
 
