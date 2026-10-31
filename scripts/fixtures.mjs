@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,10 +52,12 @@ const fixtures = [
   },
 ];
 
-// Synthetic meetings: the user on the mic, the others on system audio, each silent while someone
-// else talks. The first also has a speakers variant that mixes the other side into the mic,
-// quieter and a beat late, the way a laptop microphone hears its own speakers. The second has two
-// voices taking turns on system audio, so the final pass has two speakers to tell apart.
+// Synthetic meetings: the user on the mic, the others on system audio. A turn starts `gap`
+// seconds after the last one ends, or `overlap` seconds after the previous turn started, for
+// crosstalk. An `echo` variant mixes the other side into the mic, quieter and a beat late, the way
+// a laptop microphone hears its own speakers. `<prefix>-turns.json` holds who said what when, so
+// a run can be scored: every user turn must survive, as itself and once. Numbers are written the
+// way the speech model writes them, so the score compares like with like.
 const meetings = [
   {
     prefix: "meeting",
@@ -99,11 +101,71 @@ const meetings = [
       ["tom", "And I will update the store listings with the new screenshots tonight."],
     ],
   },
+  {
+    // The user repeats what the other side just said, the way people confirm: not echo, and on
+    // speakers the echo of the other side must still go.
+    prefix: "meeting-repeat-back",
+    speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
+    echo: "meeting-repeat-back-mic-speakers.wav",
+    turns: [
+      ["other", "Can we move the launch to March 12th?"],
+      ["you", "March 12th works for me.", { gap: 0.5 }],
+      ["other", "The budget for the pilot is $42,000."],
+      ["you", "$42,000, right.", { gap: 0.4 }],
+      ["other", "Please send the contract to Maria by Friday."],
+      ["you", "Maria by Friday. Got it.", { gap: 0.4 }],
+      ["other", "So we agree on the plan?"],
+      ["you", "Yes.", { gap: 0.4 }],
+      ["other", "And Victor owns the legal review."],
+      ["you", "Victor owns the legal review. I will follow up with him tomorrow.", { gap: 0.6 }],
+    ],
+  },
+  {
+    // The user talks over the other side, whose words the speakers also play into the mic.
+    prefix: "meeting-crosstalk",
+    speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
+    echo: "meeting-crosstalk-mic-speakers.wav",
+    turns: [
+      ["you", "Let's go through the renewal before the call ends."],
+      [
+        "other",
+        "The Kowalski renewal is the biggest deal we have this quarter, and the legal team still has not reviewed the final terms of the contract.",
+      ],
+      ["you", "Sorry, who owns legal review?", { overlap: 3 }],
+      ["other", "Victor owns it. He already has the draft."],
+      ["you", "Thanks. I will send him the latest numbers today.", { gap: 0.6 }],
+    ],
+  },
+  {
+    // Three voices on system audio, so speaker detection has to tell more than two apart.
+    prefix: "meeting-three-others",
+    speakers: {
+      you: ["mic", "Daniel"],
+      anna: ["system", "Samantha"],
+      tom: ["system", "Ralph"],
+      kate: ["system", "Karen"],
+    },
+    turns: [
+      ["you", "Morning all. Let's start with the roadmap and then the budget."],
+      ["anna", "The roadmap is ready. We moved the search work into the second quarter."],
+      ["tom", "That works for engineering. The migration finishes at the end of March."],
+      ["kate", "Finance needs the new numbers before the board meeting on the twentieth."],
+      ["anna", "I can send them on Monday, once the hiring plan is final."],
+      ["you", "Good. Tom, is the migration on track?"],
+      ["tom", "Mostly. We still wait on the vendor for two of the data exports."],
+      ["kate", "If the vendor slips, does the budget for the second quarter change?"],
+      ["tom", "Only slightly. We would move about ten thousand dollars into April."],
+      ["anna", "Then let's keep the plan and review it again in two weeks."],
+      ["kate", "Agreed. I will update the forecast and share it on Friday."],
+      ["you", "Thanks everyone. Anna sends the numbers Monday, Kate shares the forecast Friday."],
+    ],
+  },
 ];
 const gapSeconds = 1.2;
 const meetingFixtures = ({ prefix, echo }) => [
   `${prefix}-mic.wav`,
   `${prefix}-system.wav`,
+  `${prefix}-turns.json`,
   ...(echo ? [echo] : []),
 ];
 
@@ -168,18 +230,42 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
   const work = join(tmpdir(), `voice-fixture-${process.pid}-${prefix}`);
   mkdirSync(work, { recursive: true });
   try {
-    let at = 0.5;
-    const lines = turns.map(([speaker, speech], index) => {
+    let previousStart = 0;
+    let end = 0.5 - gapSeconds;
+    const lines = turns.map(([speaker, speech, { gap = gapSeconds, overlap } = {}], index) => {
       const [source, voice] = speakers[speaker];
       const file = join(work, `${index}.wav`);
       const aiff = join(work, `${index}.aiff`);
       run("say", ["-v", voice, "-o", aiff, speech]);
       run("ffmpeg", ["-y", "-loglevel", "error", "-i", aiff, "-ar", "16000", "-ac", "1", file]);
-      const line = { source, file, startMs: Math.round(at * 1000) };
-      at += duration(file) + gapSeconds;
-      return line;
+      const start = overlap === undefined ? end + gap : previousStart + overlap;
+      const seconds = duration(file);
+      previousStart = start;
+      end = Math.max(end, start + seconds);
+      return {
+        speaker,
+        source,
+        file,
+        speech,
+        startMs: Math.round(start * 1000),
+        endMs: Math.round((start + seconds) * 1000),
+      };
     });
-    const total = String(at);
+    const total = String(end + gapSeconds);
+    writeFileSync(
+      join(fixturesDir, `${prefix}-turns.json`),
+      `${JSON.stringify(
+        lines.map(({ speaker, source, startMs, endMs, speech }) => ({
+          speaker,
+          source,
+          startMs,
+          endMs,
+          text: speech,
+        })),
+        null,
+        2,
+      )}\n`,
+    );
     for (const source of ["mic", "system"]) {
       const own = lines.filter((line) => line.source === source);
       const delayed = own.map((line, index) => `[${index}]adelay=${line.startMs}[d${index}]`);

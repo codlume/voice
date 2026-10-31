@@ -204,6 +204,48 @@ async function waitOn(page, expression, timeoutMs) {
 // Meeting fixtures play this many times faster than real time.
 const MEETING_FIXTURE_SPEED = 8;
 
+const meetingWords = (text) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+// A user turn survives when the mic segments around it hold most of its words. A system turn of
+// four or more words is echo kept when mic segments that start while it plays repeat most of its
+// words beyond the user's own; a user repeating it after it ends is not echo.
+function scoreMeeting(turns, segments) {
+  const wordsOf = (filter) =>
+    segments
+      .filter((entry) => entry.source === "mic" && filter(entry))
+      .flatMap((entry) => meetingWords(entry.text));
+  const share = (words, heard) => words.filter((word) => heard.has(word)).length / words.length;
+  const userTurns = turns.filter((turn) => turn.source === "mic");
+  const lost = userTurns
+    .filter((turn) => {
+      const heard = new Set(
+        wordsOf(
+          (entry) => entry.startMs <= turn.endMs + 1500 && entry.endMs >= turn.startMs - 1500,
+        ),
+      );
+      return share(meetingWords(turn.text), heard) < 0.6;
+    })
+    .map((turn) => turn.text);
+  const echoKept = turns
+    .filter((turn) => turn.source === "system" && meetingWords(turn.text).length >= 4)
+    .filter((turn) => {
+      const own = new Set(
+        userTurns
+          .filter((user) => user.startMs <= turn.endMs && user.endMs >= turn.startMs)
+          .flatMap((user) => meetingWords(user.text)),
+      );
+      const heard = new Set(
+        wordsOf(
+          (entry) => entry.startMs >= turn.startMs - 1000 && entry.startMs <= turn.endMs - 500,
+        ),
+      );
+      const words = meetingWords(turn.text).filter((word) => !own.has(word));
+      return words.length > 0 && share(words, heard) >= 0.6;
+    })
+    .map((turn) => turn.text);
+  return { userTurns: userTurns.length, userTurnsLost: lost, echoKept };
+}
+
 async function pollAsync(check, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -476,6 +518,7 @@ const commands = {
       const fakeMicrophonePath = join(userData, "capture.wav");
       const meetingMicPath = join(userData, "meeting-mic.wav");
       const meetingSystemPath = join(userData, "meeting-system.wav");
+      const meetingOutputPath = join(userData, "meeting-output.txt");
       const logPath = join(userData, "main.log");
       const { child, ports: announced } = launchVoice(userData, {
         inspect: true,
@@ -483,6 +526,7 @@ const commands = {
           VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
           VOICE_HELPER_TEST_MEETING_MIC: meetingMicPath,
           VOICE_HELPER_TEST_MEETING_SYSTEM: meetingSystemPath,
+          VOICE_HELPER_TEST_MEETING_OUTPUT: meetingOutputPath,
           VOICE_HELPER_TEST_MEETING_SPEED: String(MEETING_FIXTURE_SPEED),
         },
       });
@@ -502,6 +546,7 @@ const commands = {
         fakeMicrophonePath,
         meetingMicPath,
         meetingSystemPath,
+        meetingOutputPath,
         logPath,
       });
       save();
@@ -1119,23 +1164,31 @@ const commands = {
     const system =
       flags.find((flag) => flag.startsWith("--system="))?.slice("--system=".length) ??
       "meeting-system.wav";
+    const headphones = flags.includes("--output=headphones");
     const state = requireInstance();
     if (!state.meetingMicPath) fail("this instance was launched before meeting support; relaunch");
+    if (headphones && !state.meetingOutputPath)
+      fail("this instance was launched before --output support; relaunch");
     const fixtures = [[join(fixturesDir, mic), state.meetingMicPath]];
     if (withSystem) fixtures.push([join(fixturesDir, system), state.meetingSystemPath]);
     for (const [fixture] of fixtures) {
       if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
     }
+    const turnsPath = join(fixturesDir, mic.replace(/-mic(-speakers)?\.wav$/, "-turns.json"));
+    const turns = existsSync(turnsPath) ? JSON.parse(readFileSync(turnsPath, "utf8")) : null;
     const hub = await connect("hub");
     const logOffset = statSync(state.logPath).size;
+    const newLog = () =>
+      readFileSync(state.logPath).subarray(logOffset).toString("utf8").split("\n");
     const endedFixtures = () =>
-      readFileSync(state.logPath, "utf8")
-        .slice(logOffset)
-        .split("\n")
-        .filter((line) => line.includes("helper info: meeting fixture ended")).length;
+      newLog().filter((line) => line.includes("helper info: meeting fixture ended")).length;
     const call = (expression) => hub.evaluate(expression);
     try {
       for (const [fixture, path] of fixtures) copyFileSync(fixture, path);
+      if (state.meetingOutputPath) {
+        if (headphones) writeFileSync(state.meetingOutputPath, "headphones");
+        else rmSync(state.meetingOutputPath, { force: true });
+      }
       const startedAt = performance.now();
       const started = await call("window.voice.startMeeting()");
       if (started.kind !== "ok") fail(`startMeeting: ${JSON.stringify(started)}`);
@@ -1144,21 +1197,45 @@ const commands = {
         call(
           `window.voice.getMeetings().then((s) => s.meetings.find((m) => m.id === ${id})?.status.kind ?? null)`,
         );
+      // Every live segment with when it first showed, until the final pass replaces them.
+      const live = new Map();
+      let replaced = false;
+      const watchLive = async () => {
+        if (replaced) return;
+        const transcript = await call(`window.voice.getMeeting(${id}).then((d) => d.transcript)`);
+        const segments = transcript.filter((entry) => entry.kind === "segment");
+        const keys = new Set(
+          segments.map((entry) => `${entry.source}@${entry.startMs}:${entry.text}`),
+        );
+        if ([...live.keys()].some((key) => !keys.has(key))) {
+          replaced = true;
+          return;
+        }
+        const now = performance.now() - startedAt;
+        for (const entry of segments) {
+          const key = `${entry.source}@${entry.startMs}:${entry.text}`;
+          if (!live.has(key)) live.set(key, { ...entry, arrivedMs: Math.round(now) });
+        }
+      };
       const recording = await pollAsync(
         async () => ((await status()) === "recording" ? true : undefined),
         10_000,
         "meeting to record",
       );
       await pollAsync(
-        () => (endedFixtures() >= fixtures.length ? true : undefined),
+        async () => {
+          await watchLive();
+          return endedFixtures() >= fixtures.length ? true : undefined;
+        },
         180_000,
         "meeting fixtures to finish",
       );
-      const live = await call(`window.voice.getMeeting(${id}).then((d) => d.transcript.length)`);
+      const liveBeforeStop = live.size;
       await call(`window.voice.stopMeeting(${id})`);
       const stoppedAt = performance.now();
       let finished = await pollAsync(
         async () => {
+          await watchLive();
           const kind = await status();
           return ["ready", "confirmingShort"].includes(kind) ? kind : undefined;
         },
@@ -1175,17 +1252,35 @@ const commands = {
       }
       const detail = await call(`window.voice.getMeeting(${id})`);
       const folder = join(state.userData, "meetings", started.id);
+      const finalSegments = detail.transcript.filter((entry) => entry.kind === "segment");
+      const liveSegments = [...live.values()];
+      // How long after its speech ended each You line showed, in wall ms at the fixture speed.
+      const youLatency = liveSegments
+        .filter((entry) => entry.source === "mic")
+        .map((entry) => Math.round(entry.arrivedMs - entry.endMs / MEETING_FIXTURE_SPEED));
       const result = {
         mic,
         system: withSystem && system,
+        output: headphones ? "headphones" : "speakers",
         id: started.id,
         recording,
-        liveEntriesBeforeStop: live,
+        liveEntriesBeforeStop: liveBeforeStop,
         status: finished,
         recordMs: Math.round(stoppedAt - startedAt),
         stopToReadyMs: Math.round(performance.now() - stoppedAt),
+        firstYouLineMs: liveSegments.find((entry) => entry.source === "mic")?.arrivedMs ?? null,
+        youLatencyMs: youLatency,
+        echoDropped: newLog().filter((line) => line.includes("meeting echo dropped")).length,
         filesAfter: readdirSync(folder).toSorted(),
         speakers: detail.meeting.speakers.map((speaker) => `${speaker.id}: ${speaker.label}`),
+        ...(turns && {
+          live: scoreMeeting(turns, liveSegments),
+          final: scoreMeeting(turns, finalSegments),
+        }),
+        liveTranscript: liveSegments.map(
+          (entry) =>
+            `+${entry.arrivedMs} ${entry.source}@${Math.round(entry.startMs)}-${Math.round(entry.endMs)}: ${entry.text}`,
+        ),
         transcript: detail.transcript.map((entry) =>
           entry.kind === "segment"
             ? `${entry.source === "system" && entry.speakerId ? entry.speakerId : entry.source}@${Math.round(entry.startMs)}-${Math.round(entry.endMs)}: ${entry.text}`
@@ -1198,6 +1293,7 @@ const commands = {
     } finally {
       rmSync(state.meetingMicPath, { force: true });
       rmSync(state.meetingSystemPath, { force: true });
+      if (state.meetingOutputPath) rmSync(state.meetingOutputPath, { force: true });
       hub.close();
     }
   },
@@ -1231,8 +1327,9 @@ const commands = {
     const snapshots = await snapshotStream(hub);
     const logOffset = statSync(state.logPath).size;
     const logLine = (pattern) =>
-      readFileSync(state.logPath, "utf8")
-        .slice(logOffset)
+      readFileSync(state.logPath)
+        .subarray(logOffset)
+        .toString("utf8")
         .split("\n")
         .find((l) => pattern.test(l));
     const waitForLog = (pattern, timeoutMs, label) =>
