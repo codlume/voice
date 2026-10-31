@@ -203,7 +203,7 @@ const summaryRefusal = (result: MeetingCommandResult) =>
   result.kind === "refused" ? result.message : null;
 
 function TitleField({ meeting }: { meeting: Meeting }) {
-  const saved = meeting.title?.text ?? "";
+  const saved = meeting.title ?? "";
   const [draft, setDraft] = useState(saved);
   const action = useAction();
   const commit = () => {
@@ -393,7 +393,7 @@ function Thoughts({ meeting }: { meeting: Meeting }) {
 
 /** A speaker's name, saved on Enter or leaving the field; blank goes back to "Speaker N". */
 function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
-  const saved = speaker.name?.text ?? "";
+  const saved = speaker.name ?? "";
   const [draft, setDraft] = useState(saved);
   const action = useAction();
   const commit = () => {
@@ -453,7 +453,7 @@ function Transcript({
         <fieldset aria-label="Speakers" {...stylex.props(styles.speakers)}>
           {meeting.speakers.map((speaker) => (
             <SpeakerField
-              key={`${speaker.id}:${speaker.name?.text ?? ""}`}
+              key={`${speaker.id}:${speaker.name ?? ""}`}
               meetingId={meeting.id}
               speaker={speaker}
             />
@@ -542,7 +542,7 @@ export function MeetingDetail({
       </div>
       <div {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.heading)}>
-          <TitleField key={meeting.title?.text ?? ""} meeting={meeting} />
+          <TitleField key={meeting.title ?? ""} meeting={meeting} />
           <p {...stylex.props(styles.when)}>{when.join(" · ")}</p>
         </div>
         <div {...stylex.props(styles.actions)}>

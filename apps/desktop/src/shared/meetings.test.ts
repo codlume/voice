@@ -82,7 +82,7 @@ describe("meetings", () => {
 
   test("a title files the meeting into matching auto folders while they are on", () => {
     const titled = retitle(meeting(A, 1), "  Ana 1:1 ", folders, DEFAULT_MEETINGS_SETTINGS);
-    expect(titled.title).toEqual({ text: "Ana 1:1", source: "user" });
+    expect(titled.title).toEqual("Ana 1:1");
     expect(titled.folderIds).toEqual([ONES]);
 
     const off = retitle(meeting(A, 1), "Ana 1:1", folders, {
@@ -97,7 +97,7 @@ describe("meetings", () => {
   });
 
   test("a blank title clears it so one can be generated", () => {
-    const titled = meeting(A, 1, { title: { text: "Old", source: "user" } });
+    const titled = meeting(A, 1, { title: "Old" });
     expect(retitle(titled, "   ", folders, DEFAULT_MEETINGS_SETTINGS).title).toBeNull();
   });
 

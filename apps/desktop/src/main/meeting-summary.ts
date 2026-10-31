@@ -141,7 +141,7 @@ export function createMeetingSummarizer({
   /** Fills a blank title, the auto folders it matches included; a title the user typed meanwhile wins. */
   const withTitle = (meeting: Meeting, title: string | null): Meeting => {
     if (meeting.title !== null || title === null) return meeting;
-    const titled: Meeting = { ...meeting, title: { text: title, source: "generated" } };
+    const titled: Meeting = { ...meeting, title };
     const { folders, settings } = store.state();
     const added = autoFolderIds(titled, folders, settings).filter(
       (folderId) => !meeting.folderIds.includes(folderId),
@@ -192,7 +192,7 @@ export function createMeetingSummarizer({
       const markdown = renderSummaryMarkdown(summary, input.speakers);
       await store.update(id, (latest) => ({
         ...withTitle(latest, summary.title),
-        summary: { kind: "ready", summary: { markdown, generatedAt: now(), coversUntilMs } },
+        summary: { kind: "ready", summary: { markdown, coversUntilMs } },
       }));
       return { ok: true };
     },

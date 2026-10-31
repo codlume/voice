@@ -52,7 +52,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 0,
     endMs: 4000,
     text: "Can you ship the hotfix today?",
-    final: true,
   },
   {
     kind: "segment",
@@ -61,7 +60,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 5000,
     endMs: 9000,
     text: "Yes, I will.",
-    final: true,
   },
   { kind: "marker", marker: "dictated", atMs: 9500 },
   {
@@ -72,7 +70,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 10_000,
     endMs: 12_000,
     text: "  ",
-    final: true,
   },
 ];
 
@@ -88,7 +85,6 @@ const summary: MeetingSummary = {
 
 const previous: Summary = {
   markdown: "Old summary.",
-  generatedAt: START,
   coversUntilMs: 10 * MIN,
 };
 
@@ -174,7 +170,7 @@ describe("summarizeMeeting", () => {
     expect(await summarizer.summarizeMeeting(ID, { signal: signal() })).toEqual({ ok: true });
 
     const written = await saved();
-    expect(written.title).toEqual({ text: "Hotfix Release Plan", source: "generated" });
+    expect(written.title).toEqual("Hotfix Release Plan");
     expect(written.folderIds).toEqual([folder.id]);
     expect(written.status).toEqual({ kind: "summarizing", progress: null });
     expect(written.summary).toEqual({
@@ -196,7 +192,6 @@ describe("summarizeMeeting", () => {
           "- Tell support.",
           "",
         ].join("\n"),
-        generatedAt: START + 40 * MIN,
         coversUntilMs: 30 * MIN,
       },
     });
@@ -227,7 +222,7 @@ describe("summarizeMeeting", () => {
         summarize: async (): Promise<SummaryResult> => {
           await store.update(ID, (latest) => ({
             ...latest,
-            title: { text: "Ops sync", source: "user" },
+            title: "Ops sync",
           }));
           return { ok: true, summary };
         },
@@ -236,13 +231,13 @@ describe("summarizeMeeting", () => {
 
     await summarizer.summarizeMeeting(ID, { signal: signal() });
 
-    expect((await saved()).title).toEqual({ text: "Ops sync", source: "user" });
+    expect((await saved()).title).toEqual("Ops sync");
   });
 
   test("asks for a title only when the title is blank, with the notes and transcript", async () => {
     let seen: Parameters<SummaryProvider["summarize"]>[0] | undefined;
     const { summarizer } = await harness({
-      stored: meeting({ title: { text: "Ops sync", source: "user" } }),
+      stored: meeting({ title: "Ops sync" }),
       provider: {
         summarize: async (request) => {
           seen = request;
@@ -392,7 +387,6 @@ describe("summarizeMeeting", () => {
         startMs: 20_000,
         endMs: 60_000,
         text: long,
-        final: true,
       },
     ]);
 
@@ -407,7 +401,7 @@ describe("summarizeMeeting", () => {
       { step: 2, total: 2 },
     ]);
     const written = await saved();
-    expect(written.title).toEqual({ text: "Hotfix Plan For Today", source: "generated" });
+    expect(written.title).toEqual("Hotfix Plan For Today");
     expect(written.summary).toMatchObject({
       kind: "ready",
       summary: { markdown: expect.stringMatching(/^The hotfix ships today\.\n/) },
@@ -423,13 +417,13 @@ describe("generateTitle", () => {
       ok: true,
       title: "Hotfix Release Plan",
     });
-    expect((await saved()).title).toEqual({ text: "Hotfix Release Plan", source: "generated" });
+    expect((await saved()).title).toEqual("Hotfix Release Plan");
   });
 
   test("leaves a titled meeting alone without asking the model", async () => {
     const { summarizer, calls } = await harness({
       provider: {},
-      stored: meeting({ title: { text: "Ops sync", source: "user" } }),
+      stored: meeting({ title: "Ops sync" }),
     });
 
     expect(await summarizer.generateTitle(ID, { signal: signal() })).toEqual({
@@ -454,8 +448,8 @@ describe("generateTitle", () => {
 
 test("summaryInput names the mic You, speakers by their name, an unknown voice Others, and drops blank segments", () => {
   const speakers = [
-    { id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" as const } },
-    { id: "s2" as SpeakerId, label: "Speaker 2", name: { text: "Ana", source: "user" as const } },
+    { id: "s1" as SpeakerId, label: "Speaker 1", name: "Ana" },
+    { id: "s2" as SpeakerId, label: "Speaker 2", name: "Ana" },
   ];
   const { lines, speakers: read } = summaryInput(
     [
@@ -468,7 +462,6 @@ test("summaryInput names the mic You, speakers by their name, an unknown voice O
         startMs: 13_000,
         endMs: 14_000,
         text: "Bye.",
-        final: true,
       },
       {
         kind: "segment",
@@ -478,7 +471,6 @@ test("summaryInput names the mic You, speakers by their name, an unknown voice O
         startMs: 15_000,
         endMs: 16_000,
         text: "Bye all.",
-        final: true,
       },
     ],
     speakers,

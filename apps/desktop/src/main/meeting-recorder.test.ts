@@ -138,7 +138,7 @@ describe("meeting recorder", () => {
     await h.segment(id, "system", 2500, "Hi there");
     const transcript = await h.store.transcript(id);
     expect(transcript).toMatchObject([
-      { kind: "segment", source: "mic", startMs: 0, text: "Hello everyone", final: true },
+      { kind: "segment", source: "mic", startMs: 0, text: "Hello everyone" },
       { kind: "segment", source: "system", speakerId: null, startMs: 2500, text: "Hi there" },
     ]);
     expect(h.pushed).toEqual(transcript);
@@ -299,9 +299,7 @@ describe("meeting recorder", () => {
     expect(h.store.get(id)?.speakers).toEqual([]);
     await h.store.update(id, (meeting) => ({
       ...meeting,
-      speakers: [
-        { id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ania", source: "user" } },
-      ],
+      speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: "Ania" }],
     }));
     await h.store.replaceTranscript(id, (meeting, transcript) => ({
       meeting,
@@ -324,12 +322,10 @@ describe("meeting recorder", () => {
       { source: "system", startMs: 2100, endMs: 2900, text: "A new voice", speaker: 0 },
     ]);
 
-    expect(h.store.get(id)?.speakers.map(({ id: speaker, name }) => [speaker, name?.text])).toEqual(
-      [
-        ["s1", "Ania"],
-        ["s2", undefined],
-      ],
-    );
+    expect(h.store.get(id)?.speakers.map(({ id: speaker, name }) => [speaker, name])).toEqual([
+      ["s1", "Ania"],
+      ["s2", null],
+    ]);
     expect(await h.store.transcript(id)).toMatchObject([
       { kind: "segment", speakerId: "s1", text: TEN_WORDS },
       { kind: "marker", marker: "resumed", atMs: 2000 },

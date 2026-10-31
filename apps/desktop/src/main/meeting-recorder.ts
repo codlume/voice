@@ -381,7 +381,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       startMs: event.startMs,
       endMs: event.endMs,
       text: event.text,
-      final: true,
     } as const;
     // System audio is "Others" until the final pass tells its speakers apart.
     const entry: Segment =
@@ -447,7 +446,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   async function cursor(id: MeetingId): Promise<MeetingCursor> {
     const reach: MeetingCursor = { mic: 0, system: 0 };
     for (const entry of await store.transcript(id)) {
-      if (entry.kind !== "segment" || !entry.final) continue;
+      if (entry.kind !== "segment") continue;
       const source: MeetingSource = entry.source;
       reach[source] = Math.max(reach[source], entry.endMs);
     }

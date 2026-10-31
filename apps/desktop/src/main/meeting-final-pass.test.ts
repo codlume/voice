@@ -28,7 +28,6 @@ describe("applying the final pass", () => {
         startMs: 0,
         endMs: 900,
         text: "helo",
-        final: true,
         source: "mic",
       },
       { kind: "marker", marker: "dictated", atMs: 1000 },

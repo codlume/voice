@@ -86,8 +86,7 @@ const key = (entry: TranscriptEntry) => JSON.stringify(entry);
 
 /**
  * The transcript read from main plus the live lines that arrived while it loaded. A live line the
- * read already holds is left out, so a marker is not doubled and a partial does not come back
- * after its final line.
+ * read already holds is left out, so neither a line nor a marker is doubled.
  */
 export function mergeTranscript(
   read: readonly TranscriptEntry[],

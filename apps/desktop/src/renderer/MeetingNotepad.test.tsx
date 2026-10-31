@@ -34,14 +34,13 @@ const meeting: Meeting = {
 
 const said = (segmentId: string, text: string, source: "mic" | "system"): TranscriptEntry =>
   source === "mic"
-    ? { kind: "segment", id: segmentId, startMs: 0, endMs: 1, text, final: true, source }
+    ? { kind: "segment", id: segmentId, startMs: 0, endMs: 1, text, source }
     : {
         kind: "segment",
         id: segmentId,
         startMs: 0,
         endMs: 1,
         text,
-        final: true,
         source,
         speakerId: null,
       };
@@ -185,7 +184,7 @@ describe("the notepad", () => {
     push({
       meeting: {
         ...done,
-        speakers: [{ id: s1, label: "Speaker 1", name: { text: "Ann", source: "user" } }],
+        speakers: [{ id: s1, label: "Speaker 1", name: "Ann" }],
       },
       prompt: null,
     });
