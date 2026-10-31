@@ -198,6 +198,19 @@ async function waitOn(page, expression, timeoutMs) {
   throw new Error(`timed out after ${timeoutMs} ms waiting for ${expression} (last ${show(last)})`);
 }
 
+// Meeting fixtures play this many times faster than real time.
+const MEETING_FIXTURE_SPEED = 8;
+
+async function pollAsync(check, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await check();
+    if (result !== undefined) return result;
+    await sleep(100);
+  }
+  throw new Error(`timed out after ${timeoutMs} ms waiting for ${label}`);
+}
+
 async function poll(check, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -458,10 +471,17 @@ const commands = {
       ownsScratch = true;
       if (stopping) return;
       const fakeMicrophonePath = join(userData, "capture.wav");
+      const meetingMicPath = join(userData, "meeting-mic.wav");
+      const meetingSystemPath = join(userData, "meeting-system.wav");
       const logPath = join(userData, "main.log");
       const { child, ports: announced } = launchVoice(userData, {
         inspect: true,
-        env: { VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath },
+        env: {
+          VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
+          VOICE_HELPER_TEST_MEETING_MIC: meetingMicPath,
+          VOICE_HELPER_TEST_MEETING_SYSTEM: meetingSystemPath,
+          VOICE_HELPER_TEST_MEETING_SPEED: String(MEETING_FIXTURE_SPEED),
+        },
       });
       child.stdout.on("data", (chunk) => appendFileSync(logPath, chunk));
       child.stderr.on("data", (chunk) => appendFileSync(join(userData, "stderr.log"), chunk));
@@ -477,6 +497,8 @@ const commands = {
         electronIdentity: processIdentity(child.pid),
         userData,
         fakeMicrophonePath,
+        meetingMicPath,
+        meetingSystemPath,
         logPath,
       });
       save();
@@ -1074,6 +1096,95 @@ const commands = {
     const path = join(evidenceDir(), `${name}.txt`);
     appendFileSync(path, `${rest.join(" ")}\n`);
     out(path);
+  },
+
+  async meeting() {
+    const [mic = "meeting-mic.wav", ...flags] = args.filter(
+      (arg) => !arg.startsWith("--scenario-owner="),
+    );
+    const withSystem = !flags.includes("--no-system");
+    const state = requireInstance();
+    if (!state.meetingMicPath) fail("this instance was launched before meeting support; relaunch");
+    const fixtures = [[join(fixturesDir, mic), state.meetingMicPath]];
+    if (withSystem) {
+      fixtures.push([join(fixturesDir, "meeting-system.wav"), state.meetingSystemPath]);
+    }
+    for (const [fixture] of fixtures) {
+      if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
+    }
+    const hub = await connect("hub");
+    const logOffset = statSync(state.logPath).size;
+    const endedFixtures = () =>
+      readFileSync(state.logPath, "utf8")
+        .slice(logOffset)
+        .split("\n")
+        .filter((line) => line.includes("helper info: meeting fixture ended")).length;
+    const call = (expression) => hub.evaluate(expression);
+    try {
+      for (const [fixture, path] of fixtures) copyFileSync(fixture, path);
+      const startedAt = performance.now();
+      const started = await call("window.voice.startMeeting()");
+      if (started.kind !== "ok") fail(`startMeeting: ${JSON.stringify(started)}`);
+      const id = JSON.stringify(started.id);
+      const status = () =>
+        call(
+          `window.voice.getMeetings().then((s) => s.meetings.find((m) => m.id === ${id})?.status.kind ?? null)`,
+        );
+      const recording = await pollAsync(
+        async () => ((await status()) === "recording" ? true : undefined),
+        10_000,
+        "meeting to record",
+      );
+      await pollAsync(
+        () => (endedFixtures() >= fixtures.length ? true : undefined),
+        180_000,
+        "meeting fixtures to finish",
+      );
+      const live = await call(`window.voice.getMeeting(${id}).then((d) => d.transcript.length)`);
+      await call(`window.voice.stopMeeting(${id})`);
+      const stoppedAt = performance.now();
+      let finished = await pollAsync(
+        async () => {
+          const kind = await status();
+          return ["ready", "confirmingShort"].includes(kind) ? kind : undefined;
+        },
+        120_000,
+        "meeting to finish",
+      );
+      if (finished === "confirmingShort") {
+        await call(`window.voice.keepMeeting(${id})`);
+        finished = await pollAsync(
+          async () => ((await status()) === "ready" ? "ready" : undefined),
+          120_000,
+          "kept meeting to finish",
+        );
+      }
+      const detail = await call(`window.voice.getMeeting(${id})`);
+      const folder = join(state.userData, "meetings", started.id);
+      const result = {
+        mic,
+        system: withSystem,
+        id: started.id,
+        recording,
+        liveEntriesBeforeStop: live,
+        status: finished,
+        recordMs: Math.round(stoppedAt - startedAt),
+        stopToReadyMs: Math.round(performance.now() - stoppedAt),
+        filesAfter: readdirSync(folder).toSorted(),
+        transcript: detail.transcript.map((entry) =>
+          entry.kind === "segment"
+            ? `${entry.source}@${Math.round(entry.startMs)}-${Math.round(entry.endMs)}: ${entry.text}`
+            : `[${entry.marker}@${Math.round(entry.atMs)}]`,
+        ),
+      };
+      const path = join(evidenceDir(), `meeting-${mic.replace(/\.wav$/, "")}-${Date.now()}.json`);
+      writeFileSync(path, JSON.stringify(result, null, 2));
+      out({ ...result, evidence: path });
+    } finally {
+      rmSync(state.meetingMicPath, { force: true });
+      rmSync(state.meetingSystemPath, { force: true });
+      hub.close();
+    }
   },
 
   async dictate() {
