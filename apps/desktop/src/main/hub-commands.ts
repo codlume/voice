@@ -18,10 +18,12 @@ import {
   parseFolderId,
   parseMeetingId,
   parseMeetingsSettingsPatch,
+  renameSpeaker,
   retitle,
   titleText,
   type MeetingCommandResult,
   type MeetingId,
+  type SpeakerId,
 } from "../shared/meetings.ts";
 import { models, type Model, type ModelId } from "../shared/models.ts";
 import { parseAccountName, type createAccount } from "./account.ts";
@@ -241,6 +243,16 @@ function registerMeetingCommands(
       }),
     );
   });
+  hubCommands.handle(
+    Channel.renameMeetingSpeaker,
+    async (_event, raw: unknown, speakerId: unknown, name: unknown) => {
+      const id = parseMeetingId(raw);
+      if (!id || typeof speakerId !== "string" || typeof name !== "string") return;
+      await saving("speaker rename", "Could not rename this speaker. Try again.", () =>
+        meetings.update(id, (meeting) => renameSpeaker(meeting, speakerId as SpeakerId, name)),
+      );
+    },
+  );
   hubCommands.handle(Channel.updateMeetingNotes, async (_event, raw: unknown, notes: unknown) => {
     const id = parseMeetingId(raw);
     if (!id || typeof notes !== "string") return;

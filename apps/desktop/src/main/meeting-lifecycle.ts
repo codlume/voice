@@ -140,6 +140,7 @@ export function step(
         folderIds: [],
         notes: "",
         summary: { kind: "none" },
+        speakers: [],
       },
       effects: [{ type: "startCapture", leg: 0 }],
     };

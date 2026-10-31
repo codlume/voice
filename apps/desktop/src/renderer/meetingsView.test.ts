@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { DayKey } from "../shared/insights.ts";
-import type { Meeting, MeetingId, TranscriptEntry } from "../shared/meetings.ts";
+import type { Meeting, MeetingId, Speaker, SpeakerId } from "../shared/meetings.ts";
 import {
   expiredBy,
   inlineRuns,
@@ -10,12 +10,17 @@ import {
   overview,
   retentionSentence,
   searchResults,
-  speakerNames,
   summaryBlocks,
   transcriptRows,
 } from "./meetingsView.ts";
 
 const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).getTime();
+
+const named = (id: string, label: string, name: string | null): Speaker => ({
+  id: id as SpeakerId,
+  label,
+  name: name === null ? null : { text: name, source: "user" },
+});
 
 function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): Meeting {
   return {
@@ -27,6 +32,7 @@ function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): M
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...patch,
   };
 }
@@ -104,7 +110,10 @@ describe("summary", () => {
   });
 
   test("highlights speaker names as whole words and keeps bold", () => {
-    const runs = inlineRuns("Ania met Ann about the **Annual** plan", ["Ann", "Ania"]);
+    const runs = inlineRuns("Ania met Ann about the **Annual** plan", [
+      named("s1", "Speaker 1", "Ann"),
+      named("s2", "Speaker 2", "Ania"),
+    ]);
     expect(runs.filter((run) => run.name).map((run) => run.text)).toEqual(["Ania", "Ann"]);
     expect(runs.find((run) => run.text === "Annual")).toEqual({
       text: "Annual",
@@ -115,69 +124,51 @@ describe("summary", () => {
     expect(runs.map((run) => run.text).join("")).toBe("Ania met Ann about the Annual plan");
   });
 
-  test("names the system voices once, never the user's own mic", () => {
-    const transcript: TranscriptEntry[] = [
-      { kind: "segment", id: "1", startMs: 0, endMs: 1, text: "Hi", final: true, source: "mic" },
-      {
-        kind: "segment",
-        id: "2",
-        startMs: 1,
-        endMs: 2,
-        text: "Hej",
-        final: true,
-        source: "system",
-        speaker: "Ania",
-      },
-      {
-        kind: "segment",
-        id: "3",
-        startMs: 2,
-        endMs: 3,
-        text: "Yo",
-        final: true,
-        source: "system",
-        speaker: null,
-      },
-      {
-        kind: "segment",
-        id: "4",
-        startMs: 3,
-        endMs: 4,
-        text: "Ok",
-        final: true,
-        source: "system",
-        speaker: "Ania",
-      },
-    ];
-    expect(speakerNames(transcript)).toEqual(["Ania"]);
+  test("a speaker token shows the speaker's current name, highlighted, inside bold too", () => {
+    const speakers = [named("s1", "Speaker 1", "Ania"), named("s2", "Speaker 2", null)];
+    const runs = inlineRuns(
+      "{{speaker:s1}} asked **{{speaker:s2}}** and {{speaker:you}}",
+      speakers,
+    );
+    expect(runs.map(({ text, bold, name }) => ({ text, bold, name }))).toEqual([
+      { text: "Ania", bold: false, name: true },
+      { text: " asked ", bold: false, name: false },
+      { text: "Speaker 2", bold: true, name: true },
+      { text: " and ", bold: false, name: false },
+      { text: "You", bold: false, name: true },
+    ]);
+    expect(new Set(runs.map((run) => run.at)).size).toBe(runs.length);
   });
 });
 
 test("transcript rows name each voice once per turn and mark pauses and dictation", () => {
-  const rows = transcriptRows([
-    { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", final: true, source: "mic" },
-    {
-      kind: "segment",
-      id: "b",
-      startMs: 2000,
-      endMs: 3000,
-      text: "again",
-      final: true,
-      source: "mic",
-    },
-    { kind: "marker", marker: "dictated", atMs: 4000 },
-    {
-      kind: "segment",
-      id: "c",
-      startMs: 65_000,
-      endMs: 66_000,
-      text: "Hi",
-      final: false,
-      source: "system",
-      speaker: null,
-    },
-    { kind: "marker", marker: "paused", atMs: 70_000 },
-  ]);
+  const rows = transcriptRows(
+    [
+      { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", final: true, source: "mic" },
+      {
+        kind: "segment",
+        id: "b",
+        startMs: 2000,
+        endMs: 3000,
+        text: "again",
+        final: true,
+        source: "mic",
+      },
+      { kind: "marker", marker: "dictated", atMs: 4000 },
+      {
+        kind: "segment",
+        id: "c",
+        startMs: 65_000,
+        endMs: 66_000,
+        text: "Hi",
+        final: false,
+        source: "system",
+        speakerId: null,
+      },
+      { kind: "marker", marker: "paused", atMs: 70_000 },
+    ],
+    [],
+  );
   expect(rows).toEqual([
     expect.objectContaining({ speaker: "You", mine: true, time: "00:00", continues: false }),
     expect.objectContaining({ speaker: "You", continues: true }),

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import { meetingMarkdown } from "./meeting-markdown.ts";
-import type { Meeting, MeetingId, TranscriptEntry } from "./meetings.ts";
+import type { Meeting, MeetingId, SpeakerId, TranscriptEntry } from "./meetings.ts";
 
 const START = Date.UTC(2026, 9, 31, 14, 5);
 
@@ -17,11 +17,12 @@ const meeting: Meeting = {
     kind: "ready",
     summary: {
       markdown:
-        "We agreed to ship on Friday.\n\n### Decisions\n- Ship Friday\n\n### Next Steps\n**Ana**\n- Draft the post",
+        "We agreed to ship on Friday.\n\n### Decisions\n- Ship Friday\n\n### Next Steps\n**{{speaker:s1}}**\n- Draft the post",
       generatedAt: START + 3_800_000,
       coversUntilMs: 3_700_000,
     },
   },
+  speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" } }],
 };
 
 const transcript: TranscriptEntry[] = [
@@ -29,7 +30,7 @@ const transcript: TranscriptEntry[] = [
     kind: "segment",
     id: "b",
     source: "system",
-    speaker: "Ana",
+    speakerId: "s1" as SpeakerId,
     startMs: 4000,
     endMs: 6000,
     text: "Friday works.",
@@ -48,7 +49,7 @@ const transcript: TranscriptEntry[] = [
     kind: "segment",
     id: "c",
     source: "system",
-    speaker: null,
+    speakerId: null,
     startMs: 3_661_000,
     endMs: 3_662_000,
     text: "Bye",
