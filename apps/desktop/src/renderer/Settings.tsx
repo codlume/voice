@@ -165,7 +165,7 @@ export function GlobeHint() {
 }
 
 // Undefined while the value already equals its default, which hides the reset button.
-function resetTo<T>(
+export function resetTo<T>(
   value: T,
   defaultValue: T,
   change: (value: T) => void,
@@ -173,7 +173,7 @@ function resetTo<T>(
   return value === defaultValue ? undefined : () => change(defaultValue);
 }
 
-function Row({
+export function Row({
   title,
   detail,
   disabled = false,
@@ -216,7 +216,7 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   options,
   value,
   onChange,
