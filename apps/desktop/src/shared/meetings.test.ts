@@ -13,6 +13,7 @@ import {
   resolveSpeakerTokens,
   retitle,
   searchMeeting,
+  spokenText,
   speakerToken,
   type Folder,
   type FolderId,
@@ -216,30 +217,44 @@ describe("searchMeeting", () => {
   });
 
   test("finds words typed without their accents and marks what matched", () => {
-    expect(searchMeeting(met, [], "lodzi")).toEqual({
+    expect(searchMeeting(met, "", "lodzi")).toEqual({
       id: A,
       field: "title",
       snippet: { before: "Wyjazd do ", match: "Łodzi", after: "" },
     });
-    expect(searchMeeting(met, [], "ŁÓDŹ")?.snippet.match).toBe("Łodz");
+    expect(searchMeeting(met, "", "ŁÓDŹ")?.snippet.match).toBe("Łodz");
   });
 
   test("searches the summary as it reads, with names and without Markdown", () => {
-    expect(searchMeeting(met, [], "zolc books")).toEqual({
+    expect(searchMeeting(met, "", "zolc books")).toEqual({
       id: A,
       field: "summary",
       snippet: { before: "Decisions Ola ", match: "Żółć books", after: " the train" },
     });
-    expect(searchMeeting(met, [], "###")).toBeNull();
+    expect(searchMeeting(met, "", "###")).toBeNull();
+  });
+
+  test("marks the match where folding changes the text's length or script", () => {
+    const noted = { ...met, notes: "Die Straße 😀 nach Ἀθῆναι, ΣΟΦΟΣ cafe\u0301 İzmir" };
+    const match = (query: string) => searchMeeting(noted, "", query)?.snippet.match;
+    expect(match("strasse nach")).toBeUndefined();
+    expect(match("straße 😀 nach")).toBe("Straße 😀 nach");
+    expect(match("STRASSE")).toBe("Straße");
+    expect(match("αθηναι, σοφοσ")).toBe("Ἀθῆναι, ΣΟΦΟΣ");
+    expect(match("café izmir")).toBe("cafe\u0301 İzmir");
   });
 
   test("finds a renamed speaker in the transcript", () => {
     const quiet = { ...met, summary: { kind: "none" } } as const;
-    expect(searchMeeting(quiet, [said("I can do Friday", ola)], "ola zolc")).toMatchObject({
+    expect(
+      searchMeeting(quiet, spokenText(quiet, [said("I can do Friday", ola)]), "ola zolc"),
+    ).toMatchObject({
       field: "transcript",
       snippet: { match: "Ola Żółć", after: ": I can do Friday" },
     });
-    expect(searchMeeting(quiet, [said("I can do Friday", null)], "others: i can")).toMatchObject({
+    expect(
+      searchMeeting(quiet, spokenText(quiet, [said("I can do Friday", null)]), "others: i can"),
+    ).toMatchObject({
       field: "transcript",
     });
   });

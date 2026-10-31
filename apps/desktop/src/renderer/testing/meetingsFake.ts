@@ -5,6 +5,7 @@ import {
   renameSpeaker,
   retitle,
   searchMeeting,
+  spokenText,
   type Folder,
   type FolderId,
   type Meeting,
@@ -139,7 +140,8 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
       })),
     searchMeetings: async (query) =>
       state.meetings.flatMap(
-        (meeting) => searchMeeting(meeting, transcripts[meeting.id] ?? [], query) ?? [],
+        (meeting) =>
+          searchMeeting(meeting, spokenText(meeting, transcripts[meeting.id] ?? []), query) ?? [],
       ),
     updateMeetingsSettings: async (patch) => set({ settings: { ...state.settings, ...patch } }),
     copyMeetingMarkdown: async () => {},

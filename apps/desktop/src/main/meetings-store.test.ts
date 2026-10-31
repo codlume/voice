@@ -362,6 +362,33 @@ describe("meetings store", () => {
     expect(await store.search("   ")).toEqual([]);
   });
 
+  test("search sees lines, rewrites and speaker names that changed since the last search", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    const s1 = "s1" as SpeakerId;
+    await seed(store, meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    const said = (id: string, text: string): Segment => ({
+      ...segment(id, text),
+      source: "system",
+      speakerId: s1,
+    });
+    await store.append(A, [said("l1", "The budget is approved")]);
+    expect(await store.search("hiring")).toEqual([]);
+
+    await store.append(A, [said("l2", "Next we discuss hiring")]);
+    expect((await store.search("hiring")).map(({ id }) => id)).toEqual([A]);
+
+    await store.update(A, (current) => renameSpeaker(current, s1, "Ada"));
+    expect((await store.search("ada: next")).map(({ id }) => id)).toEqual([A]);
+
+    await store.replaceTranscript(A, (current) => ({
+      meeting: current,
+      transcript: [said("l3", "Only the roadmap")],
+    }));
+    expect(await store.search("hiring")).toEqual([]);
+    expect((await store.search("roadmap")).map(({ id }) => id)).toEqual([A]);
+  });
+
   test("deleting a folder takes its meetings out of it and keeps them", async () => {
     const first = harness();
     await first.loaded;

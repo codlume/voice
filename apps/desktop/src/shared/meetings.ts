@@ -534,17 +534,34 @@ function snippet(text: string, start: number, end: number): MeetingSnippet {
 // Letters NFD does not take apart, so "lodz" finds "Łódź".
 const FOLDED: Record<string, string> = { ł: "l", Ł: "l", ø: "o", Ø: "o", đ: "d", Đ: "d", ß: "ss" };
 
+const foldedChars = new Map<string, string>();
+
+/** One character lowercased without its accents. */
+function foldChar(char: string): string {
+  let folded = foldedChars.get(char);
+  if (folded === undefined) {
+    folded = (FOLDED[char] ?? char.normalize("NFD").replace(/\p{M}/gu, "")).toLocaleLowerCase();
+    foldedChars.set(char, folded);
+  }
+  return folded;
+}
+
+/**
+ * `text` folded as `fold` folds it, without the positions. ASCII has no accents and lowercases the
+ * same alone or in a run, so a search reads whole transcripts without visiting each character.
+ */
+const foldText = (text: string) => text.replace(/[^\0-\x7f]/gu, foldChar).toLocaleLowerCase();
+
 /** `text` lowercased without accents, and where each of its characters starts in `text`. */
 function fold(text: string): { folded: string; from: number[] } {
   let folded = "";
   const from: number[] = [];
   let at = 0;
   for (const char of text) {
-    const bare = (FOLDED[char] ?? char.normalize("NFD").replace(/\p{M}/gu, "")).toLocaleLowerCase();
-    for (const part of bare) {
-      folded += part;
-      from.push(at);
-    }
+    const part = foldChar(char);
+    folded += part;
+    // One position per UTF-16 unit, as `indexOf` counts them, so an emoji keeps later marks in place.
+    for (let unit = 0; unit < part.length; unit += 1) from.push(at);
     at += char.length;
   }
   from.push(text.length);
@@ -558,34 +575,39 @@ const summaryText = (markdown: string, speakers: readonly Speaker[]) =>
     .replace(/^\s*-\s+/gm, "")
     .replaceAll("**", "");
 
+/** The transcript as search reads it: each line with the name of whoever said it. */
+export const spokenText = (meeting: Meeting, transcript: readonly TranscriptEntry[]): string =>
+  transcript
+    .flatMap((entry) =>
+      entry.kind === "segment" ? [`${speakerName(entry, meeting.speakers)}: ${entry.text}`] : [],
+    )
+    .join("\n");
+
 /**
  * The first field, in the order the list shows them, that holds `query`, ignoring case and
- * accents. Transcript lines are searched with the name of whoever said them.
+ * accents. `spoken` is the meeting's `spokenText`, or empty to search the other fields only.
  */
 export function searchMeeting(
   meeting: Meeting,
-  transcript: readonly TranscriptEntry[],
+  spoken: string,
   query: string,
 ): MeetingSearchHit | null {
-  const needle = fold(query.trim()).folded;
+  const needle = foldText(query.trim());
   if (needle === "") return null;
   const summary =
     meeting.summary.kind === "ready"
       ? summaryText(meeting.summary.summary.markdown, meeting.speakers)
       : "";
-  const spoken = transcript.flatMap((entry) =>
-    entry.kind === "segment" ? [`${speakerName(entry, meeting.speakers)}: ${entry.text}`] : [],
-  );
   const fields: [MeetingSearchField, string][] = [
     ["title", meeting.title ?? ""],
     ["summary", summary],
     ["notes", meeting.notes],
-    ["transcript", spoken.join("\n")],
+    ["transcript", spoken],
   ];
   for (const [field, text] of fields) {
-    const { folded, from } = fold(text);
-    const at = folded.indexOf(needle);
+    const at = foldText(text).indexOf(needle);
     if (at < 0) continue;
+    const { from } = fold(text);
     return { id: meeting.id, field, snippet: snippet(text, from[at]!, from[at + needle.length]!) };
   }
   return null;

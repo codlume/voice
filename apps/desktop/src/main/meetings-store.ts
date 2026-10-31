@@ -13,6 +13,7 @@ import {
   parseMeetingsSettingsPatch,
   refile,
   searchMeeting,
+  spokenText,
   type Folder,
   type FolderDraft,
   type FolderId,
@@ -87,6 +88,10 @@ const VERSION = 1;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const MAX_TIMER_MS = 2 ** 31 - 1;
+// Typing asks again at each pause, and each search reads every transcript, so their text is kept
+// until this long after the last search.
+const SEARCH_KEEP_MS = 60_000;
+const SEARCH_SLICE_MS = 8;
 
 class LeftAlone extends Error {}
 
@@ -118,6 +123,12 @@ export function createMeetingsStore(options: {
   const recovered = new Set<MeetingId>();
   let ready = false;
   let expiry: NodeJS.Timeout | null = null;
+  // Spoken text by meeting while searches go on; a transcript write or a rename makes it stale.
+  const searchable = new Map<
+    MeetingId,
+    { revision: number; speakers: readonly Speaker[]; text: string }
+  >();
+  let forgetSearchable: NodeJS.Timeout | null = null;
   let queue: Promise<void> = Promise.resolve();
 
   function serial<T>(work: () => Promise<T>): Promise<T> {
@@ -257,6 +268,20 @@ export function createMeetingsStore(options: {
       throw error;
     }
     return sortTranscript(text.split("\n").flatMap(parseLine));
+  }
+
+  async function searchableText(meeting: Meeting): Promise<string> {
+    const kept = searchable.get(meeting.id);
+    if (kept?.revision === meeting.transcriptRevision && kept.speakers === meeting.speakers) {
+      return kept.text;
+    }
+    const text = spokenText(meeting, await readTranscript(meeting.id));
+    searchable.set(meeting.id, {
+      revision: meeting.transcriptRevision,
+      speakers: meeting.speakers,
+      text,
+    });
+    return text;
   }
 
   const loading = serial(async () => {
@@ -402,10 +427,20 @@ export function createMeetingsStore(options: {
       if (patch.retention !== undefined) await expire();
     },
     async search(query) {
+      if (forgetSearchable) clearTimeout(forgetSearchable);
+      forgetSearchable = setTimeout(() => searchable.clear(), SEARCH_KEEP_MS);
+      forgetSearchable.unref();
       const hits: MeetingSearchHit[] = [];
+      let slice = performance.now();
       for (const meeting of list()) {
-        const quick = searchMeeting(meeting, [], query);
-        const hit = quick ?? searchMeeting(meeting, await readTranscript(meeting.id), query);
+        // Kept text makes the whole search synchronous, so it gives way to shortcuts and IPC.
+        if (performance.now() - slice > SEARCH_SLICE_MS) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          slice = performance.now();
+        }
+        const hit =
+          searchMeeting(meeting, "", query) ??
+          searchMeeting(meeting, await searchableText(meeting), query);
         if (hit) hits.push(hit);
       }
       return hits;
