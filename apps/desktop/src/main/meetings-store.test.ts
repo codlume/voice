@@ -1,0 +1,326 @@
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as NodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
+
+import {
+  applyMeetingsChange,
+  type Meeting,
+  type MeetingId,
+  type MeetingsChange,
+  type MeetingsState,
+  type Segment,
+  type TranscriptEntry,
+} from "../shared/meetings.ts";
+import { createMeetingsStore } from "./meetings-store.ts";
+
+const DAY = 86_400_000;
+const START = Date.UTC(2026, 9, 31, 9, 0);
+const ids = [
+  "11111111-1111-4111-8111-111111111111",
+  "22222222-2222-4222-8222-222222222222",
+  "33333333-3333-4333-8333-333333333333",
+] as MeetingId[];
+const [A, B, C] = ids as [MeetingId, MeetingId, MeetingId];
+
+let dir: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(NodePath.join(tmpdir(), "voice-meetings-"));
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
+  return {
+    id,
+    title: { text: "Weekly sync", source: "user" },
+    createdAt: START,
+    spans: [{ startedAt: START, endedAt: START + 30 * 60_000 }],
+    status: { kind: "ready" },
+    folderIds: [],
+    notes: "",
+    summary: { kind: "none" },
+    ...overrides,
+  };
+}
+
+const segment = (id: string, text: string, startMs = 0): Segment => ({
+  kind: "segment",
+  id,
+  source: "mic",
+  startMs,
+  endMs: startMs + 1000,
+  text,
+  final: true,
+});
+
+function harness(options: { now?: number } = {}) {
+  const clock = { now: options.now ?? START };
+  const logs: string[] = [];
+  let hub: MeetingsState | null = null;
+  const changes: MeetingsChange[] = [];
+  const store = createMeetingsStore({
+    dir,
+    log: (message) => logs.push(message),
+    now: () => clock.now,
+    onChange: (change) => {
+      changes.push(change);
+      hub = applyMeetingsChange(hub, change);
+    },
+  });
+  const loaded = store.loaded().then(() => {
+    hub = store.state();
+  });
+  return { store, clock, logs, changes, loaded, hub: () => hub };
+}
+
+async function relaunch(options: { now?: number } = {}) {
+  const next = harness(options);
+  await next.loaded;
+  return next;
+}
+
+const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
+const mode = async (file: string) => (await stat(file)).mode & 0o777;
+
+describe("meetings store", () => {
+  test("a meeting and its transcript survive a relaunch", async () => {
+    const first = harness();
+    await first.loaded;
+    const saved = meeting(A, { notes: "Ask about the budget" });
+    await first.store.put(saved);
+    await first.store.append(A, [segment("s1", "Hello"), segment("s2", "Budget is fine", 1000)]);
+    await first.store.append(A, [{ kind: "marker", marker: "paused", atMs: 2000 }]);
+
+    const second = await relaunch();
+    expect(second.store.state().meetings).toEqual([saved]);
+    expect(await second.store.transcript(A)).toEqual([
+      segment("s1", "Hello"),
+      segment("s2", "Budget is fine", 1000),
+      { kind: "marker", marker: "paused", atMs: 2000 },
+    ]);
+  });
+
+  test("files are owner-only and the hub hears each change as a patch", async () => {
+    const { store, loaded, changes, hub } = harness();
+    await loaded;
+    await store.put(meeting(A));
+    await store.append(A, [segment("s1", "Hello")]);
+    expect(await mode(meetingDir(A))).toBe(0o700);
+    expect(await mode(NodePath.join(meetingDir(A), "meeting.json"))).toBe(0o600);
+    expect(await mode(NodePath.join(meetingDir(A), "transcript.ndjson"))).toBe(0o600);
+    expect(changes.map((change) => change.kind)).toEqual(["patch"]);
+    expect(hub()?.meetings).toEqual([meeting(A)]);
+  });
+
+  test("appends grow the file one line per entry and a later partial is replaced by its final", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    await store.put(meeting(A));
+    await store.append(A, [{ ...segment("s1", "Hel"), final: false }]);
+    await store.append(A, [segment("s1", "Hello there")]);
+    const file = await readFile(NodePath.join(meetingDir(A), "transcript.ndjson"), "utf8");
+    expect(file.trimEnd().split("\n")).toHaveLength(2);
+    expect(await store.transcript(A)).toEqual([segment("s1", "Hello there")]);
+  });
+
+  test("a line a crash tore is skipped and the next append does not join it", async () => {
+    await mkdir(meetingDir(A), { recursive: true });
+    await writeFile(
+      NodePath.join(meetingDir(A), "meeting.json"),
+      JSON.stringify({ version: 1, meeting: meeting(A) }),
+    );
+    const file = NodePath.join(meetingDir(A), "transcript.ndjson");
+    await writeFile(file, `${JSON.stringify(segment("s1", "Kept"))}\n{"kind":"segm`);
+    const { store, loaded } = harness();
+    await loaded;
+    await store.append(A, [segment("s2", "After the crash", 2000)]);
+    expect(await store.transcript(A)).toEqual([
+      segment("s1", "Kept"),
+      segment("s2", "After the crash", 2000),
+    ]);
+  });
+
+  test("replacing the transcript swaps in the final pass whole", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    await store.put(meeting(A));
+    await store.append(A, [segment("live", "helo wrld")]);
+    await store.replaceTranscript(A, [segment("final", "Hello world")]);
+    await store.append(A, [{ kind: "marker", marker: "resumed", atMs: 5000 }]);
+    expect(await store.transcript(A)).toEqual([
+      segment("final", "Hello world"),
+      { kind: "marker", marker: "resumed", atMs: 5000 },
+    ]);
+  });
+
+  test("deleting a meeting removes its folder, audio included, and late writes do not bring it back", async () => {
+    const { store, loaded, hub } = harness();
+    await loaded;
+    await store.put(meeting(A));
+    await writeFile(NodePath.join(meetingDir(A), "mic.pcm"), "audio");
+    await store.remove(A);
+    expect(existsSync(meetingDir(A))).toBe(false);
+    await store.append(A, [segment("s1", "late")]);
+    await store.put(meeting(A));
+    expect(existsSync(meetingDir(A))).toBe(false);
+    expect(hub()?.meetings).toEqual([]);
+  });
+
+  test("the recovery scan returns meetings a crash left mid-lifecycle, with their newest write", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A, { status: { kind: "recording", since: START }, spans: [] }));
+    await first.store.put(meeting(B, { status: { kind: "paused" } }));
+    await first.store.put(meeting(C));
+    const audio = NodePath.join(meetingDir(A), "mic.pcm");
+    await writeFile(audio, "audio");
+    const audioAt = (await stat(audio)).mtimeMs;
+
+    const second = await relaunch();
+    const found = await second.store.unfinished();
+    expect(found.map(({ meeting: { id } }) => id).toSorted()).toEqual([A, B]);
+    expect(found.find(({ meeting: { id } }) => id === A)?.lastWriteAt).toBeGreaterThanOrEqual(
+      audioAt,
+    );
+  });
+
+  test("retention deletes ready meetings past their window, and only those", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A));
+    await first.store.put(meeting(B, { status: { kind: "transcribing" } }));
+    await first.store.put(
+      meeting(C, {
+        createdAt: START + 20 * DAY,
+        spans: [{ startedAt: START + 20 * DAY, endedAt: START + 20 * DAY + 1 }],
+      }),
+    );
+    await first.store.updateSettings({ retention: "week" });
+    expect(
+      first.store
+        .state()
+        .meetings.map(({ id }) => id)
+        .toSorted(),
+    ).toEqual([A, B, C]);
+
+    const later = await relaunch({ now: START + 8 * DAY });
+    expect(
+      later.store
+        .state()
+        .meetings.map(({ id }) => id)
+        .toSorted(),
+    ).toEqual([B, C]);
+    expect(existsSync(meetingDir(A))).toBe(false);
+
+    await later.store.updateSettings({ retention: "forever" });
+    later.clock.now = START + 400 * DAY;
+    await later.store.expire();
+    expect(later.store.state().meetings).toHaveLength(2);
+  });
+
+  test("forever is the default and keeps old meetings", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A));
+    const later = await relaunch({ now: START + 3000 * DAY });
+    expect(later.store.state().settings.retention).toBe("forever");
+    expect(later.store.state().meetings).toHaveLength(1);
+  });
+
+  test("search finds titles, summaries, notes and full transcripts, ignoring case", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    await store.put(meeting(A, { title: { text: "Roadmap review", source: "user" } }));
+    await store.put(
+      meeting(B, {
+        createdAt: START + 1,
+        title: null,
+        notes: "Remember the hiring plan",
+        summary: {
+          kind: "ready",
+          summary: { markdown: "We chose Postgres.", generatedAt: START, coversUntilMs: 1 },
+        },
+      }),
+    );
+    await store.put(meeting(C, { createdAt: START + 2, title: null }));
+    await store.append(C, [segment("s1", "The quarterly ROADMAP slipped by a week")]);
+
+    expect(await store.search("roadmap")).toEqual([
+      { id: C, field: "transcript", snippet: "The quarterly ROADMAP slipped by a week" },
+      { id: A, field: "title", snippet: "Roadmap review" },
+    ]);
+    expect((await store.search("postgres")).map(({ field }) => field)).toEqual(["summary"]);
+    expect((await store.search("hiring")).map(({ field }) => field)).toEqual(["notes"]);
+    expect(await store.search("   ")).toEqual([]);
+  });
+
+  test("deleting a folder takes its meetings out of it and keeps them", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A));
+    const folder = await first.store.createFolder({ name: " Clients ", kind: "manual" });
+    expect(folder.name).toBe("Clients");
+    await first.store.setInFolder(A, folder.id, true);
+    expect(first.store.get(A)?.folderIds).toEqual([folder.id]);
+
+    await first.store.removeFolder(folder.id);
+    const second = await relaunch();
+    expect(second.store.state().folders).toEqual([]);
+    expect(second.store.get(A)?.folderIds).toEqual([]);
+  });
+
+  test("auto folders keep their rule across a relaunch", async () => {
+    const first = harness();
+    await first.loaded;
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: { kind: "titleContains", text: "1:1" },
+    });
+    const second = await relaunch();
+    expect(second.store.state().folders).toEqual([folder]);
+  });
+
+  test("an unreadable meeting is left alone and never overwritten or expired", async () => {
+    await mkdir(meetingDir(A), { recursive: true });
+    const file = NodePath.join(meetingDir(A), "meeting.json");
+    await writeFile(file, "{ not json");
+    const { store, loaded, logs } = harness({ now: START + 3000 * DAY });
+    await loaded;
+    await store.updateSettings({ retention: "day" });
+    expect(store.state().meetings).toEqual([]);
+    expect(await readFile(file, "utf8")).toBe("{ not json");
+    expect(logs.some((line) => line.includes(A))).toBe(true);
+  });
+
+  test("an unreadable folders file is left alone and folder changes are refused", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(NodePath.join(dir, "folders.json"), JSON.stringify({ version: 99 }));
+    const { store, loaded } = harness();
+    await loaded;
+    await expect(store.createFolder({ name: "New", kind: "manual" })).rejects.toThrow();
+    expect(JSON.parse(await readFile(NodePath.join(dir, "folders.json"), "utf8"))).toEqual({
+      version: 99,
+    });
+  });
+
+  test("ignores directories and lines that are not meetings", async () => {
+    await mkdir(NodePath.join(dir, "not-a-meeting"), { recursive: true });
+    const { store, loaded } = harness();
+    await loaded;
+    await store.put(meeting(A));
+    await appendFile(
+      NodePath.join(meetingDir(A), "transcript.ndjson"),
+      `${JSON.stringify({ kind: "segment", id: "x" })}\n`,
+    );
+    const entries: TranscriptEntry[] = await store.transcript(A);
+    expect(entries).toEqual([]);
+    expect(store.state().meetings.map(({ id }) => id)).toEqual([A]);
+  });
+});
