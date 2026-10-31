@@ -6,7 +6,8 @@ export type Speaker = { id: SpeakerId; label: string };
 
 export type TranscriptLine = { speaker: SpeakerId; startMs: number; text: string };
 
-export type SummaryProgress = { done: number; total: number };
+/** Step `step` of `total` has started. Neither goes back; `total` grows when a part must be split. */
+export type SummaryProgress = { step: number; total: number };
 
 export type SummaryRequest = {
   /** The final transcript in time order; dictated spans already left out. */

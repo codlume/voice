@@ -2,7 +2,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import type { MeetingSummary, SummaryProvider, SummaryResult } from "@voice/cleanup/summary";
+import type {
+  MeetingSummary,
+  SummaryProgress,
+  SummaryProvider,
+  SummaryResult,
+} from "@voice/cleanup/summary";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
@@ -355,7 +360,7 @@ describe("summarizeMeeting", () => {
 
   test("runs the Gemma provider step by step through the transform model, with progress", async () => {
     const steps: GenerateRequest[] = [];
-    const progress: number[] = [];
+    const progress: SummaryProgress[] = [];
     const long = Array.from(
       { length: 20 },
       () => "we ship the hotfix today and write the notes",
@@ -392,11 +397,14 @@ describe("summarizeMeeting", () => {
 
     await summarizer.summarizeMeeting(ID, {
       signal: signal(),
-      onProgress: ({ done, total }) => progress.push(done / total),
+      onProgress: (step) => progress.push(step),
     });
 
     expect(steps.map(({ budgetMs }) => budgetMs)).toEqual([STEP_BUDGET_MS, STEP_BUDGET_MS]);
-    expect(progress).toEqual([0.5, 1]);
+    expect(progress).toEqual([
+      { step: 1, total: 2 },
+      { step: 2, total: 2 },
+    ]);
     const written = await saved();
     expect(written.title).toEqual({ text: "Hotfix Plan For Today", source: "generated" });
     expect(written.summary).toMatchObject({
