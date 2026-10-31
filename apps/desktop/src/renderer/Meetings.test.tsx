@@ -296,6 +296,9 @@ async function press(field: HTMLInputElement, key: string) {
   });
 }
 
+const overviewTitle = () =>
+  document.querySelector("aside[aria-label='Meeting overview'] h2")?.textContent;
+
 const sample = () => [
   meeting(1, "Weekly product sync", hoursAgo(0), {
     summary: summary(syncSummary),
@@ -359,6 +362,19 @@ describe("Past notes", () => {
     expect(document.querySelectorAll("li").length).toBe(1);
     await type(search, "zzz");
     await waitForText("No meetings match “zzz”.");
+  });
+
+  test("the panel follows the search results", async () => {
+    fakeMain(sample());
+    await render();
+    const row = [...document.querySelectorAll("li")].find((li) =>
+      li.textContent?.includes("Planowanie sprintu"),
+    )!;
+    await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
+    expect(overviewTitle()).toBe("Planowanie sprintu");
+    await type(document.querySelector<HTMLInputElement>("input[type=search]")!, "export bug");
+    await waitForText("Transcript: Morning all");
+    expect(overviewTitle()).toBe("Weekly product sync");
   });
 
   test("without meetings it says how to start, with no calendar talk", async () => {

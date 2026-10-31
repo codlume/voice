@@ -417,7 +417,10 @@ function MeetingsPage({
   });
   const summaryModel = summaryModelRow(snapshot);
   const opened = meetings.find(({ id }) => id === openId);
-  const selected = meetings.find(({ id }) => id === selectedId) ?? days[0]?.meetings[0] ?? null;
+  // The panel describes a meeting the list shows: a search result, or any meeting in a folder.
+  const shown = tab === "notes" ? days.flatMap((day) => day.meetings) : meetings;
+  const selected =
+    shown.find(({ id }) => id === selectedId) ?? (tab === "notes" ? shown[0] : null) ?? null;
   // Main checks System Audio Recording again only while Set up Meetings asks for it.
   const asksForSetup = !setup.ready && !opened;
   useEffect(() => {
