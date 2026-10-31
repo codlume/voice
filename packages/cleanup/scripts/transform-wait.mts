@@ -4,10 +4,9 @@
 //   node packages/cleanup/scripts/transform-wait.mts wait [--fixture en-30] [--model <gguf>]
 //   node packages/cleanup/scripts/transform-wait.mts context [--rounds 4] [--model <gguf>]
 //
-// wait: runs the fixture's summary twice, first with Transforms queued behind summary steps
-// ("queued"), then with Transforms going first (`transformsFirst`, "first"). Transforms are asked
-// for one after another at fixed times after the summary starts, as a user dictating would.
-// Wait is a Transform's time minus its idle time.
+// wait: runs the fixture's summary and asks for Transforms one after another at fixed times after
+// it starts, as a user dictating would. The engine stops the running summary step for each. Wait is
+// a Transform's time minus its idle time.
 // context: alternates an 8,192 and a 16,384-token engine, a few idle Transforms per round.
 
 import { readFileSync } from "node:fs";
@@ -19,7 +18,6 @@ import { createGemmaSummaryProvider, estimateTokens } from "../src/summary/gemma
 import type { TranscriptLine } from "../src/summary/provider.ts";
 import { createTransformEngine, type TransformEngine } from "../src/transform/engine.ts";
 import { TRANSFORM_MODEL } from "../src/transform/model.ts";
-import { transformsFirst } from "../src/transform/preempt.ts";
 
 const FIXTURES = new URL("../../../test-fixtures/meetings/", import.meta.url).pathname;
 
@@ -86,11 +84,7 @@ async function idleTransforms(engine: TransformEngine, count: number): Promise<n
   return times;
 }
 
-async function waitRun(engine: TransformEngine, mode: "queued" | "first", idleMs: number) {
-  const model =
-    mode === "first"
-      ? transformsFirst(engine.transform, engine.generate)
-      : { transform: engine.transform, generate: engine.generate };
+async function waitRun(engine: TransformEngine, idleMs: number) {
   const lines = readLines(values.fixture);
   const speakers = [...new Set(lines.map(({ speaker }) => speaker))].map((id) => ({
     id,
@@ -98,7 +92,7 @@ async function waitRun(engine: TransformEngine, mode: "queued" | "first", idleMs
   }));
   const provider = createGemmaSummaryProvider({
     tokens: estimateTokens,
-    generate: (step) => model.generate({ ...step, budgetMs: 600_000 }),
+    generate: (step) => engine.generate({ ...step, budgetMs: 600_000 }),
   });
   let running = true;
   const started = performance.now();
@@ -116,14 +110,14 @@ async function waitRun(engine: TransformEngine, mode: "queued" | "first", idleMs
     const due = started + at - performance.now();
     if (due > 0) await new Promise((resolve) => setTimeout(resolve, due));
     if (!running) break;
-    const { ms } = await timed(() => model.transform(transformRequest()));
+    const { ms } = await timed(() => engine.transform(transformRequest()));
     waits.push(Math.max(0, ms - idleMs));
   }
   const done = await summary;
   if (!done.value.ok) throw new Error(`summary failed: ${done.value.failure.kind}`);
   console.log(
     [
-      `${mode.padEnd(6)} transforms ${waits.length}`,
+      `transforms ${waits.length}`,
       `wait max ${s(Math.max(...waits))} s`,
       `median ${s(median(waits))} s`,
       `waits ${waits.map(s).join(" ")}`,
@@ -140,8 +134,7 @@ if (command === "wait") {
   const idle = await idleTransforms(engine, 5);
   const idleMs = median(idle);
   console.log(`idle transform median ${s(idleMs)} s (${idle.map(s).join(" ")})`);
-  await waitRun(engine, "queued", idleMs);
-  await waitRun(engine, "first", idleMs);
+  await waitRun(engine, idleMs);
   await engine.dispose();
 } else if (command === "context") {
   const sizes = [8192, TRANSFORM_MODEL.contextSize];

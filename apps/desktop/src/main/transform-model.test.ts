@@ -9,6 +9,7 @@ import type {
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
+import { ABORT_GRACE_MS } from "./engine-process.ts";
 import { createTransformProcess, serve } from "./transform-engine.ts";
 import {
   createTransformModel,
@@ -68,6 +69,7 @@ function harness({
   const disk = { present: onDisk, downloads: 0, removes: 0 };
   let loadGate = holdLoad ? deferred() : undefined;
   const runStarted: (() => void)[] = [];
+  const heldStep = deferred();
 
   const module: TransformModule = {
     source: {
@@ -118,11 +120,14 @@ function harness({
         generate: ({ signal, ...received }) =>
           new Promise((resolve, reject) => {
             worker.generated.push(received);
+            const answer = { ok: true, text: '{"answer": "no"}', truncated: false } as const;
+            signal.addEventListener("abort", () => reject(signal.reason));
+            // A step slow to stop: it finishes only when the test says so.
             if (holdFirstGenerate && worker.generated.length === 1) {
-              signal.addEventListener("abort", () => reject(signal.reason));
+              void heldStep.promise.then(() => resolve(answer));
               return;
             }
-            resolve({ ok: true, text: '{"answer": "no"}', truncated: false });
+            resolve(answer);
           }),
         dispose: async () => {
           worker.disposes += 1;
@@ -173,6 +178,7 @@ function harness({
       loadGate = undefined;
     },
     nextRun: () => new Promise<void>((resolve) => runStarted.push(resolve)),
+    finishStep: () => heldStep.resolve(),
     last: () => statuses.at(-1),
   };
 }
@@ -253,8 +259,8 @@ describe("transform model", () => {
     expect(workers[0]!.generated).toEqual([step]);
   });
 
-  test("a Transform stops a running generate step, goes first, and the step runs again", async () => {
-    const { model, workers } = harness({ holdFirstGenerate: true });
+  test("a Transform during a step slow to stop never cancels the step, so the process is not killed", async () => {
+    const { model, workers, finishStep } = harness({ holdFirstGenerate: true });
     await model.refresh();
     const step = {
       system: "You are a meeting notes tool.",
@@ -263,22 +269,19 @@ describe("transform model", () => {
       temperature: 0,
       budgetMs: 60_000,
     };
-    const order: string[] = [];
-    const generating = model
-      .generate({ ...step, signal: new AbortController().signal })
-      .then((result) => {
-        order.push("generate");
-        return result;
-      });
+    const generating = model.generate({ ...step, signal: new AbortController().signal });
     await vi.waitFor(() => expect(workers[0]?.generated).toHaveLength(1));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
-    expect(await model.run(request())).toEqual(RESULT);
-    order.push("transform");
+    const transformed = model.run(request());
+    await vi.advanceTimersByTimeAsync(ABORT_GRACE_MS * 2);
 
+    // The engine in the process makes the step yield; preempting it here would have armed the kill.
+    expect(await transformed).toEqual(RESULT);
+    expect(workers[0]!.closed).toBe(false);
+    finishStep();
     expect(await generating).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
-    expect(order).toEqual(["transform", "generate"]);
     expect(workers).toHaveLength(1);
-    expect(workers[0]!.generated).toEqual([step, step]);
   });
 
   test("warm loads once however often it is called, and a run reuses that process", async () => {
