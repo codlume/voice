@@ -1,20 +1,15 @@
 // @vitest-environment happy-dom
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { afterEach, describe, expect, test, vi, type Mock } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS, type HubApi, type Snapshot } from "../shared/api.ts";
 import {
   DEFAULT_MEETINGS_SETTINGS,
-  renameSpeaker,
-  searchMeeting,
   type Folder,
-  type FolderDraft,
   type FolderId,
   type Meeting,
   type MeetingId,
-  type MeetingsChange,
-  type MeetingsState,
   type MeetingPartial,
   type MeetingTranscriptChange,
   type OpenMeetingRequest,
@@ -23,6 +18,7 @@ import {
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Meetings } from "./Meetings.tsx";
+import { fakeMeetingsMain } from "./testing/meetingsFake.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -127,89 +123,28 @@ const setUp: Snapshot = {
   meetingNotices: [],
 };
 
-// Holds state like main and publishes every change; spies record the commands.
+type Spied<T> = {
+  [K in keyof T]: T[K] extends (...args: never[]) => unknown ? Mock<T[K]> : T[K];
+};
+
+/** Spies on every command, so tests can check what the page asked main for. */
+const spied = <T extends object>(api: T) =>
+  Object.fromEntries(
+    Object.entries(api).map(([name, command]) => [name, vi.fn(command)]),
+  ) as Spied<T>;
+
+// The preview's fake main, with the sample transcript and spies on every command.
 function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
-  let state: MeetingsState = { meetings, folders, settings: DEFAULT_MEETINGS_SETTINGS };
-  const listeners = new Set<(change: MeetingsChange) => void>();
-  const set = (next: Partial<MeetingsState>) => {
-    state = { ...state, ...next };
-    for (const listener of listeners) listener({ kind: "all", state });
-  };
-  const transcripts: Record<string, TranscriptEntry[]> = { [id(1)]: transcript };
-  const live = {
-    transcript: new Set<(change: MeetingTranscriptChange) => void>(),
-    partial: new Set<(partial: MeetingPartial) => void>(),
-  };
+  const main = fakeMeetingsMain({
+    state: { meetings, folders, settings: DEFAULT_MEETINGS_SETTINGS },
+    transcripts: { [id(1)]: transcript },
+  });
   const api = {
-    getMeetings: async () => state,
-    onMeetings: (listener: (change: MeetingsChange) => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    getMeeting: async (meetingId: MeetingId) => {
-      const found = state.meetings.find((candidate) => candidate.id === meetingId);
-      return found ? { meeting: found, transcript: transcripts[meetingId] ?? [] } : null;
-    },
-    searchMeetings: vi.fn(async (query: string) =>
-      state.meetings.flatMap((m) => searchMeeting(m, transcripts[m.id] ?? [], query) ?? []),
-    ),
-    onMeetingTranscript: (listener: (change: MeetingTranscriptChange) => void) => {
-      live.transcript.add(listener);
-      return () => live.transcript.delete(listener);
-    },
-    onMeetingPartial: (listener: (partial: MeetingPartial) => void) => {
-      live.partial.add(listener);
-      return () => live.partial.delete(listener);
-    },
-    renameMeeting: vi.fn(async (meetingId: MeetingId, title: string) =>
-      set({
-        meetings: state.meetings.map((m) =>
-          m.id === meetingId ? { ...m, title: title || null } : m,
-        ),
-      }),
-    ),
-    renameMeetingSpeaker: vi.fn(async (meetingId: MeetingId, speakerId: SpeakerId, name: string) =>
-      set({
-        meetings: state.meetings.map((m) =>
-          m.id === meetingId ? renameSpeaker(m, speakerId, name) : m,
-        ),
-      }),
-    ),
-    updateMeetingNotes: vi.fn(async (meetingId: MeetingId, notes: string) =>
-      set({ meetings: state.meetings.map((m) => (m.id === meetingId ? { ...m, notes } : m)) }),
-    ),
-    deleteMeeting: vi.fn(async (meetingId: MeetingId) =>
-      set({ meetings: state.meetings.filter((m) => m.id !== meetingId) }),
-    ),
-    createFolder: vi.fn(async (draft: FolderDraft) => {
-      const folder = { ...draft, id: crypto.randomUUID() as FolderId, createdAt: 0 } as Folder;
-      set({ folders: [...state.folders, folder] });
-      return folder;
-    }),
-    updateFolder: vi.fn(async (folderId: FolderId, draft: FolderDraft) =>
-      set({ folders: state.folders.map((f) => (f.id === folderId ? { ...f, ...draft } : f)) }),
-    ),
-    deleteFolder: vi.fn(async (folderId: FolderId) =>
-      set({ folders: state.folders.filter((f) => f.id !== folderId) }),
-    ),
-    updateMeetingsSettings: vi.fn(async () => {}),
+    ...spied(main.api),
     requestPermission: vi.fn(async () => {}),
     downloadSpeakerModel: vi.fn(async () => {}),
     watchMeetingPermissions: vi.fn(async () => {}),
     installModel: vi.fn(async () => {}),
-    generateMeetingSummary: vi.fn(async (meetingId: MeetingId) => {
-      const index = state.meetings.findIndex((m) => m.id === meetingId);
-      const summarizing = {
-        ...state.meetings[index]!,
-        status: { kind: "summarizing" as const, progress: null },
-      };
-      set({ meetings: state.meetings.with(index, summarizing) });
-      return { kind: "ok", id: meetingId } as const;
-    }),
-    startMeeting: vi.fn(
-      async () => ({ kind: "refused", message: "Recording did not start." }) as const,
-    ),
-    pauseMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
   };
   (window as { voice?: HubApi }).voice = {
     getSnapshot: () => Promise.reject(new Error("not needed")),
@@ -217,16 +152,9 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   } as Partial<HubApi> as HubApi;
   return {
     ...api,
-    /** Plays main publishing a new version of a meeting. */
-    publish(changed: Meeting) {
-      set({ meetings: state.meetings.map((m) => (m.id === changed.id ? changed : m)) });
-    },
-    /** Plays main pushing a saved line or an unconfirmed one to the open meeting. */
+    publish: main.publish,
     async push(event: MeetingTranscriptChange | MeetingPartial) {
-      await act(async () => {
-        if ("entries" in event) for (const listener of live.transcript) listener(event);
-        else for (const listener of live.partial) listener(event);
-      });
+      await act(async () => main.push(event));
     },
   };
 }
@@ -386,12 +314,19 @@ describe("Past notes", () => {
     expect(document.querySelector("aside")).toBeNull();
   });
 
-  test("Start meeting says why main refused", async () => {
+  test("Start meeting starts one, and a refused start says why", async () => {
     const main = fakeMain([]);
     await render();
     await click(document.querySelector("h1")!.parentElement!.querySelector("button:last-child")!);
     expect(main.startMeeting).toHaveBeenCalledOnce();
-    expect(document.querySelector("[role=status]")?.textContent).toBe("Recording did not start.");
+    await waitForText("Recording ·");
+    main.startMeeting.mockResolvedValueOnce({
+      kind: "refused",
+      message: "Recording did not start.",
+    });
+    await click(byText("Stop"));
+    await click(document.querySelector("h1")!.parentElement!.querySelector("button:last-child")!);
+    await waitForText("Recording did not start.");
   });
 });
 
@@ -664,7 +599,9 @@ describe("a meeting", () => {
       getMeeting(meetingId).then(
         (detail) => new Promise((resolve) => answers.push(() => resolve(detail))),
       );
-    await act(async () => main.publish({ ...live, status: { kind: "transcribing" } }));
+    await act(async () =>
+      main.publish({ ...live, status: { kind: "transcribing", step: "finalizing" } }),
+    );
     await main.push({
       id: id(4),
       entries: [
@@ -686,14 +623,16 @@ describe("a meeting", () => {
     const main = await openSync();
     await click(byText("Transcript"));
     await waitForText("I will draft the email");
-    const reads = vi.spyOn(window.voice as HubApi, "getMeeting");
+    main.getMeeting.mockClear();
     const [synced] = sample();
     await act(async () => main.publish({ ...synced!, notes: "edited in the notepad" }));
     await act(async () => main.renameMeetingSpeaker(id(1), TOM, "Tom Becker"));
     await waitForText("Tom Becker");
-    expect(reads).not.toHaveBeenCalled();
-    await act(async () => main.publish({ ...synced!, status: { kind: "summarizing" } }));
-    expect(reads).toHaveBeenCalledOnce();
+    expect(main.getMeeting).not.toHaveBeenCalled();
+    await act(async () =>
+      main.publish({ ...synced!, status: { kind: "summarizing", progress: null } }),
+    );
+    expect(main.getMeeting).toHaveBeenCalledOnce();
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {

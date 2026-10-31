@@ -196,7 +196,8 @@ async function send(command: PromptCommand, id: MeetingId) {
       await api.dismissMeetingPrompt();
       return null;
     case "viewSummary":
-      return api.viewMeetingSummary(id);
+      await api.viewMeetingSummary(id);
+      return null;
   }
 }
 
