@@ -403,7 +403,14 @@ function MeetingsPage({
     }, "Could not start the meeting.");
 
   if (opened) {
-    return <MeetingDetail meeting={opened} folders={folders} onBack={() => setOpenId(null)} />;
+    return (
+      <MeetingDetail
+        meeting={opened}
+        folders={folders}
+        summaryModel={summaryModel}
+        onBack={() => setOpenId(null)}
+      />
+    );
   }
 
   const startButton = (variant: "primary" | "secondary") => (

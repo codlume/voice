@@ -57,6 +57,8 @@ export type MeetingEffect =
   | { type: "mark"; marker: MarkerKind }
   | { type: "transcribeFinal" }
   | { type: "summarize" }
+  /** A meeting left without a summary still gets a title when its title is blank. */
+  | { type: "generateTitle" }
   | { type: "delete" }
   | { type: "notify"; notice: MeetingNotice };
 
@@ -94,13 +96,15 @@ const summarizing = (meeting: Meeting): Step => ({
   effects: [{ type: "summarize" }],
 });
 
-// A resumed meeting keeps its summary, which is now stale and offers "Update summary".
+// A resumed meeting keeps its summary, which is now stale and offers "Update summary". The
+// summary writes a blank title; without one, the title is written on its own.
 function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
   if (meeting.summary.kind === "none" && recordedMs(meeting, 0) > AUTO_SUMMARY_MIN_MS) {
     const next = summarizing(meeting);
     return { ...next, effects: [...effects, ...next.effects] };
   }
-  return { meeting: withStatus(meeting, { kind: "ready" }), effects };
+  const title: MeetingEffect[] = meeting.title === null ? [{ type: "generateTitle" }] : [];
+  return { meeting: withStatus(meeting, { kind: "ready" }), effects: [...effects, ...title] };
 }
 
 function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleConfig): Step {

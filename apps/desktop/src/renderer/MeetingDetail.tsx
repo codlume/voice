@@ -18,7 +18,9 @@ import {
 import { a11y } from "./a11y.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
+import type { ChecklistRow } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { SetupChecklist } from "./Home.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
 import {
@@ -193,11 +195,9 @@ const tabs: readonly { value: DetailTab; label: string }[] = [
   { value: "transcript", label: "Transcript" },
 ];
 
-const SUMMARY_UNAVAILABLE = "Summaries are not available in this version of Voice yet.";
-
 /** Says why a summary command did nothing, or null when it went ahead. */
 const summaryRefusal = (result: MeetingCommandResult) =>
-  result.kind === "unavailable" ? SUMMARY_UNAVAILABLE : null;
+  result.kind === "refused" ? result.message : null;
 
 function TitleField({ meeting }: { meeting: Meeting }) {
   const saved = meeting.title?.text ?? "";
@@ -276,7 +276,13 @@ function Banner({
   );
 }
 
-function SummaryPanel({ meeting }: { meeting: Meeting }) {
+function SummaryPanel({
+  meeting,
+  summaryModel,
+}: {
+  meeting: Meeting;
+  summaryModel: ChecklistRow | null;
+}) {
   const { speakers } = meeting;
   const action = useAction();
   const generate = (label: string) => ({
@@ -326,6 +332,9 @@ function SummaryPanel({ meeting }: { meeting: Meeting }) {
   })();
   return (
     <>
+      {summaryModel && summary.kind !== "ready" && (
+        <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
+      )}
       {notice}
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
@@ -466,10 +475,13 @@ const feedbackText = { copied: "Copied as Markdown", saved: "Saved" } as const;
 export function MeetingDetail({
   meeting,
   folders,
+  summaryModel,
   onBack,
 }: {
   meeting: Meeting;
   folders: readonly Folder[];
+  /** The summary model's row while it is not on disk, else null. */
+  summaryModel: ChecklistRow | null;
   onBack: () => void;
 }) {
   const detail = useMeetingDetail(meeting);
@@ -574,7 +586,7 @@ export function MeetingDetail({
           ))}
         </Tabs.List>
         <Tabs.Panel value="summary" {...stylex.props(styles.panel)}>
-          <SummaryPanel meeting={meeting} />
+          <SummaryPanel meeting={meeting} summaryModel={summaryModel} />
         </Tabs.Panel>
         <Tabs.Panel value="thoughts" {...stylex.props(styles.panel)}>
           <Thoughts key={meeting.id} meeting={meeting} />

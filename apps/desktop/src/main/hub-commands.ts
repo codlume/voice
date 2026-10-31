@@ -284,7 +284,7 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
   hubCommands.handle(Channel.deleteMeeting, async (_event, raw: unknown) => {
     const id = parseMeetingId(raw);
     if (!id) return;
-    await saving("delete", "Could not delete this meeting. Try again.", () => meetings.remove(id));
+    await saving("delete", "Could not delete this meeting. Try again.", () => recorder.remove(id));
   });
   hubCommands.handle(Channel.createFolder, async (_event, raw: unknown) => {
     const draft = parseFolderDraft(raw);

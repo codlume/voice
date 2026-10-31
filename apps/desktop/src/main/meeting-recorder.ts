@@ -26,6 +26,7 @@ import {
   type MeetingEffect,
   type MeetingEvent,
 } from "./meeting-lifecycle.ts";
+import type { MeetingSummarizer } from "./meeting-summary.ts";
 import type { MeetingsStore } from "./meetings-store.ts";
 import type { HelperCommand, HelperEvent, MeetingCursor } from "./protocol.ts";
 
@@ -40,6 +41,8 @@ export type MeetingRecorder = {
   keep(id: MeetingId): Promise<MeetingCommandResult>;
   discard(id: MeetingId): Promise<MeetingCommandResult>;
   generateSummary(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Deletes a meeting from the hub, stopping its summary or title first. */
+  remove(id: MeetingId): Promise<void>;
   onHelperEvent(event: HelperEvent): void;
   helperExited(): void;
   /** Finishes every meeting a crash or quit left unfinished, from its audio files. Never records. */
@@ -57,11 +60,8 @@ export type MeetingRecorderDeps = {
   /** Unconfirmed live text, passed straight on and never saved. */
   onPartial?: (partial: MeetingPartial) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
-  /**
-   * Writes the summary, or the failure with the previous summary kept, to the meeting
-   * (`meeting-summary.ts`). Aborted when the meeting is deleted. Without it a summary fails.
-   */
-  summarize?: (id: MeetingId, signal: AbortSignal) => Promise<{ ok: boolean }>;
+  /** Writes summaries and titles to the meeting; its work is aborted when the meeting is deleted. */
+  summarizer: Pick<MeetingSummarizer, "summarizeMeeting" | "generateTitle">;
   log: Log;
   now?: () => number;
 };
@@ -88,7 +88,6 @@ const live = (meeting: Meeting) =>
 export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorder {
   const { store, log } = deps;
   const now = deps.now ?? Date.now;
-  const summarize = deps.summarize ?? (async () => ({ ok: false }));
   const summaries = new Map<MeetingId, AbortController>();
   const timers = new Map<MeetingId, NodeJS.Timeout[]>();
   const watchdogs = new Map<MeetingId, NodeJS.Timeout>();
@@ -113,6 +112,20 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     const tracked = work.catch((error) => log(`meetings: ${what} failed (${String(error)})`));
     inflight.add(tracked);
     void tracked.finally(() => inflight.delete(tracked));
+  }
+
+  /** Summary and title work, one per meeting; a delete aborts it, and an abort ends it quietly. */
+  async function summaryWork(id: MeetingId, work: (signal: AbortSignal) => Promise<unknown>) {
+    summaries.get(id)?.abort();
+    const controller = new AbortController();
+    summaries.set(id, controller);
+    try {
+      await work(controller.signal);
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      if (summaries.get(id) === controller) summaries.delete(id);
+    }
   }
 
   const folder = (id: MeetingId) => NodePath.join(deps.dir, id);
@@ -189,27 +202,26 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         finalPending.set(id, "draining");
         await sendTranscribe(id);
         return;
-      case "summarize": {
-        summaries.get(id)?.abort();
-        const controller = new AbortController();
-        summaries.set(id, controller);
+      case "summarize":
         background(
           "summary",
-          (async () => {
+          summaryWork(id, async (signal) => {
             let ok = false;
             try {
-              ({ ok } = await summarize(id, controller.signal));
-            } catch (error) {
-              if (controller.signal.aborted) return;
-              log(`meetings: summary failed (${String(error)})`);
+              ({ ok } = await deps.summarizer.summarizeMeeting(id, { signal }));
             } finally {
-              if (summaries.get(id) === controller) summaries.delete(id);
+              if (!signal.aborted)
+                await dispatch(id, { type: ok ? "summarized" : "summaryFailed" });
             }
-            await dispatch(id, { type: ok ? "summarized" : "summaryFailed" });
-          })(),
+          }),
         );
         return;
-      }
+      case "generateTitle":
+        background(
+          "title",
+          summaryWork(id, (signal) => deps.summarizer.generateTitle(id, { signal })),
+        );
+        return;
       case "delete":
         summaries.get(id)?.abort(new Error("Meeting deleted"));
         clearTimers(id);
@@ -489,6 +501,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     keep: (id) => command(id, { type: "keep" }),
     discard: (id) => command(id, { type: "discard" }),
     generateSummary: (id) => command(id, { type: "generateSummary" }),
+    async remove(id) {
+      summaries.get(id)?.abort(new Error("Meeting deleted"));
+      await store.remove(id);
+    },
     onHelperEvent(event) {
       switch (event.type) {
         case "ready":

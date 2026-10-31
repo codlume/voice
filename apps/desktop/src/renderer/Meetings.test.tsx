@@ -187,6 +187,12 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     updateMeetingsSettings: vi.fn(async () => {}),
     requestPermission: vi.fn(async () => {}),
     installModel: vi.fn(async () => {}),
+    generateMeetingSummary: vi.fn(async (meetingId: MeetingId) => {
+      const index = state.meetings.findIndex((m) => m.id === meetingId);
+      const summarizing = { ...state.meetings[index]!, status: { kind: "summarizing" as const } };
+      set({ meetings: state.meetings.with(index, summarizing) });
+      return { kind: "ok", id: meetingId } as const;
+    }),
     startMeeting: vi.fn(async () => ({ kind: "unavailable" }) as const),
   };
   (window as { voice?: HubApi }).voice = {
@@ -445,11 +451,27 @@ describe("a meeting", () => {
     expect(text()).not.toContain("Weekly product sync");
   });
 
-  test("a short meeting offers Generate summary", async () => {
-    fakeMain(sample());
+  test("a short meeting offers Generate summary, which asks main for it", async () => {
+    const main = fakeMain(sample());
     await render();
     await click(byText("Morning standup"));
     await waitForText("Generate summary");
+    await click(byText("Generate summary"));
+    expect(main.generateMeetingSummary).toHaveBeenCalledWith(id(3));
+    await waitForText("Writing the summary…");
+  });
+
+  test("a summary that needed the missing model offers its download above the failure", async () => {
+    const meetings = sample();
+    const message = "Download the summary model, then try again.";
+    meetings[2] = { ...meetings[2]!, summary: { kind: "failed", message, previous: null } };
+    const main = fakeMain(meetings);
+    await render({ ...setUp, models: { ...setUp.models, transform: { state: "missing" } } });
+    await click(byText("Morning standup"));
+    await waitForText("Download the summary model, then try again.");
+    expect(text()).toContain("Summaries use Gemma 4 E2B by Google (3.1 GB).");
+    await click(byText("Download"));
+    expect(main.installModel).toHaveBeenCalledWith("transform");
   });
 });
 

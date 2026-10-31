@@ -44,6 +44,10 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     capture: () => ({ language: "en", microphone: null }),
     onTranscript: (_id, entries) => pushed.push(...entries),
     onNotice: (_id, notice) => notices.push(notice.kind),
+    summarizer: {
+      summarizeMeeting: async () => ({ ok: true }),
+      generateTitle: async () => ({ ok: true, title: null }),
+    },
     log: () => {},
     now: () => clock,
     ...overrides,
@@ -301,6 +305,75 @@ describe("meeting recorder", () => {
       { kind: "marker", marker: "resumed", atMs: 2000 },
       { kind: "segment", speakerId: "s2", text: "A new voice" },
     ]);
+  });
+
+  test("after the final pass a meeting over 5 minutes is summarized, a shorter one only gets a title", async () => {
+    const calls: string[] = [];
+    const outcomes = [true, false];
+    const h = harness({
+      summarizer: {
+        summarizeMeeting: async (id) => {
+          calls.push(`summary ${id}`);
+          return outcomes.shift() ? { ok: true } : { ok: false, failure: { kind: "rejected" } };
+        },
+        generateTitle: async (id) => {
+          calls.push(`title ${id}`);
+          return { ok: true, title: null };
+        },
+      },
+    });
+    const long = await h.start();
+    await h.segment(long, "mic", 0, TEN_WORDS);
+    h.advance(6 * 60_000);
+    await h.recorder.stop(long);
+    await h.finish(long);
+    expect(calls).toEqual([`summary ${long}`]);
+    expect(h.store.get(long)?.status.kind).toBe("ready");
+    expect(h.notices).toContain("summaryReady");
+
+    const short = await h.start();
+    await h.segment(short, "mic", 0, TEN_WORDS);
+    h.advance(2 * 60_000);
+    await h.recorder.stop(short);
+    await h.finish(short);
+    expect(h.store.get(short)?.status.kind).toBe("ready");
+    expect(calls).toEqual([`summary ${long}`, `title ${short}`]);
+
+    await h.recorder.generateSummary(short);
+    await h.settle();
+    expect(calls.at(-1)).toBe(`summary ${short}`);
+    expect(h.store.get(short)?.status.kind).toBe("ready");
+    expect(h.notices).toContain("summaryFailed");
+  });
+
+  test("deleting a meeting from the hub stops its summary", async () => {
+    let seen: AbortSignal | undefined;
+    const h = harness({
+      summarizer: {
+        summarizeMeeting: (_id, { signal }) => {
+          seen = signal;
+          return new Promise((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          );
+        },
+        generateTitle: async () => ({ ok: true, title: null }),
+      },
+    });
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(6 * 60_000);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    await h.drained(id);
+    // The summary never ends on its own, so this waits for it to start instead of settling.
+    h.emit({ type: "meeting.finalized", id, segments: [] });
+    await vi.waitFor(() => expect(seen).toBeDefined());
+
+    await h.recorder.remove(id);
+    await h.settle();
+
+    expect(seen?.aborted).toBe(true);
+    expect(h.store.get(id)).toBeNull();
   });
 
   test("stop on a paused meeting finishes it, though its capture drained at the pause", async () => {

@@ -235,7 +235,7 @@ describe("meeting lifecycle", () => {
     expect(discarded.effects).toEqual([{ type: "delete" }]);
   });
 
-  test("a long meeting is summarized after the final pass, and a short one waits for the user", () => {
+  test("a long meeting is summarized after the final pass, and a short one only gets a title until the user asks", () => {
     const long = play([
       ...recording(30),
       [{ type: "drained", words: 4000 }, 30 * MIN],
@@ -252,6 +252,8 @@ describe("meeting lifecycle", () => {
     ]);
     expect(quick.meeting?.status).toEqual({ kind: "ready" });
     expect(kinds(quick.effects)).not.toContain("summarize");
+    expect(kinds(quick.effects)).toContain("generateTitle");
+    expect(kinds(long.effects)).not.toContain("generateTitle");
 
     const generating = step(quick.meeting, { type: "generateSummary" }, T0 + 6 * MIN, config);
     expect(generating.meeting?.status).toEqual({ kind: "summarizing" });

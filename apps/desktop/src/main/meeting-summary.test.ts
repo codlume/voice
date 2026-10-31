@@ -105,11 +105,13 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
 async function harness({
   provider,
   onDisk = true,
+  foundOnRefresh = false,
   generate,
   stored = meeting(),
 }: {
   provider?: Partial<SummaryProvider>;
   onDisk?: boolean;
+  foundOnRefresh?: boolean;
   generate?: (request: GenerateRequest) => Promise<GenerateResult>;
   stored?: Meeting;
 }) {
@@ -119,10 +121,15 @@ async function harness({
   await store.put(stored);
   await store.append(ID, transcript);
   const calls: string[] = [];
+  let present = onDisk;
   const summarizer = createMeetingSummarizer({
     store,
     model: {
-      onDisk: () => onDisk,
+      onDisk: () => present,
+      refresh: async () => {
+        calls.push("refresh");
+        present ||= foundOnRefresh;
+      },
       generate: generate ?? (async () => ({ ok: false, failure: { kind: "timedOut" } })),
     },
     ...(provider && {
@@ -291,11 +298,22 @@ describe("summarizeMeeting", () => {
       ok: false,
       failure: { kind: "modelUnavailable" },
     });
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(["refresh"]);
     expect((await saved()).summary).toMatchObject({
       kind: "failed",
       message: summaryFailureMessage.modelUnavailable,
     });
+  });
+
+  test("looks at the disk again before giving up, as a meeting recovered at launch needs", async () => {
+    const { summarizer, calls } = await harness({
+      provider: {},
+      onDisk: false,
+      foundOnRefresh: true,
+    });
+
+    expect(await summarizer.summarizeMeeting(ID, { signal: signal() })).toEqual({ ok: true });
+    expect(calls).toEqual(["refresh", "summarize"]);
   });
 
   test("a model that breaks mid-run is reported stopped and logged", async () => {

@@ -72,6 +72,7 @@ import {
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
 import { createMeetingRecorder, type MeetingRecorder } from "./meeting-recorder.ts";
+import { createMeetingSummarizer } from "./meeting-summary.ts";
 import { dismiss, follow, noMeetingFocus, promptFor, raise } from "./meeting-focus.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
 import { createNotepad, parseBounds, type NotepadOpening } from "./notepad-window.ts";
@@ -488,6 +489,7 @@ async function main() {
   });
   meetingRecorder = createMeetingRecorder({
     store: meetings,
+    summarizer: createMeetingSummarizer({ store: meetings, model: transformModel, log }),
     dir: meetingsDir,
     send: (command) => helper.send(command),
     capture: () => ({

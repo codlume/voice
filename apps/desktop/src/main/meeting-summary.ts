@@ -61,7 +61,7 @@ export const STEP_BUDGET_MS = 240_000;
 export const summaryFailureMessage: Record<SummaryOutcomeFailure["kind"], string> = {
   tooShort: "The meeting was too short to summarize.",
   noTranscript: "There is no transcript to summarize.",
-  modelUnavailable: "Download the Transforms model to summarize meetings.",
+  modelUnavailable: "Download the summary model, then try again.",
   timedOut: "The summary took too long.",
   rejected: "The summary model gave no usable summary.",
   stopped: "The summary model stopped.",
@@ -133,7 +133,7 @@ export function createMeetingSummarizer({
   log,
 }: {
   store: Pick<MeetingsStore, "get" | "transcript" | "update" | "state">;
-  model: Pick<TransformModel, "onDisk" | "generate">;
+  model: Pick<TransformModel, "onDisk" | "refresh" | "generate">;
   provider?: SummaryProvider;
   now?: () => number;
   log: (message: string) => void;
@@ -153,6 +153,8 @@ export function createMeetingSummarizer({
     signal: AbortSignal,
     work: () => Promise<T>,
   ): Promise<T | { ok: false; failure: SummaryOutcomeFailure }> {
+    // A meeting recovered at launch can get here before the model's first look at the disk.
+    if (!model.onDisk()) await model.refresh();
     if (!model.onDisk()) return { ok: false, failure: { kind: "modelUnavailable" } };
     try {
       return await work();
