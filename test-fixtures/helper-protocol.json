@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 18,
+  "protocolVersion": 19,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 17,
+      "version": 18,
       "compatible": false
     },
     {
-      "version": 18,
+      "version": 19,
       "compatible": true
     },
     {
-      "version": 19,
+      "version": 20,
       "compatible": false
     }
   ],
@@ -422,6 +422,13 @@
       "required": ["type", "id", "dir", "baseMs", "language"]
     },
     {
+      "name": "meeting.models.download",
+      "wire": {
+        "type": "meeting.models.download"
+      },
+      "required": ["type"]
+    },
+    {
       "name": "permissions.request.systemAudio",
       "wire": {
         "type": "permissions.request",
@@ -619,11 +626,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 18
+        "version": 19
       },
       "parsed": {
         "type": "ready",
-        "version": 18
+        "version": 19
       },
       "required": ["type", "version"]
     },
@@ -1323,48 +1330,54 @@
       "wire": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 0,
         "mic": "active",
         "system": "active"
       },
       "parsed": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 0,
         "mic": "active",
         "system": "active"
       },
-      "required": ["type", "id", "mic", "system"]
+      "required": ["type", "id", "atMs", "mic", "system"]
     },
     {
       "name": "meeting.started.micOnly",
       "wire": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 0,
         "mic": "active",
         "system": "unavailable"
       },
       "parsed": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 0,
         "mic": "active",
         "system": "unavailable"
       },
-      "required": ["type", "id", "mic", "system"]
+      "required": ["type", "id", "atMs", "mic", "system"]
     },
     {
       "name": "meeting.started.denied",
       "wire": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 612250.5,
         "mic": "active",
         "system": "denied"
       },
       "parsed": {
         "type": "meeting.started",
         "id": "m1",
+        "atMs": 612250.5,
         "mic": "active",
         "system": "denied"
       },
-      "required": ["type", "id", "mic", "system"]
+      "required": ["type", "id", "atMs", "mic", "system"]
     },
     {
       "name": "meeting.failed",
@@ -1605,14 +1618,60 @@
       "wire": {
         "type": "meeting.finalizeFailed",
         "id": "m1",
+        "reason": "transcript",
         "message": "speech model is not downloaded"
       },
       "parsed": {
         "type": "meeting.finalizeFailed",
         "id": "m1",
+        "reason": "transcript",
         "message": "speech model is not downloaded"
       },
-      "required": ["type", "id", "message"]
+      "required": ["type", "id", "reason", "message"]
+    },
+    {
+      "name": "meeting.finalizeFailed.speakerModels",
+      "wire": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "reason": "speakerModels",
+        "message": "speaker detection is not downloaded"
+      },
+      "parsed": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "reason": "speakerModels",
+        "message": "speaker detection is not downloaded"
+      },
+      "required": ["type", "id", "reason", "message"]
+    },
+    {
+      "name": "meeting.models.status",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "missing",
+        "message": null
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "missing",
+        "message": null
+      },
+      "required": ["type", "state"]
+    },
+    {
+      "name": "meeting.models.status.failed",
+      "wire": {
+        "type": "meeting.models.status",
+        "state": "failed",
+        "message": "The Internet connection appears to be offline."
+      },
+      "parsed": {
+        "type": "meeting.models.status",
+        "state": "failed",
+        "message": "The Internet connection appears to be offline."
+      },
+      "required": ["type", "state"]
     }
   ],
   "normalizedEvents": [
@@ -1956,6 +2015,10 @@
     {
       "name": "unknown-asr-state",
       "line": "{\"type\":\"asr.status\",\"state\":\"sleeping\"}"
+    },
+    {
+      "name": "unknown-meeting-models-state",
+      "line": "{\"type\":\"meeting.models.status\",\"state\":\"sleeping\"}"
     },
     {
       "name": "nonfinite-version",

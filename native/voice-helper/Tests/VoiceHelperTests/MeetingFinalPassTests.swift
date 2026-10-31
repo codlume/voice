@@ -78,7 +78,18 @@ private func writeMeeting(in dir: URL) throws {
         try writeMeeting(in: dir)
         await pass(diarize: { _ in [] }, fail: true).run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let failed = try await lines.wait(for: "meeting.finalizeFailed")
+        #expect(failed.last?["reason"] as? String == "transcript")
         #expect(failed.last?["message"] as? String == "speech model is not downloaded")
+        #expect(lines.snapshot().allSatisfy { $0["type"] as? String != "meeting.finalized" })
+    }
+
+    @Test func speakersThatCouldNotBeToldApartFailThePassInsteadOfMergingIntoOneVoice() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeMeeting(in: dir)
+        await pass(diarize: { _ in throw MeetingFinalizeError(reason: .speakerModels, message: "speaker detection is not downloaded") })
+            .run(id: "m1", dir: dir, baseMs: 0, language: .en)
+        let failed = try await lines.wait(for: "meeting.finalizeFailed")
+        #expect(failed.last?["reason"] as? String == "speakerModels")
         #expect(lines.snapshot().allSatisfy { $0["type"] as? String != "meeting.finalized" })
     }
 
@@ -112,7 +123,7 @@ private func writeMeeting(in dir: URL) throws {
         let mic = try PcmWriter(url: dir.appendingPathComponent("mic.pcm"))
         // Speech with no pause yet: no window can be cut, so only a partial can show it.
         try mic.append((0..<3 * 16_000).map { 0.3 * sin(Float($0) * 2 * .pi * 440 / 16_000) })
-        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in "words \(samples.count / 16_000)" },
+        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
                                        isDictating: { false }, idle: .milliseconds(5))
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         job.record(systemActive: false)

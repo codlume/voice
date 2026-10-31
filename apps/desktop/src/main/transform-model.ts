@@ -1,14 +1,26 @@
-import type { TransformEngine, TransformRequest, TransformResult } from "@voice/cleanup/transform";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  TransformEngine,
+  TransformRequest,
+  TransformResult,
+} from "@voice/cleanup/transform";
 import type { ModelSource } from "@voice/cleanup/download";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { forkUtility } from "./engine-process.ts";
 import { createTransformProcess } from "./transform-engine.ts";
 
-export type { TransformFailure, TransformRequest, TransformResult } from "@voice/cleanup/transform";
+export type {
+  GenerateRequest,
+  GenerateResult,
+  TransformFailure,
+  TransformRequest,
+  TransformResult,
+} from "@voice/cleanup/transform";
 
 /**
- * `run` resolves with data for every failure the text caused and rejects only on abort
+ * `run` and `generate` resolve with data for every failure the input caused and reject only on abort
  * (`signal.reason`), a model that is not installed, a load failure or a lost process.
  *
  * While `keepLoaded` holds, the model loads as soon as its weights are on disk and stays past the
@@ -19,6 +31,11 @@ export type TransformModel = {
   install(): Promise<void>;
   uninstall(): Promise<void>;
   run(request: TransformRequest): Promise<TransformResult>;
+  /**
+   * One step on the same loaded model, such as a meeting summary step. A Transform stops it and
+   * goes first, and the step then runs again, so it must be safe to repeat.
+   */
+  generate(request: GenerateRequest): Promise<GenerateResult>;
   warm(): void;
   follow(): void;
   unload(): Promise<void>;
@@ -71,7 +88,7 @@ async function importModule(log: (message: string) => void): Promise<TransformMo
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
+const TIMED_OUT = { ok: false, failure: { kind: "timedOut" } } as const;
 
 type Resident = { path: string; engine: TransformEngine; loaded: Promise<void> };
 
@@ -227,6 +244,29 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     await set({ phase: "installed", path: state.path });
   }
 
+  async function onLoaded<R>(
+    signal: AbortSignal,
+    call: (engine: TransformEngine) => Promise<R>,
+  ): Promise<R | typeof TIMED_OUT> {
+    signal.throwIfAborted();
+    running += 1;
+    unloadWhenSettled = false;
+    clearTimeout(idleTimer);
+    try {
+      const engine = await withinLoadBound(loadedEngine(), signal);
+      if (engine === "overran") {
+        options.log("transform: the model took too long to load");
+        if (resident(state)) void set({ phase: "installed", path: state.path });
+        return TIMED_OUT;
+      }
+      return await call(engine);
+    } finally {
+      running -= 1;
+      if (running === 0 && unloadWhenSettled) void unload();
+      else armIdle();
+    }
+  }
+
   return {
     refresh: async () => {
       const { findModel, source } = await loadModule();
@@ -259,25 +299,8 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       }
       void set({ phase: "missing" });
     },
-    run: async (request) => {
-      request.signal.throwIfAborted();
-      running += 1;
-      unloadWhenSettled = false;
-      clearTimeout(idleTimer);
-      try {
-        const engine = await withinLoadBound(loadedEngine(), request.signal);
-        if (engine === "overran") {
-          options.log("transform: the model took too long to load");
-          if (resident(state)) void set({ phase: "installed", path: state.path });
-          return TIMED_OUT;
-        }
-        return await engine.transform(request);
-      } finally {
-        running -= 1;
-        if (running === 0 && unloadWhenSettled) void unload();
-        else armIdle();
-      }
-    },
+    run: (request) => onLoaded(request.signal, (engine) => engine.transform(request)),
+    generate: (request) => onLoaded(request.signal, (engine) => engine.generate(request)),
     warm: () => {
       if (state.phase !== "installed" && !resident(state)) return;
       unloadWhenSettled = false;

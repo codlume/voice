@@ -34,6 +34,7 @@ import type { InsightsStore } from "./insights.ts";
 import type { InstalledApps } from "./installed-apps.ts";
 import type { Commands } from "./ipc.ts";
 import type { MeetingRecorder } from "./meeting-recorder.ts";
+import { dismissBanner } from "./meeting-focus.ts";
 import type { MeetingsStore } from "./meetings-store.ts";
 import type { MicrophoneTest } from "./microphone-test.ts";
 import { editAssignments, type SettingsQueue } from "./settings-queue.ts";
@@ -56,6 +57,8 @@ export type HubCommandDeps = {
   restartForUpdate: (request: RestartRequest) => Promise<void>;
   updateSettings: (change: (settings: Settings) => Settings) => Promise<void>;
   requestPermission: (kind: PermissionKind) => void;
+  downloadSpeakerModel: () => void;
+  watchMeetingPermissions: (watching: boolean) => void;
   refreshLoginItem: () => void;
   microphoneTest: Pick<MicrophoneTest, "start" | "stop">;
   modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }>;
@@ -72,7 +75,10 @@ export type HubCommandDeps = {
   log: Log;
 };
 
-const UNAVAILABLE: MeetingCommandResult = { kind: "unavailable" };
+const GONE: MeetingCommandResult = {
+  kind: "refused",
+  message: "This meeting is no longer on this Mac.",
+};
 // Characters Finder or the save panel refuse in a file name.
 const UNSAFE_FILE_NAME = /[/\\:*?"<>|]/g;
 
@@ -95,6 +101,10 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
   });
   hubCommands.handle(Channel.requestPermission, (_event, kind) => {
     if (isPermissionKind(kind)) deps.requestPermission(kind);
+  });
+  hubCommands.handle(Channel.downloadSpeakerModel, () => deps.downloadSpeakerModel());
+  hubCommands.handle(Channel.watchMeetingPermissions, (_event, watching: unknown) => {
+    if (typeof watching === "boolean") deps.watchMeetingPermissions(watching);
   });
   hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
     if (deps.development) return;
@@ -219,7 +229,7 @@ const withMeeting =
   (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
   (_event: unknown, raw: unknown) => {
     const id = parseMeetingId(raw);
-    return id ? command(id) : UNAVAILABLE;
+    return id ? command(id) : GONE;
   };
 
 type MeetingControlDeps = Pick<HubCommandDeps, "meetings" | "meetingRecorder" | "log">;
@@ -284,7 +294,7 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
   hubCommands.handle(Channel.deleteMeeting, async (_event, raw: unknown) => {
     const id = parseMeetingId(raw);
     if (!id) return;
-    await saving("delete", "Could not delete this meeting. Try again.", () => meetings.remove(id));
+    await saving("delete", "Could not delete this meeting. Try again.", () => recorder.remove(id));
   });
   hubCommands.handle(Channel.createFolder, async (_event, raw: unknown) => {
     const draft = parseFolderDraft(raw);
@@ -351,8 +361,14 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
     );
     return "saved";
   });
+  hubCommands.handle(Channel.retryMeetingTranscript, withMeeting(recorder.retryFinalPass));
+  hubCommands.handle(Channel.deleteMeetingAudio, withMeeting(recorder.deleteAudio));
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
   hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
   hubCommands.handle(Channel.openNotepad, () => deps.openNotepad());
+  hubCommands.handle(Channel.dismissMeetingNotice, (_event, key: unknown) => {
+    if (typeof key !== "number") return;
+    deps.store.update((s) => ({ ...s, meeting: dismissBanner(s.meeting, key) }));
+  });
 }

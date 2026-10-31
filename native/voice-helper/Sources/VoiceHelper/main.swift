@@ -17,6 +17,7 @@ final class Helper {
     private let permissions: Permissions
     private let installedApps: InstalledApps
     private let meetings: Meetings
+    private let diarizer: SpeakerDiarizer
     private var testTarget: TranscriptTarget?
 
     @MainActor
@@ -48,11 +49,13 @@ final class Helper {
         installedApps = InstalledApps(output: output)
         let transcriber = transcriber
         let diarizer = SpeakerDiarizer(modelsDir: modelsDir, output: output)
-        let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeetingWords($0, language: $1) },
-                                         diarize: { await diarizer.turns(in: $0) }, isDictating: { capture.isDictating })
+        self.diarizer = diarizer
+        let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeeting($0, language: $1) },
+                                         diarize: { try await diarizer.turns(in: $0) }, isDictating: { capture.isDictating })
         meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
                             decode: { try await transcriber.decodeMeeting($0, language: $1) },
                             finalPass: finalPass, isDictating: { capture.isDictating })
+        diarizer.reportStatus()
     }
 
     func installHotkeyTap() {
@@ -130,6 +133,8 @@ final class Helper {
             meetings.transcribe(id: id, dir: dir, baseMs: baseMs, fromMs: fromMs, language: language)
         case .meetingFinalize(let id, let dir, let baseMs, let language):
             meetings.finalize(id: id, dir: dir, baseMs: baseMs, language: language)
+        case .meetingModelsDownload:
+            diarizer.download()
         }
     }
 

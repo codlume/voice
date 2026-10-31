@@ -97,6 +97,37 @@ describe.skipIf(!modelPath)("Gemma 4 E2B transforms on the real model", () => {
     expect(next.ok).toBe(true);
   }, 90_000);
 
+  test("a Transform stops a long generate step within a slice, and the step then finishes", async () => {
+    const transcript = readFileSync(
+      new URL("../../../test-fixtures/meetings/en-30.txt", import.meta.url),
+      "utf8",
+    );
+    const short = () =>
+      engine.transform(request("so um we moved the launch to friday and anna will tell them"));
+    await short();
+    const idleStart = performance.now();
+    await short();
+    const idleMs = performance.now() - idleStart;
+
+    const step = engine.generate({
+      system: "You are a meeting notes tool.",
+      user: `Name the meeting's main topic in three words.\n\n${transcript}`,
+      maxTokens: 20,
+      temperature: 0,
+      budgetMs: 240_000,
+      signal: new AbortController().signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    const start = performance.now();
+    const transformed = await short();
+    const waitMs = Math.round(performance.now() - start - idleMs);
+    console.log(`[transform] waited ${waitMs} ms for a summary step to stop`);
+
+    expect(transformed.ok).toBe(true);
+    expect(waitMs).toBeLessThan(1_500);
+    await expect(step).resolves.toMatchObject({ ok: true });
+  }, 240_000);
+
   test("a budget that runs out mid-generation resolves as timedOut", async () => {
     const result = await engine.transform(
       request(prose("a Polish of a 650-word email"), { budgetMs: 1_500 }),

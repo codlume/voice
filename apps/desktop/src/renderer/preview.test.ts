@@ -43,4 +43,18 @@ describe("preview harness", { timeout: 30_000 }, () => {
       expect(session.kind).toMatch(/^transform/);
     },
   );
+
+  test("records, pauses and stops a meeting, so live states can be shown", async () => {
+    const voice = await openPreview("?hub=meetings");
+    const started = await voice.startMeeting();
+    if (started.kind !== "ok") throw new Error("the preview refused to start");
+    const status = async () =>
+      (await voice.getMeetings()).meetings.find(({ id }) => id === started.id)?.status.kind;
+    expect(await status()).toBe("recording");
+    expect((await voice.startMeeting()).kind).toBe("refused");
+    await voice.pauseMeeting(started.id);
+    expect(await status()).toBe("paused");
+    await voice.stopMeeting(started.id);
+    expect(await status()).toBe("ready");
+  });
 });

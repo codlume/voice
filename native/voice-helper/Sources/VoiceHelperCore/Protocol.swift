@@ -12,6 +12,13 @@ public enum MeetingSource: String, Codable, Sendable { case mic, system }
 /// How a meeting leg's source started: recording, or left out because the Mac cannot record it
 /// or the user has not allowed it.
 public enum MeetingSourceState: String, Codable, Sendable { case active, unavailable, denied }
+/// The speaker detection models a final pass needs to tell the other side's voices apart. They
+/// download only on `meeting.models.download`. `unavailable` below macOS 15, where diarization
+/// can crash; a final pass there leaves every system voice as one.
+public enum SpeakerModelsState: String, Codable, Sendable { case unavailable, missing, downloading, ready, failed }
+/// Why a final pass failed: the words could not be decoded, the speaker detection models are not
+/// downloaded, or speaker detection itself failed.
+public enum MeetingFinalizeFailure: String, Codable, Sendable { case transcript, speakerModels, speakers }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
@@ -153,6 +160,8 @@ public enum HelperCommand: Equatable, Sendable {
     /// Transcribes both files again in full, tells the voices in `system.pcm` apart, and answers
     /// with `meeting.finalized` or `meeting.finalizeFailed`. The files are only read.
     case meetingFinalize(id: String, dir: String, baseMs: Double, language: DictationLanguage)
+    /// Downloads the speaker detection models; `meeting.models.status` reports the progress.
+    case meetingModelsDownload
 }
 
 /// Meeting time, per source, that a transcript already covers.
@@ -188,7 +197,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 18
+public let helperProtocolVersion = 19
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -221,7 +230,8 @@ public enum HelperEvent: Equatable, Sendable {
     case log(level: LogLevel, message: String)
     case appsListed(apps: [InstalledApp])
     case iconsRendered(id: String, icons: [RenderedIcon])
-    case meetingStarted(id: String, mic: MeetingSourceState, system: MeetingSourceState)
+    /// `atMs` is the meeting time where this leg's audio starts.
+    case meetingStarted(id: String, atMs: Double, mic: MeetingSourceState, system: MeetingSourceState)
     /// The leg could not start, or capture died mid-leg; what was recorded stays on disk.
     case meetingFailed(id: String, message: String)
     /// A source stopped mid-leg, so the leg ended; what was recorded stays on disk.
@@ -237,7 +247,9 @@ public enum HelperEvent: Equatable, Sendable {
     /// The final pass over the files, in meeting time. Its speakers number the system voices.
     case meetingFinalized(id: String, segments: [FinalSegment])
     /// The final pass could not finish; the live transcript and the audio stay as they are.
-    case meetingFinalizeFailed(id: String, message: String)
+    case meetingFinalizeFailed(id: String, reason: MeetingFinalizeFailure, message: String)
+    /// The speaker detection models: once after `ready`, and whenever they change.
+    case meetingModelsStatus(state: SpeakerModelsState, message: String?)
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -253,7 +265,7 @@ private enum Key: String, CodingKey {
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
     case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting, segments
-    case speaker
+    case speaker, atMs
 }
 
 extension HelperCommand: Decodable {
@@ -315,6 +327,7 @@ extension HelperCommand: Decodable {
             self = .meetingTranscribe(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
                                       baseMs: try c.decode(Double.self, forKey: .baseMs), fromMs: try c.decode(MeetingCursor.self, forKey: .fromMs),
                                       language: try c.decode(DictationLanguage.self, forKey: .language))
+        case "meeting.models.download": self = .meetingModelsDownload
         case "meeting.finalize":
             self = .meetingFinalize(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
                                     baseMs: try c.decode(Double.self, forKey: .baseMs),
@@ -470,9 +483,10 @@ extension HelperEvent: Encodable {
             try c.encode("icons.rendered", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(icons, forKey: .icons)
-        case .meetingStarted(let id, let mic, let system):
+        case .meetingStarted(let id, let atMs, let mic, let system):
             try c.encode("meeting.started", forKey: .type)
             try c.encode(id, forKey: .id)
+            try c.encode(finite(atMs), forKey: .atMs)
             try c.encode(mic, forKey: .mic)
             try c.encode(system, forKey: .system)
         case .meetingFailed(let id, let message):
@@ -504,9 +518,14 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.finalized", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(segments, forKey: .segments)
-        case .meetingFinalizeFailed(let id, let message):
+        case .meetingFinalizeFailed(let id, let reason, let message):
             try c.encode("meeting.finalizeFailed", forKey: .type)
             try c.encode(id, forKey: .id)
+            try c.encode(reason, forKey: .reason)
+            try c.encode(message, forKey: .message)
+        case .meetingModelsStatus(let state, let message):
+            try c.encode("meeting.models.status", forKey: .type)
+            try c.encode(state, forKey: .state)
             try c.encode(message, forKey: .message)
         }
     }

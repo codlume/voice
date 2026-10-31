@@ -27,6 +27,15 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         #expect(words.map(\.text) == ["fixed", "42", "bugs"])
     }
 
+    @Test func aSymbolAfterASpaceStartsAWord() {
+        let spaced = FinalTranscript.words(tokens: [(" is", 0, 100), (" $", 200, 250), ("4", 250, 300), ("2", 300, 350), (",", 350, 360),
+                                                    ("000", 360, 420), (".", 420, 430)], offsetMs: 0)
+        #expect(spaced.map(\.text) == ["is", "$42,000."])
+        let afterBareSpace = FinalTranscript.words(tokens: [(" is", 0, 100), (" ", 100, 110), ("$", 200, 250), ("42", 250, 300)], offsetMs: 0)
+        #expect(afterBareSpace.map(\.text) == ["is", "$42"])
+        #expect(afterBareSpace.last?.startMs == 200)
+    }
+
     @Test func lateOrLongTokensDoNotBridgeTheSilenceAfterASentence() {
         // As Parakeet decodes a TTS meeting: the period comes 4 s after its word, a second one
         // later still, and a word token the model gave no duration ends at the next token.
@@ -34,7 +43,7 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
                       (" Yes", 10_000, 10_300)]
         let words = FinalTranscript.words(tokens: tokens, offsetMs: 0)
         #expect(words.map(\.text) == ["Friday.", "Perfect", "Yes"])
-        let segments = FinalTranscript.segments(mic: words, system: [], turns: nil)
+        let segments = FinalTranscript.segments(mic: words, system: [], turns: nil, output: OutputTimeline())
         #expect(segments.map(\.text) == ["Friday.", "Perfect", "Yes"])
     }
 
@@ -46,7 +55,7 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
             SpeakerTurn(speaker: "S2", startMs: 1900, endMs: 2700),
             SpeakerTurn(speaker: "S7", startMs: 4900, endMs: 6000),
         ]
-        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns)
+        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns, output: OutputTimeline())
         #expect(segments.map(\.text) == ["Morning all", "Hi Ada", "Shall we start"])
         #expect(segments.map(\.speaker) == [0, 1, 0])
         #expect(segments.allSatisfy { $0.source == .system })
@@ -55,7 +64,7 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
     @Test func aSpeakerChangeSplitsASegmentWithoutAPause() {
         let system = said("we ship friday", at: 0) + said("no monday", at: 900)
         let turns = [SpeakerTurn(speaker: "A", startMs: 0, endMs: 880), SpeakerTurn(speaker: "B", startMs: 880, endMs: 1600)]
-        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns)
+        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns, output: OutputTimeline())
         #expect(segments.map(\.text) == ["we ship friday", "no monday"])
         #expect(segments.map(\.speaker) == [0, 1])
     }
@@ -64,13 +73,13 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         // "two" is near the turn, "three" is too far from any and keeps the speaker before it.
         let system = said("one two three", at: 0, wordMs: 1200)
         let turns = [SpeakerTurn(speaker: "A", startMs: 0, endMs: 1000), SpeakerTurn(speaker: "B", startMs: 9000, endMs: 10_000)]
-        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns)
+        let segments = FinalTranscript.segments(mic: [], system: system, turns: turns, output: OutputTimeline())
         #expect(segments.map(\.text) == ["one two three"])
         #expect(segments.map(\.speaker) == [0])
     }
 
     @Test func withoutDiarizationSystemAudioHasNoSpeaker() {
-        let segments = FinalTranscript.segments(mic: said("hello there", at: 0), system: said("hi", at: 2000), turns: nil)
+        let segments = FinalTranscript.segments(mic: said("hello there", at: 0), system: said("hi", at: 2000), turns: nil, output: OutputTimeline())
         #expect(segments.map(\.source) == [.mic, .system])
         #expect(segments.map(\.speaker) == [nil, nil])
     }
@@ -78,24 +87,41 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
     @Test func micWordsThatEchoTheOtherSideAreDropped() {
         let system = said("we ship on friday after review", at: 1000)
         let mic = said("we ship on friday after review", at: 1100) + said("sounds good to me", at: 6000)
-        let segments = FinalTranscript.segments(mic: mic, system: system, turns: [])
+        let segments = FinalTranscript.segments(mic: mic, system: system, turns: [], output: OutputTimeline())
         #expect(segments.map(\.text) == ["we ship on friday after review", "sounds good to me"])
         #expect(segments.map(\.source) == [.system, .mic])
     }
 
     @Test func theUsersWordsStayWhenTheEchoFollowsThemWithoutAPause() {
         let system = said("the beta build is ready", at: 3000)
-        let mic = said("morning everyone", at: 0) + said("yes the plan", at: 600) + said("the beta build is ready", at: 1500)
-        let segments = FinalTranscript.segments(mic: mic, system: system, turns: nil)
+        let mic = said("morning everyone", at: 0) + said("yes the plan", at: 600) + said("the beta build is ready", at: 3040)
+        let segments = FinalTranscript.segments(mic: mic, system: system, turns: nil, output: OutputTimeline())
         #expect(segments.filter { $0.source == .mic }.map(\.text) == ["morning everyone yes the plan"])
+    }
+
+    @Test func aUserRepeatingTheOtherSideKeepsTheirLine() {
+        // A beat after the other side, not the same instant: agreement, not the speakers.
+        let system = said("the budget is forty two thousand dollars", at: 1000)
+        let mic = said("forty two thousand dollars right", at: 3600)
+        let segments = FinalTranscript.segments(mic: mic, system: system, turns: nil, output: OutputTimeline())
+        #expect(segments.filter { $0.source == .mic }.map(\.text) == ["forty two thousand dollars right"])
+    }
+
+    @Test func withHeadphonesNothingTheMicHeardIsEcho() {
+        let system = said("we ship on friday after review", at: 1000)
+        let mic = said("we ship on friday after review", at: 1040)
+        let headphones = OutputTimeline([(0, .headphones)])
+        #expect(FinalTranscript.segments(mic: mic, system: system, turns: nil, output: headphones).map(\.source) == [.system, .mic])
+        let unplugged = OutputTimeline([(0, .headphones), (1000, .speakers)])
+        #expect(FinalTranscript.segments(mic: mic, system: system, turns: nil, output: unplugged).map(\.source) == [.system])
     }
 
     @Test func pausesAndLongRunsEndSegments() {
         let words = said("first part", at: 0) + said("after a pause", at: 2000)
-        #expect(FinalTranscript.segments(mic: words, system: [], turns: nil).map(\.text) == ["first part", "after a pause"])
+        #expect(FinalTranscript.segments(mic: words, system: [], turns: nil, output: OutputTimeline()).map(\.text) == ["first part", "after a pause"])
         // 40 s of words with no pause: the run ends at the first sentence end past 30 s.
         let long = (0..<100).map { TimedWord(text: $0 == 79 ? "end." : "word", startMs: Double($0) * 400, endMs: Double($0) * 400 + 350) }
-        let split = FinalTranscript.segments(mic: long, system: [], turns: nil)
+        let split = FinalTranscript.segments(mic: long, system: [], turns: nil, output: OutputTimeline())
         #expect(split.count == 2)
         #expect(split[0].text.hasSuffix("end."))
     }

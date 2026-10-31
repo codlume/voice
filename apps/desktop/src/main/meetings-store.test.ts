@@ -16,7 +16,7 @@ import {
   type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
-import { createMeetingsStore } from "./meetings-store.ts";
+import { createMeetingsStore, type MeetingsStore } from "./meetings-store.ts";
 
 const DAY = 86_400_000;
 const START = Date.UTC(2026, 9, 31, 9, 0);
@@ -37,10 +37,12 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+const seed = (store: MeetingsStore, saved: Meeting) => store.upsert(saved.id, () => saved);
+
 function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
   return {
     id,
-    title: { text: "Weekly sync", source: "user" },
+    title: "Weekly sync",
     createdAt: START,
     spans: [{ startedAt: START, endedAt: START + 30 * 60_000 }],
     status: { kind: "ready" },
@@ -48,6 +50,8 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: null,
+    transcriptRevision: 0,
     ...overrides,
   };
 }
@@ -59,7 +63,6 @@ const segment = (id: string, text: string, startMs = 0): Segment => ({
   startMs,
   endMs: startMs + 1000,
   text,
-  final: true,
 });
 
 function harness(options: { now?: number } = {}) {
@@ -92,12 +95,14 @@ const rule = (text: string) => ({ kind: "titleContains", text }) as const;
 const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
+const snippet = (before: string, match: string, after: string) => ({ before, match, after });
+
 describe("meetings store", () => {
   test("a meeting and its transcript survive a relaunch", async () => {
     const first = harness();
     await first.loaded;
     const saved = meeting(A, { notes: "Ask about the budget" });
-    await first.store.put(saved);
+    await seed(first.store, saved);
     await first.store.append(A, [segment("s1", "Hello"), segment("s2", "Budget is fine", 1000)]);
     await first.store.append(A, [{ kind: "marker", marker: "paused", atMs: 2000 }]);
 
@@ -114,22 +119,20 @@ describe("meetings store", () => {
     const first = harness();
     await first.loaded;
     const s1 = "s1" as SpeakerId;
-    await first.store.put(meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    await seed(first.store, meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
     const said: Segment = { ...segment("x", "Hi"), source: "system", speakerId: s1 };
     await first.store.append(A, [said]);
     await first.store.update(A, (saved) => renameSpeaker(saved, s1, "  Ania "));
 
     const second = await relaunch();
-    expect(second.store.get(A)?.speakers).toEqual([
-      { id: s1, label: "Speaker 1", name: { text: "Ania", source: "user" } },
-    ]);
+    expect(second.store.get(A)?.speakers).toEqual([{ id: s1, label: "Speaker 1", name: "Ania" }]);
     expect(await second.store.transcript(A)).toEqual([said]);
   });
 
   test("files are owner-only and the hub hears each change as a patch", async () => {
     const { store, loaded, changes, hub } = harness();
     await loaded;
-    await store.put(meeting(A));
+    await seed(store, meeting(A));
     await store.append(A, [segment("s1", "Hello")]);
     expect(await mode(meetingDir(A))).toBe(0o700);
     expect(await mode(NodePath.join(meetingDir(A), "meeting.json"))).toBe(0o600);
@@ -138,15 +141,16 @@ describe("meetings store", () => {
     expect(hub()?.meetings).toEqual([meeting(A)]);
   });
 
-  test("appends grow the file one line per entry and a later partial is replaced by its final", async () => {
+  test("appends grow the file one line per entry, read back in time order", async () => {
     const { store, loaded } = harness();
     await loaded;
-    await store.put(meeting(A));
-    await store.append(A, [{ ...segment("s1", "Hel"), final: false }]);
-    await store.append(A, [segment("s1", "Hello there")]);
+    await seed(store, meeting(A));
+    const later = { ...segment("s2", "there"), startMs: 2000, endMs: 3000 };
+    await store.append(A, [later]);
+    await store.append(A, [segment("s1", "Hello")]);
     const file = await readFile(NodePath.join(meetingDir(A), "transcript.ndjson"), "utf8");
     expect(file.trimEnd().split("\n")).toHaveLength(2);
-    expect(await store.transcript(A)).toEqual([segment("s1", "Hello there")]);
+    expect(await store.transcript(A)).toEqual([segment("s1", "Hello"), later]);
   });
 
   test("a line a crash tore is skipped and the next append does not join it", async () => {
@@ -169,7 +173,7 @@ describe("meetings store", () => {
   test("replacing the transcript swaps in the final pass whole, with its meeting", async () => {
     const { store, loaded, hub } = harness();
     await loaded;
-    await store.put(meeting(A));
+    await seed(store, meeting(A));
     await store.append(A, [segment("live", "helo wrld")]);
     const speakers = [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }];
     const seen: TranscriptEntry[][] = [];
@@ -189,15 +193,54 @@ describe("meetings store", () => {
     expect(await store.replaceTranscript(B, (m) => ({ meeting: m, transcript: [] }))).toBe(false);
   });
 
+  test("every write to the transcript moves its revision on; only a rewrite publishes it", async () => {
+    const { store, loaded, hub } = harness();
+    await loaded;
+    await seed(store, meeting(A));
+    expect(await store.append(A, [segment("s1", "Hello")])).toBe(1);
+    expect(await store.append(A, [segment("s2", "again", 2000)])).toBe(2);
+    expect(store.get(A)?.transcriptRevision).toBe(2);
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(0);
+    await store.replaceTranscript(A, (current) => ({ meeting: current, transcript: [] }));
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(3);
+    expect((await relaunch()).store.get(A)?.transcriptRevision).toBe(3);
+    expect(await store.append(B, [segment("s1", "Hello")])).toBeNull();
+  });
+
+  test("interleaved changes each see the one queued before, so none is lost", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    await seed(store, meeting(A, { status: { kind: "recording", since: START } }));
+    const folder = await store.createFolder({ name: "Work", kind: "manual" });
+    const s1 = "s1" as SpeakerId;
+    await Promise.all([
+      store.setInFolder(A, folder.id, true),
+      store.update(A, (m) => ({ ...m, notes: "ship it" })),
+      store.upsert(A, (m) => m && { ...m, status: { kind: "paused" } }),
+      store.update(A, (m) => ({ ...m, title: "Roadmap" })),
+      store.upsert(A, (m) => m && { ...m, speakers: [{ id: s1, label: "Speaker 1", name: null }] }),
+      store.update(A, (m) => renameSpeaker(m, s1, "Ania")),
+    ]);
+    const expected = {
+      status: { kind: "paused" },
+      folderIds: [folder.id],
+      notes: "ship it",
+      title: "Roadmap",
+      speakers: [{ id: s1, label: "Speaker 1", name: "Ania" }],
+    };
+    expect(store.get(A)).toMatchObject(expected);
+    expect((await relaunch()).store.get(A)).toMatchObject(expected);
+  });
+
   test("deleting a meeting removes its folder, audio included, and late writes do not bring it back", async () => {
     const { store, loaded, hub } = harness();
     await loaded;
-    await store.put(meeting(A));
+    await seed(store, meeting(A));
     await writeFile(NodePath.join(meetingDir(A), "mic.pcm"), "audio");
     await store.remove(A);
     expect(existsSync(meetingDir(A))).toBe(false);
     await store.append(A, [segment("s1", "late")]);
-    await store.put(meeting(A));
+    await seed(store, meeting(A));
     expect(existsSync(meetingDir(A))).toBe(false);
     expect(hub()?.meetings).toEqual([]);
   });
@@ -205,9 +248,9 @@ describe("meetings store", () => {
   test("the recovery scan returns meetings a crash left mid-lifecycle, with their newest write", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A, { status: { kind: "recording", since: START }, spans: [] }));
-    await first.store.put(meeting(B, { status: { kind: "paused" } }));
-    await first.store.put(meeting(C));
+    await seed(first.store, meeting(A, { status: { kind: "recording", since: START }, spans: [] }));
+    await seed(first.store, meeting(B, { status: { kind: "paused" } }));
+    await seed(first.store, meeting(C));
     const audio = NodePath.join(meetingDir(A), "mic.pcm");
     await writeFile(audio, "audio");
     const audioAt = (await stat(audio)).mtimeMs;
@@ -223,9 +266,10 @@ describe("meetings store", () => {
   test("retention deletes ready meetings past their window, and only those", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A));
-    await first.store.put(meeting(B, { status: { kind: "transcribing" } }));
-    await first.store.put(
+    await seed(first.store, meeting(A));
+    await seed(first.store, meeting(B, { status: { kind: "transcribing", step: "finalizing" } }));
+    await seed(
+      first.store,
       meeting(C, {
         createdAt: START + 20 * DAY,
         spans: [{ startedAt: START + 20 * DAY, endedAt: START + 20 * DAY + 1 }],
@@ -247,6 +291,7 @@ describe("meetings store", () => {
         .toSorted(),
     ).toEqual([B, C]);
     expect(existsSync(meetingDir(A))).toBe(false);
+    expect(later.logs).toContain("meetings: deleted 1 past the week retention");
 
     await later.store.updateSettings({ retention: "forever" });
     later.clock.now = START + 400 * DAY;
@@ -254,10 +299,25 @@ describe("meetings store", () => {
     expect(later.store.state().meetings).toHaveLength(2);
   });
 
+  test("a meeting a crash left unfinished is not deleted in the launch that finishes it", async () => {
+    const first = harness();
+    await first.loaded;
+    await seed(first.store, meeting(A, { status: { kind: "paused" } }));
+    await first.store.updateSettings({ retention: "day" });
+
+    const later = await relaunch({ now: START + 30 * DAY });
+    await later.store.upsert(A, (found) => found && { ...found, status: { kind: "ready" } });
+    await later.store.expire();
+    expect(later.store.get(A)?.status.kind).toBe("ready");
+
+    const next = await relaunch({ now: START + 30 * DAY });
+    expect(next.store.get(A)).toBeNull();
+  });
+
   test("forever is the default and keeps old meetings", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A));
+    await seed(first.store, meeting(A));
     const later = await relaunch({ now: START + 3000 * DAY });
     expect(later.store.state().settings.retention).toBe("forever");
     expect(later.store.state().meetings).toHaveLength(1);
@@ -266,34 +326,73 @@ describe("meetings store", () => {
   test("search finds titles, summaries, notes and full transcripts, ignoring case", async () => {
     const { store, loaded } = harness();
     await loaded;
-    await store.put(meeting(A, { title: { text: "Roadmap review", source: "user" } }));
-    await store.put(
+    await seed(store, meeting(A, { title: "Roadmap review" }));
+    await seed(
+      store,
       meeting(B, {
         createdAt: START + 1,
         title: null,
         notes: "Remember the hiring plan",
         summary: {
           kind: "ready",
-          summary: { markdown: "We chose Postgres.", generatedAt: START, coversUntilMs: 1 },
+          summary: {
+            markdown: "We chose Postgres with {{speaker:you}}.",
+            coversUntilMs: 1,
+          },
         },
       }),
     );
-    await store.put(meeting(C, { createdAt: START + 2, title: null }));
+    await seed(store, meeting(C, { createdAt: START + 2, title: null }));
     await store.append(C, [segment("s1", "The quarterly ROADMAP slipped by a week")]);
 
     expect(await store.search("roadmap")).toEqual([
-      { id: C, field: "transcript", snippet: "The quarterly ROADMAP slipped by a week" },
-      { id: A, field: "title", snippet: "Roadmap review" },
+      {
+        id: C,
+        field: "transcript",
+        snippet: snippet("You: The quarterly ", "ROADMAP", " slipped by a week"),
+      },
+      { id: A, field: "title", snippet: snippet("", "Roadmap", " review") },
     ]);
-    expect((await store.search("postgres")).map(({ field }) => field)).toEqual(["summary"]);
+    expect(await store.search("postgres with you")).toEqual([
+      { id: B, field: "summary", snippet: snippet("We chose ", "Postgres with You", ".") },
+    ]);
+    // Token markup is not text the user wrote.
+    expect(await store.search("speaker:")).toEqual([]);
     expect((await store.search("hiring")).map(({ field }) => field)).toEqual(["notes"]);
     expect(await store.search("   ")).toEqual([]);
+  });
+
+  test("search sees lines, rewrites and speaker names that changed since the last search", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    const s1 = "s1" as SpeakerId;
+    await seed(store, meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    const said = (id: string, text: string): Segment => ({
+      ...segment(id, text),
+      source: "system",
+      speakerId: s1,
+    });
+    await store.append(A, [said("l1", "The budget is approved")]);
+    expect(await store.search("hiring")).toEqual([]);
+
+    await store.append(A, [said("l2", "Next we discuss hiring")]);
+    expect((await store.search("hiring")).map(({ id }) => id)).toEqual([A]);
+
+    await store.update(A, (current) => renameSpeaker(current, s1, "Ada"));
+    expect((await store.search("ada: next")).map(({ id }) => id)).toEqual([A]);
+
+    await store.replaceTranscript(A, (current) => ({
+      meeting: current,
+      transcript: [said("l3", "Only the roadmap")],
+    }));
+    expect(await store.search("hiring")).toEqual([]);
+    expect((await store.search("roadmap")).map(({ id }) => id)).toEqual([A]);
   });
 
   test("deleting a folder takes its meetings out of it and keeps them", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A));
+    await seed(first.store, meeting(A));
     const folder = await first.store.createFolder({ name: " Clients ", kind: "manual" });
     expect(folder.name).toBe("Clients");
     await first.store.setInFolder(A, folder.id, true);
@@ -320,9 +419,9 @@ describe("meetings store", () => {
   test("a new or edited automatic folder files the existing meetings its rule matches", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
-    await first.store.put(meeting(B, { title: { text: "Weekly sync", source: "generated" } }));
-    await first.store.put(meeting(C, { title: null }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
+    await seed(first.store, meeting(B, { title: "Weekly sync" }));
+    await seed(first.store, meeting(C, { title: null }));
     const folder = await first.store.createFolder({
       name: "1:1s",
       kind: "auto",
@@ -352,7 +451,7 @@ describe("meetings store", () => {
   test("a folder turned manual keeps its meetings and drops its rule", async () => {
     const first = harness();
     await first.loaded;
-    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
     const folder = await first.store.createFolder({
       name: "1:1s",
       kind: "auto",
@@ -369,7 +468,7 @@ describe("meetings store", () => {
     const first = harness();
     await first.loaded;
     await first.store.updateSettings({ autoFolders: false });
-    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
     const folder = await first.store.createFolder({
       name: "1:1s",
       kind: "auto",
@@ -416,7 +515,7 @@ describe("meetings store", () => {
     await mkdir(NodePath.join(dir, "not-a-meeting"), { recursive: true });
     const { store, loaded } = harness();
     await loaded;
-    await store.put(meeting(A));
+    await seed(store, meeting(A));
     await appendFile(
       NodePath.join(meetingDir(A), "transcript.ndjson"),
       `${JSON.stringify({ kind: "segment", id: "x" })}\n`,

@@ -7,7 +7,7 @@ const START = Date.UTC(2026, 9, 31, 14, 5);
 
 const meeting: Meeting = {
   id: "11111111-1111-4111-8111-111111111111" as MeetingId,
-  title: { text: "Launch plan", source: "generated" },
+  title: "Launch plan",
   createdAt: START - 1000,
   spans: [{ startedAt: START, endedAt: START + 3_700_000 }],
   status: { kind: "ready" },
@@ -18,11 +18,12 @@ const meeting: Meeting = {
     summary: {
       markdown:
         "We agreed to ship on Friday.\n\n### Decisions\n- Ship Friday\n\n### Next Steps\n**{{speaker:s1}}**\n- Draft the post",
-      generatedAt: START + 3_800_000,
       coversUntilMs: 3_700_000,
     },
   },
-  speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" } }],
+  speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: "Ana" }],
+  finalPassFailed: null,
+  transcriptRevision: 0,
 };
 
 const transcript: TranscriptEntry[] = [
@@ -34,7 +35,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 4000,
     endMs: 6000,
     text: "Friday works.",
-    final: true,
   },
   {
     kind: "segment",
@@ -43,7 +43,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 0,
     endMs: 3000,
     text: "Can we ship Friday?",
-    final: true,
   },
   {
     kind: "segment",
@@ -53,9 +52,8 @@ const transcript: TranscriptEntry[] = [
     startMs: 3_661_000,
     endMs: 3_662_000,
     text: "Bye",
-    final: true,
   },
-  { kind: "segment", id: "e", source: "mic", startMs: 9000, endMs: 9000, text: "  ", final: true },
+  { kind: "segment", id: "e", source: "mic", startMs: 9000, endMs: 9000, text: "  " },
   { kind: "marker", marker: "paused", atMs: 10_000 },
 ];
 
@@ -93,6 +91,17 @@ describe("meeting markdown", () => {
         "**Others** (1:01:01): Bye",
         "",
       ].join("\n"),
+    );
+  });
+
+  test("keeps the previous summary a failed update left, as the page shows it", () => {
+    if (meeting.summary.kind !== "ready") throw new Error("the fixture has a summary");
+    const failed: Meeting = {
+      ...meeting,
+      summary: { kind: "failed", message: "The model stopped.", previous: meeting.summary.summary },
+    };
+    expect(meetingMarkdown(failed, [], { locale: "en-US", timeZone: "UTC" })).toContain(
+      "## Summary\n\n*Previous summary. Updating it failed.*\n\nWe agreed to ship on Friday.",
     );
   });
 

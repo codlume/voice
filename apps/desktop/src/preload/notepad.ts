@@ -11,6 +11,7 @@ const voice: NotepadApi = {
   getNotepad: () => ipcRenderer.invoke(Channel.getNotepad),
   onNotepad: (listener) => subscribe<NotepadState | null>(Channel.notepad, listener),
   dismissMeetingPrompt: () => ipcRenderer.invoke(Channel.dismissMeetingPrompt),
+  viewMeetingSummary: (id) => ipcRenderer.invoke(Channel.viewMeetingSummary, id),
   getMeeting: (id) => ipcRenderer.invoke(Channel.getMeeting, id),
   updateMeetingNotes: (id, notes) => ipcRenderer.invoke(Channel.updateMeetingNotes, id, notes),
   pauseMeeting: (id) => ipcRenderer.invoke(Channel.pauseMeeting, id),

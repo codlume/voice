@@ -17,19 +17,24 @@ final class MeetingCapture {
     private var watch: DispatchSourceTimer?
     private var lastMicAudio = DispatchTime.now()
     private let microphone: Microphone?
+    private let dir: URL
     private let micURL: URL
     private let systemURL: URL
     private var mic: PcmWriter?
     private var system: PcmWriter?
     private var micSource: MicSource?
     private var systemSource: AnyObject?
+    private var systemRestarts = 0
     private var fixtures: [FileSource] = []
     private var stopped = false
     private let startedAt = DispatchTime.now()
-    private var startFrames = 0
+    /// Where this leg's audio starts in the files.
+    private(set) var startFrames = 0
+    private var route: MeetingOutput?
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
          isDictating: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
+        self.dir = dir
         micURL = dir.appendingPathComponent("mic.pcm")
         systemURL = dir.appendingPathComponent("system.pcm")
         self.microphone = microphone
@@ -48,7 +53,9 @@ final class MeetingCapture {
         switch source {
         case .disabled:
             throw CaptureError(reason: .device, message: "meeting capture disabled in test mode; set a meeting fixture")
-        case .fixture(let micPath, let systemPath, let speed):
+        case .fixture(let micPath, let systemPath, let speed, let outputPath):
+            let said = (try? String(contentsOfFile: outputPath, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            note(said == MeetingOutput.headphones.rawValue ? .headphones : .speakers)
             mic = try open(micURL)
             fixtures.append(try fixture(micPath, speed: speed) { [weak self] in self?.receiveMic($0) })
             var systemState = MeetingSourceState.unavailable
@@ -63,6 +70,7 @@ final class MeetingCapture {
             guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
                 throw CaptureError(reason: .permission, message: "Allow microphone access for Voice to record meetings.")
             }
+            note(OutputRoute.current)
             mic = try open(micURL)
             try openMic()
             let system = startSystem()
@@ -123,6 +131,9 @@ final class MeetingCapture {
         }
         try source.start { [weak self] in self?.receiveMic($0) }
         micSource = source
+        // The stall clock runs from here: a new device, Bluetooth above all, takes a moment to
+        // deliver its first buffer.
+        lastMicAudio = .now()
     }
 
     // A device change stops the engine. Unlike dictation, a meeting keeps going on whatever input
@@ -139,8 +150,7 @@ final class MeetingCapture {
         guard !stopped else { return }
         do {
             try openMic()
-            let elapsed = startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
-            try mic?.pad(to: system?.frames ?? elapsed)
+            try mic?.pad(to: system?.frames ?? elapsedFrames)
             output.log(.info, "meeting microphone reopened after a device change")
         } catch {
             guard attempt < 10 else {
@@ -154,26 +164,54 @@ final class MeetingCapture {
     private func startSystem() -> MeetingSourceState {
         guard #available(macOS 14.4, *) else { return .unavailable }
         if SystemAudioAccess.state == .denied { return .denied }
-        let source: SystemAudioSource
-        do throws(CaptureError) {
-            source = try SystemAudioSource()
-        } catch {
-            output.log(.error, "meeting system audio unavailable: \(error.message)")
-            return .unavailable
-        }
         do throws(CaptureError) {
             system = try open(systemURL)
-            try source.start { [weak self] in self?.receiveSystem($0) }
-            systemSource = source
+            try openSystem()
             return .active
         } catch {
             output.log(.error, "meeting system audio unavailable: \(error.message)")
-            source.stop()
             try? system?.close()
             system = nil
             return .unavailable
         }
     }
+
+    @available(macOS 14.4, *)
+    private func openSystem() throws(CaptureError) {
+        let source = try SystemAudioSource()
+        do throws(CaptureError) {
+            try source.start(sink: { [weak self] in self?.receiveSystem($0) }, onFormatChange: { [weak self] in
+                self?.restartSystem(because: "its format changed")
+            })
+        } catch {
+            source.stop()
+            throw error
+        }
+        systemSource = source
+    }
+
+    // A tap that stopped delivering, or whose sample rate changed, is recreated in place; the
+    // file gets silence for the moments it missed. A tap that keeps stalling ends the leg.
+    private func restartSystem(because reason: String) {
+        guard #available(macOS 14.4, *), !stopped, let old = systemSource as? SystemAudioSource else { return }
+        old.stop()
+        systemSource = nil
+        systemRestarts += 1
+        guard systemRestarts <= Self.systemRestartLimit else {
+            output.log(.error, "meeting system audio stalled again after \(Self.systemRestartLimit) restarts")
+            return lose(AudioLoss(source: .system, reason: .device))
+        }
+        do {
+            try system?.pad(to: elapsedFrames)
+            try openSystem()
+            output.log(.info, "meeting system audio restarted: \(reason)")
+        } catch {
+            output.log(.error, "meeting system audio did not restart: \(error)")
+            lose(AudioLoss(source: .system, reason: .device))
+        }
+    }
+
+    private static let systemRestartLimit = 3
 
     // Permissions can be taken away mid-meeting, and macOS then hands the app silence, not an
     // error, so the leg checks every two seconds.
@@ -182,14 +220,39 @@ final class MeetingCapture {
         timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .milliseconds(200))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            let loss = MeetingWatch.loss(
+            note(OutputRoute.current)
+            var msSinceSystemAudio: Double?
+            if #available(macOS 14.4, *), system { msSinceSystemAudio = (systemSource as? SystemAudioSource)?.msSinceAudio }
+            switch MeetingWatch.check(
                 micAllowed: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-                systemRecording: system, systemAllowed: SystemAudioAccess.state != .denied,
-                msSinceMicAudio: micSource == nil ? nil : lastMicAudio.millisecondsToNow())
-            if let loss { lose(loss) }
+                systemAllowed: SystemAudioAccess.state != .denied,
+                msSinceMicAudio: micSource == nil ? nil : lastMicAudio.millisecondsToNow(),
+                msSinceSystemAudio: msSinceSystemAudio) {
+            case .lost(let loss): lose(loss)
+            case .systemStalled: restartSystem(because: "it delivered nothing for \(Int(MeetingWatch.systemStallMs)) ms")
+            case nil: break
+            }
         }
         watch = timer
         timer.resume()
+    }
+
+    // The files' frame for now, by the clock: a source that stalled has fewer frames than this.
+    private var elapsedFrames: Int {
+        startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
+    }
+
+    // Echo can only come from speakers, so the transcription needs to know where the other side
+    // played at every moment of the meeting.
+    private func note(_ current: MeetingOutput) {
+        guard current != route else { return }
+        let frame = route == nil ? startFrames : elapsedFrames
+        route = current
+        do {
+            try OutputTimeline.append(current, atFrame: frame, dir: dir)
+        } catch {
+            output.log(.error, "meeting output route not saved: \(error.localizedDescription)")
+        }
     }
 
     private func lose(_ loss: AudioLoss) {

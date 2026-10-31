@@ -131,7 +131,7 @@ function greeting(hour: number): string {
   return "Good evening";
 }
 
-function run(command: SetupCommand): Promise<void> {
+export function runSetupCommand(command: SetupCommand): Promise<void> {
   switch (command.type) {
     case "installModel":
       return hubApi().installModel(command.id);
@@ -139,6 +139,8 @@ function run(command: SetupCommand): Promise<void> {
       return hubApi().uninstallModel(command.id);
     case "requestPermission":
       return hubApi().requestPermission(command.kind);
+    case "downloadSpeakerModel":
+      return hubApi().downloadSpeakerModel();
   }
 }
 
@@ -180,7 +182,7 @@ export function SetupRow({ row }: { row: ChecklistRow }) {
         <Button
           key={action.label}
           aria-label={`${action.label} ${row.title}`}
-          onClick={() => void run(action.command)}
+          onClick={() => void runSetupCommand(action.command)}
         >
           {action.label}
         </Button>

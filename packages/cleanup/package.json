@@ -15,6 +15,10 @@
       "types": "./src/style.ts",
       "import": "./src/style.ts"
     },
+    "./summary": {
+      "types": "./src/summary/index.ts",
+      "import": "./src/summary/index.ts"
+    },
     "./transform": {
       "types": "./src/transform/index.ts",
       "import": "./src/transform/index.ts"

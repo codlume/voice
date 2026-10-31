@@ -36,6 +36,7 @@ function harness() {
     transform: idleRun,
     meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+    speakerModel: "ready",
     loginItem: "off",
     models: {
       asr: { state: "ready" },
@@ -111,7 +112,7 @@ describe("publish", () => {
     const { pill, update } = harness();
     const meeting: Meeting = {
       id: "00000000-0000-4000-8000-000000000001" as MeetingId,
-      title: { text: "Pricing review", source: "user" },
+      title: "Pricing review",
       createdAt: 0,
       spans: [{ startedAt: 0, endedAt: 60_000 }],
       status: { kind: "recording", since: 90_000 },
@@ -119,6 +120,8 @@ describe("publish", () => {
       notes: "Ask about the discount",
       summary: { kind: "none" },
       speakers: [],
+      finalPassFailed: null,
+      transcriptRevision: 0,
     };
     update({ meeting: follow(noMeetingFocus, [meeting]) });
     update({ meeting: follow(noMeetingFocus, [{ ...meeting, notes: "Ask about the deadline" }]) });

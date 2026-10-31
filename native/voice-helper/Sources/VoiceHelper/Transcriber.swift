@@ -223,18 +223,10 @@ final class Transcriber: Transcribing {
         }
     }
 
-    /// Decodes a meeting window on its own manager at utility priority, so a dictation decode
-    /// never queues behind meeting audio on the model actor. Waits for a model that is loading.
-    func decodeMeeting(_ samples: [Float], language: DictationLanguage) async throws -> String {
-        let manager = try await meetingAsr()
-        let asrLanguage = language.asrLanguage
-        return try await Task.detached(priority: .utility) {
-            try await Self.decode(samples, with: manager, language: asrLanguage)
-        }.value
-    }
-
-    /// `decodeMeeting` with each word's time, for the final pass. Times are ms into `samples`.
-    func decodeMeetingWords(_ samples: [Float], language: DictationLanguage) async throws -> [TimedWord] {
+    /// Decodes a meeting window into words, with times in ms into `samples`, on its own manager at
+    /// utility priority, so a dictation decode never queues behind meeting audio on the model
+    /// actor. Waits for a model that is loading.
+    func decodeMeeting(_ samples: [Float], language: DictationLanguage) async throws -> [TimedWord] {
         let manager = try await meetingAsr()
         let asrLanguage = language.asrLanguage
         return try await Task.detached(priority: .utility) {

@@ -1,27 +1,32 @@
 import { dayKey, type DayKey } from "../shared/insights.ts";
-import { clock, markerText } from "../shared/meeting-markdown.ts";
+import { clock, markerText, shownSummary } from "../shared/meeting-markdown.ts";
 import {
   endedAt,
-  foldTranscript,
   meetingRetentionMs,
+  sortTranscript,
   OTHERS,
   YOU,
   SPEAKER_TOKEN,
   speakerDisplayName,
   speakerName,
   startedAt,
+  summarizesOnStop,
+  summaryStale,
   tokenName,
   type MaxLength,
   type Meeting,
   type MeetingRetention,
   type MeetingSearchField,
   type MeetingSearchHit,
+  type MeetingSnippet,
   type MeetingSource,
-  type MeetingStatus,
   type Speaker,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { dayLabel, formatterCache, timeLabel } from "./historyView.ts";
+
+/** Shown where a first meeting starts: the setup checklist and the notepad before anyone speaks. */
+export const CONSENT_REMINDER = "Always get consent before recording others.";
 
 /** When the meeting began, or when it was made if it never recorded. */
 export const meetingAt = (meeting: Meeting) => startedAt(meeting) ?? meeting.createdAt;
@@ -37,12 +42,27 @@ export function meetingDays(
   const days = Map.groupBy(meetings, (meeting) => dayKey(new Date(meetingAt(meeting))));
   return Array.from(days, ([day, dayMeetings]) => ({
     day,
-    label: dayLabel(day, today, locale),
+    label: meetingDayLabel(day, today, locale),
     meetings: dayMeetings,
   }));
 }
 
 const shortDate = formatterCache({ weekday: "short", month: "short", day: "numeric" });
+const shortDateWithYear = formatterCache({
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+/** "Today", "Yesterday", then "Thu, Oct 22", with the year only for an earlier year. */
+function meetingDayLabel(day: DayKey, today: DayKey, locale?: string): string {
+  const named = dayLabel(day, today, locale);
+  if (named === "Today" || named === "Yesterday") return named;
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  const format = day.slice(0, 4) === today.slice(0, 4) ? shortDate : shortDateWithYear;
+  return format(locale).format(new Date(year, month - 1, date));
+}
 
 /** "Thu, Oct 22 · 5:28 PM", the line under a meeting's title. */
 export function meetingWhen(meeting: Meeting, locale?: string): string {
@@ -58,31 +78,55 @@ export function durationLabel(ms: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
 }
 
-/** Statuses that hold a capture open or can resume one, where the page shows the controls. */
-export type LiveStatus = Extract<MeetingStatus, { kind: "starting" | "recording" | "paused" }>;
-export type LiveMeeting = Meeting & { status: LiveStatus };
-
-const isLive = (meeting: Meeting): meeting is LiveMeeting =>
-  meeting.status.kind === "starting" ||
-  meeting.status.kind === "recording" ||
-  meeting.status.kind === "paused";
-
-export const liveMeeting = (meetings: readonly Meeting[]): LiveMeeting | null =>
-  meetings.find(isLive) ?? null;
-
-const statusLabels: Record<MeetingStatus["kind"], string | null> = {
-  starting: "Starting…",
-  recording: "Recording",
-  paused: "Paused",
-  finishing: "Finishing…",
-  confirmingShort: "Short recording",
-  transcribing: "Transcribing…",
-  summarizing: "Writing summary…",
-  ready: null,
+export type SummaryNotice = {
+  text: string;
+  error: boolean;
+  /** What the notice offers to do about it. */
+  action: "generate" | "retry" | "update" | null;
 };
 
-/** A word for a row whose meeting is not done yet. */
-export const statusLabel = (meeting: Meeting) => statusLabels[meeting.status.kind];
+const SHORT = "Short meetings get a summary only when you ask for one.";
+
+const say = (text: string, action: SummaryNotice["action"] = null, error = false) => ({
+  text,
+  error,
+  action,
+});
+
+/**
+ * What to say about the meeting's summary beside or instead of it, the same on the meeting page
+ * and in the overview panel; null when the summary needs no words.
+ */
+export function summaryNotice(meeting: Meeting): SummaryNotice | null {
+  const { summary, status } = meeting;
+  if (status.kind === "summarizing") {
+    const { progress } = status;
+    const step =
+      progress && progress.total > 1 ? ` Step ${progress.step} of ${progress.total}.` : "";
+    return say(`Writing the summary…${step}`);
+  }
+  if (status.kind === "transcribing" && summary.kind === "none") {
+    return say(
+      summarizesOnStop(meeting) ? "The summary is written once the transcript is final." : SHORT,
+    );
+  }
+  if (status.kind !== "ready") {
+    return say(
+      shownSummary(meeting)
+        ? "Update the summary after the meeting ends."
+        : "The summary is written when the meeting ends.",
+    );
+  }
+  if (summary.kind === "failed") {
+    const shown = summary.previous ? " Showing the previous summary." : "";
+    return say(`The summary could not be written. ${summary.message}${shown}`, "retry", true);
+  }
+  if (summary.kind === "none") {
+    return say(summarizesOnStop(meeting) ? "This meeting has no summary yet." : SHORT, "generate");
+  }
+  if (summaryStale(meeting)) return say("New recording since this summary.", "update");
+  return null;
+}
 
 // Summary Markdown, limited to what the summary step writes: headings, paragraphs, and bullet
 // lists one level deep, with **bold** inline.
@@ -133,9 +177,12 @@ export function summaryBlocks(markdown: string): Block[] {
   return blocks;
 }
 
-/** The summary's first paragraph, which the side panel shows as the overview. */
+/**
+ * The paragraph a summary opens with, which the side panel shows as the overview. A summary that
+ * opens with a heading has none: its first paragraph further down is an owner's name.
+ */
 export function overview(markdown: string): string | null {
-  const first = summaryBlocks(markdown).find((block) => block.kind === "paragraph");
+  const [first] = summaryBlocks(markdown);
   return first?.kind === "paragraph" ? first.text : null;
 }
 
@@ -220,7 +267,7 @@ export function transcriptRows(
 ): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   let lastSpeaker: string | null = null;
-  for (const [index, entry] of foldTranscript(lines).entries()) {
+  for (const [index, entry] of sortTranscript(lines).entries()) {
     if (entry.kind === "marker") {
       rows.push({
         kind: "marker",
@@ -238,7 +285,7 @@ export function transcriptRows(
       mine: entry.source === "mic",
       time: clock(entry.startMs),
       text: entry.text,
-      final: entry.final,
+      final: true,
       continues: speaker === lastSpeaker,
     });
     lastSpeaker = speaker;
@@ -278,7 +325,7 @@ const hitLabels: Record<MeetingSearchField, string | null> = {
   transcript: "Transcript",
 };
 
-export type SearchResult = { meeting: Meeting; where: string | null; snippet: string };
+export type SearchResult = { meeting: Meeting; where: string | null; snippet: MeetingSnippet };
 
 /** Hits in main's order, paired with their meetings; a hit for a meeting just deleted drops out. */
 export function searchResults(
@@ -329,4 +376,19 @@ export function expiredBy(
       meeting.status.kind === "ready" &&
       (endedAt(meeting) ?? meeting.createdAt) + meetingRetentionMs[retention] <= now,
   ).length;
+}
+
+const entryKey = (entry: TranscriptEntry) => JSON.stringify(entry);
+
+/**
+ * The transcript read from main plus the live lines that arrived while it loaded. A live line the
+ * read already holds is left out, so a marker is not doubled and a partial does not come back
+ * after its final line.
+ */
+export function mergeTranscript(
+  read: readonly TranscriptEntry[],
+  live: readonly TranscriptEntry[],
+): TranscriptEntry[] {
+  const seen = new Set(read.map(entryKey));
+  return [...read, ...live.filter((entry) => !seen.has(entryKey(entry)))];
 }

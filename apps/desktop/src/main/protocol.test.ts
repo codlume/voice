@@ -568,6 +568,7 @@ const commandCases = {
     baseMs: 600_000,
     language: "pl",
   },
+  "meeting.models.download": { type: "meeting.models.download" },
 } satisfies Record<HelperCommand["type"], HelperCommand> & Record<string, HelperCommand>;
 
 const eventTypes = {
@@ -603,6 +604,7 @@ const eventTypes = {
   "meeting.partial": true,
   "meeting.finalized": true,
   "meeting.finalizeFailed": true,
+  "meeting.models.status": true,
 } satisfies Record<HelperEvent["type"], true>;
 
 function startContractHelper(configure: () => HelperCommand[] = () => []) {

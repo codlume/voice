@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { RESTART_MIN_MS, startHelper, type Helper, type HelperExit } from "./helper.ts";
-import { decodeTarget, type HelperEvent } from "./protocol.ts";
+import { decodeTarget, HELPER_PROTOCOL_VERSION, type HelperEvent } from "./protocol.ts";
 
 const FAKE = NodePath.join(import.meta.dirname, "testing/fake-helper.ts");
 
@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 18 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: HELPER_PROTOCOL_VERSION });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -229,12 +229,19 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v18; refusing/);
+      .toMatch(
+        new RegExp(
+          `helper: speaks protocol v2 but this build expects v${HELPER_PROTOCOL_VERSION}; refusing`,
+        ),
+      );
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 18 },
+        attributes: {
+          "helper.protocol_version": 2,
+          "helper.expected_version": HELPER_PROTOCOL_VERSION,
+        },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);

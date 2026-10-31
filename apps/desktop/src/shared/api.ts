@@ -17,10 +17,11 @@ import {
   type MeetingsChange,
   type MeetingsSettingsPatch,
   type MeetingsState,
-  type MeetingNotice,
+  type MeetingBanner,
   type MeetingTranscriptChange,
   type MeetingPartial,
   type NotepadState,
+  type OpenMeetingRequest,
   type PillMeeting,
   type SpeakerId,
 } from "./meetings.ts";
@@ -48,6 +49,12 @@ export type Permissions = {
   accessibility: PermissionState;
   systemAudio: SystemAudioPermission;
 };
+/**
+ * The on-device models that tell the voices on system audio apart. They download only when the
+ * user asks; without them a meeting's other side stays one voice. Unavailable before macOS 15.
+ */
+export type SpeakerModelState = "missing" | "downloading" | "ready" | "failed" | "unavailable";
+
 export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export const UPDATE_CHANNELS = ["stable", "nightly"] as const;
@@ -275,8 +282,10 @@ export type Snapshot = {
   permissions: Permissions;
   loginItem: LoginItem;
   models: Record<ModelId, ModelStatus>;
+  speakerModel: SpeakerModelState;
   settings: Settings;
   account: AccountState;
+  meetingNotices: readonly MeetingBanner[];
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &
@@ -340,6 +349,10 @@ export type HubApi = WindowApi & {
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
+  /** Downloads the models that tell meeting speakers apart. */
+  downloadSpeakerModel(): Promise<void>;
+  /** True while Set up Meetings shows, so main keeps checking System Audio Recording. */
+  watchMeetingPermissions(watching: boolean): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
   startMicrophoneTest(): Promise<void>;
   stopMicrophoneTest(): Promise<void>;
@@ -414,14 +427,20 @@ export type HubApi = WindowApi & {
   keepMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   discardMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Runs a failed final pass again over the audio it kept. */
+  retryMeetingTranscript(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Deletes the audio a failed final pass kept; the live transcript stays the transcript. */
+  deleteMeetingAudio(id: MeetingId): Promise<MeetingCommandResult>;
   /** Shows the floating notepad for the current meeting without taking focus. */
   openNotepad(): Promise<void>;
   /** Fires as transcript lines are saved during a meeting. */
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
   /** Fires with unconfirmed text while a meeting records, for the live view. */
   onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
-  /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
-  onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
+  /** Takes a notice off the Meetings page, and off the notepad when it shows the same one. */
+  dismissMeetingNotice(key: number): Promise<void>;
+  /** Fires when main brings the window up on a meeting, as when its summary is ready. */
+  onOpenMeeting(listener: (request: OpenMeetingRequest) => void): () => void;
 };
 
 /** The meeting commands the Voice window and the notepad share. */
@@ -445,6 +464,8 @@ export type NotepadApi = Pick<WindowApi, "diagnosticsStartedAtLaunch"> &
     onNotepad(listener: (state: NotepadState | null) => void): () => void;
     /** Answers a prompt that needs nothing else, such as "Keep recording". */
     dismissMeetingPrompt(): Promise<void>;
+    /** Brings the Voice window forward on the meeting's summary. */
+    viewMeetingSummary(id: MeetingId): Promise<void>;
   };
 
 export type VoiceApi = PillApi | HubApi | NotepadApi;
@@ -462,6 +483,8 @@ export const Channel = {
   level: "voice:level",
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
+  downloadSpeakerModel: "voice:downloadSpeakerModel",
+  watchMeetingPermissions: "voice:watchMeetingPermissions",
   setOpenAtLogin: "voice:setOpenAtLogin",
   startMicrophoneTest: "voice:startMicrophoneTest",
   stopMicrophoneTest: "voice:stopMicrophoneTest",
@@ -515,12 +538,16 @@ export const Channel = {
   keepMeeting: "voice:keepMeeting",
   discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
+  retryMeetingTranscript: "voice:retryMeetingTranscript",
+  deleteMeetingAudio: "voice:deleteMeetingAudio",
   meetingTranscript: "voice:meetingTranscript",
   meetingPartial: "voice:meetingPartial",
-  meetingNotice: "voice:meetingNotice",
+  dismissMeetingNotice: "voice:dismissMeetingNotice",
   openNotepad: "voice:openNotepad",
   setPillClickable: "voice:setPillClickable",
   getNotepad: "voice:getNotepad",
   notepad: "voice:notepad",
   dismissMeetingPrompt: "voice:dismissMeetingPrompt",
+  viewMeetingSummary: "voice:viewMeetingSummary",
+  openMeeting: "voice:openMeeting",
 } as const;

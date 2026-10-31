@@ -1,3 +1,4 @@
+import { SPEAKER_TOKEN } from "@voice/cleanup/summary";
 import type { Shortcut } from "./transforms.ts";
 
 export type MeetingId = string & { readonly __brand: "MeetingId" };
@@ -12,15 +13,16 @@ export const parseMeetingId = (value: unknown): MeetingId | null =>
 export const parseFolderId = (value: unknown): FolderId | null =>
   typeof value === "string" && UUID.test(value) ? (value as FolderId) : null;
 
-/** A blank title is null, which lets the summary step generate one. */
-export type MeetingTitle = { text: string; source: "user" | "generated" };
-
 /** One recording leg, start to stop or pause, in wall-clock ms. */
 export type Span = { startedAt: number; endedAt: number };
 
+/** `step` counts from 1; a long meeting is summarized in parts, and `total` can grow. */
+export type SummaryProgress = { step: number; total: number };
+
 /**
  * Where the meeting is in its lifecycle. `starting` remembers what a failed capture start returns
- * to: a new meeting has nothing to keep.
+ * to: a new meeting has nothing to keep. `finishing` catches the live transcript up after Stop;
+ * `transcribing` does the same after a crash (`draining`), then runs the final pass.
  */
 export type MeetingStatus =
   | { kind: "starting"; from: "new" | "paused" | "ready" }
@@ -28,12 +30,15 @@ export type MeetingStatus =
   | { kind: "paused" }
   | { kind: "finishing" }
   | { kind: "confirmingShort" }
-  | { kind: "transcribing" }
-  | { kind: "summarizing" }
+  | { kind: "transcribing"; step: "draining" | "finalizing" }
+  | { kind: "summarizing"; progress: SummaryProgress | null }
   | { kind: "ready" };
 
-/** `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale. */
-export type Summary = { markdown: string; generatedAt: number; coversUntilMs: number };
+/**
+ * `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale.
+ * `markdown` names speakers with `speakerToken`, so a rename needs no regeneration.
+ */
+export type Summary = { markdown: string; coversUntilMs: number };
 
 export type SummaryState =
   | { kind: "none" }
@@ -42,19 +47,18 @@ export type SummaryState =
 
 export type SpeakerId = string & { readonly __brand: "SpeakerId" };
 
-/** A name for a speaker: the user's rename, or one read from the meeting app's window later on. */
-export type SpeakerName = { text: string; source: "user" | "meetingApp" };
-
 /**
  * One voice on system audio, found by diarization. The id and the "Speaker N" label never change,
- * so a rename shows everywhere the id is used, including summaries written before it.
+ * so a rename shows everywhere the id is used, including summaries written before it. `name` is
+ * the user's rename.
  */
-export type Speaker = { id: SpeakerId; label: string; name: SpeakerName | null };
+export type Speaker = { id: SpeakerId; label: string; name: string | null };
 
 /** What `meeting.json` holds. The transcript lives in its own append-only file. */
 export type Meeting = {
   id: MeetingId;
-  title: MeetingTitle | null;
+  /** A blank title is null, which lets the summary step generate one. */
+  title: string | null;
   createdAt: number;
   /** Closed legs, oldest first. An open leg is `status.since`. */
   spans: readonly Span[];
@@ -65,6 +69,17 @@ export type Meeting = {
   summary: SummaryState;
   /** The voices on system audio, in the order they first spoke. */
   speakers: readonly Speaker[];
+  /**
+   * Why the final pass failed, so the live transcript stands in and the audio is kept until the
+   * user tries again or deletes it. Null when it did not fail.
+   */
+  finalPassFailed: FinalPassFailure | null;
+  /**
+   * Counts every write to the transcript file, appends and rewrites alike. Appends reach open
+   * windows as lines tagged with their revision; a meeting whose revision is ahead of the lines a
+   * window holds was rewritten, so the window reads the file again.
+   */
+  transcriptRevision: number;
 };
 
 /** Transcript times are ms of recorded audio from the meeting's start, pauses left out. */
@@ -74,8 +89,6 @@ export type Segment = {
   startMs: number;
   endMs: number;
   text: string;
-  /** False for a partial, which a later line with the same id replaces. */
-  final: boolean;
 } & Voice;
 
 /** The mic is the user. System audio is everyone else: one speaker once diarized, else null. */
@@ -205,17 +218,28 @@ export function applyMeetingsChange(
 /** Option+M, on the "M" key's position whatever the layout types there. */
 export const DEFAULT_MEETING_SHORTCUT: Shortcut = { keycode: 46, modifiers: ["option"] };
 
+/** Statuses that hold a capture open or can resume one. At most one meeting is live. */
+export type LiveStatus = Extract<MeetingStatus, { kind: "starting" | "recording" | "paused" }>;
+export type LiveMeeting = Meeting & { status: LiveStatus };
+
+/** A capture is open or opening. */
+export const isCapturing = ({ status }: Meeting): boolean =>
+  status.kind === "starting" || status.kind === "recording";
+
+export const isLive = (meeting: Meeting): meeting is LiveMeeting =>
+  isCapturing(meeting) || meeting.status.kind === "paused";
+
+export const liveMeeting = (meetings: readonly Meeting[]): LiveMeeting | null =>
+  meetings.find(isLive) ?? null;
+
 /**
- * What the meeting shortcut and the menu bar item do now: stop the meeting that records or is
- * paused, wait while one starts, or start one.
+ * What the meeting shortcut and the menu bar item do now: stop the live meeting, wait while it
+ * starts, or start one.
  */
 export type MeetingToggle = { kind: "start" } | { kind: "stop" | "wait"; id: MeetingId };
 
 export function meetingToggle(meetings: readonly Meeting[]): MeetingToggle {
-  const live = meetings.find(
-    ({ status }) =>
-      status.kind === "starting" || status.kind === "recording" || status.kind === "paused",
-  );
+  const live = liveMeeting(meetings);
   if (!live) return { kind: "start" };
   return { kind: live.status.kind === "starting" ? "wait" : "stop", id: live.id };
 }
@@ -226,14 +250,16 @@ export const meetingToggleLabels: Record<MeetingToggle["kind"], string> = {
   wait: "Starting meeting…",
 };
 
-/** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
+/** `refused` carries a message for the user: the command did nothing. */
 export type MeetingCommandResult =
   | { kind: "ok"; id: MeetingId }
-  | { kind: "refused"; message: string }
-  | { kind: "unavailable" };
+  | { kind: "refused"; message: string };
 
 /** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
 export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
+
+/** Why a final pass failed, as far as the user can act on it: download speaker detection, or not. */
+export type FinalPassFailure = "speakerModels" | "other";
 
 /** What a meeting tells the user: warnings, prompts and outcomes. */
 export type MeetingNotice =
@@ -245,9 +271,13 @@ export type MeetingNotice =
   | { kind: "maxLengthReached" }
   | { kind: "atMaxLength" }
   | { kind: "silence" }
-  | { kind: "finalPassFailed" }
+  /** Nobody answered "Still in a meeting?", so the recording stopped. */
+  | { kind: "silenceStopped" }
+  | { kind: "finalPassFailed"; reason: FinalPassFailure }
+  /** `open` brings the Voice window up on the summary, without taking focus. */
   | { kind: "summaryReady"; open: boolean }
-  | { kind: "summaryFailed" };
+  /** `message` says why, as the meeting's summary state does. */
+  | { kind: "summaryFailed"; message: string | null };
 
 /**
  * A warning or question the notepad and the Flow Bar show where the user is, until it is
@@ -257,7 +287,73 @@ export type MeetingPrompt =
   | { kind: "startedByMistake" }
   | { kind: "silence" }
   | { kind: "maxLengthSoon"; endsAt: number }
+  | { kind: "summaryReady" }
   | { kind: "notice"; text: string };
+
+/** Main asks the Voice window to show a meeting, as when its summary is ready. */
+export type OpenMeetingRequest = { id: MeetingId; tab: "summary" };
+
+/** What the user can do from a notice besides dismissing it. */
+export type MeetingNoticeAction = "viewSummary" | "retryFinalPass" | "deleteAudio";
+
+/**
+ * A notice the Meetings page shows until the user dismisses it or it no longer applies. `key`
+ * tells two notices apart; the notepad's prompt from the same notice shares it. One that is not
+ * `dismissable` stays until what it reports is resolved.
+ */
+export type MeetingBanner = {
+  key: number;
+  id: MeetingId;
+  text: string;
+  actions: readonly MeetingNoticeAction[];
+  dismissable: boolean;
+};
+
+export const meetingNoticeActionLabels: Record<MeetingNoticeAction, string> = {
+  viewSummary: "View summary",
+  retryFinalPass: "Try again",
+  deleteAudio: "Delete audio",
+};
+
+function lostText(loss: AudioLoss | null): string {
+  const what =
+    loss === null
+      ? "Audio stopped coming in"
+      : loss.reason === "permission"
+        ? `Voice is no longer allowed to record ${loss.source === "mic" ? "the microphone" : "system audio"}`
+        : loss.source === "mic"
+          ? "The microphone stopped"
+          : "System audio stopped";
+  return `${what}, so the meeting is paused. Resume to keep recording.`;
+}
+
+/** What a notice says, or null for one that only asks a question. */
+export function noticeText(notice: MeetingNotice): string | null {
+  switch (notice.kind) {
+    case "startFailed":
+    case "resumeFailed":
+      return notice.message;
+    case "captureLost":
+      return lostText(notice.loss);
+    case "maxLengthReached":
+      return "Recording stopped at the maximum length.";
+    case "silenceStopped":
+      return "Recording stopped after 10 minutes without speech.";
+    case "atMaxLength":
+      return "This meeting is at its maximum length and cannot record more.";
+    case "finalPassFailed":
+      return notice.reason === "speakerModels"
+        ? "Speaker detection is not downloaded, so the final transcript could not be made. Download it in Set up Meetings, then try again. The live transcript and the audio are kept."
+        : "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
+    case "summaryFailed":
+      return `The summary could not be written.${notice.message ? ` ${notice.message}` : ""}`;
+    case "summaryReady":
+      return "Your summary is ready.";
+    case "maxLengthSoon":
+    case "silence":
+      return null;
+  }
+}
 
 /** The meeting the floating notepad shows, with the prompt it waits on. */
 export type NotepadState = { meeting: Meeting; prompt: MeetingPrompt | null };
@@ -276,13 +372,24 @@ export type PillMeeting = {
 };
 
 /** Live transcript lines, pushed as they are written so an open meeting view can append them. */
-export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
+/** Lines appended to a transcript; `revision` is the meeting's `transcriptRevision` after them. */
+export type MeetingTranscriptChange = {
+  id: MeetingId;
+  entries: readonly TranscriptEntry[];
+  revision: number;
+};
 
 /** What a source said since its last segment, which may still change. Never saved; empty clears it. */
 export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };
 
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
-export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };
+/** The text around a search match, the match itself kept apart so it can be marked. */
+export type MeetingSnippet = { before: string; match: string; after: string };
+export type MeetingSearchHit = {
+  id: MeetingId;
+  field: MeetingSearchField;
+  snippet: MeetingSnippet;
+};
 
 export const startedAt = (meeting: Meeting): number | null =>
   meeting.spans[0]?.startedAt ??
@@ -300,16 +407,23 @@ export const recordedMs = (meeting: Meeting, now: number): number =>
   closedMs(meeting) +
   (meeting.status.kind === "recording" ? Math.max(0, now - meeting.status.since) : 0);
 
+/** Spec 7: meetings of 5 minutes or less wait for a manual "Generate summary". */
+export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
+
+/** Whether the meeting's recording is long enough to be summarized after Stop without asking. */
+export const summarizesOnStop = (meeting: Meeting): boolean =>
+  closedMs(meeting) > AUTO_SUMMARY_MIN_MS;
+
 /** True once a resume recorded more than the summary covers, so "Update summary" applies. */
 export const summaryStale = (meeting: Meeting): boolean =>
   meeting.summary.kind === "ready" && meeting.summary.summary.coversUntilMs < closedMs(meeting);
 
-export const titleText = (meeting: Meeting) => meeting.title?.text ?? "Untitled meeting";
+export const titleText = (meeting: Meeting) => meeting.title ?? "Untitled meeting";
 
 export const YOU = "You";
 export const OTHERS = "Others";
 
-export const speakerDisplayName = (speaker: Speaker) => speaker.name?.text ?? speaker.label;
+export const speakerDisplayName = (speaker: Speaker) => speaker.name ?? speaker.label;
 
 /** Who spoke a segment: You, a speaker's name or label, or Others before diarization. */
 export function speakerName(segment: Segment, speakers: readonly Speaker[]): string {
@@ -318,15 +432,15 @@ export function speakerName(segment: Segment, speakers: readonly Speaker[]): str
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
 
-/** The token a summary writes for a speaker, `you` for the user, so a later rename shows in it. */
-export const speakerToken = (id: SpeakerId | "you") => `{{speaker:${id}}}`;
+export { SPEAKER_TOKEN, speakerToken } from "@voice/cleanup/summary";
 
-/** Matches `speakerToken`; group 1 is the id. */
-export const SPEAKER_TOKEN = /\{\{speaker:([A-Za-z0-9_-]+)\}\}/g;
+/** The token ids a summary uses besides the meeting's speakers: the user, and voices not told apart. */
+export const YOU_ID = "you";
+export const OTHERS_ID = "others";
 
 /** The name a summary token stands for; an id the meeting no longer has reads as Others. */
 export function tokenName(id: string, speakers: readonly Speaker[]): string {
-  if (id === "you") return YOU;
+  if (id === YOU_ID) return YOU;
   const speaker = speakers.find((candidate) => candidate.id === id);
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
@@ -340,9 +454,7 @@ export function renameSpeaker(meeting: Meeting, id: SpeakerId, text: string): Me
   const trimmed = text.trim();
   if (!meeting.speakers.some((speaker) => speaker.id === id)) return meeting;
   const speakers = meeting.speakers.map((speaker) =>
-    speaker.id === id
-      ? { ...speaker, name: trimmed === "" ? null : { text: trimmed, source: "user" as const } }
-      : speaker,
+    speaker.id === id ? { ...speaker, name: trimmed === "" ? null : trimmed } : speaker,
   );
   return { ...meeting, speakers };
 }
@@ -368,31 +480,15 @@ export function addSpeakers(
 
 const entryMs = (entry: TranscriptEntry) => (entry.kind === "segment" ? entry.startMs : entry.atMs);
 
-/**
- * The transcript as the file's lines mean it: a later segment with an id replaces the earlier
- * one, and entries run in time order, ties in file order.
- */
-export function foldTranscript(lines: readonly TranscriptEntry[]): TranscriptEntry[] {
-  const order: (TranscriptEntry | string)[] = [];
-  const segments = new Map<string, Segment>();
-  for (const line of lines) {
-    if (line.kind === "marker") {
-      order.push(line);
-      continue;
-    }
-    if (!segments.has(line.id)) order.push(line.id);
-    segments.set(line.id, line);
-  }
-  return order
-    .map((item) => (typeof item === "string" ? segments.get(item)! : item))
-    .toSorted((a, b) => entryMs(a) - entryMs(b));
-}
+/** Entries in time order, ties in file order: the two sources' lines land out of order. */
+export const sortTranscript = (lines: readonly TranscriptEntry[]): TranscriptEntry[] =>
+  lines.toSorted((a, b) => entryMs(a) - entryMs(b));
 
 const ruleMatches = (meeting: Meeting, folder: FolderKind): boolean =>
   folder.kind === "auto" &&
   meeting.title !== null &&
   folder.rule.text.trim() !== "" &&
-  meeting.title.text.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
+  meeting.title.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
 
 export function autoFolderIds(
   meeting: Meeting,
@@ -423,35 +519,96 @@ export function refile(meeting: Meeting, folder: Folder, before: FolderKind | nu
 
 const SNIPPET_CONTEXT = 40;
 
-function snippet(text: string, at: number, length: number): string {
-  const start = Math.max(0, at - SNIPPET_CONTEXT);
-  const end = Math.min(text.length, at + length + SNIPPET_CONTEXT);
-  const body = text.slice(start, end).replace(/\s+/g, " ").trim();
-  return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
+const flat = (part: string) => part.replace(/\s+/g, " ");
+
+function snippet(text: string, start: number, end: number): MeetingSnippet {
+  const from = Math.max(0, start - SNIPPET_CONTEXT);
+  const to = Math.min(text.length, end + SNIPPET_CONTEXT);
+  return {
+    before: `${from > 0 ? "…" : ""}${flat(text.slice(from, start)).trimStart()}`,
+    match: flat(text.slice(start, end)),
+    after: `${flat(text.slice(end, to)).trimEnd()}${to < text.length ? "…" : ""}`,
+  };
 }
 
-/** The first field, in the order the list shows them, that holds `query`, ignoring case. */
+// Letters NFD does not take apart, so "lodz" finds "Łódź".
+const FOLDED: Record<string, string> = { ł: "l", Ł: "l", ø: "o", Ø: "o", đ: "d", Đ: "d", ß: "ss" };
+
+const foldedChars = new Map<string, string>();
+
+/** One character lowercased without its accents. */
+function foldChar(char: string): string {
+  let folded = foldedChars.get(char);
+  if (folded === undefined) {
+    folded = (FOLDED[char] ?? char.normalize("NFD").replace(/\p{M}/gu, "")).toLocaleLowerCase();
+    foldedChars.set(char, folded);
+  }
+  return folded;
+}
+
+/**
+ * `text` folded as `fold` folds it, without the positions. ASCII has no accents and lowercases the
+ * same alone or in a run, so a search reads whole transcripts without visiting each character.
+ */
+const foldText = (text: string) => text.replace(/[^\0-\x7f]/gu, foldChar).toLocaleLowerCase();
+
+/** `text` lowercased without accents, and where each of its characters starts in `text`. */
+function fold(text: string): { folded: string; from: number[] } {
+  let folded = "";
+  const from: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const part = foldChar(char);
+    folded += part;
+    // One position per UTF-16 unit, as `indexOf` counts them, so an emoji keeps later marks in place.
+    for (let unit = 0; unit < part.length; unit += 1) from.push(at);
+    at += char.length;
+  }
+  from.push(text.length);
+  return { folded, from };
+}
+
+/** Summary Markdown as it reads on the page: names in, heading marks, bold and bullets out. */
+const summaryText = (markdown: string, speakers: readonly Speaker[]) =>
+  resolveSpeakerTokens(markdown, speakers)
+    .replace(/^#+\s*/gm, "")
+    .replace(/^\s*-\s+/gm, "")
+    .replaceAll("**", "");
+
+/** The transcript as search reads it: each line with the name of whoever said it. */
+export const spokenText = (meeting: Meeting, transcript: readonly TranscriptEntry[]): string =>
+  transcript
+    .flatMap((entry) =>
+      entry.kind === "segment" ? [`${speakerName(entry, meeting.speakers)}: ${entry.text}`] : [],
+    )
+    .join("\n");
+
+/**
+ * The first field, in the order the list shows them, that holds `query`, ignoring case and
+ * accents. `spoken` is the meeting's `spokenText`, or empty to search the other fields only.
+ */
 export function searchMeeting(
   meeting: Meeting,
-  transcript: readonly TranscriptEntry[],
+  spoken: string,
   query: string,
 ): MeetingSearchHit | null {
-  const needle = query.trim().toLocaleLowerCase();
+  const needle = foldText(query.trim());
   if (needle === "") return null;
   const summary =
     meeting.summary.kind === "ready"
-      ? resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers)
+      ? summaryText(meeting.summary.summary.markdown, meeting.speakers)
       : "";
-  const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
   const fields: [MeetingSearchField, string][] = [
-    ["title", meeting.title?.text ?? ""],
+    ["title", meeting.title ?? ""],
     ["summary", summary],
     ["notes", meeting.notes],
-    ["transcript", spoken.join("\n")],
+    ["transcript", spoken],
   ];
   for (const [field, text] of fields) {
-    const at = text.toLocaleLowerCase().indexOf(needle);
-    if (at >= 0) return { id: meeting.id, field, snippet: snippet(text, at, needle.length) };
+    const at = foldText(text).indexOf(needle);
+    if (at < 0) continue;
+    const { from } = fold(text);
+    return { id: meeting.id, field, snippet: snippet(text, from[at]!, from[at + needle.length]!) };
   }
   return null;
 }
@@ -466,7 +623,7 @@ export function retitle(
   const trimmed = text.trim();
   const titled: Meeting = {
     ...meeting,
-    title: trimmed === "" ? null : { text: trimmed, source: "user" },
+    title: trimmed === "" ? null : trimmed,
   };
   const added = autoFolderIds(titled, folders, settings).filter(
     (id) => !meeting.folderIds.includes(id),

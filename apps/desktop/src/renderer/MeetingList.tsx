@@ -1,13 +1,20 @@
 import { Menu } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useState, type MouseEvent, type ReactNode } from "react";
 
-import { titleText, type Folder, type Meeting, type MeetingId } from "../shared/meetings.ts";
+import {
+  titleText,
+  type Folder,
+  type Meeting,
+  type MeetingId,
+  type MeetingSnippet,
+} from "../shared/meetings.ts";
 import { Card } from "./Card.tsx";
 import { FolderDialog } from "./FolderDialog.tsx";
 import { timeLabel } from "./historyView.ts";
-import { meetingAt, statusLabel, type MeetingDay } from "./meetingsView.ts";
+import { meetingAt, type MeetingDay } from "./meetingsView.ts";
+import { statusLabel } from "./meetingStatus.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { useAction } from "./useAction.ts";
@@ -122,6 +129,7 @@ const styles = stylex.create({
     whiteSpace: "nowrap",
   },
   where: { color: color.foreground },
+  match: { backgroundColor: "transparent", color: color.foreground, fontWeight: 600 },
   folderButton: {
     display: "inline-flex",
     alignItems: "center",
@@ -238,7 +246,9 @@ export function FolderMenu({
   );
 }
 
-function Row({
+// Memoized with the list's callbacks passed through as they are, so hovering a row, or scrolling
+// rows under the pointer, renders the two rows whose selection changed rather than all of them.
+const Row = memo(function Row({
   meeting,
   folders,
   snippet,
@@ -248,10 +258,10 @@ function Row({
 }: {
   meeting: Meeting;
   folders: readonly Folder[];
-  snippet: { where: string | null; text: string } | undefined;
+  snippet: { where: string | null; text: MeetingSnippet } | undefined;
   selected: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
+  onSelect: (id: MeetingId) => void;
+  onOpen: (id: MeetingId) => void;
 }) {
   const status = statusLabel(meeting);
   const at = meetingAt(meeting);
@@ -259,20 +269,20 @@ function Row({
   const open = (event: MouseEvent<HTMLLIElement>) => {
     const { target, currentTarget } = event;
     if (!(target instanceof Element) || !currentTarget.contains(target)) return;
-    if (!target.closest("button")) onOpen();
+    if (!target.closest("button")) onOpen(meeting.id);
   };
   return (
     <li
       onClick={open}
-      onPointerEnter={onSelect}
-      onFocus={onSelect}
+      onPointerEnter={() => onSelect(meeting.id)}
+      onFocus={() => onSelect(meeting.id)}
       {...stylex.props(stylex.defaultMarker(), styles.row, selected && styles.rowSelected)}
     >
       <span aria-hidden="true" {...stylex.props(styles.docIcon)}>
         <FileTextIcon size={16} />
       </span>
       <div {...stylex.props(styles.body)}>
-        <button type="button" onClick={onOpen} {...stylex.props(styles.title)}>
+        <button type="button" onClick={() => onOpen(meeting.id)} {...stylex.props(styles.title)}>
           {titleText(meeting)}
         </button>
         <span {...stylex.props(styles.meta)}>
@@ -282,7 +292,9 @@ function Row({
         {snippet && (
           <p {...stylex.props(styles.snippet)}>
             {snippet.where && <span {...stylex.props(styles.where)}>{snippet.where}: </span>}
-            {snippet.text}
+            {snippet.text.before}
+            <mark {...stylex.props(styles.match)}>{snippet.text.match}</mark>
+            {snippet.text.after}
           </p>
         )}
       </div>
@@ -297,7 +309,7 @@ function Row({
       </FolderMenu>
     </li>
   );
-}
+});
 
 /** Meetings grouped by day, with the search snippet under a row that `snippets` has one for. */
 export function MeetingList({
@@ -310,7 +322,7 @@ export function MeetingList({
 }: {
   days: readonly MeetingDay[];
   folders: readonly Folder[];
-  snippets: ReadonlyMap<MeetingId, { where: string | null; text: string }> | null;
+  snippets: ReadonlyMap<MeetingId, { where: string | null; text: MeetingSnippet }> | null;
   selectedId: MeetingId | null;
   onSelect: (id: MeetingId) => void;
   onOpen: (id: MeetingId) => void;
@@ -319,7 +331,7 @@ export function MeetingList({
     <div {...stylex.props(styles.days)}>
       {days.map((day) => (
         <section key={day.day} aria-label={day.label} {...stylex.props(styles.day)}>
-          <h3 {...stylex.props(styles.dayLabel)}>{day.label}</h3>
+          <h2 {...stylex.props(styles.dayLabel)}>{day.label}</h2>
           <Card style={styles.card}>
             <ul {...stylex.props(styles.list)}>
               {day.meetings.map((meeting) => (
@@ -329,8 +341,8 @@ export function MeetingList({
                   folders={folders}
                   snippet={snippets?.get(meeting.id)}
                   selected={meeting.id === selectedId}
-                  onSelect={() => onSelect(meeting.id)}
-                  onOpen={() => onOpen(meeting.id)}
+                  onSelect={onSelect}
+                  onOpen={onOpen}
                 />
               ))}
             </ul>

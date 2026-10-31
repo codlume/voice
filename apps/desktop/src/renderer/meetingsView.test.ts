@@ -5,7 +5,6 @@ import type { Meeting, MeetingId, Speaker, SpeakerId } from "../shared/meetings.
 import {
   expiredBy,
   inlineRuns,
-  liveMeeting,
   meetingDays,
   overview,
   retentionSentence,
@@ -19,13 +18,13 @@ const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).getTim
 const named = (id: string, label: string, name: string | null): Speaker => ({
   id: id as SpeakerId,
   label,
-  name: name === null ? null : { text: name, source: "user" },
+  name: name === null ? null : name,
 });
 
 function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): Meeting {
   return {
     id: id as MeetingId,
-    title: { text: id, source: "user" },
+    title: id,
     createdAt: startedAt,
     spans: [{ startedAt, endedAt: startedAt + 30 * 60_000 }],
     status: { kind: "ready" },
@@ -33,6 +32,8 @@ function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): M
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: null,
+    transcriptRevision: 0,
     ...patch,
   };
 }
@@ -48,7 +49,7 @@ describe("meetingDays", () => {
       meeting("kickoff", at(14, 11)),
     ];
     const days = meetingDays(meetings, today, "en-US");
-    expect(days.map(({ label }) => label)).toEqual(["Today", "Yesterday", "October 14, 2026"]);
+    expect(days.map(({ label }) => label)).toEqual(["Today", "Yesterday", "Wed, Oct 14"]);
     expect(days[1]!.meetings.map(({ id }) => id)).toEqual(["retro", "planning"]);
   });
 
@@ -57,7 +58,12 @@ describe("meetingDays", () => {
       spans: [],
       status: { kind: "starting", from: "new" },
     });
-    expect(meetingDays([empty], today, "en-US")[0]!.label).toBe("October 20, 2026");
+    expect(meetingDays([empty], today, "en-US")[0]!.label).toBe("Tue, Oct 20");
+  });
+
+  test("names the year only for a meeting from an earlier year", () => {
+    const old = meeting("old", new Date(2025, 11, 15, 10).getTime());
+    expect(meetingDays([old], today, "en-US")[0]!.label).toBe("Mon, Dec 15, 2025");
   });
 });
 
@@ -81,6 +87,12 @@ describe("summary", () => {
       "Ania and Tomek agreed to ship the beta on Friday. Annual planning moves to November.",
     );
     expect(overview("### Decisions\n- None")).toBeNull();
+  });
+
+  test("a summary with no overview paragraph has no overview, not its first owner", () => {
+    expect(
+      overview("### Decisions\n\n- Ship\n\n### Next Steps\n\n**{{speaker:s1}}**\n- Tell support\n"),
+    ).toBeNull();
   });
 
   test("next steps keep their owners with the owner's tasks", () => {
@@ -144,14 +156,13 @@ describe("summary", () => {
 test("transcript rows name each voice once per turn and mark pauses and dictation", () => {
   const rows = transcriptRows(
     [
-      { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", final: true, source: "mic" },
+      { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", source: "mic" },
       {
         kind: "segment",
         id: "b",
         startMs: 2000,
         endMs: 3000,
         text: "again",
-        final: true,
         source: "mic",
       },
       { kind: "marker", marker: "dictated", atMs: 4000 },
@@ -161,7 +172,6 @@ test("transcript rows name each voice once per turn and mark pauses and dictatio
         startMs: 65_000,
         endMs: 66_000,
         text: "Hi",
-        final: false,
         source: "system",
         speakerId: null,
       },
@@ -173,7 +183,7 @@ test("transcript rows name each voice once per turn and mark pauses and dictatio
     expect.objectContaining({ speaker: "You", mine: true, time: "00:00", continues: false }),
     expect.objectContaining({ speaker: "You", continues: true }),
     expect.objectContaining({ kind: "marker", text: "Dictated at 00:04" }),
-    expect.objectContaining({ speaker: "Others", mine: false, final: false, continues: false }),
+    expect.objectContaining({ speaker: "Others", mine: false, continues: false }),
     expect.objectContaining({ kind: "marker", text: "Paused at 01:10" }),
   ]);
 });
@@ -184,21 +194,23 @@ test("search results follow main's order, say where they matched, and skip delet
   const results = searchResults(
     [a, b],
     [
-      { id: b.id, field: "transcript", snippet: "…the export bug…" },
-      { id: "gone" as MeetingId, field: "title", snippet: "gone" },
-      { id: a.id, field: "title", snippet: "a" },
+      {
+        id: b.id,
+        field: "transcript",
+        snippet: { before: "…the ", match: "export", after: " bug…" },
+      },
+      {
+        id: "gone" as MeetingId,
+        field: "title",
+        snippet: { before: "", match: "gone", after: "" },
+      },
+      { id: a.id, field: "title", snippet: { before: "", match: "a", after: "" } },
     ],
   );
   expect(results.map((result) => [result.meeting.id, result.where])).toEqual([
     ["b", "Transcript"],
     ["a", null],
   ]);
-});
-
-test("the live meeting is the one recording, paused or starting", () => {
-  const recording = meeting("live", at(22, 9), { status: { kind: "recording", since: at(22, 9) } });
-  expect(liveMeeting([meeting("done", at(22, 8)), recording])?.id).toBe("live");
-  expect(liveMeeting([meeting("done", at(22, 8))])).toBeNull();
 });
 
 describe("retention", () => {

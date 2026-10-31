@@ -1,11 +1,24 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import * as NodePath from "node:path";
 
-export async function writeFileAtomic(
+// Writes of one file share its temp file, so they run one at a time, in the order they were asked.
+const pending = new Map<string, Promise<void>>();
+
+export function writeFileAtomic(
   file: string,
   text: string,
   options: { mode?: number } = {},
 ): Promise<void> {
+  const write = (pending.get(file) ?? Promise.resolve()).then(() => replace(file, text, options));
+  const settled = write.catch(() => {});
+  pending.set(file, settled);
+  void settled.then(() => {
+    if (pending.get(file) === settled) pending.delete(file);
+  });
+  return write;
+}
+
+async function replace(file: string, text: string, options: { mode?: number }) {
   await mkdir(NodePath.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
   try {

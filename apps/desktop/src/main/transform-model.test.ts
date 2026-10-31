@@ -1,9 +1,15 @@
 import { MessageChannel, type MessagePort } from "node:worker_threads";
 
-import type { TransformEngine, TransformRequest, TransformResult } from "@voice/cleanup/transform";
+import type {
+  GenerateRequest,
+  TransformEngine,
+  TransformRequest,
+  TransformResult,
+} from "@voice/cleanup/transform";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { ModelStatus } from "../shared/api.ts";
+import { ABORT_GRACE_MS } from "./engine-process.ts";
 import { createTransformProcess, serve } from "./transform-engine.ts";
 import {
   createTransformModel,
@@ -30,6 +36,7 @@ type FakeWorker = {
   loads: number;
   disposes: number;
   runs: Run[];
+  generated: Omit<GenerateRequest, "signal">[];
   closed: boolean;
   crash(): void;
 };
@@ -53,6 +60,7 @@ function harness({
   onDisk = true,
   holdLoad = false,
   holdRuns = false,
+  holdFirstGenerate = false,
   loadError = undefined as string | undefined,
   keepLoaded = false,
 } = {}) {
@@ -61,6 +69,7 @@ function harness({
   const disk = { present: onDisk, downloads: 0, removes: 0 };
   let loadGate = holdLoad ? deferred() : undefined;
   const runStarted: (() => void)[] = [];
+  const heldStep = deferred();
 
   const module: TransformModule = {
     source: {
@@ -89,6 +98,7 @@ function harness({
         loads: 0,
         disposes: 0,
         runs: [],
+        generated: [],
         closed: false,
         crash: () => port2.close(),
       };
@@ -106,6 +116,18 @@ function harness({
             worker.runs.push({ request: received, finish: resolve });
             runStarted.shift()?.();
             if (!holdRuns) resolve(RESULT);
+          }),
+        generate: ({ signal, ...received }) =>
+          new Promise((resolve, reject) => {
+            worker.generated.push(received);
+            const answer = { ok: true, text: '{"answer": "no"}', truncated: false } as const;
+            signal.addEventListener("abort", () => reject(signal.reason));
+            // A step slow to stop: it finishes only when the test says so.
+            if (holdFirstGenerate && worker.generated.length === 1) {
+              void heldStep.promise.then(() => resolve(answer));
+              return;
+            }
+            resolve(answer);
           }),
         dispose: async () => {
           worker.disposes += 1;
@@ -156,6 +178,7 @@ function harness({
       loadGate = undefined;
     },
     nextRun: () => new Promise<void>((resolve) => runStarted.push(resolve)),
+    finishStep: () => heldStep.resolve(),
     last: () => statuses.at(-1),
   };
 }
@@ -214,6 +237,51 @@ describe("transform model", () => {
       text: "so um the launch moved to friday",
       dictation: { instructionKeepsWords: true },
     });
+  });
+
+  test("a generate step crosses to the same process with its JSON schema, and its result comes back", async () => {
+    const { model, workers } = harness();
+    await model.refresh();
+    const step = {
+      system: "You are a meeting notes tool.",
+      user: "Part 1 of 2.",
+      maxTokens: 20,
+      temperature: 0,
+      jsonSchema: { type: "object", properties: { answer: { enum: ["yes", "no"] } } },
+      budgetMs: 60_000,
+    } as const;
+
+    await model.run(request());
+    const result = await model.generate({ ...step, signal: new AbortController().signal });
+
+    expect(result).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.generated).toEqual([step]);
+  });
+
+  test("a Transform during a step slow to stop never cancels the step, so the process is not killed", async () => {
+    const { model, workers, finishStep } = harness({ holdFirstGenerate: true });
+    await model.refresh();
+    const step = {
+      system: "You are a meeting notes tool.",
+      user: "Part 1 of 2.",
+      maxTokens: 20,
+      temperature: 0,
+      budgetMs: 60_000,
+    };
+    const generating = model.generate({ ...step, signal: new AbortController().signal });
+    await vi.waitFor(() => expect(workers[0]?.generated).toHaveLength(1));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    const transformed = model.run(request());
+    await vi.advanceTimersByTimeAsync(ABORT_GRACE_MS * 2);
+
+    // The engine in the process makes the step yield; preempting it here would have armed the kill.
+    expect(await transformed).toEqual(RESULT);
+    expect(workers[0]!.closed).toBe(false);
+    finishStep();
+    expect(await generating).toEqual({ ok: true, text: '{"answer": "no"}', truncated: false });
+    expect(workers).toHaveLength(1);
   });
 
   test("warm loads once however often it is called, and a run reuses that process", async () => {

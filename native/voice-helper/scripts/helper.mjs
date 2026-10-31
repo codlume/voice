@@ -178,6 +178,19 @@ export async function prepareAsr(helper, { download = false } = {}) {
   return performance.now() - startedAt;
 }
 
+// The speaker detection models a meeting's final pass needs; below macOS 15 there are none.
+export async function prepareSpeakerModels(helper) {
+  helper.send({ type: "meeting.models.download" });
+  const status = await helper.waitFor(
+    (event) =>
+      event.type === "meeting.models.status" &&
+      ["ready", "unavailable", "failed"].includes(event.state),
+    { timeoutMs: 10 * 60_000, label: "meeting.models.status ready" },
+  );
+  assert(status.state !== "failed", `meeting.models.status is failed: ${status.message ?? ""}`);
+  return status.state;
+}
+
 export async function dictateFixture(helper, name, id, language = "en", { onStarted } = {}) {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;

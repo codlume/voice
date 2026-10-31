@@ -47,7 +47,7 @@ final class Meetings {
             let states = try leg.start()
             legs[id] = leg
             job.record(systemActive: states.system == .active)
-            output.emit(.meetingStarted(id: id, mic: states.mic, system: states.system))
+            output.emit(.meetingStarted(id: id, atMs: baseMs + PcmFile.milliseconds(leg.startFrames), mic: states.mic, system: states.system))
         } catch {
             leg.stop()
             job.drain()
@@ -109,7 +109,8 @@ final class Meetings {
 /// window starts decoding while a dictation runs.
 @MainActor
 final class MeetingTranscription {
-    typealias Decode = (_ samples: [Float], _ language: DictationLanguage) async throws -> String
+    /// The words in `samples`, with times in ms into them.
+    typealias Decode = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
 
     private let id: String
     private let output: Output
@@ -186,6 +187,7 @@ final class MeetingTranscription {
             }
             guard let window = nextWindow() else {
                 if recording {
+                    publish()
                     if let partial = nextPartial() {
                         await showPartial(partial)
                     } else {
@@ -242,12 +244,16 @@ final class MeetingTranscription {
     private func transcribe(_ window: Window) async throws {
         var heard = false
         if let speech = MeetingChunker.speech(in: window.samples) {
-            let text = try await decode(window.samples, language).trimmingCharacters(in: .whitespacesAndNewlines)
+            let startMs = meetingMs(window.offset)
+            let words = try await decode(window.samples, language).map {
+                TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
+            }
             try Task.checkCancellation()
-            if !text.isEmpty {
+            if !words.isEmpty {
                 heard = true
                 filter.add(TimedText(source: window.source, startMs: meetingMs(window.offset + speech.lowerBound),
-                                     endMs: meetingMs(window.offset + speech.upperBound), text: text))
+                                     endMs: meetingMs(window.offset + speech.upperBound), text: Self.text(words)),
+                           words: words, nowMs: Self.nowMs)
             }
         }
         cursor[window.source] = window.offset + window.samples.count
@@ -276,9 +282,8 @@ final class MeetingTranscription {
     /// Text that may still change, for the live view only; it is never saved.
     private func showPartial(_ window: Window) async {
         partialEnd[window.source] = window.offset + window.samples.count
-        guard let text = try? await decode(window.samples, language).trimmingCharacters(in: .whitespacesAndNewlines),
-              !Task.isCancelled, !text.isEmpty
-        else { return }
+        guard let words = try? await decode(window.samples, language), !Task.isCancelled, !words.isEmpty else { return }
+        let text = Self.text(words)
         showing.insert(window.source)
         output.emit(.meetingPartial(id: id, source: window.source, text: text))
     }
@@ -291,15 +296,16 @@ final class MeetingTranscription {
     /// `systemDone` once no system audio is left to transcribe, which releases every mic segment.
     private func publish(systemDone: Bool = false) {
         let systemMissing = !FileManager.default.fileExists(atPath: file(.system).path) || (recording && !systemActive)
-        filter.systemReached(systemDone || systemMissing ? .infinity : meetingMs(cursor[.system] ?? 0))
-        let released = filter.release()
+        let released = filter.release(systemMs: systemDone || systemMissing ? .infinity : meetingMs(cursor[.system] ?? 0),
+                                      nowMs: Self.nowMs,
+                                      output: OutputTimeline.read(dir: dir, baseMs: baseMs))
         // Counts only: transcript text never goes to the log.
         for echo in filter.takeDropped() {
-            output.log(.info, "meeting echo dropped a \(EchoFilter.words(echo.text).count)-word mic segment")
+            output.log(.info, "meeting echo dropped a \(echo.text.split(separator: " ").count)-word mic segment")
             clearPartial(.mic)
         }
         for segment in released {
-            // The segment goes first, so the live view never shows neither.
+            // The segment goes out before its partial clears, so the line never blinks out.
             output.emit(.meetingSegment(id: id, source: segment.source, startMs: segment.startMs, endMs: segment.endMs, text: segment.text))
             clearPartial(segment.source)
         }
@@ -307,6 +313,14 @@ final class MeetingTranscription {
 
     private func meetingMs(_ frames: Int) -> Double {
         baseMs + PcmFile.milliseconds(frames)
+    }
+
+    private static var nowMs: Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000
+    }
+
+    private static func text(_ words: [TimedWord]) -> String {
+        words.map(\.text).joined(separator: " ")
     }
 
     private func file(_ source: MeetingSource) -> URL {
@@ -321,8 +335,9 @@ final class MeetingTranscription {
 @MainActor
 final class MeetingFinalPass {
     typealias DecodeWords = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
-    /// Speaker turns in ms from the start of the file, or nil when the voices cannot be told apart.
-    typealias Diarize = (_ url: URL) async -> [SpeakerTurn]?
+    /// Speaker turns in ms from the start of the file, or nil on a Mac that cannot tell voices
+    /// apart. Throws `MeetingFinalizeError` when it could have and did not.
+    typealias Diarize = (_ url: URL) async throws -> [SpeakerTurn]?
 
     private let output: Output
     private let decode: DecodeWords
@@ -347,16 +362,19 @@ final class MeetingFinalPass {
             var turns: [SpeakerTurn]?
             if !system.isEmpty {
                 try await dictationDone()
-                turns = await diarize(systemURL)?.map {
+                turns = try await diarize(systemURL)?.map {
                     SpeakerTurn(speaker: $0.speaker, startMs: baseMs + $0.startMs, endMs: baseMs + $0.endMs)
                 }
             }
             try Task.checkCancellation()
-            output.emit(.meetingFinalized(id: id, segments: FinalTranscript.segments(mic: mic, system: system, turns: turns)))
+            let segments = FinalTranscript.segments(mic: mic, system: system, turns: turns, output: OutputTimeline.read(dir: dir, baseMs: baseMs))
+            output.emit(.meetingFinalized(id: id, segments: segments))
         } catch is CancellationError {
             return
+        } catch let error as MeetingFinalizeError {
+            output.emit(.meetingFinalizeFailed(id: id, reason: error.reason, message: error.message))
         } catch {
-            output.emit(.meetingFinalizeFailed(id: id, message: (error as? TranscribeError)?.message ?? "\(error)"))
+            output.emit(.meetingFinalizeFailed(id: id, reason: .transcript, message: (error as? TranscribeError)?.message ?? "\(error)"))
         }
     }
 

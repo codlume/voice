@@ -87,7 +87,8 @@ const ruleText = (folder: Folder) =>
 
 const countText = (count: number) => (count === 1 ? "1 meeting" : `${count} meetings`);
 
-type Editing = { open: boolean; folder: Folder | null };
+// Each open gets a fresh dialog, so a cancelled edit never carries into the next one.
+type Editing = { open: boolean; folder: Folder | null; key: string };
 type Deleting = { open: boolean; folder: Folder };
 
 export function MeetingFolders({
@@ -110,11 +111,14 @@ export function MeetingFolders({
   const inFolder = (folder: Folder) =>
     meetings.filter(({ folderIds }) => folderIds.includes(folder.id));
   const open = folders.find(({ id }) => id === openId);
+  const edit = (folder: Folder | null) =>
+    setEditing({ open: true, folder, key: crypto.randomUUID() });
 
   const dialogs = (
     <>
       {editing && (
         <FolderDialog
+          key={editing.key}
           folder={editing.folder}
           open={editing.open}
           onOpenChange={(next) => setEditing({ ...editing, open: next })}
@@ -166,7 +170,7 @@ export function MeetingFolders({
             <h2 {...stylex.props(styles.folderTitle)}>{open.name}</h2>
             <span {...stylex.props(styles.detail)}>{ruleText(open)}</span>
           </div>
-          <Button variant="secondary" onClick={() => setEditing({ open: true, folder: open })}>
+          <Button variant="secondary" onClick={() => edit(open)}>
             Edit
           </Button>
         </div>
@@ -211,7 +215,7 @@ export function MeetingFolders({
           />
           <Field.Label {...stylex.props(styles.autoLabel)}>Automatic folders</Field.Label>
         </Field.Root>
-        <Button variant="secondary" onClick={() => setEditing({ open: true, folder: null })}>
+        <Button variant="secondary" onClick={() => edit(null)}>
           <FolderPlusIcon size={14} aria-hidden="true" />
           New folder
         </Button>
@@ -251,7 +255,7 @@ export function MeetingFolders({
                     variant="icon"
                     aria-label={`Edit folder ${folder.name}`}
                     title="Edit"
-                    onClick={() => setEditing({ open: true, folder })}
+                    onClick={() => edit(folder)}
                   >
                     <PencilIcon size={15} />
                   </Button>
