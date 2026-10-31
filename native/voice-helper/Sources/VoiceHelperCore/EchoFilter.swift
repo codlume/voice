@@ -75,10 +75,6 @@ public enum EchoPolicy {
     /// How far a mic word may trail the system word it repeats. It may also lead it a little: the
     /// two files' clocks start a device's latency apart, and word times are only that exact.
     static let lagMs = -400.0...700.0
-    /// The share of a live segment's words that must be echo to drop it; a segment that mixes the
-    /// user's words with echo stays whole.
-    static let segmentShare = 0.8
-
     /// For each mic word, whether it is echo of `system`. Both lists in time order.
     public static func echoes(mic: [TimedWord], system: [TimedWord], output: OutputTimeline) -> [Bool] {
         let micKeys = mic.map { key($0.text) }
@@ -87,19 +83,19 @@ public enum EchoPolicy {
             !micKeys[i].isEmpty && micKeys[i] == systemKeys[j] && lagMs.contains(mic[i].startMs - system[j].startMs)
                 && output.output(atMs: mic[i].startMs) == .speakers
         }
-        // Longest common ordered subsequence under `matches`, then the mic words it uses.
+        // Longest common ordered subsequence under `matches`, then the system word each mic word repeats.
         var length = [[Int]](repeating: [Int](repeating: 0, count: system.count + 1), count: mic.count + 1)
         for i in stride(from: mic.count - 1, through: 0, by: -1) {
             for j in stride(from: system.count - 1, through: 0, by: -1) {
                 length[i][j] = matches(i, j) ? length[i + 1][j + 1] + 1 : max(length[i + 1][j], length[i][j + 1])
             }
         }
-        var matched = [Bool](repeating: false, count: mic.count)
+        var repeats = [Int?](repeating: nil, count: mic.count)
         var i = 0
         var j = 0
         while i < mic.count, j < system.count {
             if matches(i, j), length[i][j] == length[i + 1][j + 1] + 1 {
-                matched[i] = true
+                repeats[i] = j
                 i += 1
                 j += 1
             } else if length[i + 1][j] >= length[i][j + 1] {
@@ -108,21 +104,25 @@ public enum EchoPolicy {
                 j += 1
             }
         }
-        // Runs of matched words, bridging one word the model heard differently.
+        // Runs of repeated words. A word the model heard differently ("bill" for "build") stays in
+        // its run only where it sounds like the one system word the run skips there; the user's
+        // own word between two echoes does not.
         var echoes = [Bool](repeating: false, count: mic.count)
         var start = 0
         while start < mic.count {
-            guard matched[start] else {
+            guard var last = repeats[start] else {
                 start += 1
                 continue
             }
             var end = start + 1
             var count = 1
             while end < mic.count {
-                if matched[end] {
+                if let next = repeats[end] {
+                    last = next
                     count += 1
                     end += 1
-                } else if end + 1 < mic.count, matched[end + 1] {
+                } else if end + 1 < mic.count, let next = repeats[end + 1], next == last + 2,
+                          misheard(micKeys[end], as: systemKeys[last + 1]) {
                     end += 1
                 } else {
                     break
@@ -134,11 +134,21 @@ public enum EchoPolicy {
         return echoes
     }
 
-    /// Whether a whole live segment is echo.
-    public static func isEcho(_ mic: [TimedWord], system: [TimedWord], output: OutputTimeline) -> Bool {
-        guard mic.count >= minimumWords else { return false }
-        let echoed = echoes(mic: mic, system: system, output: output).filter { $0 }.count
-        return Double(echoed) / Double(mic.count) >= segmentShare
+    static func misheard(_ heard: String, as said: String) -> Bool {
+        let a = Array(heard)
+        let b = Array(said)
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        var row = Array(0...b.count)
+        for i in 1...a.count {
+            var previous = row[0]
+            row[0] = i
+            for j in 1...b.count {
+                let diagonal = previous
+                previous = row[j]
+                row[j] = min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+        }
+        return row[b.count] * 2 <= max(a.count, b.count)
     }
 
     /// A word as compared: its letters and digits, lowercased, so "Friday." and "friday" match.
@@ -147,9 +157,10 @@ public enum EchoPolicy {
     }
 }
 
-/// The live view's echo check. A mic segment waits until the system transcript passes it, so the
-/// check sees every system word it needs, but never longer than `waitMs` of further mic audio:
-/// the user's own line shows soon even while the other side talks on without a pause. With
+/// The live view's echo check, which drops the echo runs `EchoPolicy` finds in a mic segment. A
+/// mic segment waits until the system transcript passes it, so the
+/// check sees every system word it needs, but never longer than `waitMs`: the user's own line
+/// shows soon even while the other side talks on without a pause or its decode runs late. With
 /// headphones on it does not wait at all.
 public struct EchoFilter: Sendable {
     public static let waitMs = 3000.0
@@ -159,6 +170,7 @@ public struct EchoFilter: Sendable {
     private struct Waiting {
         let segment: TimedText
         let words: [TimedWord]
+        let sinceMs: Double
     }
 
     private var system: [TimedWord] = []
@@ -168,35 +180,41 @@ public struct EchoFilter: Sendable {
 
     public init() {}
 
-    /// A final segment with the words it was decoded from, in meeting time.
-    public mutating func add(_ segment: TimedText, words: [TimedWord]) {
+    /// A final segment with the words it was decoded from, in meeting time. `nowMs` is a
+    /// monotonic clock, the same one `release` gets.
+    public mutating func add(_ segment: TimedText, words: [TimedWord], nowMs: Double) {
         switch segment.source {
         case .system:
             system += words
             ready.append(segment)
         case .mic:
-            waiting.append(Waiting(segment: segment, words: words))
+            waiting.append(Waiting(segment: segment, words: words, sinceMs: nowMs))
         }
     }
 
     /// Segments to publish, in the order they became final. `systemMs` is how far the system
-    /// transcript reaches (infinity when no system audio is coming), `micMs` how far mic audio is
-    /// recorded.
-    public mutating func release(systemMs: Double, micMs: Double, output: OutputTimeline) -> [TimedText] {
+    /// transcript reaches, infinity when no system audio is coming.
+    public mutating func release(systemMs: Double, nowMs: Double, output: OutputTimeline) -> [TimedText] {
         var due: [Waiting] = []
         waiting.removeAll { item in
             let segment = item.segment
             let isDue = output.output(atMs: segment.startMs) == .headphones && output.output(atMs: segment.endMs) == .headphones
                 || segment.endMs + EchoPolicy.lagMs.upperBound <= systemMs
-                || segment.endMs + Self.waitMs <= micMs
+                || item.sinceMs + Self.waitMs <= nowMs
             if isDue { due.append(item) }
             return isDue
         }
         for item in due {
-            if EchoPolicy.isEcho(item.words, system: system, output: output) {
-                dropped.append(item.segment)
-            } else {
+            let echoes = EchoPolicy.echoes(mic: item.words, system: system, output: output)
+            guard echoes.contains(true) else {
                 ready.append(item.segment)
+                continue
+            }
+            // Only the echo goes; the user's words around it stay, as in the final pass.
+            for run in runs(item.words, echoes) {
+                let text = TimedText(source: .mic, startMs: run.words[0].startMs, endMs: run.words[run.words.count - 1].endMs,
+                                     text: run.words.map(\.text).joined(separator: " "))
+                if run.echo { dropped.append(text) } else { ready.append(text) }
             }
         }
         let horizon = min(systemMs, waiting.map(\.segment.startMs).min() ?? .infinity) - Self.keepMs
@@ -205,7 +223,13 @@ public struct EchoFilter: Sendable {
         return ready
     }
 
-    /// Mic segments dropped as echo since the last call.
+    private func runs(_ words: [TimedWord], _ echoes: [Bool]) -> [(echo: Bool, words: [TimedWord])] {
+        zip(words, echoes).reduce(into: []) { runs, pair in
+            if runs.last?.echo == pair.1 { runs[runs.count - 1].words.append(pair.0) } else { runs.append((pair.1, [pair.0])) }
+        }
+    }
+
+    /// Mic text dropped as echo since the last call.
     public mutating func takeDropped() -> [TimedText] {
         defer { dropped.removeAll() }
         return dropped
