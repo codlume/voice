@@ -22,7 +22,14 @@ import { dictationLanguages } from "./dictation-language.ts";
 import { parseDictionary } from "./dictionary.ts";
 import { MicrophoneSchema } from "./microphone.ts";
 import { parseSnippets } from "./snippets.ts";
-import { isValidTransformList, parseTransforms, type TransformId } from "./transforms.ts";
+import {
+  isValidTransformList,
+  parseShortcut,
+  parseTransforms,
+  sameShortcut,
+  type Shortcut,
+  type TransformId,
+} from "./transforms.ts";
 
 // Parsing drops invalid items; refuse the save rather than lose text the user just typed.
 const everyItem = <T>(
@@ -97,6 +104,14 @@ export const SettingsPatchSchema = Schema.Struct({
         Schema.NullOr(Schema.declare((u): u is TransformId => typeof u === "string")),
       ),
     }),
+  ),
+  meetingShortcut: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.declare((u): u is Shortcut => {
+        const shortcut = parseShortcut(u);
+        return shortcut !== null && sameShortcut(shortcut, u as Shortcut);
+      }),
+    ),
   ),
 } satisfies Record<keyof Settings, unknown>);
 

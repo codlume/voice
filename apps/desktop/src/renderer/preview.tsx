@@ -771,6 +771,7 @@ function fakeMeetings(
     },
     exportMeetingMarkdown: async () => "cancelled",
     startMeeting: unavailable,
+    toggleMeeting: unavailable,
     pauseMeeting: unavailable,
     resumeMeeting: unavailable,
     stopMeeting: unavailable,
@@ -900,6 +901,10 @@ function fakeVoice(
           pageAnimationMs: patch.pageAnimationMs ?? snapshot.settings.pageAnimationMs,
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
+          meetingShortcut:
+            patch.meetingShortcut === undefined
+              ? snapshot.settings.meetingShortcut
+              : patch.meetingShortcut,
           lowerAudioWhileDictating:
             patch.lowerAudioWhileDictating ?? snapshot.settings.lowerAudioWhileDictating,
           lowerAudioByPercent: patch.lowerAudioByPercent ?? snapshot.settings.lowerAudioByPercent,

@@ -12,10 +12,10 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { MeetingSource } from "../shared/meetings.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { Target } from "../shared/style.ts";
-import type { HelperShortcut } from "../shared/transforms.ts";
+import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 16;
+export const HELPER_PROTOCOL_VERSION = 17;
 
 export type HelperCommand =
   | {
@@ -23,6 +23,7 @@ export type HelperCommand =
       key: Hotkey;
       toggleKey: Hotkey | null;
       transforms: readonly HelperShortcut[];
+      meeting: Shortcut | null;
     }
   | { type: "microphone.configure"; microphone: Microphone | null }
   | {
@@ -169,6 +170,7 @@ const HelperEventSchema = Schema.Union([
     uptimeMs: nullOnInvalid(Schema.Finite),
   }),
   Schema.Struct({ type: Schema.Literal("transform"), transformId: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("meeting.shortcut") }),
   Schema.Struct({
     type: Schema.Literal("selection.result"),
     id: Schema.String,

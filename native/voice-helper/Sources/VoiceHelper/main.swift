@@ -69,8 +69,8 @@ final class Helper {
     @MainActor
     private func dispatch(_ command: HelperCommand, receivedAt: DispatchTime) {
         switch command {
-        case .hotkeyConfigure(let key, let toggleKey, let transforms):
-            hotkeyTap.configure(key: key, toggleKey: toggleKey, transforms: transforms)
+        case .hotkeyConfigure(let key, let toggleKey, let transforms, let meeting):
+            hotkeyTap.configure(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting)
         case .microphoneConfigure(let microphone):
             capture.configure(microphone: microphone)
         case .captureStart(let id, let language, let outputVolumeScale, let microphone, let detectHost, let hotkeyUptimeMs):

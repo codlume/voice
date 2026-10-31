@@ -26,7 +26,14 @@ import {
 import { parseDictionary } from "../shared/dictionary.ts";
 import { parseDictationLanguage } from "../shared/dictation-language.ts";
 import { parseSnippets } from "../shared/snippets.ts";
-import { parseTransformSettings } from "../shared/transforms.ts";
+import { DEFAULT_MEETING_SHORTCUT } from "../shared/meetings.ts";
+import {
+  parseShortcut,
+  parseTransformSettings,
+  sameShortcut,
+  type Shortcut,
+  type TransformSettings,
+} from "../shared/transforms.ts";
 import type { Category } from "../shared/app-categories.ts";
 import { DEFAULT_STYLES, parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import { SettingsPatchSchema } from "../shared/settings-patch.ts";
@@ -89,12 +96,23 @@ function parseStyles(c: Record<string, unknown>): CategoryStyles {
   };
 }
 
+// Transforms had their shortcuts first, so a transform's shortcut stays the transform's.
+function parseMeetingShortcut(raw: unknown, transforms: TransformSettings): Shortcut | null {
+  const shortcut = raw === undefined ? DEFAULT_MEETING_SHORTCUT : parseShortcut(raw);
+  if (shortcut === null) return null;
+  const taken = transforms.items.some(
+    (transform) => transform.shortcut && sameShortcut(transform.shortcut, shortcut),
+  );
+  return taken ? null : shortcut;
+}
+
 export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "stable"): Settings {
   const r = record(raw);
   const c = record(r.cleanup);
   const d = DEFAULT_SETTINGS.cleanup;
   const hotkey = pick(hotkeys, r.hotkey, DEFAULT_SETTINGS.hotkey);
   const toggleHotkey = pick(hotkeys, r.toggleHotkey, null);
+  const transforms = parseTransformSettings(r.transforms);
   return {
     microphone: Option.getOrNull(Schema.decodeUnknownOption(MicrophoneSchema)(r.microphone)),
     hotkey,
@@ -128,7 +146,8 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
     snippets: parseSnippets(r.snippets),
     dictionary: parseDictionary(r.dictionary),
     zoomLevel: parseZoomLevel(r.zoomLevel),
-    transforms: parseTransformSettings(r.transforms),
+    transforms,
+    meetingShortcut: parseMeetingShortcut(r.meetingShortcut, transforms),
   };
 }
 

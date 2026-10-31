@@ -1,6 +1,8 @@
 import { useEffect, useEffectEvent, useState } from "react";
 
+import type { Shortcut as KeyCombo } from "../shared/transforms.ts";
 import { dictationKeys, type DictationKeySettings } from "./hotkeys.ts";
+import { pressMatches } from "./shortcutCapture.ts";
 
 type ShortcutEvent = Pick<
   KeyboardEvent,
@@ -57,6 +59,24 @@ export function useShortcuts(bindings: readonly Binding[], { reachAppModal = fal
     if (!binding) return;
     event.preventDefault();
     if (!event.repeat) binding.run();
+  });
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+}
+
+/**
+ * The meeting shortcut while a Voice window has focus, where the helper's tap stands down so a
+ * shortcut picker can record those keys. A picker that takes the press prevents its default.
+ */
+export function useMeetingShortcut(combo: KeyCombo | null, run: () => void) {
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (combo === null || event.defaultPrevented || !pressMatches(combo, event)) return;
+    event.preventDefault();
+    if (!event.repeat) run();
   });
 
   useEffect(() => {

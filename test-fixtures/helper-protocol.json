@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 16,
+  "protocolVersion": 17,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 15,
+      "version": 16,
       "compatible": false
     },
     {
-      "version": 16,
+      "version": 17,
       "compatible": true
     },
     {
-      "version": 17,
+      "version": 18,
       "compatible": false
     }
   ],
@@ -50,9 +50,10 @@
         "type": "hotkey.configure",
         "key": "fn",
         "toggleKey": null,
-        "transforms": []
+        "transforms": [],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "hotkey.configure.toggle",
@@ -60,9 +61,10 @@
         "type": "hotkey.configure",
         "key": "rightOption",
         "toggleKey": "rightCommand",
-        "transforms": []
+        "transforms": [],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "hotkey.configure.transforms",
@@ -81,9 +83,24 @@
             "keycode": 40,
             "modifiers": ["control", "option", "command"]
           }
-        ]
+        ],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
+    },
+    {
+      "name": "hotkey.configure.meeting",
+      "wire": {
+        "type": "hotkey.configure",
+        "key": "fn",
+        "toggleKey": null,
+        "transforms": [],
+        "meeting": {
+          "keycode": 46,
+          "modifiers": ["option"]
+        }
+      },
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "microphone.configure",
@@ -469,11 +486,11 @@
     },
     {
       "name": "unknown-hotkey",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null,\"transforms\":[]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null,\"transforms\":[],\"meeting\":null}"
     },
     {
       "name": "unknown-toggle",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\",\"transforms\":[]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\",\"transforms\":[],\"meeting\":null}"
     },
     {
       "name": "missing-transforms",
@@ -481,19 +498,27 @@
     },
     {
       "name": "unknown-modifier",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"fn\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"fn\"]}],\"meeting\":null}"
     },
     {
       "name": "fractional-keycode",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}],\"meeting\":null}"
     },
     {
       "name": "unmodified-transform",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}],\"meeting\":null}"
     },
     {
       "name": "shift-only-transform",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}],\"meeting\":null}"
+    },
+    {
+      "name": "missing-meeting",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[]}"
+    },
+    {
+      "name": "shift-only-meeting",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[],\"meeting\":{\"keycode\":46,\"modifiers\":[\"shift\"]}}"
     },
     {
       "name": "unknown-permission",
@@ -583,11 +608,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 16
+        "version": 17
       },
       "parsed": {
         "type": "ready",
-        "version": 16
+        "version": 17
       },
       "required": ["type", "version"]
     },
@@ -672,6 +697,16 @@
         "transformId": "polish"
       },
       "required": ["type", "transformId"]
+    },
+    {
+      "name": "meeting.shortcut",
+      "wire": {
+        "type": "meeting.shortcut"
+      },
+      "parsed": {
+        "type": "meeting.shortcut"
+      },
+      "required": ["type"]
     },
     {
       "name": "selection.result.selected",

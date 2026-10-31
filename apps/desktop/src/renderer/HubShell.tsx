@@ -43,6 +43,7 @@ import {
   jumpShortcuts,
   shortcuts,
   useCommandHeld,
+  useMeetingShortcut,
   useShortcuts,
   withShortcut,
   type Binding,
@@ -54,6 +55,7 @@ import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
+import { hubApi } from "./voice.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
@@ -700,6 +702,7 @@ export function HubShell({
         ],
     { reachAppModal: true },
   );
+  useMeetingShortcut(snapshot.settings.meetingShortcut, () => void hubApi().toggleMeeting());
   const commandHeld = useCommandHeld(snapshot.settings);
 
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";

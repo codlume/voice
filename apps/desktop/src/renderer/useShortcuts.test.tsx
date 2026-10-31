@@ -5,7 +5,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test } from "vite-plus/test";
 
-import { jumpShortcuts, shortcuts, useShortcuts } from "./shortcuts.ts";
+import type { Shortcut as KeyCombo } from "../shared/transforms.ts";
+import { jumpShortcuts, shortcuts, useMeetingShortcut, useShortcuts } from "./shortcuts.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -152,4 +153,60 @@ test("shortcuts do not run inside an alert dialog nested in the app modal", asyn
   );
   await press(field("nested-confirm"), "1", "Digit1");
   expect(ran).toEqual([]);
+});
+
+async function mountMeeting(shortcut: KeyCombo | null, children: ReactNode = null) {
+  const ran: string[] = [];
+  function Shell() {
+    useMeetingShortcut(shortcut, () => ran.push("meeting"));
+    return children;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(<Shell />));
+  return ran;
+}
+
+async function pressOption(target: Element, code: string, init: KeyboardEventInit = {}) {
+  const event = new KeyboardEvent("keydown", {
+    key: "µ",
+    code,
+    altKey: true,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  await act(async () => {
+    target.dispatchEvent(event);
+  });
+  return event;
+}
+
+const OPTION_M: KeyCombo = { keycode: 46, modifiers: ["option"] };
+
+function Picker() {
+  return <button id="picker" onKeyDown={(event) => event.preventDefault()} />;
+}
+
+test("the meeting shortcut runs once per press by key position and types nothing", async () => {
+  const ran = await mountMeeting(OPTION_M, <textarea id="notes" />);
+  const notes = field("notes");
+  expect((await pressOption(notes, "KeyM")).defaultPrevented).toBe(true);
+  await pressOption(notes, "KeyM", { repeat: true });
+  await pressOption(notes, "KeyM", { shiftKey: true });
+  await pressOption(notes, "KeyN");
+  expect(ran).toEqual(["meeting"]);
+});
+
+test("the meeting shortcut leaves a press a picker took, and does nothing when off", async () => {
+  const ran = await mountMeeting(OPTION_M, <Picker />);
+  await pressOption(field("picker"), "KeyM");
+  expect(ran).toEqual([]);
+  await act(async () => root?.unmount());
+  document.body.replaceChildren();
+
+  const off = await mountMeeting(null, <input id="field" />);
+  await pressOption(field("field"), "KeyM");
+  expect(off).toEqual([]);
 });

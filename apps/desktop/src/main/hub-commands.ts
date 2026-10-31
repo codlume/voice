@@ -319,6 +319,7 @@ function registerMeetingCommands(
     return "saved";
   });
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
+  hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.pauseMeeting, withMeeting(recorder.pause));
   hubCommands.handle(Channel.resumeMeeting, withMeeting(recorder.resume));
   hubCommands.handle(Channel.stopMeeting, withMeeting(recorder.stop));

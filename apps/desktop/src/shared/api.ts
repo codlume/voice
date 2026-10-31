@@ -5,23 +5,29 @@ import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryChange, HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
-import type {
-  Folder,
-  FolderDraft,
-  FolderId,
-  MeetingCommandResult,
-  MeetingDetail,
-  MeetingId,
-  MeetingSearchHit,
-  MeetingsChange,
-  MeetingsSettingsPatch,
-  MeetingsState,
-  MeetingNotice,
-  MeetingTranscriptChange,
+import {
+  DEFAULT_MEETING_SHORTCUT,
+  type Folder,
+  type FolderDraft,
+  type FolderId,
+  type MeetingCommandResult,
+  type MeetingDetail,
+  type MeetingId,
+  type MeetingSearchHit,
+  type MeetingsChange,
+  type MeetingsSettingsPatch,
+  type MeetingsState,
+  type MeetingNotice,
+  type MeetingTranscriptChange,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
-import { DEFAULT_TRANSFORMS, type LastTransform, type TransformSettings } from "./transforms.ts";
+import {
+  DEFAULT_TRANSFORMS,
+  type LastTransform,
+  type Shortcut,
+  type TransformSettings,
+} from "./transforms.ts";
 import {
   DEFAULT_STYLES,
   type Assignment,
@@ -229,6 +235,8 @@ export type Settings = {
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
   zoomLevel: number;
   transforms: TransformSettings;
+  /** Starts a meeting, or stops the one recording. Never one a transform uses. */
+  meetingShortcut: Shortcut | null;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -250,6 +258,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictionary: [],
   zoomLevel: 0,
   transforms: DEFAULT_TRANSFORMS,
+  meetingShortcut: DEFAULT_MEETING_SHORTCUT,
 };
 
 export type { SettingsPatch } from "./settings-patch.ts";
@@ -374,6 +383,8 @@ export type HubApi = WindowApi & {
   /** Opens a save dialog for a .md file. */
   exportMeetingMarkdown(id: MeetingId): Promise<"saved" | "cancelled">;
   startMeeting(): Promise<MeetingCommandResult>;
+  /** What the meeting shortcut does: stops the meeting that records or is paused, or starts one. */
+  toggleMeeting(): Promise<MeetingCommandResult>;
   pauseMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   resumeMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   stopMeeting(id: MeetingId): Promise<MeetingCommandResult>;
@@ -447,6 +458,7 @@ export const Channel = {
   copyMeetingMarkdown: "voice:copyMeetingMarkdown",
   exportMeetingMarkdown: "voice:exportMeetingMarkdown",
   startMeeting: "voice:startMeeting",
+  toggleMeeting: "voice:toggleMeeting",
   pauseMeeting: "voice:pauseMeeting",
   resumeMeeting: "voice:resumeMeeting",
   stopMeeting: "voice:stopMeeting",

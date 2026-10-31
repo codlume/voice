@@ -44,6 +44,7 @@ const fresh: Snapshot = {
     dictionary: [],
     zoomLevel: 0,
     transforms: DEFAULT_TRANSFORMS,
+    meetingShortcut: null,
   },
   microphones: {
     kind: "ready",

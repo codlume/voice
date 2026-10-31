@@ -6,6 +6,7 @@ import {
   sameShortcut,
   type Modifier,
   type Shortcut,
+  type ShortcutHolder,
 } from "../shared/transforms.ts";
 
 export type KeyboardLayout = ReadonlyMap<string, string>;
@@ -81,13 +82,26 @@ function isReserved({ keycode, modifiers }: Shortcut, layout: KeyboardLayout | n
   );
 }
 
+export const MEETING_SHORTCUT_TITLE = "Start or stop a meeting";
+
+export const meetingShortcutHolder = (shortcut: Shortcut | null): ShortcutHolder => ({
+  name: MEETING_SHORTCUT_TITLE,
+  shortcut,
+});
+
+/** Whether a key press is `shortcut`, matched by key position like the helper's tap. */
+export function pressMatches(shortcut: Shortcut, press: KeyPress): boolean {
+  const keycode = keycodeForCode(press.code);
+  return keycode !== null && sameShortcut({ keycode, modifiers: heldModifiers(press) }, shortcut);
+}
+
 export function capture(
   press: KeyPress,
   {
     others,
     layout,
   }: {
-    others: readonly { name: string; shortcut: Shortcut | null }[];
+    others: readonly ShortcutHolder[];
     layout: KeyboardLayout | null;
   },
 ): Capture {

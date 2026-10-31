@@ -15,6 +15,7 @@ final class HotkeyTap {
     private var key: HotkeyKey = .fn
     private var toggleKey: HotkeyKey?
     private var transforms: [TransformShortcut] = []
+    private var meeting: KeyCombo?
     private var hotkeys: Hotkeys
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
@@ -44,17 +45,20 @@ final class HotkeyTap {
         runLoop = loop!
     }
 
-    func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut]) {
+    func configure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut], meeting: KeyCombo?) {
         perform {
             self.transforms = transforms
+            self.meeting = meeting
             if key == self.key, toggleKey == self.toggleKey {
                 self.hotkeys.setTransforms(transforms)
+                self.hotkeys.setMeeting(meeting)
                 return
             }
             self.emit(self.hotkeys.reconcile(flags: 0))
             self.key = key
             self.toggleKey = toggleKey
-            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
+            self.hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting,
+                                   initialFlags: currentFlags())
             self.syncBackstop()
         }
     }
@@ -109,7 +113,8 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
-        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, initialFlags: currentFlags())
+        hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting,
+                          initialFlags: currentFlags())
         syncBackstop()
         output.log(.info, "hotkey tap installed")
         return true
@@ -142,6 +147,8 @@ final class HotkeyTap {
         case .transform(let transformId):
             heldShortcutKey.withLock { $0 = keyEvent.keycode }
             output.emit(.transform(transformId: transformId))
+        case .meeting:
+            output.emit(.meetingShortcut)
         case .nothing:
             break
         }
