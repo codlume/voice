@@ -329,7 +329,7 @@ export function MeetingList({
     <div {...stylex.props(styles.days)}>
       {days.map((day) => (
         <section key={day.day} aria-label={day.label} {...stylex.props(styles.day)}>
-          <h3 {...stylex.props(styles.dayLabel)}>{day.label}</h3>
+          <h2 {...stylex.props(styles.dayLabel)}>{day.label}</h2>
           <Card style={styles.card}>
             <ul {...stylex.props(styles.list)}>
               {day.meetings.map((meeting) => (

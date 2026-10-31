@@ -164,21 +164,35 @@ const lineClass = (said: string) =>
 
 function Page({
   snapshot,
+  sidebar,
   request = null,
 }: {
   snapshot: Snapshot;
+  sidebar: HTMLElement | null;
   request?: OpenMeetingRequest | null;
 }) {
   const [open, setOpen] = useState(false);
-  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} request={request} />;
+  return (
+    <Meetings
+      snapshot={snapshot}
+      settings={{ open, setOpen }}
+      sidebar={sidebar}
+      request={request}
+    />
+  );
 }
 
-async function render(snapshot: Snapshot = setUp) {
+async function render(snapshot: Snapshot = setUp, sidebar: HTMLElement | null = null) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<Page snapshot={snapshot} />));
+  await act(async () => root!.render(<Page snapshot={snapshot} sidebar={sidebar} />));
   await settle();
+}
+
+async function openSearch() {
+  await click(document.querySelector("button[aria-label='Search meetings']")!);
+  return document.querySelector<HTMLInputElement>("input[type=search]")!;
 }
 
 const settle = () => act(async () => {});
@@ -242,7 +256,7 @@ describe("Past notes", () => {
     fakeMain(sample());
     await render();
     const days = [...document.querySelectorAll("section[aria-label]")].map((section) => ({
-      day: section.querySelector("h3")?.textContent,
+      day: section.querySelector("h2")?.textContent,
       titles: [...section.querySelectorAll("li > div > button")].map((b) => b.textContent),
     }));
     expect(days[0]).toEqual({ day: "Today", titles: ["Weekly product sync"] });
@@ -283,7 +297,7 @@ describe("Past notes", () => {
   test("search shows where each meeting matched, and says when nothing does", async () => {
     const main = fakeMain(sample());
     await render();
-    const search = document.querySelector<HTMLInputElement>("input[type=search]")!;
+    const search = await openSearch();
     await type(search, "export bug");
     await waitForText("Transcript: You: Morning all Priya Shah: The export bug is fixed");
     expect(document.querySelector("li mark")?.textContent).toBe("export bug");
@@ -301,7 +315,7 @@ describe("Past notes", () => {
     )!;
     await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
     expect(overviewTitle()).toBe("Planowanie sprintu");
-    await type(document.querySelector<HTMLInputElement>("input[type=search]")!, "export bug");
+    await type(await openSearch(), "export bug");
     await waitForText("Transcript: You: Morning all");
     expect(overviewTitle()).toBe("Weekly product sync");
   });
@@ -401,7 +415,7 @@ describe("a ready summary", () => {
     await waitForText("All meetings");
     await click(byText("Transcript"));
     const request: OpenMeetingRequest = { id: id(1), tab: "summary" };
-    await act(async () => root!.render(<Page snapshot={setUp} request={request} />));
+    await act(async () => root!.render(<Page snapshot={setUp} sidebar={null} request={request} />));
     await waitForText("Next Steps");
     const selected = document.querySelector("[role=tab][aria-selected=true]");
     expect(selected?.textContent).toBe("Summary");
@@ -831,25 +845,37 @@ test("the settings say how long transcripts are kept", async () => {
   );
 });
 
+const progress = () => document.querySelector("[role=progressbar]")?.getAttribute("aria-label");
+
 describe("Set up Meetings", () => {
   test("a new Mac asks for both permissions and a first meeting, and Grant asks macOS", async () => {
     const main = fakeMain([]);
-    await render({
-      ...setUp,
-      permissions: { microphone: "notDetermined", accessibility: "granted", systemAudio: "denied" },
-      speakerModel: "missing",
-    });
-    expect(text()).toContain("Set up Meetings0 of 4 done");
-    expect(text()).toContain("Speaker detection");
-    expect(text()).toContain("System Audio RecordingHears the other participants");
-    expect(text()).toContain("Allow Voice in System Settings");
-    expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
-    expect(text()).toContain("Always get consent before recording others.");
-    await click(byText("Grant"));
+    const sidebar = document.createElement("aside");
+    document.body.append(sidebar);
+    await render(
+      {
+        ...setUp,
+        permissions: {
+          microphone: "notDetermined",
+          accessibility: "granted",
+          systemAudio: "denied",
+        },
+        speakerModel: "missing",
+      },
+      sidebar,
+    );
+    const card = sidebar.textContent ?? "";
+    expect(card).toContain("Set up Meetings");
+    expect(progress()).toBe("0 of 4 done");
+    expect(card).toContain("System Audio RecordingAllow Voice in System Settings");
+    expect(card).toContain("Speaker detection");
+    expect(card).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
+    expect(card).toContain("Always get consent before recording others.");
+    await click(document.querySelector("[aria-label='Grant Microphone']")!);
     expect(main.requestPermission).toHaveBeenCalledWith("microphone");
-    await click(byText("Open"));
+    await click(document.querySelector("[aria-label='Open System Audio Recording']")!);
     expect(main.requestPermission).toHaveBeenLastCalledWith("systemAudio");
-    await click(byText("Download"));
+    await click(document.querySelector("[aria-label='Download Speaker detection']")!);
     expect(main.downloadSpeakerModel).toHaveBeenCalledOnce();
   });
 
@@ -860,9 +886,8 @@ describe("Set up Meetings", () => {
     };
     fakeMain([]);
     await render(unavailable);
-    expect(text()).toContain("Meetings record only your microphone on this Mac");
     expect(text()).toContain("Needs macOS 14.4 or later");
-    expect(text()).toContain("3 of 4 done");
+    expect(progress()).toBe("3 of 4 done");
     await act(async () => root?.unmount());
     document.body.replaceChildren();
 

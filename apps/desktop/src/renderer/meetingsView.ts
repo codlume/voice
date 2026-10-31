@@ -43,12 +43,27 @@ export function meetingDays(
   const days = Map.groupBy(meetings, (meeting) => dayKey(new Date(meetingAt(meeting))));
   return Array.from(days, ([day, dayMeetings]) => ({
     day,
-    label: dayLabel(day, today, locale),
+    label: meetingDayLabel(day, today, locale),
     meetings: dayMeetings,
   }));
 }
 
 const shortDate = formatterCache({ weekday: "short", month: "short", day: "numeric" });
+const shortDateWithYear = formatterCache({
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+/** "Today", "Yesterday", then "Thu, Oct 22", with the year only for an earlier year. */
+function meetingDayLabel(day: DayKey, today: DayKey, locale?: string): string {
+  const named = dayLabel(day, today, locale);
+  if (named === "Today" || named === "Yesterday") return named;
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  const format = day.slice(0, 4) === today.slice(0, 4) ? shortDate : shortDateWithYear;
+  return format(locale).format(new Date(year, month - 1, date));
+}
 
 /** "Thu, Oct 22 · 5:28 PM", the line under a meeting's title. */
 export function meetingWhen(meeting: Meeting, locale?: string): string {

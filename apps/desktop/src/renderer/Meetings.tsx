@@ -1,7 +1,8 @@
 import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { AudioLinesIcon, CircleDotIcon, SearchIcon, SettingsIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import type { DayKey } from "../shared/insights.ts";
 import { shownSummary } from "../shared/meeting-markdown.ts";
@@ -26,6 +27,7 @@ import { MeetingList } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
 import { MeetingTabs, RecordingControls, StatusClock } from "./MeetingParts.tsx";
 import { MeetingsSettingsDialog } from "./MeetingsSettingsDialog.tsx";
+import { MeetingsSetup } from "./MeetingsSetup.tsx";
 import { Inline } from "./MeetingSummary.tsx";
 import {
   CONSENT_REMINDER,
@@ -50,14 +52,23 @@ const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   container: { containerType: "inline-size" },
+  // HubShell leaves the block and right padding to this page, so the overview can run full height.
   layout: {
     display: "grid",
-    gridTemplateColumns: { default: "minmax(0, 1fr) 260px", [layout.narrow]: "minmax(0, 1fr)" },
-    columnGap: space.xl,
+    gridTemplateColumns: { default: "minmax(0, 1fr) 300px", [layout.narrow]: "minmax(0, 1fr)" },
     alignItems: "start",
   },
   layoutAlone: { gridTemplateColumns: "minmax(0, 1fr)" },
-  main: { display: "flex", flexDirection: "column", gap: space.lg, minWidth: 0 },
+  main: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.lg,
+    minWidth: 0,
+    paddingBlock: space.xxl,
+    paddingRight: { default: space.xl, [layout.narrow]: space.xxl },
+  },
+  mainAlone: { paddingRight: space.xxl },
+  detail: { paddingBlock: space.xxl, paddingRight: space.xxl },
   header: { display: "flex", alignItems: "center", gap: space.sm },
   headline: { flexGrow: 1 },
   notice: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
@@ -139,8 +150,10 @@ const styles = stylex.create({
     gap: space.sm,
     position: "sticky",
     top: 0,
-    minHeight: 240,
-    paddingLeft: space.xl,
+    height: "100cqh",
+    overflowY: "auto",
+    paddingBlock: space.xxl,
+    paddingInline: space.xl,
     borderLeftWidth: 1,
     borderLeftStyle: "solid",
     borderLeftColor: color.border,
@@ -196,29 +209,51 @@ function useSearch(query: string): readonly MeetingSearchHit[] | null {
   return trimmed === "" ? null : hits;
 }
 
+/** A search icon that opens into the field, and closes again once the field is empty and left. */
 function Search({ query, onChange }: { query: string; onChange: (query: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const shown = open || query !== "";
+  const label = withShortcut("Search meetings", shortcuts.searchHistory);
   useShortcuts([
     {
       shortcut: shortcuts.searchHistory,
       run: () => {
+        setOpen(true);
         input.current?.focus();
         input.current?.select();
       },
     },
   ]);
+  if (!shown) {
+    return (
+      <div {...stylex.props(styles.search)}>
+        <Button
+          variant="icon"
+          aria-label="Search meetings"
+          title={label}
+          onClick={() => setOpen(true)}
+        >
+          <SearchIcon size={17} />
+        </Button>
+      </div>
+    );
+  }
   return (
     <div {...stylex.props(styles.search)}>
       <SearchIcon size={14} aria-hidden="true" {...stylex.props(styles.searchIcon)} />
       <input
         ref={input}
+        // Opened by the icon or the shortcut, so the user is about to type.
+        autoFocus
         type="search"
         aria-label="Search meetings"
         autoComplete="off"
         spellCheck={false}
-        placeholder={withShortcut("Search meetings", shortcuts.searchHistory)}
+        placeholder={label}
         value={query}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={() => setOpen(false)}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           event.preventDefault();
@@ -301,11 +336,13 @@ export function Meetings({
   snapshot,
   settings,
   request = null,
+  sidebar,
 }: {
   snapshot: Snapshot;
   settings: SettingsDialog;
   /** A meeting main asked to show on its summary. */
   request?: OpenMeetingRequest | null;
+  sidebar: HTMLElement | null;
 }) {
   const state = useMeetings();
   const today = useToday();
@@ -313,6 +350,7 @@ export function Meetings({
     <MeetingsPage
       snapshot={snapshot}
       settings={settings}
+      sidebar={sidebar}
       state={state}
       today={today}
       request={request}
@@ -323,12 +361,14 @@ export function Meetings({
 function MeetingsPage({
   snapshot,
   settings,
+  sidebar,
   state,
   today,
   request,
 }: {
   snapshot: Snapshot;
   settings: SettingsDialog;
+  sidebar: HTMLElement | null;
   state: MeetingsState;
   today: DayKey;
   request: OpenMeetingRequest | null;
@@ -374,7 +414,7 @@ function MeetingsPage({
   const selected =
     shown.find(({ id }) => id === selectedId) ?? (tab === "notes" ? shown[0] : null) ?? null;
   // Main checks System Audio Recording again only while Set up Meetings asks for it.
-  const asksForSetup = !setup.ready && !opened;
+  const asksForSetup = !setup.ready && (sidebar !== null || !opened);
   useEffect(() => {
     if (!asksForSetup) return;
     void hubApi().watchMeetingPermissions(true);
@@ -388,16 +428,33 @@ function MeetingsPage({
       if (refusal) setNotice(refusal);
     }, "Could not start the meeting.");
 
-  if (opened) {
-    return (
-      <MeetingDetail
-        key={`${opened.id}:${requests}`}
-        meeting={opened}
-        folders={folders}
-        notices={snapshot.meetingNotices.filter(({ id }) => id === opened.id)}
-        summaryModel={summaryModel}
-        onBack={() => setOpenId(null)}
+  // The setup card sits in the sidebar, or above the list while the sidebar is collapsed.
+  const setupCard = !setup.ready && <MeetingsSetup rows={setup.rows} consent={CONSENT_REMINDER} />;
+  const around = (page: ReactNode) => (
+    <>
+      {sidebar && setupCard && createPortal(setupCard, sidebar)}
+      {page}
+      <MeetingsSettingsDialog
+        open={settings.open}
+        onOpenChange={settings.setOpen}
+        settings={state.settings}
+        meetings={meetings}
       />
+    </>
+  );
+
+  if (opened) {
+    return around(
+      <div {...stylex.props(styles.detail)}>
+        <MeetingDetail
+          key={`${opened.id}:${requests}`}
+          meeting={opened}
+          folders={folders}
+          notices={snapshot.meetingNotices.filter(({ id }) => id === opened.id)}
+          summaryModel={summaryModel}
+          onBack={() => setOpenId(null)}
+        />
+      </div>,
     );
   }
 
@@ -436,10 +493,10 @@ function MeetingsPage({
       />
     );
 
-  return (
+  return around(
     <div {...stylex.props(styles.container)}>
       <div {...stylex.props(styles.layout, !selected && styles.layoutAlone)}>
-        <div {...stylex.props(styles.main)}>
+        <div {...stylex.props(styles.main, !selected && styles.mainAlone)}>
           <div {...stylex.props(styles.header)}>
             <h1 {...stylex.props(pageStyles.headline, styles.headline)}>Meetings</h1>
             <Button
@@ -469,13 +526,7 @@ function MeetingsPage({
             onViewSummary={setOpenId}
           />
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
-          {!setup.ready && (
-            <SetupChecklist
-              title="Set up Meetings"
-              rows={setup.rows}
-              after={<p {...stylex.props(styles.notice)}>{CONSENT_REMINDER}</p>}
-            />
-          )}
+          {!sidebar && setupCard}
           {summaryModel && (
             <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
           )}
@@ -505,12 +556,6 @@ function MeetingsPage({
         </div>
         {selected && <OverviewPanel meeting={selected} />}
       </div>
-      <MeetingsSettingsDialog
-        open={settings.open}
-        onOpenChange={settings.setOpen}
-        settings={state.settings}
-        meetings={meetings}
-      />
-    </div>
+    </div>,
   );
 }

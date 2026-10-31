@@ -285,6 +285,11 @@ const hubScenes: Record<string, HubScene> = {
   },
   meetings: { ...ready, meetings: sampleMeetings() },
   "meetings-empty": ready,
+  "meetings-setup": {
+    ...ready,
+    permissions: { ...ready.permissions, microphone: "notDetermined", systemAudio: "denied" },
+    meetings: sampleMeetings(),
+  },
   "meetings-recording": { ...ready, meetings: sampleMeetings({ recording: true }) },
   "history-empty": { ...ready, history: [] },
   history: ready,
