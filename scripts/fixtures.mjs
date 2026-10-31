@@ -52,22 +52,60 @@ const fixtures = [
   },
 ];
 
-// A synthetic two-person meeting: the user on the mic, the other participant on system audio, each
-// silent while the other talks. The speakers variant also mixes the other side into the mic,
-// quieter and a beat late, the way a laptop microphone hears its own speakers.
-const meeting = {
-  gapSeconds: 1.2,
-  voices: { mic: "Daniel", system: "Samantha" },
-  turns: [
-    ["mic", "Morning everyone. Let's go through the launch plan for the Kowalski account."],
-    ["system", "Sounds good. The beta build is ready, and we fixed forty two bugs last week."],
-    ["mic", "Great. Can we ship it to the first customers on March twelfth?"],
-    ["system", "Yes, if design signs off on the onboarding screens by Friday."],
-    ["mic", "I'll ask Maria to review them today and send notes tomorrow morning."],
-    ["system", "Perfect. I'll update the release checklist and share it in the channel."],
-  ],
-};
-const meetingFixtures = ["meeting-mic.wav", "meeting-system.wav", "meeting-mic-speakers.wav"];
+// Synthetic meetings: the user on the mic, the others on system audio, each silent while someone
+// else talks. The first also has a speakers variant that mixes the other side into the mic,
+// quieter and a beat late, the way a laptop microphone hears its own speakers. The second has two
+// voices taking turns on system audio, so the final pass has two speakers to tell apart.
+const meetings = [
+  {
+    prefix: "meeting",
+    speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
+    echo: "meeting-mic-speakers.wav",
+    turns: [
+      ["you", "Morning everyone. Let's go through the launch plan for the Kowalski account."],
+      ["other", "Sounds good. The beta build is ready, and we fixed forty two bugs last week."],
+      ["you", "Great. Can we ship it to the first customers on March twelfth?"],
+      ["other", "Yes, if design signs off on the onboarding screens by Friday."],
+      ["you", "I'll ask Maria to review them today and send notes tomorrow morning."],
+      ["other", "Perfect. I'll update the release checklist and share it in the channel."],
+    ],
+  },
+  {
+    prefix: "meeting-two-others",
+    speakers: { you: ["mic", "Daniel"], anna: ["system", "Samantha"], tom: ["system", "Ralph"] },
+    turns: [
+      ["you", "Thanks for joining. Anna, Tom, where are we with the mobile release?"],
+      [
+        "anna",
+        "The iOS build passed review yesterday, and the crash rate is down to half a percent.",
+      ],
+      [
+        "tom",
+        "Android is a day behind. We are still waiting on the payment provider to approve the new screens.",
+      ],
+      [
+        "anna",
+        "I can help with that. I spoke to their support team last month about the same issue.",
+      ],
+      [
+        "tom",
+        "That would be great. If they approve it by Wednesday, we can ship both apps on Thursday.",
+      ],
+      ["you", "Good. Let's aim for Thursday and check again on Wednesday afternoon."],
+      [
+        "anna",
+        "I will send the release notes to marketing before then, so they can prepare the announcement.",
+      ],
+      ["tom", "And I will update the store listings with the new screenshots tonight."],
+    ],
+  },
+];
+const gapSeconds = 1.2;
+const meetingFixtures = ({ prefix, echo }) => [
+  `${prefix}-mic.wav`,
+  `${prefix}-system.wav`,
+  ...(echo ? [echo] : []),
+];
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: ["ignore", "inherit", "inherit"] });
@@ -126,18 +164,19 @@ function duration(file) {
   return Number(result.stdout.trim());
 }
 
-function generateMeeting() {
-  const work = join(tmpdir(), `voice-fixture-${process.pid}-meeting`);
+function generateMeeting({ prefix, speakers, echo, turns }) {
+  const work = join(tmpdir(), `voice-fixture-${process.pid}-${prefix}`);
   mkdirSync(work, { recursive: true });
   try {
     let at = 0.5;
-    const lines = meeting.turns.map(([source, speech], index) => {
+    const lines = turns.map(([speaker, speech], index) => {
+      const [source, voice] = speakers[speaker];
       const file = join(work, `${index}.wav`);
       const aiff = join(work, `${index}.aiff`);
-      run("say", ["-v", meeting.voices[source], "-o", aiff, speech]);
+      run("say", ["-v", voice, "-o", aiff, speech]);
       run("ffmpeg", ["-y", "-loglevel", "error", "-i", aiff, "-ar", "16000", "-ac", "1", file]);
       const line = { source, file, startMs: Math.round(at * 1000) };
-      at += duration(file) + meeting.gapSeconds;
+      at += duration(file) + gapSeconds;
       return line;
     });
     const total = String(at);
@@ -158,22 +197,23 @@ function generateMeeting() {
         "1",
         "-c:a",
         "pcm_s16le",
-        join(fixturesDir, `meeting-${source}.wav`),
+        join(fixturesDir, `${prefix}-${source}.wav`),
       ]);
     }
+    if (!echo) return;
     run("ffmpeg", [
       "-y",
       "-loglevel",
       "error",
       "-i",
-      join(fixturesDir, "meeting-mic.wav"),
+      join(fixturesDir, `${prefix}-mic.wav`),
       "-i",
-      join(fixturesDir, "meeting-system.wav"),
+      join(fixturesDir, `${prefix}-system.wav`),
       "-filter_complex",
       "[1]volume=0.3,adelay=40[echo];[0][echo]amix=inputs=2:normalize=0:duration=first",
       "-c:a",
       "pcm_s16le",
-      join(fixturesDir, "meeting-mic-speakers.wav"),
+      join(fixturesDir, echo),
     ]);
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -188,9 +228,11 @@ export function ensureFixtures() {
     generate(fixture);
     console.log(`generated ${target}`);
   }
-  if (meetingFixtures.some((name) => !existsSync(join(fixturesDir, name)))) {
-    generateMeeting();
-    console.log(`generated ${meetingFixtures.join(", ")} in ${fixturesDir}`);
+  for (const meeting of meetings) {
+    const names = meetingFixtures(meeting);
+    if (names.every((name) => existsSync(join(fixturesDir, name)))) continue;
+    generateMeeting(meeting);
+    console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
   }
 }
 

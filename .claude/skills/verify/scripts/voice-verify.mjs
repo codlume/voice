@@ -1116,12 +1116,13 @@ const commands = {
       (arg) => !arg.startsWith("--scenario-owner="),
     );
     const withSystem = !flags.includes("--no-system");
+    const system =
+      flags.find((flag) => flag.startsWith("--system="))?.slice("--system=".length) ??
+      "meeting-system.wav";
     const state = requireInstance();
     if (!state.meetingMicPath) fail("this instance was launched before meeting support; relaunch");
     const fixtures = [[join(fixturesDir, mic), state.meetingMicPath]];
-    if (withSystem) {
-      fixtures.push([join(fixturesDir, "meeting-system.wav"), state.meetingSystemPath]);
-    }
+    if (withSystem) fixtures.push([join(fixturesDir, system), state.meetingSystemPath]);
     for (const [fixture] of fixtures) {
       if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
     }
@@ -1176,7 +1177,7 @@ const commands = {
       const folder = join(state.userData, "meetings", started.id);
       const result = {
         mic,
-        system: withSystem,
+        system: withSystem && system,
         id: started.id,
         recording,
         liveEntriesBeforeStop: live,
@@ -1184,9 +1185,10 @@ const commands = {
         recordMs: Math.round(stoppedAt - startedAt),
         stopToReadyMs: Math.round(performance.now() - stoppedAt),
         filesAfter: readdirSync(folder).toSorted(),
+        speakers: detail.meeting.speakers.map((speaker) => `${speaker.id}: ${speaker.label}`),
         transcript: detail.transcript.map((entry) =>
           entry.kind === "segment"
-            ? `${entry.source}@${Math.round(entry.startMs)}-${Math.round(entry.endMs)}: ${entry.text}`
+            ? `${entry.source === "system" && entry.speakerId ? entry.speakerId : entry.source}@${Math.round(entry.startMs)}-${Math.round(entry.endMs)}: ${entry.text}`
             : `[${entry.marker}@${Math.round(entry.atMs)}]`,
         ),
       };
