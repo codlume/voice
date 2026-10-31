@@ -8,11 +8,12 @@ const meeting: Meeting = {
   title: null,
   createdAt: 0,
   spans: [],
-  status: { kind: "transcribing" },
+  status: { kind: "transcribing", step: "finalizing" },
   folderIds: [],
   notes: "",
   summary: { kind: "none" },
   speakers: [],
+  finalPassFailed: false,
 };
 
 let ids = 0;

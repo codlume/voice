@@ -50,6 +50,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: false,
     ...overrides,
   };
 }
@@ -251,7 +252,7 @@ describe("meetings store", () => {
     const first = harness();
     await first.loaded;
     await seed(first.store, meeting(A));
-    await seed(first.store, meeting(B, { status: { kind: "transcribing" } }));
+    await seed(first.store, meeting(B, { status: { kind: "transcribing", step: "finalizing" } }));
     await seed(
       first.store,
       meeting(C, {

@@ -280,6 +280,7 @@ function fixtureMeeting(
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: false,
     ...patch,
   };
 }

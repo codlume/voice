@@ -53,6 +53,7 @@ function meeting(
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: false,
     ...patch,
   };
 }
@@ -190,7 +191,10 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     installModel: vi.fn(async () => {}),
     generateMeetingSummary: vi.fn(async (meetingId: MeetingId) => {
       const index = state.meetings.findIndex((m) => m.id === meetingId);
-      const summarizing = { ...state.meetings[index]!, status: { kind: "summarizing" as const } };
+      const summarizing = {
+        ...state.meetings[index]!,
+        status: { kind: "summarizing" as const, progress: null },
+      };
       set({ meetings: state.meetings.with(index, summarizing) });
       return { kind: "ok", id: meetingId } as const;
     }),
@@ -543,7 +547,9 @@ describe("a meeting", () => {
 
   test("a long meeting without a summary offers one in words that fit its length and state", async () => {
     const stored = meeting(5, "Planning", hoursAgo(1));
-    const transcribing = meeting(6, "Retro", hoursAgo(2), { status: { kind: "transcribing" } });
+    const transcribing = meeting(6, "Retro", hoursAgo(2), {
+      status: { kind: "transcribing", step: "finalizing" },
+    });
     const main = fakeMain([stored, transcribing]);
     await render();
     await click(byText("Planning"));

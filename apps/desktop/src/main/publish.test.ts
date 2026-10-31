@@ -119,6 +119,7 @@ describe("publish", () => {
       notes: "Ask about the discount",
       summary: { kind: "none" },
       speakers: [],
+      finalPassFailed: false,
     };
     update({ meeting: follow(noMeetingFocus, [meeting]) });
     update({ meeting: follow(noMeetingFocus, [{ ...meeting, notes: "Ask about the deadline" }]) });

@@ -479,11 +479,16 @@ function parseStatus(raw: unknown): MeetingStatus | null {
         : null;
     case "recording":
       return isTime(raw.since) ? { kind: "recording", since: raw.since } : null;
+    case "transcribing":
+      return raw.step === "draining" || raw.step === "finalizing"
+        ? { kind: "transcribing", step: raw.step }
+        : null;
+    // Progress is only for the run that reported it.
+    case "summarizing":
+      return { kind: "summarizing", progress: null };
     case "paused":
     case "finishing":
     case "confirmingShort":
-    case "transcribing":
-    case "summarizing":
     case "ready":
       return { kind: raw.kind };
     default:
@@ -516,6 +521,7 @@ function parseMeeting(raw: unknown): Meeting | null {
   const status = parseStatus(raw.status);
   const summary = parseSummary(raw.summary);
   if (!id || !status || !summary || !isTime(raw.createdAt) || !isText(raw.notes)) return null;
+  if (typeof raw.finalPassFailed !== "boolean") return null;
   if (!Array.isArray(raw.spans) || !Array.isArray(raw.folderIds)) return null;
   const spans = raw.spans.map(parseSpan);
   if (spans.some((span) => span === null)) return null;
@@ -535,6 +541,7 @@ function parseMeeting(raw: unknown): Meeting | null {
     notes: raw.notes,
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
+    finalPassFailed: raw.finalPassFailed,
   };
 }
 
