@@ -28,7 +28,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     notes: "",
     summary: { kind: "none" },
     speakers: [],
-    finalPassFailed: false,
+    finalPassFailed: null,
     transcriptRevision: 0,
     ...patch,
   };
@@ -221,7 +221,7 @@ describe("notices on the Meetings page", () => {
       texts(follow(summary, [{ ...failed, status: { kind: "summarizing", progress: null } }])),
     ).toEqual([]);
 
-    const done = meeting(3, { kind: "ready" }, { finalPassFailed: true });
+    const done = meeting(3, { kind: "ready" }, { finalPassFailed: "other" });
     const pass = raise(
       follow(noMeetingFocus, [done]),
       done.id,
@@ -233,7 +233,7 @@ describe("notices on the Meetings page", () => {
       dismissable: false,
     });
     expect(texts(follow(pass, [done]))).toHaveLength(1);
-    expect(texts(follow(pass, [{ ...done, finalPassFailed: false }]))).toEqual([]);
+    expect(texts(follow(pass, [{ ...done, finalPassFailed: null }]))).toEqual([]);
     expect(texts(follow(pass, []))).toEqual([]);
   });
 

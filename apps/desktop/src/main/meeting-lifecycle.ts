@@ -207,7 +207,7 @@ export function step(
         notes: "",
         summary: { kind: "none" },
         speakers: [],
-        finalPassFailed: false,
+        finalPassFailed: null,
         transcriptRevision: 0,
       },
       effects: [watch("start"), { type: "startCapture", leg: 0 }],
@@ -399,14 +399,14 @@ export function step(
         case "finalPass":
           return { meeting, effects: [{ type: "applyFinalPass", segments: event.segments }] };
         case "finalized":
-          return afterTranscript({ ...meeting, finalPassFailed: false }, [{ type: "deleteAudio" }]);
+          return afterTranscript({ ...meeting, finalPassFailed: null }, [{ type: "deleteAudio" }]);
         case "stalled":
           if (event.watch !== "finalPass") return same;
-          return afterTranscript({ ...meeting, finalPassFailed: true }, [
+          return afterTranscript({ ...meeting, finalPassFailed: "other" }, [
             notify({ kind: "finalPassFailed", reason: "other" }),
           ]);
         case "finalizeFailed":
-          return afterTranscript({ ...meeting, finalPassFailed: true }, [
+          return afterTranscript({ ...meeting, finalPassFailed: event.reason }, [
             notify({ kind: "finalPassFailed", reason: event.reason }),
           ]);
         case "helperReady":
@@ -467,5 +467,5 @@ export function step(
 // The live transcript becomes the meeting's transcript for good.
 const audioDeleted = (meeting: Meeting): Step =>
   meeting.finalPassFailed
-    ? { meeting: { ...meeting, finalPassFailed: false }, effects: [{ type: "deleteAudio" }] }
+    ? { meeting: { ...meeting, finalPassFailed: null }, effects: [{ type: "deleteAudio" }] }
     : { meeting, effects: [] };

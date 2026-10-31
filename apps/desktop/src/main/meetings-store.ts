@@ -536,7 +536,13 @@ function parseMeeting(raw: unknown): Meeting | null {
   const status = parseStatus(raw.status);
   const summary = parseSummary(raw.summary);
   if (!id || !status || !summary || !isTime(raw.createdAt) || !isText(raw.notes)) return null;
-  if (typeof raw.finalPassFailed !== "boolean") return null;
+  const { finalPassFailed } = raw;
+  if (
+    finalPassFailed !== null &&
+    finalPassFailed !== "speakerModels" &&
+    finalPassFailed !== "other"
+  )
+    return null;
   if (!Number.isSafeInteger(raw.transcriptRevision)) return null;
   if (!Array.isArray(raw.spans) || !Array.isArray(raw.folderIds)) return null;
   const spans = raw.spans.map(parseSpan);
@@ -552,7 +558,7 @@ function parseMeeting(raw: unknown): Meeting | null {
     notes: raw.notes,
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
-    finalPassFailed: raw.finalPassFailed,
+    finalPassFailed,
     transcriptRevision: raw.transcriptRevision as number,
   };
 }

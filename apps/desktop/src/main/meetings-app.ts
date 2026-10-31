@@ -190,7 +190,7 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
   void meetings.loaded().then(() => {
     for (const { id, finalPassFailed } of meetings.state().meetings) {
       if (!finalPassFailed) continue;
-      const notice = { kind: "finalPassFailed", reason: "other" } as const;
+      const notice = { kind: "finalPassFailed", reason: finalPassFailed } as const;
       store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
     }
   });

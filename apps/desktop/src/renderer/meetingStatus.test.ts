@@ -14,7 +14,7 @@ const meeting = (status: MeetingStatus): Meeting => ({
   notes: "",
   summary: { kind: "none" },
   speakers: [],
-  finalPassFailed: false,
+  finalPassFailed: null,
   transcriptRevision: 0,
 });
 

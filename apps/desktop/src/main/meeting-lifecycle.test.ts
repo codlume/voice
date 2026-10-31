@@ -56,7 +56,7 @@ function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Mee
     notes: "",
     summary: { kind: "none" },
     speakers: [],
-    finalPassFailed: false,
+    finalPassFailed: null,
     transcriptRevision: 0,
     ...overrides,
   };
@@ -388,7 +388,7 @@ describe("meeting lifecycle", () => {
 
   test("a failed final pass keeps the live transcript and the audio until the user retries or deletes it", () => {
     for (const failure of [
-      { type: "finalizeFailed", reason: "other" },
+      { type: "finalizeFailed", reason: "speakerModels" },
       { type: "stalled", watch: "finalPass" },
     ] satisfies MeetingEvent[]) {
       const { meeting, effects } = play([
@@ -400,7 +400,9 @@ describe("meeting lifecycle", () => {
       expect(notices(effects)).toEqual(["finalPassFailed", "summaryReady"]);
       expect(kinds(effects)).not.toContain("deleteAudio");
       expect(meeting?.status).toEqual({ kind: "ready" });
-      expect(meeting?.finalPassFailed).toBe(true);
+      expect(meeting?.finalPassFailed).toBe(
+        failure.type === "finalizeFailed" ? failure.reason : "other",
+      );
 
       // meeting-summary.ts wrote the summary meanwhile.
       const summary = { markdown: "Overview.", coversUntilMs: 30 * MIN };
@@ -408,12 +410,12 @@ describe("meeting lifecycle", () => {
       const retried = step(summarized, { type: "retryFinalPass" }, T0 + 40 * MIN, config);
       expect(retried.meeting?.status).toEqual({ kind: "transcribing", step: "finalizing" });
       const done = step(retried.meeting, { type: "finalized" }, T0 + 41 * MIN, config);
-      expect(done.meeting?.finalPassFailed).toBe(false);
+      expect(done.meeting?.finalPassFailed).toBeNull();
       expect(done.meeting?.status).toEqual({ kind: "ready" });
       expect(kinds(done.effects)).toContain("deleteAudio");
 
       const deleted = step(meeting, { type: "deleteAudio" }, T0 + 40 * MIN, config);
-      expect(deleted.meeting).toEqual({ ...meeting, finalPassFailed: false });
+      expect(deleted.meeting).toEqual({ ...meeting, finalPassFailed: null });
       expect(deleted.effects).toEqual([{ type: "deleteAudio" }]);
     }
     const fine = meetingAt({ kind: "ready" });

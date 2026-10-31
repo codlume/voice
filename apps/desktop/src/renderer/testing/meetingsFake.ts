@@ -85,7 +85,7 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
       notes: "",
       summary: { kind: "none" },
       speakers: [],
-      finalPassFailed: false,
+      finalPassFailed: null,
       transcriptRevision: 0,
     };
     set({ meetings: [meeting, ...state.meetings] });
@@ -185,14 +185,14 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
     retryMeetingTranscript: async (id) =>
       step(
         id,
-        (meeting) => meeting.finalPassFailed,
-        (meeting) => ({ ...meeting, finalPassFailed: false }),
+        (meeting) => meeting.finalPassFailed !== null,
+        (meeting) => ({ ...meeting, finalPassFailed: null }),
       ),
     deleteMeetingAudio: async (id) =>
       step(
         id,
-        (meeting) => meeting.finalPassFailed,
-        (meeting) => ({ ...meeting, finalPassFailed: false }),
+        (meeting) => meeting.finalPassFailed !== null,
+        (meeting) => ({ ...meeting, finalPassFailed: null }),
       ),
     onMeetingTranscript: (listener) => {
       lineListeners.add(listener);

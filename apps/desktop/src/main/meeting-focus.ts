@@ -96,7 +96,7 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   if (!meeting) return false;
   switch (banner.kind) {
     case "finalPassFailed":
-      return meeting.finalPassFailed;
+      return meeting.finalPassFailed !== null;
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
     case "summaryReady":

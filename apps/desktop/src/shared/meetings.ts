@@ -70,10 +70,10 @@ export type Meeting = {
   /** The voices on system audio, in the order they first spoke. */
   speakers: readonly Speaker[];
   /**
-   * The final pass failed, so the live transcript stands in and the audio is kept until the user
-   * tries again or deletes it.
+   * Why the final pass failed, so the live transcript stands in and the audio is kept until the
+   * user tries again or deletes it. Null when it did not fail.
    */
-  finalPassFailed: boolean;
+  finalPassFailed: FinalPassFailure | null;
   /**
    * Counts every write to the transcript file, appends and rewrites alike. Appends reach open
    * windows as lines tagged with their revision; a meeting whose revision is ahead of the lines a

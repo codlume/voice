@@ -32,7 +32,7 @@ function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): M
     notes: "",
     summary: { kind: "none" },
     speakers: [],
-    finalPassFailed: false,
+    finalPassFailed: null,
     transcriptRevision: 0,
     ...patch,
   };

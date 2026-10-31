@@ -39,7 +39,7 @@ const meeting = (id: MeetingId, createdAt: number, overrides: Partial<Meeting> =
   notes: "",
   summary: { kind: "none" },
   speakers: [],
-  finalPassFailed: false,
+  finalPassFailed: null,
   transcriptRevision: 0,
   ...overrides,
 });

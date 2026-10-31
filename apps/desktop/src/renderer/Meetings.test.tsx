@@ -50,7 +50,7 @@ function meeting(
     notes: "",
     summary: { kind: "none" },
     speakers: [],
-    finalPassFailed: false,
+    finalPassFailed: null,
     transcriptRevision: 0,
     ...patch,
   };

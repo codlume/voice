@@ -792,7 +792,7 @@ describe("meeting recorder", () => {
     await h.drained(id);
     await h.finalized(id);
     expect(h.store.get(id)?.status.kind).toBe("ready");
-    expect(h.store.get(id)?.finalPassFailed).toBe(false);
+    expect(h.store.get(id)?.finalPassFailed).toBeNull();
     expect(h.notices).not.toContain("finalPassFailed");
   });
 
@@ -806,7 +806,7 @@ describe("meeting recorder", () => {
     await h.drained(id);
     await vi.advanceTimersByTimeAsync(20 * 60_000);
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBe(true);
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
     expect(h.notices).toEqual(["finalPassFailed"]);
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
   });
@@ -820,25 +820,26 @@ describe("meeting recorder", () => {
     first.emit({
       type: "meeting.finalizeFailed",
       id,
-      reason: "speakers",
-      message: "diarizer crashed",
+      reason: "speakerModels",
+      message: "speaker detection not downloaded",
     });
     await first.settle();
-    expect(first.store.get(id)?.finalPassFailed).toBe(true);
+    expect(first.store.get(id)?.finalPassFailed).toBe("speakerModels");
 
+    // The reason outlives the relaunch, so its notice still says to download speaker detection.
     const h = harness();
     await h.store.loaded();
-    expect(h.store.get(id)?.finalPassFailed).toBe(true);
+    expect(h.store.get(id)?.finalPassFailed).toBe("speakerModels");
     expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
     await h.settle();
     expect(h.sentTypes()).toEqual(["meeting.finalize"]);
     h.emit({ type: "meeting.finalizeFailed", id, reason: "speakers", message: "diarizer crashed" });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBe(true);
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
 
     expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
     await h.settle();
-    expect(h.store.get(id)?.finalPassFailed).toBe(false);
+    expect(h.store.get(id)?.finalPassFailed).toBeNull();
     for (const name of ["mic.pcm", "system.pcm", "audio.json"]) {
       expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
     }

@@ -29,7 +29,7 @@ const meeting: Meeting = {
   notes: "",
   summary: { kind: "none" },
   speakers: [],
-  finalPassFailed: false,
+  finalPassFailed: null,
   transcriptRevision: 0,
 };
 
