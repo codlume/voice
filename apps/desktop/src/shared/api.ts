@@ -351,6 +351,8 @@ export type HubApi = WindowApi & {
   requestPermission(kind: PermissionKind): Promise<void>;
   /** Downloads the models that tell meeting speakers apart. */
   downloadSpeakerModel(): Promise<void>;
+  /** True while Set up Meetings shows, so main keeps checking System Audio Recording. */
+  watchMeetingPermissions(watching: boolean): Promise<void>;
   setOpenAtLogin(on: boolean): Promise<void>;
   startMicrophoneTest(): Promise<void>;
   stopMicrophoneTest(): Promise<void>;
@@ -482,6 +484,7 @@ export const Channel = {
   updateSettings: "voice:updateSettings",
   requestPermission: "voice:requestPermission",
   downloadSpeakerModel: "voice:downloadSpeakerModel",
+  watchMeetingPermissions: "voice:watchMeetingPermissions",
   setOpenAtLogin: "voice:setOpenAtLogin",
   startMicrophoneTest: "voice:startMicrophoneTest",
   stopMicrophoneTest: "voice:stopMicrophoneTest",

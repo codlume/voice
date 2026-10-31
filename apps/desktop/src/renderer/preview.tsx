@@ -832,6 +832,7 @@ function fakeMeetings(
     onMeetingPartial: () => () => {},
     dismissMeetingNotice: async () => {},
     onOpenMeeting: () => () => {},
+    watchMeetingPermissions: async () => {},
   };
 }
 

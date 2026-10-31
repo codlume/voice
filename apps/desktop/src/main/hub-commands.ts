@@ -58,6 +58,7 @@ export type HubCommandDeps = {
   updateSettings: (change: (settings: Settings) => Settings) => Promise<void>;
   requestPermission: (kind: PermissionKind) => void;
   downloadSpeakerModel: () => void;
+  watchMeetingPermissions: (watching: boolean) => void;
   refreshLoginItem: () => void;
   microphoneTest: Pick<MicrophoneTest, "start" | "stop">;
   modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }>;
@@ -102,6 +103,9 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
     if (isPermissionKind(kind)) deps.requestPermission(kind);
   });
   hubCommands.handle(Channel.downloadSpeakerModel, () => deps.downloadSpeakerModel());
+  hubCommands.handle(Channel.watchMeetingPermissions, (_event, watching: unknown) => {
+    if (typeof watching === "boolean") deps.watchMeetingPermissions(watching);
+  });
   hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
     if (deps.development) return;
     const openAtLogin = on === true;
