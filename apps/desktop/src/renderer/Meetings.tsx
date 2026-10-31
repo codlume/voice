@@ -30,7 +30,6 @@ import {
   meetingWhen,
   overview,
   searchResults,
-  speakerNames,
   type LiveMeeting,
 } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
@@ -40,7 +39,7 @@ import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { useNow } from "./useNow.ts";
-import { useMeetingDetail, useMeetings } from "./useMeetings.ts";
+import { useMeetings } from "./useMeetings.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
@@ -326,9 +325,6 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
         ? summary.previous
         : null;
   const text = shown && overview(shown.markdown);
-  // Only an overview needs the speaker names, so a meeting without one skips reading its transcript.
-  const detail = useMeetingDetail(text ? meeting : null);
-  const names = detail ? speakerNames(detail.transcript) : [];
   return (
     <aside aria-label="Meeting overview" {...stylex.props(styles.aside)}>
       <h2 {...stylex.props(styles.asideTitle)}>{titleText(meeting)}</h2>
@@ -337,7 +333,7 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
       <h3 {...stylex.props(styles.overviewLabel)}>Overview</h3>
       {text ? (
         <p {...stylex.props(styles.overview)}>
-          <Inline text={text} names={names} />
+          <Inline text={text} speakers={meeting.speakers} />
         </p>
       ) : (
         <p {...stylex.props(styles.overviewEmpty)}>{emptyOverview(meeting)}</p>

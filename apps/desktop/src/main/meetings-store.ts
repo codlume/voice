@@ -26,6 +26,8 @@ import {
   type MeetingsState,
   type MeetingStatus,
   type Span,
+  type Speaker,
+  type SpeakerId,
   type Summary,
   type SummaryState,
   type TranscriptEntry,
@@ -507,7 +509,17 @@ function parseMeeting(raw: unknown): Meeting | null {
     folderIds: raw.folderIds.flatMap((folderId) => parseFolderId(folderId) ?? []),
     notes: raw.notes,
     summary,
+    speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
   };
+}
+
+function parseSpeaker(raw: unknown): Speaker[] {
+  if (!isRecord(raw) || !isText(raw.id) || !isText(raw.label)) return [];
+  const speaker = { id: raw.id as SpeakerId, label: raw.label };
+  if (raw.name === null) return [{ ...speaker, name: null }];
+  const { text, source } = isRecord(raw.name) ? raw.name : {};
+  if (!isText(text) || (source !== "user" && source !== "meetingApp")) return [];
+  return [{ ...speaker, name: { text, source } }];
 }
 
 function parseFolders(raw: unknown): Folder[] {
@@ -550,8 +562,9 @@ function parseLine(line: string): TranscriptEntry[] {
     final: raw.final,
   };
   if (raw.source === "mic") return [{ ...base, source: "mic" }];
-  if (raw.source === "system" && (raw.speaker === null || isText(raw.speaker))) {
-    return [{ ...base, source: "system", speaker: raw.speaker }];
+  if (raw.source === "system") {
+    const speakerId = isText(raw.speakerId) ? (raw.speakerId as SpeakerId) : null;
+    return [{ ...base, source: "system", speakerId }];
   }
   return [];
 }

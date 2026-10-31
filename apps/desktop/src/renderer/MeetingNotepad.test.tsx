@@ -9,6 +9,7 @@ import type {
   MeetingId,
   MeetingTranscriptChange,
   NotepadState,
+  SpeakerId,
   TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Notepad } from "./MeetingNotepad.tsx";
@@ -25,6 +26,7 @@ const meeting: Meeting = {
   folderIds: [],
   notes: "",
   summary: { kind: "none" },
+  speakers: [],
 };
 
 const said = (segmentId: string, text: string, source: "mic" | "system"): TranscriptEntry =>
@@ -38,7 +40,7 @@ const said = (segmentId: string, text: string, source: "mic" | "system"): Transc
         text,
         final: true,
         source,
-        speaker: null,
+        speakerId: null,
       };
 
 function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
@@ -119,6 +121,28 @@ describe("the notepad", () => {
     hear([said("b", "The export bug is fixed", "system")]);
     const lines = [...document.querySelectorAll("ol li")].map((li) => li.textContent);
     expect(lines).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
+  });
+
+  test("labels other voices by speaker once diarized, and follows a rename", async () => {
+    const s1 = "s1" as SpeakerId;
+    const done = {
+      ...meeting,
+      status: { kind: "ready" },
+      speakers: [{ id: s1, label: "Speaker 1", name: null }],
+    } satisfies Meeting;
+    const { push } = fakeNotepad({ meeting: done, prompt: null }, [
+      { ...said("a", "Ship it Friday", "system"), speakerId: s1 } as TranscriptEntry,
+    ]);
+    await render();
+    expect(document.querySelector("ol li")?.textContent).toBe("Speaker 100:00Ship it Friday");
+    push({
+      meeting: {
+        ...done,
+        speakers: [{ id: s1, label: "Speaker 1", name: { text: "Ann", source: "user" } }],
+      },
+      prompt: null,
+    });
+    expect(document.querySelector("ol li")?.textContent).toBe("Ann00:00Ship it Friday");
   });
 
   test("offers Pause and Stop while recording, and says so", async () => {

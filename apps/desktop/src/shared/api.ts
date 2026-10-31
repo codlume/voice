@@ -21,6 +21,7 @@ import {
   type MeetingTranscriptChange,
   type NotepadState,
   type PillMeeting,
+  type SpeakerId,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
@@ -387,6 +388,8 @@ export type HubApi = WindowApi & {
   getMeeting(id: MeetingId): Promise<MeetingDetail | null>;
   /** A blank title clears it, so the summary can generate one. */
   renameMeeting(id: MeetingId, title: string): Promise<void>;
+  /** Names one of the meeting's speakers everywhere it shows; a blank name brings back "Speaker N". */
+  renameMeetingSpeaker(id: MeetingId, speakerId: SpeakerId, name: string): Promise<void>;
   updateMeetingNotes(id: MeetingId, notes: string): Promise<void>;
   /** Deletes the meeting with its transcript, notes and any audio. */
   deleteMeeting(id: MeetingId): Promise<void>;
@@ -489,6 +492,7 @@ export const Channel = {
   meetings: "voice:meetings",
   getMeeting: "voice:getMeeting",
   renameMeeting: "voice:renameMeeting",
+  renameMeetingSpeaker: "voice:renameMeetingSpeaker",
   updateMeetingNotes: "voice:updateMeetingNotes",
   deleteMeeting: "voice:deleteMeeting",
   createFolder: "voice:createFolder",

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 import { DEFAULT_SETTINGS, type HubApi, type Snapshot } from "../shared/api.ts";
 import {
   DEFAULT_MEETINGS_SETTINGS,
+  renameSpeaker,
   searchMeeting,
   type Folder,
   type FolderDraft,
@@ -14,6 +15,8 @@ import {
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
+  type Speaker,
+  type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Meetings } from "./Meetings.tsx";
@@ -47,6 +50,7 @@ function meeting(
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...patch,
   };
 }
@@ -56,8 +60,14 @@ const summary = (markdown: string) => ({
   summary: { markdown, generatedAt: 0, coversUntilMs: 30 * MINUTE },
 });
 
+const PRIYA = "s1" as SpeakerId;
+const TOM = "s2" as SpeakerId;
+const syncSpeakers: Speaker[] = [
+  { id: PRIYA, label: "Speaker 1", name: { text: "Priya Shah", source: "user" } },
+  { id: TOM, label: "Speaker 2", name: null },
+];
 const syncSummary =
-  "Priya Shah agreed to ship the export fix.\n\n### Decisions\n- Ship on Thursday\n\n### Next Steps\n- **Priya Shah**\n  - Draft the launch email";
+  "{{speaker:s1}} agreed to ship the export fix.\n\n### Decisions\n- Ship on Thursday\n\n### Next Steps\n- **{{speaker:s2}}**\n  - Draft the launch email";
 
 const transcript: TranscriptEntry[] = [
   {
@@ -78,7 +88,17 @@ const transcript: TranscriptEntry[] = [
     text: "The export bug is fixed",
     final: true,
     source: "system",
-    speaker: "Priya Shah",
+    speakerId: PRIYA,
+  },
+  {
+    kind: "segment",
+    id: "c",
+    startMs: 5000,
+    endMs: 6000,
+    text: "I will draft the email",
+    final: true,
+    source: "system",
+    speakerId: TOM,
   },
 ];
 
@@ -125,6 +145,13 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     },
     searchMeetings: vi.fn(async (query: string) =>
       state.meetings.flatMap((m) => searchMeeting(m, transcripts[m.id] ?? [], query) ?? []),
+    ),
+    renameMeetingSpeaker: vi.fn(async (meetingId: MeetingId, speakerId: SpeakerId, name: string) =>
+      set({
+        meetings: state.meetings.map((m) =>
+          m.id === meetingId ? renameSpeaker(m, speakerId, name) : m,
+        ),
+      }),
     ),
     updateMeetingNotes: vi.fn(async (meetingId: MeetingId, notes: string) =>
       set({ meetings: state.meetings.map((m) => (m.id === meetingId ? { ...m, notes } : m)) }),
@@ -207,7 +234,10 @@ async function type(element: HTMLInputElement | HTMLTextAreaElement, value: stri
 }
 
 const sample = () => [
-  meeting(1, "Weekly product sync", hoursAgo(0), { summary: summary(syncSummary) }),
+  meeting(1, "Weekly product sync", hoursAgo(0), {
+    summary: summary(syncSummary),
+    speakers: syncSpeakers,
+  }),
   meeting(2, "Planowanie sprintu", hoursAgo(26)),
   meeting(3, "Morning standup", hoursAgo(27)),
 ];
@@ -297,6 +327,30 @@ describe("a meeting", () => {
     expect(text()).toContain("The export bug is fixed");
     await click(byText("My thoughts"));
     expect(document.querySelector("textarea[aria-label='My thoughts']")).not.toBeNull();
+  });
+
+  test("renaming a speaker shows the name in the transcript and the summary", async () => {
+    const main = await openSync();
+    await waitForText("Speaker 2");
+    await click(byText("Transcript"));
+    await waitForText("I will draft the email");
+    const field = document.querySelector<HTMLInputElement>(
+      "input[aria-label='Name for Speaker 2']",
+    )!;
+    await act(async () => field.focus());
+    await type(field, "Tom Becker");
+    await act(async () => {
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(main.renameMeetingSpeaker).toHaveBeenCalledWith(id(1), TOM, "Tom Becker");
+    await waitForText("Tom Becker");
+    expect(text()).not.toContain("Speaker 2I will draft");
+    await click(byText("Summary"));
+    await vi.waitFor(async () => {
+      await settle();
+      const marks = [...document.querySelectorAll("mark")].map((mark) => mark.textContent);
+      expect(marks).toEqual(["Priya Shah", "Tom Becker"]);
+    });
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {

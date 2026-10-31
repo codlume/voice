@@ -267,11 +267,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       text: event.text,
       final: true,
     } as const;
-    // Speakers on system audio get names in step 3; until then they are "Others".
+    // System audio is "Others" until the final pass tells its speakers apart.
     const entry: Segment =
       event.source === "mic"
         ? { ...base, source: "mic" }
-        : { ...base, source: "system", speaker: null };
+        : { ...base, source: "system", speakerId: null };
     await store.append(id, [entry]);
     deps.onTranscript(id, [entry]);
     if (watchdogs.has(id))

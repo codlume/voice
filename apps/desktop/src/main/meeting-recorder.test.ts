@@ -116,7 +116,7 @@ describe("meeting recorder", () => {
     const transcript = await h.store.transcript(id);
     expect(transcript).toMatchObject([
       { kind: "segment", source: "mic", startMs: 0, text: "Hello everyone", final: true },
-      { kind: "segment", source: "system", speaker: null, startMs: 2500, text: "Hi there" },
+      { kind: "segment", source: "system", speakerId: null, startMs: 2500, text: "Hi there" },
     ]);
     expect(h.pushed).toEqual(transcript);
   });

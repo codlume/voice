@@ -75,6 +75,8 @@ const voice: HubApi = {
   onMeetings: (listener) => subscribe<MeetingsChange>(Channel.meetings, listener),
   getMeeting: (id) => ipcRenderer.invoke(Channel.getMeeting, id),
   renameMeeting: (id, title) => ipcRenderer.invoke(Channel.renameMeeting, id, title),
+  renameMeetingSpeaker: (id, speakerId, name) =>
+    ipcRenderer.invoke(Channel.renameMeetingSpeaker, id, speakerId, name),
   updateMeetingNotes: (id, notes) => ipcRenderer.invoke(Channel.updateMeetingNotes, id, notes),
   deleteMeeting: (id) => ipcRenderer.invoke(Channel.deleteMeeting, id),
   createFolder: (draft) => ipcRenderer.invoke(Channel.createFolder, draft),

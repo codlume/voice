@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   applyMeetingsChange,
+  renameSpeaker,
   type Meeting,
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
   type Segment,
+  type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
@@ -45,6 +47,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...overrides,
   };
 }
@@ -105,6 +108,22 @@ describe("meetings store", () => {
       segment("s2", "Budget is fine", 1000),
       { kind: "marker", marker: "paused", atMs: 2000 },
     ]);
+  });
+
+  test("a renamed speaker and the segments that name it survive a relaunch", async () => {
+    const first = harness();
+    await first.loaded;
+    const s1 = "s1" as SpeakerId;
+    await first.store.put(meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    const said: Segment = { ...segment("x", "Hi"), source: "system", speakerId: s1 };
+    await first.store.append(A, [said]);
+    await first.store.update(A, (saved) => renameSpeaker(saved, s1, "  Ania "));
+
+    const second = await relaunch();
+    expect(second.store.get(A)?.speakers).toEqual([
+      { id: s1, label: "Speaker 1", name: { text: "Ania", source: "user" } },
+    ]);
+    expect(await second.store.transcript(A)).toEqual([said]);
   });
 
   test("files are owner-only and the hub hears each change as a patch", async () => {

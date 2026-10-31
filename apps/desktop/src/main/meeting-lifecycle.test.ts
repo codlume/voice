@@ -53,6 +53,7 @@ function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Mee
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...overrides,
   };
 }

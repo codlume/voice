@@ -78,6 +78,7 @@ describe("hub preload", () => {
       "openRelease",
       "pauseMeeting",
       "renameMeeting",
+      "renameMeetingSpeaker",
       "requestAccountDeletion",
       "requestPermission",
       "restartForUpdate",

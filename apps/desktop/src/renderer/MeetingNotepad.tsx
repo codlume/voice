@@ -7,6 +7,7 @@ import type {
   MeetingCommandResult,
   MeetingId,
   NotepadState,
+  Speaker,
   TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
@@ -187,7 +188,7 @@ function useNotepadState(): NotepadState | null | undefined {
 }
 
 /** The meeting's transcript, read once and then followed line by line while it records. */
-function useLiveTranscript(id: MeetingId) {
+function useLiveTranscript(id: MeetingId, speakers: readonly Speaker[]) {
   const [lines, setLines] = useState<{
     read: readonly TranscriptEntry[] | null;
     live: readonly TranscriptEntry[];
@@ -208,8 +209,11 @@ function useLiveTranscript(id: MeetingId) {
     };
   }, [id]);
   return useMemo(
-    () => (lines.read === null ? null : transcriptRows(mergeTranscript(lines.read, lines.live))),
-    [lines],
+    () =>
+      lines.read === null
+        ? null
+        : transcriptRows(mergeTranscript(lines.read, lines.live), speakers),
+    [lines, speakers],
   );
 }
 
@@ -306,7 +310,7 @@ function send(command: NotepadCommand, id: MeetingId): Promise<MeetingCommandRes
 
 function MeetingNotepad({ meeting, prompt }: NotepadState) {
   // Held here, not in the tab, so lines keep arriving while My thoughts is open.
-  const rows = useLiveTranscript(meeting.id);
+  const rows = useLiveTranscript(meeting.id, meeting.speakers);
   const now = useNow(notepadTicks(meeting, prompt));
   const status = notepadStatus(meeting, now);
   const [tab, setTab] = useState<NotepadTab>("transcript");

@@ -10,6 +10,8 @@ import {
   type Folder,
   type Meeting,
   type MeetingCommandResult,
+  type MeetingId,
+  type Speaker,
   type Summary,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
@@ -19,13 +21,7 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
-import {
-  durationLabel,
-  meetingWhen,
-  speakerNames,
-  statusLabel,
-  transcriptRows,
-} from "./meetingsView.ts";
+import { durationLabel, meetingWhen, statusLabel, transcriptRows } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -129,6 +125,30 @@ const styles = stylex.create({
     resize: "vertical",
     outline: "none",
   },
+  speakers: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: space.sm,
+    margin: 0,
+    padding: space.lg,
+    paddingBottom: 0,
+    borderWidth: 0,
+  },
+  speakerInput: {
+    width: 140,
+    paddingBlock: 4,
+    paddingInline: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: { default: color.border, ":focus": color.input },
+    borderRadius: radius.small,
+    backgroundColor: "transparent",
+    color: color.primary,
+    font: "inherit",
+    fontSize: 13,
+    fontWeight: 600,
+    outline: "none",
+  },
   transcript: { margin: 0, padding: space.lg, listStyle: "none" },
   turn: {
     display: "grid",
@@ -215,16 +235,16 @@ function TitleField({ meeting }: { meeting: Meeting }) {
 
 function SummaryCard({
   summary,
-  names,
+  speakers,
   dimmed = false,
 }: {
   summary: Summary;
-  names: readonly string[];
+  speakers: readonly Speaker[];
   dimmed?: boolean;
 }) {
   return (
     <Card style={[styles.summaryCard, dimmed && styles.stale]}>
-      <SummaryMarkdown markdown={summary.markdown} names={names} />
+      <SummaryMarkdown markdown={summary.markdown} speakers={speakers} />
     </Card>
   );
 }
@@ -250,7 +270,8 @@ function Banner({
   );
 }
 
-function SummaryPanel({ meeting, names }: { meeting: Meeting; names: readonly string[] }) {
+function SummaryPanel({ meeting }: { meeting: Meeting }) {
+  const { speakers } = meeting;
   const action = useAction();
   const generate = (label: string) => ({
     label,
@@ -306,7 +327,11 @@ function SummaryPanel({ meeting, names }: { meeting: Meeting; names: readonly st
         </p>
       )}
       {previous && (
-        <SummaryCard summary={previous} names={names} dimmed={status.kind === "summarizing"} />
+        <SummaryCard
+          summary={previous}
+          speakers={speakers}
+          dimmed={status.kind === "summarizing"}
+        />
       )}
     </>
   );
@@ -336,9 +361,54 @@ function Thoughts({ meeting }: { meeting: Meeting }) {
   );
 }
 
-function Transcript({ transcript }: { transcript: readonly TranscriptEntry[] | undefined }) {
+/** A speaker's name, saved on Enter or leaving the field; blank goes back to "Speaker N". */
+function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
+  const saved = speaker.name?.text ?? "";
+  const [draft, setDraft] = useState(saved);
+  const action = useAction();
+  const commit = () => {
+    if (draft.trim() === saved) return;
+    void action.run(
+      () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, draft),
+      "Could not rename this speaker.",
+    );
+  };
+  return (
+    <>
+      <input
+        aria-label={`Name for ${speaker.label}`}
+        value={draft}
+        placeholder={speaker.label}
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(saved);
+            event.currentTarget.blur();
+          }
+        }}
+        {...stylex.props(styles.speakerInput)}
+      />
+      {action.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {action.error}
+        </p>
+      )}
+    </>
+  );
+}
+
+function Transcript({
+  meeting,
+  transcript,
+}: {
+  meeting: Meeting;
+  transcript: readonly TranscriptEntry[] | undefined;
+}) {
   if (transcript === undefined) return null;
-  const rows = transcriptRows(transcript);
+  const rows = transcriptRows(transcript, meeting.speakers);
   if (rows.length === 0) {
     return (
       <Card style={styles.summaryCard}>
@@ -348,6 +418,17 @@ function Transcript({ transcript }: { transcript: readonly TranscriptEntry[] | u
   }
   return (
     <Card>
+      {meeting.speakers.length > 0 && (
+        <fieldset aria-label="Speakers" {...stylex.props(styles.speakers)}>
+          {meeting.speakers.map((speaker) => (
+            <SpeakerField
+              key={`${speaker.id}:${speaker.name?.text ?? ""}`}
+              meetingId={meeting.id}
+              speaker={speaker}
+            />
+          ))}
+        </fieldset>
+      )}
       <ol aria-label="Transcript" {...stylex.props(styles.transcript)}>
         {rows.map((row) =>
           row.kind === "marker" ? (
@@ -386,7 +467,6 @@ export function MeetingDetail({
 }) {
   const detail = useMeetingDetail(meeting);
   const transcript = detail?.transcript;
-  const names = transcript ? speakerNames(transcript) : [];
   const [tab, setTab] = useState<DetailTab>("summary");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [feedback, setFeedback] = useState<keyof typeof feedbackText | null>(null);
@@ -487,13 +567,13 @@ export function MeetingDetail({
           ))}
         </Tabs.List>
         <Tabs.Panel value="summary" {...stylex.props(styles.panel)}>
-          <SummaryPanel meeting={meeting} names={names} />
+          <SummaryPanel meeting={meeting} />
         </Tabs.Panel>
         <Tabs.Panel value="thoughts" {...stylex.props(styles.panel)}>
           <Thoughts key={meeting.id} meeting={meeting} />
         </Tabs.Panel>
         <Tabs.Panel value="transcript" {...stylex.props(styles.panel)}>
-          <Transcript transcript={transcript} />
+          <Transcript meeting={meeting} transcript={transcript} />
         </Tabs.Panel>
       </Tabs.Root>
       <ConfirmDialog

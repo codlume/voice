@@ -23,6 +23,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...patch,
   };
 }
