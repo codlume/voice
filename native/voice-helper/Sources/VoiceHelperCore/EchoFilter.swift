@@ -26,7 +26,7 @@ public struct EchoFilter: Sendable {
     private var waiting: [TimedText] = []
     private var ready: [TimedText] = []
     private var systemThroughMs = 0.0
-    public private(set) var dropped: [TimedText] = []
+    private var dropped: [TimedText] = []
 
     public init() {}
 
@@ -58,6 +58,12 @@ public struct EchoFilter: Sendable {
         return ready
     }
 
+    /// Mic segments dropped as echo since the last call.
+    public mutating func takeDropped() -> [TimedText] {
+        defer { dropped.removeAll() }
+        return dropped
+    }
+
     public func isEcho(_ mic: TimedText) -> Bool {
         let words = Self.words(mic.text)
         guard !words.isEmpty else { return false }
@@ -68,7 +74,7 @@ public struct EchoFilter: Sendable {
         return Double(echoed) / Double(words.count) >= Self.echoShare
     }
 
-    static func words(_ text: String) -> [String] {
+    public static func words(_ text: String) -> [String] {
         text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
 }

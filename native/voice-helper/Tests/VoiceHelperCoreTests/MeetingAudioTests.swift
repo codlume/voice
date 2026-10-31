@@ -113,7 +113,8 @@ private func silence(seconds: Double) -> [Float] {
         #expect(filter.release() == [system(1_000, 4_000, "Let's ship the beta on Friday, okay?")], "mic waits for system to pass it")
         filter.systemReached(6_000)
         #expect(filter.release().isEmpty)
-        #expect(filter.dropped == [mic(1_100, 4_200, "Let's ship the beta on Friday.")])
+        #expect(filter.takeDropped() == [mic(1_100, 4_200, "Let's ship the beta on Friday.")])
+        #expect(filter.takeDropped().isEmpty)
     }
 
     @Test func keepsTheUsersOwnWordsEvenWhenTheyOverlapSystemAudio() {

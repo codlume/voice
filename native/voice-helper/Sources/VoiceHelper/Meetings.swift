@@ -221,7 +221,12 @@ final class MeetingTranscription {
     private func publish(systemDone: Bool = false) {
         let systemMissing = !FileManager.default.fileExists(atPath: file(.system).path) || (recording && !systemActive)
         filter.systemReached(systemDone || systemMissing ? .infinity : meetingMs(cursor[.system] ?? 0))
-        for segment in filter.release() {
+        let released = filter.release()
+        // Counts only: transcript text never goes to the log.
+        for echo in filter.takeDropped() {
+            output.log(.info, "meeting echo dropped a \(EchoFilter.words(echo.text).count)-word mic segment")
+        }
+        for segment in released {
             output.emit(.meetingSegment(id: id, source: segment.source, startMs: segment.startMs, endMs: segment.endMs, text: segment.text))
         }
     }
