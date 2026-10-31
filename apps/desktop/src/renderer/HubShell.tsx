@@ -96,13 +96,17 @@ type PageView = {
   history: HistoryState;
   openPage: (id: AppPage) => void;
   openSettingsPage: (id: SettingsPage) => void;
+  /** The Meetings page's own settings dialog, which Settings can open too. */
+  meetingSettings: { open: boolean; setOpen: (open: boolean) => void };
 };
 
 const appPageViews: Record<AppPage, (view: PageView) => ReactNode> = {
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
-  meetings: ({ snapshot }) => <Meetings snapshot={snapshot} />,
+  meetings: ({ snapshot, meetingSettings }) => (
+    <Meetings snapshot={snapshot} settings={meetingSettings} />
+  ),
   insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
   transforms: ({ snapshot, openSettingsPage }) => (
@@ -141,8 +145,15 @@ const settingsPageViews: Record<SettingsPage, (view: PageView) => ReactNode> = {
       session={snapshot.session}
     />
   ),
-  privacy: ({ snapshot, history }) => (
-    <DataPrivacySettings settings={snapshot.settings} history={history} />
+  privacy: ({ snapshot, history, openPage, meetingSettings }) => (
+    <DataPrivacySettings
+      settings={snapshot.settings}
+      history={history}
+      onOpenMeetingSettings={() => {
+        openPage("meetings");
+        meetingSettings.setOpen(true);
+      }}
+    />
   ),
   shortcuts: ({ snapshot, openPage }) => (
     <ShortcutsSettings
@@ -655,6 +666,7 @@ export function HubShell({
     section: "general",
   });
   const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
+  const [meetingSettingsOpen, setMeetingSettingsOpen] = useState(false);
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
   if (shown.page !== appPage) setShown({ page: appPage, rises: true });
@@ -712,6 +724,7 @@ export function HubShell({
     history,
     openPage: selectAppPage,
     openSettingsPage: openSettings,
+    meetingSettings: { open: meetingSettingsOpen, setOpen: setMeetingSettingsOpen },
   };
   const AppPageView = appPageViews[appPage];
   return (

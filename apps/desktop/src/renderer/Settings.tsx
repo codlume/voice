@@ -43,6 +43,7 @@ import { Card } from "./Card.tsx";
 import { CommitSlider } from "./CommitSlider.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { droppedBy } from "./historyView.ts";
+import { retentionSentence } from "./meetingsView.ts";
 import { dictatesWithFn, dictationKeys, hotkeyLabel } from "./hotkeys.ts";
 import { Keys } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
@@ -57,6 +58,7 @@ import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { shortcutsHint } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
 import { useKeyboardLayout } from "./useKeyboardLayout.ts";
+import { useMeetings } from "./useMeetings.ts";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { updateStatusText } from "./updateStatus.ts";
@@ -649,10 +651,13 @@ export function SystemSettings({
 export function DataPrivacySettings({
   settings,
   history,
+  onOpenMeetingSettings,
 }: {
   settings: Settings;
   history: HistoryState;
+  onOpenMeetingSettings: () => void;
 }) {
+  const meetings = useMeetings();
   const diagnosticsAction = useAction();
   const changeDiagnostics = (diagnostics: DiagnosticsConsent) =>
     update(diagnosticsAction, { diagnostics });
@@ -685,6 +690,22 @@ export function DataPrivacySettings({
       </Section>
 
       <HistorySection history={history} />
+
+      <Section label="Meetings">
+        <Card>
+          <Row
+            title="Keep meetings"
+            detail={
+              meetings ? retentionSentence(meetings.settings.retention) : "Reading your meetings…"
+            }
+            onReset={undefined}
+          >
+            <Button variant="secondary" onClick={onOpenMeetingSettings}>
+              Meeting settings…
+            </Button>
+          </Row>
+        </Card>
+      </Section>
 
       <Section label="Insights">
         <Card>
