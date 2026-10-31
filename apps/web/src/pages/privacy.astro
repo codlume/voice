@@ -43,9 +43,23 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
     <ul {...ul}>
       <li {...li}>
         <strong>Speech recognition.</strong> Voice recognizes speech locally, using the Parakeet model.
-        Voice captures audio only while you hold the dictation shortcut. The audio is held in memory
-        only. It is never written to disk and never sent anywhere. Voice discards it after
-        transcription, or when you cancel.
+        For dictation, Voice captures audio only while you dictate with the dictation shortcut. That
+        audio is held in memory only. It is never written to disk and never sent anywhere. Voice
+        discards it after transcription, or when you cancel.
+      </li>
+      <li {...li}>
+        <strong>Meetings.</strong> Voice records a meeting only after you start one, with Start
+        meeting, the meeting shortcut, or the menu bar, and stops when you stop it or it reaches the
+        maximum length you chose. It records your microphone and, if you allow System Audio
+        Recording, the sound your Mac plays. That sound includes the other participants and
+        anything else playing at the time, such as music, videos, or notification sounds. While the
+        meeting records, Voice writes its audio to files on your Mac, so a crash or quit does not
+        lose it, and deletes those files once the final transcript is ready. Voice transcribes the
+        meeting and writes its summary on your Mac, with local models. The transcript, summary, and
+        your thoughts stay in Voice's data folder on your Mac for as long as Keep meetings says in
+        the Meetings settings: until you delete them, unless you choose a shorter time. Deleting a
+        meeting deletes all of it. Nothing about a meeting is sent anywhere. Copy as Markdown puts
+        a meeting on your clipboard, and Export .md saves it to a file you choose.
       </li>
       <li {...li}>
         <strong>Cleanup.</strong> This optional step tidies up the transcribed text. It is on by
@@ -60,7 +74,7 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         Switching back to keeping it until you quit deletes that file right away, and Clear history
         deletes every transcript. If Voice cannot read that file, it leaves the file alone, keeps
         the history in memory, and says so on Home until you clear history.
-        Audio is never saved, whatever you choose. If you turn on Copy transcript to clipboard, each
+        Dictation audio is never saved, whatever you choose. If you turn on Copy transcript to clipboard, each
         transcript also stays on your clipboard after Voice quits, where other apps and clipboard
         managers can read it like anything you copy. Its settings file holds your microphone,
         shortcut, and preferences, and none of your text.
@@ -88,17 +102,21 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
         category Insights counts. The website stays in memory only for the session. Voice never captures your screen or reads other windows.
       </li>
       <li {...li}>
-        <strong>Permissions.</strong> Voice asks for two macOS permissions. Microphone lets it hear
-        you while you hold the shortcut. Accessibility lets it detect the shortcut and type text. The
-        keyboard listener only looks for the shortcut. Your keystrokes are not recorded or sent.
+        <strong>Permissions.</strong> Voice asks for up to three macOS permissions. Microphone lets it
+        hear you while you dictate or during a meeting you start. Accessibility lets it detect its
+        shortcuts and type text. System Audio Recording lets it record the sound your Mac plays
+        during a meeting you start. macOS asks for it from the Set up Meetings checklist or when you
+        first start a meeting, and meetings record only your microphone without it. The keyboard listener only looks for
+        Voice's shortcuts. Your keystrokes are not recorded or sent.
       </li>
     </ul>
 
     <h2 {...h2}>What the Mac app sends over the network</h2>
     <ul {...ul}>
       <li {...li}>
-        <strong>Model downloads.</strong> Voice fetches the speech and cleanup models from Hugging
-        Face (huggingface.co), and only when you click to download them. Hugging Face sees a normal
+        <strong>Model downloads.</strong> Voice fetches the speech, cleanup, and transform models from
+        Hugging Face (huggingface.co), and only when you click to download them or turn on
+        Transforms. The transform model also writes meeting summaries. Hugging Face sees a normal
         download request, including your IP address. Voice sends no personal data from the app.
       </li>
       <li {...li}>
@@ -165,7 +183,7 @@ const mailto = `mailto:${CONTACT_EMAIL}`;
       </li>
       <li {...li}>
         <strong>What never reaches the account service.</strong> We never send audio, transcripts,
-        clipboard contents, or app context to the account service.
+        meetings, clipboard contents, or app context to the account service.
       </li>
     </ul>
     <p {...p}>
