@@ -5,7 +5,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 
 import type { MeetingCommandResult, Meeting, MeetingId, NotepadState } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
-import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
+import {
+  CONSENT_REMINDER,
+  partialRows,
+  transcriptRows,
+  type TranscriptRow,
+} from "./meetingsView.ts";
 import {
   notepadStatus,
   notepadTicks,
@@ -115,7 +120,9 @@ const styles = stylex.create({
     outline: "none",
   },
   scroll: { flexGrow: 1, minHeight: 0, overflowY: "auto", paddingInline: space.md },
-  empty: { margin: 0, paddingBlock: space.lg, color: color.mutedForeground, textAlign: "center" },
+  empty: { paddingBlock: space.lg, color: color.mutedForeground, textAlign: "center" },
+  emptyLine: { margin: 0 },
+  consent: { marginTop: space.sm, fontSize: 12 },
   transcript: { margin: 0, paddingBlock: space.sm, paddingInline: 0, listStyle: "none" },
   turn: { paddingTop: { default: space.md, ":first-child": 0 } },
   turnContinued: { paddingTop: 4 },
@@ -214,7 +221,10 @@ function Transcript({ rows }: { rows: readonly TranscriptRow[] | null }) {
       {...stylex.props(styles.scroll)}
     >
       {rows.length === 0 ? (
-        <p {...stylex.props(styles.empty)}>What people say shows up here.</p>
+        <div {...stylex.props(styles.empty)}>
+          <p {...stylex.props(styles.emptyLine)}>What people say shows up here.</p>
+          <p {...stylex.props(styles.emptyLine, styles.consent)}>{CONSENT_REMINDER}</p>
+        </div>
       ) : (
         <ol aria-label="Transcript" {...stylex.props(styles.transcript)}>
           {rows.map((row) =>

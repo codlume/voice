@@ -26,6 +26,7 @@ import { MeetingNotices } from "./MeetingNotices.tsx";
 import { MeetingsSettingsDialog } from "./MeetingsSettingsDialog.tsx";
 import { Inline } from "./MeetingSummary.tsx";
 import {
+  CONSENT_REMINDER,
   liveMeeting,
   meetingDays,
   meetingWhen,
@@ -482,7 +483,13 @@ function MeetingsPage({
             onOpen={setOpenId}
           />
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
-          {!setup.ready && <SetupChecklist title="Set up Meetings" rows={setup.rows} />}
+          {!setup.ready && (
+            <SetupChecklist
+              title="Set up Meetings"
+              rows={setup.rows}
+              after={<p {...stylex.props(styles.notice)}>{CONSENT_REMINDER}</p>}
+            />
+          )}
           {summaryModel && (
             <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
           )}

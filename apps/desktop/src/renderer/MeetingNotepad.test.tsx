@@ -132,6 +132,14 @@ describe("the notepad", () => {
     expect(lines()).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
   });
 
+  test("before anyone speaks it reminds the user to get consent, and the reminder goes once they do", async () => {
+    const { hear } = fakeNotepad({ meeting, prompt: null }, []);
+    await render();
+    expect(document.body.textContent).toContain("Always get consent before recording others.");
+    hear([said("a", "Morning all", "mic")]);
+    expect(document.body.textContent).not.toContain("Always get consent before recording others.");
+  });
+
   test("shows each side's unconfirmed text in gray after the transcript until it stops", async () => {
     const { hear, murmur, push } = fakeNotepad({ meeting, prompt: null }, [
       said("a", "Morning all", "mic"),

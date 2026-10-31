@@ -24,6 +24,9 @@ import {
 import { dayLabel, formatterCache, timeLabel } from "./historyView.ts";
 
 /** When the meeting began, or when it was made if it never recorded. */
+/** Shown where a first meeting starts: the setup checklist and the notepad before anyone speaks. */
+export const CONSENT_REMINDER = "Always get consent before recording others.";
+
 export const meetingAt = (meeting: Meeting) => startedAt(meeting) ?? meeting.createdAt;
 
 export type MeetingDay = { day: DayKey; label: string; meetings: readonly Meeting[] };

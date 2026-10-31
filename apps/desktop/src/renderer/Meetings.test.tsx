@@ -631,6 +631,7 @@ describe("Set up Meetings", () => {
     expect(text()).toContain("System Audio RecordingHears the other participants");
     expect(text()).toContain("Allow Voice in System Settings");
     expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
+    expect(text()).toContain("Always get consent before recording others.");
     await click(byText("Grant"));
     expect(main.requestPermission).toHaveBeenCalledWith("microphone");
     await click(byText("Open"));
