@@ -56,17 +56,35 @@ public enum FinalTranscript {
     /// A word no turn covers takes the nearest turn this close.
     static let nearMs = 1000.0
 
-    /// Words from the speech model's tokens, whose text starts with a space where a word starts.
+    /// The longest a token is taken to sound. A token the model gave no duration otherwise ends
+    /// where the next token starts, across any silence between them.
+    static let tokenMs = 500.0
+
+    /// Words from the speech model's tokens. A word starts at a token that begins with a space,
+    /// or after a token that is only a space, as before a number. Punctuation joins its word but
+    /// not its time: the model often emits a period well into the silence after the sentence.
     /// Times are ms from the start of the decoded audio plus `offsetMs`.
     public static func words(tokens: [(text: String, startMs: Double, endMs: Double)], offsetMs: Double) -> [TimedWord] {
         var words: [TimedWord] = []
+        var boundary = true
         for token in tokens where !token.text.isEmpty {
             let piece = token.text.trimmingCharacters(in: .whitespaces)
-            if let last = words.last, !token.text.hasPrefix(" ") {
-                words[words.count - 1] = TimedWord(text: last.text + piece, startMs: last.startMs, endMs: offsetMs + token.endMs)
-            } else if !piece.isEmpty {
-                words.append(TimedWord(text: piece, startMs: offsetMs + token.startMs, endMs: offsetMs + token.endMs))
+            let startMs = offsetMs + token.startMs
+            let endMs = offsetMs + min(token.endMs, token.startMs + tokenMs)
+            if piece.isEmpty {
+                boundary = true
+                continue
             }
+            let punctuation = !piece.contains { $0.isLetter || $0.isNumber }
+            if let last = words.last, punctuation {
+                // A second period emitted for the same sentence end is dropped.
+                if !last.text.hasSuffix(piece) { words[words.count - 1] = TimedWord(text: last.text + piece, startMs: last.startMs, endMs: last.endMs) }
+            } else if let last = words.last, !boundary, !token.text.hasPrefix(" ") {
+                words[words.count - 1] = TimedWord(text: last.text + piece, startMs: last.startMs, endMs: max(last.endMs, endMs))
+            } else {
+                words.append(TimedWord(text: piece, startMs: startMs, endMs: endMs))
+            }
+            boundary = false
         }
         return words
     }
@@ -76,7 +94,7 @@ public enum FinalTranscript {
         let systemRuns = group(system, speakers: turns.map { turns in assign(system, to: turns) })
         var filter = EchoFilter()
         for run in systemRuns { filter.add(TimedText(source: .system, startMs: run.startMs, endMs: run.endMs, text: run.text)) }
-        let micRuns = group(mic, speakers: nil).filter {
+        let micRuns = group(mic, speakers: echoMarks(mic, system: system)).filter {
             !filter.isEcho(TimedText(source: .mic, startMs: $0.startMs, endMs: $0.endMs, text: $0.text))
         }
         var numbers: [String: Int] = [:]
@@ -122,6 +140,30 @@ public enum FinalTranscript {
         }
         close()
         return runs
+    }
+
+    /// Fewer echoed words in a row than this stay the user's: both sides say "yes" and "the".
+    static let echoRun = 3
+
+    // Marks the mic words that repeat system words heard around the same time, in runs of at
+    // least `echoRun`, so a mic run splits where the user's own words turn into the speakers' echo.
+    private static func echoMarks(_ mic: [TimedWord], system: [TimedWord]) -> [String?] {
+        var low = 0
+        let heard = mic.map { word -> Bool in
+            while low < system.count, system[low].endMs < word.startMs - EchoFilter.toleranceMs { low += 1 }
+            let spoken = Set(EchoFilter.words(word.text))
+            return system[low...].prefix { $0.startMs <= word.endMs + EchoFilter.toleranceMs }
+                .contains { !spoken.isDisjoint(with: EchoFilter.words($0.text)) }
+        }
+        var marks = [String?](repeating: nil, count: mic.count)
+        var start = 0
+        while start < mic.count {
+            var end = start
+            while end < mic.count, heard[end] { end += 1 }
+            if end - start >= echoRun { for index in start..<end { marks[index] = "echo" } }
+            start = max(end, start + 1)
+        }
+        return marks
     }
 
     // Each word takes the turn it overlaps most, else the nearest close turn, else the speaker
