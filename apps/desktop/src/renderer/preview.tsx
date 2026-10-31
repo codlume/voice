@@ -284,7 +284,7 @@ function fixtureMeeting(
   };
 }
 
-const summaryOf = (markdown: string, coversMinutes: number, at: number) => ({
+const summaryOf = (markdown: string, coversMinutes: number) => ({
   markdown,
   coversUntilMs: coversMinutes * MINUTE,
 });
@@ -344,23 +344,23 @@ function sampleMeetings({ recording = false } = {}): MeetingFixtures {
         { startedAt: designAt, endedAt: designAt + 20 * MINUTE },
         { startedAt: designAt + 40 * MINUTE, endedAt: designAt + 52 * MINUTE },
       ],
-      summary: { kind: "ready", summary: summaryOf(designReview, 20, designAt + 21 * MINUTE) },
+      summary: { kind: "ready", summary: summaryOf(designReview, 20) },
     }),
     fixtureMeeting(1, "Weekly product sync", syncAt, 34, {
       folderIds: [productFolder],
       notes:
         "Ask Tom whether the Windows test plan covers older audio drivers.\nPricing page: keep until launch.",
-      summary: { kind: "ready", summary: summaryOf(productSync, 34, syncAt + 35 * MINUTE) },
+      summary: { kind: "ready", summary: summaryOf(productSync, 34) },
     }),
     fixtureMeeting(3, "Planowanie sprintu", planningAt, 46, {
-      summary: { kind: "ready", summary: summaryOf(sprintPlanning, 46, planningAt + 47 * MINUTE) },
+      summary: { kind: "ready", summary: summaryOf(sprintPlanning, 46) },
     }),
     fixtureMeeting(4, "Morning standup", standupAt, 4, { folderIds: [standupFolder] }),
     fixtureMeeting(5, "Customer call: Northwind", customerAt, 28, {
       summary: {
         kind: "failed",
         message: "The cleanup model stopped before it finished.",
-        previous: summaryOf(customerCall, 28, customerAt + 29 * MINUTE),
+        previous: summaryOf(customerCall, 28),
       },
     }),
   ];
