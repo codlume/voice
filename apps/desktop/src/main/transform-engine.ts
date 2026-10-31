@@ -67,6 +67,14 @@ const decodeWork = Schema.decodeUnknownOption(WorkSchema);
 const decodeTransformResult = Schema.decodeUnknownOption(TransformResultSchema);
 const decodeGenerateResult = Schema.decodeUnknownOption(GenerateResultSchema);
 
+const narrow =
+  <T>(decode: (result: unknown) => Option.Option<T>) =>
+  (result: unknown) => {
+    const value = Option.getOrUndefined(decode(result));
+    if (value === undefined) throw new Error("The transform model returned a malformed result.");
+    return value;
+  };
+
 export function serve(
   port: ParentPort,
   createEngine: (options: { modelPath: string }) => TransformEngine,
@@ -107,14 +115,6 @@ export function createTransformProcess({
     decodeResult: Option.some,
     onLost,
   });
-
-  const narrow =
-    <T>(decode: (result: unknown) => Option.Option<T>) =>
-    (result: unknown) => {
-      const value = Option.getOrUndefined(decode(result));
-      if (value === undefined) throw new Error("The transform model returned a malformed result.");
-      return value;
-    };
 
   return {
     load: engine.load,

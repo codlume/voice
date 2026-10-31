@@ -1,3 +1,5 @@
+import { overviewOf, replaceSpeakerTokens } from "@voice/cleanup/summary";
+
 export type MeetingId = string & { readonly __brand: "MeetingId" };
 export type FolderId = string & { readonly __brand: "FolderId" };
 
@@ -30,8 +32,17 @@ export type MeetingStatus =
   | { kind: "summarizing" }
   | { kind: "ready" };
 
-/** `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale. */
-export type Summary = { markdown: string; generatedAt: number; coversUntilMs: number };
+/**
+ * `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale.
+ * `markdown` names speakers with chips (`speakerToken`), so a rename needs no regeneration.
+ * `overview` is the generated overview paragraph, null once the user edits the Markdown.
+ */
+export type Summary = {
+  markdown: string;
+  overview: string | null;
+  generatedAt: number;
+  coversUntilMs: number;
+};
 
 export type SummaryState =
   | { kind: "none" }
@@ -211,6 +222,14 @@ export const recordedMs = (meeting: Meeting, now: number): number =>
 export const summaryStale = (meeting: Meeting): boolean =>
   meeting.summary.kind === "ready" && meeting.summary.summary.coversUntilMs < closedMs(meeting);
 
+/** The overview the right panel shows: the stored one, else Wispr's first-paragraph rule. */
+export const summaryOverview = (summary: Summary) =>
+  summary.overview ?? overviewOf(summary.markdown);
+
+/** Summary Markdown with every speaker chip as its plain label, for search and copying. */
+export const plainSpeakers = (markdown: string, render = (label: string) => label) =>
+  replaceSpeakerTokens(markdown, ({ label }) => render(label));
+
 export const titleText = (meeting: Meeting) => meeting.title?.text ?? "Untitled meeting";
 
 export const speakerName = (segment: Segment) =>
@@ -271,7 +290,8 @@ export function searchMeeting(
 ): MeetingSearchHit | null {
   const needle = query.trim().toLocaleLowerCase();
   if (needle === "") return null;
-  const summary = meeting.summary.kind === "ready" ? meeting.summary.summary.markdown : "";
+  const summary =
+    meeting.summary.kind === "ready" ? plainSpeakers(meeting.summary.summary.markdown) : "";
   const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
   const fields: [MeetingSearchField, string][] = [
     ["title", meeting.title?.text ?? ""],

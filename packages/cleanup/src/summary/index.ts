@@ -1,4 +1,4 @@
-export { createGemmaSummaryProvider, type GenerateStep } from "./gemma.ts";
+export { createGemmaSummaryProvider, estimateTokens, type GenerateStep } from "./gemma.ts";
 export { detectLanguage, headingsFor, type SummaryLanguage } from "./language.ts";
 export {
   overviewOf,

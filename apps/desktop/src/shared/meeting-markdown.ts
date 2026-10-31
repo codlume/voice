@@ -1,5 +1,6 @@
 import {
   foldTranscript,
+  plainSpeakers,
   speakerName,
   startedAt,
   titleText,
@@ -46,7 +47,8 @@ export function meetingMarkdown(
     }).format(at),
   );
   if (meeting.summary.kind === "ready") {
-    sections.push(`## Summary\n\n${meeting.summary.summary.markdown.trim()}`);
+    const summary = plainSpeakers(meeting.summary.summary.markdown, (name) => `**${name}**`);
+    sections.push(`## Summary\n\n${summary.trim()}`);
   }
   if (meeting.notes.trim() !== "") sections.push(`## My thoughts\n\n${meeting.notes.trim()}`);
   const lines = foldTranscript(transcript).flatMap((entry) => {
