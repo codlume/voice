@@ -14,7 +14,7 @@ const dictationDone: Session = { phase: "done", id: "s1", outcome: { kind: "empt
 const state: AppState = {
   session: idle,
   transform: reading,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
   settings: DEFAULT_SETTINGS,

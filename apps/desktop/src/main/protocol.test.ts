@@ -28,7 +28,7 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 15 },
+      { type: "ready", version: 16 },
       { type: "hotkey", action: "down", uptimeMs: 1234.5 },
       { type: "hotkey", action: "up", uptimeMs: 2345.5 },
       { type: "hotkey", action: "chord", uptimeMs: 1 },
@@ -112,7 +112,12 @@ describe("parseHelperEvent", () => {
         method: "none",
         reason: "selectionChanged",
       },
-      { type: "permissions", microphone: "granted", accessibility: "denied" },
+      {
+        type: "permissions",
+        microphone: "granted",
+        accessibility: "denied",
+        systemAudio: "notDetermined",
+      },
       { type: "asr.status", state: "ready", message: null },
       { type: "log", level: "info", message: "hello" },
       {
@@ -374,7 +379,12 @@ describe("parseHelperEvent", () => {
     ["icons without their request id", line({ type: "icons.rendered", icons: [] })],
     [
       "an unknown permission state",
-      line({ type: "permissions", microphone: "maybe", accessibility: "granted" }),
+      line({
+        type: "permissions",
+        microphone: "maybe",
+        accessibility: "granted",
+        systemAudio: "notDetermined",
+      }),
     ],
   ])("rejects %s", (_name, input) => {
     expect(parseHelperEvent(input)).toBeNull();
@@ -506,6 +516,35 @@ const commandCases = {
   "apps.list": { type: "apps.list" },
   "icons.render": { type: "icons.render", id: "icons-1", paths: ["/Applications/Synthetic.app"] },
   "icons.render.empty": { type: "icons.render", id: "icons-1", paths: [] },
+  "permissions.request.systemAudio": { type: "permissions.request", kind: "systemAudio" },
+  "meeting.start": {
+    type: "meeting.start",
+    id: "m1",
+    dir: "/tmp/synthetic/meetings/m1",
+    baseMs: 0,
+    fromMs: { mic: 1250.5, system: 0 },
+    language: "pl",
+    microphone: null,
+  },
+  "meeting.start.pinned": {
+    type: "meeting.start",
+    id: "m1",
+    dir: "/tmp/synthetic/meetings/m1",
+    baseMs: 600_000,
+    fromMs: { mic: 600_000, system: 600_000 },
+    language: "auto",
+    microphone,
+  },
+  "meeting.stop": { type: "meeting.stop", id: "m1" },
+  "meeting.cancel": { type: "meeting.cancel", id: "m1" },
+  "meeting.transcribe": {
+    type: "meeting.transcribe",
+    id: "m1",
+    dir: "/tmp/synthetic/meetings/m1",
+    baseMs: 0,
+    fromMs: { mic: 1250.5, system: 0 },
+    language: "en",
+  },
 } satisfies Record<HelperCommand["type"], HelperCommand> & Record<string, HelperCommand>;
 
 const eventTypes = {
@@ -532,6 +571,10 @@ const eventTypes = {
   log: true,
   "apps.listed": true,
   "icons.rendered": true,
+  "meeting.started": true,
+  "meeting.failed": true,
+  "meeting.segment": true,
+  "meeting.drained": true,
 } satisfies Record<HelperEvent["type"], true>;
 
 function startContractHelper(configure: () => HelperCommand[] = () => []) {

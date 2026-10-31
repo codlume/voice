@@ -75,7 +75,12 @@ function handle(command: Record<string, unknown>) {
       emit({ type: "log", level: "info", message: `hotkey configured: ${String(command.key)}` });
       return;
     case "permissions.check":
-      emit({ type: "permissions", microphone: "granted", accessibility: "granted" });
+      emit({
+        type: "permissions",
+        microphone: "granted",
+        accessibility: "granted",
+        systemAudio: "notDetermined",
+      });
       return;
     case "asr.prepare":
       emit({ type: "asr.status", state: "ready" });

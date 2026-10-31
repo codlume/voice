@@ -194,7 +194,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     },
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "granted", accessibility: "granted" },
+    permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
       asr: { state: "ready" },

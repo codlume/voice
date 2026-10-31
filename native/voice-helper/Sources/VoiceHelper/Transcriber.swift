@@ -61,6 +61,7 @@ final class Transcriber: Transcribing {
     private let output: Output
     private var load: AsrLoad = .missing
     private var lastDecodeFinishedAt: DispatchTime?
+    private var meetingManager: Task<AsrManager, Error>?
     private static let warmSeconds = 300.0
 
     /// A model that has not decoded for a while may pay a reload on its next decode, and the
@@ -144,6 +145,7 @@ final class Transcriber: Transcribing {
             break
         }
         load = .missing
+        meetingManager = nil
         do {
             try FileManager.default.removeItem(at: directory)
         } catch let error as CocoaError where error.code == .fileNoSuchFile {
@@ -219,6 +221,40 @@ final class Transcriber: Transcribing {
         } catch {
             throw TranscribeError(reason: .unknown, message: "\(error)")
         }
+    }
+
+    /// Decodes a meeting window on its own manager at utility priority, so a dictation decode
+    /// never queues behind meeting audio on the model actor. Waits for a model that is loading.
+    func decodeMeeting(_ samples: [Float], language: DictationLanguage) async throws -> String {
+        let pending: Task<AsrManager, Error>
+        if let meetingManager {
+            pending = meetingManager
+        } else {
+            let prepared: Task<PreparedAsr, Error>
+            switch load {
+            case .ready(let ready): prepared = Task { ready }
+            case .loading(let task), .downloading(let task): prepared = task
+            case .missing: throw TranscribeError(reason: .asrUnavailable, message: "speech model is not downloaded")
+            case .failed(let message): throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(message)")
+            }
+            pending = Task.detached(priority: .utility) {
+                let manager = AsrManager()
+                try await manager.loadModels(try await prepared.value.models)
+                return manager
+            }
+            meetingManager = pending
+        }
+        let manager: AsrManager
+        do {
+            manager = try await pending.value
+        } catch {
+            if meetingManager == pending { meetingManager = nil }
+            throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(error)")
+        }
+        let asrLanguage = language.asrLanguage
+        return try await Task.detached(priority: .utility) {
+            try await Self.decode(samples, with: manager, language: asrLanguage)
+        }.value
     }
 
     nonisolated static func decode(_ samples: [Float], with manager: AsrManager, language: Language?) async throws -> String {

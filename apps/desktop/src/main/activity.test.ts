@@ -35,7 +35,7 @@ describe("activity", () => {
 const busy: AppState = {
   session: idle,
   transform: reading,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
   settings: DEFAULT_SETTINGS,

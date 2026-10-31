@@ -128,6 +128,15 @@ private func commandCases() -> [String: HelperCommand] {
         "icons.render.empty": .iconsRender(id: "icons-1", paths: []),
         "test.audioFile": .testAudioFile(path: "/tmp/synthetic.wav"),
         "test.audioFile.clear": .testAudioFile(path: nil),
+        "permissions.request.systemAudio": .permissionsRequest(kind: .systemAudio),
+        "meeting.start": .meetingStart(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 0, fromMs: MeetingCursor(mic: 1250.5, system: 0),
+                                       language: .pl, microphone: nil),
+        "meeting.start.pinned": .meetingStart(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 600_000,
+                                              fromMs: MeetingCursor(mic: 600_000, system: 600_000), language: .auto, microphone: microphone),
+        "meeting.stop": .meetingStop(id: "m1"),
+        "meeting.cancel": .meetingCancel(id: "m1"),
+        "meeting.transcribe": .meetingTranscribe(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 0,
+                                                 fromMs: MeetingCursor(mic: 1250.5, system: 0), language: .en),
     ]
 }
 
@@ -171,8 +180,9 @@ private func eventCases() -> [String: HelperEvent] {
         "insert.result.selectionChanged": .insertResult(id: "r1", outcome: .refused(.selectionChanged)),
         "insert.result.paste": .insertResult(id: "s1", outcome: .paste(.unchanged, clipboardSaveMs: 1.5)),
         "insert.result.accessibility": .insertResult(id: "s1", outcome: .accessibility(.direct)),
-        "permissions": .permissions(microphone: .granted, accessibility: .notDetermined),
-        "permissions.denied": .permissions(microphone: .denied, accessibility: .granted),
+        "permissions": .permissions(microphone: .granted, accessibility: .notDetermined, systemAudio: .notDetermined),
+        "permissions.denied": .permissions(microphone: .denied, accessibility: .granted, systemAudio: .denied),
+        "permissions.systemAudio.unavailable": .permissions(microphone: .granted, accessibility: .granted, systemAudio: .unavailable),
         "asr.status": .asrStatus(state: .failed, message: "Synthetic model failure"),
         "asr.status.ready": .asrStatus(state: .ready, message: nil),
         "log": .log(level: .info, message: "Synthetic protocol log"),
@@ -181,6 +191,14 @@ private func eventCases() -> [String: HelperEvent] {
         "apps.listed.empty": .appsListed(apps: []),
         "icons.rendered": .iconsRendered(id: "icons-1", icons: [RenderedIcon(path: "/Applications/Synthetic.app", png: Data([0x89, 0x50, 0x4E, 0x47, 0xFF]))]),
         "icons.rendered.empty": .iconsRendered(id: "icons-1", icons: []),
+        "meeting.started": .meetingStarted(id: "m1", mic: .active, system: .active),
+        "meeting.started.micOnly": .meetingStarted(id: "m1", mic: .active, system: .unavailable),
+        "meeting.started.denied": .meetingStarted(id: "m1", mic: .active, system: .denied),
+        "meeting.failed": .meetingFailed(id: "m1", message: "Synthetic microphone failure"),
+        "meeting.segment": .meetingSegment(id: "m1", source: .mic, startMs: 1200, endMs: 4850.5, text: "Zażółć Ada 42"),
+        "meeting.segment.system": .meetingSegment(id: "m1", source: .system, startMs: 5000, endMs: 9000, text: "Synthetic reply"),
+        "meeting.drained": .meetingDrained(id: "m1", failure: nil),
+        "meeting.drained.failure": .meetingDrained(id: "m1", failure: "speech model is not downloaded"),
     ]
 }
 
@@ -204,6 +222,10 @@ private func commandType(_ command: HelperCommand) -> String {
     case .testTarget: "test.target"
     case .appsList: "apps.list"
     case .iconsRender: "icons.render"
+    case .meetingStart: "meeting.start"
+    case .meetingStop: "meeting.stop"
+    case .meetingCancel: "meeting.cancel"
+    case .meetingTranscribe: "meeting.transcribe"
     }
 }
 
@@ -232,6 +254,10 @@ private func eventType(_ event: HelperEvent) -> String {
     case .log: "log"
     case .appsListed: "apps.listed"
     case .iconsRendered: "icons.rendered"
+    case .meetingStarted: "meeting.started"
+    case .meetingFailed: "meeting.failed"
+    case .meetingSegment: "meeting.segment"
+    case .meetingDrained: "meeting.drained"
     }
 }
 

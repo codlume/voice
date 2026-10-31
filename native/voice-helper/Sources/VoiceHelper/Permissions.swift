@@ -17,7 +17,7 @@ final class Permissions {
     }
 
     func check() {
-        output.emit(.permissions(microphone: microphone, accessibility: accessibility))
+        output.emit(.permissions(microphone: microphone, accessibility: accessibility, systemAudio: SystemAudioAccess.state))
     }
 
     func request(_ kind: PermissionKind) {
@@ -32,6 +32,8 @@ final class Permissions {
             AXIsProcessTrustedWithOptions(options)
             check()
             pollUntilAccessibilityGranted()
+        case .systemAudio:
+            SystemAudioAccess.request { self.check() }
         }
     }
 

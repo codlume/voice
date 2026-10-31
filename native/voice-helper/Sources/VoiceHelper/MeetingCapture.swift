@@ -1,0 +1,190 @@
+import AVFoundation
+import Foundation
+import VoiceHelperCore
+
+/// One recording leg of a meeting: the microphone into `mic.pcm` and system audio into
+/// `system.pcm`, appended as the audio arrives. Both files share one timeline: each source opened
+/// for a leg first pads its file to the longer of the two, and stopping pads both to the same end.
+/// Independent of dictation's capture, so dictating mid-meeting keeps working; while it runs the
+/// meeting mic records silence instead of the dictated words.
+final class MeetingCapture {
+    private let output: Output
+    private let devices: AudioInputDevices
+    private let source: MeetingAudioSource
+    private let isDictating: () -> Bool
+    private let onFailed: (String) -> Void
+    private let microphone: Microphone?
+    private let micURL: URL
+    private let systemURL: URL
+    private var mic: PcmWriter?
+    private var system: PcmWriter?
+    private var micSource: MicSource?
+    private var systemSource: AnyObject?
+    private var fixtures: [FileSource] = []
+    private var stopped = false
+    private let startedAt = DispatchTime.now()
+    private var startFrames = 0
+
+    init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
+         isDictating: @escaping () -> Bool, onFailed: @escaping (String) -> Void) {
+        micURL = dir.appendingPathComponent("mic.pcm")
+        systemURL = dir.appendingPathComponent("system.pcm")
+        self.microphone = microphone
+        self.source = source
+        self.output = output
+        self.devices = devices
+        self.isDictating = isDictating
+        self.onFailed = onFailed
+    }
+
+    /// Starts both sources; throws only when the microphone cannot record, since a meeting
+    /// without the user's voice is not one. System audio that cannot record is reported instead.
+    func start() throws(CaptureError) -> (mic: MeetingSourceState, system: MeetingSourceState) {
+        startFrames = max(PcmFile.frames(at: micURL), PcmFile.frames(at: systemURL))
+        switch source {
+        case .disabled:
+            throw CaptureError(reason: .device, message: "meeting capture disabled in test mode; set a meeting fixture")
+        case .fixture(let micPath, let systemPath, let speed):
+            mic = try open(micURL)
+            fixtures.append(try fixture(micPath, speed: speed) { [weak self] in self?.receiveMic($0) })
+            var systemState = MeetingSourceState.unavailable
+            if !systemPath.isEmpty, FileManager.default.fileExists(atPath: systemPath) {
+                system = try open(systemURL)
+                fixtures.append(try fixture(systemPath, speed: speed) { [weak self] in self?.receiveSystem($0) })
+                systemState = .active
+            }
+            fixtures.forEach { $0.start() }
+            return (.active, systemState)
+        case .live:
+            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+                throw CaptureError(reason: .permission, message: "Allow microphone access for Voice to record meetings.")
+            }
+            mic = try open(micURL)
+            try openMic()
+            return (.active, startSystem())
+        }
+    }
+
+    /// Delivers what the sources still hold, pads both files to one end and closes them.
+    func stop() {
+        guard !stopped else { return }
+        stopped = true
+        fixtures.forEach { $0.stop() }
+        fixtures = []
+        micSource?.finish()
+        micSource?.dispose()
+        micSource = nil
+        if #available(macOS 14.4, *) { (systemSource as? SystemAudioSource)?.stop() }
+        systemSource = nil
+        let end = max(mic?.frames ?? 0, system?.frames ?? 0)
+        for writer in [mic, system].compactMap({ $0 }) {
+            do {
+                try writer.pad(to: end)
+                try writer.close()
+            } catch {
+                output.log(.error, "meeting audio close failed: \(error.localizedDescription)")
+            }
+        }
+        mic = nil
+        system = nil
+    }
+
+    private func open(_ url: URL) throws(CaptureError) -> PcmWriter {
+        do {
+            let writer = try PcmWriter(url: url)
+            try writer.pad(to: startFrames)
+            return writer
+        } catch {
+            throw CaptureError(reason: .unknown, message: "Could not save meeting audio: \(error.localizedDescription)")
+        }
+    }
+
+    private func fixture(_ path: String, speed: Double, sink: @escaping ([Float]) -> Void) throws(CaptureError) -> FileSource {
+        do {
+            return try FileSource(path: path, speed: speed, sink: sink) { [output] in output.log(.info, "meeting fixture ended \(path)") }
+        } catch let error as CaptureError {
+            throw error
+        } catch {
+            throw CaptureError(reason: .unknown, message: "\(error)")
+        }
+    }
+
+    private func openMic() throws(CaptureError) {
+        let source = try MicSource(device: devices.resolve(microphone), preference: microphone) { [weak self] changed in
+            self?.micChanged(changed)
+        }
+        try source.start { [weak self] in self?.receiveMic($0) }
+        micSource = source
+    }
+
+    // A device change stops the engine. Unlike dictation, a meeting keeps going on whatever input
+    // is now current, with silence for the moments it took to switch.
+    private func micChanged(_ changed: MicSource) {
+        guard changed === micSource, !stopped else { return }
+        changed.finish()
+        changed.dispose()
+        micSource = nil
+        reopenMic(attempt: 1)
+    }
+
+    private func reopenMic(attempt: Int) {
+        guard !stopped else { return }
+        do {
+            try openMic()
+            let elapsed = startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
+            try mic?.pad(to: system?.frames ?? elapsed)
+            output.log(.info, "meeting microphone reopened after a device change")
+        } catch {
+            guard attempt < 10 else { return fail("The microphone stopped: \(error)") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reopenMic(attempt: attempt + 1) }
+        }
+    }
+
+    private func startSystem() -> MeetingSourceState {
+        guard #available(macOS 14.4, *) else { return .unavailable }
+        if SystemAudioAccess.state == .denied { return .denied }
+        let source: SystemAudioSource
+        do throws(CaptureError) {
+            source = try SystemAudioSource()
+        } catch {
+            output.log(.error, "meeting system audio unavailable: \(error.message)")
+            return .unavailable
+        }
+        do throws(CaptureError) {
+            system = try open(systemURL)
+            try source.start { [weak self] in self?.receiveSystem($0) }
+            systemSource = source
+            return .active
+        } catch {
+            output.log(.error, "meeting system audio unavailable: \(error.message)")
+            source.stop()
+            try? system?.close()
+            system = nil
+            return .unavailable
+        }
+    }
+
+    private func receiveMic(_ chunk: [Float]) {
+        // Dictated words belong to wherever they were inserted, not to the meeting.
+        write(isDictating() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
+    }
+
+    private func receiveSystem(_ chunk: [Float]) {
+        write(chunk, to: system)
+    }
+
+    private func write(_ chunk: [Float], to writer: PcmWriter?) {
+        guard !stopped, let writer else { return }
+        do {
+            try writer.append(chunk)
+        } catch {
+            fail("Could not save meeting audio: \(error.localizedDescription)")
+        }
+    }
+
+    private func fail(_ message: String) {
+        guard !stopped else { return }
+        stop()
+        onFailed(message)
+    }
+}

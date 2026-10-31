@@ -36,7 +36,8 @@ mac:
   sign: ./build/sign.mjs
   notarize: false
   extendInfo:
-    NSMicrophoneUsageDescription: Voice records your speech only while you hold the dictation shortcut.
+    NSMicrophoneUsageDescription: Voice uses your microphone while you hold the dictation shortcut or during a meeting you start.
+    NSAudioCaptureUsageDescription: Voice records sound from other apps only during a meeting you start, to transcribe what other participants say. It stays on your Mac.
 # These positions and iconSize drive build/background*.png. Rerun `pnpm -C apps/desktop brand` after changing them.
 dmg:
   title: Voice
