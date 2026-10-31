@@ -340,7 +340,8 @@ describe("Past notes", () => {
     await render();
     const search = document.querySelector<HTMLInputElement>("input[type=search]")!;
     await type(search, "export bug");
-    await waitForText("Transcript: Morning all The export bug is fixed");
+    await waitForText("Transcript: You: Morning all Priya Shah: The export bug is fixed");
+    expect(document.querySelector("li mark")?.textContent).toBe("export bug");
     expect(main.searchMeetings).toHaveBeenLastCalledWith("export bug");
     expect(document.querySelectorAll("li").length).toBe(1);
     await type(search, "zzz");

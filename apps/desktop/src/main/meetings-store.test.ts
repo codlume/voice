@@ -312,12 +312,17 @@ describe("meetings store", () => {
     await seed(store, meeting(C, { createdAt: START + 2, title: null }));
     await store.append(C, [segment("s1", "The quarterly ROADMAP slipped by a week")]);
 
+    const snippet = (before: string, match: string, after: string) => ({ before, match, after });
     expect(await store.search("roadmap")).toEqual([
-      { id: C, field: "transcript", snippet: "The quarterly ROADMAP slipped by a week" },
-      { id: A, field: "title", snippet: "Roadmap review" },
+      {
+        id: C,
+        field: "transcript",
+        snippet: snippet("You: The quarterly ", "ROADMAP", " slipped by a week"),
+      },
+      { id: A, field: "title", snippet: snippet("", "Roadmap", " review") },
     ]);
     expect(await store.search("postgres with you")).toEqual([
-      { id: B, field: "summary", snippet: "We chose Postgres with You." },
+      { id: B, field: "summary", snippet: snippet("We chose ", "Postgres with You", ".") },
     ]);
     // Token markup is not text the user wrote.
     expect(await store.search("speaker:")).toEqual([]);

@@ -371,7 +371,13 @@ export type MeetingTranscriptChange = { id: MeetingId; entries: readonly Transcr
 export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };
 
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
-export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };
+/** The text around a search match, the match itself kept apart so it can be marked. */
+export type MeetingSnippet = { before: string; match: string; after: string };
+export type MeetingSearchHit = {
+  id: MeetingId;
+  field: MeetingSearchField;
+  snippet: MeetingSnippet;
+};
 
 export const startedAt = (meeting: Meeting): number | null =>
   meeting.spans[0]?.startedAt ??
@@ -501,26 +507,62 @@ export function refile(meeting: Meeting, folder: Folder, before: FolderKind | nu
 
 const SNIPPET_CONTEXT = 40;
 
-function snippet(text: string, at: number, length: number): string {
-  const start = Math.max(0, at - SNIPPET_CONTEXT);
-  const end = Math.min(text.length, at + length + SNIPPET_CONTEXT);
-  const body = text.slice(start, end).replace(/\s+/g, " ").trim();
-  return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
+function snippet(text: string, start: number, end: number): MeetingSnippet {
+  const from = Math.max(0, start - SNIPPET_CONTEXT);
+  const to = Math.min(text.length, end + SNIPPET_CONTEXT);
+  const flat = (part: string) => part.replace(/\s+/g, " ");
+  return {
+    before: `${from > 0 ? "…" : ""}${flat(text.slice(from, start)).trimStart()}`,
+    match: flat(text.slice(start, end)),
+    after: `${flat(text.slice(end, to)).trimEnd()}${to < text.length ? "…" : ""}`,
+  };
 }
 
-/** The first field, in the order the list shows them, that holds `query`, ignoring case. */
+// Letters NFD does not take apart, so "lodz" finds "Łódź".
+const FOLDED: Record<string, string> = { ł: "l", Ł: "l", ø: "o", Ø: "o", đ: "d", Đ: "d", ß: "ss" };
+
+/** `text` lowercased without accents, and where each of its characters starts in `text`. */
+function fold(text: string): { folded: string; from: number[] } {
+  let folded = "";
+  const from: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const bare = (FOLDED[char] ?? char.normalize("NFD").replace(/\p{M}/gu, "")).toLocaleLowerCase();
+    for (const part of bare) {
+      folded += part;
+      from.push(at);
+    }
+    at += char.length;
+  }
+  from.push(text.length);
+  return { folded, from };
+}
+
+/** Summary Markdown as it reads on the page: names in, heading marks, bold and bullets out. */
+const summaryText = (markdown: string, speakers: readonly Speaker[]) =>
+  resolveSpeakerTokens(markdown, speakers)
+    .replace(/^#+\s*/gm, "")
+    .replace(/^\s*-\s+/gm, "")
+    .replaceAll("**", "");
+
+/**
+ * The first field, in the order the list shows them, that holds `query`, ignoring case and
+ * accents. Transcript lines are searched with the name of whoever said them.
+ */
 export function searchMeeting(
   meeting: Meeting,
   transcript: readonly TranscriptEntry[],
   query: string,
 ): MeetingSearchHit | null {
-  const needle = query.trim().toLocaleLowerCase();
+  const needle = fold(query.trim()).folded;
   if (needle === "") return null;
   const summary =
     meeting.summary.kind === "ready"
-      ? resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers)
+      ? summaryText(meeting.summary.summary.markdown, meeting.speakers)
       : "";
-  const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
+  const spoken = transcript.flatMap((entry) =>
+    entry.kind === "segment" ? [`${speakerName(entry, meeting.speakers)}: ${entry.text}`] : [],
+  );
   const fields: [MeetingSearchField, string][] = [
     ["title", meeting.title ?? ""],
     ["summary", summary],
@@ -528,8 +570,10 @@ export function searchMeeting(
     ["transcript", spoken.join("\n")],
   ];
   for (const [field, text] of fields) {
-    const at = text.toLocaleLowerCase().indexOf(needle);
-    if (at >= 0) return { id: meeting.id, field, snippet: snippet(text, at, needle.length) };
+    const { folded, from } = fold(text);
+    const at = folded.indexOf(needle);
+    if (at < 0) continue;
+    return { id: meeting.id, field, snippet: snippet(text, from[at]!, from[at + needle.length]!) };
   }
   return null;
 }
