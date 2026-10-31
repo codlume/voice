@@ -4,6 +4,8 @@ import { ChevronLeftIcon, CopyIcon, DownloadIcon, FolderPlusIcon, Trash2Icon } f
 import { useEffect, useState } from "react";
 
 import {
+  commandRefusal,
+  isLive,
   recordedMs,
   summarizesOnStop,
   summaryStale,
@@ -61,6 +63,7 @@ const styles = stylex.create({
   },
   when: { margin: 0, color: color.mutedForeground, fontSize: 13.5 },
   actions: { display: "flex", alignItems: "center", gap: 2, paddingTop: 6 },
+  controls: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.sm },
   iconButton: {
     display: "inline-flex",
     alignItems: "center",
@@ -198,9 +201,73 @@ const tabs: readonly { value: DetailTab; label: string }[] = [
   { value: "transcript", label: "Transcript" },
 ];
 
-/** Says why a summary command did nothing, or null when it went ahead. */
-const summaryRefusal = (result: MeetingCommandResult) =>
-  result.kind === "refused" ? result.message : null;
+type Control = {
+  label: string;
+  primary: boolean;
+  run: (id: MeetingId) => Promise<MeetingCommandResult>;
+};
+
+/**
+ * What the page can do to the recording now. A finished meeting resumes into itself; resuming
+ * while its summary is written stops the summary, which can be updated after.
+ */
+function recordingControls(meeting: Meeting): Control[] {
+  const api = hubApi();
+  const resume: Control = { label: "Resume recording", primary: false, run: api.resumeMeeting };
+  const stop: Control = { label: "Stop", primary: true, run: api.stopMeeting };
+  switch (meeting.status.kind) {
+    case "starting":
+      return [stop];
+    case "recording":
+      return [{ label: "Pause", primary: false, run: api.pauseMeeting }, stop];
+    case "paused":
+      return [{ ...resume, label: "Resume" }, stop];
+    case "confirmingShort":
+      return [
+        { label: "Discard", primary: false, run: api.discardMeeting },
+        { label: "Keep", primary: true, run: api.keepMeeting },
+      ];
+    case "summarizing":
+    case "ready":
+      return [resume];
+    case "finishing":
+    case "transcribing":
+      return [];
+  }
+}
+
+function RecordingControls({ meeting }: { meeting: Meeting }) {
+  const action = useAction();
+  const controls = recordingControls(meeting);
+  if (controls.length === 0) return null;
+  return (
+    <div {...stylex.props(styles.controls)}>
+      {meeting.status.kind === "confirmingShort" && (
+        <p {...stylex.props(styles.when)}>Started by mistake? Only a few words were captured.</p>
+      )}
+      {controls.map(({ label, primary, run }) => (
+        <Button
+          key={label}
+          variant={primary ? "primary" : "secondary"}
+          disabled={action.pending}
+          onClick={() =>
+            void action.run(async () => {
+              const refusal = commandRefusal(await run(meeting.id));
+              if (refusal) throw new Error(refusal);
+            }, "Could not change the recording.")
+          }
+        >
+          {label}
+        </Button>
+      ))}
+      {action.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {action.error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function TitleField({ meeting }: { meeting: Meeting }) {
   const saved = meeting.title ?? "";
@@ -293,7 +360,7 @@ function SummaryPanel({
     disabled: action.pending,
     onClick: () =>
       void action.run(async () => {
-        const refusal = summaryRefusal(await hubApi().generateMeetingSummary(meeting.id));
+        const refusal = commandRefusal(await hubApi().generateMeetingSummary(meeting.id));
         if (refusal) throw new Error(refusal);
       }, "Could not start the summary."),
   });
@@ -306,7 +373,12 @@ function SummaryPanel({
         : null;
   const short = "Short meetings get a summary only when you ask for one.";
   const notice = (() => {
-    if (status.kind === "summarizing") return <Banner text="Writing the summary…" />;
+    if (status.kind === "summarizing") {
+      const { progress } = status;
+      const step =
+        progress && progress.total > 1 ? ` Step ${progress.step} of ${progress.total}.` : "";
+      return <Banner text={`Writing the summary…${step}`} />;
+    }
     if (status.kind === "transcribing" && summary.kind === "none") {
       return (
         <Banner
@@ -319,13 +391,22 @@ function SummaryPanel({
       );
     }
     if (status.kind !== "ready") {
-      return <Banner text="The summary is written when the meeting ends." />;
+      return (
+        <Banner
+          text={
+            previous
+              ? "Update the summary after the meeting ends."
+              : "The summary is written when the meeting ends."
+          }
+        />
+      );
     }
     if (summary.kind === "failed") {
+      const shown = summary.previous ? " Showing the previous summary." : "";
       return (
         <Banner
           error
-          text={`The summary could not be written. ${summary.message}`}
+          text={`The summary could not be written. ${summary.message}${shown}`}
           action={generate("Try again")}
         />
       );
@@ -565,16 +646,19 @@ export function MeetingDetail({
           <Button variant="icon" aria-label="Export .md" title="Export .md" onClick={exportFile}>
             <DownloadIcon size={16} />
           </Button>
-          <Button
-            variant="icon"
-            aria-label="Delete meeting"
-            title="Delete meeting"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2Icon size={16} />
-          </Button>
+          {!isLive(meeting) && (
+            <Button
+              variant="icon"
+              aria-label="Delete meeting"
+              title="Delete meeting"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2Icon size={16} />
+            </Button>
+          )}
         </div>
       </div>
+      <RecordingControls meeting={meeting} />
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
           {action.error}

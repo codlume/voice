@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DayKey } from "../shared/insights.ts";
 import { clock } from "../shared/meeting-markdown.ts";
 import {
+  commandRefusal,
   liveMeeting,
   recordedMs,
   titleText,
@@ -198,12 +199,7 @@ const styles = stylex.create({
   overviewEmpty: { margin: 0, color: color.mutedForeground },
 });
 
-const RECORDING_UNAVAILABLE = "Recording meetings is not available in this version of Voice yet.";
 const SEARCH_DELAY_MS = 150;
-
-/** Says why a recording command did nothing, or null when it went ahead. */
-const recordingRefusal = (result: MeetingCommandResult) =>
-  result.kind === "unavailable" ? RECORDING_UNAVAILABLE : null;
 
 /** Main's hits for `query`, asked once typing pauses. The last answer stays up while the next one loads. */
 function useSearch(query: string): readonly MeetingSearchHit[] | null {
@@ -268,7 +264,7 @@ function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => voi
   const action = useAction();
   const run = (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
     void action.run(async () => {
-      const refusal = recordingRefusal(await command(meeting.id));
+      const refusal = commandRefusal(await command(meeting.id));
       if (refusal) throw new Error(refusal);
     }, "Could not change the recording.");
   const label = { starting: "Starting…", recording: "Recording", paused: "Paused" }[status.kind];
@@ -400,7 +396,7 @@ function MeetingsPage({
   const startMeeting = () =>
     void start.run(async () => {
       setNotice("");
-      const refusal = recordingRefusal(await hubApi().startMeeting());
+      const refusal = commandRefusal(await hubApi().startMeeting());
       if (refusal) setNotice(refusal);
     }, "Could not start the meeting.");
 

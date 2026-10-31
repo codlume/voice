@@ -73,7 +73,10 @@ export type HubCommandDeps = {
   log: Log;
 };
 
-const UNAVAILABLE: MeetingCommandResult = { kind: "unavailable" };
+const GONE: MeetingCommandResult = {
+  kind: "refused",
+  message: "This meeting is no longer on this Mac.",
+};
 // Characters Finder or the save panel refuse in a file name.
 const UNSAFE_FILE_NAME = /[/\\:*?"<>|]/g;
 
@@ -220,7 +223,7 @@ const withMeeting =
   (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
   (_event: unknown, raw: unknown) => {
     const id = parseMeetingId(raw);
-    return id ? command(id) : UNAVAILABLE;
+    return id ? command(id) : GONE;
   };
 
 type MeetingControlDeps = Pick<HubCommandDeps, "meetings" | "meetingRecorder" | "log">;

@@ -244,11 +244,14 @@ export const meetingToggleLabels: Record<MeetingToggle["kind"], string> = {
   wait: "Starting meeting…",
 };
 
-/** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
+/** `refused` carries a message for the user: the command did nothing. */
 export type MeetingCommandResult =
   | { kind: "ok"; id: MeetingId }
-  | { kind: "refused"; message: string }
-  | { kind: "unavailable" };
+  | { kind: "refused"; message: string };
+
+/** Says why a meeting command did nothing, or null when it went ahead. */
+export const commandRefusal = (result: MeetingCommandResult) =>
+  result.kind === "refused" ? result.message : null;
 
 /** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
 export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
