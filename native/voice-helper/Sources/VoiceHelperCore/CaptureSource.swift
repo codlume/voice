@@ -44,16 +44,25 @@ public struct AudioLoss: Equatable, Sendable {
 }
 
 /// What a recording leg checks every few seconds, so a revoked permission or a dead microphone
-/// pauses the meeting instead of recording silence that looks like a quiet room. System audio
-/// legitimately goes quiet, so only its permission counts; the microphone always delivers.
+/// pauses the meeting instead of recording silence that looks like a quiet room. The microphone
+/// and the system tap both deliver frames through silence, so a source with no frames for a
+/// while has stalled; a stalled tap is recreated, a stalled microphone ends the leg.
 public enum MeetingWatch {
     public static let micStallMs = 5000.0
+    public static let systemStallMs = 3000.0
 
-    /// `msSinceMicAudio` is nil while the microphone reopens after a device change.
-    public static func loss(micAllowed: Bool, systemRecording: Bool, systemAllowed: Bool, msSinceMicAudio: Double?) -> AudioLoss? {
-        if !micAllowed { return AudioLoss(source: .mic, reason: .permission) }
-        if systemRecording, !systemAllowed { return AudioLoss(source: .system, reason: .permission) }
-        if let msSinceMicAudio, msSinceMicAudio >= micStallMs { return AudioLoss(source: .mic, reason: .device) }
+    public enum Finding: Equatable, Sendable {
+        case lost(AudioLoss)
+        case systemStalled
+    }
+
+    /// `msSinceMicAudio` is nil while the microphone reopens after a device change, and
+    /// `msSinceSystemAudio` while no tap records.
+    public static func check(micAllowed: Bool, systemAllowed: Bool, msSinceMicAudio: Double?, msSinceSystemAudio: Double?) -> Finding? {
+        if !micAllowed { return .lost(AudioLoss(source: .mic, reason: .permission)) }
+        if msSinceSystemAudio != nil, !systemAllowed { return .lost(AudioLoss(source: .system, reason: .permission)) }
+        if let msSinceMicAudio, msSinceMicAudio >= micStallMs { return .lost(AudioLoss(source: .mic, reason: .device)) }
+        if let msSinceSystemAudio, msSinceSystemAudio >= systemStallMs { return .systemStalled }
         return nil
     }
 }
