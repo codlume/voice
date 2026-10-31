@@ -42,7 +42,7 @@ import { parseRestartRequest, type createUpdates } from "./updates.ts";
 const LOGIN_ITEMS_PANE = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 
 const isPermissionKind = (kind: unknown): kind is PermissionKind =>
-  kind === "microphone" || kind === "accessibility";
+  kind === "microphone" || kind === "accessibility" || kind === "systemAudio";
 
 export type HubCommandDeps = {
   store: Store;

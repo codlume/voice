@@ -16,6 +16,7 @@ final class Helper {
     private let hotkeyTap: HotkeyTap
     private let permissions: Permissions
     private let installedApps: InstalledApps
+    private let meetings: Meetings
     private var testTarget: TranscriptTarget?
 
     @MainActor
@@ -45,6 +46,10 @@ final class Helper {
         self.hotkeyTap = hotkeyTap
         permissions = Permissions(output: output) { hotkeyTap.install() }
         installedApps = InstalledApps(output: output)
+        let transcriber = transcriber
+        meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
+                            decode: { try await transcriber.decodeMeeting($0, language: $1) },
+                            isDictating: { capture.isDictating })
     }
 
     func installHotkeyTap() {
@@ -112,12 +117,21 @@ final class Helper {
             installedApps.list()
         case .iconsRender(let id, let paths):
             installedApps.renderIcons(id: id, paths: paths)
+        case .meetingStart(let id, let dir, let baseMs, let fromMs, let language, let microphone):
+            meetings.start(id: id, dir: dir, baseMs: baseMs, fromMs: fromMs, language: language, microphone: microphone)
+        case .meetingStop(let id):
+            meetings.stop(id: id)
+        case .meetingCancel(let id):
+            meetings.cancel(id: id)
+        case .meetingTranscribe(let id, let dir, let baseMs, let fromMs, let language):
+            meetings.transcribe(id: id, dir: dir, baseMs: baseMs, fromMs: fromMs, language: language)
         }
     }
 
     @MainActor
     func shutdown() {
         devices.shutdown()
+        meetings.shutdown()
         capture.shutdown()
         pasteboard.flush()
     }

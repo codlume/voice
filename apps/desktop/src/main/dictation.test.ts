@@ -104,7 +104,7 @@ function harness(opts: Options = {}) {
     },
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "granted", accessibility: "granted" },
+    permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
       asr: opts.asrModel ?? { state: "ready" },
@@ -2060,15 +2060,25 @@ describe("createDictation", () => {
       type: "permissions",
       microphone: "denied",
       accessibility: "granted",
+      systemAudio: "unavailable",
     });
     h.dictation.onHelperEvent({ type: "asr.status", state: "failed", message: "corrupt" });
-    expect(h.store.state.permissions).toEqual({ microphone: "denied", accessibility: "granted" });
+    expect(h.store.state.permissions).toEqual({
+      microphone: "denied",
+      accessibility: "granted",
+      systemAudio: "unavailable",
+    });
     expect(h.store.state.models.asr).toEqual({ state: "failed", message: "corrupt" });
   });
 
   test("a permissions event that repeats the current state notifies no one", () => {
     const h = harness();
-    const denied = { type: "permissions", microphone: "denied", accessibility: "granted" } as const;
+    const denied = {
+      type: "permissions",
+      microphone: "denied",
+      accessibility: "granted",
+      systemAudio: "notDetermined",
+    } as const;
     h.dictation.onHelperEvent(denied);
     h.dictation.onHelperEvent(denied);
     h.dictation.onHelperEvent(denied);
@@ -2076,7 +2086,11 @@ describe("createDictation", () => {
 
     h.dictation.onHelperEvent({ ...denied, microphone: "granted" });
     expect(h.phases).toHaveLength(2);
-    expect(h.store.state.permissions).toEqual({ microphone: "granted", accessibility: "granted" });
+    expect(h.store.state.permissions).toEqual({
+      microphone: "granted",
+      accessibility: "granted",
+      systemAudio: "notDetermined",
+    });
   });
 });
 

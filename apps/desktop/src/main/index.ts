@@ -92,6 +92,7 @@ const FINISH_FIRST: Record<BusyDuring, string> = {
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  systemAudio: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
 };
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
@@ -280,7 +281,11 @@ async function main() {
   const store = createStore({
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+    permissions: {
+      microphone: "notDetermined",
+      accessibility: "notDetermined",
+      systemAudio: "notDetermined",
+    },
     loginItem: "unavailable",
     models: {
       asr: { state: "missing" },
@@ -736,6 +741,7 @@ async function main() {
   }
 
   function requestPermission(kind: PermissionKind) {
+    if (store.state.permissions[kind] === "unavailable") return;
     if (store.state.permissions[kind] === "denied") {
       // The system prompt never reappears once denied; the user has to flip it in Settings.
       void shell.openExternal(PERMISSION_PANES[kind]);

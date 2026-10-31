@@ -20,7 +20,7 @@ function harness() {
     },
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "granted", accessibility: "granted" },
+    permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
       asr: { state: "ready" },

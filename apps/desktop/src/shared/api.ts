@@ -27,8 +27,15 @@ import {
   type CategoryStyles,
 } from "./style.ts";
 
-export type PermissionKind = "microphone" | "accessibility";
+export type PermissionKind = "microphone" | "accessibility" | "systemAudio";
 export type PermissionState = "granted" | "denied" | "notDetermined";
+/** System Audio Recording is unavailable below macOS 14.4, where meetings record the mic only. */
+export type SystemAudioPermission = PermissionState | "unavailable";
+export type Permissions = {
+  microphone: PermissionState;
+  accessibility: PermissionState;
+  systemAudio: SystemAudioPermission;
+};
 export const hotkeys = ["fn", "rightOption", "rightCommand"] as const;
 export type Hotkey = (typeof hotkeys)[number];
 export const UPDATE_CHANNELS = ["stable", "nightly"] as const;
@@ -250,7 +257,7 @@ export type Snapshot = {
   microphoneTest: MicrophoneTest;
   updates: UpdatesSnapshot;
   session: PillState;
-  permissions: Record<PermissionKind, PermissionState>;
+  permissions: Permissions;
   loginItem: LoginItem;
   models: Record<ModelId, ModelStatus>;
   settings: Settings;

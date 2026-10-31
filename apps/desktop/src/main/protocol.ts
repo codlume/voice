@@ -9,12 +9,13 @@ import { parseBundleId, parseHost } from "../shared/app-categories.ts";
 import { MicrophoneSchema } from "../shared/microphone.ts";
 
 import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
+import type { MeetingSource } from "../shared/meetings.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { Target } from "../shared/style.ts";
 import type { HelperShortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 15;
+export const HELPER_PROTOCOL_VERSION = 16;
 
 export type HelperCommand =
   | {
@@ -51,9 +52,37 @@ export type HelperCommand =
   | { type: "asr.remove" }
   | { type: "test.target"; target: Target | null }
   | { type: "apps.list" }
-  | { type: "icons.render"; id: string; paths: string[] };
+  | { type: "icons.render"; id: string; paths: string[] }
+  // Records one leg into `dir`, appending to its mic.pcm and system.pcm, and transcribes them as
+  // they grow. `baseMs` is the meeting time at the files' first byte; `fromMs` is how far each
+  // source's transcript already reaches.
+  | {
+      type: "meeting.start";
+      id: string;
+      dir: string;
+      baseMs: number;
+      fromMs: MeetingCursor;
+      language: DictationLanguage;
+      microphone: Microphone | null;
+    }
+  // Ends the leg and keeps transcribing what was recorded; meeting.drained follows.
+  | { type: "meeting.stop"; id: string }
+  // Ends the leg and drops the transcription, for a meeting being deleted.
+  | { type: "meeting.cancel"; id: string }
+  // Transcribes what the transcript does not reach yet, without recording.
+  | {
+      type: "meeting.transcribe";
+      id: string;
+      dir: string;
+      baseMs: number;
+      fromMs: MeetingCursor;
+      language: DictationLanguage;
+    };
+
+export type MeetingCursor = Record<MeetingSource, number>;
 
 const permissionState = Schema.Literals(["granted", "denied", "notDetermined"]);
+const meetingSourceState = Schema.Literals(["active", "unavailable", "denied"]);
 // The default covers a missing key and catchDecoding a malformed value; neither covers both.
 const nullOnInvalid = <S extends Schema.Top>(schema: S) =>
   Schema.NullOr(schema).pipe(
@@ -228,6 +257,7 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("permissions"),
     microphone: permissionState,
     accessibility: permissionState,
+    systemAudio: Schema.Literals(["granted", "denied", "notDetermined", "unavailable"]),
   }),
   Schema.Struct({
     type: Schema.Literal("asr.status"),
@@ -250,6 +280,31 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("icons.rendered"),
     id: Schema.String,
     icons: validEntries(Schema.Struct({ path: Schema.String, png: Schema.String })),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("meeting.started"),
+    id: Schema.String,
+    mic: meetingSourceState,
+    system: meetingSourceState,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("meeting.failed"),
+    id: Schema.String,
+    message: Schema.String,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("meeting.segment"),
+    id: Schema.String,
+    source: Schema.Literals(["mic", "system"]),
+    startMs: Schema.Finite,
+    endMs: Schema.Finite,
+    text: Schema.String,
+  }),
+  // A null failure means everything recorded is transcribed.
+  Schema.Struct({
+    type: Schema.Literal("meeting.drained"),
+    id: Schema.String,
+    failure: nullOnInvalid(Schema.String),
   }),
   Schema.Struct({
     type: Schema.Literal("log"),

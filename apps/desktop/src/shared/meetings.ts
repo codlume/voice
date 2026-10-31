@@ -65,6 +65,7 @@ export type Segment = {
 
 /** The mic is the user. System audio is everyone else, named once a name is known. */
 export type Voice = { source: "mic" } | { source: "system"; speaker: string | null };
+export type MeetingSource = Voice["source"];
 
 export const markerKinds = ["paused", "resumed", "dictated", "gap"] as const;
 export type MarkerKind = (typeof markerKinds)[number];

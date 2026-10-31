@@ -61,7 +61,11 @@ const base: Snapshot = {
     status: { kind: "idle" },
   },
   session: { kind: "idle" },
-  permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+  permissions: {
+    microphone: "notDetermined",
+    accessibility: "notDetermined",
+    systemAudio: "notDetermined",
+  },
   loginItem: "off",
   models: {
     asr: { state: "missing" },
@@ -83,7 +87,7 @@ const base: Snapshot = {
 
 const ready: Snapshot = {
   ...base,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
 };
 
@@ -430,7 +434,7 @@ const hubScenes: Record<string, HubScene> = {
   fresh: { ...base, history: [] },
   progress: {
     ...base,
-    permissions: { microphone: "granted", accessibility: "denied" },
+    permissions: { microphone: "granted", accessibility: "denied", systemAudio: "notDetermined" },
     models: {
       asr: { state: "downloading", progress: 0.42 },
       cleanup: { state: "failed", message: "Download interrupted. Check your connection." },
@@ -439,7 +443,11 @@ const hubScenes: Record<string, HubScene> = {
   },
   "setup-not-ready": {
     ...base,
-    permissions: { microphone: "granted", accessibility: "notDetermined" },
+    permissions: {
+      microphone: "granted",
+      accessibility: "notDetermined",
+      systemAudio: "notDetermined",
+    },
     models: {
       asr: { state: "ready" },
       cleanup: { state: "ready" },

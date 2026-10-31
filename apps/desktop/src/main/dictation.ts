@@ -555,11 +555,16 @@ export function createDictation(options: DictationOptions): Dictation {
       case "permissions":
         store.update((s) =>
           s.permissions.microphone === event.microphone &&
-          s.permissions.accessibility === event.accessibility
+          s.permissions.accessibility === event.accessibility &&
+          s.permissions.systemAudio === event.systemAudio
             ? s
             : {
                 ...s,
-                permissions: { microphone: event.microphone, accessibility: event.accessibility },
+                permissions: {
+                  microphone: event.microphone,
+                  accessibility: event.accessibility,
+                  systemAudio: event.systemAudio,
+                },
               },
         );
         return;
