@@ -261,7 +261,7 @@ describe("My thoughts in the notepad", () => {
     await render();
     await openThoughts();
     type("Follow up with Tom on pricing");
-    act(() => window.dispatchEvent(new Event("pagehide")));
+    act(() => window.dispatchEvent(new Event("beforeunload")));
     expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Follow up with Tom on pricing");
   });
 

@@ -29,12 +29,14 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
     const timer = setTimeout(flush, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [draft]);
-  // React never unmounts a closing window's root, so leaving saves on unmount and on pagehide.
+  // React never unmounts a closing window's root, so leaving saves on unmount and on
+  // beforeunload. Not pagehide: a closing window's IPC sent then reaches main after the window's
+  // handlers are gone, and the save is lost.
   useEffect(() => {
     const leave = () => flush();
-    window.addEventListener("pagehide", leave);
+    window.addEventListener("beforeunload", leave);
     return () => {
-      window.removeEventListener("pagehide", leave);
+      window.removeEventListener("beforeunload", leave);
       leave();
     };
   }, []);
