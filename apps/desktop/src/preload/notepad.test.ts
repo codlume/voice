@@ -49,6 +49,7 @@ describe("notepad preload", () => {
       "resumeMeeting",
       "stopMeeting",
       "updateMeetingNotes",
+      "viewMeetingSummary",
     ]);
   });
 

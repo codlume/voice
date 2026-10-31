@@ -34,6 +34,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
+import type { MeetingId } from "../shared/meetings.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { runsAfterDictation } from "../shared/transforms.ts";
@@ -449,6 +450,7 @@ async function main() {
     send: (command) => helper.send(command),
     transformModel,
     hub: () => hub,
+    showMeeting: (id, options) => showMeeting(id, options),
     refreshTray: () => refreshTray(store.state),
     notepadWindow: {
       webPreferences: webPreferencesFor("notepad"),
@@ -560,14 +562,22 @@ async function main() {
     }
   }
 
-  function showHub(): BrowserWindow {
+  const showHub = () => openHub({ activate: true });
+
+  /** `activate: false` shows the window behind the user's app, which keeps focus. */
+  function openHub({ activate }: { activate: boolean }): BrowserWindow {
     if (hub && !hub.isDestroyed()) {
+      if (!activate) {
+        if (!hub.isVisible()) hub.showInactive();
+        return hub;
+      }
       hub.show();
       hub.focus();
       return hub;
     }
     hub = new BrowserWindow({
       ...hubWindowSize(screen.getPrimaryDisplay().workArea, store.state.settings.zoomLevel),
+      show: activate,
       title: "Voice",
       titleBarStyle: "hidden",
       trafficLightPosition: trafficLightPosition(store.state.settings.zoomLevel),
@@ -608,7 +618,17 @@ async function main() {
     hub.webContents.once("did-finish-load", () => void account.restore());
     registerHubCommands(hub.webContents.ipc, hubCommandDeps);
     loadPage(hub, "hub");
+    if (!activate) hub.showInactive();
     return hub;
+  }
+
+  function showMeeting(id: MeetingId, options: { activate: boolean }) {
+    const contents = openHub(options).webContents;
+    const send = () => {
+      if (!contents.isDestroyed()) contents.send(Channel.openMeeting, { id, tab: "summary" });
+    };
+    if (contents.isLoading()) contents.once("did-finish-load", send);
+    else send();
   }
 
   // A request sent while the hub is still loading would reach the old document and be lost.

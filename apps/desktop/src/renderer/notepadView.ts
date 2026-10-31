@@ -7,7 +7,7 @@ import {
 } from "../shared/meetings.ts";
 
 export type RecordingCommand = "pause" | "resume" | "stop";
-export type NotepadCommand = RecordingCommand | "keep" | "discard" | "dismiss";
+export type NotepadCommand = RecordingCommand | "keep" | "discard" | "dismiss" | "viewSummary";
 
 /** `recording` is the only tone that says audio is being captured. */
 export type NotepadStatus = {
@@ -70,6 +70,15 @@ export function promptView(prompt: MeetingPrompt, now: number): PromptView {
         ],
       };
     }
+    case "summaryReady":
+      return {
+        title: "Your summary is ready",
+        body: "The summary of this meeting is in Voice.",
+        actions: [
+          { label: "Dismiss", command: "dismiss", primary: false },
+          { label: "View summary", command: "viewSummary", primary: true },
+        ],
+      };
     case "notice":
       return {
         title: null,

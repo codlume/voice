@@ -269,8 +269,10 @@ export type MeetingNotice =
   /** Nobody answered "Still in a meeting?", so the recording stopped. */
   | { kind: "silenceStopped" }
   | { kind: "finalPassFailed" }
+  /** `open` brings the Voice window up on the summary, without taking focus. */
   | { kind: "summaryReady"; open: boolean }
-  | { kind: "summaryFailed" };
+  /** `message` says why, as the meeting's summary state does. */
+  | { kind: "summaryFailed"; message: string | null };
 
 /**
  * A warning or question the notepad and the Flow Bar show where the user is, until it is
@@ -280,7 +282,11 @@ export type MeetingPrompt =
   | { kind: "startedByMistake" }
   | { kind: "silence" }
   | { kind: "maxLengthSoon"; endsAt: number }
+  | { kind: "summaryReady" }
   | { kind: "notice"; text: string };
+
+/** Main asks the Voice window to show a meeting, as when its summary is ready. */
+export type OpenMeetingRequest = { id: MeetingId; tab: "summary" };
 
 /** What the user can do from a notice besides dismissing it. */
 export type MeetingNoticeAction = "viewSummary" | "retryFinalPass" | "deleteAudio";
@@ -316,7 +322,7 @@ function lostText(loss: AudioLoss | null): string {
   return `${what}, so the meeting is paused. Resume to keep recording.`;
 }
 
-/** What a notice says, or null for one that asks a question or opens the summary instead. */
+/** What a notice says, or null for one that only asks a question. */
 export function noticeText(notice: MeetingNotice): string | null {
   switch (notice.kind) {
     case "startFailed":
@@ -333,10 +339,11 @@ export function noticeText(notice: MeetingNotice): string | null {
     case "finalPassFailed":
       return "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
     case "summaryFailed":
-      return "The summary could not be written.";
+      return `The summary could not be written.${notice.message ? ` ${notice.message}` : ""}`;
+    case "summaryReady":
+      return "Your summary is ready.";
     case "maxLengthSoon":
     case "silence":
-    case "summaryReady":
       return null;
   }
 }

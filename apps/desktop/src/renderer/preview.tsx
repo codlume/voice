@@ -830,6 +830,7 @@ function fakeMeetings(
     onMeetingTranscript: () => () => {},
     onMeetingPartial: () => () => {},
     dismissMeetingNotice: async () => {},
+    onOpenMeeting: () => () => {},
   };
 }
 

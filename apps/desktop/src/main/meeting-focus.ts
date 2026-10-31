@@ -58,7 +58,7 @@ export function currentMeeting(meetings: readonly Meeting[]): CurrentMeeting | n
 
 /**
  * The prompt a notice raises where the user is. A failed start leaves no meeting to show it on,
- * and the final pass and summary outcomes belong to the Voice window.
+ * and the final pass and a failed summary belong to the Voice window.
  */
 export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt | null {
   switch (notice.kind) {
@@ -66,6 +66,8 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
       return { kind: "silence" };
     case "maxLengthSoon":
       return { kind: "maxLengthSoon", endsAt: now + notice.inMs };
+    case "summaryReady":
+      return { kind: "summaryReady" };
     case "resumeFailed":
     case "captureLost":
     case "maxLengthReached":
@@ -97,6 +99,8 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
       return meeting.finalPassFailed;
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
+    case "summaryReady":
+      return meeting.summary.kind === "ready" && meeting.status.kind === "ready";
     default:
       return !isCapturing(meeting);
   }

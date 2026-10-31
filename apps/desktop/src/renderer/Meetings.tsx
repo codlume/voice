@@ -16,6 +16,7 @@ import {
   type MeetingId,
   type MeetingSearchHit,
   type MeetingsState,
+  type OpenMeetingRequest,
 } from "../shared/meetings.ts";
 import type { Snapshot } from "../shared/api.ts";
 import { Button } from "./Button.tsx";
@@ -344,11 +345,26 @@ type PageTab = "notes" | "folders";
 
 type SettingsDialog = { open: boolean; setOpen: (open: boolean) => void };
 
-export function Meetings({ snapshot, settings }: { snapshot: Snapshot; settings: SettingsDialog }) {
+export function Meetings({
+  snapshot,
+  settings,
+  request = null,
+}: {
+  snapshot: Snapshot;
+  settings: SettingsDialog;
+  /** A meeting main asked to show on its summary. */
+  request?: OpenMeetingRequest | null;
+}) {
   const state = useMeetings();
   const today = useToday();
   return state ? (
-    <MeetingsPage snapshot={snapshot} settings={settings} state={state} today={today} />
+    <MeetingsPage
+      snapshot={snapshot}
+      settings={settings}
+      state={state}
+      today={today}
+      request={request}
+    />
   ) : null;
 }
 
@@ -357,14 +373,24 @@ function MeetingsPage({
   settings,
   state,
   today,
+  request,
 }: {
   snapshot: Snapshot;
   settings: SettingsDialog;
   state: MeetingsState;
   today: DayKey;
+  request: OpenMeetingRequest | null;
 }) {
   const { meetings, folders } = state;
-  const [openId, setOpenId] = useState<MeetingId | null>(null);
+  const [openId, setOpenId] = useState<MeetingId | null>(request?.id ?? null);
+  // Each request opens its meeting afresh, so the page lands on the Summary tab it asks for.
+  const [shownRequest, setShownRequest] = useState(request);
+  const [requests, setRequests] = useState(0);
+  if (request !== shownRequest) {
+    setShownRequest(request);
+    setRequests((count) => count + 1);
+    if (request) setOpenId(request.id);
+  }
   const [tab, setTab] = useState<PageTab>("notes");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<MeetingId | null>(null);
@@ -403,6 +429,7 @@ function MeetingsPage({
   if (opened) {
     return (
       <MeetingDetail
+        key={`${opened.id}:${requests}`}
         meeting={opened}
         folders={folders}
         notices={snapshot.meetingNotices.filter(({ id }) => id === opened.id)}
