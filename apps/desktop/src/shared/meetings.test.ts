@@ -3,6 +3,8 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   applyMeetingsChange,
   DEFAULT_MEETINGS_SETTINGS,
+  meetingToggle,
+  meetingToggleLabels,
   parseFolderDraft,
   parseMeetingId,
   parseMeetingsSettingsPatch,
@@ -11,6 +13,7 @@ import {
   type FolderId,
   type Meeting,
   type MeetingId,
+  type MeetingStatus,
   type MeetingsState,
 } from "./meetings.ts";
 
@@ -117,5 +120,41 @@ describe("meetings", () => {
         rule: { kind: "calendarSeries", text: "x" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("meetingToggle", () => {
+  const toggleWith = (status: MeetingStatus) => {
+    const next = meetingToggle([meeting(A, 2), meeting(B, 1, { status })]);
+    return { ...next, label: meetingToggleLabels[next.kind] };
+  };
+
+  test.each<[MeetingStatus, object]>([
+    [
+      { kind: "recording", since: 0 },
+      { kind: "stop", id: B, label: "Stop meeting" },
+    ],
+    [{ kind: "paused" }, { kind: "stop", id: B, label: "Stop meeting" }],
+    [
+      { kind: "starting", from: "new" },
+      { kind: "wait", id: B, label: "Starting meeting…" },
+    ],
+    [
+      { kind: "starting", from: "paused" },
+      { kind: "wait", id: B, label: "Starting meeting…" },
+    ],
+  ])("a meeting %j makes the shortcut and the menu bar item %j", (status, expected) => {
+    expect(toggleWith(status)).toEqual(expected);
+  });
+
+  test.each<MeetingStatus>([
+    { kind: "finishing" },
+    { kind: "confirmingShort" },
+    { kind: "transcribing" },
+    { kind: "summarizing" },
+    { kind: "ready" },
+  ])("a meeting no longer recording, %j, leaves them starting a new one", (status) => {
+    expect(toggleWith(status)).toEqual({ kind: "start", label: "Start meeting" });
+    expect(meetingToggle([])).toEqual({ kind: "start" });
   });
 });
