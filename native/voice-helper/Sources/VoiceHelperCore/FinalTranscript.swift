@@ -60,6 +60,8 @@ public enum FinalTranscript {
     /// where the next token starts, across any silence between them.
     static let tokenMs = 500.0
 
+    private static let closing = Set(".,!?;:…)]}%\"'”’»")
+
     /// Words from the speech model's tokens. A word starts at a token that begins with a space,
     /// or after a token that is only a space, as before a number. Punctuation joins its word but
     /// not its time: the model often emits a period well into the silence after the sentence.
@@ -75,7 +77,9 @@ public enum FinalTranscript {
                 boundary = true
                 continue
             }
-            let punctuation = !piece.contains { $0.isLetter || $0.isNumber }
+            // A symbol after a space, as in "is $42", opens a word; one that closes a word never does.
+            let opens = (boundary || token.text.hasPrefix(" ")) && !piece.allSatisfy { Self.closing.contains($0) }
+            let punctuation = !piece.contains { $0.isLetter || $0.isNumber } && !opens
             if let last = words.last, punctuation {
                 // A second period emitted for the same sentence end is dropped.
                 if !last.text.hasSuffix(piece) { words[words.count - 1] = TimedWord(text: last.text + piece, startMs: last.startMs, endMs: last.endMs) }

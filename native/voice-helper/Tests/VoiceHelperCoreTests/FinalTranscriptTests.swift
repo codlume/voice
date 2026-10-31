@@ -27,6 +27,15 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         #expect(words.map(\.text) == ["fixed", "42", "bugs"])
     }
 
+    @Test func aSymbolAfterASpaceStartsAWord() {
+        let spaced = FinalTranscript.words(tokens: [(" is", 0, 100), (" $", 200, 250), ("4", 250, 300), ("2", 300, 350), (",", 350, 360),
+                                                    ("000", 360, 420), (".", 420, 430)], offsetMs: 0)
+        #expect(spaced.map(\.text) == ["is", "$42,000."])
+        let afterBareSpace = FinalTranscript.words(tokens: [(" is", 0, 100), (" ", 100, 110), ("$", 200, 250), ("42", 250, 300)], offsetMs: 0)
+        #expect(afterBareSpace.map(\.text) == ["is", "$42"])
+        #expect(afterBareSpace.last?.startMs == 200)
+    }
+
     @Test func lateOrLongTokensDoNotBridgeTheSilenceAfterASentence() {
         // As Parakeet decodes a TTS meeting: the period comes 4 s after its word, a second one
         // later still, and a word token the model gave no duration ends at the next token.
