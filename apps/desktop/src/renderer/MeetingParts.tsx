@@ -1,7 +1,7 @@
 import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { PauseIcon, PlayIcon } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 
 import type { MeetingControls } from "../shared/api.ts";
 import type { Meeting, MeetingPrompt } from "../shared/meetings.ts";
@@ -139,50 +139,76 @@ export function useTranscriptRows(
   const transcript = useMeetingTranscript(api, meeting);
   const partials = useMeetingPartials(api, meeting.id, meeting.status.kind === "recording");
   const { speakers } = meeting;
+  // Partials change several times a second; the saved lines only when one is added.
+  const saved = useMemo(
+    () => transcript && transcriptRows(transcript, speakers),
+    [transcript, speakers],
+  );
   return useMemo(
-    () =>
-      transcript ? [...transcriptRows(transcript, speakers), ...partialRows(partials)] : undefined,
-    [transcript, speakers, partials],
+    () => (saved ? [...saved, ...partialRows(partials)] : undefined),
+    [saved, partials],
   );
 }
+
+type SpeechProps = Omit<Extract<TranscriptRow, { kind: "speech" }>, "kind" | "id"> & {
+  notepad: boolean;
+};
+
+// Memoized on plain values, so a new line renders only itself, not every line before it.
+const Speech = memo(function Speech({
+  speaker,
+  mine,
+  time,
+  text,
+  final,
+  continues,
+  notepad,
+}: SpeechProps) {
+  return (
+    <li {...stylex.props(styles.turn, continues && styles.turnContinued)}>
+      {!continues && (
+        <div {...stylex.props(styles.speakerLine)}>
+          <p
+            {...stylex.props(
+              styles.speaker,
+              notepad && styles.speakerNotepad,
+              !mine && styles.speakerOthers,
+            )}
+          >
+            {speaker}
+          </p>
+          <span {...stylex.props(styles.time, notepad && styles.timeNotepad)}>{time}</span>
+        </div>
+      )}
+      <p
+        {...stylex.props(styles.speech, notepad && styles.speechNotepad, !final && styles.partial)}
+      >
+        {text}
+      </p>
+    </li>
+  );
+});
 
 export function TranscriptList({ rows, look }: { rows: readonly TranscriptRow[]; look: Look }) {
   const notepad = look === "notepad";
   return (
     <ol aria-label="Transcript" {...stylex.props(styles.transcript)}>
-      {rows.map((row) =>
+      {rows.map(({ id, ...row }) =>
         row.kind === "marker" ? (
-          <li key={row.id} {...stylex.props(styles.marker, notepad && styles.markerNotepad)}>
+          <li key={id} {...stylex.props(styles.marker, notepad && styles.markerNotepad)}>
             {row.text}
           </li>
         ) : (
-          <li key={row.id} {...stylex.props(styles.turn, row.continues && styles.turnContinued)}>
-            {!row.continues && (
-              <div {...stylex.props(styles.speakerLine)}>
-                <p
-                  {...stylex.props(
-                    styles.speaker,
-                    notepad && styles.speakerNotepad,
-                    !row.mine && styles.speakerOthers,
-                  )}
-                >
-                  {row.speaker}
-                </p>
-                <span {...stylex.props(styles.time, notepad && styles.timeNotepad)}>
-                  {row.time}
-                </span>
-              </div>
-            )}
-            <p
-              {...stylex.props(
-                styles.speech,
-                notepad && styles.speechNotepad,
-                !row.final && styles.partial,
-              )}
-            >
-              {row.text}
-            </p>
-          </li>
+          <Speech
+            key={id}
+            speaker={row.speaker}
+            mine={row.mine}
+            time={row.time}
+            text={row.text}
+            final={row.final}
+            continues={row.continues}
+            notepad={notepad}
+          />
         ),
       )}
     </ol>
