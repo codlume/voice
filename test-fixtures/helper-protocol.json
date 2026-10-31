@@ -1449,6 +1449,38 @@
       "required": ["type", "id"]
     },
     {
+      "name": "meeting.lost",
+      "wire": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "mic",
+        "reason": "permission"
+      },
+      "parsed": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "mic",
+        "reason": "permission"
+      },
+      "required": ["type", "id", "source", "reason"]
+    },
+    {
+      "name": "meeting.lost.system",
+      "wire": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "system",
+        "reason": "device"
+      },
+      "parsed": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "system",
+        "reason": "device"
+      },
+      "required": ["type", "id", "source", "reason"]
+    },
+    {
       "name": "meeting.partial",
       "wire": {
         "type": "meeting.partial",

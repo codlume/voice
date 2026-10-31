@@ -33,11 +33,15 @@ final class Meetings {
         let folder = URL(fileURLWithPath: dir)
         let job = job(id: id, dir: folder, baseMs: baseMs, fromMs: fromMs, language: language)
         let leg = MeetingCapture(dir: folder, microphone: microphone, source: source, output: output, devices: devices,
-                                 isDictating: isDictating) { [weak self, output] message in
+                                 isDictating: isDictating, onFailed: { [weak self, output] message in
             self?.legs[id] = nil
             job.drain()
             output.emit(.meetingFailed(id: id, message: message))
-        }
+        }, onLost: { [weak self, output] loss in
+            self?.legs[id] = nil
+            job.drain()
+            output.emit(.meetingLost(id: id, source: loss.source, reason: loss.reason))
+        })
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let states = try leg.start()

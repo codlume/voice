@@ -599,6 +599,7 @@ const eventTypes = {
   "meeting.failed": true,
   "meeting.segment": true,
   "meeting.drained": true,
+  "meeting.lost": true,
   "meeting.partial": true,
   "meeting.finalized": true,
   "meeting.finalizeFailed": true,

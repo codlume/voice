@@ -1,5 +1,6 @@
 import {
   closedMs,
+  type AudioLoss,
   type Meeting,
   type MeetingId,
   type MeetingNotice,
@@ -42,8 +43,19 @@ export function currentMeeting(meetings: readonly Meeting[]): CurrentMeeting | n
   return best;
 }
 
+function lostText(loss: AudioLoss | null): string {
+  const what =
+    loss === null
+      ? "Audio stopped coming in"
+      : loss.reason === "permission"
+        ? `Voice is no longer allowed to record ${loss.source === "mic" ? "the microphone" : "system audio"}`
+        : loss.source === "mic"
+          ? "The microphone stopped"
+          : "System audio stopped";
+  return `${what}, so the meeting is paused. Resume to keep recording.`;
+}
+
 const noticeText: Partial<Record<MeetingNotice["kind"], string>> = {
-  captureLost: "Audio stopped coming in, so the meeting is paused. Resume to keep recording.",
   maxLengthReached: "Recording stopped at the maximum length.",
   atMaxLength: "This meeting is at its maximum length and cannot record more.",
 };
@@ -60,6 +72,8 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
       return { kind: "maxLengthSoon", endsAt: now + notice.inMs };
     case "resumeFailed":
       return { kind: "notice", text: notice.message };
+    case "captureLost":
+      return { kind: "notice", text: lostText(notice.loss) };
     default: {
       const text = noticeText[notice.kind];
       return text ? { kind: "notice", text } : null;

@@ -1,6 +1,7 @@
 import {
   maxLengthMs,
   recordedMs,
+  type AudioLoss,
   type MarkerKind,
   type Meeting,
   type MeetingId,
@@ -27,7 +28,7 @@ export type MeetingEvent =
   | { type: "resume" }
   | { type: "captureStarted"; leg: number }
   | { type: "captureFailed"; leg: number; message: string }
-  | { type: "captureLost"; leg: number }
+  | { type: "captureLost"; leg: number; loss: AudioLoss }
   | { type: "pause" }
   | { type: "stop" }
   | { type: "timer"; leg: number; timer: Timer }
@@ -112,6 +113,13 @@ function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleCon
   };
 }
 
+const lossMessage = ({ source, reason }: AudioLoss) => {
+  if (reason === "permission") {
+    return `Voice is not allowed to record ${source === "mic" ? "the microphone" : "system audio"}.`;
+  }
+  return source === "mic" ? "The microphone stopped." : "System audio stopped.";
+};
+
 const lastSummary = (summary: SummaryState) =>
   summary.kind === "ready" ? summary.summary : summary.kind === "failed" ? summary.previous : null;
 
@@ -195,7 +203,7 @@ export function step(
         }
         case "captureFailed":
         case "captureLost": {
-          const message = event.type === "captureFailed" ? event.message : "Capture stopped";
+          const message = event.type === "captureFailed" ? event.message : lossMessage(event.loss);
           if (status.from === "new") return gone([notify({ kind: "startFailed", message })]);
           return {
             meeting: withStatus(meeting, { kind: status.from }),
@@ -229,7 +237,13 @@ export function step(
         case "captureLost":
           return {
             meeting: close({ kind: "paused" }),
-            effects: [mark("gap"), notify({ kind: "captureLost" })],
+            effects: [
+              mark("gap"),
+              notify({
+                kind: "captureLost",
+                loss: event.type === "captureLost" ? event.loss : null,
+              }),
+            ],
           };
         case "timer":
           if (event.timer === "maxLengthWarning") {

@@ -224,6 +224,8 @@ public enum HelperEvent: Equatable, Sendable {
     case meetingStarted(id: String, mic: MeetingSourceState, system: MeetingSourceState)
     /// The leg could not start, or capture died mid-leg; what was recorded stays on disk.
     case meetingFailed(id: String, message: String)
+    /// A source stopped mid-leg, so the leg ended; what was recorded stays on disk.
+    case meetingLost(id: String, source: MeetingSource, reason: MeetingLossReason)
     /// A final transcript segment, in meeting time.
     case meetingSegment(id: String, source: MeetingSource, startMs: Double, endMs: Double, text: String)
     /// Capture is stopped and everything recorded is transcribed, or `failure` says why the rest
@@ -477,6 +479,11 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
+        case .meetingLost(let id, let source, let reason):
+            try c.encode("meeting.lost", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(source, forKey: .source)
+            try c.encode(reason, forKey: .reason)
         case .meetingSegment(let id, let source, let startMs, let endMs, let text):
             try c.encode("meeting.segment", forKey: .type)
             try c.encode(id, forKey: .id)

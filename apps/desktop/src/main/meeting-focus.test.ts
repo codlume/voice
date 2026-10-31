@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { Meeting, MeetingId, MeetingStatus } from "../shared/meetings.ts";
+import type { AudioLoss, Meeting, MeetingId, MeetingStatus } from "../shared/meetings.ts";
 import {
   currentMeeting,
   dismiss,
   follow,
   noMeetingFocus,
+  noticePrompt,
   promptFor,
   raise,
   toPillMeeting,
@@ -29,6 +30,11 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
 }
 
 const recording = (n: number) => meeting(n, { kind: "recording", since: 5000 });
+
+const lostText = (loss: AudioLoss | null) => {
+  const prompt = noticePrompt({ kind: "captureLost", loss }, 0);
+  return prompt?.kind === "notice" ? prompt.text : null;
+};
 
 describe("currentMeeting", () => {
   test("a recording beats one waiting on the user, which beats a paused one", () => {
@@ -77,10 +83,19 @@ describe("prompts", () => {
 
   test("a lost capture leaves a notice on the paused meeting until resumed or dismissed", () => {
     const paused = meeting(1, { kind: "paused" });
-    const focus = raise(follow(noMeetingFocus, [paused]), paused.id, { kind: "captureLost" }, 0);
+    const lost = { kind: "captureLost", loss: null } as const;
+    const focus = raise(follow(noMeetingFocus, [paused]), paused.id, lost, 0);
     expect(promptFor(paused, focus)).toMatchObject({ kind: "notice" });
     expect(promptFor(paused, dismiss(focus))).toBeNull();
     expect(promptFor(recording(1), follow(focus, [recording(1)]))).toBeNull();
+  });
+
+  test("a lost capture says which source stopped and why", () => {
+    expect(lostText({ source: "mic", reason: "device" })).toMatch(/^The microphone stopped, /);
+    expect(lostText({ source: "system", reason: "permission" })).toMatch(
+      /^Voice is no longer allowed to record system audio, /,
+    );
+    expect(lostText(null)).toMatch(/^Audio stopped coming in, /);
   });
 
   test("summary outcomes stay in the Voice window", () => {
@@ -101,7 +116,7 @@ describe("prompts", () => {
     const focus = raise(
       follow(noMeetingFocus, [live, other]),
       other.id,
-      { kind: "captureLost" },
+      { kind: "captureLost", loss: null },
       0,
     );
     expect(promptFor(live, focus)).toBeNull();

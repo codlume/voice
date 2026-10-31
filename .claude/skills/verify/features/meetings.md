@@ -28,6 +28,7 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meetings-setup`: `Set up Meetings` at the top of the page (Microphone, System Audio Recording, Try Meetings) until all are done; System Audio Recording below macOS 14.4 reads "Needs macOS 14.4 or later" and does not hold it open. A `Summaries` row offers the transform model while it is not on disk.
 - `meeting-toggle`: the meeting shortcut (default ⌥M, Settings > Shortcuts > Meetings) and the tray's `meeting` item stop the meeting that records or is paused, or start one; while one starts the tray reads `Starting meeting…` and a press does nothing.
 - `meetings-privacy-settings`: Settings > Data and Privacy > Meetings states the retention and `Meeting settings…` opens the Meetings page's dialog.
+- `meeting-audio-lost`: when a live leg loses the microphone or system audio permission, or the microphone stops delivering audio for 5 s, the helper ends the leg with `meeting.lost`; the meeting goes `paused` with an Audio lost (`gap`) marker and a `captureLost` notice naming the source and reason. Test mode cannot produce it: fixtures never use a device or a permission.
 - `meeting-recovery`: a meeting left `recording` by a quit becomes `ready` on the next launch, its leg closed at the last audio write, and the helper plays no fixture and opens no device.
 
 ## How to get to it (user POV)

@@ -303,6 +303,13 @@ const HelperEventSchema = Schema.Union([
     id: Schema.String,
     message: Schema.String,
   }),
+  // A source stopped mid-leg, which ended the leg.
+  Schema.Struct({
+    type: Schema.Literal("meeting.lost"),
+    id: Schema.String,
+    source: Schema.Literals(["mic", "system"]),
+    reason: Schema.Literals(["permission", "device"]),
+  }),
   Schema.Struct({
     type: Schema.Literal("meeting.segment"),
     id: Schema.String,

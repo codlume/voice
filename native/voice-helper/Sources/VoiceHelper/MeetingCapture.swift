@@ -13,6 +13,9 @@ final class MeetingCapture {
     private let source: MeetingAudioSource
     private let isDictating: () -> Bool
     private let onFailed: (String) -> Void
+    private let onLost: (AudioLoss) -> Void
+    private var watch: DispatchSourceTimer?
+    private var lastMicAudio = DispatchTime.now()
     private let microphone: Microphone?
     private let micURL: URL
     private let systemURL: URL
@@ -26,7 +29,7 @@ final class MeetingCapture {
     private var startFrames = 0
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
-         isDictating: @escaping () -> Bool, onFailed: @escaping (String) -> Void) {
+         isDictating: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
         micURL = dir.appendingPathComponent("mic.pcm")
         systemURL = dir.appendingPathComponent("system.pcm")
         self.microphone = microphone
@@ -35,6 +38,7 @@ final class MeetingCapture {
         self.devices = devices
         self.isDictating = isDictating
         self.onFailed = onFailed
+        self.onLost = onLost
     }
 
     /// Starts both sources; throws only when the microphone cannot record, since a meeting
@@ -61,7 +65,9 @@ final class MeetingCapture {
             }
             mic = try open(micURL)
             try openMic()
-            return (.active, startSystem())
+            let system = startSystem()
+            startWatch(system: system == .active)
+            return (.active, system)
         }
     }
 
@@ -69,6 +75,8 @@ final class MeetingCapture {
     func stop() {
         guard !stopped else { return }
         stopped = true
+        watch?.cancel()
+        watch = nil
         fixtures.forEach { $0.stop() }
         fixtures = []
         micSource?.finish()
@@ -135,7 +143,10 @@ final class MeetingCapture {
             try mic?.pad(to: system?.frames ?? elapsed)
             output.log(.info, "meeting microphone reopened after a device change")
         } catch {
-            guard attempt < 10 else { return fail("The microphone stopped: \(error)") }
+            guard attempt < 10 else {
+                output.log(.error, "meeting microphone did not come back: \(error)")
+                return lose(AudioLoss(source: .mic, reason: .device))
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reopenMic(attempt: attempt + 1) }
         }
     }
@@ -164,7 +175,32 @@ final class MeetingCapture {
         }
     }
 
+    // Permissions can be taken away mid-meeting, and macOS then hands the app silence, not an
+    // error, so the leg checks every two seconds.
+    private func startWatch(system: Bool) {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .milliseconds(200))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let loss = MeetingWatch.loss(
+                micAllowed: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+                systemRecording: system, systemAllowed: SystemAudioAccess.state != .denied,
+                msSinceMicAudio: micSource == nil ? nil : lastMicAudio.millisecondsToNow())
+            if let loss { lose(loss) }
+        }
+        watch = timer
+        timer.resume()
+    }
+
+    private func lose(_ loss: AudioLoss) {
+        guard !stopped else { return }
+        output.log(.error, "meeting \(loss.source.rawValue) lost (\(loss.reason.rawValue)); the leg ends")
+        stop()
+        onLost(loss)
+    }
+
     private func receiveMic(_ chunk: [Float]) {
+        lastMicAudio = .now()
         // Dictated words belong to wherever they were inserted, not to the meeting.
         write(isDictating() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
     }

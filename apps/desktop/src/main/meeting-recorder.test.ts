@@ -472,6 +472,18 @@ describe("meeting recorder", () => {
     expect(await h.store.transcript(id)).toEqual([{ kind: "marker", marker: "gap", atMs: 30_000 }]);
   });
 
+  test("a source lost mid-meeting pauses it with an Audio lost marker and records nothing more", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.audio(id, 20_000);
+    h.emit({ type: "meeting.lost", id, source: "mic", reason: "permission" });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "paused" });
+    expect(h.notices).toEqual(["captureLost"]);
+    expect(await h.store.transcript(id)).toEqual([{ kind: "marker", marker: "gap", atMs: 20_000 }]);
+    expect(h.sentTypes()).toEqual(["meeting.start"]);
+  });
+
   test("dictating mid-meeting leaves a dictated marker and asks nothing of the helper", async () => {
     const h = harness();
     const id = await h.start();

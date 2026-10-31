@@ -493,6 +493,19 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "capture.started":
           background("dictated marker", dictated());
           return;
+        case "meeting.lost": {
+          const id = event.id as MeetingId;
+          const meeting = store.get(id);
+          if (!meeting) return;
+          unwatch(id);
+          const loss = { source: event.source, reason: event.reason };
+          log(`meetings: ${id} lost ${loss.source} audio (${loss.reason})`);
+          background(
+            event.type,
+            dispatch(id, { type: "captureLost", leg: meeting.spans.length, loss }),
+          );
+          return;
+        }
         case "meeting.started":
         case "meeting.failed": {
           const id = event.id as MeetingId;

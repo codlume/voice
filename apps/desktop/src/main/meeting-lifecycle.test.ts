@@ -129,7 +129,7 @@ describe("meeting lifecycle", () => {
       [{ type: "resume" }, 2 * MIN],
       [{ type: "captureStarted", leg: 1 }, 2 * MIN],
       [{ type: "timer", leg: 0, timer: "maxLength" }, 3 * MIN],
-      [{ type: "captureLost", leg: 0 }, 3 * MIN],
+      [{ type: "captureLost", leg: 0, loss: { source: "mic", reason: "device" } }, 3 * MIN],
     ]);
     expect(meeting?.status).toEqual({ kind: "recording", since: T0 + 2 * MIN });
   });
@@ -153,11 +153,15 @@ describe("meeting lifecycle", () => {
     const { meeting, effects } = play([
       [{ type: "start", id: ID }, 0],
       [{ type: "captureStarted", leg: 0 }, 0],
-      [{ type: "captureLost", leg: 0 }, 7 * MIN],
+      [{ type: "captureLost", leg: 0, loss: { source: "system", reason: "permission" } }, 7 * MIN],
     ]);
     expect(meeting?.status).toEqual({ kind: "paused" });
     expect(effects).toContainEqual({ type: "mark", marker: "gap" });
     expect(notices(effects)).toEqual(["captureLost"]);
+    expect(effects).toContainEqual({
+      type: "notify",
+      notice: { kind: "captureLost", loss: { source: "system", reason: "permission" } },
+    });
     expect(kinds(effects).filter((kind) => kind === "startCapture")).toHaveLength(1);
   });
 

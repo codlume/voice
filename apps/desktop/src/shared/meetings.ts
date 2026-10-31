@@ -232,11 +232,15 @@ export type MeetingCommandResult =
   | { kind: "refused"; message: string }
   | { kind: "unavailable" };
 
+/** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
+export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
+
 /** What a meeting tells the user: warnings, prompts and outcomes. */
 export type MeetingNotice =
   | { kind: "startFailed"; message: string }
   | { kind: "resumeFailed"; message: string }
-  | { kind: "captureLost" }
+  /** `loss` is null when capture failed some other way, such as the helper stopping. */
+  | { kind: "captureLost"; loss: AudioLoss | null }
   | { kind: "maxLengthSoon"; inMs: number }
   | { kind: "maxLengthReached" }
   | { kind: "atMaxLength" }
