@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 
 import type { MeetingCommandResult, Meeting, MeetingId, NotepadState } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
+import { ThoughtsEditor } from "./MeetingThoughts.tsx";
 import {
   CONSENT_REMINDER,
   partialRows,
@@ -23,7 +24,6 @@ import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
-import { useThoughts } from "./useThoughts.ts";
 import { notepadApi } from "./voice.ts";
 
 const HEADER_HEIGHT = 40;
@@ -144,20 +144,6 @@ const styles = stylex.create({
     "::before": { content: "''", flexGrow: 1, height: 1, backgroundColor: color.border },
     "::after": { content: "''", flexGrow: 1, height: 1, backgroundColor: color.border },
   },
-  thoughts: {
-    flexGrow: 1,
-    width: "100%",
-    minHeight: 0,
-    padding: space.md,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 14,
-    lineHeight: 1.55,
-    resize: "none",
-    outline: "none",
-  },
   error: { margin: 0, paddingInline: space.md, paddingBottom: space.sm },
 });
 
@@ -252,30 +238,6 @@ function Transcript({ rows }: { rows: readonly TranscriptRow[] | null }) {
         </ol>
       )}
     </div>
-  );
-}
-
-function Thoughts({ meeting }: Pick<NotepadState, "meeting">) {
-  const thoughts = useThoughts(
-    meeting,
-    (notes) => notepadApi().updateMeetingNotes(meeting.id, notes),
-    "Could not save your thoughts. Keep the notepad open and try again.",
-  );
-  return (
-    <>
-      <textarea
-        aria-label="My thoughts"
-        value={thoughts.text}
-        placeholder="Write your thoughts here. The summary never changes them."
-        onChange={(event) => thoughts.change(event.target.value)}
-        {...stylex.props(styles.thoughts)}
-      />
-      {thoughts.error && (
-        <p role="alert" {...stylex.props(pageStyles.error, styles.error)}>
-          {thoughts.error}
-        </p>
-      )}
-    </>
   );
 }
 
@@ -384,7 +346,11 @@ function MeetingNotepad({ meeting, prompt }: NotepadState) {
           <Transcript rows={rows} />
         </Tabs.Panel>
         <Tabs.Panel value="thoughts" {...stylex.props(styles.panel)}>
-          <Thoughts meeting={meeting} />
+          <ThoughtsEditor
+            meeting={meeting}
+            save={(notes) => notepadApi().updateMeetingNotes(meeting.id, notes)}
+            look="notepad"
+          />
         </Tabs.Panel>
       </Tabs.Root>
     </div>

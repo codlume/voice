@@ -60,7 +60,7 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
     dismissMeetingPrompt: vi.fn(async () => {}),
     viewMeetingSummary: vi.fn(async () => {}),
     getMeeting: async () => ({ meeting: first.meeting, transcript: [...transcript] }),
-    updateMeetingNotes: vi.fn(async () => {}),
+    updateMeetingNotes: vi.fn(async (_id: MeetingId, _notes: string) => {}),
     pauseMeeting: vi.fn(ok),
     resumeMeeting: vi.fn(ok),
     stopMeeting: vi.fn(ok),
@@ -254,6 +254,30 @@ describe("My thoughts in the notepad", () => {
     expect(api.updateMeetingNotes).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTime(600));
     expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Ask about pricing");
+  });
+
+  test("saves what the delay has not sent when the window closes", async () => {
+    const { api } = fakeNotepad({ meeting, prompt: null });
+    await render();
+    await openThoughts();
+    type("Follow up with Tom on pricing");
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Follow up with Tom on pricing");
+  });
+
+  test("a failed save keeps the text and saves it again on Try again", async () => {
+    const { api } = fakeNotepad({ meeting, prompt: null });
+    api.updateMeetingNotes.mockRejectedValueOnce(new Error("disk full"));
+    await render();
+    await openThoughts();
+    type("Ask about pricing");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(document.querySelector("[role=alert]")?.textContent).toBe("disk full");
+    expect(thoughts().value).toBe("Ask about pricing");
+    await act(async () => button("Try again")?.click());
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Ask about pricing");
+    expect(document.querySelector("[role=alert]")).toBeNull();
   });
 
   test("shows thoughts written in the Voice window", async () => {

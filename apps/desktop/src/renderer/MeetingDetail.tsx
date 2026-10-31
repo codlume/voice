@@ -27,6 +27,7 @@ import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SetupChecklist } from "./Home.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
+import { ThoughtsEditor } from "./MeetingThoughts.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
 import {
   durationLabel,
@@ -39,7 +40,6 @@ import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
-import { useThoughts } from "./useThoughts.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -123,22 +123,6 @@ const styles = stylex.create({
   muted: { margin: 0, color: color.mutedForeground },
   summaryCard: { padding: space.lg },
   stale: { opacity: 0.6 },
-  thoughts: {
-    width: "100%",
-    minHeight: 280,
-    padding: space.lg,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: color.border, ":focus": color.input },
-    borderRadius: radius.large,
-    backgroundColor: color.card,
-    color: color.foreground,
-    font: "inherit",
-    fontSize: 15,
-    lineHeight: 1.6,
-    resize: "vertical",
-    outline: "none",
-  },
   speakers: {
     display: "flex",
     flexWrap: "wrap",
@@ -473,30 +457,6 @@ function SummaryPanel({
   );
 }
 
-function Thoughts({ meeting }: { meeting: Meeting }) {
-  const thoughts = useThoughts(
-    meeting,
-    (notes) => hubApi().updateMeetingNotes(meeting.id, notes),
-    "Could not save your thoughts. Keep this page open and try again.",
-  );
-  return (
-    <>
-      <textarea
-        aria-label="My thoughts"
-        value={thoughts.text}
-        placeholder="Write your thoughts here. The summary never changes them."
-        onChange={(event) => thoughts.change(event.target.value)}
-        {...stylex.props(styles.thoughts)}
-      />
-      {thoughts.error && (
-        <p role="alert" {...stylex.props(pageStyles.error)}>
-          {thoughts.error}
-        </p>
-      )}
-    </>
-  );
-}
-
 /** A speaker's name; blank goes back to "Speaker N". */
 function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
   const action = useAction();
@@ -699,7 +659,12 @@ export function MeetingDetail({
           <SummaryPanel meeting={meeting} summaryModel={summaryModel} />
         </Tabs.Panel>
         <Tabs.Panel value="thoughts" {...stylex.props(styles.panel)}>
-          <Thoughts key={meeting.id} meeting={meeting} />
+          <ThoughtsEditor
+            key={meeting.id}
+            meeting={meeting}
+            save={(notes) => hubApi().updateMeetingNotes(meeting.id, notes)}
+            look="page"
+          />
         </Tabs.Panel>
         <Tabs.Panel value="transcript" {...stylex.props(styles.panel)}>
           <Transcript meeting={meeting} transcript={transcript} />
