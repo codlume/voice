@@ -4,8 +4,14 @@ public enum HotkeyKey: String, Codable, Sendable { case fn, rightOption, rightCo
 /// `down`, `up`, and `chord` come from the hold key, `toggle` from a clean tap of the toggle key,
 /// and `cancel` from Escape.
 public enum HotkeyAction: String, Codable, Sendable { case down, up, chord, cancel, toggle }
-public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility }
+public enum PermissionKind: String, Codable, Sendable { case microphone, accessibility, systemAudio }
 public enum PermissionState: String, Codable, Sendable { case granted, denied, notDetermined }
+/// System Audio Recording is `unavailable` below macOS 14.4, where Voice records no system audio.
+public enum SystemAudioPermission: String, Codable, Sendable { case granted, denied, notDetermined, unavailable }
+public enum MeetingSource: String, Codable, Sendable { case mic, system }
+/// How a meeting leg's source started: recording, or left out because the Mac cannot record it
+/// or the user has not allowed it.
+public enum MeetingSourceState: String, Codable, Sendable { case active, unavailable, denied }
 public enum CaptureFailure: String, Codable, Sendable { case permission, device, busy, unknown }
 public enum CaptureStopReason: String, Codable, Sendable { case deviceChanged, maxDuration }
 public enum TranscriptFailure: String, Codable, Sendable { case asrUnavailable, unknown }
@@ -123,6 +129,34 @@ public enum HelperCommand: Equatable, Sendable {
     case testTarget(TranscriptTarget?)
     case appsList
     case iconsRender(id: String, paths: [String])
+    /// Records one leg into `dir`, appending to the meeting's `mic.pcm` and `system.pcm`, and
+    /// transcribes them as they grow. `baseMs` is the meeting time at the files' first byte;
+    /// `fromMs` is how far each source's transcript already reaches, in meeting time.
+    case meetingStart(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage, microphone: Microphone?)
+    /// Ends the leg and keeps transcribing what was recorded; `meeting.drained` follows. Idempotent.
+    case meetingStop(id: String)
+    /// Ends the leg and drops the transcription, for a meeting being deleted. Idempotent.
+    case meetingCancel(id: String)
+    /// Transcribes whatever of the files the transcript does not reach yet, without recording.
+    case meetingTranscribe(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage)
+}
+
+/// Meeting time, per source, that a transcript already covers.
+public struct MeetingCursor: Equatable, Sendable {
+    public let mic: Double
+    public let system: Double
+
+    public init(mic: Double, system: Double) {
+        self.mic = mic
+        self.system = system
+    }
+
+    public subscript(source: MeetingSource) -> Double {
+        switch source {
+        case .mic: mic
+        case .system: system
+        }
+    }
 }
 
 /// What the user was dictating into: the frontmost app and, for a browser page, the page host.
@@ -140,7 +174,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 15
+public let helperProtocolVersion = 16
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -166,11 +200,19 @@ public enum HelperEvent: Equatable, Sendable {
     case transcript(Transcript)
     case transcriptFailed(id: String, reason: TranscriptFailure, message: String)
     case insertResult(id: String, outcome: InsertOutcome)
-    case permissions(microphone: PermissionState, accessibility: PermissionState)
+    case permissions(microphone: PermissionState, accessibility: PermissionState, systemAudio: SystemAudioPermission)
     case asrStatus(state: AsrState, message: String?)
     case log(level: LogLevel, message: String)
     case appsListed(apps: [InstalledApp])
     case iconsRendered(id: String, icons: [RenderedIcon])
+    case meetingStarted(id: String, mic: MeetingSourceState, system: MeetingSourceState)
+    /// The leg could not start, or capture died mid-leg; what was recorded stays on disk.
+    case meetingFailed(id: String, message: String)
+    /// A final transcript segment, in meeting time.
+    case meetingSegment(id: String, source: MeetingSource, startMs: Double, endMs: Double, text: String)
+    /// Capture is stopped and everything recorded is transcribed, or `failure` says why the rest
+    /// could not be; the audio stays on disk either way.
+    case meetingDrained(id: String, failure: String?)
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -185,6 +227,7 @@ private enum Key: String, CodingKey {
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
+    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure
 }
 
 extension HelperCommand: Decodable {
@@ -234,6 +277,17 @@ extension HelperCommand: Decodable {
         case "icons.render":
             self = .iconsRender(id: try c.decode(String.self, forKey: .id),
                                 paths: try c.decode([String].self, forKey: .paths))
+        case "meeting.start":
+            self = .meetingStart(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
+                                 baseMs: try c.decode(Double.self, forKey: .baseMs), fromMs: try c.decode(MeetingCursor.self, forKey: .fromMs),
+                                 language: try c.decode(DictationLanguage.self, forKey: .language),
+                                 microphone: try c.decode(Microphone?.self, forKey: .microphone))
+        case "meeting.stop": self = .meetingStop(id: try c.decode(String.self, forKey: .id))
+        case "meeting.cancel": self = .meetingCancel(id: try c.decode(String.self, forKey: .id))
+        case "meeting.transcribe":
+            self = .meetingTranscribe(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
+                                      baseMs: try c.decode(Double.self, forKey: .baseMs), fromMs: try c.decode(MeetingCursor.self, forKey: .fromMs),
+                                      language: try c.decode(DictationLanguage.self, forKey: .language))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -363,10 +417,11 @@ extension HelperEvent: Encodable {
                 try c.encode("none", forKey: .method)
                 try c.encode(reason, forKey: .reason)
             }
-        case .permissions(let microphone, let accessibility):
+        case .permissions(let microphone, let accessibility, let systemAudio):
             try c.encode("permissions", forKey: .type)
             try c.encode(microphone, forKey: .microphone)
             try c.encode(accessibility, forKey: .accessibility)
+            try c.encode(systemAudio, forKey: .systemAudio)
         case .asrStatus(let state, let message):
             try c.encode("asr.status", forKey: .type)
             try c.encode(state, forKey: .state)
@@ -382,6 +437,26 @@ extension HelperEvent: Encodable {
             try c.encode("icons.rendered", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(icons, forKey: .icons)
+        case .meetingStarted(let id, let mic, let system):
+            try c.encode("meeting.started", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(mic, forKey: .mic)
+            try c.encode(system, forKey: .system)
+        case .meetingFailed(let id, let message):
+            try c.encode("meeting.failed", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(message, forKey: .message)
+        case .meetingSegment(let id, let source, let startMs, let endMs, let text):
+            try c.encode("meeting.segment", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(source, forKey: .source)
+            try c.encode(finite(startMs), forKey: .startMs)
+            try c.encode(finite(endMs), forKey: .endMs)
+            try c.encode(text, forKey: .text)
+        case .meetingDrained(let id, let failure):
+            try c.encode("meeting.drained", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(failure, forKey: .failure)
         }
     }
 
@@ -407,6 +482,17 @@ extension TransformShortcut: Decodable {
         guard modifiers.contains(where: { $0 != .shift }) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .modifiers, in: c, debugDescription: "a transform shortcut needs a modifier other than shift")
+        }
+    }
+}
+
+extension MeetingCursor: Decodable {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        mic = try c.decode(Double.self, forKey: .mic)
+        system = try c.decode(Double.self, forKey: .system)
+        guard mic.isFinite, system.isFinite, mic >= 0, system >= 0 else {
+            throw DecodingError.dataCorruptedError(forKey: .mic, in: c, debugDescription: "cursor times must be finite and not negative")
         }
     }
 }

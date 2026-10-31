@@ -35,6 +35,7 @@ import {
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
+  type PillMeeting,
   type Segment,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
@@ -61,7 +62,11 @@ const base: Snapshot = {
     status: { kind: "idle" },
   },
   session: { kind: "idle" },
-  permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+  permissions: {
+    microphone: "notDetermined",
+    accessibility: "notDetermined",
+    systemAudio: "notDetermined",
+  },
   loginItem: "off",
   models: {
     asr: { state: "missing" },
@@ -83,7 +88,7 @@ const base: Snapshot = {
 
 const ready: Snapshot = {
   ...base,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
 };
 
@@ -114,6 +119,30 @@ const pillScenes: Record<string, PillState> = {
   transformLoading: { kind: "transforming", loading: true },
   transformTooLong: transformDone({ kind: "tooLong", maxWords: 1000 }),
   transformNotInserted: transformDone({ kind: "notInserted", reason: "noFocusedField" }),
+};
+
+// Fixed times, so a recording scene reads the same each load: 12 minutes in a closed leg.
+const meetingSince = Date.now() - 95_000;
+const pillMeetingScenes: Record<string, PillMeeting> = {
+  "meeting-recording": {
+    status: { kind: "recording", since: meetingSince },
+    closedMs: 720_000,
+    prompt: null,
+  },
+  "meeting-paused": { status: { kind: "paused" }, closedMs: 815_000, prompt: null },
+  "meeting-starting": { status: { kind: "starting", from: "new" }, closedMs: 0, prompt: null },
+  "meeting-finishing": { status: { kind: "finishing" }, closedMs: 815_000, prompt: null },
+  "meeting-short": { status: { kind: "confirmingShort" }, closedMs: 4_000, prompt: null },
+  "meeting-silence": {
+    status: { kind: "recording", since: meetingSince },
+    closedMs: 720_000,
+    prompt: { kind: "silence" },
+  },
+  "meeting-limit": {
+    status: { kind: "recording", since: meetingSince },
+    closedMs: 6_900_000,
+    prompt: { kind: "maxLengthSoon", endsAt: Date.now() + 290_000 },
+  },
 };
 
 const releaseItems = [
@@ -430,7 +459,7 @@ const hubScenes: Record<string, HubScene> = {
   fresh: { ...base, history: [] },
   progress: {
     ...base,
-    permissions: { microphone: "granted", accessibility: "denied" },
+    permissions: { microphone: "granted", accessibility: "denied", systemAudio: "notDetermined" },
     models: {
       asr: { state: "downloading", progress: 0.42 },
       cleanup: { state: "failed", message: "Download interrupted. Check your connection." },
@@ -439,7 +468,11 @@ const hubScenes: Record<string, HubScene> = {
   },
   "setup-not-ready": {
     ...base,
-    permissions: { microphone: "granted", accessibility: "notDetermined" },
+    permissions: {
+      microphone: "granted",
+      accessibility: "notDetermined",
+      systemAudio: "notDetermined",
+    },
     models: {
       asr: { state: "ready" },
       cleanup: { state: "ready" },
@@ -766,7 +799,11 @@ function fakeMeetings(
     pauseMeeting: unavailable,
     resumeMeeting: unavailable,
     stopMeeting: unavailable,
+    keepMeeting: unavailable,
+    discardMeeting: unavailable,
     generateMeetingSummary: unavailable,
+    onMeetingTranscript: () => () => {},
+    onMeetingNotice: () => () => {},
   };
 }
 
@@ -780,6 +817,7 @@ function fakeVoice(
     ...initial
   }: HubScene,
   loop: boolean,
+  pillMeeting: PillMeeting | null = null,
 ): HubApi & PillApi {
   let snapshot: Snapshot = initial;
   let history = initialHistory;
@@ -857,9 +895,13 @@ function fakeVoice(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    getPillSnapshot: async () => toPillSnapshot(snapshot),
+    getPillSnapshot: async () => toPillSnapshot(snapshot, pillMeeting),
+    setPillClickable: async () => {},
+    openNotepad: async () => {
+      console.info("openNotepad");
+    },
     onPillSnapshot: (listener) => {
-      const forward = (next: Snapshot) => listener(toPillSnapshot(next));
+      const forward = (next: Snapshot) => listener(toPillSnapshot(next, pillMeeting));
       listeners.add(forward);
       return () => listeners.delete(forward);
     },
@@ -1095,7 +1137,17 @@ function Gallery() {
             <a href={`?pill=${name}`}>{name}</a>
           </figcaption>
           <div style={box}>
-            <PillCapsule session={session} alwaysShowPill />
+            <PillCapsule session={session} alwaysShowPill meeting={null} />
+          </div>
+        </figure>
+      ))}
+      {Object.entries(pillMeetingScenes).map(([name, meeting]) => (
+        <figure key={name} style={{ margin: 0 }}>
+          <figcaption style={{ fontSize: 12, marginBottom: 4 }}>
+            <a href={`?pill=${name}`}>{name}</a>
+          </figcaption>
+          <div style={box}>
+            <PillCapsule session={{ kind: "idle" }} alwaysShowPill={false} meeting={meeting} />
           </div>
         </figure>
       ))}
@@ -1110,7 +1162,11 @@ const root = createRoot(document.getElementById("root")!);
 
 if (pill) {
   const session = pillScenes[pill] ?? { kind: "idle" };
-  window.voice = fakeVoice({ ...ready, session }, pill === "cycle");
+  window.voice = fakeVoice(
+    { ...ready, session },
+    pill === "cycle",
+    pillMeetingScenes[pill] ?? null,
+  );
   if (params.get("backdrop") !== "none") document.body.style.background = "#d9dde3";
   root.render(<PillPreview />);
 } else if (hub) {

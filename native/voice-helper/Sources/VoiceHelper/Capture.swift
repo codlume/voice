@@ -107,6 +107,15 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
+    /// True from a dictation's start until its transcript, so meetings keep their mic and the
+    /// speech model clear of it.
+    var isDictating: Bool {
+        switch state {
+        case .starting, .recording, .transcribing: true
+        case .idle, .testing: false
+        }
+    }
+
     /// False when no session began, so the caller schedules nothing for it. `hotkeyUptimeMs` is the
     /// press main answered with this command, when one did.
     @discardableResult
@@ -669,19 +678,22 @@ final class MicSource {
     }
 }
 
-private final class FileSource {
+/// Plays a test fixture in 100 ms ticks; `speed` above 1 delivers that many ticks' audio per tick.
+final class FileSource {
     private let samples: [Float]
+    private let framesPerTick: Int
     private let sink: ([Float]) -> Void
     private let onEnd: () -> Void
     private var offset = 0
     private var timer: DispatchSourceTimer?
 
-    init(path: String, sink: @escaping ([Float]) -> Void, onEnd: @escaping () -> Void) throws {
+    init(path: String, speed: Double = 1, sink: @escaping ([Float]) -> Void, onEnd: @escaping () -> Void) throws {
         do {
             samples = try readAudioFile(at: path)
         } catch {
             throw CaptureError(reason: .unknown, message: "cannot read test audio file: \(error.localizedDescription)")
         }
+        framesPerTick = Int(Double(chunkFrames) * speed)
         self.sink = sink
         self.onEnd = onEnd
     }
@@ -705,7 +717,7 @@ private final class FileSource {
             onEnd()
             return
         }
-        let end = min(offset + chunkFrames, samples.count)
+        let end = min(offset + framesPerTick, samples.count)
         sink(Array(samples[offset..<end]))
         offset = end
     }

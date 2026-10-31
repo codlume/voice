@@ -65,6 +65,7 @@ export type Segment = {
 
 /** The mic is the user. System audio is everyone else, named once a name is known. */
 export type Voice = { source: "mic" } | { source: "system"; speaker: string | null };
+export type MeetingSource = Voice["source"];
 
 export const markerKinds = ["paused", "resumed", "dictated", "gap"] as const;
 export type MarkerKind = (typeof markerKinds)[number];
@@ -186,8 +187,53 @@ export function applyMeetingsChange(
   return { meetings, folders: change.folders, settings: change.settings };
 }
 
-/** Commands later steps build. Until then they answer `unavailable` and change nothing. */
-export type MeetingCommandResult = { kind: "unavailable" };
+/** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
+export type MeetingCommandResult =
+  | { kind: "ok"; id: MeetingId }
+  | { kind: "refused"; message: string }
+  | { kind: "unavailable" };
+
+/** What a meeting tells the user: warnings, prompts and outcomes. */
+export type MeetingNotice =
+  | { kind: "startFailed"; message: string }
+  | { kind: "resumeFailed"; message: string }
+  | { kind: "captureLost" }
+  | { kind: "maxLengthSoon"; inMs: number }
+  | { kind: "maxLengthReached" }
+  | { kind: "atMaxLength" }
+  | { kind: "silence" }
+  | { kind: "finalPassFailed" }
+  | { kind: "summaryReady"; open: boolean }
+  | { kind: "summaryFailed" };
+
+/**
+ * A warning or question the notepad and the Flow Bar show where the user is, until it is
+ * answered or stops applying. `endsAt` is the wall-clock time the recording will stop.
+ */
+export type MeetingPrompt =
+  | { kind: "startedByMistake" }
+  | { kind: "silence" }
+  | { kind: "maxLengthSoon"; endsAt: number }
+  | { kind: "notice"; text: string };
+
+/** The meeting the floating notepad shows, with the prompt it waits on. */
+export type NotepadState = { meeting: Meeting; prompt: MeetingPrompt | null };
+
+/** Statuses the Flow Bar shows: a capture open or resumable, or an answer the user owes. */
+export type PillMeetingStatus = Extract<
+  MeetingStatus,
+  { kind: "starting" | "recording" | "paused" | "finishing" | "confirmingShort" }
+>;
+
+/** What the Flow Bar shows of the current meeting. `closedMs` leaves out the open leg. */
+export type PillMeeting = {
+  status: PillMeetingStatus;
+  closedMs: number;
+  prompt: MeetingPrompt | null;
+};
+
+/** Live transcript lines, pushed as they are written so an open meeting view can append them. */
+export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
 
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
 export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };
@@ -199,7 +245,8 @@ export const startedAt = (meeting: Meeting): number | null =>
 export const endedAt = (meeting: Meeting): number | null =>
   meeting.status.kind === "recording" ? null : (meeting.spans.at(-1)?.endedAt ?? null);
 
-const closedMs = (meeting: Meeting) =>
+/** Recorded audio in ms, leaving out a leg that is still open. */
+export const closedMs = (meeting: Meeting) =>
   meeting.spans.reduce((sum, span) => sum + span.endedAt - span.startedAt, 0);
 
 /** Recorded audio in ms, the open leg counted up to `now`. */

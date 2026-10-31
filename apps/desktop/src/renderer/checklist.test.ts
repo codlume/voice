@@ -14,7 +14,11 @@ const fresh: Snapshot = {
     status: { kind: "disabled", reason: "Test" },
   },
   session: { kind: "idle" },
-  permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+  permissions: {
+    microphone: "notDetermined",
+    accessibility: "notDetermined",
+    systemAudio: "notDetermined",
+  },
   loginItem: "off",
   models: {
     asr: { state: "missing" },
@@ -55,7 +59,7 @@ const fresh: Snapshot = {
 
 const allReady: Snapshot = {
   ...fresh,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
 };
 

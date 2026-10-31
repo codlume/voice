@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../shared/api.ts";
 import { POLISH_ID } from "../shared/transforms.ts";
 import { idle, type Session } from "./session.ts";
 import { toSnapshot, type AppState } from "./store.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun, type TransformRun } from "./transform-run.ts";
 
 const reading: TransformRun = { phase: "reading", id: "r1", transformId: POLISH_ID };
@@ -14,7 +15,8 @@ const dictationDone: Session = { phase: "done", id: "s1", outcome: { kind: "empt
 const state: AppState = {
   session: idle,
   transform: reading,
-  permissions: { microphone: "granted", accessibility: "granted" },
+  meeting: noMeetingFocus,
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
   settings: DEFAULT_SETTINGS,

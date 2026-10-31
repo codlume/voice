@@ -12,6 +12,7 @@ import { createCleanup, followSettings, type CleanupModule } from "./cleanup.ts"
 import { createDictation } from "./dictation.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 import { noAutoApply } from "./testing/no-auto-apply.ts";
@@ -597,7 +598,12 @@ describe("followSettings", () => {
       },
       session: idle,
       transform: idleRun,
-      permissions: { microphone: "granted", accessibility: "granted" },
+      meeting: noMeetingFocus,
+      permissions: {
+        microphone: "granted",
+        accessibility: "granted",
+        systemAudio: "notDetermined",
+      },
       loginItem: "off",
       models: {
         asr: { state: "ready" },

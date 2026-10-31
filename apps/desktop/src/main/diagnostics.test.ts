@@ -12,6 +12,7 @@ import { sessionSpan, startDiagnostics, type Diagnostics } from "./diagnostics.t
 import { createDictation, type SessionReport } from "./dictation.ts";
 import type { HelperCrash } from "./helper-crash.ts";
 import { idle } from "./session.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 import { noAutoApply } from "./testing/no-auto-apply.ts";
@@ -194,7 +195,8 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     },
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "granted", accessibility: "granted" },
+    meeting: noMeetingFocus,
+    permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
       asr: { state: "ready" },

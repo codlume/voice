@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 15,
+  "protocolVersion": 16,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 14,
+      "version": 15,
       "compatible": false
     },
     {
-      "version": 15,
+      "version": 16,
       "compatible": true
     },
     {
-      "version": 16,
+      "version": 17,
       "compatible": false
     }
   ],
@@ -326,6 +326,80 @@
         "paths": []
       },
       "required": ["type", "id", "paths"]
+    },
+    {
+      "name": "meeting.start",
+      "wire": {
+        "type": "meeting.start",
+        "id": "m1",
+        "dir": "/tmp/synthetic/meetings/m1",
+        "baseMs": 0,
+        "fromMs": {
+          "mic": 1250.5,
+          "system": 0
+        },
+        "language": "pl",
+        "microphone": null
+      },
+      "required": ["type", "id", "dir", "baseMs", "fromMs", "language", "microphone"]
+    },
+    {
+      "name": "meeting.start.pinned",
+      "wire": {
+        "type": "meeting.start",
+        "id": "m1",
+        "dir": "/tmp/synthetic/meetings/m1",
+        "baseMs": 600000,
+        "fromMs": {
+          "mic": 600000,
+          "system": 600000
+        },
+        "language": "auto",
+        "microphone": {
+          "uid": "usb",
+          "name": "Synthetic USB"
+        }
+      },
+      "required": ["type", "id", "dir", "baseMs", "fromMs", "language", "microphone"]
+    },
+    {
+      "name": "meeting.stop",
+      "wire": {
+        "type": "meeting.stop",
+        "id": "m1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "meeting.cancel",
+      "wire": {
+        "type": "meeting.cancel",
+        "id": "m1"
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "meeting.transcribe",
+      "wire": {
+        "type": "meeting.transcribe",
+        "id": "m1",
+        "dir": "/tmp/synthetic/meetings/m1",
+        "baseMs": 0,
+        "fromMs": {
+          "mic": 1250.5,
+          "system": 0
+        },
+        "language": "en"
+      },
+      "required": ["type", "id", "dir", "baseMs", "fromMs", "language"]
+    },
+    {
+      "name": "permissions.request.systemAudio",
+      "wire": {
+        "type": "permissions.request",
+        "kind": "systemAudio"
+      },
+      "required": ["type", "kind"]
     }
   ],
   "nativeCommands": [
@@ -444,6 +518,14 @@
     {
       "name": "wrong-html",
       "line": "{\"type\":\"insert\",\"id\":\"s1\",\"text\":\"Synthetic text\",\"html\":42}"
+    },
+    {
+      "name": "negative-meeting-cursor",
+      "line": "{\"type\":\"meeting.transcribe\",\"id\":\"m1\",\"dir\":\"/tmp/m1\",\"baseMs\":0,\"fromMs\":{\"mic\":-1,\"system\":0},\"language\":\"en\"}"
+    },
+    {
+      "name": "missing-meeting-cursor-source",
+      "line": "{\"type\":\"meeting.start\",\"id\":\"m1\",\"dir\":\"/tmp/m1\",\"baseMs\":0,\"fromMs\":{\"mic\":0},\"language\":\"en\",\"microphone\":null}"
     }
   ],
   "events": [
@@ -501,11 +583,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 15
+        "version": 16
       },
       "parsed": {
         "type": "ready",
-        "version": 15
+        "version": 16
       },
       "required": ["type", "version"]
     },
@@ -1014,28 +1096,48 @@
       "wire": {
         "type": "permissions",
         "microphone": "granted",
-        "accessibility": "notDetermined"
+        "accessibility": "notDetermined",
+        "systemAudio": "notDetermined"
       },
       "parsed": {
         "type": "permissions",
         "microphone": "granted",
-        "accessibility": "notDetermined"
+        "accessibility": "notDetermined",
+        "systemAudio": "notDetermined"
       },
-      "required": ["type", "microphone", "accessibility"]
+      "required": ["type", "microphone", "accessibility", "systemAudio"]
     },
     {
       "name": "permissions.denied",
       "wire": {
         "type": "permissions",
         "microphone": "denied",
-        "accessibility": "granted"
+        "accessibility": "granted",
+        "systemAudio": "denied"
       },
       "parsed": {
         "type": "permissions",
         "microphone": "denied",
-        "accessibility": "granted"
+        "accessibility": "granted",
+        "systemAudio": "denied"
       },
-      "required": ["type", "microphone", "accessibility"]
+      "required": ["type", "microphone", "accessibility", "systemAudio"]
+    },
+    {
+      "name": "permissions.systemAudio.unavailable",
+      "wire": {
+        "type": "permissions",
+        "microphone": "granted",
+        "accessibility": "granted",
+        "systemAudio": "unavailable"
+      },
+      "parsed": {
+        "type": "permissions",
+        "microphone": "granted",
+        "accessibility": "granted",
+        "systemAudio": "unavailable"
+      },
+      "required": ["type", "microphone", "accessibility", "systemAudio"]
     },
     {
       "name": "asr.status",
@@ -1169,6 +1271,136 @@
         "icons": []
       },
       "required": ["type", "id", "icons"]
+    },
+    {
+      "name": "meeting.started",
+      "wire": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "active"
+      },
+      "parsed": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "active"
+      },
+      "required": ["type", "id", "mic", "system"]
+    },
+    {
+      "name": "meeting.started.micOnly",
+      "wire": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "unavailable"
+      },
+      "parsed": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "unavailable"
+      },
+      "required": ["type", "id", "mic", "system"]
+    },
+    {
+      "name": "meeting.started.denied",
+      "wire": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "denied"
+      },
+      "parsed": {
+        "type": "meeting.started",
+        "id": "m1",
+        "mic": "active",
+        "system": "denied"
+      },
+      "required": ["type", "id", "mic", "system"]
+    },
+    {
+      "name": "meeting.failed",
+      "wire": {
+        "type": "meeting.failed",
+        "id": "m1",
+        "message": "Synthetic microphone failure"
+      },
+      "parsed": {
+        "type": "meeting.failed",
+        "id": "m1",
+        "message": "Synthetic microphone failure"
+      },
+      "required": ["type", "id", "message"]
+    },
+    {
+      "name": "meeting.segment",
+      "wire": {
+        "type": "meeting.segment",
+        "id": "m1",
+        "source": "mic",
+        "startMs": 1200,
+        "endMs": 4850.5,
+        "text": "Zażółć Ada 42"
+      },
+      "parsed": {
+        "type": "meeting.segment",
+        "id": "m1",
+        "source": "mic",
+        "startMs": 1200,
+        "endMs": 4850.5,
+        "text": "Zażółć Ada 42"
+      },
+      "required": ["type", "id", "source", "startMs", "endMs", "text"]
+    },
+    {
+      "name": "meeting.segment.system",
+      "wire": {
+        "type": "meeting.segment",
+        "id": "m1",
+        "source": "system",
+        "startMs": 5000,
+        "endMs": 9000,
+        "text": "Synthetic reply"
+      },
+      "parsed": {
+        "type": "meeting.segment",
+        "id": "m1",
+        "source": "system",
+        "startMs": 5000,
+        "endMs": 9000,
+        "text": "Synthetic reply"
+      },
+      "required": ["type", "id", "source", "startMs", "endMs", "text"]
+    },
+    {
+      "name": "meeting.drained",
+      "wire": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": null
+      },
+      "parsed": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": null
+      },
+      "required": ["type", "id"]
+    },
+    {
+      "name": "meeting.drained.failure",
+      "wire": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": "speech model is not downloaded"
+      },
+      "parsed": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": "speech model is not downloaded"
+      },
+      "required": ["type", "id"]
     }
   ],
   "normalizedEvents": [
@@ -1461,6 +1693,19 @@
           }
         ]
       }
+    },
+    {
+      "name": "meeting.drained.failure.wrongType",
+      "wire": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": 42
+      },
+      "parsed": {
+        "type": "meeting.drained",
+        "id": "m1",
+        "failure": null
+      }
     }
   ],
   "invalidEvents": [
@@ -1511,6 +1756,14 @@
     {
       "name": "invalid-device",
       "line": "{\"type\":\"microphones.changed\",\"devices\":[{\"uid\":\"\",\"name\":\"Synthetic USB\"}],\"defaultUid\":null}"
+    },
+    {
+      "name": "unknown-meeting-source",
+      "line": "{\"type\":\"meeting.segment\",\"id\":\"m1\",\"source\":\"speaker\",\"startMs\":0,\"endMs\":1,\"text\":\"x\"}"
+    },
+    {
+      "name": "unknown-system-audio-permission",
+      "line": "{\"type\":\"permissions\",\"microphone\":\"granted\",\"accessibility\":\"granted\",\"systemAudio\":\"future\"}"
     }
   ]
 }

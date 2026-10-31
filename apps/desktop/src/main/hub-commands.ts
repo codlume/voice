@@ -6,6 +6,7 @@ import {
   Channel,
   parseTranscriptVersion,
   type HubApi,
+  type MeetingControls,
   type PermissionKind,
   type RestartRequest,
   type Settings,
@@ -42,7 +43,7 @@ import { parseRestartRequest, type createUpdates } from "./updates.ts";
 const LOGIN_ITEMS_PANE = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
 
 const isPermissionKind = (kind: unknown): kind is PermissionKind =>
-  kind === "microphone" || kind === "accessibility";
+  kind === "microphone" || kind === "accessibility" || kind === "systemAudio";
 
 export type HubCommandDeps = {
   store: Store;
@@ -65,6 +66,7 @@ export type HubCommandDeps = {
   settingsQueue: SettingsQueue;
   meetings: MeetingsStore;
   meetingRecorder: MeetingRecorder;
+  openNotepad: () => void;
   log: Log;
 };
 
@@ -200,37 +202,63 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
   });
 }
 
-function registerMeetingCommands(
-  hubCommands: Commands<HubApi>,
-  { meetings, meetingRecorder: recorder, log }: HubCommandDeps,
-) {
-  async function saving<T>(what: string, failure: string, work: () => Promise<T>): Promise<T> {
+const savingFor =
+  (log: Log) =>
+  async <T>(what: string, failure: string, work: () => Promise<T>): Promise<T> => {
     try {
       return await work();
     } catch (error) {
       log(`meetings: ${what} failed (${String(error)})`);
       throw new Error(failure, { cause: error });
     }
-  }
-  async function markdownOf(id: MeetingId) {
-    const meeting = meetings.get(id);
-    if (!meeting) throw new Error("This meeting is no longer on this Mac.");
-    return { meeting, markdown: meetingMarkdown(meeting, await meetings.transcript(id)) };
-  }
-  const withMeeting =
-    (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
-    (_event: unknown, raw: unknown) => {
-      const id = parseMeetingId(raw);
-      return id ? command(id) : UNAVAILABLE;
-    };
+  };
 
-  hubCommands.handle(Channel.getMeetings, () => meetings.loaded().then(meetings.state));
-  hubCommands.handle(Channel.getMeeting, async (_event, raw: unknown) => {
+const withMeeting =
+  (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
+  (_event: unknown, raw: unknown) => {
+    const id = parseMeetingId(raw);
+    return id ? command(id) : UNAVAILABLE;
+  };
+
+type MeetingControlDeps = Pick<HubCommandDeps, "meetings" | "meetingRecorder" | "log">;
+
+/** The commands the Voice window and the notepad both send about one meeting. */
+export function registerMeetingControls(
+  commands: Commands<MeetingControls>,
+  { meetings, meetingRecorder: recorder, log }: MeetingControlDeps,
+) {
+  const saving = savingFor(log);
+  commands.handle(Channel.getMeeting, async (_event, raw: unknown) => {
     const id = parseMeetingId(raw);
     const meeting = id && meetings.get(id);
     if (!id || !meeting) return null;
     return { meeting, transcript: await meetings.transcript(id) };
   });
+  commands.handle(Channel.updateMeetingNotes, async (_event, raw: unknown, notes: unknown) => {
+    const id = parseMeetingId(raw);
+    if (!id || typeof notes !== "string") return;
+    await saving("notes", "Could not save your thoughts. Try again.", () =>
+      meetings.update(id, (meeting) => (meeting.notes === notes ? meeting : { ...meeting, notes })),
+    );
+  });
+  commands.handle(Channel.pauseMeeting, withMeeting(recorder.pause));
+  commands.handle(Channel.resumeMeeting, withMeeting(recorder.resume));
+  commands.handle(Channel.stopMeeting, withMeeting(recorder.stop));
+  commands.handle(Channel.keepMeeting, withMeeting(recorder.keep));
+  commands.handle(Channel.discardMeeting, withMeeting(recorder.discard));
+}
+
+function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommandDeps) {
+  const { meetings, meetingRecorder: recorder, log } = deps;
+  const saving = savingFor(log);
+  registerMeetingControls(hubCommands, deps);
+  async function markdownOf(id: MeetingId) {
+    const meeting = meetings.get(id);
+    if (!meeting) throw new Error("This meeting is no longer on this Mac.");
+    return { meeting, markdown: meetingMarkdown(meeting, await meetings.transcript(id)) };
+  }
+
+  hubCommands.handle(Channel.getMeetings, () => meetings.loaded().then(meetings.state));
   hubCommands.handle(Channel.renameMeeting, async (_event, raw: unknown, title: unknown) => {
     const id = parseMeetingId(raw);
     if (!id || typeof title !== "string") return;
@@ -239,13 +267,6 @@ function registerMeetingCommands(
         const { folders, settings } = meetings.state();
         return retitle(meeting, title, folders, settings);
       }),
-    );
-  });
-  hubCommands.handle(Channel.updateMeetingNotes, async (_event, raw: unknown, notes: unknown) => {
-    const id = parseMeetingId(raw);
-    if (!id || typeof notes !== "string") return;
-    await saving("notes", "Could not save your thoughts. Try again.", () =>
-      meetings.update(id, (meeting) => (meeting.notes === notes ? meeting : { ...meeting, notes })),
     );
   });
   hubCommands.handle(Channel.deleteMeeting, async (_event, raw: unknown) => {
@@ -319,8 +340,6 @@ function registerMeetingCommands(
     return "saved";
   });
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
-  hubCommands.handle(Channel.pauseMeeting, withMeeting(recorder.pause));
-  hubCommands.handle(Channel.resumeMeeting, withMeeting(recorder.resume));
-  hubCommands.handle(Channel.stopMeeting, withMeeting(recorder.stop));
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
+  hubCommands.handle(Channel.openNotepad, () => deps.openNotepad());
 }

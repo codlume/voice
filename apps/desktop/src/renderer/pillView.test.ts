@@ -1,7 +1,16 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { InsertFailure, Outcome, TransformOutcome } from "../shared/api.ts";
-import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
+import type { InsertFailure, Outcome, PillState, TransformOutcome } from "../shared/api.ts";
+import type { PillMeeting } from "../shared/meetings.ts";
+import {
+  BAR_COUNT,
+  MIN_BAR_SCALE,
+  barScales,
+  flowBarView,
+  pillView,
+  smoothLevel,
+  ticks,
+} from "./pillView.ts";
 
 const done = (outcome: Outcome) => pillView({ kind: "done", outcome });
 const transformDone = (outcome: TransformOutcome) => pillView({ kind: "transformDone", outcome });
@@ -149,5 +158,77 @@ describe("barScales", () => {
 
   test("a steady level still moves between ticks", () => {
     expect(barScales(0.6, 1)).not.toEqual(barScales(0.6, 2));
+  });
+});
+
+const recording: PillMeeting = {
+  status: { kind: "recording", since: 100_000 },
+  closedMs: 60_000,
+  prompt: null,
+};
+const at = (meeting: PillMeeting | null, session: PillState = { kind: "idle" }, now = 165_000) =>
+  flowBarView({ session, alwaysShowPill: true, meeting }, now);
+
+const snapshot = (meeting: PillMeeting | null, session: PillState = { kind: "idle" }) => ({
+  session,
+  alwaysShowPill: true,
+  meeting,
+});
+
+describe("flowBarView", () => {
+  test("a recording meeting shows its running time with the recording look", () => {
+    expect(at(recording)).toEqual({ kind: "meeting", look: "recording", text: "02:05" });
+  });
+
+  test("dictation mid-meeting shows dictation, and the meeting comes back after", () => {
+    expect(at(recording, { kind: "listening" })).toEqual({ kind: "listening" });
+    expect(at(recording, { kind: "processing", overdue: false })).toEqual({ kind: "processing" });
+    expect(at(recording, { kind: "done", outcome: { kind: "inserted", method: "paste" } })).toEqual(
+      { kind: "inserted", method: "paste" },
+    );
+    expect(at(recording, { kind: "idle" })).toMatchObject({ kind: "meeting" });
+  });
+
+  test("a paused meeting never looks like it is recording", () => {
+    expect(at({ ...recording, status: { kind: "paused" } })).toEqual({
+      kind: "meeting",
+      look: "paused",
+      text: "Paused · 01:00",
+    });
+    expect(at({ ...recording, status: { kind: "starting", from: "new" } })).toEqual({
+      kind: "meeting",
+      look: "waiting",
+      text: "Starting…",
+    });
+  });
+
+  test("asks the meeting's questions in place of the clock", () => {
+    expect(at({ ...recording, prompt: { kind: "silence" } })).toMatchObject({
+      look: "prompt",
+      text: "Still in a meeting?",
+    });
+    expect(at({ ...recording, status: { kind: "confirmingShort" } })).toMatchObject({
+      look: "prompt",
+      text: "Started by mistake?",
+    });
+    expect(
+      at({ ...recording, prompt: { kind: "maxLengthSoon", endsAt: 165_000 + 4 * 60_000 + 1 } }),
+    ).toMatchObject({ look: "prompt", text: "Recording ends in 5 min" });
+  });
+
+  test("a notice is left to the notepad; the Flow Bar keeps the status", () => {
+    const paused: PillMeeting = {
+      ...recording,
+      status: { kind: "paused" },
+      prompt: { kind: "notice", text: "Audio stopped coming in." },
+    };
+    expect(at(paused)).toMatchObject({ look: "paused" });
+  });
+
+  test("ticks only while it shows a running clock", () => {
+    expect(ticks(snapshot(recording))).toBe(true);
+    expect(ticks(snapshot({ ...recording, status: { kind: "paused" } }))).toBe(false);
+    expect(ticks(snapshot(recording, { kind: "listening" }))).toBe(false);
+    expect(ticks(snapshot(null))).toBe(false);
   });
 });

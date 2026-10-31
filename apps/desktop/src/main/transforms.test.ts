@@ -12,6 +12,7 @@ import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import { HELPER_TIMEOUT_MESSAGE, INSERT_TIMEOUT_MS, idle, type Session } from "./session.ts";
 import { createStore, toSnapshot } from "./store.ts";
 import type { TransformRequest, TransformResult } from "./transform-model.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import {
   GENERATE_GRACE_MS,
   READ_TIMEOUT_MS,
@@ -58,7 +59,8 @@ function harness(opts: Options = {}) {
     },
     session: opts.session ?? idle,
     transform: idleRun,
-    permissions: { microphone: "granted", accessibility: "granted" },
+    meeting: noMeetingFocus,
+    permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
       asr: { state: "ready" },

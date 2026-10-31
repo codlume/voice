@@ -24,8 +24,9 @@ import type * as ElectronUpdater from "electron-updater";
 import {
   Channel,
   DIAGNOSTICS_ARGUMENT,
-  toPillSnapshot,
+  showsMeeting,
   type LoginItem,
+  type NotepadApi,
   type PermissionKind,
   type PillApi,
   type RestartRequest,
@@ -34,6 +35,7 @@ import {
 } from "../shared/api.ts";
 import { wantsCleanup } from "../shared/dictation-language.ts";
 import { copyText } from "../shared/history.ts";
+import type { MeetingId, NotepadState } from "../shared/meetings.ts";
 import type { BusyDuring, Model, ModelId } from "../shared/models.ts";
 import { trafficLightPosition } from "../shared/titlebar.ts";
 import { runsAfterDictation } from "../shared/transforms.ts";
@@ -55,11 +57,18 @@ import { createDictation, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hotkeyConfigure } from "./hotkey-config.ts";
-import { registerHubCommands, type HubCommandDeps } from "./hub-commands.ts";
+import { writeFileAtomic } from "./atomic-file.ts";
+import {
+  registerHubCommands,
+  registerMeetingControls,
+  type HubCommandDeps,
+} from "./hub-commands.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
-import { unavailableRecorder } from "./meeting-recorder.ts";
+import { createMeetingRecorder, type MeetingRecorder } from "./meeting-recorder.ts";
+import { dismiss, follow, noMeetingFocus, promptFor, raise } from "./meeting-focus.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
+import { createNotepad, parseBounds, type NotepadOpening } from "./notepad-window.ts";
 import { createInsights } from "./insights.ts";
 import { createInstalledApps, type InstalledApps } from "./installed-apps.ts";
 import type { Commands } from "./ipc.ts";
@@ -71,7 +80,7 @@ import { publish } from "./publish.ts";
 import { idle } from "./session.ts";
 import { createSettingsQueue, type SettingsQueue } from "./settings-queue.ts";
 import { applyPatch, openSettings } from "./settings.ts";
-import { createStore, toSnapshot, type AppState } from "./store.ts";
+import { createStore, pillSnapshot, type AppState } from "./store.ts";
 import { createTrayIcon } from "./tray-icon.ts";
 import { createTransformModel } from "./transform-model.ts";
 import { createTransforms, followTransformSettings, type Transforms } from "./transforms.ts";
@@ -92,6 +101,7 @@ const FINISH_FIRST: Record<BusyDuring, string> = {
 const PERMISSION_PANES: Record<PermissionKind, string> = {
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  systemAudio: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
 };
 
 // The VOICE_* switches (test mode, a scratch userData, a helper build) are for development runs
@@ -166,6 +176,14 @@ function receivesCallbackUrls(): boolean {
 }
 
 const rendererDir = NodePath.join(__dirname, "../dist/renderer");
+
+function readNotepadBounds(file: string) {
+  try {
+    return parseBounds(JSON.parse(readFileSync(file, "utf8")));
+  } catch {
+    return null;
+  }
+}
 
 function loadPage(window: BrowserWindow, page: Page) {
   void window.loadURL(pageUrl(page, { development, env: process.env, rendererDir }));
@@ -280,7 +298,12 @@ async function main() {
   const store = createStore({
     session: idle,
     transform: idleRun,
-    permissions: { microphone: "notDetermined", accessibility: "notDetermined" },
+    meeting: noMeetingFocus,
+    permissions: {
+      microphone: "notDetermined",
+      accessibility: "notDetermined",
+      systemAudio: "notDetermined",
+    },
     loginItem: "unavailable",
     models: {
       asr: { state: "missing" },
@@ -370,6 +393,7 @@ async function main() {
   let transforms: Transforms;
   let microphoneTest: MicrophoneTest;
   let installedApps: InstalledApps;
+  let meetingRecorder: MeetingRecorder;
   let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
   const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
   const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
@@ -390,6 +414,7 @@ async function main() {
       transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
       installedApps.onHelperEvent(event);
+      meetingRecorder.onHelperEvent(event);
     },
     onExit: (exit) => {
       if (lifecycle === "running") {
@@ -405,6 +430,7 @@ async function main() {
         transforms.dispatch({ type: "helperExited" });
         microphoneTest.helperExited();
         installedApps.helperExited();
+        meetingRecorder.helperExited();
       }
     },
     configure: () => {
@@ -434,13 +460,92 @@ async function main() {
   });
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", history.expire);
+  const meetingsDir = NodePath.join(userData, "meetings");
   const meetings = createMeetingsStore({
-    dir: NodePath.join(userData, "meetings"),
+    dir: meetingsDir,
     log,
     onChange: (change) => {
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetings, change);
+      store.update((s) => ({ ...s, meeting: follow(s.meeting, meetings.state().meetings) }));
+      syncNotepad();
     },
   });
+  meetingRecorder = createMeetingRecorder({
+    store: meetings,
+    dir: meetingsDir,
+    send: (command) => helper.send(command),
+    capture: () => ({
+      language: store.state.settings.dictationLanguage,
+      microphone: store.state.settings.microphone,
+    }),
+    onTranscript: (id, entries) => {
+      if (hub && !hub.isDestroyed())
+        hub.webContents.send(Channel.meetingTranscript, { id, entries });
+      if (notepad.meetingId() === id) notepad.send(Channel.meetingTranscript, { id, entries });
+    },
+    onNotice: (id, notice) => {
+      log(`meetings: ${id} notice ${notice.kind}`);
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetingNotice, { id, notice });
+      store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
+    },
+    log,
+  });
+  const notepadBoundsFile = NodePath.join(userData, "notepad.json");
+  const notepad = createNotepad({
+    create: (options) => {
+      const window = new BrowserWindow(options);
+      const commands: Commands<NotepadApi> = window.webContents.ipc;
+      registerMeetingControls(commands, { meetings, meetingRecorder, log });
+      commands.handle(Channel.getNotepad, notepadState);
+      commands.handle(Channel.dismissMeetingPrompt, () =>
+        store.update((s) => ({ ...s, meeting: dismiss(s.meeting) })),
+      );
+      loadPage(window, "notepad");
+      return window;
+    },
+    webPreferences: webPreferencesFor("notepad"),
+    dark: () => nativeTheme.shouldUseDarkColors,
+    workAreas: () => ({
+      all: screen.getAllDisplays().map(({ workArea }) => workArea),
+      primary: screen.getPrimaryDisplay().workArea,
+    }),
+    saved: readNotepadBounds(notepadBoundsFile),
+    save: (bounds) => {
+      writeFileAtomic(notepadBoundsFile, JSON.stringify(bounds), { mode: 0o600 }).catch(
+        (error: unknown) => log(`notepad: saving its place failed (${String(error)})`),
+      );
+    },
+  });
+  function notepadState(): NotepadState | null {
+    const id = notepad.meetingId();
+    const meeting = id && meetings.get(id);
+    return meeting ? { meeting, prompt: promptFor(meeting, store.state.meeting) } : null;
+  }
+  let sentNotepad: NotepadState | null = null;
+  function syncNotepad() {
+    if (notepad.meetingId() === null) return;
+    const next = notepadState();
+    // A discarded meeting leaves nothing to show.
+    if (next === null) {
+      notepad.close();
+      return;
+    }
+    if (isDeepStrictEqual(next, sentNotepad)) return;
+    sentNotepad = next;
+    notepad.send(Channel.notepad, next);
+  }
+  function openNotepad(
+    opening: NotepadOpening,
+    id: MeetingId | null = store.state.meeting.current?.id ?? null,
+  ) {
+    const target = id ?? notepad.meetingId();
+    if (!target) return;
+    notepad.open(target, opening);
+    sentNotepad = null;
+    syncNotepad();
+  }
+  // A launch only ever finishes what a crash or quit left; it never records.
+  meetingRecorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
   powerMonitor.on("resume", () => {
     meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));
   });
@@ -663,8 +768,40 @@ async function main() {
   }
   refreshTray(store.state);
 
+  // The Flow Bar lets clicks through, except over its capsule while that shows a meeting.
+  let pillHovered = false;
+  let pillMouse = { clickable: false, forward: false };
+  function syncPillMouse() {
+    const forward = showsMeeting(pillSnapshot(store.state));
+    if (!forward) pillHovered = false;
+    const next = { clickable: forward && pillHovered, forward };
+    if (isDeepStrictEqual(next, pillMouse) || pill.isDestroyed()) return;
+    pillMouse = next;
+    pill.setIgnoreMouseEvents(!next.clickable, { forward });
+    // A click on a window that cannot be key makes macOS activate Voice through the Voice window,
+    // raising it over the user's app. A focusable capsule takes the click itself.
+    pill.setFocusable(next.clickable);
+  }
+
+  // A new meeting brings up the notepad, and so does a question the user has to answer.
+  function followMeeting(state: AppState, previous: AppState) {
+    const { current } = state.meeting;
+    const started = current && current.id !== previous.meeting.current?.id;
+    const prompt = current && promptFor(current, state.meeting);
+    const before =
+      previous.meeting.current && promptFor(previous.meeting.current, previous.meeting);
+    const asks = prompt && prompt.kind !== "notice" && prompt.kind !== before?.kind;
+    if (current && (asks || (started && current.status.kind === "starting"))) {
+      openNotepad("inactive", current.id);
+    } else {
+      syncNotepad();
+    }
+  }
+
   store.subscribe((state, previous) => {
     publish({ hub, pill }, state, previous);
+    syncPillMouse();
+    if (state.meeting !== previous.meeting) followMeeting(state, previous);
     if (state.session.phase === "starting" && previous.session.phase !== "starting") {
       positionPill(pill);
     }
@@ -736,6 +873,7 @@ async function main() {
   }
 
   function requestPermission(kind: PermissionKind) {
+    if (store.state.permissions[kind] === "unavailable") return;
     if (store.state.permissions[kind] === "denied") {
       // The system prompt never reappears once denied; the user has to flip it in Settings.
       void shell.openExternal(PERMISSION_PANES[kind]);
@@ -775,7 +913,12 @@ async function main() {
   // Each window's handlers live on its own webContents.ipc, which Electron consults only for that
   // window's invokes. The Flow Bar cannot reach a hub command, and a recreated hub gets a new set.
   const pillCommands: Commands<PillApi> = pill.webContents.ipc;
-  pillCommands.handle(Channel.getPillSnapshot, () => toPillSnapshot(toSnapshot(store.state)));
+  pillCommands.handle(Channel.getPillSnapshot, () => pillSnapshot(store.state));
+  pillCommands.handle(Channel.setPillClickable, (_event, clickable: unknown) => {
+    pillHovered = clickable === true;
+    syncPillMouse();
+  });
+  pillCommands.handle(Channel.openNotepad, () => openNotepad("focused"));
 
   const hubCommandDeps: HubCommandDeps = {
     store,
@@ -797,7 +940,8 @@ async function main() {
     installedApps,
     settingsQueue,
     meetings,
-    meetingRecorder: unavailableRecorder,
+    meetingRecorder,
+    openNotepad: () => openNotepad("focused"),
     log,
   };
 
@@ -837,7 +981,7 @@ async function main() {
       settingsQueue.settled(),
       insights.settled(),
       history.settled(),
-      meetings.settled(),
+      meetingRecorder.settled().then(meetings.settled),
       helper.stop(),
       cleanup.dispose(),
       transformModel.dispose(),

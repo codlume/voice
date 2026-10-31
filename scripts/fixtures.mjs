@@ -52,6 +52,23 @@ const fixtures = [
   },
 ];
 
+// A synthetic two-person meeting: the user on the mic, the other participant on system audio, each
+// silent while the other talks. The speakers variant also mixes the other side into the mic,
+// quieter and a beat late, the way a laptop microphone hears its own speakers.
+const meeting = {
+  gapSeconds: 1.2,
+  voices: { mic: "Daniel", system: "Samantha" },
+  turns: [
+    ["mic", "Morning everyone. Let's go through the launch plan for the Kowalski account."],
+    ["system", "Sounds good. The beta build is ready, and we fixed forty two bugs last week."],
+    ["mic", "Great. Can we ship it to the first customers on March twelfth?"],
+    ["system", "Yes, if design signs off on the onboarding screens by Friday."],
+    ["mic", "I'll ask Maria to review them today and send notes tomorrow morning."],
+    ["system", "Perfect. I'll update the release checklist and share it in the channel."],
+  ],
+};
+const meetingFixtures = ["meeting-mic.wav", "meeting-system.wav", "meeting-mic-speakers.wav"];
+
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: ["ignore", "inherit", "inherit"] });
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited ${result.status}`);
@@ -99,6 +116,70 @@ function generate(fixture) {
   }
 }
 
+function duration(file) {
+  const result = spawnSync(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) throw new Error(`ffprobe ${file} exited ${result.status}`);
+  return Number(result.stdout.trim());
+}
+
+function generateMeeting() {
+  const work = join(tmpdir(), `voice-fixture-${process.pid}-meeting`);
+  mkdirSync(work, { recursive: true });
+  try {
+    let at = 0.5;
+    const lines = meeting.turns.map(([source, speech], index) => {
+      const file = join(work, `${index}.wav`);
+      const aiff = join(work, `${index}.aiff`);
+      run("say", ["-v", meeting.voices[source], "-o", aiff, speech]);
+      run("ffmpeg", ["-y", "-loglevel", "error", "-i", aiff, "-ar", "16000", "-ac", "1", file]);
+      const line = { source, file, startMs: Math.round(at * 1000) };
+      at += duration(file) + meeting.gapSeconds;
+      return line;
+    });
+    const total = String(at);
+    for (const source of ["mic", "system"]) {
+      const own = lines.filter((line) => line.source === source);
+      const delayed = own.map((line, index) => `[${index}]adelay=${line.startMs}[d${index}]`);
+      const mixed = own.map((_, index) => `[d${index}]`).join("");
+      run("ffmpeg", [
+        "-y",
+        "-loglevel",
+        "error",
+        ...own.flatMap((line) => ["-i", line.file]),
+        "-filter_complex",
+        `${delayed.join(";")};${mixed}amix=inputs=${own.length}:normalize=0,apad=whole_dur=${total}`,
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        join(fixturesDir, `meeting-${source}.wav`),
+      ]);
+    }
+    run("ffmpeg", [
+      "-y",
+      "-loglevel",
+      "error",
+      "-i",
+      join(fixturesDir, "meeting-mic.wav"),
+      "-i",
+      join(fixturesDir, "meeting-system.wav"),
+      "-filter_complex",
+      "[1]volume=0.3,adelay=40[echo];[0][echo]amix=inputs=2:normalize=0:duration=first",
+      "-c:a",
+      "pcm_s16le",
+      join(fixturesDir, "meeting-mic-speakers.wav"),
+    ]);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 export function ensureFixtures() {
   mkdirSync(fixturesDir, { recursive: true });
   for (const fixture of fixtures) {
@@ -106,6 +187,10 @@ export function ensureFixtures() {
     if (existsSync(target)) continue;
     generate(fixture);
     console.log(`generated ${target}`);
+  }
+  if (meetingFixtures.some((name) => !existsSync(join(fixturesDir, name)))) {
+    generateMeeting();
+    console.log(`generated ${meetingFixtures.join(", ")} in ${fixturesDir}`);
   }
 }
 
