@@ -160,17 +160,22 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
 const lineClass = (said: string) =>
   [...document.querySelectorAll("li p")].find((p) => p.textContent === said)?.className;
 
-function Page({ snapshot }: { snapshot: Snapshot }) {
+function Page({ snapshot, sidebar }: { snapshot: Snapshot; sidebar: HTMLElement | null }) {
   const [open, setOpen] = useState(false);
-  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} />;
+  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} sidebar={sidebar} />;
 }
 
-async function render(snapshot: Snapshot = setUp) {
+async function render(snapshot: Snapshot = setUp, sidebar: HTMLElement | null = null) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<Page snapshot={snapshot} />));
+  await act(async () => root!.render(<Page snapshot={snapshot} sidebar={sidebar} />));
   await settle();
+}
+
+async function openSearch() {
+  await click(document.querySelector("button[aria-label='Search meetings']")!);
+  return document.querySelector<HTMLInputElement>("input[type=search]")!;
 }
 
 const settle = () => act(async () => {});
@@ -234,7 +239,7 @@ describe("Past notes", () => {
     fakeMain(sample());
     await render();
     const days = [...document.querySelectorAll("section[aria-label]")].map((section) => ({
-      day: section.querySelector("h3")?.textContent,
+      day: section.querySelector("h2")?.textContent,
       titles: [...section.querySelectorAll("li > div > button")].map((b) => b.textContent),
     }));
     expect(days[0]).toEqual({ day: "Today", titles: ["Weekly product sync"] });
@@ -275,7 +280,7 @@ describe("Past notes", () => {
   test("search shows where each meeting matched, and says when nothing does", async () => {
     const main = fakeMain(sample());
     await render();
-    const search = document.querySelector<HTMLInputElement>("input[type=search]")!;
+    const search = await openSearch();
     await type(search, "export bug");
     await waitForText("Transcript: Morning all The export bug is fixed");
     expect(main.searchMeetings).toHaveBeenLastCalledWith("export bug");
@@ -292,7 +297,7 @@ describe("Past notes", () => {
     )!;
     await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
     expect(overviewTitle()).toBe("Planowanie sprintu");
-    await type(document.querySelector<HTMLInputElement>("input[type=search]")!, "export bug");
+    await type(await openSearch(), "export bug");
     await waitForText("Transcript: Morning all");
     expect(overviewTitle()).toBe("Weekly product sync");
   });
@@ -714,21 +719,33 @@ test("the settings say how long transcripts are kept", async () => {
   );
 });
 
+const progress = () => document.querySelector("[role=progressbar]")?.getAttribute("aria-label");
+
 describe("Set up Meetings", () => {
   test("a new Mac asks for both permissions and a first meeting, and Grant asks macOS", async () => {
     const main = fakeMain([]);
-    await render({
-      ...setUp,
-      permissions: { microphone: "notDetermined", accessibility: "granted", systemAudio: "denied" },
-    });
-    expect(text()).toContain("Set up Meetings0 of 3 done");
-    expect(text()).toContain("System Audio RecordingHears the other participants");
-    expect(text()).toContain("Allow Voice in System Settings");
-    expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
-    expect(text()).toContain("Always get consent before recording others.");
-    await click(byText("Grant"));
+    const sidebar = document.createElement("aside");
+    document.body.append(sidebar);
+    await render(
+      {
+        ...setUp,
+        permissions: {
+          microphone: "notDetermined",
+          accessibility: "granted",
+          systemAudio: "denied",
+        },
+      },
+      sidebar,
+    );
+    const card = sidebar.textContent ?? "";
+    expect(card).toContain("Set up Meetings");
+    expect(progress()).toBe("0 of 3 done");
+    expect(card).toContain("System Audio RecordingAllow Voice in System Settings");
+    expect(card).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
+    expect(card).toContain("Always get consent before recording others.");
+    await click(document.querySelector("[aria-label='Grant Microphone']")!);
     expect(main.requestPermission).toHaveBeenCalledWith("microphone");
-    await click(byText("Open"));
+    await click(document.querySelector("[aria-label='Open System Audio Recording']")!);
     expect(main.requestPermission).toHaveBeenLastCalledWith("systemAudio");
   });
 
@@ -739,9 +756,8 @@ describe("Set up Meetings", () => {
     };
     fakeMain([]);
     await render(unavailable);
-    expect(text()).toContain("Meetings record only your microphone on this Mac");
     expect(text()).toContain("Needs macOS 14.4 or later");
-    expect(text()).toContain("2 of 3 done");
+    expect(progress()).toBe("2 of 3 done");
     await act(async () => root?.unmount());
     document.body.replaceChildren();
 

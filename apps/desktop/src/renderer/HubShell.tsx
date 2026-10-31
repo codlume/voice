@@ -98,14 +98,16 @@ type PageView = {
   openSettingsPage: (id: SettingsPage) => void;
   /** The Meetings page's own settings dialog, which Settings can open too. */
   meetingSettings: { open: boolean; setOpen: (open: boolean) => void };
+  /** Where a page can put a card under the nav; null while the sidebar is collapsed. */
+  sidebar: HTMLElement | null;
 };
 
 const appPageViews: Record<AppPage, (view: PageView) => ReactNode> = {
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
-  meetings: ({ snapshot, meetingSettings }) => (
-    <Meetings snapshot={snapshot} settings={meetingSettings} />
+  meetings: ({ snapshot, meetingSettings, sidebar }) => (
+    <Meetings snapshot={snapshot} settings={meetingSettings} sidebar={sidebar} />
   ),
   insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
@@ -368,9 +370,12 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
   },
+  // Meetings sets its list beside an overview panel that runs the card's full height, so the page
+  // owns its block and right padding, and measures the card's height in cqh.
+  mainWide: { paddingBlock: 0, paddingRight: 0, containerType: "size" },
   column: { maxWidth: 800, marginInline: "auto" },
-  // Meetings sets its list beside an overview panel.
   columnWide: { maxWidth: 1120 },
+  sidebarSlot: { marginTop: space.lg },
   settingsViewport: {
     position: "fixed",
     inset: 0,
@@ -667,6 +672,7 @@ export function HubShell({
   });
   const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
   const [meetingSettingsOpen, setMeetingSettingsOpen] = useState(false);
+  const [sidebarSlot, setSidebarSlot] = useState<HTMLDivElement | null>(null);
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
   if (shown.page !== appPage) setShown({ page: appPage, rises: true });
@@ -725,6 +731,7 @@ export function HubShell({
     openPage: selectAppPage,
     openSettingsPage: openSettings,
     meetingSettings: { open: meetingSettingsOpen, setOpen: setMeetingSettingsOpen },
+    sidebar: sidebarSlot,
   };
   const AppPageView = appPageViews[appPage];
   return (
@@ -768,6 +775,7 @@ export function HubShell({
               onSelect={selectAppPage}
             />
           </nav>
+          {!collapsed && <div ref={setSidebarSlot} {...stylex.props(styles.sidebarSlot)} />}
           <div {...stylex.props(styles.footer)}>
             <Tooltip.Trigger
               payload={settingsLabel}
@@ -789,7 +797,11 @@ export function HubShell({
           </div>
         </aside>
       </SidebarTooltip>
-      <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
+      <main
+        ref={mainRef}
+        tabIndex={-1}
+        {...stylex.props(styles.main, widePages.has(appPage) && styles.mainWide)}
+      >
         <div
           key={appPage}
           {...stylex.props(

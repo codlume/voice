@@ -48,7 +48,7 @@ describe("meetingDays", () => {
       meeting("kickoff", at(14, 11)),
     ];
     const days = meetingDays(meetings, today, "en-US");
-    expect(days.map(({ label }) => label)).toEqual(["Today", "Yesterday", "October 14, 2026"]);
+    expect(days.map(({ label }) => label)).toEqual(["Today", "Yesterday", "Wed, Oct 14"]);
     expect(days[1]!.meetings.map(({ id }) => id)).toEqual(["retro", "planning"]);
   });
 
@@ -57,7 +57,12 @@ describe("meetingDays", () => {
       spans: [],
       status: { kind: "starting", from: "new" },
     });
-    expect(meetingDays([empty], today, "en-US")[0]!.label).toBe("October 20, 2026");
+    expect(meetingDays([empty], today, "en-US")[0]!.label).toBe("Tue, Oct 20");
+  });
+
+  test("names the year only for a meeting from an earlier year", () => {
+    const old = meeting("old", new Date(2025, 11, 15, 10).getTime());
+    expect(meetingDays([old], today, "en-US")[0]!.label).toBe("Mon, Dec 15, 2025");
   });
 });
 
