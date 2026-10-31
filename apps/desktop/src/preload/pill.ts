@@ -10,6 +10,8 @@ const voice: PillApi = {
   getPillSnapshot: () => ipcRenderer.invoke(Channel.getPillSnapshot),
   onPillSnapshot: (listener) => subscribe<PillSnapshot>(Channel.pillSnapshot, listener),
   onLevel: (listener) => subscribe<number>(Channel.level, listener),
+  setPillClickable: (clickable) => ipcRenderer.invoke(Channel.setPillClickable, clickable),
+  openNotepad: () => ipcRenderer.invoke(Channel.openNotepad),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

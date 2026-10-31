@@ -31,7 +31,7 @@ async function load() {
 }
 
 describe("pill preload", () => {
-  test("exposes exactly the Flow Bar's four members under voice", async () => {
+  test("exposes exactly the Flow Bar's members under voice", async () => {
     const { api } = await load();
     expect(exposures.map(({ name }) => name)).toEqual(["voice"]);
     expect(Object.keys(api).toSorted()).toEqual([
@@ -39,6 +39,8 @@ describe("pill preload", () => {
       "getPillSnapshot",
       "onLevel",
       "onPillSnapshot",
+      "openNotepad",
+      "setPillClickable",
     ]);
   });
 

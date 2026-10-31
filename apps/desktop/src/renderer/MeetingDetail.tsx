@@ -1,7 +1,7 @@
 import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { ChevronLeftIcon, CopyIcon, DownloadIcon, FolderPlusIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   recordedMs,
@@ -30,6 +30,7 @@ import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useMeetingDetail } from "./useMeetings.ts";
+import { useThoughts } from "./useThoughts.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -166,7 +167,6 @@ const tabs: readonly { value: DetailTab; label: string }[] = [
   { value: "transcript", label: "Transcript" },
 ];
 
-const THOUGHTS_SAVE_DELAY_MS = 600;
 const SUMMARY_UNAVAILABLE = "Summaries are not available in this version of Voice yet.";
 
 /** Says why a summary command did nothing, or null when it went ahead. */
@@ -313,40 +313,23 @@ function SummaryPanel({ meeting, names }: { meeting: Meeting; names: readonly st
 }
 
 function Thoughts({ meeting }: { meeting: Meeting }) {
-  const [text, setText] = useState(meeting.notes);
-  const unsaved = useRef<string | null>(null);
-  const action = useAction();
-  const flush = useEffectEvent(() => {
-    const notes = unsaved.current;
-    if (notes === null) return;
-    unsaved.current = null;
-    void action.run(
-      () => hubApi().updateMeetingNotes(meeting.id, notes),
-      "Could not save your thoughts. Keep this page open and try again.",
-    );
-  });
-  useEffect(() => {
-    if (unsaved.current !== text) return;
-    const timer = setTimeout(flush, THOUGHTS_SAVE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [text]);
-  // Leaving the meeting saves what the delay has not yet sent.
-  useEffect(() => () => flush(), []);
+  const thoughts = useThoughts(
+    meeting,
+    (notes) => hubApi().updateMeetingNotes(meeting.id, notes),
+    "Could not save your thoughts. Keep this page open and try again.",
+  );
   return (
     <>
       <textarea
         aria-label="My thoughts"
-        value={text}
+        value={thoughts.text}
         placeholder="Write your thoughts here. The summary never changes them."
-        onChange={(event) => {
-          unsaved.current = event.target.value;
-          setText(event.target.value);
-        }}
+        onChange={(event) => thoughts.change(event.target.value)}
         {...stylex.props(styles.thoughts)}
       />
-      {action.error && (
+      {thoughts.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
-          {action.error}
+          {thoughts.error}
         </p>
       )}
     </>

@@ -3,8 +3,18 @@ import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { PillSnapshot } from "../shared/api.ts";
-import { BAR_COUNT, MIN_BAR_SCALE, barScales, pillView, smoothLevel } from "./pillView.ts";
+import {
+  BAR_COUNT,
+  MIN_BAR_SCALE,
+  barScales,
+  flowBarView,
+  smoothLevel,
+  ticks,
+  type MeetingLook,
+} from "./pillView.ts";
 import { font, darkPill, radius } from "./tokens.stylex.ts";
+import { useNow } from "./useNow.ts";
+import { pillApi } from "./voice.ts";
 
 const spring = "cubic-bezier(0.34, 1.36, 0.64, 1)";
 const settle = "cubic-bezier(0.32, 0.72, 0, 1)";
@@ -53,6 +63,27 @@ const styles = stylex.create({
   },
   hidden: { opacity: 0 },
   wide: { width: 296 },
+  meeting: { width: 200 },
+  meetingRecording: { width: 112 },
+  button: {
+    gap: 7,
+    width: "100%",
+    height: "100%",
+    minWidth: 0,
+    paddingBlock: 0,
+    paddingInline: 14,
+    borderWidth: 0,
+    borderRadius: radius.round,
+    backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.08)" },
+    cursor: "pointer",
+  },
+  ellipsis: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
+  tabular: { fontVariantNumeric: "tabular-nums" },
+  light: { flexShrink: 0, width: 7, height: 7, borderRadius: radius.round },
+  recordingLight: { backgroundColor: "#ff453a" },
+  promptLight: { backgroundColor: "#ffd60a" },
+  pauseGlyph: { flexShrink: 0, display: "flex", gap: 2 },
+  pauseBar: { width: 2.5, height: 9, borderRadius: 1, backgroundColor: darkPill.glyph },
   content: {
     display: "flex",
     alignItems: "center",
@@ -126,7 +157,7 @@ function Wave() {
   useEffect(() => {
     let level = 0;
     let tick = 0;
-    return window.voice.onLevel((next) => {
+    return pillApi().onLevel((next) => {
       level = smoothLevel(level, next);
       tick += 1;
       setScales(barScales(level, tick));
@@ -167,17 +198,61 @@ function Check({ pasted }: { pasted: boolean }) {
   );
 }
 
-export function PillCapsule({ session, alwaysShowPill }: PillSnapshot) {
-  const view = pillView(session);
+function MeetingGlyph({ look }: { look: MeetingLook }) {
+  if (look === "paused") {
+    return (
+      <span aria-hidden="true" {...stylex.props(styles.pauseGlyph)}>
+        <span {...stylex.props(styles.pauseBar)} />
+        <span {...stylex.props(styles.pauseBar)} />
+      </span>
+    );
+  }
+  if (look === "waiting") return null;
+  return (
+    <span
+      aria-hidden="true"
+      {...stylex.props(
+        styles.light,
+        look === "recording" ? styles.recordingLight : styles.promptLight,
+      )}
+    />
+  );
+}
+
+// The window lets clicks through everywhere else, so it takes them only while the pointer is here.
+function MeetingButton({ look, text }: { look: MeetingLook; text: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={`${text}. Open the meeting notepad`}
+      onPointerEnter={() => void pillApi().setPillClickable(true)}
+      onPointerLeave={() => void pillApi().setPillClickable(false)}
+      onClick={() => void pillApi().openNotepad()}
+      {...stylex.props(styles.content, styles.text, styles.button, styles.tabular)}
+    >
+      <MeetingGlyph look={look} />
+      <span {...stylex.props(styles.ellipsis)}>{text}</span>
+    </button>
+  );
+}
+
+export function PillCapsule(snapshot: PillSnapshot) {
+  const now = useNow(ticks(snapshot));
+  const view = flowBarView(snapshot, now);
   return (
     <div {...stylex.props(styles.frame)}>
       <div
         data-view={view.kind}
+        data-look={view.kind === "meeting" ? view.look : undefined}
         role="status"
         {...stylex.props(
           styles.capsule,
-          view.kind === "idle" ? [styles.idle, !alwaysShowPill && styles.hidden] : styles.open,
+          view.kind === "idle"
+            ? [styles.idle, !snapshot.alwaysShowPill && styles.hidden]
+            : styles.open,
           view.kind === "message" && styles.wide,
+          view.kind === "meeting" &&
+            (view.look === "recording" ? styles.meetingRecording : styles.meeting),
         )}
       >
         {view.kind === "listening" && <Wave />}
@@ -186,6 +261,7 @@ export function PillCapsule({ session, alwaysShowPill }: PillSnapshot) {
         {view.kind === "message" && (
           <div {...stylex.props(styles.content, styles.text, styles.message)}>{view.text}</div>
         )}
+        {view.kind === "meeting" && <MeetingButton look={view.look} text={view.text} />}
       </div>
     </div>
   );

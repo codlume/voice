@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import { Channel, DEFAULT_SETTINGS } from "../shared/api.ts";
+import type { Meeting, MeetingId } from "../shared/meetings.ts";
+import { follow, noMeetingFocus } from "./meeting-focus.ts";
 import { publish } from "./publish.ts";
 import { createStore, type AppState } from "./store.ts";
 import { idleRun } from "./transform-run.ts";
@@ -32,6 +34,7 @@ function harness() {
     },
     session: { phase: "idle" },
     transform: idleRun,
+    meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {
@@ -64,10 +67,12 @@ describe("publish", () => {
       {
         session: { kind: "listening" },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
+        meeting: null,
       },
       {
         session: { kind: "done", outcome: { kind: "inserted", method: "paste" } },
         alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
+        meeting: null,
       },
     ]);
     const sentToPill = JSON.stringify(pill.sent);
@@ -97,7 +102,33 @@ describe("publish", () => {
       {
         session: { kind: "idle" },
         alwaysShowPill: !DEFAULT_SETTINGS.alwaysShowPill,
+        meeting: null,
       },
     ]);
+  });
+
+  test("the pill gets the meeting's status and clock, never its notes or transcript", () => {
+    const { pill, update } = harness();
+    const meeting: Meeting = {
+      id: "00000000-0000-4000-8000-000000000001" as MeetingId,
+      title: { text: "Pricing review", source: "user" },
+      createdAt: 0,
+      spans: [{ startedAt: 0, endedAt: 60_000 }],
+      status: { kind: "recording", since: 90_000 },
+      folderIds: [],
+      notes: "Ask about the discount",
+      summary: { kind: "none" },
+    };
+    update({ meeting: follow(noMeetingFocus, [meeting]) });
+    update({ meeting: follow(noMeetingFocus, [{ ...meeting, notes: "Ask about the deadline" }]) });
+
+    expect(pill.sent.map(({ value }) => value)).toEqual([
+      {
+        session: { kind: "idle" },
+        alwaysShowPill: DEFAULT_SETTINGS.alwaysShowPill,
+        meeting: { status: { kind: "recording", since: 90_000 }, closedMs: 60_000, prompt: null },
+      },
+    ]);
+    expect(JSON.stringify(pill.sent)).not.toContain("Pricing review");
   });
 });

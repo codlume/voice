@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { Channel, toPillSnapshot } from "../shared/api.ts";
-import { toSnapshot, type AppState } from "./store.ts";
+import { Channel } from "../shared/api.ts";
+import { pillSnapshot, toSnapshot, type AppState } from "./store.ts";
 
 type SnapshotTarget = {
   isDestroyed(): boolean;
@@ -15,8 +15,7 @@ export function publish(
 ) {
   const snapshot = toSnapshot(state);
   if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.snapshot, snapshot);
-  const pillSnapshot = toPillSnapshot(snapshot);
-  if (pill.isDestroyed() || isDeepStrictEqual(pillSnapshot, toPillSnapshot(toSnapshot(previous))))
-    return;
-  pill.webContents.send(Channel.pillSnapshot, pillSnapshot);
+  const next = pillSnapshot(state);
+  if (pill.isDestroyed() || isDeepStrictEqual(next, pillSnapshot(previous))) return;
+  pill.webContents.send(Channel.pillSnapshot, next);
 }

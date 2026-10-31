@@ -34,6 +34,7 @@ import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { useNow } from "./useNow.ts";
 import { useMeetingDetail, useMeetings } from "./useMeetings.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
@@ -197,23 +198,6 @@ const SEARCH_DELAY_MS = 150;
 /** Says why a recording command did nothing, or null when it went ahead. */
 const recordingRefusal = (result: MeetingCommandResult) =>
   result.kind === "unavailable" ? RECORDING_UNAVAILABLE : null;
-
-// Outside the component so the purity lint sees the clock read is not part of a render.
-const readClock = () => Date.now();
-
-/**
- * The current time, ticking each second only while `active`, so an idle page stays idle. A stale
- * first value is harmless: `recordedMs` counts a leg that started after it as zero until the tick.
- */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(readClock);
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => setNow(readClock()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
-}
 
 /** Main's hits for `query`, asked once typing pauses. The last answer stays up while the next one loads. */
 function useSearch(query: string): readonly MeetingSearchHit[] | null {

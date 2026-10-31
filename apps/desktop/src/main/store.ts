@@ -1,8 +1,13 @@
-import type { PillState, Snapshot } from "../shared/api.ts";
+import { toPillSnapshot, type PillSnapshot, type PillState, type Snapshot } from "../shared/api.ts";
+import { toPillMeeting, type MeetingFocus } from "./meeting-focus.ts";
 import { dictating, toPillState, type Session } from "./session.ts";
 import { toPillState as toTransformPillState, type TransformRun } from "./transform-run.ts";
 
-export type AppState = Omit<Snapshot, "session"> & { session: Session; transform: TransformRun };
+export type AppState = Omit<Snapshot, "session"> & {
+  session: Session;
+  transform: TransformRun;
+  meeting: MeetingFocus;
+};
 
 export type Store = {
   readonly state: AppState;
@@ -30,6 +35,9 @@ export function toSnapshot(state: AppState): Snapshot {
     account: state.account,
   };
 }
+
+export const pillSnapshot = (state: AppState): PillSnapshot =>
+  toPillSnapshot(toSnapshot(state), toPillMeeting(state.meeting));
 
 export function createStore(initial: AppState): Store {
   let state = initial;
