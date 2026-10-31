@@ -1,4 +1,4 @@
-import { headingsFor } from "./language.ts";
+import { UNASSIGNED } from "./ledger.ts";
 import type { MeetingSummary, Speaker, SpeakerId } from "./provider.ts";
 
 /**
@@ -31,29 +31,29 @@ function mentionTokens(text: string, speakers: readonly Speaker[]): string {
 
 /**
  * Wispr's shape: the overview paragraph, `### Decisions`, then `### Next Steps` grouped by owner
- * in speaker order, unassigned last. Headings follow the summary's language.
+ * in speaker order, unassigned last. Headings are English in every language, as Wispr writes
+ * them; the text under them is in the meeting's language.
  */
 export function renderSummaryMarkdown(
   summary: MeetingSummary,
   speakers: readonly Speaker[],
 ): string {
-  const headings = headingsFor(summary.language);
   const inline = (text: string) => mentionTokens(text.trim(), speakers);
   const overview = inline(summary.overview);
   const owners: (SpeakerId | null)[] = [...speakers.map(({ id }) => id), null];
   const groups = owners.flatMap((owner) => {
     const tasks = summary.nextSteps.filter((step) => step.owner === owner);
     if (tasks.length === 0) return [];
-    const heading = `**${owner === null ? headings.unassigned : speakerToken(owner)}**`;
+    const heading = `**${owner === null ? UNASSIGNED : speakerToken(owner)}**`;
     return [[heading, ...tasks.map(({ task }) => `- ${inline(task)}`)].join("\n")];
   });
   const sections = overview === "" ? [] : [overview];
   if (summary.decisions.length > 0) {
     sections.push(
-      `### ${headings.decisions}`,
+      "### Decisions",
       summary.decisions.map((decision) => `- ${inline(decision)}`).join("\n"),
     );
   }
-  if (groups.length > 0) sections.push(`### ${headings.nextSteps}`, ...groups);
+  if (groups.length > 0) sections.push("### Next Steps", ...groups);
   return `${sections.join("\n\n")}\n`;
 }

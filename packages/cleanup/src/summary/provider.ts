@@ -25,8 +25,6 @@ export type NextStep = { owner: SpeakerId | null; task: string };
 /** Free text is plain; owners are ids, so the renderer, not the model, writes every speaker token. */
 export type MeetingSummary = {
   title: string | null;
-  /** The transcript's language, which picks the headings. */
-  language: string;
   overview: string;
   decisions: readonly string[];
   nextSteps: readonly NextStep[];

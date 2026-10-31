@@ -1,6 +1,5 @@
 import { expect, test } from "vite-plus/test";
 
-import { detectLanguage } from "./language.ts";
 import { renderSummaryMarkdown, SPEAKER_TOKEN } from "./markdown.ts";
 import type { MeetingSummary, Speaker } from "./provider.ts";
 
@@ -12,7 +11,6 @@ const speakers: Speaker[] = [
 
 const summary: MeetingSummary = {
   title: null,
-  language: "en",
   overview: "The hotfix ships today. Speaker 1 fixes the export and You review it.",
   decisions: ["Ship 4.12.1 as a hotfix today.", "Column reordering moves to next sprint."],
   nextSteps: [
@@ -76,26 +74,18 @@ test("a label is matched whole, so Speaker 1 is not found inside Speaker 12", ()
   expect(markdown).toBe("{{speaker:s12}} and {{speaker:s1}} agreed.\n");
 });
 
-test("Polish headings, and empty sections left out", () => {
+test("English headings over Polish text, and empty sections left out", () => {
   const markdown = renderSummaryMarkdown(
     {
       ...summary,
-      language: "pl",
+      overview: "Przechodzimy na Przelewy24.",
       decisions: [],
       nextSteps: [{ owner: null, task: "Zadzwonić do Kasi." }],
     },
     speakers,
   );
 
-  expect(markdown).not.toContain("### Decyzje");
-  expect(markdown).toContain("### Następne kroki\n\n**Bez przypisania**\n- Zadzwonić do Kasi.");
-});
-
-test.each([
-  ["so we will ship the fix and the notes go out with it", "en"],
-  ["no dobra, to się jeszcze nie da, ale już mamy plan na piątek", "pl"],
-  ["wir haben das nicht gemacht und ich bin auch dafür", "de"],
-  ["", "en"],
-])("detects %j as %s", (text, language) => {
-  expect(detectLanguage(text)).toBe(language);
+  expect(markdown).toBe(
+    "Przechodzimy na Przelewy24.\n\n### Next Steps\n\n**Unassigned**\n- Zadzwonić do Kasi.\n",
+  );
 });

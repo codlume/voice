@@ -1,6 +1,5 @@
 import type { GenerateRequest, GenerateResult } from "../transform/engine.ts";
 import { countWords } from "../words.ts";
-import { detectLanguage, SUMMARY_LANGUAGES, type SummaryLanguage } from "./language.ts";
 import {
   applyPart,
   candidatePairs,
@@ -65,18 +64,16 @@ const partPrompt = ({
   parts,
   transcript,
   userNotes,
-  language,
 }: {
   part: number;
   parts: number;
   transcript: string;
   userNotes: string;
-  language: string;
 }) => {
   const whole = parts === 1;
   const of = whole ? "a meeting transcript" : `part ${part} of ${parts} of one meeting transcript`;
   return `<task>
-Below is ${of}. Write every text value in ${language}, the language of the transcript.
+Below is ${of}. Write every text value in the language of the transcript.
 - topics: the topics discussed, one short sentence each that says what came out of it.
 - decisions: what the participants decided, one sentence each with the names and numbers. status is "final" when it still held at the end, "rejected" when it was turned down, "open" when it was left for later, "changed" when the participants changed it afterwards.
 - nextSteps: tasks someone agreed to do. owner is the speaker label of the person who will do it. task starts with a verb and includes the deadline if one was said. status is "agreed", "moved" when it was given to someone else afterwards, "dropped" when it was cancelled, "idea" when it was only suggested, "done" when it was already finished. Leave out small talk and reminders.${
@@ -111,8 +108,8 @@ ${later}
 
 ${CLOSING}`;
 
-const overviewPrompt = (ledger: string, userNotes: string, language: string) => `<task>
-Below is what one meeting discussed and settled. Write ${OVERVIEW_RULE} Write it in ${language}, the language of the meeting.
+const overviewPrompt = (ledger: string, userNotes: string) => `<task>
+Below is what one meeting discussed and settled. Write ${OVERVIEW_RULE} Write it in the language of the meeting notes.
 </task>
 
 <meeting_notes>
@@ -124,9 +121,8 @@ ${CLOSING}`;
 const titlePrompt = (
   grounding: { kind: "transcript" | "summary"; text: string },
   userNotes: string,
-  language: string,
 ) => `<task>
-Fill in the field below. Write it in ${language}, the language of the meeting.
+Fill in the field below. Write it in the language of the meeting.
 <field name="title">
 The blank meeting title. Replace it with a concise 3-6 word title only.
 </field>
@@ -268,8 +264,6 @@ export function planParts(lines: readonly string[], tokens: (text: string) => nu
 }
 
 type Prepared = {
-  language: SummaryLanguage;
-  languageName: string;
   speakers: readonly Speaker[];
   lines: string[];
 };
@@ -286,12 +280,9 @@ function prepare({
   if (countWords(text) < MIN_WORDS) return { ok: false, failure: { kind: "tooShort" } };
   const present = new Set(spoken.map(({ speaker }) => speaker));
   const labelOf = new Map(speakers.map((speaker) => [speaker.id, speaker.label.trim()]));
-  const language = detectLanguage(text);
   return {
     ok: true,
     prepared: {
-      language,
-      languageName: SUMMARY_LANGUAGES[language].name,
       speakers: speakers.filter(({ id }) => present.has(id)),
       lines: spoken.map(
         (line) => `${labelOf.get(line.speaker) ?? line.speaker}: ${line.text.trim()}`,
@@ -342,7 +333,7 @@ export function createGemmaSummaryProvider({
     let fallback: string | null = null;
     for (let attempt = 0; attempt < TITLE_ATTEMPTS; attempt++) {
       // At temperature 0 a retry would repeat the same answer.
-      const reply = await ask(titlePrompt(grounding, notes, prepared.languageName), signal, {
+      const reply = await ask(titlePrompt(grounding, notes), signal, {
         maxTokens: TITLE_MAX_TOKENS,
         temperature: attempt === 0 ? 0 : 0.7,
       });
@@ -385,7 +376,6 @@ export function createGemmaSummaryProvider({
           parts: part + queue.length,
           transcript: chunk.join("\n"),
           userNotes: request.notes,
-          language: prepared.languageName,
         }),
         signal,
         { maxTokens: PART_MAX_TOKENS, jsonSchema: partSchema(labels, whole) },
@@ -425,11 +415,9 @@ export function createGemmaSummaryProvider({
         advance();
       }
       ledger = dropReplaced(ledger, pairs, replaced);
-      const reply = await ask(
-        overviewPrompt(describeLedger(ledger), request.notes, prepared.languageName),
-        signal,
-        { maxTokens: OVERVIEW_MAX_TOKENS },
-      );
+      const reply = await ask(overviewPrompt(describeLedger(ledger), request.notes), signal, {
+        maxTokens: OVERVIEW_MAX_TOKENS,
+      });
       overview = "tooLong" in reply ? "" : reply.text.trim();
       advance();
     }
@@ -456,7 +444,7 @@ export function createGemmaSummaryProvider({
       generated = await title(prepared, grounding, request.notes, signal);
       advance();
     }
-    return { title: generated, language: prepared.language, overview, decisions, nextSteps };
+    return { title: generated, overview, decisions, nextSteps };
   }
 
   async function settle<T>(

@@ -15,7 +15,6 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { createGemmaSummaryProvider, estimateTokens } from "../src/summary/gemma.ts";
-import { SUMMARY_LANGUAGES } from "../src/summary/language.ts";
 import { renderSummaryMarkdown, SPEAKER_TOKEN } from "../src/summary/markdown.ts";
 import type { Speaker, TranscriptLine } from "../src/summary/provider.ts";
 import { createTransformEngine } from "../src/transform/engine.ts";
@@ -45,20 +44,16 @@ const fold = (text: string) =>
 const matches = (line: string, groups: Groups) =>
   groups.every((group) => group.some((alt) => fold(line).includes(fold(alt))));
 
-const headings = Object.values(SUMMARY_LANGUAGES);
-
 function sections(markdown: string) {
   const [overview = "", ...parts] = markdown.split(/^###\s+/m);
   const section = (names: string[]) =>
     parts.find((part) => names.includes(part.split("\n")[0]!.trim())) ?? "";
-  const decisions = section(headings.map((heading) => heading.decisions))
+  const decisions = section(["Decisions"])
     .split("\n")
     .filter((line) => /^\s*[-*]/.test(line));
   const actions: { owner: string; line: string }[] = [];
   let owner = "";
-  for (const line of section(headings.map((heading) => heading.nextSteps))
-    .split("\n")
-    .slice(1)) {
+  for (const line of section(["Next Steps"]).split("\n").slice(1)) {
     const bold = line.match(/^\s*\*\*(.+?)\*\*\s*:?\s*$/);
     if (bold) owner = bold[1]!.replace(/:$/, "").trim();
     else if (/^\s*[-*]/.test(line)) actions.push({ owner, line });

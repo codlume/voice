@@ -73,7 +73,6 @@ const transcript: TranscriptEntry[] = [
 
 const summary: MeetingSummary = {
   title: "Hotfix Release Plan",
-  language: "en",
   overview: "The hotfix ships today, as Speaker 1 asked.",
   decisions: ["Ship the hotfix today."],
   nextSteps: [

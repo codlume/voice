@@ -105,7 +105,6 @@ describe("summarize", () => {
       ok: true,
       summary: {
         title: null,
-        language: "en",
         overview: "The hotfix ships today and Speaker 1 writes the release notes by Friday.",
         decisions: ["Ship the hotfix today."],
         nextSteps: [{ owner: "s1", task: "Write the release notes by Friday." }],
@@ -296,7 +295,7 @@ describe("summarize", () => {
     await expect(provider.summarize(request())).rejects.toBe(broken);
   });
 
-  test("a Polish transcript asks for Polish", async () => {
+  test("asks for the transcript's own language without naming one", async () => {
     const model = fakeModel({});
     const provider = createGemmaSummaryProvider({
       generate: model.generate,
@@ -307,10 +306,9 @@ describe("summarize", () => {
       "no dobra to ja się tym zajmę ale nie wiem czy już jest gotowe na piątek",
     );
 
-    const result = await provider.summarize(request({ lines: polish }));
+    await provider.summarize(request({ lines: polish, title: "generate" }));
 
-    expect(model.steps[0]!.user).toContain("Polish (polski)");
-    expect(result.ok && result.summary.language).toBe("pl");
+    for (const step of model.steps) expect(step.user).toContain("in the language of the");
   });
 });
 
