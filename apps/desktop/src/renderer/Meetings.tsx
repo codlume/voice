@@ -14,8 +14,11 @@ import {
   type MeetingSearchHit,
   type MeetingsState,
 } from "../shared/meetings.ts";
+import type { Snapshot } from "../shared/api.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
+import { meetingsChecklist, summaryModelRow } from "./checklist.ts";
+import { SetupChecklist } from "./Home.tsx";
 import { MeetingDetail } from "./MeetingDetail.tsx";
 import { MeetingFolders } from "./MeetingFolders.tsx";
 import { MeetingList } from "./MeetingList.tsx";
@@ -31,9 +34,11 @@ import {
   type LiveMeeting,
 } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
+import { shortcutLabel } from "./shortcutCapture.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { useKeyboardLayout } from "./useKeyboardLayout.ts";
 import { useNow } from "./useNow.ts";
 import { useMeetingDetail, useMeetings } from "./useMeetings.ts";
 import { useToday } from "./useToday.ts";
@@ -343,13 +348,21 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
 
 type PageTab = "notes" | "folders";
 
-export function Meetings() {
+export function Meetings({ snapshot }: { snapshot: Snapshot }) {
   const state = useMeetings();
   const today = useToday();
-  return state ? <MeetingsPage state={state} today={today} /> : null;
+  return state ? <MeetingsPage snapshot={snapshot} state={state} today={today} /> : null;
 }
 
-function MeetingsPage({ state, today }: { state: MeetingsState; today: DayKey }) {
+function MeetingsPage({
+  snapshot,
+  state,
+  today,
+}: {
+  snapshot: Snapshot;
+  state: MeetingsState;
+  today: DayKey;
+}) {
   const { meetings, folders } = state;
   const [openId, setOpenId] = useState<MeetingId | null>(null);
   const [tab, setTab] = useState<PageTab>("notes");
@@ -371,6 +384,13 @@ function MeetingsPage({ state, today }: { state: MeetingsState; today: DayKey })
     [results],
   );
   const live = liveMeeting(meetings);
+  const keyboard = useKeyboardLayout();
+  const { meetingShortcut } = snapshot.settings;
+  const setup = meetingsChecklist(snapshot, {
+    tried: meetings.length > 0,
+    shortcut: meetingShortcut && shortcutLabel(meetingShortcut, keyboard),
+  });
+  const summaryModel = summaryModelRow(snapshot);
   const opened = meetings.find(({ id }) => id === openId);
   const selected = meetings.find(({ id }) => id === selectedId) ?? days[0]?.meetings[0] ?? null;
 
@@ -447,6 +467,10 @@ function MeetingsPage({ state, today }: { state: MeetingsState; today: DayKey })
             </p>
           )}
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
+          {!setup.ready && <SetupChecklist title="Set up Meetings" rows={setup.rows} />}
+          {summaryModel && (
+            <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
+          )}
           <Tabs.Root
             value={tab}
             onValueChange={(value: unknown) => setTab(value === "folders" ? "folders" : "notes")}

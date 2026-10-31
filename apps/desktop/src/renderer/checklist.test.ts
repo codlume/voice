@@ -4,7 +4,7 @@ import type { ModelStatus, Snapshot } from "../shared/api.ts";
 import { DEFAULT_TRANSFORMS } from "../shared/transforms.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
 import { DEFAULT_STYLES } from "../shared/style.ts";
-import { checklist } from "./checklist.ts";
+import { checklist, meetingsChecklist, summaryModelRow } from "./checklist.ts";
 
 const fresh: Snapshot = {
   updates: {
@@ -203,4 +203,87 @@ describe("checklist", () => {
     expect(list.ready).toBe(true);
     expect(list.rows.map((r) => r.id)).not.toContain("cleanup");
   });
+});
+
+const rows = (
+  permissions: Snapshot["permissions"],
+  options = { tried: false, shortcut: "⌥M" as string | null },
+) => meetingsChecklist({ permissions }, options);
+const summary = (list: ReturnType<typeof meetingsChecklist>) =>
+  list.rows.map((r) => [r.id, r.status.kind, r.status.text, r.actions.map((a) => a.label)]);
+
+describe("meetingsChecklist", () => {
+  test("a fresh Mac asks for both permissions and a first meeting", () => {
+    const list = rows(fresh.permissions);
+    expect(list.ready).toBe(false);
+    expect(summary(list)).toEqual([
+      ["microphone", "needed", "Needs access", ["Grant"]],
+      ["systemAudio", "needed", "Needs access", ["Grant"]],
+      ["tryMeetings", "needed", "Not yet", []],
+    ]);
+    expect(list.rows[1]?.actions[0]?.command).toEqual({
+      type: "requestPermission",
+      kind: "systemAudio",
+    });
+    expect(list.rows[2]?.subtitle).toBe(
+      "Click Start meeting or press ⌥M, talk a little, then stop",
+    );
+    expect(rows(fresh.permissions, { tried: false, shortcut: null }).rows[2]?.subtitle).toBe(
+      "Click Start meeting, talk a little, then stop",
+    );
+  });
+
+  test("a denied System Audio Recording sends the user to System Settings", () => {
+    const list = rows({ ...fresh.permissions, microphone: "granted", systemAudio: "denied" });
+    expect(summary(list).slice(0, 2)).toEqual([
+      ["microphone", "ready", "Granted", []],
+      ["systemAudio", "needed", "Allow Voice in System Settings", ["Open"]],
+    ]);
+  });
+
+  test("below macOS 14.4 system audio is unavailable, says so, and does not hold it open", () => {
+    const permissions = { ...fresh.permissions, microphone: "granted", systemAudio: "unavailable" };
+    const list = rows(permissions as Snapshot["permissions"], { tried: true, shortcut: null });
+    expect(list.rows[1]).toMatchObject({
+      status: { kind: "unavailable", text: "Needs macOS 14.4 or later" },
+      subtitle: "Meetings record only your microphone on this Mac",
+      actions: [],
+    });
+    expect(list.ready).toBe(true);
+  });
+
+  test("it is done once both are granted and one meeting was tried", () => {
+    const granted = {
+      ...fresh.permissions,
+      microphone: "granted",
+      systemAudio: "granted",
+    } as const;
+    expect(rows(granted).ready).toBe(false);
+    expect(rows(granted, { tried: true, shortcut: null }).ready).toBe(true);
+  });
+});
+
+describe("summaryModelRow", () => {
+  const withTransform = (transform: ModelStatus) =>
+    summaryModelRow({ models: { ...fresh.models, transform } });
+
+  test("offers the transform model while it is not on disk", () => {
+    expect(withTransform({ state: "missing" })).toMatchObject({
+      title: "Summary model",
+      subtitle: "Summaries use Gemma 4 E2B by Google (3.1 GB). Transcripts work without it.",
+      status: { kind: "needed", text: "Not downloaded" },
+      actions: [{ label: "Download", command: { type: "installModel", id: "transform" } }],
+    });
+    expect(withTransform({ state: "downloading", progress: 0.5 })?.actions).toEqual([
+      { label: "Cancel", command: { type: "uninstallModel", id: "transform" } },
+    ]);
+    expect(withTransform({ state: "failed", message: "Offline" })?.actions[0]?.label).toBe("Retry");
+  });
+
+  test.each<ModelStatus>([{ state: "installed" }, { state: "loading" }, { state: "ready" }])(
+    "is gone once the model is on disk (%j)",
+    (transform) => {
+      expect(withTransform(transform)).toBeNull();
+    },
+  );
 });
