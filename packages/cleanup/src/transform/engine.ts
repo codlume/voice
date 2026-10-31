@@ -6,6 +6,7 @@ import { countWords } from "../words.ts";
 import { budget } from "./budget.ts";
 import { guard } from "./guard.ts";
 import { TRANSFORM_MODEL } from "./model.ts";
+import { transformsFirst } from "./preempt.ts";
 import { SYSTEM_PROMPT, userMessage } from "./prompt.ts";
 
 export type TransformFailure =
@@ -43,8 +44,9 @@ export type GenerateResult =
 
 export type TransformEngine = {
   load(): Promise<void>;
-  // One run at a time, transforms and generate steps alike. Expected failures resolve as data;
-  // aborting rejects with the signal's reason, and a broken model rejects with its error.
+  // One run at a time, transforms and generate steps alike. A Transform stops the running step
+  // and goes first, and the step then runs again. Expected failures resolve as data; aborting
+  // rejects with the signal's reason, and a broken model rejects with its error.
   transform(request: TransformRequest): Promise<TransformResult>;
   generate(request: GenerateRequest): Promise<GenerateResult>;
   dispose(): Promise<void>;
@@ -180,12 +182,19 @@ export function createTransformEngine({
     return serialize(() => run(request, deadline.signal)).finally(() => clearTimeout(timer));
   }
 
+  // Preempting here, where the model lives, keeps a yield from ever looking like a cancel to the
+  // process client, whose cancel kills a process that does not stop within its grace time.
+  const turns = transformsFirst(
+    (request: TransformRequest) => withBudget(request, attempt),
+    (request: GenerateRequest) => withBudget(request, generateStep),
+  );
+
   return {
     load: async () => {
       await load();
     },
-    transform: (request) => withBudget(request, attempt),
-    generate: (request) => withBudget(request, generateStep),
+    transform: turns.transform,
+    generate: turns.generate,
     dispose,
   };
 }
