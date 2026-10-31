@@ -16,6 +16,8 @@ import type {
   MeetingsChange,
   MeetingsSettingsPatch,
   MeetingsState,
+  MeetingNotice,
+  MeetingTranscriptChange,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
@@ -375,7 +377,14 @@ export type HubApi = WindowApi & {
   pauseMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   resumeMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   stopMeeting(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Answers "Started by mistake?" for a very short recording. */
+  keepMeeting(id: MeetingId): Promise<MeetingCommandResult>;
+  discardMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Fires as transcript lines are saved during a meeting. */
+  onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
+  /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
+  onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
 };
 
 export type VoiceApi = PillApi | HubApi;
@@ -441,5 +450,9 @@ export const Channel = {
   pauseMeeting: "voice:pauseMeeting",
   resumeMeeting: "voice:resumeMeeting",
   stopMeeting: "voice:stopMeeting",
+  keepMeeting: "voice:keepMeeting",
+  discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
+  meetingTranscript: "voice:meetingTranscript",
+  meetingNotice: "voice:meetingNotice",
 } as const;

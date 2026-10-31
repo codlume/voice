@@ -545,7 +545,11 @@ function fakeMeetings(): MeetingsApi {
     pauseMeeting: unavailable,
     resumeMeeting: unavailable,
     stopMeeting: unavailable,
+    keepMeeting: unavailable,
+    discardMeeting: unavailable,
     generateMeetingSummary: unavailable,
+    onMeetingTranscript: () => () => {},
+    onMeetingNotice: () => () => {},
   };
 }
 

@@ -58,7 +58,7 @@ import { hotkeyConfigure } from "./hotkey-config.ts";
 import { registerHubCommands, type HubCommandDeps } from "./hub-commands.ts";
 import { hubMinimumSize, hubWindowSize } from "./hub-window.ts";
 import { createHistory } from "./history.ts";
-import { unavailableRecorder } from "./meeting-recorder.ts";
+import { createMeetingRecorder, type MeetingRecorder } from "./meeting-recorder.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
 import { createInsights } from "./insights.ts";
 import { createInstalledApps, type InstalledApps } from "./installed-apps.ts";
@@ -375,6 +375,7 @@ async function main() {
   let transforms: Transforms;
   let microphoneTest: MicrophoneTest;
   let installedApps: InstalledApps;
+  let meetingRecorder: MeetingRecorder;
   let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
   const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
   const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
@@ -395,6 +396,7 @@ async function main() {
       transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
       installedApps.onHelperEvent(event);
+      meetingRecorder.onHelperEvent(event);
     },
     onExit: (exit) => {
       if (lifecycle === "running") {
@@ -410,6 +412,7 @@ async function main() {
         transforms.dispatch({ type: "helperExited" });
         microphoneTest.helperExited();
         installedApps.helperExited();
+        meetingRecorder.helperExited();
       }
     },
     configure: () => {
@@ -439,13 +442,34 @@ async function main() {
   });
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", history.expire);
+  const meetingsDir = NodePath.join(userData, "meetings");
   const meetings = createMeetingsStore({
-    dir: NodePath.join(userData, "meetings"),
+    dir: meetingsDir,
     log,
     onChange: (change) => {
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetings, change);
     },
   });
+  meetingRecorder = createMeetingRecorder({
+    store: meetings,
+    dir: meetingsDir,
+    send: (command) => helper.send(command),
+    capture: () => ({
+      language: store.state.settings.dictationLanguage,
+      microphone: store.state.settings.microphone,
+    }),
+    onTranscript: (id, entries) => {
+      if (hub && !hub.isDestroyed())
+        hub.webContents.send(Channel.meetingTranscript, { id, entries });
+    },
+    onNotice: (id, notice) => {
+      log(`meetings: ${id} notice ${notice.kind}`);
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetingNotice, { id, notice });
+    },
+    log,
+  });
+  // A launch only ever finishes what a crash or quit left; it never records.
+  meetingRecorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
   powerMonitor.on("resume", () => {
     meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));
   });
@@ -803,7 +827,7 @@ async function main() {
     installedApps,
     settingsQueue,
     meetings,
-    meetingRecorder: unavailableRecorder,
+    meetingRecorder,
     log,
   };
 
@@ -843,7 +867,7 @@ async function main() {
       settingsQueue.settled(),
       insights.settled(),
       history.settled(),
-      meetings.settled(),
+      meetingRecorder.settled().then(meetings.settled),
       helper.stop(),
       cleanup.dispose(),
       transformModel.dispose(),
