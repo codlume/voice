@@ -4,6 +4,7 @@ import {
   type Marker,
   type Meeting,
   type MeetingId,
+  type MeetingNotice,
   type MeetingStatus,
   type MeetingsSettings,
   type SummaryState,
@@ -43,18 +44,6 @@ export type MeetingEvent =
   /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
   | { type: "recover"; lastAudioAt: number };
 
-export type Notice =
-  | { kind: "startFailed"; message: string }
-  | { kind: "resumeFailed"; message: string }
-  | { kind: "captureLost" }
-  | { kind: "maxLengthSoon"; inMs: number }
-  | { kind: "maxLengthReached" }
-  | { kind: "atMaxLength" }
-  | { kind: "silence" }
-  | { kind: "finalPassFailed" }
-  | { kind: "summaryReady"; open: boolean }
-  | { kind: "summaryFailed" };
-
 /** The driver writes `meeting.json` whenever the step returns a different meeting object. */
 export type MeetingEffect =
   | { type: "startCapture"; leg: number }
@@ -64,7 +53,7 @@ export type MeetingEffect =
   | { type: "transcribeFinal" }
   | { type: "summarize" }
   | { type: "delete" }
-  | { type: "notify"; notice: Notice };
+  | { type: "notify"; notice: MeetingNotice };
 
 export type Step = { meeting: Meeting | null; effects: MeetingEffect[] };
 
@@ -75,7 +64,7 @@ export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
 /** Below this the user is asked "Started by mistake?" before anything else runs. */
 export const SHORT_RECORDING_WORDS = 10;
 
-const notify = (notice: Notice): MeetingEffect => ({ type: "notify", notice });
+const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
 const mark = (marker: Marker["marker"], atMs: number): MeetingEffect => ({
   type: "mark",
   marker: { kind: "marker", marker, atMs },

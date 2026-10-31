@@ -5,7 +5,12 @@ import { contextBridge, ipcRenderer } from "electron";
 import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
 import type { HistoryChange } from "../shared/history.ts";
 import type { Insights } from "../shared/insights.ts";
-import type { MeetingsChange } from "../shared/meetings.ts";
+import type {
+  MeetingNotice,
+  MeetingId,
+  MeetingsChange,
+  MeetingTranscriptChange,
+} from "../shared/meetings.ts";
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
 
@@ -85,7 +90,13 @@ const voice: HubApi = {
   pauseMeeting: (id) => ipcRenderer.invoke(Channel.pauseMeeting, id),
   resumeMeeting: (id) => ipcRenderer.invoke(Channel.resumeMeeting, id),
   stopMeeting: (id) => ipcRenderer.invoke(Channel.stopMeeting, id),
+  keepMeeting: (id) => ipcRenderer.invoke(Channel.keepMeeting, id),
+  discardMeeting: (id) => ipcRenderer.invoke(Channel.discardMeeting, id),
   generateMeetingSummary: (id) => ipcRenderer.invoke(Channel.generateMeetingSummary, id),
+  onMeetingTranscript: (listener) =>
+    subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
+  onMeetingNotice: (listener) =>
+    subscribe<{ id: MeetingId; notice: MeetingNotice }>(Channel.meetingNotice, listener),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

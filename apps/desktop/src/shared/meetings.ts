@@ -187,8 +187,27 @@ export function applyMeetingsChange(
   return { meetings, folders: change.folders, settings: change.settings };
 }
 
-/** Commands later steps build. Until then they answer `unavailable` and change nothing. */
-export type MeetingCommandResult = { kind: "unavailable" };
+/** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
+export type MeetingCommandResult =
+  | { kind: "ok"; id: MeetingId }
+  | { kind: "refused"; message: string }
+  | { kind: "unavailable" };
+
+/** What a meeting tells the user: warnings, prompts and outcomes. */
+export type MeetingNotice =
+  | { kind: "startFailed"; message: string }
+  | { kind: "resumeFailed"; message: string }
+  | { kind: "captureLost" }
+  | { kind: "maxLengthSoon"; inMs: number }
+  | { kind: "maxLengthReached" }
+  | { kind: "atMaxLength" }
+  | { kind: "silence" }
+  | { kind: "finalPassFailed" }
+  | { kind: "summaryReady"; open: boolean }
+  | { kind: "summaryFailed" };
+
+/** Live transcript lines, pushed as they are written so an open meeting view can append them. */
+export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
 
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
 export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };

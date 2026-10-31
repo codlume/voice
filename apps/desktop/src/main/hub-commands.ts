@@ -322,5 +322,7 @@ function registerMeetingCommands(
   hubCommands.handle(Channel.pauseMeeting, withMeeting(recorder.pause));
   hubCommands.handle(Channel.resumeMeeting, withMeeting(recorder.resume));
   hubCommands.handle(Channel.stopMeeting, withMeeting(recorder.stop));
+  hubCommands.handle(Channel.keepMeeting, withMeeting(recorder.keep));
+  hubCommands.handle(Channel.discardMeeting, withMeeting(recorder.discard));
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
 }
