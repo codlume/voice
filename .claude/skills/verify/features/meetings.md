@@ -41,7 +41,7 @@ Preconditions: baseline. A fresh userData has no meetings.
 
 ## Gotchas
 
-- Automatic folders only collect a meeting when a title is set. Folders made or edited later do not yet pick up existing meetings (main has no backfill yet).
+- Automatic folders only collect a meeting when a title is set. Making or editing an automatic folder, or turning Automatic folders on, files existing meetings whose title matches; editing a rule takes out meetings only the old rule matched, and keeps ones added by hand.
 - Test mode never opens the microphone or a system audio tap. Without the fixture files in the userData, `meeting.start` fails with "meeting capture disabled" or reports system audio `unavailable`. A fixture run proves files, transcription, echo filtering, and lifecycle, not device or permission behavior.
 - Markers use wall-clock meeting time and segments use audio time, so at 8x playback markers sort ahead of where they would land in a real-time meeting.
 - Proven with `vv meeting meeting-mic-speakers.wav`, dictation mid-meeting, and recovery on 2026-10-31.

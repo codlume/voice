@@ -85,6 +85,7 @@ async function relaunch(options: { now?: number } = {}) {
   return next;
 }
 
+const rule = (text: string) => ({ kind: "titleContains", text }) as const;
 const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
@@ -285,6 +286,78 @@ describe("meetings store", () => {
     });
     const second = await relaunch();
     expect(second.store.state().folders).toEqual([folder]);
+  });
+
+  test("a new or edited automatic folder files the existing meetings its rule matches", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await first.store.put(meeting(B, { title: { text: "Weekly sync", source: "generated" } }));
+    await first.store.put(meeting(C, { title: null }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: rule("1:1"),
+    });
+    expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[folder.id], [], []]);
+
+    // B is added by hand, then the rule moves from "1:1" to "sync".
+    await first.store.setInFolder(C, folder.id, true);
+    await first.store.updateFolder(folder.id, { name: "Syncs", kind: "auto", rule: rule("Sync") });
+    expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[], [folder.id], [folder.id]]);
+
+    const before = first.changes.length;
+    await first.store.updateFolder(folder.id, { name: "Syncs", kind: "auto", rule: rule("Sync") });
+    const repeat = first.changes.slice(before);
+    expect(repeat.map((change) => change.kind === "patch" && change.upsert.length)).toEqual([0]);
+
+    const second = await relaunch();
+    expect(ids.map((id) => second.store.get(id)?.folderIds)).toEqual([
+      [],
+      [folder.id],
+      [folder.id],
+    ]);
+    expect(second.hub()?.folders).toEqual([{ ...folder, name: "Syncs", rule: rule("Sync") }]);
+  });
+
+  test("a folder turned manual keeps its meetings and drops its rule", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: { kind: "titleContains", text: "1:1" },
+    });
+    await first.store.updateFolder(folder.id, { name: "1:1s", kind: "manual" });
+    expect(first.store.get(A)?.folderIds).toEqual([folder.id]);
+    expect(first.store.state().folders).toEqual([
+      { id: folder.id, name: "1:1s", kind: "manual", createdAt: folder.createdAt },
+    ]);
+  });
+
+  test("turning automatic folders on files existing meetings; off files nothing", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.updateSettings({ autoFolders: false });
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: { kind: "titleContains", text: "1:1" },
+    });
+    expect(first.store.get(A)?.folderIds).toEqual([]);
+
+    await first.store.updateSettings({ autoFolders: true });
+    expect(first.store.get(A)?.folderIds).toEqual([folder.id]);
+    expect(first.hub()?.meetings.find(({ id }) => id === A)?.folderIds).toEqual([folder.id]);
+
+    await first.store.setInFolder(A, folder.id, false);
+    await first.store.updateSettings({ autoFolders: true });
+    expect(first.store.get(A)?.folderIds).toEqual([]);
+    await first.store.updateSettings({ autoFolders: false });
+    const second = await relaunch();
+    expect(second.store.get(A)?.folderIds).toEqual([]);
   });
 
   test("an unreadable meeting is left alone and never overwritten or expired", async () => {

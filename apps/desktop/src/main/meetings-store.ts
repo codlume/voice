@@ -11,10 +11,12 @@ import {
   parseFolderId,
   parseMeetingId,
   parseMeetingsSettingsPatch,
+  refile,
   searchMeeting,
   type Folder,
   type FolderDraft,
   type FolderId,
+  type FolderKind,
   type Meeting,
   type MeetingId,
   type MeetingSearchHit,
@@ -236,12 +238,24 @@ export function createMeetingsStore(options: {
     ready = true;
   }).then(expire);
 
-  const editFolder = (id: FolderId, change: (folder: Folder) => Folder) =>
-    serial(async () => {
-      if (!folders.some((folder) => folder.id === id)) return;
-      await writeFolders(folders.map((folder) => (folder.id === id ? change(folder) : folder)));
-      publish([]);
-    });
+  // Runs after the folders are written, so no meeting points at a folder that is not saved.
+  async function refileMeetings(
+    targets: readonly { folder: Folder; before: FolderKind | null }[],
+  ): Promise<Meeting[]> {
+    if (!settings.autoFolders) return [];
+    const changed: Meeting[] = [];
+    for (const meeting of meetings.values()) {
+      const next = targets.reduce(
+        (current, { folder, before }) => refile(current, folder, before),
+        meeting,
+      );
+      if (next === meeting) continue;
+      await writeMeeting(next);
+      meetings.set(next.id, next);
+      changed.push(next);
+    }
+    return changed;
+  }
 
   return {
     loaded: () => loading,
@@ -291,10 +305,18 @@ export function createMeetingsStore(options: {
           createdAt: now(),
         };
         await writeFolders([...folders, folder]);
-        publish([]);
+        publish(await refileMeetings([{ folder, before: null }]));
         return folder;
       }),
-    updateFolder: (id, draft) => editFolder(id, (folder) => ({ ...folder, ...cleanDraft(draft) })),
+    updateFolder: (id, draft) =>
+      serial(async () => {
+        const before = folders.find((folder) => folder.id === id);
+        if (!before) return;
+        // Built from the draft alone, so a folder turned manual drops its old rule.
+        const folder: Folder = { ...cleanDraft(draft), id, createdAt: before.createdAt };
+        await writeFolders(folders.map((other) => (other.id === id ? folder : other)));
+        publish(await refileMeetings([{ folder, before }]));
+      }),
     removeFolder: (id) =>
       serial(async () => {
         if (!folders.some((folder) => folder.id === id)) return;
@@ -330,8 +352,10 @@ export function createMeetingsStore(options: {
         const next: MeetingsSettings = { ...settings, ...patch };
         await mkdir(dir, { recursive: true, mode: DIR_MODE });
         await writeFileAtomic(settingsFile, envelope({ settings: next }), { mode: FILE_MODE });
+        const turnedOn = next.autoFolders && !settings.autoFolders;
         settings = next;
-        publish([]);
+        const autoFolders = turnedOn ? folders.filter((folder) => folder.kind === "auto") : [];
+        publish(await refileMeetings(autoFolders.map((folder) => ({ folder, before: null }))));
       });
       if (patch.retention !== undefined) await expire();
     },
