@@ -6,6 +6,7 @@ import {
   cleanTitle,
   createGemmaSummaryProvider,
   estimateTokens,
+  fitsWhole,
   PART_TOKENS,
   planParts,
   WHOLE_TOKENS,
@@ -170,10 +171,10 @@ describe("summarize", () => {
           }),
         );
       },
-      pair: (step) => ok(step.user.includes("Launch") ? '{"answer": "yes"}' : '{"answer": "no"}'),
+      pair: () => ok('{"answer": "yes"}'),
       overview: () => ok("  Launch is on November 17.  "),
     });
-    const progress: number[] = [];
+    const progress: { step: number; total: number }[] = [];
     const provider = createGemmaSummaryProvider({
       generate: model.generate,
       tokens: estimateTokens,
@@ -183,7 +184,7 @@ describe("summarize", () => {
       request({
         lines: transcript(1200),
         title: "generate",
-        onProgress: ({ done, total }) => progress.push(done / total),
+        onProgress: (step) => progress.push(step),
       }),
     );
 
@@ -197,36 +198,113 @@ describe("summarize", () => {
       summary: {
         overview: "Launch is on November 17.",
         decisions: ["Launch moves to Tuesday, November 17."],
-        // The later part repeats the task with a new owner, which takes it over.
+        // The later part gives the task to a new owner, which the pair step confirms.
         nextSteps: [{ owner: "you", task: "Take the Brightline volume tier call." }],
         title: "Hotfix Release Plan",
       },
     });
-    expect(progress.at(-1)).toBe(1);
-    expect(progress).toEqual(progress.toSorted((a, b) => a - b));
+    // A step per part, one to combine them, one for the title.
+    const total = partSteps.length + 2;
+    expect(progress).toEqual(
+      Array.from({ length: total }, (_, index) => ({ step: index + 1, total })),
+    );
   });
 
-  test("a part that overflows the context hands its tail to the next part", async () => {
+  test("a meeting that overflows as a whole is read in parts, checked across parts, and given one overview", async () => {
     let first = true;
     const model = fakeModel({
-      part: () => {
-        if (!first) return ok(part());
-        first = false;
-        return { ok: false, failure: { kind: "tooLong" } };
+      part: (_, index) => {
+        if (first) {
+          first = false;
+          return { ok: false, failure: { kind: "tooLong" } };
+        }
+        const task =
+          index === 1
+            ? "Call Brightline about the volume tier."
+            : "Take the Brightline volume tier call.";
+        return ok(
+          part({
+            nextSteps: [{ owner: index === 1 ? "Speaker 1" : "You", task, status: "agreed" }],
+            overview: undefined,
+          }),
+        );
       },
+      pair: () => ok('{"answer": "yes"}'),
+      overview: () => ok("Speaker 1 hands the Brightline call to You."),
     });
+    const progress: { step: number; total: number }[] = [];
     const provider = createGemmaSummaryProvider({
       generate: model.generate,
       tokens: estimateTokens,
     });
 
-    const result = await provider.summarize(request({ lines: transcript(40) }));
+    const result = await provider.summarize(
+      request({ lines: transcript(40), onProgress: (step) => progress.push(step) }),
+    );
 
-    const transcripts = model.steps
-      .filter((step) => isPart(step))
-      .map((step) => step.user.match(/^You: |^Speaker 1: /gm)?.length);
-    expect(transcripts).toEqual([40, 32, 8]);
+    const partSteps = model.steps.filter((step) => isPart(step));
+    expect(partSteps.map(({ user }) => user.match(/^You: |^Speaker 1: /gm)?.length)).toEqual([
+      40, 20, 20,
+    ]);
+    expect(partSteps[1]!.user).toContain("part 1 of 2");
+    expect(partSteps[1]!.jsonSchema?.properties).not.toHaveProperty("overview");
+    expect(model.steps.filter((step) => !isPart(step))).toHaveLength(2);
+    expect(result).toEqual({
+      ok: true,
+      summary: {
+        title: null,
+        overview: "Speaker 1 hands the Brightline call to You.",
+        decisions: ["Ship the hotfix today."],
+        nextSteps: [{ owner: "you", task: "Take the Brightline volume tier call." }],
+      },
+    });
+    expect(progress).toEqual([
+      { step: 1, total: 1 },
+      { step: 2, total: 4 },
+      { step: 3, total: 4 },
+      { step: 4, total: 4 },
+    ]);
+  });
+
+  test("a part that overflows is read in halves, and the step count grows to match", async () => {
+    let first = true;
+    const model = fakeModel({
+      part: () => {
+        if (!first) return ok(part({ overview: undefined }));
+        first = false;
+        return { ok: false, failure: { kind: "tooLong" } };
+      },
+    });
+    const progress: { step: number; total: number }[] = [];
+    const provider = createGemmaSummaryProvider({
+      generate: model.generate,
+      tokens: estimateTokens,
+    });
+    const lines = transcript(1200);
+    const planned = planParts(
+      lines.map(({ text }) => `You: ${text}`),
+      estimateTokens,
+    ).length;
+
+    const result = await provider.summarize(
+      request({ lines, onProgress: (step) => progress.push(step) }),
+    );
+
+    const partSteps = model.steps.filter((step) => isPart(step));
+    expect(partSteps).toHaveLength(planned + 2);
+    expect(partSteps.at(-1)!.user).toContain(`part ${planned + 1} of ${planned + 1}`);
+    // The halves replace the part that overflowed: no line lost or read twice.
+    const read = partSteps.slice(1).flatMap(({ user }) => user.match(/^(You|Speaker 1): /gm) ?? []);
+    expect(read).toHaveLength(1200);
     expect(result.ok).toBe(true);
+    const total = planned + 3;
+    expect(progress.map(({ step }) => step)).toEqual(
+      Array.from({ length: total }, (_, index) => index + 1),
+    );
+    expect(progress.at(-1)).toEqual({ step: total, total });
+    expect(progress.map((entry) => entry.total)).toEqual(
+      progress.map((entry) => entry.total).toSorted((a, b) => a - b),
+    );
   });
 
   test.each([
@@ -401,13 +479,19 @@ describe("chunkLines", () => {
     expect(chunks.flat()).toEqual(lines);
   });
 
-  test("a meeting that fits is read whole; a longer one goes in smaller parts", () => {
+  test("a meeting fits whole with the user's notes counted; parts are never fewer than two", () => {
     const line = "x".repeat(299);
 
     // 299 characters estimate 100 tokens, plus one for the line break.
-    const fitting = Math.floor(WHOLE_TOKENS / 101);
-    expect(planParts(Array(fitting).fill(line), estimateTokens)).toHaveLength(1);
-    const parts = planParts(Array(fitting + 1).fill(line), estimateTokens);
-    expect(parts.length).toBeGreaterThanOrEqual(WHOLE_TOKENS / PART_TOKENS);
+    const fitting = Array(Math.floor(WHOLE_TOKENS / 101)).fill(line);
+    expect(fitsWhole(fitting, "", estimateTokens)).toBe(true);
+    expect(fitsWhole(fitting, line, estimateTokens)).toBe(false);
+    expect(fitsWhole([...fitting, line], "", estimateTokens)).toBe(false);
+    expect(planParts([...fitting, line], estimateTokens).length).toBeGreaterThanOrEqual(
+      WHOLE_TOKENS / PART_TOKENS,
+    );
+    expect(planParts(fitting.slice(0, 3), estimateTokens).map((chunk) => chunk.length)).toEqual([
+      2, 1,
+    ]);
   });
 });
