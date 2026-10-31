@@ -25,6 +25,28 @@ public enum MeetingChunker {
         return final ? samples.count : nil
     }
 
+    /// The most audio one final-pass window takes. Longer windows give the model more context than
+    /// the live windows had; the model still decodes them in overlapping 15 s pieces.
+    public static let finalWindowSamples = 120 * PcmFile.sampleRate
+
+    /// Samples to take from the front of `samples` for one final-pass window: all of them when
+    /// fewer than a window remain, else up to the middle of the window's last pause, else its
+    /// quietest frame in the last 10 s.
+    public static func finalCut(_ samples: [Float]) -> Int {
+        guard samples.count >= finalWindowSamples else { return samples.count }
+        let levels = frameLevels(samples)
+        var run = 0
+        var lastPause: Int?
+        for (index, level) in levels.enumerated() {
+            run = level < quietRms ? run + 1 : 0
+            if run >= pauseFrames { lastPause = index - run / 2 }
+        }
+        if let lastPause, lastPause > levels.count / 2 { return lastPause * frameSamples }
+        let tail = (levels.count - 100)..<levels.count
+        let quietest = tail.min { levels[$0] < levels[$1] } ?? levels.count
+        return max(quietest, 1) * frameSamples
+    }
+
     /// The span in `window` that holds speech, as a sample range, or nil when it is all quiet and
     /// needs no decode.
     public static func speech(in window: [Float]) -> Range<Int>? {

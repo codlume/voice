@@ -545,6 +545,13 @@ const commandCases = {
     fromMs: { mic: 1250.5, system: 0 },
     language: "en",
   },
+  "meeting.finalize": {
+    type: "meeting.finalize",
+    id: "m1",
+    dir: "/tmp/synthetic/meetings/m1",
+    baseMs: 600_000,
+    language: "pl",
+  },
 } satisfies Record<HelperCommand["type"], HelperCommand> & Record<string, HelperCommand>;
 
 const eventTypes = {
@@ -575,6 +582,8 @@ const eventTypes = {
   "meeting.failed": true,
   "meeting.segment": true,
   "meeting.drained": true,
+  "meeting.finalized": true,
+  "meeting.finalizeFailed": true,
 } satisfies Record<HelperEvent["type"], true>;
 
 function startContractHelper(configure: () => HelperCommand[] = () => []) {
