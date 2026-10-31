@@ -140,6 +140,7 @@ private func commandCases() -> [String: HelperCommand] {
         "meeting.transcribe": .meetingTranscribe(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 0,
                                                  fromMs: MeetingCursor(mic: 1250.5, system: 0), language: .en),
         "meeting.finalize": .meetingFinalize(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 600_000, language: .pl),
+        "meeting.models.download": .meetingModelsDownload,
     ]
 }
 
@@ -195,9 +196,9 @@ private func eventCases() -> [String: HelperEvent] {
         "apps.listed.empty": .appsListed(apps: []),
         "icons.rendered": .iconsRendered(id: "icons-1", icons: [RenderedIcon(path: "/Applications/Synthetic.app", png: Data([0x89, 0x50, 0x4E, 0x47, 0xFF]))]),
         "icons.rendered.empty": .iconsRendered(id: "icons-1", icons: []),
-        "meeting.started": .meetingStarted(id: "m1", mic: .active, system: .active),
-        "meeting.started.micOnly": .meetingStarted(id: "m1", mic: .active, system: .unavailable),
-        "meeting.started.denied": .meetingStarted(id: "m1", mic: .active, system: .denied),
+        "meeting.started": .meetingStarted(id: "m1", atMs: 0, mic: .active, system: .active),
+        "meeting.started.micOnly": .meetingStarted(id: "m1", atMs: 0, mic: .active, system: .unavailable),
+        "meeting.started.denied": .meetingStarted(id: "m1", atMs: 612_250.5, mic: .active, system: .denied),
         "meeting.failed": .meetingFailed(id: "m1", message: "Synthetic microphone failure"),
         "meeting.segment": .meetingSegment(id: "m1", source: .mic, startMs: 1200, endMs: 4850.5, text: "Zażółć Ada 42"),
         "meeting.segment.system": .meetingSegment(id: "m1", source: .system, startMs: 5000, endMs: 9000, text: "Synthetic reply"),
@@ -215,7 +216,11 @@ private func eventCases() -> [String: HelperEvent] {
         "meeting.finalized.undiarized": .meetingFinalized(id: "m1", segments: [
             FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: nil),
         ]),
-        "meeting.finalizeFailed": .meetingFinalizeFailed(id: "m1", message: "speech model is not downloaded"),
+        "meeting.finalizeFailed": .meetingFinalizeFailed(id: "m1", reason: .transcript, message: "speech model is not downloaded"),
+        "meeting.finalizeFailed.speakerModels": .meetingFinalizeFailed(id: "m1", reason: .speakerModels,
+                                                                       message: "speaker detection is not downloaded"),
+        "meeting.models.status": .meetingModelsStatus(state: .missing, message: nil),
+        "meeting.models.status.failed": .meetingModelsStatus(state: .failed, message: "The Internet connection appears to be offline."),
     ]
 }
 
@@ -244,6 +249,7 @@ private func commandType(_ command: HelperCommand) -> String {
     case .meetingCancel: "meeting.cancel"
     case .meetingTranscribe: "meeting.transcribe"
     case .meetingFinalize: "meeting.finalize"
+    case .meetingModelsDownload: "meeting.models.download"
     }
 }
 
@@ -281,6 +287,7 @@ private func eventType(_ event: HelperEvent) -> String {
     case .meetingPartial: "meeting.partial"
     case .meetingFinalized: "meeting.finalized"
     case .meetingFinalizeFailed: "meeting.finalizeFailed"
+    case .meetingModelsStatus: "meeting.models.status"
     }
 }
 

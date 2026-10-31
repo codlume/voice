@@ -14,7 +14,12 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { modelsDir, prepareAsr, withHelper } from "../native/voice-helper/scripts/helper.mjs";
+import {
+  modelsDir,
+  prepareAsr,
+  prepareSpeakerModels,
+  withHelper,
+} from "../native/voice-helper/scripts/helper.mjs";
 import { downloadModel, S1_MINI, S1_MINI_FILE } from "../packages/cleanup/src/download.ts";
 import { GEMMA_4_E2B } from "../packages/cleanup/src/transform/model.ts";
 import {
@@ -256,7 +261,11 @@ export function signalGroup(pid, signal) {
 }
 
 export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
-export const optionalModelFiles = { transform: GEMMA_4_E2B.file };
+// `speakers` is FluidAudio's folder for the offline diarizer, absent below macOS 15.
+export const optionalModelFiles = {
+  transform: GEMMA_4_E2B.file,
+  speakers: "speaker-diarization-coreml",
+};
 
 export function linkTestModels(userData, cache) {
   const models = join(userData, "models");
@@ -277,9 +286,10 @@ export async function prepareUserData(name) {
     console.error(`preparing test models in ${cache}`);
     await Promise.all([
       downloadModel({ dir: cache, source: S1_MINI }),
-      withHelper({ env: smokeEnvironment(userData) }, (helper) =>
-        prepareAsr(helper, { download: true }),
-      ),
+      withHelper({ env: smokeEnvironment(userData) }, async (helper) => {
+        await prepareAsr(helper, { download: true });
+        await prepareSpeakerModels(helper);
+      }),
     ]);
     claim.reset();
     linkTestModels(userData, cache);

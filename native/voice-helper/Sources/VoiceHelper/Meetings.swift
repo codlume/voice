@@ -47,7 +47,7 @@ final class Meetings {
             let states = try leg.start()
             legs[id] = leg
             job.record(systemActive: states.system == .active)
-            output.emit(.meetingStarted(id: id, mic: states.mic, system: states.system))
+            output.emit(.meetingStarted(id: id, atMs: baseMs + PcmFile.milliseconds(leg.startFrames), mic: states.mic, system: states.system))
         } catch {
             leg.stop()
             job.drain()
@@ -331,8 +331,9 @@ final class MeetingTranscription {
 @MainActor
 final class MeetingFinalPass {
     typealias DecodeWords = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
-    /// Speaker turns in ms from the start of the file, or nil when the voices cannot be told apart.
-    typealias Diarize = (_ url: URL) async -> [SpeakerTurn]?
+    /// Speaker turns in ms from the start of the file, or nil on a Mac that cannot tell voices
+    /// apart. Throws `MeetingFinalizeError` when it could have and did not.
+    typealias Diarize = (_ url: URL) async throws -> [SpeakerTurn]?
 
     private let output: Output
     private let decode: DecodeWords
@@ -357,7 +358,7 @@ final class MeetingFinalPass {
             var turns: [SpeakerTurn]?
             if !system.isEmpty {
                 try await dictationDone()
-                turns = await diarize(systemURL)?.map {
+                turns = try await diarize(systemURL)?.map {
                     SpeakerTurn(speaker: $0.speaker, startMs: baseMs + $0.startMs, endMs: baseMs + $0.endMs)
                 }
             }
@@ -366,8 +367,10 @@ final class MeetingFinalPass {
             output.emit(.meetingFinalized(id: id, segments: segments))
         } catch is CancellationError {
             return
+        } catch let error as MeetingFinalizeError {
+            output.emit(.meetingFinalizeFailed(id: id, reason: error.reason, message: error.message))
         } catch {
-            output.emit(.meetingFinalizeFailed(id: id, message: (error as? TranscribeError)?.message ?? "\(error)"))
+            output.emit(.meetingFinalizeFailed(id: id, reason: .transcript, message: (error as? TranscribeError)?.message ?? "\(error)"))
         }
     }
 

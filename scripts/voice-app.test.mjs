@@ -167,6 +167,7 @@ test("the required test models are linked always and the optional ones only when
     asr: true,
     cleanup: true,
     transform: false,
+    speakers: false,
   });
 
   for (const file of Object.values(optionalModelFiles)) writeFileSync(join(cache, file), "model");
@@ -175,6 +176,7 @@ test("the required test models are linked always and the optional ones only when
     asr: true,
     cleanup: true,
     transform: true,
+    speakers: true,
   });
 });
 
