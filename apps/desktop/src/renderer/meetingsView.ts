@@ -20,7 +20,6 @@ import {
   type MeetingSearchHit,
   type MeetingSnippet,
   type MeetingSource,
-  type MeetingStatus,
   type Speaker,
   type TranscriptEntry,
 } from "../shared/meetings.ts";

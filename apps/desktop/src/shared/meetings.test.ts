@@ -191,16 +191,17 @@ describe("meetingToggle", () => {
   });
 });
 
+const said = (text: string, speakerId: SpeakerId | null): TranscriptEntry => ({
+  kind: "segment",
+  id: text,
+  startMs: 0,
+  endMs: 1,
+  text,
+  source: "system",
+  speakerId,
+});
+
 describe("searchMeeting", () => {
-  const said = (text: string, speakerId: SpeakerId | null): TranscriptEntry => ({
-    kind: "segment",
-    id: text,
-    startMs: 0,
-    endMs: 1,
-    text,
-    source: "system",
-    speakerId,
-  });
   const ola = "s1" as SpeakerId;
   const met = meeting(A, 1, {
     title: "Wyjazd do Łodzi",

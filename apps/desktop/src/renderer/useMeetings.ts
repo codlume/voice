@@ -91,6 +91,8 @@ export function useMeetingTranscript(
       current = false;
       unsubscribe();
     };
+    // readFor is not read here: a new one is the signal that the file was rewritten.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [api, id, readFor]);
   return useMemo(() => {
     if (!id) return null;

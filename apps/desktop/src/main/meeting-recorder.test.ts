@@ -896,8 +896,7 @@ describe("meeting recorder", () => {
   });
 
   test("summary progress shows on the meeting, and closing Voice stops a summary without failing it", async () => {
-    let started = () => {};
-    const running = new Promise<void>((resolve) => (started = resolve));
+    const { promise: running, resolve: started } = Promise.withResolvers<void>();
     const h = harness({
       summarizer: {
         summarizeMeeting: async (_id, { signal, onProgress }) => {

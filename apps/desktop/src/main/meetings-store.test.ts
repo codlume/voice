@@ -95,6 +95,8 @@ const rule = (text: string) => ({ kind: "titleContains", text }) as const;
 const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
+const snippet = (before: string, match: string, after: string) => ({ before, match, after });
+
 describe("meetings store", () => {
   test("a meeting and its transcript survive a relaunch", async () => {
     const first = harness();
@@ -343,7 +345,6 @@ describe("meetings store", () => {
     await seed(store, meeting(C, { createdAt: START + 2, title: null }));
     await store.append(C, [segment("s1", "The quarterly ROADMAP slipped by a week")]);
 
-    const snippet = (before: string, match: string, after: string) => ({ before, match, after });
     expect(await store.search("roadmap")).toEqual([
       {
         id: C,
