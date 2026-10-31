@@ -130,6 +130,9 @@ final class MeetingCapture {
         }
         try source.start { [weak self] in self?.receiveMic($0) }
         micSource = source
+        // The stall clock runs from here: a new device, Bluetooth above all, takes a moment to
+        // deliver its first buffer.
+        lastMicAudio = .now()
     }
 
     // A device change stops the engine. Unlike dictation, a meeting keeps going on whatever input
