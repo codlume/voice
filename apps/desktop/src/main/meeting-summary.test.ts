@@ -98,11 +98,12 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     title: null,
     createdAt: START,
     spans: [{ startedAt: START, endedAt: START + 30 * MIN }],
-    status: { kind: "summarizing" },
+    status: { kind: "summarizing", progress: null },
     folderIds: [],
     notes: "ship today",
     summary: { kind: "none" },
     speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }],
+    finalPassFailed: false,
     ...overrides,
   };
 }
@@ -175,7 +176,7 @@ describe("summarizeMeeting", () => {
     const written = await saved();
     expect(written.title).toEqual({ text: "Hotfix Release Plan", source: "generated" });
     expect(written.folderIds).toEqual([folder.id]);
-    expect(written.status).toEqual({ kind: "summarizing" });
+    expect(written.status).toEqual({ kind: "summarizing", progress: null });
     expect(written.summary).toEqual({
       kind: "ready",
       summary: {

@@ -518,9 +518,12 @@ async function main() {
       const commands: Commands<NotepadApi> = window.webContents.ipc;
       registerMeetingControls(commands, { meetings, meetingRecorder, log });
       commands.handle(Channel.getNotepad, notepadState);
-      commands.handle(Channel.dismissMeetingPrompt, () =>
-        store.update((s) => ({ ...s, meeting: dismiss(s.meeting) })),
-      );
+      commands.handle(Channel.dismissMeetingPrompt, () => {
+        // Dismissing "Still in a meeting?" answers it: the meeting goes on.
+        const { raised } = store.state.meeting;
+        if (raised?.prompt.kind === "silence") meetingRecorder.keepRecording(raised.id);
+        store.update((s) => ({ ...s, meeting: dismiss(s.meeting) }));
+      });
       loadPage(window, "notepad");
       return window;
     },
@@ -1010,6 +1013,8 @@ async function main() {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
     transforms.dispose();
+    // An aborted summary writes nothing, so the next launch writes it instead of a failure.
+    meetingRecorder.dispose();
     const stopped = Promise.allSettled([
       settingsQueue.settled(),
       insights.settled(),

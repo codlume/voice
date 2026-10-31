@@ -52,7 +52,7 @@ export function promptView(prompt: MeetingPrompt, now: number): PromptView {
     case "silence":
       return {
         title: "Still in a meeting?",
-        body: "Voice has not heard anyone for 10 minutes.",
+        body: "Voice has not heard anyone for 10 minutes. Recording stops in 30 seconds.",
         actions: [
           { label: "Stop", command: "stop", primary: false },
           { label: "Keep recording", command: "dismiss", primary: true },

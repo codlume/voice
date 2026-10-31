@@ -28,6 +28,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: false,
     ...patch,
   };
 }
@@ -52,8 +53,8 @@ describe("currentMeeting", () => {
   test("finished meetings are never current", () => {
     const done = [
       meeting(1, { kind: "ready" }),
-      meeting(2, { kind: "transcribing" }),
-      meeting(3, { kind: "summarizing" }),
+      meeting(2, { kind: "transcribing", step: "finalizing" }),
+      meeting(3, { kind: "summarizing", progress: null }),
     ];
     expect(currentMeeting(done)).toBeNull();
   });
@@ -189,7 +190,9 @@ describe("notices on the Meetings page", () => {
       0,
     );
     expect(texts(summary)).toEqual(["The summary could not be written."]);
-    expect(texts(follow(summary, [{ ...failed, status: { kind: "summarizing" } }]))).toEqual([]);
+    expect(
+      texts(follow(summary, [{ ...failed, status: { kind: "summarizing", progress: null } }])),
+    ).toEqual([]);
 
     const done = meeting(3, { kind: "ready" });
     const pass = raise(follow(noMeetingFocus, [done]), done.id, { kind: "finalPassFailed" }, 0);

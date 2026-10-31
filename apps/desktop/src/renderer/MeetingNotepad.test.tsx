@@ -29,6 +29,7 @@ const meeting: Meeting = {
   notes: "",
   summary: { kind: "none" },
   speakers: [],
+  finalPassFailed: false,
 };
 
 const said = (segmentId: string, text: string, source: "mic" | "system"): TranscriptEntry =>
@@ -162,7 +163,10 @@ describe("the notepad", () => {
       "YouGreat",
     ]);
 
-    push({ meeting: { ...meeting, status: { kind: "transcribing" } }, prompt: null });
+    push({
+      meeting: { ...meeting, status: { kind: "transcribing", step: "finalizing" } },
+      prompt: null,
+    });
     expect(lines()).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
   });
 

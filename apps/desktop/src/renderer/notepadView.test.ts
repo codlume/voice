@@ -13,6 +13,7 @@ const meeting = (status: MeetingStatus): Meeting => ({
   notes: "",
   summary: { kind: "none" },
   speakers: [],
+  finalPassFailed: false,
 });
 
 const commands = (view: ReturnType<typeof promptView>) =>
@@ -44,8 +45,14 @@ describe("notepadStatus", () => {
   });
 
   test("says recording only while it records, and offers no controls after Stop", () => {
-    for (const kind of ["finishing", "confirmingShort", "transcribing", "ready"] as const) {
-      const status = notepadStatus(meeting({ kind }), 0);
+    const statuses: MeetingStatus[] = [
+      { kind: "finishing" },
+      { kind: "confirmingShort" },
+      { kind: "transcribing", step: "finalizing" },
+      { kind: "ready" },
+    ];
+    for (const done of statuses) {
+      const status = notepadStatus(meeting(done), 0);
       expect(status.tone).not.toBe("recording");
       expect(status.controls).toEqual([]);
     }

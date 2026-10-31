@@ -37,6 +37,7 @@ const meeting = (id: MeetingId, createdAt: number, overrides: Partial<Meeting> =
   notes: "",
   summary: { kind: "none" },
   speakers: [],
+  finalPassFailed: false,
   ...overrides,
 });
 
@@ -178,8 +179,8 @@ describe("meetingToggle", () => {
   test.each<MeetingStatus>([
     { kind: "finishing" },
     { kind: "confirmingShort" },
-    { kind: "transcribing" },
-    { kind: "summarizing" },
+    { kind: "transcribing", step: "finalizing" },
+    { kind: "summarizing", progress: null },
     { kind: "ready" },
   ])("a meeting no longer recording, %j, leaves them starting a new one", (status) => {
     expect(toggleWith(status)).toEqual({ kind: "start", label: "Start meeting" });

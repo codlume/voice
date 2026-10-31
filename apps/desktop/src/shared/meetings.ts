@@ -19,9 +19,13 @@ export type MeetingTitle = { text: string; source: "user" | "generated" };
 /** One recording leg, start to stop or pause, in wall-clock ms. */
 export type Span = { startedAt: number; endedAt: number };
 
+/** `step` counts from 1; a long meeting is summarized in parts, and `total` can grow. */
+export type SummaryProgress = { step: number; total: number };
+
 /**
  * Where the meeting is in its lifecycle. `starting` remembers what a failed capture start returns
- * to: a new meeting has nothing to keep.
+ * to: a new meeting has nothing to keep. `finishing` catches the live transcript up after Stop;
+ * `transcribing` does the same after a crash (`draining`), then runs the final pass.
  */
 export type MeetingStatus =
   | { kind: "starting"; from: "new" | "paused" | "ready" }
@@ -29,8 +33,8 @@ export type MeetingStatus =
   | { kind: "paused" }
   | { kind: "finishing" }
   | { kind: "confirmingShort" }
-  | { kind: "transcribing" }
-  | { kind: "summarizing" }
+  | { kind: "transcribing"; step: "draining" | "finalizing" }
+  | { kind: "summarizing"; progress: SummaryProgress | null }
   | { kind: "ready" };
 
 /**
@@ -69,6 +73,11 @@ export type Meeting = {
   summary: SummaryState;
   /** The voices on system audio, in the order they first spoke. */
   speakers: readonly Speaker[];
+  /**
+   * The final pass failed, so the live transcript stands in and the audio is kept until the user
+   * tries again or deletes it.
+   */
+  finalPassFailed: boolean;
 };
 
 /** Transcript times are ms of recorded audio from the meeting's start, pauses left out. */
@@ -260,6 +269,8 @@ export type MeetingNotice =
   | { kind: "maxLengthReached" }
   | { kind: "atMaxLength" }
   | { kind: "silence" }
+  /** Nobody answered "Still in a meeting?", so the recording stopped. */
+  | { kind: "silenceStopped" }
   | { kind: "finalPassFailed" }
   | { kind: "summaryReady"; open: boolean }
   | { kind: "summaryFailed" };
@@ -302,10 +313,12 @@ export function noticeText(notice: MeetingNotice): string | null {
       return lostText(notice.loss);
     case "maxLengthReached":
       return "Recording stopped at the maximum length.";
+    case "silenceStopped":
+      return "Recording stopped after 10 minutes without speech.";
     case "atMaxLength":
       return "This meeting is at its maximum length and cannot record more.";
     case "finalPassFailed":
-      return "The final transcript could not be made, so the live transcript and the audio are kept.";
+      return "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
     case "summaryFailed":
       return "The summary could not be written.";
     case "maxLengthSoon":
