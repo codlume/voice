@@ -121,6 +121,9 @@ final class MeetingTranscription {
     private var recording = false
     private var systemActive = false
     private var loop: Task<Void, Never>?
+    // Where each source's last partial decode ended, and the sources showing a partial.
+    private var partialEnd: [MeetingSource: Int] = [:]
+    private var showing: Set<MeetingSource> = []
 
     init(id: String, output: Output, decode: @escaping Decode, isDictating: @escaping () -> Bool,
          idle: Duration = .milliseconds(300), retry: Duration = .seconds(5)) {
@@ -179,10 +182,15 @@ final class MeetingTranscription {
             }
             guard let window = nextWindow() else {
                 if recording {
-                    try? await Task.sleep(for: idle)
+                    if let partial = nextPartial() {
+                        await showPartial(partial)
+                    } else {
+                        try? await Task.sleep(for: idle)
+                    }
                     continue
                 }
                 publish(systemDone: true)
+                for source in showing { clearPartial(source) }
                 output.emit(.meetingDrained(id: id, failure: nil))
                 return
             }
@@ -228,16 +236,52 @@ final class MeetingTranscription {
     }
 
     private func transcribe(_ window: Window) async throws {
+        var heard = false
         if let speech = MeetingChunker.speech(in: window.samples) {
             let text = try await decode(window.samples, language).trimmingCharacters(in: .whitespacesAndNewlines)
             try Task.checkCancellation()
             if !text.isEmpty {
+                heard = true
                 filter.add(TimedText(source: window.source, startMs: meetingMs(window.offset + speech.lowerBound),
                                      endMs: meetingMs(window.offset + speech.upperBound), text: text))
             }
         }
         cursor[window.source] = window.offset + window.samples.count
+        if !heard { clearPartial(window.source) }
         publish()
+    }
+
+    /// Audio after a source's cursor that no window takes yet because no pause has come, once at
+    /// least `partialSamples` of it are new since the last partial.
+    private func nextPartial() -> Window? {
+        for source in [MeetingSource.mic, .system] {
+            let url = file(source)
+            let offset = cursor[source] ?? 0
+            let end = PcmFile.frames(at: url)
+            guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples,
+                  let samples = try? PcmFile.read(at: url, offset: offset, count: MeetingChunker.windowSamples),
+                  MeetingChunker.speech(in: samples) != nil
+            else { continue }
+            return Window(source: source, offset: offset, samples: samples)
+        }
+        return nil
+    }
+
+    private static let partialSamples = PcmFile.sampleRate
+
+    /// Text that may still change, for the live view only; it is never saved.
+    private func showPartial(_ window: Window) async {
+        partialEnd[window.source] = window.offset + window.samples.count
+        guard let text = try? await decode(window.samples, language).trimmingCharacters(in: .whitespacesAndNewlines),
+              !Task.isCancelled, !text.isEmpty
+        else { return }
+        showing.insert(window.source)
+        output.emit(.meetingPartial(id: id, source: window.source, text: text))
+    }
+
+    private func clearPartial(_ source: MeetingSource) {
+        guard showing.remove(source) != nil else { return }
+        output.emit(.meetingPartial(id: id, source: source, text: ""))
     }
 
     /// `systemDone` once no system audio is left to transcribe, which releases every mic segment.
@@ -248,9 +292,12 @@ final class MeetingTranscription {
         // Counts only: transcript text never goes to the log.
         for echo in filter.takeDropped() {
             output.log(.info, "meeting echo dropped a \(EchoFilter.words(echo.text).count)-word mic segment")
+            clearPartial(.mic)
         }
         for segment in released {
+            // The segment goes first, so the live view never shows neither.
             output.emit(.meetingSegment(id: id, source: segment.source, startMs: segment.startMs, endMs: segment.endMs, text: segment.text))
+            clearPartial(segment.source)
         }
     }
 

@@ -18,6 +18,7 @@ import type {
   MeetingsState,
   MeetingNotice,
   MeetingTranscriptChange,
+  MeetingPartial,
   SpeakerId,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
@@ -386,6 +387,8 @@ export type HubApi = WindowApi & {
   generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
   /** Fires as transcript lines are saved during a meeting. */
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
+  /** Fires with unconfirmed text while a meeting records, for the live view. */
+  onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
   /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
   onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
 };
@@ -458,5 +461,6 @@ export const Channel = {
   discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
   meetingTranscript: "voice:meetingTranscript",
+  meetingPartial: "voice:meetingPartial",
   meetingNotice: "voice:meetingNotice",
 } as const;

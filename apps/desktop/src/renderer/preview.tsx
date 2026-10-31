@@ -799,6 +799,7 @@ function fakeMeetings(
     discardMeeting: unavailable,
     generateMeetingSummary: unavailable,
     onMeetingTranscript: () => () => {},
+    onMeetingPartial: () => () => {},
     onMeetingNotice: () => () => {},
   };
 }

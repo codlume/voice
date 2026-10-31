@@ -12,6 +12,7 @@ import {
   type MeetingCommandResult,
   type MeetingId,
   type MeetingNotice,
+  type MeetingPartial,
   type MeetingSource,
   type Segment,
   type TranscriptEntry,
@@ -50,6 +51,8 @@ export type MeetingRecorderDeps = {
   send: (command: HelperCommand) => boolean;
   capture: () => { language: DictationLanguage; microphone: Microphone | null };
   onTranscript: (id: MeetingId, entries: readonly TranscriptEntry[]) => void;
+  /** Unconfirmed live text, passed straight on and never saved. */
+  onPartial?: (partial: MeetingPartial) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
   /** Step 4's summary. Until it exists a summary request fails and the transcript is kept. */
   summarize?: (id: MeetingId) => Promise<string>;
@@ -478,6 +481,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.drained":
           background("drain", drained(event.id as MeetingId, event.failure));
           return;
+        case "meeting.partial": {
+          const id = event.id as MeetingId;
+          if (store.get(id)) deps.onPartial?.({ id, source: event.source, text: event.text });
+          return;
+        }
         case "meeting.finalized":
           background("final pass", finalized(event.id as MeetingId, event.segments));
           return;
