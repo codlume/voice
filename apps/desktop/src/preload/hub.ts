@@ -9,6 +9,7 @@ import type {
   MeetingsChange,
   MeetingTranscriptChange,
   MeetingPartial,
+  OpenMeetingRequest,
 } from "../shared/meetings.ts";
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
@@ -19,6 +20,14 @@ const restartListeners = new Set<() => void>();
 ipcRenderer.on(Channel.requestRestart, () => {
   if (restartListeners.size === 0) restartRequested = true;
   for (const listener of restartListeners) listener();
+});
+
+// So can a ready summary, which brings up a hub main may have only just created.
+let openRequested: OpenMeetingRequest | null = null;
+const openListeners = new Set<(request: OpenMeetingRequest) => void>();
+ipcRenderer.on(Channel.openMeeting, (_event, request: OpenMeetingRequest) => {
+  if (openListeners.size === 0) openRequested = request;
+  for (const listener of openListeners) listener(request);
 });
 
 const voice: HubApi = {
@@ -102,6 +111,14 @@ const voice: HubApi = {
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
   onMeetingPartial: (listener) => subscribe<MeetingPartial>(Channel.meetingPartial, listener),
   dismissMeetingNotice: (key) => ipcRenderer.invoke(Channel.dismissMeetingNotice, key),
+  onOpenMeeting: (listener) => {
+    openListeners.add(listener);
+    if (openRequested) {
+      listener(openRequested);
+      openRequested = null;
+    }
+    return () => openListeners.delete(listener);
+  },
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

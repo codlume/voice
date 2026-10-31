@@ -17,6 +17,7 @@ import {
   type MeetingsState,
   type MeetingPartial,
   type MeetingTranscriptChange,
+  type OpenMeetingRequest,
   type Speaker,
   type SpeakerId,
   type TranscriptEntry,
@@ -222,9 +223,15 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
 const lineClass = (said: string) =>
   [...document.querySelectorAll("li p")].find((p) => p.textContent === said)?.className;
 
-function Page({ snapshot }: { snapshot: Snapshot }) {
+function Page({
+  snapshot,
+  request = null,
+}: {
+  snapshot: Snapshot;
+  request?: OpenMeetingRequest | null;
+}) {
   const [open, setOpen] = useState(false);
-  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} />;
+  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} request={request} />;
 }
 
 async function render(snapshot: Snapshot = setUp) {
@@ -414,6 +421,21 @@ describe("a failed final pass", () => {
     await click(byText("Delete audio"));
     expect(deleteMeetingAudio).toHaveBeenCalledWith(id(1));
     await waitForText("There is no kept audio to delete.");
+  });
+});
+
+describe("a ready summary", () => {
+  test("main's request opens its meeting on the Summary tab, even over another tab", async () => {
+    fakeMain(sample());
+    await render();
+    await click(byText("Weekly product sync"));
+    await waitForText("All meetings");
+    await click(byText("Transcript"));
+    const request: OpenMeetingRequest = { id: id(1), tab: "summary" };
+    await act(async () => root!.render(<Page snapshot={setUp} request={request} />));
+    await waitForText("Next Steps");
+    const selected = document.querySelector("[role=tab][aria-selected=true]");
+    expect(selected?.textContent).toBe("Summary");
   });
 });
 

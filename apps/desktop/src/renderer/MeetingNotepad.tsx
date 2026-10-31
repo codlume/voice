@@ -294,6 +294,8 @@ function send(command: NotepadCommand, id: MeetingId): Promise<MeetingCommandRes
       return api.discardMeeting(id);
     case "dismiss":
       return api.dismissMeetingPrompt();
+    case "viewSummary":
+      return api.viewMeetingSummary(id);
   }
 }
 

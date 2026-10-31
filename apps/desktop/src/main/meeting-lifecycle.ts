@@ -424,11 +424,14 @@ export function step(
             meeting: withStatus(meeting, { kind: "ready" }),
             effects: [notify({ kind: "summaryReady", open: config.openSummaryWhenReady })],
           };
-        case "summaryFailed":
+        case "summaryFailed": {
+          const { summary } = meeting;
+          const message = summary.kind === "failed" ? summary.message : null;
           return {
             meeting: withStatus(meeting, { kind: "ready" }),
-            effects: [notify({ kind: "summaryFailed" })],
+            effects: [notify({ kind: "summaryFailed", message })],
           };
+        }
         // The summary in progress gives way; the one before it, if any, is then stale.
         case "resume": {
           const next = resume(meeting, "ready", config);

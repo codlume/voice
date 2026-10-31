@@ -58,6 +58,7 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
       return () => notepadListeners.delete(listener);
     },
     dismissMeetingPrompt: vi.fn(async () => {}),
+    viewMeetingSummary: vi.fn(async () => {}),
     getMeeting: async () => ({ meeting: first.meeting, transcript: [...transcript] }),
     updateMeetingNotes: vi.fn(async () => {}),
     pauseMeeting: vi.fn(ok),

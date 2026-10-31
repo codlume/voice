@@ -74,6 +74,7 @@ describe("hub preload", () => {
       "onMeetingPartial",
       "onMeetingTranscript",
       "onMeetings",
+      "onOpenMeeting",
       "onRestartRequest",
       "onSnapshot",
       "openNotepad",

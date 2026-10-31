@@ -21,6 +21,7 @@ import {
   type MeetingTranscriptChange,
   type MeetingPartial,
   type NotepadState,
+  type OpenMeetingRequest,
   type PillMeeting,
   type SpeakerId,
 } from "./meetings.ts";
@@ -427,6 +428,8 @@ export type HubApi = WindowApi & {
   onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
   /** Takes a notice off the Meetings page, and off the notepad when it shows the same one. */
   dismissMeetingNotice(key: number): Promise<void>;
+  /** Fires when main brings the window up on a meeting, as when its summary is ready. */
+  onOpenMeeting(listener: (request: OpenMeetingRequest) => void): () => void;
 };
 
 /** The meeting commands the Voice window and the notepad share. */
@@ -450,6 +453,8 @@ export type NotepadApi = Pick<WindowApi, "diagnosticsStartedAtLaunch"> &
     onNotepad(listener: (state: NotepadState | null) => void): () => void;
     /** Answers a prompt that needs nothing else, such as "Keep recording". */
     dismissMeetingPrompt(): Promise<void>;
+    /** Brings the Voice window forward on the meeting's summary. */
+    viewMeetingSummary(id: MeetingId): Promise<void>;
   };
 
 export type VoiceApi = PillApi | HubApi | NotepadApi;
@@ -530,4 +535,6 @@ export const Channel = {
   getNotepad: "voice:getNotepad",
   notepad: "voice:notepad",
   dismissMeetingPrompt: "voice:dismissMeetingPrompt",
+  viewMeetingSummary: "voice:viewMeetingSummary",
+  openMeeting: "voice:openMeeting",
 } as const;

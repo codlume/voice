@@ -14,6 +14,7 @@ import {
 import { Channel, type NotepadApi } from "../shared/api.ts";
 import {
   meetingToggle,
+  parseMeetingId,
   meetingToggleLabels,
   type MeetingId,
   type MeetingToggle,
@@ -39,6 +40,8 @@ export type MeetingsAppDeps = {
   transformModel: TransformModel;
   /** The Voice window while it exists. */
   hub: () => BrowserWindow | undefined;
+  /** Brings the Voice window up on a meeting's summary; `activate: false` leaves focus where it is. */
+  showMeeting: (id: MeetingId, options: { activate: boolean }) => void;
   refreshTray: () => void;
   notepadWindow: { webPreferences: WebPreferences; load: (window: BrowserWindow) => void };
   log: Log;
@@ -104,6 +107,7 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
     onNotice: (id, notice) => {
       log(`meetings: ${id} notice ${notice.kind}`);
       store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
+      if (notice.kind === "summaryReady" && notice.open) deps.showMeeting(id, { activate: false });
     },
     log,
   });
@@ -115,6 +119,10 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       const commands: Commands<NotepadApi> = window.webContents.ipc;
       registerMeetingControls(commands, { meetings, meetingRecorder: recorder, log });
       commands.handle(Channel.getNotepad, notepadState);
+      commands.handle(Channel.viewMeetingSummary, (_event, raw: unknown) => {
+        const id = parseMeetingId(raw);
+        if (id && meetings.get(id)) deps.showMeeting(id, { activate: true });
+      });
       commands.handle(Channel.dismissMeetingPrompt, () => {
         // Dismissing "Still in a meeting?" answers it: the meeting goes on.
         const { raised } = store.state.meeting;
