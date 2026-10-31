@@ -210,6 +210,40 @@ describe("summarize", () => {
     );
   });
 
+  test("a whole meeting that says one decision twice keeps the fuller one", async () => {
+    const model = fakeModel({
+      part: () =>
+        ok(
+          part({
+            decisions: [
+              { decision: "Brightline Messaging is used for SMS.", status: "final" },
+              {
+                decision: "Move SMS to Brightline Messaging on a one-year contract.",
+                status: "final",
+              },
+            ],
+          }),
+        ),
+      pair: () => ok('{"answer": "yes"}'),
+    });
+    const progress: { step: number; total: number }[] = [];
+    const provider = createGemmaSummaryProvider({
+      generate: model.generate,
+      tokens: estimateTokens,
+    });
+
+    const result = await provider.summarize(request({ onProgress: (step) => progress.push(step) }));
+
+    expect(result.ok && result.summary.decisions).toEqual([
+      "Move SMS to Brightline Messaging on a one-year contract.",
+    ]);
+    expect(model.steps).toHaveLength(2);
+    expect(progress).toEqual([
+      { step: 1, total: 1 },
+      { step: 2, total: 2 },
+    ]);
+  });
+
   test("a meeting that overflows as a whole is read in parts, checked across parts, and given one overview", async () => {
     let first = true;
     const model = fakeModel({

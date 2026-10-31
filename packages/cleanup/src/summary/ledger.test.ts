@@ -4,7 +4,7 @@ import {
   applyPart,
   candidatePairs,
   describeItem,
-  dropReplaced,
+  dropConfirmed,
   emptyLedger,
   sameItem,
   type Ledger,
@@ -188,11 +188,70 @@ describe("reconcile", () => {
   test("drops only the earlier item of a confirmed pair", () => {
     const pairs = candidatePairs(ledger);
 
-    expect(dropReplaced(ledger, pairs, new Set()).decisions).toHaveLength(4);
-    expect(dropReplaced(ledger, pairs, new Set(["P1"])).decisions.map(({ text }) => text)).toEqual([
-      "Brightline Messaging replaces Pingwell.",
-      "A small OpsWorld booth, capped at eighteen thousand.",
-      "Annual plans stay two months free.",
-    ]);
+    expect(dropConfirmed(ledger, pairs, new Set()).decisions).toHaveLength(4);
+    expect(dropConfirmed(ledger, pairs, new Set(["P1"])).decisions.map(({ text }) => text)).toEqual(
+      [
+        "Brightline Messaging replaces Pingwell.",
+        "A small OpsWorld booth, capped at eighteen thousand.",
+        "Annual plans stay two months free.",
+      ],
+    );
   });
+});
+
+const sevenDecisions = (variant: string) =>
+  Array.from({ length: 7 }, (_, index) => ({
+    decision: `Budget line ${index} for Brightline ${variant}.`,
+    status: "final" as const,
+  }));
+
+test("many decision pairs leave room for a task hand-over to be judged", () => {
+  const ledger = after(
+    part({
+      decisions: sevenDecisions("held"),
+      nextSteps: [
+        { owner: "Speaker 1", task: "Negotiate the Brightline volume tier.", status: "agreed" },
+      ],
+    }),
+    part({
+      decisions: sevenDecisions("raised"),
+      nextSteps: [
+        { owner: "You", task: "Take the Brightline volume tier call.", status: "agreed" },
+      ],
+    }),
+  );
+
+  const pairs = candidatePairs(ledger);
+
+  expect(pairs).toHaveLength(40);
+  expect(pairs.filter(({ later }) => "owner" in later).map(({ later }) => later.text)).toEqual([
+    "Take the Brightline volume tier call.",
+  ]);
+});
+
+test("in one part, a repeat is asked about and a yes drops the shorter; two owners are not", () => {
+  const ledger = after(
+    part({
+      decisions: [
+        {
+          decision: "Move SMS to Brightline Messaging on a one-year contract at 0.6 cents.",
+          status: "final",
+        },
+        { decision: "Brightline Messaging is used for SMS.", status: "final" },
+      ],
+      nextSteps: [
+        { owner: "Speaker 1", task: "Draft the Brightline migration plan.", status: "agreed" },
+        { owner: "You", task: "Review the Brightline migration plan.", status: "agreed" },
+      ],
+    }),
+  );
+
+  const pairs = candidatePairs(ledger);
+
+  expect(pairs.map(({ question, drop }) => [question, drop.text])).toEqual([
+    ["same", "Brightline Messaging is used for SMS."],
+  ]);
+  expect(dropConfirmed(ledger, pairs, new Set(["P1"])).decisions.map(({ text }) => text)).toEqual([
+    "Move SMS to Brightline Messaging on a one-year contract at 0.6 cents.",
+  ]);
 });
