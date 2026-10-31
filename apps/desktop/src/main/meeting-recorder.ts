@@ -24,6 +24,7 @@ import {
   SILENCE_PROMPT_MS,
   step,
   type MeetingEffect,
+  type Step,
   type MeetingEvent,
 } from "./meeting-lifecycle.ts";
 import type { MeetingSummarizer } from "./meeting-summary.ts";
@@ -138,10 +139,15 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   }
 
   async function apply(id: MeetingId, event: MeetingEvent): Promise<Meeting | null> {
-    const before = store.get(id);
-    if (before === null && event.type !== "start") return null;
-    const { meeting, effects } = step(before, event, now(), config());
-    if (meeting !== null && meeting !== before) await store.put(meeting);
+    // Stepped inside the store's write, so a notes or folder edit queued meanwhile is not lost.
+    let before = null as Meeting | null;
+    let stepped: Step = { meeting: null, effects: [] };
+    await store.upsert(id, (latest) => {
+      before = latest;
+      stepped = step(latest, event, now(), config());
+      return stepped.meeting;
+    });
+    const { meeting, effects } = stepped;
     if (meeting?.status.kind !== "recording") clearSilence(id);
     if (meeting?.status.kind === "recording" && before?.status.kind !== "recording") armSilence(id);
     for (const effect of effects) await run(id, meeting ?? before, effect);

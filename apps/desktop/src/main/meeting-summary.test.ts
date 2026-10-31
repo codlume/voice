@@ -118,7 +118,7 @@ async function harness({
   const logs: string[] = [];
   const store = createMeetingsStore({ dir, log: () => {}, onChange: () => {} });
   await store.loaded();
-  await store.put(stored);
+  await store.upsert(stored.id, () => stored);
   await store.append(ID, transcript);
   const calls: string[] = [];
   let present = onDisk;

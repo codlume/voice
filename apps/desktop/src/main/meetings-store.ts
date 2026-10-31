@@ -45,8 +45,12 @@ export type MeetingsStore = {
   get(id: MeetingId): Meeting | null;
   /** The transcript as its lines mean it; empty for a meeting with none. */
   transcript(id: MeetingId): Promise<TranscriptEntry[]>;
-  /** Writes the meeting unless it was deleted this run. */
-  put(meeting: Meeting): Promise<void>;
+  /**
+   * Changes the meeting, or makes it from null, against the latest copy after every write queued
+   * before it, so a change never overwrites one it did not see. Returning the same meeting or null
+   * writes nothing; a meeting deleted this run is not brought back.
+   */
+  upsert(id: MeetingId, change: (meeting: Meeting | null) => Meeting | null): Promise<void>;
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
   append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
@@ -275,12 +279,15 @@ export function createMeetingsStore(options: {
     state,
     get: (id) => meetings.get(id) ?? null,
     transcript: (id) => readTranscript(id),
-    put: (meeting) =>
+    upsert: (id, change) =>
       serial(async () => {
-        if (tombstones.has(meeting.id)) return;
-        await writeMeeting(meeting);
-        meetings.set(meeting.id, meeting);
-        publish([meeting]);
+        if (tombstones.has(id)) return;
+        const meeting = meetings.get(id) ?? null;
+        const next = change(meeting);
+        if (next === null || next === meeting) return;
+        await writeMeeting(next);
+        meetings.set(id, next);
+        publish([next]);
       }),
     update: (id, change) =>
       serial(async () => {

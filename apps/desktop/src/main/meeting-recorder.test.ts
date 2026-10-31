@@ -190,6 +190,28 @@ describe("meeting recorder", () => {
     ]);
   });
 
+  test("edits that land while the recorder steps a meeting are kept", async () => {
+    const h = harness();
+    const id = await h.start();
+    const folder = await h.store.createFolder({ name: "Work", kind: "manual" });
+
+    const filed = h.store.setInFolder(id, folder.id, true);
+    const noted = h.store.update(id, (meeting) => ({ ...meeting, notes: "ship it" }));
+    const paused = h.recorder.pause(id);
+    await Promise.all([filed, noted, paused]);
+    await h.settle();
+
+    const saved = createMeetingsStore({ dir, log: () => {}, onChange: () => {} });
+    await saved.loaded();
+    for (const meeting of [h.store.get(id), saved.get(id)]) {
+      expect(meeting).toMatchObject({
+        status: { kind: "paused" },
+        folderIds: [folder.id],
+        notes: "ship it",
+      });
+    }
+  });
+
   test("stop transcribes the tail, asks for the final pass while the audio exists, then deletes the audio", async () => {
     const h = harness();
     const id = await h.start();
