@@ -258,6 +258,9 @@ export type MeetingCommandResult =
 /** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
 export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
 
+/** Why a final pass failed, as far as the user can act on it: download speaker detection, or not. */
+export type FinalPassFailure = "speakerModels" | "other";
+
 /** What a meeting tells the user: warnings, prompts and outcomes. */
 export type MeetingNotice =
   | { kind: "startFailed"; message: string }
@@ -270,7 +273,7 @@ export type MeetingNotice =
   | { kind: "silence" }
   /** Nobody answered "Still in a meeting?", so the recording stopped. */
   | { kind: "silenceStopped" }
-  | { kind: "finalPassFailed" }
+  | { kind: "finalPassFailed"; reason: FinalPassFailure }
   /** `open` brings the Voice window up on the summary, without taking focus. */
   | { kind: "summaryReady"; open: boolean }
   /** `message` says why, as the meeting's summary state does. */
@@ -339,7 +342,9 @@ export function noticeText(notice: MeetingNotice): string | null {
     case "atMaxLength":
       return "This meeting is at its maximum length and cannot record more.";
     case "finalPassFailed":
-      return "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
+      return notice.reason === "speakerModels"
+        ? "Speaker detection is not downloaded, so the final transcript could not be made. Download it in Set up Meetings, then try again. The live transcript and the audio are kept."
+        : "The final transcript could not be made. The live transcript is kept, and so is the audio until you try again or delete it.";
     case "summaryFailed":
       return `The summary could not be written.${notice.message ? ` ${notice.message}` : ""}`;
     case "summaryReady":

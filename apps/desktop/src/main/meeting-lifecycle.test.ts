@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   AUTO_SUMMARY_MIN_MS,
   DEFAULT_MEETINGS_SETTINGS,
+  noticeText,
   summaryStale,
   type Meeting,
   type MeetingId,
@@ -60,6 +61,29 @@ function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Mee
     ...overrides,
   };
 }
+
+/** An event that moves a meeting on from `status` without deleting it. */
+const exit = (status: MeetingStatus): MeetingEvent => {
+  switch (status.kind) {
+    case "starting":
+      return { type: "stalled", watch: "start" };
+    case "recording":
+    case "paused":
+      return { type: "stop" };
+    case "finishing":
+      return { type: "drained", words: 100 };
+    case "confirmingShort":
+      return { type: "keep" };
+    case "transcribing":
+      return status.step === "draining"
+        ? { type: "stalled", watch: "drain" }
+        : { type: "stalled", watch: "finalPass" };
+    case "summarizing":
+      return { type: "summaryFailed" };
+    case "ready":
+      return { type: "generateSummary" };
+  }
+};
 
 describe("meeting lifecycle", () => {
   test("a start asks for capture under a watchdog and records only once capture started", () => {
@@ -350,9 +374,21 @@ describe("meeting lifecycle", () => {
     expect(generating.effects).toEqual([{ type: "summarize" }]);
   });
 
+  test("a final pass that failed for want of speaker detection says to download it", () => {
+    const { effects } = play([
+      ...recording(30),
+      [{ type: "drained", words: 4000 }, 30 * MIN],
+      [{ type: "finalizeFailed", reason: "speakerModels" }, 31 * MIN],
+    ]);
+    const notice = { kind: "finalPassFailed", reason: "speakerModels" } as const;
+    expect(effects).toContainEqual({ type: "notify", notice });
+    expect(noticeText(notice)).toContain("Download it in Set up Meetings, then try again.");
+    expect(noticeText({ ...notice, reason: "other" })).not.toContain("Speaker detection");
+  });
+
   test("a failed final pass keeps the live transcript and the audio until the user retries or deletes it", () => {
     for (const failure of [
-      { type: "finalizeFailed" },
+      { type: "finalizeFailed", reason: "other" },
       { type: "stalled", watch: "finalPass" },
     ] satisfies MeetingEvent[]) {
       const { meeting, effects } = play([
@@ -367,7 +403,7 @@ describe("meeting lifecycle", () => {
       expect(meeting?.finalPassFailed).toBe(true);
 
       // meeting-summary.ts wrote the summary meanwhile.
-      const summary = { markdown: "Overview.", generatedAt: T0, coversUntilMs: 30 * MIN };
+      const summary = { markdown: "Overview.", coversUntilMs: 30 * MIN };
       const summarized = { ...meeting!, summary: { kind: "ready", summary } } satisfies Meeting;
       const retried = step(summarized, { type: "retryFinalPass" }, T0 + 40 * MIN, config);
       expect(retried.meeting?.status).toEqual({ kind: "transcribing", step: "finalizing" });
@@ -428,7 +464,7 @@ describe("meeting lifecycle", () => {
   });
 
   test("resuming a summarized meeting appends, leaves the summary stale and does not regenerate it", () => {
-    const summary = { markdown: "Overview.", generatedAt: T0, coversUntilMs: 20 * MIN };
+    const summary = { markdown: "Overview.", coversUntilMs: 20 * MIN };
     let meeting: Meeting | null = meetingAt(
       { kind: "ready" },
       { summary: { kind: "ready", summary } },
@@ -505,27 +541,6 @@ describe("meeting lifecycle", () => {
   });
 
   test("every status has a way out without a delete", () => {
-    const exit = (status: MeetingStatus): MeetingEvent => {
-      switch (status.kind) {
-        case "starting":
-          return { type: "stalled", watch: "start" };
-        case "recording":
-        case "paused":
-          return { type: "stop" };
-        case "finishing":
-          return { type: "drained", words: 100 };
-        case "confirmingShort":
-          return { type: "keep" };
-        case "transcribing":
-          return status.step === "draining"
-            ? { type: "stalled", watch: "drain" }
-            : { type: "stalled", watch: "finalPass" };
-        case "summarizing":
-          return { type: "summaryFailed" };
-        case "ready":
-          return { type: "generateSummary" };
-      }
-    };
     for (const status of statuses) {
       const next = step(meetingAt(status), exit(status), T0 + 30 * MIN, config);
       expect(next.meeting?.status ?? null, status.kind).not.toEqual(status);

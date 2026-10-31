@@ -224,7 +224,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         return { type: "stalled", watch: "drain" };
       case "finalize":
       case "applyFinalPass":
-        return { type: "finalizeFailed" };
+        return { type: "finalizeFailed", reason: "other" };
       default:
         return null;
     }
@@ -294,7 +294,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           live.some((entry) => entry.kind === "segment" && entry.startMs >= fromMs)
         ) {
           log(`meetings: ${id} final pass found no words the live transcript heard`);
-          background("final pass", dispatch(id, { type: "finalizeFailed" }));
+          background("final pass", dispatch(id, { type: "finalizeFailed", reason: "other" }));
           return;
         }
         await store.replaceTranscript(id, (current, transcript) =>
@@ -358,9 +358,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       try {
         ({ ok } = await deps.summarizer.summarizeMeeting(id, {
           signal,
-          onProgress: (progress) => {
+          onProgress: (reached) => {
             if (signal.aborted) return;
-            const event = { type: "summaryProgress", progress } as const;
+            const event = { type: "summaryProgress", progress: reached } as const;
             background("summary progress", dispatch(id, event));
           },
         }));
@@ -671,7 +671,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           const id = event.id as MeetingId;
           if (event.type === "meeting.finalizeFailed") {
             log(`meetings: ${id} final pass failed: ${event.reason} (${event.message})`);
-            background("final pass", dispatch(id, { type: "finalizeFailed" }));
+            const reason = event.reason === "speakerModels" ? "speakerModels" : "other";
+            background("final pass", dispatch(id, { type: "finalizeFailed", reason }));
           } else {
             const arrived = { type: "finalPass", segments: event.segments } as const;
             background("final pass", dispatch(id, arrived));

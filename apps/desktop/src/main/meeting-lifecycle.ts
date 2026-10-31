@@ -3,6 +3,7 @@ import {
   recordedMs,
   summarizesOnStop,
   type AudioLoss,
+  type FinalPassFailure,
   type MarkerKind,
   type MaxLength,
   type Meeting,
@@ -45,7 +46,7 @@ export type MeetingEvent =
   | { type: "finalPass"; segments: readonly FinalSegment[] }
   /** The final pass replaced the live transcript. */
   | { type: "finalized" }
-  | { type: "finalizeFailed" }
+  | { type: "finalizeFailed"; reason: FinalPassFailure }
   | { type: "stalled"; watch: Watch }
   /** The helper (re)started: it knows nothing of the work it was doing. */
   | { type: "helperReady" }
@@ -402,11 +403,11 @@ export function step(
         case "stalled":
           if (event.watch !== "finalPass") return same;
           return afterTranscript({ ...meeting, finalPassFailed: true }, [
-            notify({ kind: "finalPassFailed" }),
+            notify({ kind: "finalPassFailed", reason: "other" }),
           ]);
         case "finalizeFailed":
           return afterTranscript({ ...meeting, finalPassFailed: true }, [
-            notify({ kind: "finalPassFailed" }),
+            notify({ kind: "finalPassFailed", reason: event.reason }),
           ]);
         case "helperReady":
           return { meeting, effects: [{ type: "finalize" }, watch("finalPass")] };

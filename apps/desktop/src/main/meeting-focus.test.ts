@@ -222,7 +222,12 @@ describe("notices on the Meetings page", () => {
     ).toEqual([]);
 
     const done = meeting(3, { kind: "ready" }, { finalPassFailed: true });
-    const pass = raise(follow(noMeetingFocus, [done]), done.id, { kind: "finalPassFailed" }, 0);
+    const pass = raise(
+      follow(noMeetingFocus, [done]),
+      done.id,
+      { kind: "finalPassFailed", reason: "other" },
+      0,
+    );
     expect(meetingBanners(pass)[0]).toMatchObject({
       actions: ["retryFinalPass", "deleteAudio"],
       dismissable: false,
