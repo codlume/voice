@@ -1449,6 +1449,38 @@
       "required": ["type", "id"]
     },
     {
+      "name": "meeting.partial",
+      "wire": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "system",
+        "text": "Synthetic unfinished"
+      },
+      "parsed": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "system",
+        "text": "Synthetic unfinished"
+      },
+      "required": ["type", "id", "source", "text"]
+    },
+    {
+      "name": "meeting.partial.cleared",
+      "wire": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "mic",
+        "text": ""
+      },
+      "parsed": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "mic",
+        "text": ""
+      },
+      "required": ["type", "id", "source", "text"]
+    },
+    {
       "name": "meeting.finalized",
       "wire": {
         "type": "meeting.finalized",

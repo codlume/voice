@@ -229,6 +229,9 @@ public enum HelperEvent: Equatable, Sendable {
     /// Capture is stopped and everything recorded is transcribed, or `failure` says why the rest
     /// could not be; the audio stays on disk either way.
     case meetingDrained(id: String, failure: String?)
+    /// What a source said since its last segment, which may still change; empty clears it. For the
+    /// live view only.
+    case meetingPartial(id: String, source: MeetingSource, text: String)
     /// The final pass over the files, in meeting time. Its speakers number the system voices.
     case meetingFinalized(id: String, segments: [FinalSegment])
     /// The final pass could not finish; the live transcript and the audio stay as they are.
@@ -485,6 +488,11 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.drained", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(failure, forKey: .failure)
+        case .meetingPartial(let id, let source, let text):
+            try c.encode("meeting.partial", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(source, forKey: .source)
+            try c.encode(text, forKey: .text)
         case .meetingFinalized(let id, let segments):
             try c.encode("meeting.finalized", forKey: .type)
             try c.encode(id, forKey: .id)

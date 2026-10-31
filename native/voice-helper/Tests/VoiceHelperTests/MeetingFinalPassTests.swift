@@ -100,3 +100,35 @@ private func writeMeeting(in dir: URL) throws {
         #expect(diarizations == 1)
     }
 }
+
+@MainActor
+@Suite struct MeetingPartialTests {
+    @Test func unfinishedSpeechShowsAsAPartialThatTheSegmentClears() async throws {
+        let lines = EmittedLines()
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let mic = try PcmWriter(url: dir.appendingPathComponent("mic.pcm"))
+        // Speech with no pause yet: no window can be cut, so only a partial can show it.
+        try mic.append((0..<3 * 16_000).map { 0.3 * sin(Float($0) * 2 * .pi * 440 / 16_000) })
+        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in "words \(samples.count / 16_000)" },
+                                       isDictating: { false }, idle: .milliseconds(5))
+        job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
+        job.record(systemActive: false)
+        let partial = try await lines.wait(for: "meeting.partial").first { $0["type"] as? String == "meeting.partial" }
+        #expect(partial?["source"] as? String == "mic")
+        #expect(partial?["text"] as? String == "words 3")
+        #expect(lines.snapshot().allSatisfy { $0["type"] as? String != "meeting.segment" })
+
+        try mic.append([Float](repeating: 0, count: 16_000))
+        try mic.close()
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        let events = lines.snapshot().compactMap { $0["type"] as? String }.filter { $0 != "log" }
+        let partials = lines.snapshot().filter { $0["type"] as? String == "meeting.partial" }.compactMap { $0["text"] as? String }
+        #expect(partials.last == "")
+        #expect(events.firstIndex(of: "meeting.segment").map { $0 < events.lastIndex(of: "meeting.partial")! } == true)
+        #expect(lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "mic" })
+    }
+}

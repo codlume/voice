@@ -274,6 +274,9 @@ export type PillMeeting = {
 /** Live transcript lines, pushed as they are written so an open meeting view can append them. */
 export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
 
+/** What a source said since its last segment, which may still change. Never saved; empty clears it. */
+export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };
+
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
 export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };
 

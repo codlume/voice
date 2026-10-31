@@ -19,6 +19,7 @@ import {
   type MeetingsState,
   type MeetingNotice,
   type MeetingTranscriptChange,
+  type MeetingPartial,
   type NotepadState,
   type PillMeeting,
   type SpeakerId,
@@ -417,6 +418,8 @@ export type HubApi = WindowApi & {
   openNotepad(): Promise<void>;
   /** Fires as transcript lines are saved during a meeting. */
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
+  /** Fires with unconfirmed text while a meeting records, for the live view. */
+  onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
   /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
   onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
 };
@@ -432,6 +435,7 @@ export type MeetingControls = Pick<
   | "keepMeeting"
   | "discardMeeting"
   | "onMeetingTranscript"
+  | "onMeetingPartial"
 >;
 
 export type NotepadApi = Pick<WindowApi, "diagnosticsStartedAtLaunch"> &
@@ -512,6 +516,7 @@ export const Channel = {
   discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
   meetingTranscript: "voice:meetingTranscript",
+  meetingPartial: "voice:meetingPartial",
   meetingNotice: "voice:meetingNotice",
   openNotepad: "voice:openNotepad",
   setPillClickable: "voice:setPillClickable",

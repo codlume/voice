@@ -4,6 +4,8 @@ import {
   endedAt,
   foldTranscript,
   meetingRetentionMs,
+  OTHERS,
+  YOU,
   SPEAKER_TOKEN,
   speakerDisplayName,
   speakerName,
@@ -14,6 +16,7 @@ import {
   type MeetingRetention,
   type MeetingSearchField,
   type MeetingSearchHit,
+  type MeetingSource,
   type MeetingStatus,
   type Speaker,
   type TranscriptEntry,
@@ -241,6 +244,31 @@ export function transcriptRows(
     lastSpeaker = speaker;
   }
   return rows;
+}
+
+/**
+ * Unconfirmed text as gray rows after the transcript, the user's first. The other side is
+ * Others: speakers are told apart only after Stop.
+ */
+export function partialRows(partials: Partial<Record<MeetingSource, string>>): TranscriptRow[] {
+  return (["mic", "system"] as const).flatMap((source) => {
+    const text = partials[source]?.trim();
+    if (!text) return [];
+    const mine = source === "mic";
+    const speaker = mine ? YOU : OTHERS;
+    return [
+      {
+        kind: "speech",
+        id: `partial-${source}`,
+        speaker,
+        mine,
+        time: "",
+        text,
+        final: false,
+        continues: false,
+      },
+    ];
+  });
 }
 
 const hitLabels: Record<MeetingSearchField, string | null> = {

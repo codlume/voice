@@ -203,6 +203,8 @@ private func eventCases() -> [String: HelperEvent] {
         "meeting.segment.system": .meetingSegment(id: "m1", source: .system, startMs: 5000, endMs: 9000, text: "Synthetic reply"),
         "meeting.drained": .meetingDrained(id: "m1", failure: nil),
         "meeting.drained.failure": .meetingDrained(id: "m1", failure: "speech model is not downloaded"),
+        "meeting.partial": .meetingPartial(id: "m1", source: .system, text: "Synthetic unfinished"),
+        "meeting.partial.cleared": .meetingPartial(id: "m1", source: .mic, text: ""),
         "meeting.finalized": .meetingFinalized(id: "m1", segments: [
             FinalSegment(source: .mic, startMs: 0, endMs: 1500.5, text: "Zażółć Ada 42", speaker: nil),
             FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: 0),
@@ -273,6 +275,7 @@ private func eventType(_ event: HelperEvent) -> String {
     case .meetingFailed: "meeting.failed"
     case .meetingSegment: "meeting.segment"
     case .meetingDrained: "meeting.drained"
+    case .meetingPartial: "meeting.partial"
     case .meetingFinalized: "meeting.finalized"
     case .meetingFinalizeFailed: "meeting.finalizeFailed"
     }

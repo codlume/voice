@@ -15,6 +15,8 @@ import {
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
+  type MeetingPartial,
+  type MeetingTranscriptChange,
   type Speaker,
   type SpeakerId,
   type TranscriptEntry,
@@ -133,6 +135,10 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     for (const listener of listeners) listener({ kind: "all", state });
   };
   const transcripts: Record<string, TranscriptEntry[]> = { [id(1)]: transcript };
+  const live = {
+    transcript: new Set<(change: MeetingTranscriptChange) => void>(),
+    partial: new Set<(partial: MeetingPartial) => void>(),
+  };
   const api = {
     getMeetings: async () => state,
     onMeetings: (listener: (change: MeetingsChange) => void) => {
@@ -146,6 +152,14 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     searchMeetings: vi.fn(async (query: string) =>
       state.meetings.flatMap((m) => searchMeeting(m, transcripts[m.id] ?? [], query) ?? []),
     ),
+    onMeetingTranscript: (listener: (change: MeetingTranscriptChange) => void) => {
+      live.transcript.add(listener);
+      return () => live.transcript.delete(listener);
+    },
+    onMeetingPartial: (listener: (partial: MeetingPartial) => void) => {
+      live.partial.add(listener);
+      return () => live.partial.delete(listener);
+    },
     renameMeetingSpeaker: vi.fn(async (meetingId: MeetingId, speakerId: SpeakerId, name: string) =>
       set({
         meetings: state.meetings.map((m) =>
@@ -179,8 +193,20 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     getSnapshot: () => Promise.reject(new Error("not needed")),
     ...api,
   } as Partial<HubApi> as HubApi;
-  return api;
+  return {
+    ...api,
+    /** Plays main pushing a saved line or an unconfirmed one to the open meeting. */
+    async push(event: MeetingTranscriptChange | MeetingPartial) {
+      await act(async () => {
+        if ("entries" in event) for (const listener of live.transcript) listener(event);
+        else for (const listener of live.partial) listener(event);
+      });
+    },
+  };
 }
+
+const lineClass = (said: string) =>
+  [...document.querySelectorAll("li p")].find((p) => p.textContent === said)?.className;
 
 function Page({ snapshot }: { snapshot: Snapshot }) {
   const [open, setOpen] = useState(false);
@@ -351,6 +377,42 @@ describe("a meeting", () => {
       const marks = [...document.querySelectorAll("mark")].map((mark) => mark.textContent);
       expect(marks).toEqual(["Priya Shah", "Tom Becker"]);
     });
+  });
+
+  test("while it records, saved lines append and unconfirmed text shows in gray until replaced", async () => {
+    const recording = meeting(4, "Live sync", hoursAgo(0), {
+      spans: [],
+      status: { kind: "recording", since: Date.now() },
+    });
+    const main = fakeMain([recording]);
+    await render();
+    await click(byText("Live sync"));
+    await click(byText("Transcript"));
+    await waitForText("No transcript yet.");
+    await main.push({ id: id(4), source: "system", text: "so the export" });
+    await waitForText("so the export");
+    expect(text()).toContain("Others");
+    await main.push({
+      id: id(4),
+      entries: [
+        {
+          kind: "segment",
+          id: "x",
+          startMs: 0,
+          endMs: 1000,
+          text: "So the export works.",
+          final: true,
+          source: "system",
+          speakerId: null,
+        },
+      ],
+    });
+    await main.push({ id: id(4), source: "system", text: "" });
+    await waitForText("So the export works.");
+    expect(text()).not.toContain("so the export");
+    await main.push({ id: id(4), source: "mic", text: "and the import" });
+    await waitForText("and the import");
+    expect(lineClass("and the import")).not.toBe(lineClass("So the export works."));
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {

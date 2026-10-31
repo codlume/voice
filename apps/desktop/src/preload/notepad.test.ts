@@ -42,6 +42,7 @@ describe("notepad preload", () => {
       "getMeeting",
       "getNotepad",
       "keepMeeting",
+      "onMeetingPartial",
       "onMeetingTranscript",
       "onNotepad",
       "pauseMeeting",
@@ -56,7 +57,10 @@ describe("notepad preload", () => {
     expect(listened).toEqual([]);
     api.onNotepad(() => {});
     api.onMeetingTranscript(() => {});
-    expect(new Set(listened)).toEqual(new Set([Channel.notepad, Channel.meetingTranscript]));
+    api.onMeetingPartial(() => {});
+    expect(new Set(listened)).toEqual(
+      new Set([Channel.notepad, Channel.meetingTranscript, Channel.meetingPartial]),
+    );
   });
 
   test("commands carry the meeting id on the shared meeting channels", async () => {

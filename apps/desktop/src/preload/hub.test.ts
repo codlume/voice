@@ -70,6 +70,7 @@ describe("hub preload", () => {
       "onLastTransform",
       "onLevel",
       "onMeetingNotice",
+      "onMeetingPartial",
       "onMeetingTranscript",
       "onMeetings",
       "onRestartRequest",

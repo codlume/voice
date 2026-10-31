@@ -21,11 +21,17 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
-import { durationLabel, meetingWhen, statusLabel, transcriptRows } from "./meetingsView.ts";
+import {
+  durationLabel,
+  meetingWhen,
+  partialRows,
+  statusLabel,
+  transcriptRows,
+} from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useMeetingDetail } from "./useMeetings.ts";
+import { useMeetingDetail, useMeetingPartials } from "./useMeetings.ts";
 import { useThoughts } from "./useThoughts.ts";
 import { hubApi } from "./voice.ts";
 
@@ -407,8 +413,9 @@ function Transcript({
   meeting: Meeting;
   transcript: readonly TranscriptEntry[] | undefined;
 }) {
+  const partials = useMeetingPartials(hubApi(), meeting.id, meeting.status.kind === "recording");
   if (transcript === undefined) return null;
-  const rows = transcriptRows(transcript, meeting.speakers);
+  const rows = [...transcriptRows(transcript, meeting.speakers), ...partialRows(partials)];
   if (rows.length === 0) {
     return (
       <Card style={styles.summaryCard}>

@@ -10,6 +10,7 @@ import type {
   MeetingId,
   MeetingsChange,
   MeetingTranscriptChange,
+  MeetingPartial,
 } from "../shared/meetings.ts";
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
@@ -99,6 +100,7 @@ const voice: HubApi = {
   openNotepad: () => ipcRenderer.invoke(Channel.openNotepad),
   onMeetingTranscript: (listener) =>
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
+  onMeetingPartial: (listener) => subscribe<MeetingPartial>(Channel.meetingPartial, listener),
   onMeetingNotice: (listener) =>
     subscribe<{ id: MeetingId; notice: MeetingNotice }>(Channel.meetingNotice, listener),
 };

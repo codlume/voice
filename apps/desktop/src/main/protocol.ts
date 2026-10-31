@@ -317,6 +317,13 @@ const HelperEventSchema = Schema.Union([
     id: Schema.String,
     failure: nullOnInvalid(Schema.String),
   }),
+  // Unconfirmed text since a source's last segment, for the live view only; empty clears it.
+  Schema.Struct({
+    type: Schema.Literal("meeting.partial"),
+    id: Schema.String,
+    source: Schema.Literals(["mic", "system"]),
+    text: Schema.String,
+  }),
   // `speaker` numbers the system voices from 0 in the order they first speak; null on the mic
   // and when the voices could not be told apart.
   Schema.Struct({

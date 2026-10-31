@@ -3,7 +3,7 @@ import "@sentry/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { Channel, DIAGNOSTICS_ARGUMENT, type NotepadApi } from "../shared/api.ts";
-import type { MeetingTranscriptChange, NotepadState } from "../shared/meetings.ts";
+import type { MeetingPartial, MeetingTranscriptChange, NotepadState } from "../shared/meetings.ts";
 import { subscribe } from "./subscribe.ts";
 
 const voice: NotepadApi = {
@@ -20,6 +20,7 @@ const voice: NotepadApi = {
   discardMeeting: (id) => ipcRenderer.invoke(Channel.discardMeeting, id),
   onMeetingTranscript: (listener) =>
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
+  onMeetingPartial: (listener) => subscribe<MeetingPartial>(Channel.meetingPartial, listener),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

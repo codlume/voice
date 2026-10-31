@@ -7,6 +7,8 @@ import type { NotepadApi } from "../shared/api.ts";
 import type {
   Meeting,
   MeetingId,
+  MeetingPartial,
+  MeetingSource,
   MeetingTranscriptChange,
   NotepadState,
   SpeakerId,
@@ -46,6 +48,7 @@ const said = (segmentId: string, text: string, source: "mic" | "system"): Transc
 function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
   const notepadListeners = new Set<(state: NotepadState | null) => void>();
   const transcriptListeners = new Set<(change: MeetingTranscriptChange) => void>();
+  const partialListeners = new Set<(partial: MeetingPartial) => void>();
   const ok = async () => ({ kind: "ok", id }) as const;
   const api = {
     diagnosticsStartedAtLaunch: false,
@@ -66,6 +69,10 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
       transcriptListeners.add(listener);
       return () => transcriptListeners.delete(listener);
     },
+    onMeetingPartial: (listener) => {
+      partialListeners.add(listener);
+      return () => partialListeners.delete(listener);
+    },
   } satisfies NotepadApi;
   window.voice = api;
   return {
@@ -74,6 +81,8 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
       act(() => notepadListeners.forEach((listener) => listener(state))),
     hear: (entries: TranscriptEntry[]) =>
       act(() => transcriptListeners.forEach((listener) => listener({ id, entries }))),
+    murmur: (source: MeetingSource, text: string) =>
+      act(() => partialListeners.forEach((listener) => listener({ id, source, text }))),
   };
 }
 
@@ -90,6 +99,7 @@ const button = (name: string) =>
   [...document.querySelectorAll("button")].find(
     (element) => (element.getAttribute("aria-label") ?? element.textContent) === name,
   );
+const lines = () => [...document.querySelectorAll("ol li")].map((li) => li.textContent);
 const thoughts = () => document.querySelector<HTMLTextAreaElement>("textarea")!;
 
 async function openThoughts() {
@@ -119,8 +129,33 @@ describe("the notepad", () => {
     const { hear } = fakeNotepad({ meeting, prompt: null }, [said("a", "Morning all", "mic")]);
     await render();
     hear([said("b", "The export bug is fixed", "system")]);
-    const lines = [...document.querySelectorAll("ol li")].map((li) => li.textContent);
-    expect(lines).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
+    expect(lines()).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
+  });
+
+  test("shows each side's unconfirmed text in gray after the transcript until it stops", async () => {
+    const { hear, murmur, push } = fakeNotepad({ meeting, prompt: null }, [
+      said("a", "Morning all", "mic"),
+    ]);
+    await render();
+    murmur("system", "The export bug");
+    murmur("mic", "Great");
+    expect(lines()).toEqual(["You00:00Morning all", "YouGreat", "OthersThe export bug"]);
+    const gray = [...document.querySelectorAll("ol li p")].find((p) => p.textContent === "Great");
+    const final = [...document.querySelectorAll("ol li p")].find(
+      (p) => p.textContent === "Morning all",
+    );
+    expect(gray?.className).not.toBe(final?.className);
+
+    hear([said("b", "The export bug is fixed", "system")]);
+    murmur("system", "");
+    expect(lines()).toEqual([
+      "You00:00Morning all",
+      "Others00:00The export bug is fixed",
+      "YouGreat",
+    ]);
+
+    push({ meeting: { ...meeting, status: { kind: "transcribing" } }, prompt: null });
+    expect(lines()).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
   });
 
   test("labels other voices by speaker once diarized, and follows a rename", async () => {

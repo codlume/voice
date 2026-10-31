@@ -11,7 +11,7 @@ import type {
   TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
-import { transcriptRows, type TranscriptRow } from "./meetingsView.ts";
+import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
 import {
   mergeTranscript,
   notepadStatus,
@@ -23,6 +23,7 @@ import {
 import { pageStyles } from "./pageStyles.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { useMeetingPartials } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
 import { useThoughts } from "./useThoughts.ts";
 import { notepadApi } from "./voice.ts";
@@ -187,8 +188,11 @@ function useNotepadState(): NotepadState | null | undefined {
   return state;
 }
 
-/** The meeting's transcript, read once and then followed line by line while it records. */
-function useLiveTranscript(id: MeetingId, speakers: readonly Speaker[]) {
+/**
+ * The meeting's transcript, read once and then followed line by line while it records, with each
+ * source's unconfirmed text after it.
+ */
+function useLiveTranscript(id: MeetingId, speakers: readonly Speaker[], recording: boolean) {
   const [lines, setLines] = useState<{
     read: readonly TranscriptEntry[] | null;
     live: readonly TranscriptEntry[];
@@ -208,12 +212,16 @@ function useLiveTranscript(id: MeetingId, speakers: readonly Speaker[]) {
       unsubscribe();
     };
   }, [id]);
+  const partials = useMeetingPartials(notepadApi(), id, recording);
   return useMemo(
     () =>
       lines.read === null
         ? null
-        : transcriptRows(mergeTranscript(lines.read, lines.live), speakers),
-    [lines, speakers],
+        : [
+            ...transcriptRows(mergeTranscript(lines.read, lines.live), speakers),
+            ...partialRows(partials),
+          ],
+    [lines, speakers, partials],
   );
 }
 
@@ -310,7 +318,7 @@ function send(command: NotepadCommand, id: MeetingId): Promise<MeetingCommandRes
 
 function MeetingNotepad({ meeting, prompt }: NotepadState) {
   // Held here, not in the tab, so lines keep arriving while My thoughts is open.
-  const rows = useLiveTranscript(meeting.id, meeting.speakers);
+  const rows = useLiveTranscript(meeting.id, meeting.speakers, meeting.status.kind === "recording");
   const now = useNow(notepadTicks(meeting, prompt));
   const status = notepadStatus(meeting, now);
   const [tab, setTab] = useState<NotepadTab>("transcript");

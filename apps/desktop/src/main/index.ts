@@ -499,6 +499,10 @@ async function main() {
         hub.webContents.send(Channel.meetingTranscript, { id, entries });
       if (notepad.meetingId() === id) notepad.send(Channel.meetingTranscript, { id, entries });
     },
+    onPartial: (partial) => {
+      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetingPartial, partial);
+      if (notepad.meetingId() === partial.id) notepad.send(Channel.meetingPartial, partial);
+    },
     onNotice: (id, notice) => {
       log(`meetings: ${id} notice ${notice.kind}`);
       if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetingNotice, { id, notice });
