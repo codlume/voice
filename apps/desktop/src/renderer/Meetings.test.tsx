@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { HubApi } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type HubApi, type Snapshot } from "../shared/api.ts";
 import {
   DEFAULT_MEETINGS_SETTINGS,
   searchMeeting,
@@ -82,6 +82,28 @@ const transcript: TranscriptEntry[] = [
   },
 ];
 
+// Set up, with the summary model on disk, so only tests about those show them.
+const setUp: Snapshot = {
+  microphones: { kind: "loading" },
+  microphoneTest: { kind: "off" },
+  updates: {
+    version: "0.0.1",
+    installedChannel: "stable",
+    channel: "stable",
+    status: { kind: "idle" },
+  },
+  session: { kind: "idle" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "granted" },
+  loginItem: "off",
+  models: {
+    asr: { state: "ready" },
+    cleanup: { state: "ready" },
+    transform: { state: "installed" },
+  },
+  settings: DEFAULT_SETTINGS,
+  account: { kind: "signedOut" },
+};
+
 // Holds state like main and publishes every change; spies record the commands.
 function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   let state: MeetingsState = { meetings, folders, settings: DEFAULT_MEETINGS_SETTINGS };
@@ -122,6 +144,8 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
       set({ folders: state.folders.filter((f) => f.id !== folderId) }),
     ),
     updateMeetingsSettings: vi.fn(async () => {}),
+    requestPermission: vi.fn(async () => {}),
+    installModel: vi.fn(async () => {}),
     startMeeting: vi.fn(async () => ({ kind: "unavailable" }) as const),
   };
   (window as { voice?: HubApi }).voice = {
@@ -131,11 +155,11 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   return api;
 }
 
-async function render() {
+async function render(snapshot: Snapshot = setUp) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<Meetings />));
+  await act(async () => root!.render(<Meetings snapshot={snapshot} />));
   await settle();
 }
 
@@ -371,4 +395,50 @@ test("the settings say how long transcripts are kept", async () => {
   expect(text()).toContain(
     "Transcripts, summaries and your thoughts stay on this Mac until you delete them.",
   );
+});
+
+describe("Set up Meetings", () => {
+  test("a new Mac asks for both permissions and a first meeting, and Grant asks macOS", async () => {
+    const main = fakeMain([]);
+    await render({
+      ...setUp,
+      permissions: { microphone: "notDetermined", accessibility: "granted", systemAudio: "denied" },
+    });
+    expect(text()).toContain("Set up Meetings0 of 3 done");
+    expect(text()).toContain("System Audio RecordingHears the other participants");
+    expect(text()).toContain("Allow Voice in System Settings");
+    expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
+    await click(byText("Grant"));
+    expect(main.requestPermission).toHaveBeenCalledWith("microphone");
+    await click(byText("Open"));
+    expect(main.requestPermission).toHaveBeenLastCalledWith("systemAudio");
+  });
+
+  test("below macOS 14.4 it says only the microphone is recorded and goes once a meeting exists", async () => {
+    const unavailable: Snapshot = {
+      ...setUp,
+      permissions: { ...setUp.permissions, systemAudio: "unavailable" },
+    };
+    fakeMain([]);
+    await render(unavailable);
+    expect(text()).toContain("Meetings record only your microphone on this Mac");
+    expect(text()).toContain("Needs macOS 14.4 or later");
+    expect(text()).toContain("2 of 3 done");
+    await act(async () => root?.unmount());
+    document.body.replaceChildren();
+
+    fakeMain(sample());
+    await render(unavailable);
+    expect(text()).not.toContain("Set up Meetings");
+  });
+
+  test("without the summary model the page offers its download and still lists meetings", async () => {
+    const main = fakeMain(sample());
+    await render({ ...setUp, models: { ...setUp.models, transform: { state: "missing" } } });
+    expect(text()).toContain("Summaries use Gemma 4 E2B by Google (3.1 GB). Transcripts work");
+    expect(text()).toContain("Weekly product sync");
+    expect(text()).not.toContain("Set up Meetings");
+    await click(byText("Download"));
+    expect(main.installModel).toHaveBeenCalledWith("transform");
+  });
 });

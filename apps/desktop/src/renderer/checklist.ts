@@ -1,6 +1,12 @@
-import type { ModelStatus, PermissionKind, PermissionState, Snapshot } from "../shared/api.ts";
+import type {
+  ModelStatus,
+  PermissionKind,
+  PermissionState,
+  Snapshot,
+  SystemAudioPermission,
+} from "../shared/api.ts";
 
-import { models, type Model, type ModelId } from "../shared/models.ts";
+import { modelById, models, type Model, type ModelId } from "../shared/models.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
@@ -13,18 +19,23 @@ type Action = {
 };
 
 export type ChecklistRow = {
-  id: PermissionKind | ModelId;
+  id: PermissionKind | ModelId | "tryMeetings";
   title: string;
   subtitle: string;
   status:
     | { kind: "ready"; text: string }
     | { kind: "needed"; text: string }
     | { kind: "busy"; text: string; progress?: number }
-    | { kind: "failed"; text: string };
+    | { kind: "failed"; text: string }
+    /** Nothing the user can do on this Mac; it does not hold the checklist open. */
+    | { kind: "unavailable"; text: string };
   actions: readonly Action[];
 };
 
 type Checklist = { ready: boolean; rows: ChecklistRow[] };
+
+export const settled = (row: ChecklistRow) =>
+  row.status.kind === "ready" || row.status.kind === "unavailable";
 
 type RowState = Pick<ChecklistRow, "status" | "actions">;
 
@@ -88,7 +99,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     {
       id: "microphone",
       title: "Microphone",
-      subtitle: "Hears you only while you dictate",
+      subtitle: "Hears you only while you dictate or record a meeting",
       ...permissionState("microphone", permissions.microphone),
     },
     {
@@ -108,4 +119,61 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     });
   }
   return { ready: rows.every((row) => row.status.kind === "ready"), rows };
+}
+
+function systemAudioState(state: SystemAudioPermission): RowState {
+  if (state !== "unavailable") return permissionState("systemAudio", state);
+  return { status: { kind: "unavailable", text: "Needs macOS 14.4 or later" }, actions: [] };
+}
+
+/**
+ * "Set up Meetings": both permissions, then one meeting tried. `shortcut` is the meeting
+ * shortcut as the keyboard shows it, or null when it is off.
+ */
+export function meetingsChecklist(
+  { permissions }: Pick<Snapshot, "permissions">,
+  { tried, shortcut }: { tried: boolean; shortcut: string | null },
+): Checklist {
+  const rows: ChecklistRow[] = [
+    {
+      id: "microphone",
+      title: "Microphone",
+      subtitle: "Hears you during a meeting",
+      ...permissionState("microphone", permissions.microphone),
+    },
+    {
+      id: "systemAudio",
+      title: "System Audio Recording",
+      subtitle:
+        permissions.systemAudio === "unavailable"
+          ? "Meetings record only your microphone on this Mac"
+          : "Hears the other participants through your Mac's sound",
+      ...systemAudioState(permissions.systemAudio),
+    },
+    {
+      id: "tryMeetings",
+      title: "Try Meetings",
+      subtitle: `Click Start meeting${shortcut ? ` or press ${shortcut}` : ""}, talk a little, then stop`,
+      status: tried ? { kind: "ready", text: "Done" } : { kind: "needed", text: "Not yet" },
+      actions: [],
+    },
+  ];
+  return { ready: rows.every(settled), rows };
+}
+
+/** Summaries need the transform model. Null once it is on disk, since transcripts never need it. */
+export function summaryModelRow({
+  models: statuses,
+}: Pick<Snapshot, "models">): ChecklistRow | null {
+  const status = statuses.transform;
+  if (status.state === "installed" || status.state === "loading" || status.state === "ready") {
+    return null;
+  }
+  const model = modelById.transform;
+  return {
+    id: model.id,
+    title: "Summary model",
+    subtitle: `Summaries use ${model.name} by ${model.vendor} (${model.size}). Transcripts work without it.`,
+    ...modelState(model, status),
+  };
 }
