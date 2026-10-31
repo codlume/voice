@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -155,11 +155,16 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   return api;
 }
 
+function Page({ snapshot }: { snapshot: Snapshot }) {
+  const [open, setOpen] = useState(false);
+  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} />;
+}
+
 async function render(snapshot: Snapshot = setUp) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<Meetings snapshot={snapshot} />));
+  await act(async () => root!.render(<Page snapshot={snapshot} />));
   await settle();
 }
 

@@ -364,18 +364,24 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
 
 type PageTab = "notes" | "folders";
 
-export function Meetings({ snapshot }: { snapshot: Snapshot }) {
+type SettingsDialog = { open: boolean; setOpen: (open: boolean) => void };
+
+export function Meetings({ snapshot, settings }: { snapshot: Snapshot; settings: SettingsDialog }) {
   const state = useMeetings();
   const today = useToday();
-  return state ? <MeetingsPage snapshot={snapshot} state={state} today={today} /> : null;
+  return state ? (
+    <MeetingsPage snapshot={snapshot} settings={settings} state={state} today={today} />
+  ) : null;
 }
 
 function MeetingsPage({
   snapshot,
+  settings,
   state,
   today,
 }: {
   snapshot: Snapshot;
+  settings: SettingsDialog;
   state: MeetingsState;
   today: DayKey;
 }) {
@@ -384,7 +390,6 @@ function MeetingsPage({
   const [tab, setTab] = useState<PageTab>("notes");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<MeetingId | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const start = useAction();
   const hits = useSearch(query);
@@ -466,7 +471,7 @@ function MeetingsPage({
               variant="icon"
               aria-label="Meeting settings"
               title="Meeting settings"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => settings.setOpen(true)}
             >
               <SettingsIcon size={17} />
             </Button>
@@ -528,8 +533,8 @@ function MeetingsPage({
         {selected && <OverviewPanel meeting={selected} />}
       </div>
       <MeetingsSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
+        open={settings.open}
+        onOpenChange={settings.setOpen}
         settings={state.settings}
         meetings={meetings}
       />
