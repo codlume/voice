@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   applyMeetingsChange,
+  renameSpeaker,
   type Meeting,
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
   type Segment,
+  type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
@@ -45,6 +47,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...overrides,
   };
 }
@@ -85,6 +88,7 @@ async function relaunch(options: { now?: number } = {}) {
   return next;
 }
 
+const rule = (text: string) => ({ kind: "titleContains", text }) as const;
 const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
@@ -104,6 +108,22 @@ describe("meetings store", () => {
       segment("s2", "Budget is fine", 1000),
       { kind: "marker", marker: "paused", atMs: 2000 },
     ]);
+  });
+
+  test("a renamed speaker and the segments that name it survive a relaunch", async () => {
+    const first = harness();
+    await first.loaded;
+    const s1 = "s1" as SpeakerId;
+    await first.store.put(meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    const said: Segment = { ...segment("x", "Hi"), source: "system", speakerId: s1 };
+    await first.store.append(A, [said]);
+    await first.store.update(A, (saved) => renameSpeaker(saved, s1, "  Ania "));
+
+    const second = await relaunch();
+    expect(second.store.get(A)?.speakers).toEqual([
+      { id: s1, label: "Speaker 1", name: { text: "Ania", source: "user" } },
+    ]);
+    expect(await second.store.transcript(A)).toEqual([said]);
   });
 
   test("files are owner-only and the hub hears each change as a patch", async () => {
@@ -146,17 +166,27 @@ describe("meetings store", () => {
     ]);
   });
 
-  test("replacing the transcript swaps in the final pass whole", async () => {
-    const { store, loaded } = harness();
+  test("replacing the transcript swaps in the final pass whole, with its meeting", async () => {
+    const { store, loaded, hub } = harness();
     await loaded;
     await store.put(meeting(A));
     await store.append(A, [segment("live", "helo wrld")]);
-    await store.replaceTranscript(A, [segment("final", "Hello world")]);
+    const speakers = [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }];
+    const seen: TranscriptEntry[][] = [];
+    const replaced = await store.replaceTranscript(A, (current, transcript) => {
+      seen.push(transcript);
+      return { meeting: { ...current, speakers }, transcript: [segment("final", "Hello world")] };
+    });
     await store.append(A, [{ kind: "marker", marker: "resumed", atMs: 5000 }]);
+    expect(replaced).toBe(true);
+    expect(seen).toEqual([[segment("live", "helo wrld")]]);
     expect(await store.transcript(A)).toEqual([
       segment("final", "Hello world"),
       { kind: "marker", marker: "resumed", atMs: 5000 },
     ]);
+    expect(hub()?.meetings[0]?.speakers).toEqual(speakers);
+    expect((await relaunch()).store.get(A)?.speakers).toEqual(speakers);
+    expect(await store.replaceTranscript(B, (m) => ({ meeting: m, transcript: [] }))).toBe(false);
   });
 
   test("deleting a meeting removes its folder, audio included, and late writes do not bring it back", async () => {
@@ -285,6 +315,78 @@ describe("meetings store", () => {
     });
     const second = await relaunch();
     expect(second.store.state().folders).toEqual([folder]);
+  });
+
+  test("a new or edited automatic folder files the existing meetings its rule matches", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await first.store.put(meeting(B, { title: { text: "Weekly sync", source: "generated" } }));
+    await first.store.put(meeting(C, { title: null }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: rule("1:1"),
+    });
+    expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[folder.id], [], []]);
+
+    // B is added by hand, then the rule moves from "1:1" to "sync".
+    await first.store.setInFolder(C, folder.id, true);
+    await first.store.updateFolder(folder.id, { name: "Syncs", kind: "auto", rule: rule("Sync") });
+    expect(ids.map((id) => first.store.get(id)?.folderIds)).toEqual([[], [folder.id], [folder.id]]);
+
+    const before = first.changes.length;
+    await first.store.updateFolder(folder.id, { name: "Syncs", kind: "auto", rule: rule("Sync") });
+    const repeat = first.changes.slice(before);
+    expect(repeat.map((change) => change.kind === "patch" && change.upsert.length)).toEqual([0]);
+
+    const second = await relaunch();
+    expect(ids.map((id) => second.store.get(id)?.folderIds)).toEqual([
+      [],
+      [folder.id],
+      [folder.id],
+    ]);
+    expect(second.hub()?.folders).toEqual([{ ...folder, name: "Syncs", rule: rule("Sync") }]);
+  });
+
+  test("a folder turned manual keeps its meetings and drops its rule", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: { kind: "titleContains", text: "1:1" },
+    });
+    await first.store.updateFolder(folder.id, { name: "1:1s", kind: "manual" });
+    expect(first.store.get(A)?.folderIds).toEqual([folder.id]);
+    expect(first.store.state().folders).toEqual([
+      { id: folder.id, name: "1:1s", kind: "manual", createdAt: folder.createdAt },
+    ]);
+  });
+
+  test("turning automatic folders on files existing meetings; off files nothing", async () => {
+    const first = harness();
+    await first.loaded;
+    await first.store.updateSettings({ autoFolders: false });
+    await first.store.put(meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    const folder = await first.store.createFolder({
+      name: "1:1s",
+      kind: "auto",
+      rule: { kind: "titleContains", text: "1:1" },
+    });
+    expect(first.store.get(A)?.folderIds).toEqual([]);
+
+    await first.store.updateSettings({ autoFolders: true });
+    expect(first.store.get(A)?.folderIds).toEqual([folder.id]);
+    expect(first.hub()?.meetings.find(({ id }) => id === A)?.folderIds).toEqual([folder.id]);
+
+    await first.store.setInFolder(A, folder.id, false);
+    await first.store.updateSettings({ autoFolders: true });
+    expect(first.store.get(A)?.folderIds).toEqual([]);
+    await first.store.updateSettings({ autoFolders: false });
+    const second = await relaunch();
+    expect(second.store.get(A)?.folderIds).toEqual([]);
   });
 
   test("an unreadable meeting is left alone and never overwritten or expired", async () => {

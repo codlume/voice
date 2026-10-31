@@ -10,6 +10,7 @@ import type {
   MeetingId,
   MeetingsChange,
   MeetingTranscriptChange,
+  MeetingPartial,
 } from "../shared/meetings.ts";
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
@@ -75,6 +76,8 @@ const voice: HubApi = {
   onMeetings: (listener) => subscribe<MeetingsChange>(Channel.meetings, listener),
   getMeeting: (id) => ipcRenderer.invoke(Channel.getMeeting, id),
   renameMeeting: (id, title) => ipcRenderer.invoke(Channel.renameMeeting, id, title),
+  renameMeetingSpeaker: (id, speakerId, name) =>
+    ipcRenderer.invoke(Channel.renameMeetingSpeaker, id, speakerId, name),
   updateMeetingNotes: (id, notes) => ipcRenderer.invoke(Channel.updateMeetingNotes, id, notes),
   deleteMeeting: (id) => ipcRenderer.invoke(Channel.deleteMeeting, id),
   createFolder: (draft) => ipcRenderer.invoke(Channel.createFolder, draft),
@@ -87,6 +90,7 @@ const voice: HubApi = {
   copyMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.copyMeetingMarkdown, id),
   exportMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.exportMeetingMarkdown, id),
   startMeeting: () => ipcRenderer.invoke(Channel.startMeeting),
+  toggleMeeting: () => ipcRenderer.invoke(Channel.toggleMeeting),
   pauseMeeting: (id) => ipcRenderer.invoke(Channel.pauseMeeting, id),
   resumeMeeting: (id) => ipcRenderer.invoke(Channel.resumeMeeting, id),
   stopMeeting: (id) => ipcRenderer.invoke(Channel.stopMeeting, id),
@@ -96,6 +100,7 @@ const voice: HubApi = {
   openNotepad: () => ipcRenderer.invoke(Channel.openNotepad),
   onMeetingTranscript: (listener) =>
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
+  onMeetingPartial: (listener) => subscribe<MeetingPartial>(Channel.meetingPartial, listener),
   onMeetingNotice: (listener) =>
     subscribe<{ id: MeetingId; notice: MeetingNotice }>(Channel.meetingNotice, listener),
 };

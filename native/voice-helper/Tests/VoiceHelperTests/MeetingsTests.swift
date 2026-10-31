@@ -52,6 +52,7 @@ private final class Harness {
                 if echo { return "we ship on friday" }
                 return peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)"
             },
+            finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false }),
             isDictating: { [unowned self] in dictating })
     }
 
@@ -208,7 +209,9 @@ struct MeetingsTests {
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
-        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in "" }, isDictating: { false })
+        let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false })
+        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in "" }, finalPass: finalPass,
+                                isDictating: { false })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-meetings-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         meetings.start(id: "m1", dir: dir.path, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en, microphone: nil)

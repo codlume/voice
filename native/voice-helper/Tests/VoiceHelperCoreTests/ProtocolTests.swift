@@ -9,15 +9,15 @@ private func json(_ line: String) throws -> [String: Any] {
 
 @Test func decodesEveryCommand() throws {
     let cases: [(String, HelperCommand)] = [
-        (#"{"type":"hotkey.configure","key":"rightOption","toggleKey":null,"transforms":[]}"#,
-         .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [])),
-        (#"{"type":"hotkey.configure","key":"fn","toggleKey":"rightCommand","transforms":[]}"#,
-         .hotkeyConfigure(key: .fn, toggleKey: .rightCommand, transforms: [])),
-        (#"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"polish","keycode":18,"modifiers":["option"]},{"id":"c1","keycode":40,"modifiers":["control","option","shift","command"]}]}"#,
+        (#"{"type":"hotkey.configure","key":"rightOption","toggleKey":null,"transforms":[],"meeting":null}"#,
+         .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [], meeting: nil)),
+        (#"{"type":"hotkey.configure","key":"fn","toggleKey":"rightCommand","transforms":[],"meeting":null}"#,
+         .hotkeyConfigure(key: .fn, toggleKey: .rightCommand, transforms: [], meeting: nil)),
+        (#"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"polish","keycode":18,"modifiers":["option"]},{"id":"c1","keycode":40,"modifiers":["control","option","shift","command"]}],"meeting":{"keycode":46,"modifiers":["option"]}}"#,
          .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [
              TransformShortcut(id: "polish", keycode: 18, modifiers: [.option]),
              TransformShortcut(id: "c1", keycode: 40, modifiers: [.control, .option, .shift, .command]),
-         ])),
+         ], meeting: KeyCombo(keycode: 46, modifiers: [.option]))),
         (#"{"type":"selection.read","id":"r1"}"#, .selectionRead(id: "r1")),
         (#"{"type":"transform.end","id":"r1"}"#, .transformEnd(id: "r1")),
         (#"{"type":"capture.start","microphone":null,"id":"s1","language":"en","outputVolumeScale":null,"detectHost":true}"#,
@@ -74,15 +74,20 @@ private func json(_ line: String) throws -> [String: Any] {
     let withoutTransforms = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null}"#)
     #expect(try unknownDescription(withoutTransforms).contains("missing field \"transforms\""))
 
-    let badModifier = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":["fn"]}]}"#)
+    let withoutMeeting = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[]}"#)
+    #expect(try unknownDescription(withoutMeeting).contains("missing field \"meeting\""))
+
+    let badModifier = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":["fn"]}],"meeting":null}"#)
     #expect(throws: ProtocolError.self) { try badModifier.get() }
 
-    let keycodeless = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","modifiers":["option"]}]}"#)
+    let keycodeless = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","modifiers":["option"]}],"meeting":null}"#)
     #expect(try unknownDescription(keycodeless).contains("missing field \"keycode\""))
 
     for modifiers in ["[]", #"["shift"]"#] {
-        let swallowsTyping = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":"# + modifiers + "}]}")
-        #expect(try unknownDescription(swallowsTyping).contains("field \"modifiers\": a transform shortcut needs a modifier other than shift"))
+        let swallowsTyping = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[{"id":"p","keycode":18,"modifiers":"# + modifiers + #"}],"meeting":null}"#)
+        #expect(try unknownDescription(swallowsTyping).contains("field \"modifiers\": a shortcut needs a modifier other than shift"))
+        let meetingSwallowsTyping = HelperCommand.decode(line: #"{"type":"hotkey.configure","key":"fn","toggleKey":null,"transforms":[],"meeting":{"keycode":46,"modifiers":"# + modifiers + "}}")
+        #expect(try unknownDescription(meetingSwallowsTyping).contains("a shortcut needs a modifier other than shift"))
     }
 
     let readWithoutId = HelperCommand.decode(line: #"{"type":"selection.read"}"#)
@@ -121,6 +126,7 @@ private func unknownDescription(_ result: Result<HelperCommand, ProtocolError>) 
         (.hotkey(action: .cancel, uptimeMs: 1), ["type": "hotkey", "action": "cancel", "uptimeMs": 1]),
         (.hotkey(action: .toggle, uptimeMs: .nan), ["type": "hotkey", "action": "toggle", "uptimeMs": 0]),
         (.transform(transformId: "polish"), ["type": "transform", "transformId": "polish"]),
+        (.meetingShortcut, ["type": "meeting.shortcut"]),
         (.selectionResult(id: "r", result: .selected(text: "zażółć", via: .accessibility)),
          ["type": "selection.result", "id": "r", "outcome": "selected", "text": "zażółć", "via": "accessibility"]),
         (.selectionResult(id: "r", result: .selected(text: "x", via: .copy)),

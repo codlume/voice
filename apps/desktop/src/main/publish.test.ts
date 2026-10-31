@@ -118,6 +118,7 @@ describe("publish", () => {
       folderIds: [],
       notes: "Ask about the discount",
       summary: { kind: "none" },
+      speakers: [],
     };
     update({ meeting: follow(noMeetingFocus, [meeting]) });
     update({ meeting: follow(noMeetingFocus, [{ ...meeting, notes: "Ask about the deadline" }]) });

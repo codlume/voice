@@ -13,6 +13,7 @@ describe("hotkeyConfigure", () => {
       key: "fn",
       toggleKey: "rightCommand",
       transforms: [],
+      meeting: { keycode: 46, modifiers: ["option"] },
     });
   });
 
@@ -22,5 +23,16 @@ describe("hotkeyConfigure", () => {
       { id: "prompt-engineer", keycode: 19, modifiers: ["option"] },
     ]);
     expect(hotkeyConfigure(on, true).transforms).toEqual([]);
+  });
+
+  test("hands the meeting shortcut to the helper unless a Voice window is focused or it is off", () => {
+    expect(hotkeyConfigure(DEFAULT_SETTINGS, false).meeting).toEqual({
+      keycode: 46,
+      modifiers: ["option"],
+    });
+    expect(hotkeyConfigure(DEFAULT_SETTINGS, true).meeting).toBeNull();
+    expect(
+      hotkeyConfigure({ ...DEFAULT_SETTINGS, meetingShortcut: null }, false).meeting,
+    ).toBeNull();
   });
 });

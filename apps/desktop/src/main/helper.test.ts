@@ -27,7 +27,7 @@ function boot(config: Record<string, unknown> = {}, binary = FAKE) {
     stateDir: "/tmp/voice-state",
     env: process.env,
     configure: () => [
-      { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [] },
+      { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [], meeting: null },
       { type: "permissions.check" },
       { type: "asr.prepare", download: false },
     ],
@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 16 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 18 });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -229,12 +229,12 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v16; refusing/);
+      .toMatch(/helper: speaks protocol v2 but this build expects v18; refusing/);
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 16 },
+        attributes: { "helper.protocol_version": 2, "helper.expected_version": 18 },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);

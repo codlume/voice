@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { HubApi } from "../shared/api.ts";
+import { DEFAULT_SETTINGS, type HubApi, type Snapshot } from "../shared/api.ts";
 import {
   DEFAULT_MEETINGS_SETTINGS,
+  renameSpeaker,
   searchMeeting,
   type Folder,
   type FolderDraft,
@@ -14,6 +15,10 @@ import {
   type MeetingId,
   type MeetingsChange,
   type MeetingsState,
+  type MeetingPartial,
+  type MeetingTranscriptChange,
+  type Speaker,
+  type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Meetings } from "./Meetings.tsx";
@@ -47,6 +52,7 @@ function meeting(
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...patch,
   };
 }
@@ -56,8 +62,14 @@ const summary = (markdown: string) => ({
   summary: { markdown, generatedAt: 0, coversUntilMs: 30 * MINUTE },
 });
 
+const PRIYA = "s1" as SpeakerId;
+const TOM = "s2" as SpeakerId;
+const syncSpeakers: Speaker[] = [
+  { id: PRIYA, label: "Speaker 1", name: { text: "Priya Shah", source: "user" } },
+  { id: TOM, label: "Speaker 2", name: null },
+];
 const syncSummary =
-  "Priya Shah agreed to ship the export fix.\n\n### Decisions\n- Ship on Thursday\n\n### Next Steps\n- **Priya Shah**\n  - Draft the launch email";
+  "{{speaker:s1}} agreed to ship the export fix.\n\n### Decisions\n- Ship on Thursday\n\n### Next Steps\n- **{{speaker:s2}}**\n  - Draft the launch email";
 
 const transcript: TranscriptEntry[] = [
   {
@@ -78,9 +90,41 @@ const transcript: TranscriptEntry[] = [
     text: "The export bug is fixed",
     final: true,
     source: "system",
-    speaker: "Priya Shah",
+    speakerId: PRIYA,
+  },
+  {
+    kind: "segment",
+    id: "c",
+    startMs: 5000,
+    endMs: 6000,
+    text: "I will draft the email",
+    final: true,
+    source: "system",
+    speakerId: TOM,
   },
 ];
+
+// Set up, with the summary model on disk, so only tests about those show them.
+const setUp: Snapshot = {
+  microphones: { kind: "loading" },
+  microphoneTest: { kind: "off" },
+  updates: {
+    version: "0.0.1",
+    installedChannel: "stable",
+    channel: "stable",
+    status: { kind: "idle" },
+  },
+  session: { kind: "idle" },
+  permissions: { microphone: "granted", accessibility: "granted", systemAudio: "granted" },
+  loginItem: "off",
+  models: {
+    asr: { state: "ready" },
+    cleanup: { state: "ready" },
+    transform: { state: "installed" },
+  },
+  settings: DEFAULT_SETTINGS,
+  account: { kind: "signedOut" },
+};
 
 // Holds state like main and publishes every change; spies record the commands.
 function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
@@ -91,6 +135,10 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     for (const listener of listeners) listener({ kind: "all", state });
   };
   const transcripts: Record<string, TranscriptEntry[]> = { [id(1)]: transcript };
+  const live = {
+    transcript: new Set<(change: MeetingTranscriptChange) => void>(),
+    partial: new Set<(partial: MeetingPartial) => void>(),
+  };
   const api = {
     getMeetings: async () => state,
     onMeetings: (listener: (change: MeetingsChange) => void) => {
@@ -103,6 +151,21 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     },
     searchMeetings: vi.fn(async (query: string) =>
       state.meetings.flatMap((m) => searchMeeting(m, transcripts[m.id] ?? [], query) ?? []),
+    ),
+    onMeetingTranscript: (listener: (change: MeetingTranscriptChange) => void) => {
+      live.transcript.add(listener);
+      return () => live.transcript.delete(listener);
+    },
+    onMeetingPartial: (listener: (partial: MeetingPartial) => void) => {
+      live.partial.add(listener);
+      return () => live.partial.delete(listener);
+    },
+    renameMeetingSpeaker: vi.fn(async (meetingId: MeetingId, speakerId: SpeakerId, name: string) =>
+      set({
+        meetings: state.meetings.map((m) =>
+          m.id === meetingId ? renameSpeaker(m, speakerId, name) : m,
+        ),
+      }),
     ),
     updateMeetingNotes: vi.fn(async (meetingId: MeetingId, notes: string) =>
       set({ meetings: state.meetings.map((m) => (m.id === meetingId ? { ...m, notes } : m)) }),
@@ -122,20 +185,39 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
       set({ folders: state.folders.filter((f) => f.id !== folderId) }),
     ),
     updateMeetingsSettings: vi.fn(async () => {}),
+    requestPermission: vi.fn(async () => {}),
+    installModel: vi.fn(async () => {}),
     startMeeting: vi.fn(async () => ({ kind: "unavailable" }) as const),
   };
   (window as { voice?: HubApi }).voice = {
     getSnapshot: () => Promise.reject(new Error("not needed")),
     ...api,
   } as Partial<HubApi> as HubApi;
-  return api;
+  return {
+    ...api,
+    /** Plays main pushing a saved line or an unconfirmed one to the open meeting. */
+    async push(event: MeetingTranscriptChange | MeetingPartial) {
+      await act(async () => {
+        if ("entries" in event) for (const listener of live.transcript) listener(event);
+        else for (const listener of live.partial) listener(event);
+      });
+    },
+  };
 }
 
-async function render() {
+const lineClass = (said: string) =>
+  [...document.querySelectorAll("li p")].find((p) => p.textContent === said)?.className;
+
+function Page({ snapshot }: { snapshot: Snapshot }) {
+  const [open, setOpen] = useState(false);
+  return <Meetings snapshot={snapshot} settings={{ open, setOpen }} />;
+}
+
+async function render(snapshot: Snapshot = setUp) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<Meetings />));
+  await act(async () => root!.render(<Page snapshot={snapshot} />));
   await settle();
 }
 
@@ -178,7 +260,10 @@ async function type(element: HTMLInputElement | HTMLTextAreaElement, value: stri
 }
 
 const sample = () => [
-  meeting(1, "Weekly product sync", hoursAgo(0), { summary: summary(syncSummary) }),
+  meeting(1, "Weekly product sync", hoursAgo(0), {
+    summary: summary(syncSummary),
+    speakers: syncSpeakers,
+  }),
   meeting(2, "Planowanie sprintu", hoursAgo(26)),
   meeting(3, "Morning standup", hoursAgo(27)),
 ];
@@ -268,6 +353,66 @@ describe("a meeting", () => {
     expect(text()).toContain("The export bug is fixed");
     await click(byText("My thoughts"));
     expect(document.querySelector("textarea[aria-label='My thoughts']")).not.toBeNull();
+  });
+
+  test("renaming a speaker shows the name in the transcript and the summary", async () => {
+    const main = await openSync();
+    await waitForText("Speaker 2");
+    await click(byText("Transcript"));
+    await waitForText("I will draft the email");
+    const field = document.querySelector<HTMLInputElement>(
+      "input[aria-label='Name for Speaker 2']",
+    )!;
+    await act(async () => field.focus());
+    await type(field, "Tom Becker");
+    await act(async () => {
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(main.renameMeetingSpeaker).toHaveBeenCalledWith(id(1), TOM, "Tom Becker");
+    await waitForText("Tom Becker");
+    expect(text()).not.toContain("Speaker 2I will draft");
+    await click(byText("Summary"));
+    await vi.waitFor(async () => {
+      await settle();
+      const marks = [...document.querySelectorAll("mark")].map((mark) => mark.textContent);
+      expect(marks).toEqual(["Priya Shah", "Tom Becker"]);
+    });
+  });
+
+  test("while it records, saved lines append and unconfirmed text shows in gray until replaced", async () => {
+    const recording = meeting(4, "Live sync", hoursAgo(0), {
+      spans: [],
+      status: { kind: "recording", since: Date.now() },
+    });
+    const main = fakeMain([recording]);
+    await render();
+    await click(byText("Live sync"));
+    await click(byText("Transcript"));
+    await waitForText("No transcript yet.");
+    await main.push({ id: id(4), source: "system", text: "so the export" });
+    await waitForText("so the export");
+    expect(text()).toContain("Others");
+    await main.push({
+      id: id(4),
+      entries: [
+        {
+          kind: "segment",
+          id: "x",
+          startMs: 0,
+          endMs: 1000,
+          text: "So the export works.",
+          final: true,
+          source: "system",
+          speakerId: null,
+        },
+      ],
+    });
+    await main.push({ id: id(4), source: "system", text: "" });
+    await waitForText("So the export works.");
+    expect(text()).not.toContain("so the export");
+    await main.push({ id: id(4), source: "mic", text: "and the import" });
+    await waitForText("and the import");
+    expect(lineClass("and the import")).not.toBe(lineClass("So the export works."));
   });
 
   test("saves thoughts once typing pauses, and again on leaving", async () => {
@@ -371,4 +516,50 @@ test("the settings say how long transcripts are kept", async () => {
   expect(text()).toContain(
     "Transcripts, summaries and your thoughts stay on this Mac until you delete them.",
   );
+});
+
+describe("Set up Meetings", () => {
+  test("a new Mac asks for both permissions and a first meeting, and Grant asks macOS", async () => {
+    const main = fakeMain([]);
+    await render({
+      ...setUp,
+      permissions: { microphone: "notDetermined", accessibility: "granted", systemAudio: "denied" },
+    });
+    expect(text()).toContain("Set up Meetings0 of 3 done");
+    expect(text()).toContain("System Audio RecordingHears the other participants");
+    expect(text()).toContain("Allow Voice in System Settings");
+    expect(text()).toContain("Click Start meeting or press ⌥M, talk a little, then stop");
+    await click(byText("Grant"));
+    expect(main.requestPermission).toHaveBeenCalledWith("microphone");
+    await click(byText("Open"));
+    expect(main.requestPermission).toHaveBeenLastCalledWith("systemAudio");
+  });
+
+  test("below macOS 14.4 it says only the microphone is recorded and goes once a meeting exists", async () => {
+    const unavailable: Snapshot = {
+      ...setUp,
+      permissions: { ...setUp.permissions, systemAudio: "unavailable" },
+    };
+    fakeMain([]);
+    await render(unavailable);
+    expect(text()).toContain("Meetings record only your microphone on this Mac");
+    expect(text()).toContain("Needs macOS 14.4 or later");
+    expect(text()).toContain("2 of 3 done");
+    await act(async () => root?.unmount());
+    document.body.replaceChildren();
+
+    fakeMain(sample());
+    await render(unavailable);
+    expect(text()).not.toContain("Set up Meetings");
+  });
+
+  test("without the summary model the page offers its download and still lists meetings", async () => {
+    const main = fakeMain(sample());
+    await render({ ...setUp, models: { ...setUp.models, transform: { state: "missing" } } });
+    expect(text()).toContain("Summaries use Gemma 4 E2B by Google (3.1 GB). Transcripts work");
+    expect(text()).toContain("Weekly product sync");
+    expect(text()).not.toContain("Set up Meetings");
+    await click(byText("Download"));
+    expect(main.installModel).toHaveBeenCalledWith("transform");
+  });
 });

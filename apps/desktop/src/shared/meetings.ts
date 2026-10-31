@@ -1,3 +1,5 @@
+import type { Shortcut } from "./transforms.ts";
+
 export type MeetingId = string & { readonly __brand: "MeetingId" };
 export type FolderId = string & { readonly __brand: "FolderId" };
 
@@ -38,6 +40,17 @@ export type SummaryState =
   | { kind: "ready"; summary: Summary }
   | { kind: "failed"; message: string; previous: Summary | null };
 
+export type SpeakerId = string & { readonly __brand: "SpeakerId" };
+
+/** A name for a speaker: the user's rename, or one read from the meeting app's window later on. */
+export type SpeakerName = { text: string; source: "user" | "meetingApp" };
+
+/**
+ * One voice on system audio, found by diarization. The id and the "Speaker N" label never change,
+ * so a rename shows everywhere the id is used, including summaries written before it.
+ */
+export type Speaker = { id: SpeakerId; label: string; name: SpeakerName | null };
+
 /** What `meeting.json` holds. The transcript lives in its own append-only file. */
 export type Meeting = {
   id: MeetingId;
@@ -50,6 +63,8 @@ export type Meeting = {
   /** The user's "My thoughts". Summaries never touch it. */
   notes: string;
   summary: SummaryState;
+  /** The voices on system audio, in the order they first spoke. */
+  speakers: readonly Speaker[];
 };
 
 /** Transcript times are ms of recorded audio from the meeting's start, pauses left out. */
@@ -63,8 +78,8 @@ export type Segment = {
   final: boolean;
 } & Voice;
 
-/** The mic is the user. System audio is everyone else, named once a name is known. */
-export type Voice = { source: "mic" } | { source: "system"; speaker: string | null };
+/** The mic is the user. System audio is everyone else: one speaker once diarized, else null. */
+export type Voice = { source: "mic" } | { source: "system"; speakerId: SpeakerId | null };
 export type MeetingSource = Voice["source"];
 
 export const markerKinds = ["paused", "resumed", "dictated", "gap"] as const;
@@ -187,17 +202,45 @@ export function applyMeetingsChange(
   return { meetings, folders: change.folders, settings: change.settings };
 }
 
+/** Option+M, on the "M" key's position whatever the layout types there. */
+export const DEFAULT_MEETING_SHORTCUT: Shortcut = { keycode: 46, modifiers: ["option"] };
+
+/**
+ * What the meeting shortcut and the menu bar item do now: stop the meeting that records or is
+ * paused, wait while one starts, or start one.
+ */
+export type MeetingToggle = { kind: "start" } | { kind: "stop" | "wait"; id: MeetingId };
+
+export function meetingToggle(meetings: readonly Meeting[]): MeetingToggle {
+  const live = meetings.find(
+    ({ status }) =>
+      status.kind === "starting" || status.kind === "recording" || status.kind === "paused",
+  );
+  if (!live) return { kind: "start" };
+  return { kind: live.status.kind === "starting" ? "wait" : "stop", id: live.id };
+}
+
+export const meetingToggleLabels: Record<MeetingToggle["kind"], string> = {
+  start: "Start meeting",
+  stop: "Stop meeting",
+  wait: "Starting meeting…",
+};
+
 /** `refused` carries a message for the user; `unavailable` is a command a later step builds. */
 export type MeetingCommandResult =
   | { kind: "ok"; id: MeetingId }
   | { kind: "refused"; message: string }
   | { kind: "unavailable" };
 
+/** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
+export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
+
 /** What a meeting tells the user: warnings, prompts and outcomes. */
 export type MeetingNotice =
   | { kind: "startFailed"; message: string }
   | { kind: "resumeFailed"; message: string }
-  | { kind: "captureLost" }
+  /** `loss` is null when capture failed some other way, such as the helper stopping. */
+  | { kind: "captureLost"; loss: AudioLoss | null }
   | { kind: "maxLengthSoon"; inMs: number }
   | { kind: "maxLengthReached" }
   | { kind: "atMaxLength" }
@@ -235,6 +278,9 @@ export type PillMeeting = {
 /** Live transcript lines, pushed as they are written so an open meeting view can append them. */
 export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
 
+/** What a source said since its last segment, which may still change. Never saved; empty clears it. */
+export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };
+
 export type MeetingSearchField = "title" | "summary" | "notes" | "transcript";
 export type MeetingSearchHit = { id: MeetingId; field: MeetingSearchField; snippet: string };
 
@@ -260,8 +306,65 @@ export const summaryStale = (meeting: Meeting): boolean =>
 
 export const titleText = (meeting: Meeting) => meeting.title?.text ?? "Untitled meeting";
 
-export const speakerName = (segment: Segment) =>
-  segment.source === "mic" ? "You" : (segment.speaker ?? "Others");
+export const YOU = "You";
+export const OTHERS = "Others";
+
+export const speakerDisplayName = (speaker: Speaker) => speaker.name?.text ?? speaker.label;
+
+/** Who spoke a segment: You, a speaker's name or label, or Others before diarization. */
+export function speakerName(segment: Segment, speakers: readonly Speaker[]): string {
+  if (segment.source === "mic") return YOU;
+  const speaker = speakers.find(({ id }) => id === segment.speakerId);
+  return speaker ? speakerDisplayName(speaker) : OTHERS;
+}
+
+/** The token a summary writes for a speaker, `you` for the user, so a later rename shows in it. */
+export const speakerToken = (id: SpeakerId | "you") => `{{speaker:${id}}}`;
+
+/** Matches `speakerToken`; group 1 is the id. */
+export const SPEAKER_TOKEN = /\{\{speaker:([A-Za-z0-9_-]+)\}\}/g;
+
+/** The name a summary token stands for; an id the meeting no longer has reads as Others. */
+export function tokenName(id: string, speakers: readonly Speaker[]): string {
+  if (id === "you") return YOU;
+  const speaker = speakers.find((candidate) => candidate.id === id);
+  return speaker ? speakerDisplayName(speaker) : OTHERS;
+}
+
+/** Summary Markdown with each speaker token replaced by the name it stands for now. */
+export const resolveSpeakerTokens = (markdown: string, speakers: readonly Speaker[]) =>
+  markdown.replace(SPEAKER_TOKEN, (_token, id: string) => tokenName(id, speakers));
+
+/** Sets or, when blank, clears the user's name for one speaker. */
+export function renameSpeaker(meeting: Meeting, id: SpeakerId, text: string): Meeting {
+  const trimmed = text.trim();
+  if (!meeting.speakers.some((speaker) => speaker.id === id)) return meeting;
+  const speakers = meeting.speakers.map((speaker) =>
+    speaker.id === id
+      ? { ...speaker, name: trimmed === "" ? null : { text: trimmed, source: "user" as const } }
+      : speaker,
+  );
+  return { ...meeting, speakers };
+}
+
+/**
+ * Speakers for clusters a diarization found, numbered after the meeting's own. A resume after
+ * the audio was deleted diarizes only the new audio, so its voices get new speakers.
+ */
+export function addSpeakers(
+  meeting: Meeting,
+  count: number,
+): { meeting: Meeting; ids: SpeakerId[] } {
+  const added = Array.from({ length: count }, (_, index): Speaker => {
+    const n = meeting.speakers.length + index + 1;
+    return { id: `s${n}` as SpeakerId, label: `Speaker ${n}`, name: null };
+  });
+  return {
+    meeting:
+      added.length === 0 ? meeting : { ...meeting, speakers: [...meeting.speakers, ...added] },
+    ids: added.map(({ id }) => id),
+  };
+}
 
 const entryMs = (entry: TranscriptEntry) => (entry.kind === "segment" ? entry.startMs : entry.atMs);
 
@@ -285,20 +388,37 @@ export function foldTranscript(lines: readonly TranscriptEntry[]): TranscriptEnt
     .toSorted((a, b) => entryMs(a) - entryMs(b));
 }
 
+const ruleMatches = (meeting: Meeting, folder: FolderKind): boolean =>
+  folder.kind === "auto" &&
+  meeting.title !== null &&
+  folder.rule.text.trim() !== "" &&
+  meeting.title.text.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
+
 export function autoFolderIds(
   meeting: Meeting,
   folders: readonly Folder[],
   settings: MeetingsSettings,
 ): FolderId[] {
-  if (!settings.autoFolders || meeting.title === null) return [];
-  const title = meeting.title.text.toLocaleLowerCase();
-  return folders.flatMap((folder) =>
-    folder.kind === "auto" &&
-    folder.rule.text.trim() !== "" &&
-    title.includes(folder.rule.text.trim().toLocaleLowerCase())
-      ? [folder.id]
-      : [],
-  );
+  if (!settings.autoFolders) return [];
+  return folders.flatMap((folder) => (ruleMatches(meeting, folder) ? [folder.id] : []));
+}
+
+/**
+ * Files an existing meeting into `folder` after the folder was made (`before` null), its rule
+ * changed, or automatic folders were turned on. A meeting the new rule matches joins; one only
+ * the old rule matched leaves; one added by hand stays. Running it twice changes nothing.
+ */
+export function refile(meeting: Meeting, folder: Folder, before: FolderKind | null): Meeting {
+  const inFolder = meeting.folderIds.includes(folder.id);
+  if (ruleMatches(meeting, folder)) {
+    return inFolder ? meeting : { ...meeting, folderIds: [...meeting.folderIds, folder.id] };
+  }
+  // A folder turned manual keeps what it holds.
+  const left =
+    inFolder && folder.kind === "auto" && before !== null && ruleMatches(meeting, before);
+  return left
+    ? { ...meeting, folderIds: meeting.folderIds.filter((id) => id !== folder.id) }
+    : meeting;
 }
 
 const SNIPPET_CONTEXT = 40;
@@ -318,7 +438,10 @@ export function searchMeeting(
 ): MeetingSearchHit | null {
   const needle = query.trim().toLocaleLowerCase();
   if (needle === "") return null;
-  const summary = meeting.summary.kind === "ready" ? meeting.summary.summary.markdown : "";
+  const summary =
+    meeting.summary.kind === "ready"
+      ? resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers)
+      : "";
   const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
   const fields: [MeetingSearchField, string][] = [
     ["title", meeting.title?.text ?? ""],

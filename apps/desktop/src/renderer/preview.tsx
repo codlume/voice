@@ -26,6 +26,7 @@ import type {
 import { EMPTY_INSIGHTS, dayKey, type DayKey, type Insights } from "../shared/insights.ts";
 import {
   DEFAULT_MEETINGS_SETTINGS,
+  renameSpeaker,
   retitle,
   searchMeeting,
   type Folder,
@@ -37,6 +38,8 @@ import {
   type MeetingsState,
   type PillMeeting,
   type Segment,
+  type Speaker,
+  type SpeakerId,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import type { ModelId } from "../shared/models.ts";
@@ -217,10 +220,13 @@ function dayAt(daysAgo: number, hour: number, minute: number): number {
 }
 
 let segmentCount = 0;
+// Fixture speakers are keyed by their name, so a fixture line can name who says it.
 const said = (atMinute: number, text: string, speaker: string | null | "you" = "you"): Segment => {
   const startMs = Math.round(atMinute * MINUTE);
   const voice =
-    speaker === "you" ? { source: "mic" as const } : { source: "system" as const, speaker };
+    speaker === "you"
+      ? { source: "mic" as const }
+      : { source: "system" as const, speakerId: speaker as SpeakerId | null };
   return {
     kind: "segment",
     id: `s${++segmentCount}`,
@@ -231,6 +237,20 @@ const said = (atMinute: number, text: string, speaker: string | null | "you" = "
     ...voice,
   };
 };
+/** A named speaker for every voice the transcript gives a name, in the order they first spoke. */
+function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker[] {
+  const names = transcript.flatMap((entry) =>
+    entry.kind === "segment" && entry.source === "system" && entry.speakerId
+      ? [entry.speakerId]
+      : [],
+  );
+  return [...new Set(names)].map((name, index) => ({
+    id: name,
+    label: `Speaker ${index + 1}`,
+    name: { text: name, source: "user" },
+  }));
+}
+
 const marked = (atMinute: number, marker: MarkerKind): TranscriptEntry => ({
   kind: "marker",
   marker,
@@ -258,6 +278,7 @@ function fixtureMeeting(
     folderIds: [],
     notes: "",
     summary: { kind: "none" },
+    speakers: [],
     ...patch,
   };
 }
@@ -349,6 +370,56 @@ function sampleMeetings({ recording = false } = {}): MeetingFixtures {
       fixtureMeeting(6, null, since, 0, { spans: [], status: { kind: "recording", since } }),
     );
   }
+  const transcripts: MeetingFixtures["transcripts"] = {
+    [fixtureId(1)]: [
+      said(0.1, "Morning. Let's start with the beta feedback."),
+      said(
+        0.4,
+        "Most of it is about the export. People lose formatting in long notes.",
+        "Priya Shah",
+      ),
+      said(1.2, "The fix is ready. I want one more day of testing on older Macs.", "Tom Becker"),
+      said(1.6, "Then we ship it Thursday and open the beta to the waitlist."),
+      marked(2.0, "dictated"),
+      said(2.3, "Agreed. I'll draft the launch email by Wednesday.", "Priya Shah"),
+      marked(18, "paused"),
+      marked(18, "resumed"),
+      said(
+        18.2,
+        "The Windows build is about a week behind, so the email should wait.",
+        "Tom Becker",
+      ),
+      said(19, "Fine. Keep the old pricing page until the email goes out."),
+    ],
+    [fixtureId(2)]: [
+      said(0.2, "Here is the new onboarding flow, three screens instead of five.", "Lena Ortiz"),
+      said(3, "The microphone prompt still shows up before we explain anything."),
+      marked(20, "paused"),
+      marked(20, "resumed"),
+      said(20.5, "I moved the prompt after the first screen. Take a look.", "Lena Ortiz"),
+    ],
+    [fixtureId(3)]: [
+      said(0.1, "Zaczynamy od zakresu sprintu.", "Anna Kowalska"),
+      said(0.8, "Najpierw wyszukiwanie, potem ekran ustawień."),
+      said(1.5, "Testy na macOS 14 trwają czterdzieści minut. Trzeba je podzielić.", "Piotr Nowak"),
+      said(2.4, "Demo w piątek trzynastego listopada.", "Anna Kowalska"),
+    ],
+    [fixtureId(4)]: [
+      said(0.1, "Yesterday I finished the folder dialog."),
+      said(0.6, "I'm on the export bug today.", null),
+    ],
+    [fixtureId(5)]: [
+      said(0.2, "We keep our meeting notes in a wiki and paste them in by hand.", "Sam Patel"),
+      said(1, "Voice can export each meeting as Markdown. I'll send you the steps."),
+    ],
+    ...(recording && {
+      [fixtureId(6)]: [
+        said(0.1, "Okay, recording. Let's go through the roadmap."),
+        { ...said(0.4, "Can everyone hear me", null), final: false },
+      ],
+    }),
+  };
+  for (const meeting of meetings) meeting.speakers = speakersIn(transcripts[meeting.id]);
   return {
     state: {
       meetings,
@@ -364,59 +435,7 @@ function sampleMeetings({ recording = false } = {}): MeetingFixtures {
       ],
       settings: DEFAULT_MEETINGS_SETTINGS,
     },
-    transcripts: {
-      [fixtureId(1)]: [
-        said(0.1, "Morning. Let's start with the beta feedback."),
-        said(
-          0.4,
-          "Most of it is about the export. People lose formatting in long notes.",
-          "Priya Shah",
-        ),
-        said(1.2, "The fix is ready. I want one more day of testing on older Macs.", "Tom Becker"),
-        said(1.6, "Then we ship it Thursday and open the beta to the waitlist."),
-        marked(2.0, "dictated"),
-        said(2.3, "Agreed. I'll draft the launch email by Wednesday.", "Priya Shah"),
-        marked(18, "paused"),
-        marked(18, "resumed"),
-        said(
-          18.2,
-          "The Windows build is about a week behind, so the email should wait.",
-          "Tom Becker",
-        ),
-        said(19, "Fine. Keep the old pricing page until the email goes out."),
-      ],
-      [fixtureId(2)]: [
-        said(0.2, "Here is the new onboarding flow, three screens instead of five.", "Lena Ortiz"),
-        said(3, "The microphone prompt still shows up before we explain anything."),
-        marked(20, "paused"),
-        marked(20, "resumed"),
-        said(20.5, "I moved the prompt after the first screen. Take a look.", "Lena Ortiz"),
-      ],
-      [fixtureId(3)]: [
-        said(0.1, "Zaczynamy od zakresu sprintu.", "Anna Kowalska"),
-        said(0.8, "Najpierw wyszukiwanie, potem ekran ustawień."),
-        said(
-          1.5,
-          "Testy na macOS 14 trwają czterdzieści minut. Trzeba je podzielić.",
-          "Piotr Nowak",
-        ),
-        said(2.4, "Demo w piątek trzynastego listopada.", "Anna Kowalska"),
-      ],
-      [fixtureId(4)]: [
-        said(0.1, "Yesterday I finished the folder dialog."),
-        said(0.6, "I'm on the export bug today.", null),
-      ],
-      [fixtureId(5)]: [
-        said(0.2, "We keep our meeting notes in a wiki and paste them in by hand.", "Sam Patel"),
-        said(1, "Voice can export each meeting as Markdown. I'll send you the steps."),
-      ],
-      ...(recording && {
-        [fixtureId(6)]: [
-          said(0.1, "Okay, recording. Let's go through the roadmap."),
-          { ...said(0.4, "Can everyone hear me", null), final: false },
-        ],
-      }),
-    },
+    transcripts,
   };
 }
 
@@ -761,6 +780,8 @@ function fakeMeetings(
     },
     renameMeeting: async (id, title) =>
       editMeeting(id, (meeting) => retitle(meeting, title, state.folders, state.settings)),
+    renameMeetingSpeaker: async (id, speakerId, name) =>
+      editMeeting(id, (meeting) => renameSpeaker(meeting, speakerId, name)),
     updateMeetingNotes: async (id, notes) => editMeeting(id, (meeting) => ({ ...meeting, notes })),
     deleteMeeting: async (id) =>
       set({ meetings: state.meetings.filter((meeting) => meeting.id !== id) }),
@@ -796,6 +817,7 @@ function fakeMeetings(
     },
     exportMeetingMarkdown: async () => "cancelled",
     startMeeting: unavailable,
+    toggleMeeting: unavailable,
     pauseMeeting: unavailable,
     resumeMeeting: unavailable,
     stopMeeting: unavailable,
@@ -803,6 +825,7 @@ function fakeMeetings(
     discardMeeting: unavailable,
     generateMeetingSummary: unavailable,
     onMeetingTranscript: () => () => {},
+    onMeetingPartial: () => () => {},
     onMeetingNotice: () => () => {},
   };
 }
@@ -930,6 +953,10 @@ function fakeVoice(
           pageAnimationMs: patch.pageAnimationMs ?? snapshot.settings.pageAnimationMs,
           microphone:
             patch.microphone === undefined ? snapshot.settings.microphone : patch.microphone,
+          meetingShortcut:
+            patch.meetingShortcut === undefined
+              ? snapshot.settings.meetingShortcut
+              : patch.meetingShortcut,
           lowerAudioWhileDictating:
             patch.lowerAudioWhileDictating ?? snapshot.settings.lowerAudioWhileDictating,
           lowerAudioByPercent: patch.lowerAudioByPercent ?? snapshot.settings.lowerAudioByPercent,

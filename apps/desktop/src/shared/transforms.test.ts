@@ -103,7 +103,16 @@ describe("parseShortcut", () => {
 describe("transformProblem", () => {
   test("a valid transform has no problem beside others", () => {
     expect(transformProblem(custom, BUILT_IN_TRANSFORMS)).toBeNull();
-    expect(transformProblem({ ...custom, shortcut: null }, [{ ...custom, id: other }])).toBeNull();
+    const sibling: Transform = { ...custom, id: other };
+    expect(transformProblem({ ...custom, shortcut: null }, [sibling])).toBeNull();
+  });
+
+  test("a shortcut the meeting shortcut holds is taken", () => {
+    const meeting = { name: "Start or stop a meeting", shortcut: custom.shortcut };
+    expect(transformProblem(custom, [meeting])).toEqual({
+      field: "shortcut",
+      message: "Start or stop a meeting already uses this shortcut.",
+    });
   });
 
   test.each([

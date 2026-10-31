@@ -1,13 +1,13 @@
 import { Progress } from "@base-ui/react/progress";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon } from "lucide-react";
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 
 import type { Settings, Snapshot } from "../shared/api.ts";
 import type { HistoryState } from "../shared/history.ts";
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
-import { checklist, type ChecklistRow, type SetupCommand } from "./checklist.ts";
+import { checklist, settled, type ChecklistRow, type SetupCommand } from "./checklist.ts";
 import { History } from "./History.tsx";
 import { YourStats } from "./HomeStats.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
@@ -142,7 +142,7 @@ function run(command: SetupCommand): Promise<void> {
   }
 }
 
-function SetupRow({ row }: { row: ChecklistRow }) {
+export function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
   return (
     <li {...stylex.props(styles.row)}>
@@ -222,17 +222,33 @@ function CrashReportsRow({ on }: { on: boolean }) {
   );
 }
 
-function Setup({ snapshot, rows }: { snapshot: Snapshot; rows: readonly ChecklistRow[] }) {
-  const done = rows.filter((row) => row.status.kind === "ready").length;
+export function SetupChecklist({
+  title,
+  rows,
+  children,
+  after,
+  counted = true,
+}: {
+  title: string;
+  rows: readonly ChecklistRow[];
+  counted?: boolean;
+  /** More rows inside the card, below the list. */
+  children?: ReactNode;
+  after?: ReactNode;
+}) {
+  const id = useId();
+  const done = rows.filter(settled).length;
   return (
-    <section aria-labelledby="setup" {...stylex.props(styles.section)}>
+    <section aria-labelledby={id} {...stylex.props(styles.section)}>
       <div {...stylex.props(styles.sectionHead)}>
-        <h2 id="setup" {...stylex.props(styles.label)}>
-          Set up Voice
+        <h2 id={id} {...stylex.props(styles.label)}>
+          {title}
         </h2>
-        <p {...stylex.props(styles.note)}>
-          {done} of {rows.length} done
-        </p>
+        {counted && (
+          <p {...stylex.props(styles.note)}>
+            {done} of {rows.length} done
+          </p>
+        )}
       </div>
       <Card>
         <ul {...stylex.props(styles.list)}>
@@ -240,10 +256,22 @@ function Setup({ snapshot, rows }: { snapshot: Snapshot; rows: readonly Checklis
             <SetupRow key={row.id} row={row} />
           ))}
         </ul>
-        <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
+        {children}
       </Card>
-      {dictatesWithFn(snapshot.settings) && <GlobeHint />}
+      {after}
     </section>
+  );
+}
+
+function Setup({ snapshot, rows }: { snapshot: Snapshot; rows: readonly ChecklistRow[] }) {
+  return (
+    <SetupChecklist
+      title="Set up Voice"
+      rows={rows}
+      after={dictatesWithFn(snapshot.settings) && <GlobeHint />}
+    >
+      <CrashReportsRow on={snapshot.settings.diagnostics === "on"} />
+    </SetupChecklist>
   );
 }
 

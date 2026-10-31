@@ -142,3 +142,21 @@ private func silence(seconds: Double) -> [Float] {
         #expect(filter.release() == [mic(0, 2_000, "hello")])
     }
 }
+
+@Suite struct MeetingWatchTests {
+    @Test func aRevokedPermissionOrASilentMicrophoneEndsTheLeg() {
+        let fine = MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: 200)
+        #expect(fine == nil)
+        #expect(MeetingWatch.loss(micAllowed: false, systemRecording: true, systemAllowed: true, msSinceMicAudio: 200)
+                == AudioLoss(source: .mic, reason: .permission))
+        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: false, msSinceMicAudio: 200)
+                == AudioLoss(source: .system, reason: .permission))
+        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: 6000)
+                == AudioLoss(source: .mic, reason: .device))
+    }
+
+    @Test func quietSystemAudioAMicReopeningAndAnUnrecordedSourceAreNotLosses() {
+        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: false, systemAllowed: false, msSinceMicAudio: 0) == nil)
+        #expect(MeetingWatch.loss(micAllowed: true, systemRecording: true, systemAllowed: true, msSinceMicAudio: nil) == nil)
+    }
+}

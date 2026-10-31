@@ -11,10 +11,12 @@ import {
   parseFolderId,
   parseMeetingId,
   parseMeetingsSettingsPatch,
+  refile,
   searchMeeting,
   type Folder,
   type FolderDraft,
   type FolderId,
+  type FolderKind,
   type Meeting,
   type MeetingId,
   type MeetingSearchHit,
@@ -24,6 +26,8 @@ import {
   type MeetingsState,
   type MeetingStatus,
   type Span,
+  type Speaker,
+  type SpeakerId,
   type Summary,
   type SummaryState,
   type TranscriptEntry,
@@ -46,8 +50,19 @@ export type MeetingsStore = {
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
   append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
-  /** Swaps in a whole transcript, as the final pass does, atomically. */
-  replaceTranscript(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
+  /**
+   * Swaps in a whole transcript and the meeting that goes with it, as the final pass does. The
+   * transcript is written first, atomically, so a crash between the two leaves a transcript
+   * whose new speakers read as Others and a meeting that runs the pass again. False when the
+   * meeting is gone.
+   */
+  replaceTranscript(
+    id: MeetingId,
+    change: (
+      meeting: Meeting,
+      transcript: TranscriptEntry[],
+    ) => { meeting: Meeting; transcript: readonly TranscriptEntry[] },
+  ): Promise<boolean>;
   /** Deletes the meeting's folder: transcript, notes, summary and any audio. */
   remove(id: MeetingId): Promise<void>;
   createFolder(draft: FolderDraft): Promise<Folder>;
@@ -236,12 +251,24 @@ export function createMeetingsStore(options: {
     ready = true;
   }).then(expire);
 
-  const editFolder = (id: FolderId, change: (folder: Folder) => Folder) =>
-    serial(async () => {
-      if (!folders.some((folder) => folder.id === id)) return;
-      await writeFolders(folders.map((folder) => (folder.id === id ? change(folder) : folder)));
-      publish([]);
-    });
+  // Runs after the folders are written, so no meeting points at a folder that is not saved.
+  async function refileMeetings(
+    targets: readonly { folder: Folder; before: FolderKind | null }[],
+  ): Promise<Meeting[]> {
+    if (!settings.autoFolders) return [];
+    const changed: Meeting[] = [];
+    for (const meeting of meetings.values()) {
+      const next = targets.reduce(
+        (current, { folder, before }) => refile(current, folder, before),
+        meeting,
+      );
+      if (next === meeting) continue;
+      await writeMeeting(next);
+      meetings.set(next.id, next);
+      changed.push(next);
+    }
+    return changed;
+  }
 
   return {
     loaded: () => loading,
@@ -275,12 +302,19 @@ export function createMeetingsStore(options: {
         await appendFile(file, lead + lines(entries), { mode: FILE_MODE });
         appendChecked.add(id);
       }),
-    replaceTranscript: (id, entries) =>
+    replaceTranscript: (id, change) =>
       serial(async () => {
-        if (tombstones.has(id)) return;
-        await mkdir(meetingDir(id), { recursive: true, mode: DIR_MODE });
-        await writeFileAtomic(transcriptFile(id), lines(entries), { mode: FILE_MODE });
+        const meeting = meetings.get(id);
+        if (!meeting) return false;
+        const next = change(meeting, await readTranscript(id));
+        await writeFileAtomic(transcriptFile(id), lines(next.transcript), { mode: FILE_MODE });
         appendChecked.add(id);
+        if (next.meeting !== meeting) {
+          await writeMeeting(next.meeting);
+          meetings.set(id, next.meeting);
+          publish([next.meeting]);
+        }
+        return true;
       }),
     remove: (id) => serial(() => removeNow(id)),
     createFolder: (draft) =>
@@ -291,10 +325,18 @@ export function createMeetingsStore(options: {
           createdAt: now(),
         };
         await writeFolders([...folders, folder]);
-        publish([]);
+        publish(await refileMeetings([{ folder, before: null }]));
         return folder;
       }),
-    updateFolder: (id, draft) => editFolder(id, (folder) => ({ ...folder, ...cleanDraft(draft) })),
+    updateFolder: (id, draft) =>
+      serial(async () => {
+        const before = folders.find((folder) => folder.id === id);
+        if (!before) return;
+        // Built from the draft alone, so a folder turned manual drops its old rule.
+        const folder: Folder = { ...cleanDraft(draft), id, createdAt: before.createdAt };
+        await writeFolders(folders.map((other) => (other.id === id ? folder : other)));
+        publish(await refileMeetings([{ folder, before }]));
+      }),
     removeFolder: (id) =>
       serial(async () => {
         if (!folders.some((folder) => folder.id === id)) return;
@@ -330,8 +372,10 @@ export function createMeetingsStore(options: {
         const next: MeetingsSettings = { ...settings, ...patch };
         await mkdir(dir, { recursive: true, mode: DIR_MODE });
         await writeFileAtomic(settingsFile, envelope({ settings: next }), { mode: FILE_MODE });
+        const turnedOn = next.autoFolders && !settings.autoFolders;
         settings = next;
-        publish([]);
+        const autoFolders = turnedOn ? folders.filter((folder) => folder.kind === "auto") : [];
+        publish(await refileMeetings(autoFolders.map((folder) => ({ folder, before: null }))));
       });
       if (patch.retention !== undefined) await expire();
     },
@@ -483,7 +527,17 @@ function parseMeeting(raw: unknown): Meeting | null {
     folderIds: raw.folderIds.flatMap((folderId) => parseFolderId(folderId) ?? []),
     notes: raw.notes,
     summary,
+    speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
   };
+}
+
+function parseSpeaker(raw: unknown): Speaker[] {
+  if (!isRecord(raw) || !isText(raw.id) || !isText(raw.label)) return [];
+  const speaker = { id: raw.id as SpeakerId, label: raw.label };
+  if (raw.name === null) return [{ ...speaker, name: null }];
+  const { text, source } = isRecord(raw.name) ? raw.name : {};
+  if (!isText(text) || (source !== "user" && source !== "meetingApp")) return [];
+  return [{ ...speaker, name: { text, source } }];
 }
 
 function parseFolders(raw: unknown): Folder[] {
@@ -526,8 +580,9 @@ function parseLine(line: string): TranscriptEntry[] {
     final: raw.final,
   };
   if (raw.source === "mic") return [{ ...base, source: "mic" }];
-  if (raw.source === "system" && (raw.speaker === null || isText(raw.speaker))) {
-    return [{ ...base, source: "system", speaker: raw.speaker }];
+  if (raw.source === "system") {
+    const speakerId = isText(raw.speakerId) ? (raw.speakerId as SpeakerId) : null;
+    return [{ ...base, source: "system", speakerId }];
   }
   return [];
 }

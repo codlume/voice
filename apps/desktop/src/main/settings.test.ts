@@ -163,6 +163,7 @@ describe("parseSettings", () => {
       dictionary: [],
       zoomLevel: 0,
       transforms: DEFAULT_TRANSFORMS,
+      meetingShortcut: { keycode: 46, modifiers: ["option"] },
     });
   });
 
@@ -397,10 +398,52 @@ describe("applyPatch", () => {
       dictionary: [{ id: "d", phrase: "btw", replacement: "by the way" }],
       zoomLevel: 1.5,
       transforms: { enabled: true, items: [bullets], autoApply: bullets.id },
+      meetingShortcut: { keycode: 46, modifiers: ["control", "option"] },
     };
     const { assignments: _, ...cleanup } = changed.cleanup;
     const wire: unknown = JSON.parse(JSON.stringify({ ...changed, cleanup }));
     expect(applyPatch(DEFAULT_SETTINGS, parseSettingsPatch(wire))).toEqual(changed);
+  });
+
+  test("the meeting shortcut defaults to Option+M, can be changed or turned off, and survives a reload", () => {
+    const OPTION_M = { keycode: 46, modifiers: ["option"] };
+    expect(parseSettings({}).meetingShortcut).toEqual(OPTION_M);
+    expect(parseSettings({ meetingShortcut: null }).meetingShortcut).toBeNull();
+    expect(parseSettings({ meetingShortcut: { keycode: 46, modifiers: [] } }).meetingShortcut).toBe(
+      null,
+    );
+    const changed = applyPatch(
+      DEFAULT_SETTINGS,
+      parseSettingsPatch({ meetingShortcut: { keycode: 46, modifiers: ["option", "shift"] } }),
+    );
+    expect(changed.meetingShortcut).toEqual({ keycode: 46, modifiers: ["option", "shift"] });
+    expect(parseSettings(JSON.parse(JSON.stringify(changed))).meetingShortcut).toEqual(
+      changed.meetingShortcut,
+    );
+    const off = applyPatch(changed, parseSettingsPatch({ meetingShortcut: null }));
+    expect(parseSettings(JSON.parse(JSON.stringify(off))).meetingShortcut).toBeNull();
+  });
+
+  test("a transform keeps its shortcut, so the meeting shortcut it would share turns off", () => {
+    const onOptionM = { ...bullets, shortcut: { keycode: 46, modifiers: ["option"] } } as const;
+    const items = [...BUILT_IN_TRANSFORMS, onOptionM];
+    expect(parseSettings({ transforms: { items } }).meetingShortcut).toBeNull();
+    const taken = applyPatch(DEFAULT_SETTINGS, parseSettingsPatch({ transforms: { items } }));
+    expect(taken.transforms.items.at(-1)?.shortcut).toEqual(onOptionM.shortcut);
+    expect(taken.meetingShortcut).toBeNull();
+    expect(
+      applyPatch(DEFAULT_SETTINGS, parseSettingsPatch({ meetingShortcut: OPTION_1 }))
+        .meetingShortcut,
+    ).toBeNull();
+  });
+
+  test.each([
+    { keycode: 46, modifiers: ["shift"] },
+    { keycode: 46, modifiers: ["shift", "option"] },
+    { keycode: 46 },
+    "option+m",
+  ])("refuses a meeting shortcut patch %j instead of saving it", (meetingShortcut) => {
+    expect(() => parseSettingsPatch({ meetingShortcut })).toThrow("Could not save these settings.");
   });
 
   test("a transforms patch changes only the fields it names and replaces the list whole", () => {
@@ -525,6 +568,7 @@ describe("applyPatch", () => {
       dictionary: [],
       zoomLevel: 0,
       transforms: DEFAULT_TRANSFORMS,
+      meetingShortcut: { keycode: 46, modifiers: ["option"] },
     });
     expect(DEFAULT_SETTINGS.cleanup).toEqual({
       enabled: true,

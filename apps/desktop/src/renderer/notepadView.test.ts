@@ -12,6 +12,7 @@ const meeting = (status: MeetingStatus): Meeting => ({
   folderIds: [],
   notes: "",
   summary: { kind: "none" },
+  speakers: [],
 });
 
 const commands = (view: ReturnType<typeof promptView>) =>

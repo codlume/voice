@@ -4,14 +4,21 @@ import {
   endedAt,
   foldTranscript,
   meetingRetentionMs,
+  OTHERS,
+  YOU,
+  SPEAKER_TOKEN,
+  speakerDisplayName,
   speakerName,
   startedAt,
+  tokenName,
   type MaxLength,
   type Meeting,
   type MeetingRetention,
   type MeetingSearchField,
   type MeetingSearchHit,
+  type MeetingSource,
   type MeetingStatus,
+  type Speaker,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { dayLabel, formatterCache, timeLabel } from "./historyView.ts";
@@ -132,14 +139,6 @@ export function overview(markdown: string): string | null {
   return first?.kind === "paragraph" ? first.text : null;
 }
 
-/** The named voices in a transcript, the people a summary can mention. */
-export function speakerNames(transcript: readonly TranscriptEntry[]): string[] {
-  const names = transcript.flatMap((entry) =>
-    entry.kind === "segment" && entry.source === "system" && entry.speaker ? [entry.speaker] : [],
-  );
-  return [...new Set(names)];
-}
-
 /** `at` is the run's offset in the source text, which keys it when rendered. */
 export type Run = { text: string; bold: boolean; name: boolean; at: number };
 
@@ -155,11 +154,35 @@ function nameRuns(text: string, bold: boolean, start: number, pattern: RegExp | 
   });
 }
 
+// The token pattern without the global flag, whose `lastIndex` a shared regex would carry over.
+const speakerTokens = new RegExp(SPEAKER_TOKEN.source);
+
+function speakerRuns(
+  text: string,
+  bold: boolean,
+  start: number,
+  pattern: RegExp | null,
+  speakers: readonly Speaker[],
+): Run[] {
+  let at = start;
+  return text.split(speakerTokens).flatMap((part, index) => {
+    const from = at;
+    if (index % 2 === 0) {
+      at += part.length;
+      return nameRuns(part, bold, from, pattern);
+    }
+    at += `{{speaker:${part}}}`.length;
+    return [{ text: tokenName(part, speakers), bold, name: true, at: from }];
+  });
+}
+
 /**
- * Inline text as runs: **bold** spans and the speaker names to highlight. A name matches as a
- * whole word, so "Ann" does not light up inside "Annual".
+ * Inline summary text as runs: **bold** spans and the speakers to highlight. A speaker token
+ * shows the speaker's current name; a name written out matches as a whole word, so "Ann" does
+ * not light up inside "Annual".
  */
-export function inlineRuns(text: string, names: readonly string[]): Run[] {
+export function inlineRuns(text: string, speakers: readonly Speaker[]): Run[] {
+  const names = speakers.map(speakerDisplayName);
   const sorted = names.filter((name) => name.trim() !== "").toSorted((a, b) => b.length - a.length);
   const pattern =
     sorted.length > 0
@@ -173,7 +196,7 @@ export function inlineRuns(text: string, names: readonly string[]): Run[] {
     const bold = index % 2 === 1;
     const start = at + (bold ? 2 : 0);
     at += part.length + (bold ? 4 : 0);
-    return nameRuns(part, bold, start, pattern);
+    return speakerRuns(part, bold, start, pattern, speakers);
   });
 }
 
@@ -191,7 +214,10 @@ export type TranscriptRow =
     }
   | { kind: "marker"; id: string; text: string };
 
-export function transcriptRows(lines: readonly TranscriptEntry[]): TranscriptRow[] {
+export function transcriptRows(
+  lines: readonly TranscriptEntry[],
+  speakers: readonly Speaker[],
+): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   let lastSpeaker: string | null = null;
   for (const [index, entry] of foldTranscript(lines).entries()) {
@@ -204,7 +230,7 @@ export function transcriptRows(lines: readonly TranscriptEntry[]): TranscriptRow
       lastSpeaker = null;
       continue;
     }
-    const speaker = speakerName(entry);
+    const speaker = speakerName(entry, speakers);
     rows.push({
       kind: "speech",
       id: entry.id,
@@ -218,6 +244,31 @@ export function transcriptRows(lines: readonly TranscriptEntry[]): TranscriptRow
     lastSpeaker = speaker;
   }
   return rows;
+}
+
+/**
+ * Unconfirmed text as gray rows after the transcript, the user's first. The other side is
+ * Others: speakers are told apart only after Stop.
+ */
+export function partialRows(partials: Partial<Record<MeetingSource, string>>): TranscriptRow[] {
+  return (["mic", "system"] as const).flatMap((source) => {
+    const text = partials[source]?.trim();
+    if (!text) return [];
+    const mine = source === "mic";
+    const speaker = mine ? YOU : OTHERS;
+    return [
+      {
+        kind: "speech",
+        id: `partial-${source}`,
+        speaker,
+        mine,
+        time: "",
+        text,
+        final: false,
+        continues: false,
+      },
+    ];
+  });
 }
 
 const hitLabels: Record<MeetingSearchField, string | null> = {

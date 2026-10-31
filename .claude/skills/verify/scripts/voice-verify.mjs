@@ -834,6 +834,17 @@ const commands = {
     out({ clicked: id });
   },
 
+  async tray() {
+    const [id] = args;
+    const inspectPort = requireInstance().inspectPort;
+    // No script can click the menu bar, so this lists or chooses the tray menu's items in main.
+    if (id) await evaluateInMain(inspectPort, `globalThis.voiceTest.clickTrayItem(${show(id)})`);
+    out({
+      ...(id ? { clicked: id } : {}),
+      items: await evaluateInMain(inspectPort, "globalThis.voiceTest.trayItems()"),
+    });
+  },
+
   async reopen() {
     const state = requireInstance();
     const hubOpen = async () =>
@@ -1432,6 +1443,7 @@ const commands = {
   browser [google-code]          play the browser's part of a pending sign-in (apps/api/scripts/play-browser.mjs)
   callback <code>                deliver the landing page's com.codlume.voice:// URL to the main process
   menu <id>                      choose an application menu item by id, as its shortcut would
+  tray [id]                      list the menu bar items, or choose one by id (meeting)
   second-instance <code>         launch a second Voice with that URL as its argument; print its exit
   reopen                         close the Voice window, then open Voice again (second copy hands over)
   front                          bring the Voice window in front of other apps and wait until it paints

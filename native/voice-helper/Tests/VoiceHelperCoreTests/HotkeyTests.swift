@@ -342,3 +342,40 @@ private func release(_ keycode: Int64, flags: UInt64) -> KeyEvent {
     #expect(hotkey.reconcile(flags: 0) == nil)
     #expect(hotkey.handle(release(18, flags: leftOptionBits), activity: .idle) == .none)
 }
+
+// The meeting shortcut. Keycode 46 is the "M" position.
+private let optionM = KeyCombo(keycode: 46, modifiers: [.option])
+private let meetingFires = HotkeyDecision(emit: .meeting, consume: true)
+
+@Test func meetingShortcutFiresOncePerPressAndSwallowsTheKey() {
+    var hotkey = Hotkeys(key: .fn, toggleKey: nil, meeting: optionM, initialFlags: 0)
+    #expect(hotkey.handle(press(46, flags: leftOptionBits), activity: .idle) == meetingFires)
+    #expect(hotkey.handle(press(46, flags: leftOptionBits, isRepeat: true), activity: .idle) == consumed)
+    #expect(hotkey.handle(release(46, flags: leftOptionBits), activity: .idle) == consumed)
+    #expect(hotkey.handle(press(46, flags: 0), activity: .idle) == .none)
+    #expect(hotkey.handle(press(46, flags: optionBit | shiftBit), activity: .idle) == .none)
+}
+
+@Test func meetingShortcutNeverFiresFromARepeatAlone() {
+    // A key already down when the tap starts or the shortcut changes arrives only as repeats.
+    var hotkey = Hotkeys(key: .fn, toggleKey: nil, meeting: optionM, initialFlags: 0)
+    #expect(hotkey.handle(press(46, flags: leftOptionBits, isRepeat: true), activity: .idle) == consumed)
+    #expect(hotkey.handle(release(46, flags: leftOptionBits), activity: .idle) == .none)
+}
+
+@Test func meetingShortcutFiresBesideAToggledDictationButNotDuringAHold() {
+    var hotkey = Hotkeys(key: .rightOption, toggleKey: nil, meeting: optionM, initialFlags: 0)
+    #expect(hotkey.handle(press(46, flags: leftOptionBits), activity: .capturing) == meetingFires)
+    #expect(hotkey.handle(release(46, flags: leftOptionBits), activity: .capturing) == consumed)
+    #expect(hotkey.handle(rightOptionDown, activity: .idle) == emits(.down))
+    #expect(hotkey.handle(press(46, flags: rightOptionBits), activity: .capturing) == emits(.chord))
+}
+
+@Test func meetingShortcutOffOrChangedStopsMatching() {
+    var hotkey = Hotkeys(key: .fn, toggleKey: nil, meeting: optionM, initialFlags: 0)
+    hotkey.setMeeting(nil)
+    #expect(hotkey.handle(press(46, flags: leftOptionBits), activity: .idle) == .none)
+    hotkey.setMeeting(KeyCombo(keycode: 46, modifiers: [.control, .option]))
+    #expect(hotkey.handle(press(46, flags: leftOptionBits), activity: .idle) == .none)
+    #expect(hotkey.handle(press(46, flags: optionBit | 0x4_0000), activity: .idle) == meetingFires)
+}

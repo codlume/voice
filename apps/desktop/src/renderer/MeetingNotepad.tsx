@@ -5,12 +5,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 
 import type {
   MeetingCommandResult,
+  Meeting,
   MeetingId,
   NotepadState,
   TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
-import { transcriptRows, type TranscriptRow } from "./meetingsView.ts";
+import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
 import {
   mergeTranscript,
   notepadStatus,
@@ -22,6 +23,7 @@ import {
 import { pageStyles } from "./pageStyles.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
+import { useMeetingPartials } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
 import { useThoughts } from "./useThoughts.ts";
 import { notepadApi } from "./voice.ts";
@@ -186,30 +188,54 @@ function useNotepadState(): NotepadState | null | undefined {
   return state;
 }
 
-/** The meeting's transcript, read once and then followed line by line while it records. */
-function useLiveTranscript(id: MeetingId) {
+/**
+ * The meeting's transcript, read and then followed line by line while it records, with each
+ * source's unconfirmed text after it. Like the Voice window, it reads again whenever main
+ * publishes a new version of the meeting, which is how the final pass's rewrite after Stop
+ * arrives; until that read lands the last one stays on screen.
+ */
+function useLiveTranscript(meeting: Meeting) {
   const [lines, setLines] = useState<{
     read: readonly TranscriptEntry[] | null;
     live: readonly TranscriptEntry[];
   }>({ read: null, live: [] });
   useEffect(() => {
     let current = true;
+    // Lines pushed after this read was asked for; the lines pushed before it belong to the last one.
+    let pending: TranscriptEntry[] | null = [];
     const unsubscribe = notepadApi().onMeetingTranscript((change) => {
-      if (change.id === id) setLines((was) => ({ ...was, live: [...was.live, ...change.entries] }));
+      if (change.id !== meeting.id) return;
+      if (pending) pending.push(...change.entries);
+      else setLines((was) => ({ ...was, live: [...was.live, ...change.entries] }));
     });
     void notepadApi()
-      .getMeeting(id)
+      .getMeeting(meeting.id)
       .then((detail) => {
-        if (current) setLines((was) => ({ ...was, read: detail?.transcript ?? [] }));
+        if (!current || !pending) return;
+        const live = pending;
+        pending = null;
+        setLines({ read: detail?.transcript ?? [], live });
       });
     return () => {
       current = false;
       unsubscribe();
     };
-  }, [id]);
+  }, [meeting]);
+  const partials = useMeetingPartials(
+    notepadApi(),
+    meeting.id,
+    meeting.status.kind === "recording",
+  );
+  const { speakers } = meeting;
   return useMemo(
-    () => (lines.read === null ? null : transcriptRows(mergeTranscript(lines.read, lines.live))),
-    [lines],
+    () =>
+      lines.read === null
+        ? null
+        : [
+            ...transcriptRows(mergeTranscript(lines.read, lines.live), speakers),
+            ...partialRows(partials),
+          ],
+    [lines, speakers, partials],
   );
 }
 
@@ -306,7 +332,7 @@ function send(command: NotepadCommand, id: MeetingId): Promise<MeetingCommandRes
 
 function MeetingNotepad({ meeting, prompt }: NotepadState) {
   // Held here, not in the tab, so lines keep arriving while My thoughts is open.
-  const rows = useLiveTranscript(meeting.id);
+  const rows = useLiveTranscript(meeting);
   const now = useNow(notepadTicks(meeting, prompt));
   const status = notepadStatus(meeting, now);
   const [tab, setTab] = useState<NotepadTab>("transcript");

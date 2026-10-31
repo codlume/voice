@@ -3,15 +3,23 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   applyMeetingsChange,
   DEFAULT_MEETINGS_SETTINGS,
+  meetingToggle,
+  meetingToggleLabels,
   parseFolderDraft,
   parseMeetingId,
   parseMeetingsSettingsPatch,
+  addSpeakers,
+  renameSpeaker,
+  resolveSpeakerTokens,
   retitle,
+  speakerToken,
   type Folder,
   type FolderId,
   type Meeting,
   type MeetingId,
+  type MeetingStatus,
   type MeetingsState,
+  type SpeakerId,
 } from "./meetings.ts";
 
 const A = "11111111-1111-4111-8111-111111111111" as MeetingId;
@@ -28,6 +36,7 @@ const meeting = (id: MeetingId, createdAt: number, overrides: Partial<Meeting> =
   folderIds: [],
   notes: "",
   summary: { kind: "none" },
+  speakers: [],
   ...overrides,
 });
 
@@ -117,5 +126,63 @@ describe("meetings", () => {
         rule: { kind: "calendarSeries", text: "x" },
       }),
     ).toBeNull();
+  });
+
+  test("speakers number on from the meeting's own, and a rename shows in every token", () => {
+    const first = addSpeakers(meeting(A, 0), 2);
+    expect(first.ids).toEqual(["s1", "s2"]);
+    const more = addSpeakers(first.meeting, 1);
+    expect(more.meeting.speakers.map(({ label }) => label)).toEqual([
+      "Speaker 1",
+      "Speaker 2",
+      "Speaker 3",
+    ]);
+    const s2 = "s2" as SpeakerId;
+    const markdown = `${speakerToken(s2)} owns it, with ${speakerToken("you")} and {{speaker:s9}}.`;
+    expect(resolveSpeakerTokens(markdown, more.meeting.speakers)).toBe(
+      "Speaker 2 owns it, with You and Others.",
+    );
+    const renamed = renameSpeaker(more.meeting, s2, " Tom ");
+    expect(resolveSpeakerTokens(markdown, renamed.speakers)).toBe(
+      "Tom owns it, with You and Others.",
+    );
+    expect(renameSpeaker(renamed, s2, "  ").speakers[1]?.name).toBeNull();
+    expect(renameSpeaker(renamed, "s7" as SpeakerId, "Ann")).toBe(renamed);
+  });
+});
+
+describe("meetingToggle", () => {
+  const toggleWith = (status: MeetingStatus) => {
+    const next = meetingToggle([meeting(A, 2), meeting(B, 1, { status })]);
+    return { ...next, label: meetingToggleLabels[next.kind] };
+  };
+
+  test.each<[MeetingStatus, object]>([
+    [
+      { kind: "recording", since: 0 },
+      { kind: "stop", id: B, label: "Stop meeting" },
+    ],
+    [{ kind: "paused" }, { kind: "stop", id: B, label: "Stop meeting" }],
+    [
+      { kind: "starting", from: "new" },
+      { kind: "wait", id: B, label: "Starting meeting…" },
+    ],
+    [
+      { kind: "starting", from: "paused" },
+      { kind: "wait", id: B, label: "Starting meeting…" },
+    ],
+  ])("a meeting %j makes the shortcut and the menu bar item %j", (status, expected) => {
+    expect(toggleWith(status)).toEqual(expected);
+  });
+
+  test.each<MeetingStatus>([
+    { kind: "finishing" },
+    { kind: "confirmingShort" },
+    { kind: "transcribing" },
+    { kind: "summarizing" },
+    { kind: "ready" },
+  ])("a meeting no longer recording, %j, leaves them starting a new one", (status) => {
+    expect(toggleWith(status)).toEqual({ kind: "start", label: "Start meeting" });
+    expect(meetingToggle([])).toEqual({ kind: "start" });
   });
 });

@@ -1,5 +1,6 @@
 import {
   foldTranscript,
+  resolveSpeakerTokens,
   speakerName,
   startedAt,
   titleText,
@@ -46,13 +47,16 @@ export function meetingMarkdown(
     }).format(at),
   );
   if (meeting.summary.kind === "ready") {
-    sections.push(`## Summary\n\n${meeting.summary.summary.markdown.trim()}`);
+    const markdown = resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers);
+    sections.push(`## Summary\n\n${markdown.trim()}`);
   }
   if (meeting.notes.trim() !== "") sections.push(`## My thoughts\n\n${meeting.notes.trim()}`);
   const lines = foldTranscript(transcript).flatMap((entry) => {
     if (entry.kind === "marker") return [markerLine(entry)];
     const text = entry.text.trim();
-    return text === "" ? [] : [`**${speakerName(entry)}** (${clock(entry.startMs)}): ${text}`];
+    return text === ""
+      ? []
+      : [`**${speakerName(entry, meeting.speakers)}** (${clock(entry.startMs)}): ${text}`];
   });
   if (lines.length > 0) sections.push(`## Transcript\n\n${lines.join("\n\n")}`);
   return `${sections.join("\n\n")}\n`;

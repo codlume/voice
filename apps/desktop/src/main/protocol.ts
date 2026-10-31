@@ -12,10 +12,10 @@ import type { Hotkey, Microphone, PermissionKind } from "../shared/api.ts";
 import type { MeetingSource } from "../shared/meetings.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import type { Target } from "../shared/style.ts";
-import type { HelperShortcut } from "../shared/transforms.ts";
+import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 16;
+export const HELPER_PROTOCOL_VERSION = 18;
 
 export type HelperCommand =
   | {
@@ -23,6 +23,7 @@ export type HelperCommand =
       key: Hotkey;
       toggleKey: Hotkey | null;
       transforms: readonly HelperShortcut[];
+      meeting: Shortcut | null;
     }
   | { type: "microphone.configure"; microphone: Microphone | null }
   | {
@@ -76,6 +77,15 @@ export type HelperCommand =
       dir: string;
       baseMs: number;
       fromMs: MeetingCursor;
+      language: DictationLanguage;
+    }
+  // Transcribes both files again in full and tells the system voices apart; meeting.finalized
+  // or meeting.finalizeFailed follows. The files are only read.
+  | {
+      type: "meeting.finalize";
+      id: string;
+      dir: string;
+      baseMs: number;
       language: DictationLanguage;
     };
 
@@ -169,6 +179,7 @@ const HelperEventSchema = Schema.Union([
     uptimeMs: nullOnInvalid(Schema.Finite),
   }),
   Schema.Struct({ type: Schema.Literal("transform"), transformId: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("meeting.shortcut") }),
   Schema.Struct({
     type: Schema.Literal("selection.result"),
     id: Schema.String,
@@ -292,6 +303,13 @@ const HelperEventSchema = Schema.Union([
     id: Schema.String,
     message: Schema.String,
   }),
+  // A source stopped mid-leg, which ended the leg.
+  Schema.Struct({
+    type: Schema.Literal("meeting.lost"),
+    id: Schema.String,
+    source: Schema.Literals(["mic", "system"]),
+    reason: Schema.Literals(["permission", "device"]),
+  }),
   Schema.Struct({
     type: Schema.Literal("meeting.segment"),
     id: Schema.String,
@@ -305,6 +323,33 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("meeting.drained"),
     id: Schema.String,
     failure: nullOnInvalid(Schema.String),
+  }),
+  // Unconfirmed text since a source's last segment, for the live view only; empty clears it.
+  Schema.Struct({
+    type: Schema.Literal("meeting.partial"),
+    id: Schema.String,
+    source: Schema.Literals(["mic", "system"]),
+    text: Schema.String,
+  }),
+  // `speaker` numbers the system voices from 0 in the order they first speak; null on the mic
+  // and when the voices could not be told apart.
+  Schema.Struct({
+    type: Schema.Literal("meeting.finalized"),
+    id: Schema.String,
+    segments: Schema.Array(
+      Schema.Struct({
+        source: Schema.Literals(["mic", "system"]),
+        startMs: Schema.Finite,
+        endMs: Schema.Finite,
+        text: Schema.String,
+        speaker: Schema.NullOr(Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))),
+      }),
+    ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("meeting.finalizeFailed"),
+    id: Schema.String,
+    message: Schema.String,
   }),
   Schema.Struct({
     type: Schema.Literal("log"),

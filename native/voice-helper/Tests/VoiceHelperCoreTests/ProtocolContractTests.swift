@@ -94,12 +94,14 @@ private func line(_ wire: [String: ContractJSON]) throws -> String {
 private func commandCases() -> [String: HelperCommand] {
     let microphone = Microphone(uid: "usb", name: "Synthetic USB")
     return [
-        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: []),
-        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand, transforms: []),
+        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [], meeting: nil),
+        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand, transforms: [], meeting: nil),
         "hotkey.configure.transforms": .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [
             TransformShortcut(id: "polish", keycode: 18, modifiers: [.option]),
             TransformShortcut(id: "c1", keycode: 40, modifiers: [.control, .option, .command]),
-        ]),
+        ], meeting: nil),
+        "hotkey.configure.meeting": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [],
+                                                     meeting: KeyCombo(keycode: 46, modifiers: [.option])),
         "microphone.configure": .microphoneConfigure(microphone: microphone),
         "microphone.configure.default": .microphoneConfigure(microphone: nil),
         "capture.start": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: 1234.5),
@@ -137,6 +139,7 @@ private func commandCases() -> [String: HelperCommand] {
         "meeting.cancel": .meetingCancel(id: "m1"),
         "meeting.transcribe": .meetingTranscribe(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 0,
                                                  fromMs: MeetingCursor(mic: 1250.5, system: 0), language: .en),
+        "meeting.finalize": .meetingFinalize(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 600_000, language: .pl),
     ]
 }
 
@@ -153,6 +156,7 @@ private func eventCases() -> [String: HelperEvent] {
         "hotkey.cancel": .hotkey(action: .cancel, uptimeMs: 1),
         "hotkey.toggle": .hotkey(action: .toggle, uptimeMs: 1),
         "transform": .transform(transformId: "polish"),
+        "meeting.shortcut": .meetingShortcut,
         "selection.result.selected": .selectionResult(id: "r1", result: .selected(text: "Zażółć /tmp/synthetic\nAda 42", via: .copy)),
         "selection.result.accessibility": .selectionResult(id: "r1", result: .selected(text: "Synthetic selection", via: .accessibility)),
         "selection.result.failed": .selectionResult(id: "r1", result: .failed(.noSelection)),
@@ -199,6 +203,19 @@ private func eventCases() -> [String: HelperEvent] {
         "meeting.segment.system": .meetingSegment(id: "m1", source: .system, startMs: 5000, endMs: 9000, text: "Synthetic reply"),
         "meeting.drained": .meetingDrained(id: "m1", failure: nil),
         "meeting.drained.failure": .meetingDrained(id: "m1", failure: "speech model is not downloaded"),
+        "meeting.lost": .meetingLost(id: "m1", source: .mic, reason: .permission),
+        "meeting.lost.system": .meetingLost(id: "m1", source: .system, reason: .device),
+        "meeting.partial": .meetingPartial(id: "m1", source: .system, text: "Synthetic unfinished"),
+        "meeting.partial.cleared": .meetingPartial(id: "m1", source: .mic, text: ""),
+        "meeting.finalized": .meetingFinalized(id: "m1", segments: [
+            FinalSegment(source: .mic, startMs: 0, endMs: 1500.5, text: "Zażółć Ada 42", speaker: nil),
+            FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: 0),
+            FinalSegment(source: .system, startMs: 4500, endMs: 6000, text: "Synthetic second voice", speaker: 1),
+        ]),
+        "meeting.finalized.undiarized": .meetingFinalized(id: "m1", segments: [
+            FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: nil),
+        ]),
+        "meeting.finalizeFailed": .meetingFinalizeFailed(id: "m1", message: "speech model is not downloaded"),
     ]
 }
 
@@ -226,6 +243,7 @@ private func commandType(_ command: HelperCommand) -> String {
     case .meetingStop: "meeting.stop"
     case .meetingCancel: "meeting.cancel"
     case .meetingTranscribe: "meeting.transcribe"
+    case .meetingFinalize: "meeting.finalize"
     }
 }
 
@@ -236,6 +254,7 @@ private func eventType(_ event: HelperEvent) -> String {
     case .ready: "ready"
     case .hotkey: "hotkey"
     case .transform: "transform"
+    case .meetingShortcut: "meeting.shortcut"
     case .selectionResult: "selection.result"
     case .captureStarted: "capture.started"
     case .captureLevel: "capture.level"
@@ -258,6 +277,10 @@ private func eventType(_ event: HelperEvent) -> String {
     case .meetingFailed: "meeting.failed"
     case .meetingSegment: "meeting.segment"
     case .meetingDrained: "meeting.drained"
+    case .meetingLost: "meeting.lost"
+    case .meetingPartial: "meeting.partial"
+    case .meetingFinalized: "meeting.finalized"
+    case .meetingFinalizeFailed: "meeting.finalizeFailed"
     }
 }
 

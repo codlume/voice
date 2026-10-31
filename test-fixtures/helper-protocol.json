@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 16,
+  "protocolVersion": 18,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 15,
+      "version": 17,
       "compatible": false
     },
     {
-      "version": 16,
+      "version": 18,
       "compatible": true
     },
     {
-      "version": 17,
+      "version": 19,
       "compatible": false
     }
   ],
@@ -50,9 +50,10 @@
         "type": "hotkey.configure",
         "key": "fn",
         "toggleKey": null,
-        "transforms": []
+        "transforms": [],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "hotkey.configure.toggle",
@@ -60,9 +61,10 @@
         "type": "hotkey.configure",
         "key": "rightOption",
         "toggleKey": "rightCommand",
-        "transforms": []
+        "transforms": [],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "hotkey.configure.transforms",
@@ -81,9 +83,24 @@
             "keycode": 40,
             "modifiers": ["control", "option", "command"]
           }
-        ]
+        ],
+        "meeting": null
       },
-      "required": ["type", "key", "toggleKey", "transforms"]
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
+    },
+    {
+      "name": "hotkey.configure.meeting",
+      "wire": {
+        "type": "hotkey.configure",
+        "key": "fn",
+        "toggleKey": null,
+        "transforms": [],
+        "meeting": {
+          "keycode": 46,
+          "modifiers": ["option"]
+        }
+      },
+      "required": ["type", "key", "toggleKey", "transforms", "meeting"]
     },
     {
       "name": "microphone.configure",
@@ -394,6 +411,17 @@
       "required": ["type", "id", "dir", "baseMs", "fromMs", "language"]
     },
     {
+      "name": "meeting.finalize",
+      "wire": {
+        "type": "meeting.finalize",
+        "id": "m1",
+        "dir": "/tmp/synthetic/meetings/m1",
+        "baseMs": 600000,
+        "language": "pl"
+      },
+      "required": ["type", "id", "dir", "baseMs", "language"]
+    },
+    {
       "name": "permissions.request.systemAudio",
       "wire": {
         "type": "permissions.request",
@@ -469,11 +497,11 @@
     },
     {
       "name": "unknown-hotkey",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null,\"transforms\":[]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"leftShift\",\"toggleKey\":null,\"transforms\":[],\"meeting\":null}"
     },
     {
       "name": "unknown-toggle",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\",\"transforms\":[]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":\"leftShift\",\"transforms\":[],\"meeting\":null}"
     },
     {
       "name": "missing-transforms",
@@ -481,19 +509,27 @@
     },
     {
       "name": "unknown-modifier",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"fn\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"fn\"]}],\"meeting\":null}"
     },
     {
       "name": "fractional-keycode",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18.5,\"modifiers\":[\"option\"]}],\"meeting\":null}"
     },
     {
       "name": "unmodified-transform",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[]}],\"meeting\":null}"
     },
     {
       "name": "shift-only-transform",
-      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}]}"
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[{\"id\":\"polish\",\"keycode\":18,\"modifiers\":[\"shift\"]}],\"meeting\":null}"
+    },
+    {
+      "name": "missing-meeting",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[]}"
+    },
+    {
+      "name": "shift-only-meeting",
+      "line": "{\"type\":\"hotkey.configure\",\"key\":\"fn\",\"toggleKey\":null,\"transforms\":[],\"meeting\":{\"keycode\":46,\"modifiers\":[\"shift\"]}}"
     },
     {
       "name": "unknown-permission",
@@ -583,11 +619,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 16
+        "version": 18
       },
       "parsed": {
         "type": "ready",
-        "version": 16
+        "version": 18
       },
       "required": ["type", "version"]
     },
@@ -672,6 +708,16 @@
         "transformId": "polish"
       },
       "required": ["type", "transformId"]
+    },
+    {
+      "name": "meeting.shortcut",
+      "wire": {
+        "type": "meeting.shortcut"
+      },
+      "parsed": {
+        "type": "meeting.shortcut"
+      },
+      "required": ["type"]
     },
     {
       "name": "selection.result.selected",
@@ -1401,6 +1447,172 @@
         "failure": "speech model is not downloaded"
       },
       "required": ["type", "id"]
+    },
+    {
+      "name": "meeting.lost",
+      "wire": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "mic",
+        "reason": "permission"
+      },
+      "parsed": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "mic",
+        "reason": "permission"
+      },
+      "required": ["type", "id", "source", "reason"]
+    },
+    {
+      "name": "meeting.lost.system",
+      "wire": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "system",
+        "reason": "device"
+      },
+      "parsed": {
+        "type": "meeting.lost",
+        "id": "m1",
+        "source": "system",
+        "reason": "device"
+      },
+      "required": ["type", "id", "source", "reason"]
+    },
+    {
+      "name": "meeting.partial",
+      "wire": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "system",
+        "text": "Synthetic unfinished"
+      },
+      "parsed": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "system",
+        "text": "Synthetic unfinished"
+      },
+      "required": ["type", "id", "source", "text"]
+    },
+    {
+      "name": "meeting.partial.cleared",
+      "wire": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "mic",
+        "text": ""
+      },
+      "parsed": {
+        "type": "meeting.partial",
+        "id": "m1",
+        "source": "mic",
+        "text": ""
+      },
+      "required": ["type", "id", "source", "text"]
+    },
+    {
+      "name": "meeting.finalized",
+      "wire": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "mic",
+            "startMs": 0,
+            "endMs": 1500.5,
+            "text": "Zażółć Ada 42",
+            "speaker": null
+          },
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": 0
+          },
+          {
+            "source": "system",
+            "startMs": 4500,
+            "endMs": 6000,
+            "text": "Synthetic second voice",
+            "speaker": 1
+          }
+        ]
+      },
+      "parsed": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "mic",
+            "startMs": 0,
+            "endMs": 1500.5,
+            "text": "Zażółć Ada 42",
+            "speaker": null
+          },
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": 0
+          },
+          {
+            "source": "system",
+            "startMs": 4500,
+            "endMs": 6000,
+            "text": "Synthetic second voice",
+            "speaker": 1
+          }
+        ]
+      },
+      "required": ["type", "id", "segments"]
+    },
+    {
+      "name": "meeting.finalized.undiarized",
+      "wire": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": null
+          }
+        ]
+      },
+      "parsed": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": null
+          }
+        ]
+      },
+      "required": ["type", "id", "segments"]
+    },
+    {
+      "name": "meeting.finalizeFailed",
+      "wire": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "message": "speech model is not downloaded"
+      },
+      "parsed": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "message": "speech model is not downloaded"
+      },
+      "required": ["type", "id", "message"]
     }
   ],
   "normalizedEvents": [

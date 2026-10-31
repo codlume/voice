@@ -21,6 +21,7 @@ public struct HotkeyDecision: Equatable, Sendable {
     public enum Emit: Equatable, Sendable {
         case hotkey(HotkeyAction)
         case transform(String)
+        case meeting
         case nothing
     }
 
@@ -84,16 +85,23 @@ public struct Hotkeys: Sendable {
     private var hold: KeyHold
     private var toggle: KeyHold?
     private var shortcuts: [TransformShortcut]
+    private var meeting: KeyCombo?
     private var swallowed: Set<Int64> = []
 
-    public init(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut] = [], initialFlags: UInt64) {
+    public init(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut] = [], meeting: KeyCombo? = nil,
+                initialFlags: UInt64) {
         hold = KeyHold(key: key, initialFlags: initialFlags)
         toggle = toggleKey.map { KeyHold(key: $0, initialFlags: initialFlags) }
         shortcuts = transforms
+        self.meeting = meeting
     }
 
     public mutating func setTransforms(_ transforms: [TransformShortcut]) {
         shortcuts = transforms
+    }
+
+    public mutating func setMeeting(_ meeting: KeyCombo?) {
+        self.meeting = meeting
     }
 
     /// True while a key may still be down, so the live state deserves a periodic check.
@@ -126,6 +134,12 @@ public struct Hotkeys: Sendable {
             swallowed.insert(event.keycode)
             return HotkeyDecision(emit: .transform(shortcut.id), consume: true)
         }
+        if event.kind == .keyDown, matchesMeeting(event) {
+            // Holding the shortcut must not start and stop a meeting over and over.
+            if event.isRepeat { return HotkeyDecision(emit: .nothing, consume: true) }
+            swallowed.insert(event.keycode)
+            return HotkeyDecision(emit: .meeting, consume: true)
+        }
         if event.kind == .keyDown, event.isRepeat, swallowed.contains(event.keycode) {
             return HotkeyDecision(emit: .nothing, consume: true)
         }
@@ -138,6 +152,13 @@ public struct Hotkeys: Sendable {
         guard activity != .capturing, !awaitingRelease else { return nil }
         let families = modifierFamilies(flags: event.flags)
         return shortcuts.first { $0.keycode == event.keycode && Set($0.modifiers) == families }
+    }
+
+    /// A meeting runs beside dictation, so the shortcut also fires while a toggled dictation
+    /// records. While a dictation key is down the press stays that dictation's chord.
+    private func matchesMeeting(_ event: KeyEvent) -> Bool {
+        guard let meeting, !awaitingRelease else { return false }
+        return meeting.keycode == event.keycode && Set(meeting.modifiers) == modifierFamilies(flags: event.flags)
     }
 }
 

@@ -18,7 +18,7 @@ import { pageStyles } from "./pageStyles.ts";
 import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
 import { styles as settingsStyles } from "./Settings.tsx";
-import { shortcutKeys } from "./shortcutCapture.ts";
+import { meetingShortcutHolder, shortcutKeys } from "./shortcutCapture.ts";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { TransformFields } from "./TransformFields.tsx";
@@ -147,6 +147,7 @@ export function Transforms({
   const autoApplyId = useId();
   const { enabled, items, autoApply } = settings.transforms;
   const layout = useKeyboardLayout();
+  const meeting = meetingShortcutHolder(settings.meetingShortcut);
   const [modal, setModal] = useState<Modal | null>(null);
   const createRef = useRef<HTMLButtonElement>(null);
   const action = useAction();
@@ -285,12 +286,12 @@ export function Transforms({
           copy={EDITOR_COPY}
           save={saveItems}
           normalize={normalize}
-          problem={transformProblem}
+          problem={(transform, others) => transformProblem(transform, [...others, meeting])}
           wide
           renderFields={(editor) => (
             <TransformFields
               editor={editor}
-              others={items.filter(({ id }) => id !== editor.draft.id)}
+              others={[...items.filter(({ id }) => id !== editor.draft.id), meeting]}
               layout={layout}
               dictationKeys={dictationKeys(settings)}
             />

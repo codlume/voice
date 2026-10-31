@@ -5,25 +5,33 @@ import type { ModelId } from "./models.ts";
 import type { DictionaryEntry } from "./dictionary.ts";
 import type { HistoryChange, HistoryRetention, HistoryState } from "./history.ts";
 import type { Insights } from "./insights.ts";
-import type {
-  Folder,
-  FolderDraft,
-  FolderId,
-  MeetingCommandResult,
-  MeetingDetail,
-  MeetingId,
-  MeetingSearchHit,
-  MeetingsChange,
-  MeetingsSettingsPatch,
-  MeetingsState,
-  MeetingNotice,
-  MeetingTranscriptChange,
-  NotepadState,
-  PillMeeting,
+import {
+  DEFAULT_MEETING_SHORTCUT,
+  type Folder,
+  type FolderDraft,
+  type FolderId,
+  type MeetingCommandResult,
+  type MeetingDetail,
+  type MeetingId,
+  type MeetingSearchHit,
+  type MeetingsChange,
+  type MeetingsSettingsPatch,
+  type MeetingsState,
+  type MeetingNotice,
+  type MeetingTranscriptChange,
+  type MeetingPartial,
+  type NotepadState,
+  type PillMeeting,
+  type SpeakerId,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
-import { DEFAULT_TRANSFORMS, type LastTransform, type TransformSettings } from "./transforms.ts";
+import {
+  DEFAULT_TRANSFORMS,
+  type LastTransform,
+  type Shortcut,
+  type TransformSettings,
+} from "./transforms.ts";
 import {
   DEFAULT_STYLES,
   type Assignment,
@@ -231,6 +239,8 @@ export type Settings = {
   /** Chromium zoom level of the Voice window. The Flow Bar never zooms. */
   zoomLevel: number;
   transforms: TransformSettings;
+  /** Starts a meeting, or stops the one recording. Never one a transform uses. */
+  meetingShortcut: Shortcut | null;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -252,6 +262,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dictionary: [],
   zoomLevel: 0,
   transforms: DEFAULT_TRANSFORMS,
+  meetingShortcut: DEFAULT_MEETING_SHORTCUT,
 };
 
 export type { SettingsPatch } from "./settings-patch.ts";
@@ -378,6 +389,8 @@ export type HubApi = WindowApi & {
   getMeeting(id: MeetingId): Promise<MeetingDetail | null>;
   /** A blank title clears it, so the summary can generate one. */
   renameMeeting(id: MeetingId, title: string): Promise<void>;
+  /** Names one of the meeting's speakers everywhere it shows; a blank name brings back "Speaker N". */
+  renameMeetingSpeaker(id: MeetingId, speakerId: SpeakerId, name: string): Promise<void>;
   updateMeetingNotes(id: MeetingId, notes: string): Promise<void>;
   /** Deletes the meeting with its transcript, notes and any audio. */
   deleteMeeting(id: MeetingId): Promise<void>;
@@ -392,6 +405,8 @@ export type HubApi = WindowApi & {
   /** Opens a save dialog for a .md file. */
   exportMeetingMarkdown(id: MeetingId): Promise<"saved" | "cancelled">;
   startMeeting(): Promise<MeetingCommandResult>;
+  /** What the meeting shortcut does: stops the meeting that records or is paused, or starts one. */
+  toggleMeeting(): Promise<MeetingCommandResult>;
   pauseMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   resumeMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   stopMeeting(id: MeetingId): Promise<MeetingCommandResult>;
@@ -403,6 +418,8 @@ export type HubApi = WindowApi & {
   openNotepad(): Promise<void>;
   /** Fires as transcript lines are saved during a meeting. */
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
+  /** Fires with unconfirmed text while a meeting records, for the live view. */
+  onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
   /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
   onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
 };
@@ -418,6 +435,7 @@ export type MeetingControls = Pick<
   | "keepMeeting"
   | "discardMeeting"
   | "onMeetingTranscript"
+  | "onMeetingPartial"
 >;
 
 export type NotepadApi = Pick<WindowApi, "diagnosticsStartedAtLaunch"> &
@@ -478,6 +496,7 @@ export const Channel = {
   meetings: "voice:meetings",
   getMeeting: "voice:getMeeting",
   renameMeeting: "voice:renameMeeting",
+  renameMeetingSpeaker: "voice:renameMeetingSpeaker",
   updateMeetingNotes: "voice:updateMeetingNotes",
   deleteMeeting: "voice:deleteMeeting",
   createFolder: "voice:createFolder",
@@ -489,6 +508,7 @@ export const Channel = {
   copyMeetingMarkdown: "voice:copyMeetingMarkdown",
   exportMeetingMarkdown: "voice:exportMeetingMarkdown",
   startMeeting: "voice:startMeeting",
+  toggleMeeting: "voice:toggleMeeting",
   pauseMeeting: "voice:pauseMeeting",
   resumeMeeting: "voice:resumeMeeting",
   stopMeeting: "voice:stopMeeting",
@@ -496,6 +516,7 @@ export const Channel = {
   discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
   meetingTranscript: "voice:meetingTranscript",
+  meetingPartial: "voice:meetingPartial",
   meetingNotice: "voice:meetingNotice",
   openNotepad: "voice:openNotepad",
   setPillClickable: "voice:setPillClickable",

@@ -68,6 +68,17 @@ public struct TransformShortcut: Equatable, Sendable {
     }
 }
 
+/// A key with modifiers, as the meeting shortcut names it.
+public struct KeyCombo: Equatable, Sendable {
+    public let keycode: Int64
+    public let modifiers: [Modifier]
+
+    public init(keycode: Int64, modifiers: [Modifier]) {
+        self.keycode = keycode
+        self.modifiers = modifiers
+    }
+}
+
 public enum SelectionResult: Equatable, Sendable {
     case selected(text: String, via: SelectionVia)
     case failed(SelectionFailure)
@@ -104,7 +115,7 @@ public struct Transcript: Equatable, Sendable {
 }
 
 public enum HelperCommand: Equatable, Sendable {
-    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
+    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut], meeting: KeyCombo?)
     case microphoneConfigure(microphone: Microphone?)
     /// `outputVolumeScale` is the fraction of each output's level to keep while capturing, at least 0
     /// and below 1; 0 mutes and nil leaves outputs alone. `detectHost` is main's say on whether the
@@ -139,6 +150,9 @@ public enum HelperCommand: Equatable, Sendable {
     case meetingCancel(id: String)
     /// Transcribes whatever of the files the transcript does not reach yet, without recording.
     case meetingTranscribe(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage)
+    /// Transcribes both files again in full, tells the voices in `system.pcm` apart, and answers
+    /// with `meeting.finalized` or `meeting.finalizeFailed`. The files are only read.
+    case meetingFinalize(id: String, dir: String, baseMs: Double, language: DictationLanguage)
 }
 
 /// Meeting time, per source, that a transcript already covers.
@@ -174,7 +188,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 16
+public let helperProtocolVersion = 18
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -184,6 +198,8 @@ public enum HelperEvent: Equatable, Sendable {
     /// answers with, so the helper measures the round trip without keeping the event around.
     case hotkey(action: HotkeyAction, uptimeMs: Double)
     case transform(transformId: String)
+    /// The meeting shortcut was pressed; main decides whether that starts or stops a meeting.
+    case meetingShortcut
     case selectionResult(id: String, result: SelectionResult)
     /// `startMs` runs from the hotkey event that started the session, or from `capture.start`
     /// when none did (a fixture-driven test), to the first audio. `relayMs` is the part of it
@@ -208,11 +224,20 @@ public enum HelperEvent: Equatable, Sendable {
     case meetingStarted(id: String, mic: MeetingSourceState, system: MeetingSourceState)
     /// The leg could not start, or capture died mid-leg; what was recorded stays on disk.
     case meetingFailed(id: String, message: String)
+    /// A source stopped mid-leg, so the leg ended; what was recorded stays on disk.
+    case meetingLost(id: String, source: MeetingSource, reason: MeetingLossReason)
     /// A final transcript segment, in meeting time.
     case meetingSegment(id: String, source: MeetingSource, startMs: Double, endMs: Double, text: String)
     /// Capture is stopped and everything recorded is transcribed, or `failure` says why the rest
     /// could not be; the audio stays on disk either way.
     case meetingDrained(id: String, failure: String?)
+    /// What a source said since its last segment, which may still change; empty clears it. For the
+    /// live view only.
+    case meetingPartial(id: String, source: MeetingSource, text: String)
+    /// The final pass over the files, in meeting time. Its speakers number the system voices.
+    case meetingFinalized(id: String, segments: [FinalSegment])
+    /// The final pass could not finish; the live transcript and the audio stay as they are.
+    case meetingFinalizeFailed(id: String, message: String)
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -227,7 +252,8 @@ private enum Key: String, CodingKey {
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
-    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure
+    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting, segments
+    case speaker
 }
 
 extension HelperCommand: Decodable {
@@ -238,7 +264,8 @@ extension HelperCommand: Decodable {
         case "hotkey.configure":
             self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key),
                                     toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey),
-                                    transforms: try c.decode([TransformShortcut].self, forKey: .transforms))
+                                    transforms: try c.decode([TransformShortcut].self, forKey: .transforms),
+                                    meeting: try c.decode(KeyCombo?.self, forKey: .meeting))
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
@@ -288,6 +315,10 @@ extension HelperCommand: Decodable {
             self = .meetingTranscribe(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
                                       baseMs: try c.decode(Double.self, forKey: .baseMs), fromMs: try c.decode(MeetingCursor.self, forKey: .fromMs),
                                       language: try c.decode(DictationLanguage.self, forKey: .language))
+        case "meeting.finalize":
+            self = .meetingFinalize(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
+                                    baseMs: try c.decode(Double.self, forKey: .baseMs),
+                                    language: try c.decode(DictationLanguage.self, forKey: .language))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -340,6 +371,8 @@ extension HelperEvent: Encodable {
         case .transform(let transformId):
             try c.encode("transform", forKey: .type)
             try c.encode(transformId, forKey: .transformId)
+        case .meetingShortcut:
+            try c.encode("meeting.shortcut", forKey: .type)
         case .selectionResult(let id, let result):
             try c.encode("selection.result", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -446,6 +479,11 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.failed", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(message, forKey: .message)
+        case .meetingLost(let id, let source, let reason):
+            try c.encode("meeting.lost", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(source, forKey: .source)
+            try c.encode(reason, forKey: .reason)
         case .meetingSegment(let id, let source, let startMs, let endMs, let text):
             try c.encode("meeting.segment", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -457,6 +495,19 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.drained", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(failure, forKey: .failure)
+        case .meetingPartial(let id, let source, let text):
+            try c.encode("meeting.partial", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(source, forKey: .source)
+            try c.encode(text, forKey: .text)
+        case .meetingFinalized(let id, let segments):
+            try c.encode("meeting.finalized", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(segments, forKey: .segments)
+        case .meetingFinalizeFailed(let id, let message):
+            try c.encode("meeting.finalizeFailed", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(message, forKey: .message)
         }
     }
 
@@ -476,14 +527,27 @@ extension TransformShortcut: Decodable {
         let c = try decoder.container(keyedBy: Key.self)
         id = try c.decode(String.self, forKey: .id)
         keycode = try c.decode(Int64.self, forKey: .keycode)
-        modifiers = try c.decode([Modifier].self, forKey: .modifiers)
-        // The event tap swallows a matching press system-wide, so a shortcut Shift alone (or
-        // nothing) modifies would eat plain typing in every app.
-        guard modifiers.contains(where: { $0 != .shift }) else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .modifiers, in: c, debugDescription: "a transform shortcut needs a modifier other than shift")
-        }
+        modifiers = try decodeShortcutModifiers(c)
     }
+}
+
+extension KeyCombo: Decodable {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        keycode = try c.decode(Int64.self, forKey: .keycode)
+        modifiers = try decodeShortcutModifiers(c)
+    }
+}
+
+// The event tap swallows a matching press system-wide, so a shortcut Shift alone (or nothing)
+// modifies would eat plain typing in every app.
+private func decodeShortcutModifiers(_ c: KeyedDecodingContainer<Key>) throws -> [Modifier] {
+    let modifiers = try c.decode([Modifier].self, forKey: .modifiers)
+    guard modifiers.contains(where: { $0 != .shift }) else {
+        throw DecodingError.dataCorruptedError(
+            forKey: .modifiers, in: c, debugDescription: "a shortcut needs a modifier other than shift")
+    }
+    return modifiers
 }
 
 extension MeetingCursor: Decodable {
@@ -494,6 +558,17 @@ extension MeetingCursor: Decodable {
         guard mic.isFinite, system.isFinite, mic >= 0, system >= 0 else {
             throw DecodingError.dataCorruptedError(forKey: .mic, in: c, debugDescription: "cursor times must be finite and not negative")
         }
+    }
+}
+
+extension FinalSegment: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(source, forKey: .source)
+        try c.encode(finite(startMs), forKey: .startMs)
+        try c.encode(finite(endMs), forKey: .endMs)
+        try c.encode(text, forKey: .text)
+        try c.encode(speaker, forKey: .speaker)
     }
 }
 

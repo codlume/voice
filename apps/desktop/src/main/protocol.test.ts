@@ -28,13 +28,14 @@ const line = (value: unknown) => JSON.stringify(value);
 describe("parseHelperEvent", () => {
   test("accepts every event variant with exactly the typed fields", () => {
     const events = [
-      { type: "ready", version: 16 },
+      { type: "ready", version: 18 },
       { type: "hotkey", action: "down", uptimeMs: 1234.5 },
       { type: "hotkey", action: "up", uptimeMs: 2345.5 },
       { type: "hotkey", action: "chord", uptimeMs: 1 },
       { type: "hotkey", action: "cancel", uptimeMs: 1 },
       { type: "hotkey", action: "toggle", uptimeMs: 1 },
       { type: "transform", transformId: "polish" },
+      { type: "meeting.shortcut" },
       { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "accessibility" },
       { type: "selection.result", id: "r", outcome: "selected", text: "hi", via: "copy" },
       { type: "selection.result", id: "r", outcome: "failed", reason: "noSelection" },
@@ -459,12 +460,19 @@ const captureStart: Extract<HelperCommand, { type: "capture.start" }> = {
   hotkeyUptimeMs: 1234.5,
 };
 const commandCases = {
-  "hotkey.configure": { type: "hotkey.configure", key: "fn", toggleKey: null, transforms: [] },
+  "hotkey.configure": {
+    type: "hotkey.configure",
+    key: "fn",
+    toggleKey: null,
+    transforms: [],
+    meeting: null,
+  },
   "hotkey.configure.toggle": {
     type: "hotkey.configure",
     key: "rightOption",
     toggleKey: "rightCommand",
     transforms: [],
+    meeting: null,
   },
   "hotkey.configure.transforms": {
     type: "hotkey.configure",
@@ -474,6 +482,14 @@ const commandCases = {
       { id: "polish" as TransformId, keycode: 18, modifiers: ["option"] },
       { id: "c1" as TransformId, keycode: 40, modifiers: ["control", "option", "command"] },
     ],
+    meeting: null,
+  },
+  "hotkey.configure.meeting": {
+    type: "hotkey.configure",
+    key: "fn",
+    toggleKey: null,
+    transforms: [],
+    meeting: { keycode: 46, modifiers: ["option"] },
   },
   "microphone.configure": { type: "microphone.configure", microphone },
   "microphone.configure.default": { type: "microphone.configure", microphone: null },
@@ -545,6 +561,13 @@ const commandCases = {
     fromMs: { mic: 1250.5, system: 0 },
     language: "en",
   },
+  "meeting.finalize": {
+    type: "meeting.finalize",
+    id: "m1",
+    dir: "/tmp/synthetic/meetings/m1",
+    baseMs: 600_000,
+    language: "pl",
+  },
 } satisfies Record<HelperCommand["type"], HelperCommand> & Record<string, HelperCommand>;
 
 const eventTypes = {
@@ -553,6 +576,7 @@ const eventTypes = {
   ready: true,
   hotkey: true,
   transform: true,
+  "meeting.shortcut": true,
   "selection.result": true,
   "capture.started": true,
   "capture.level": true,
@@ -575,6 +599,10 @@ const eventTypes = {
   "meeting.failed": true,
   "meeting.segment": true,
   "meeting.drained": true,
+  "meeting.lost": true,
+  "meeting.partial": true,
+  "meeting.finalized": true,
+  "meeting.finalizeFailed": true,
 } satisfies Record<HelperEvent["type"], true>;
 
 function startContractHelper(configure: () => HelperCommand[] = () => []) {

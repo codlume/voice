@@ -5,6 +5,7 @@ import type { Hotkey } from "../shared/api.ts";
 import {
   INSTRUCTION_MAX_LENGTH,
   TRANSFORM_NAME_MAX_LENGTH,
+  type ShortcutHolder,
   type Transform,
   type TransformProblem,
 } from "../shared/transforms.ts";
@@ -24,7 +25,7 @@ export function TransformFields({
   dictationKeys,
 }: {
   editor: Editor<Transform, TransformProblem["field"]>;
-  others: readonly Transform[];
+  others: readonly ShortcutHolder[];
   layout: KeyboardLayout | null;
   dictationKeys: readonly Hotkey[];
 }) {

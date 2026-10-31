@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { Fragment } from "react";
 
+import type { Speaker } from "../shared/meetings.ts";
 import { inlineRuns, summaryBlocks, type Block } from "./meetingsView.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 
@@ -28,8 +29,8 @@ const styles = stylex.create({
 });
 
 /** Inline summary text, with **bold** and the meeting's speaker names highlighted. */
-export function Inline({ text, names }: { text: string; names: readonly string[] }) {
-  return inlineRuns(text, names).map((run) =>
+export function Inline({ text, speakers }: { text: string; speakers: readonly Speaker[] }) {
+  return inlineRuns(text, speakers).map((run) =>
     run.name ? (
       <mark key={run.at} {...stylex.props(styles.name, run.bold && styles.bold)}>
         {run.text}
@@ -44,18 +45,18 @@ export function Inline({ text, names }: { text: string; names: readonly string[]
   );
 }
 
-function SummaryBlock({ block, names }: { block: Block; names: readonly string[] }) {
+function SummaryBlock({ block, speakers }: { block: Block; speakers: readonly Speaker[] }) {
   if (block.kind === "heading") {
     return (
       <h3 {...stylex.props(styles.heading)}>
-        <Inline text={block.text} names={names} />
+        <Inline text={block.text} speakers={speakers} />
       </h3>
     );
   }
   if (block.kind === "paragraph") {
     return (
       <p {...stylex.props(styles.paragraph)}>
-        <Inline text={block.text} names={names} />
+        <Inline text={block.text} speakers={speakers} />
       </p>
     );
   }
@@ -63,12 +64,12 @@ function SummaryBlock({ block, names }: { block: Block; names: readonly string[]
     <ul {...stylex.props(styles.list)}>
       {block.items.map((item) => (
         <li key={item.line}>
-          <Inline text={item.text} names={names} />
+          <Inline text={item.text} speakers={speakers} />
           {item.children.length > 0 && (
             <ul {...stylex.props(styles.list, styles.nested)}>
               {item.children.map((child) => (
                 <li key={child.line}>
-                  <Inline text={child.text} names={names} />
+                  <Inline text={child.text} speakers={speakers} />
                 </li>
               ))}
             </ul>
@@ -81,15 +82,15 @@ function SummaryBlock({ block, names }: { block: Block; names: readonly string[]
 
 export function SummaryMarkdown({
   markdown,
-  names,
+  speakers,
 }: {
   markdown: string;
-  names: readonly string[];
+  speakers: readonly Speaker[];
 }) {
   return (
     <div {...stylex.props(styles.summary)}>
       {summaryBlocks(markdown).map((block) => (
-        <SummaryBlock key={block.line} block={block} names={names} />
+        <SummaryBlock key={block.line} block={block} speakers={speakers} />
       ))}
     </div>
   );

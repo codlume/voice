@@ -1,7 +1,8 @@
 import {
   maxLengthMs,
   recordedMs,
-  type Marker,
+  type AudioLoss,
+  type MarkerKind,
   type Meeting,
   type MeetingId,
   type MeetingNotice,
@@ -27,7 +28,7 @@ export type MeetingEvent =
   | { type: "resume" }
   | { type: "captureStarted"; leg: number }
   | { type: "captureFailed"; leg: number; message: string }
-  | { type: "captureLost"; leg: number }
+  | { type: "captureLost"; leg: number; loss: AudioLoss }
   | { type: "pause" }
   | { type: "stop" }
   | { type: "timer"; leg: number; timer: Timer }
@@ -44,12 +45,16 @@ export type MeetingEvent =
   /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
   | { type: "recover"; lastAudioAt: number };
 
-/** The driver writes `meeting.json` whenever the step returns a different meeting object. */
+/**
+ * The driver writes `meeting.json` whenever the step returns a different meeting object. A mark
+ * is placed at the end of the recorded audio, which only the driver can read: segments are in
+ * audio time, so markers must be too, and wall-clock time drifts from it.
+ */
 export type MeetingEffect =
   | { type: "startCapture"; leg: number }
   | { type: "stopCapture"; leg: number }
   | { type: "schedule"; leg: number; timer: Timer; inMs: number }
-  | { type: "mark"; marker: Marker }
+  | { type: "mark"; marker: MarkerKind }
   | { type: "transcribeFinal" }
   | { type: "summarize" }
   | { type: "delete" }
@@ -65,10 +70,7 @@ export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
 export const SHORT_RECORDING_WORDS = 10;
 
 const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
-const mark = (marker: Marker["marker"], atMs: number): MeetingEffect => ({
-  type: "mark",
-  marker: { kind: "marker", marker, atMs },
-});
+const mark = (marker: MarkerKind): MeetingEffect => ({ type: "mark", marker });
 
 const gone = (effects: MeetingEffect[]): Step => ({
   meeting: null,
@@ -111,6 +113,13 @@ function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleCon
   };
 }
 
+const lossMessage = ({ source, reason }: AudioLoss) => {
+  if (reason === "permission") {
+    return `Voice is not allowed to record ${source === "mic" ? "the microphone" : "system audio"}.`;
+  }
+  return source === "mic" ? "The microphone stopped." : "System audio stopped.";
+};
+
 const lastSummary = (summary: SummaryState) =>
   summary.kind === "ready" ? summary.summary : summary.kind === "failed" ? summary.previous : null;
 
@@ -139,6 +148,7 @@ export function step(
         folderIds: [],
         notes: "",
         summary: { kind: "none" },
+        speakers: [],
       },
       effects: [{ type: "startCapture", leg: 0 }],
     };
@@ -180,7 +190,7 @@ export function step(
           return {
             meeting: withStatus(meeting, { kind: "recording", since: now }),
             effects: [
-              ...(leg > 0 ? [mark("resumed", recordedMs(meeting, now))] : []),
+              ...(leg > 0 ? [mark("resumed")] : []),
               {
                 type: "schedule",
                 leg,
@@ -193,7 +203,7 @@ export function step(
         }
         case "captureFailed":
         case "captureLost": {
-          const message = event.type === "captureFailed" ? event.message : "Capture stopped";
+          const message = event.type === "captureFailed" ? event.message : lossMessage(event.loss);
           if (status.from === "new") return gone([notify({ kind: "startFailed", message })]);
           return {
             meeting: withStatus(meeting, { kind: status.from }),
@@ -219,23 +229,22 @@ export function step(
       const stopCapture: MeetingEffect = { type: "stopCapture", leg };
       const close = (next: MeetingStatus) => closeLeg(meeting, status.since, now, next);
       switch (event.type) {
-        case "pause": {
-          const paused = close({ kind: "paused" });
-          return {
-            meeting: paused,
-            effects: [stopCapture, mark("paused", recordedMs(paused, now))],
-          };
-        }
+        case "pause":
+          return { meeting: close({ kind: "paused" }), effects: [stopCapture, mark("paused")] };
         case "stop":
           return { meeting: close({ kind: "finishing" }), effects: [stopCapture] };
         case "captureFailed":
-        case "captureLost": {
-          const paused = close({ kind: "paused" });
+        case "captureLost":
           return {
-            meeting: paused,
-            effects: [mark("gap", recordedMs(paused, now)), notify({ kind: "captureLost" })],
+            meeting: close({ kind: "paused" }),
+            effects: [
+              mark("gap"),
+              notify({
+                kind: "captureLost",
+                loss: event.type === "captureLost" ? event.loss : null,
+              }),
+            ],
           };
-        }
         case "timer":
           if (event.timer === "maxLengthWarning") {
             const inMs = Math.max(0, maxLengthMs[config.maxLength] - recordedMs(meeting, now));
