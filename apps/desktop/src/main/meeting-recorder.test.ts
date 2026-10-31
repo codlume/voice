@@ -196,6 +196,25 @@ describe("meeting recorder", () => {
     expect(await h.store.transcript(id)).toHaveLength(1);
   });
 
+  test("stop on a paused meeting finishes it, though its capture drained at the pause", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    h.advance(60_000);
+    await h.recorder.pause(id);
+    await h.settle();
+    await h.drained(id);
+    expect(h.store.get(id)?.status.kind).toBe("paused");
+
+    await h.recorder.stop(id);
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.transcribe", id, fromMs: { mic: 2000 } });
+    await h.drained(id);
+    expect(h.store.get(id)?.status.kind).toBe("transcribing");
+    await h.drained(id);
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+  });
+
   test("a final transcription that fails keeps the audio and the transcript", async () => {
     const h = harness();
     const id = await h.start();

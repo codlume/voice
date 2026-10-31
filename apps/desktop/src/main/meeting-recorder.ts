@@ -378,7 +378,16 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     },
     pause: (id) => command(id, { type: "pause" }),
     resume: (id) => command(id, { type: "resume" }),
-    stop: (id) => command(id, { type: "stop" }),
+    async stop(id) {
+      const paused = store.get(id)?.status.kind === "paused";
+      const result = await command(id, { type: "stop" });
+      // Pausing already drained the capture, so the helper has nothing left to report on its own.
+      // A pass over the files from where the transcript ends brings the drain that finishes it.
+      if (paused && store.get(id)?.status.kind === "finishing") {
+        background("drain", sendTranscribe(id));
+      }
+      return result;
+    },
     keep: (id) => command(id, { type: "keep" }),
     discard: (id) => command(id, { type: "discard" }),
     generateSummary: (id) => command(id, { type: "generateSummary" }),
