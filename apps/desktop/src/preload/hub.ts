@@ -95,6 +95,8 @@ const voice: HubApi = {
   keepMeeting: (id) => ipcRenderer.invoke(Channel.keepMeeting, id),
   discardMeeting: (id) => ipcRenderer.invoke(Channel.discardMeeting, id),
   generateMeetingSummary: (id) => ipcRenderer.invoke(Channel.generateMeetingSummary, id),
+  retryMeetingTranscript: (id) => ipcRenderer.invoke(Channel.retryMeetingTranscript, id),
+  deleteMeetingAudio: (id) => ipcRenderer.invoke(Channel.deleteMeetingAudio, id),
   openNotepad: () => ipcRenderer.invoke(Channel.openNotepad),
   onMeetingTranscript: (listener) =>
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),

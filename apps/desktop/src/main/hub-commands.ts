@@ -352,6 +352,8 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
     );
     return "saved";
   });
+  hubCommands.handle(Channel.retryMeetingTranscript, withMeeting(recorder.retryFinalPass));
+  hubCommands.handle(Channel.deleteMeetingAudio, withMeeting(recorder.deleteAudio));
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
   hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));

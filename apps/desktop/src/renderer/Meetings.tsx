@@ -481,6 +481,7 @@ function MeetingsPage({
             notices={snapshot.meetingNotices}
             meetings={meetings}
             onOpen={setOpenId}
+            onViewSummary={setOpenId}
           />
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
           {!setup.ready && (

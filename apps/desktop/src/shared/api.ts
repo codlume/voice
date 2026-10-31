@@ -415,6 +415,10 @@ export type HubApi = WindowApi & {
   keepMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   discardMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Runs a failed final pass again over the audio it kept. */
+  retryMeetingTranscript(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Deletes the audio a failed final pass kept; the live transcript stays the transcript. */
+  deleteMeetingAudio(id: MeetingId): Promise<MeetingCommandResult>;
   /** Shows the floating notepad for the current meeting without taking focus. */
   openNotepad(): Promise<void>;
   /** Fires as transcript lines are saved during a meeting. */
@@ -516,6 +520,8 @@ export const Channel = {
   keepMeeting: "voice:keepMeeting",
   discardMeeting: "voice:discardMeeting",
   generateMeetingSummary: "voice:generateMeetingSummary",
+  retryMeetingTranscript: "voice:retryMeetingTranscript",
+  deleteMeetingAudio: "voice:deleteMeetingAudio",
   meetingTranscript: "voice:meetingTranscript",
   meetingPartial: "voice:meetingPartial",
   dismissMeetingNotice: "voice:dismissMeetingNotice",

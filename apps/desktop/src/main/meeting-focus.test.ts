@@ -150,6 +150,8 @@ describe("notices on the Meetings page", () => {
       key: 1,
       id: paused.id,
       text: lostText({ source: "mic", reason: "device" }),
+      actions: [],
+      dismissable: true,
     });
   });
 
@@ -194,9 +196,14 @@ describe("notices on the Meetings page", () => {
       texts(follow(summary, [{ ...failed, status: { kind: "summarizing", progress: null } }])),
     ).toEqual([]);
 
-    const done = meeting(3, { kind: "ready" });
+    const done = meeting(3, { kind: "ready" }, { finalPassFailed: true });
     const pass = raise(follow(noMeetingFocus, [done]), done.id, { kind: "finalPassFailed" }, 0);
+    expect(meetingBanners(pass)[0]).toMatchObject({
+      actions: ["retryFinalPass", "deleteAudio"],
+      dismissable: false,
+    });
     expect(texts(follow(pass, [done]))).toHaveLength(1);
+    expect(texts(follow(pass, [{ ...done, finalPassFailed: false }]))).toEqual([]);
     expect(texts(follow(pass, []))).toEqual([]);
   });
 
