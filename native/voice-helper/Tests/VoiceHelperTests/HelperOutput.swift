@@ -75,3 +75,16 @@ func sessionEvents(_ events: [[String: Any]]) -> [[String: Any]] {
         return type != "capture.level" && (type.hasPrefix("capture.") || type.hasPrefix("transcript"))
     }
 }
+
+/// `text` as words spread over the loud part of `samples`, timed in ms into them, as a fake
+/// speech model's answer.
+func spokenWords(_ text: String, in samples: [Float]) -> [TimedWord] {
+    let first = samples.firstIndex { abs($0) > 0.01 } ?? 0
+    let last = samples.lastIndex { abs($0) > 0.01 } ?? samples.count
+    let words = text.split(separator: " ")
+    let wordMs = PcmFile.milliseconds(last - first) / Double(max(words.count, 1))
+    return words.enumerated().map { index, word in
+        let startMs = PcmFile.milliseconds(first) + Double(index) * wordMs
+        return TimedWord(text: String(word), startMs: startMs, endMs: startMs + wordMs)
+    }
+}

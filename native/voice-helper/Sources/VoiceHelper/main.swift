@@ -48,7 +48,7 @@ final class Helper {
         installedApps = InstalledApps(output: output)
         let transcriber = transcriber
         let diarizer = SpeakerDiarizer(modelsDir: modelsDir, output: output)
-        let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeetingWords($0, language: $1) },
+        let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeeting($0, language: $1) },
                                          diarize: { await diarizer.turns(in: $0) }, isDictating: { capture.isDictating })
         meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
                             decode: { try await transcriber.decodeMeeting($0, language: $1) },
