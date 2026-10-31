@@ -36,6 +36,7 @@ function harness() {
     transform: idleRun,
     meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+    speakerModel: "ready",
     loginItem: "off",
     models: {
       asr: { state: "ready" },

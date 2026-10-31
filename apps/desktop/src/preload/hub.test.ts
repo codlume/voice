@@ -53,6 +53,7 @@ describe("hub preload", () => {
       "discardMeeting",
       "dismissAccountError",
       "dismissMeetingNotice",
+      "downloadSpeakerModel",
       "downloadUpdate",
       "editAssignments",
       "exportMeetingMarkdown",

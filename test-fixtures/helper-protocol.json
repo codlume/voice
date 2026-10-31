@@ -2017,6 +2017,10 @@
       "line": "{\"type\":\"asr.status\",\"state\":\"sleeping\"}"
     },
     {
+      "name": "unknown-meeting-models-state",
+      "line": "{\"type\":\"meeting.models.status\",\"state\":\"sleeping\"}"
+    },
+    {
       "name": "nonfinite-version",
       "line": "{\"type\":\"ready\",\"version\":1e400}"
     },

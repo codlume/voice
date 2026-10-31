@@ -288,6 +288,7 @@ async function main() {
       accessibility: "notDetermined",
       systemAudio: "notDetermined",
     },
+    speakerModel: "missing",
     loginItem: "unavailable",
     models: {
       asr: { state: "missing" },
@@ -840,6 +841,7 @@ async function main() {
     restartForUpdate,
     updateSettings,
     requestPermission,
+    downloadSpeakerModel: () => void helper.send({ type: "meeting.models.download" }),
     refreshLoginItem,
     microphoneTest,
     modelControls,

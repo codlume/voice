@@ -139,6 +139,8 @@ function run(command: SetupCommand): Promise<void> {
       return hubApi().uninstallModel(command.id);
     case "requestPermission":
       return hubApi().requestPermission(command.kind);
+    case "downloadSpeakerModel":
+      return hubApi().downloadSpeakerModel();
   }
 }
 
