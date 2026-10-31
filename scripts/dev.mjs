@@ -10,7 +10,7 @@ import { devElectronPath } from "./dev-bundle.mjs";
 const repoDir = fileURLToPath(new URL("..", import.meta.url));
 const desktopDir = join(repoDir, "apps/desktop");
 const distDir = join(desktopDir, "dist-electron");
-const bundles = ["main.cjs", "hub-preload.cjs", "pill-preload.cjs"];
+const bundles = ["main.cjs", "hub-preload.cjs", "pill-preload.cjs", "notepad-preload.cjs"];
 const devServerUrl = "http://localhost:5783/";
 const electronArgs = process.argv.slice(2).filter((arg) => arg !== "--");
 

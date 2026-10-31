@@ -206,6 +206,32 @@ export type MeetingNotice =
   | { kind: "summaryReady"; open: boolean }
   | { kind: "summaryFailed" };
 
+/**
+ * A warning or question the notepad and the Flow Bar show where the user is, until it is
+ * answered or stops applying. `endsAt` is the wall-clock time the recording will stop.
+ */
+export type MeetingPrompt =
+  | { kind: "startedByMistake" }
+  | { kind: "silence" }
+  | { kind: "maxLengthSoon"; endsAt: number }
+  | { kind: "notice"; text: string };
+
+/** The meeting the floating notepad shows, with the prompt it waits on. */
+export type NotepadState = { meeting: Meeting; prompt: MeetingPrompt | null };
+
+/** Statuses the Flow Bar shows: a capture open or resumable, or an answer the user owes. */
+export type PillMeetingStatus = Extract<
+  MeetingStatus,
+  { kind: "starting" | "recording" | "paused" | "finishing" | "confirmingShort" }
+>;
+
+/** What the Flow Bar shows of the current meeting. `closedMs` leaves out the open leg. */
+export type PillMeeting = {
+  status: PillMeetingStatus;
+  closedMs: number;
+  prompt: MeetingPrompt | null;
+};
+
 /** Live transcript lines, pushed as they are written so an open meeting view can append them. */
 export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
 
@@ -219,7 +245,8 @@ export const startedAt = (meeting: Meeting): number | null =>
 export const endedAt = (meeting: Meeting): number | null =>
   meeting.status.kind === "recording" ? null : (meeting.spans.at(-1)?.endedAt ?? null);
 
-const closedMs = (meeting: Meeting) =>
+/** Recorded audio in ms, leaving out a leg that is still open. */
+export const closedMs = (meeting: Meeting) =>
   meeting.spans.reduce((sum, span) => sum + span.endedAt - span.startedAt, 0);
 
 /** Recorded audio in ms, the open leg counted up to `now`. */

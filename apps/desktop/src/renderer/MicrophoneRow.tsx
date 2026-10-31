@@ -99,7 +99,7 @@ function useLevel(episode: number | null) {
     if (episode === null) return;
     let smoothed = 0;
     const quietTimer = setTimeout(() => setQuiet(true), QUIET_AFTER_MS);
-    const unsubscribe = window.voice.onLevel((next) => {
+    const unsubscribe = hubApi().onLevel((next) => {
       smoothed = smoothLevel(smoothed, next);
       setLevel(smoothed);
       if (next > HEARD_LEVEL) {

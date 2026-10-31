@@ -5,6 +5,7 @@ import { START_TIMEOUT_MS } from "./dictation.ts";
 import { MICROPHONE_TEST_MAX_MS, createMicrophoneTest } from "./microphone-test.ts";
 import type { HelperCommand } from "./protocol.ts";
 import { idle } from "./session.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore } from "./store.ts";
 
@@ -20,6 +21,7 @@ function harness() {
     },
     session: idle,
     transform: idleRun,
+    meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {

@@ -23,6 +23,7 @@ const electronEntry = (
     | "main"
     | "hub-preload"
     | "pill-preload"
+    | "notepad-preload"
     | "sentry"
     | "cleanup-engine-worker"
     | "transform-engine-worker",
@@ -101,6 +102,7 @@ export default defineConfig({
       input: {
         pill: `${rendererDir}/pill.html`,
         hub: `${rendererDir}/hub.html`,
+        notepad: `${rendererDir}/notepad.html`,
       },
     },
   },
@@ -122,6 +124,7 @@ export default defineConfig({
     },
     electronEntry("hub-preload", "src/preload/hub.ts"),
     electronEntry("pill-preload", "src/preload/pill.ts"),
+    electronEntry("notepad-preload", "src/preload/notepad.ts"),
     electronEntry("sentry", "src/main/sentry.ts"),
     electronEntry("cleanup-engine-worker", "src/main/cleanup-engine-worker.ts"),
     electronEntry("transform-engine-worker", "src/main/transform-engine-worker.ts"),

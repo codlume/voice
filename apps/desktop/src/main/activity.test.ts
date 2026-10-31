@@ -5,6 +5,7 @@ import type { TransformId } from "../shared/transforms.ts";
 import { activity, whenIdle } from "./activity.ts";
 import { idle, type Session } from "./session.ts";
 import { createStore, type AppState } from "./store.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun, type TransformRun } from "./transform-run.ts";
 
 const recording: Session = { phase: "recording", id: "s1", mode: "hold", pressedAt: 0 };
@@ -35,6 +36,7 @@ describe("activity", () => {
 const busy: AppState = {
   session: idle,
   transform: reading,
+  meeting: noMeetingFocus,
   permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },

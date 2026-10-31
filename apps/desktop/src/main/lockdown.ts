@@ -1,7 +1,7 @@
 import * as NodePath from "node:path";
 import { pathToFileURL } from "node:url";
 
-export type Page = "hub" | "pill";
+export type Page = "hub" | "pill" | "notepad";
 
 interface PageSource {
   development: boolean;

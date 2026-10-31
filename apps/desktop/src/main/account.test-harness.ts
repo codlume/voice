@@ -18,6 +18,7 @@ import {
 } from "./account.ts";
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { idle } from "./session.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun } from "./transform-run.ts";
 import { createStore, toSnapshot } from "./store.ts";
 
@@ -194,6 +195,7 @@ export function harness(
   const store = createStore({
     session: idle,
     transform: idleRun,
+    meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {

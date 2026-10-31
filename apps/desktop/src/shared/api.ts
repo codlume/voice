@@ -18,6 +18,8 @@ import type {
   MeetingsState,
   MeetingNotice,
   MeetingTranscriptChange,
+  NotepadState,
+  PillMeeting,
 } from "./meetings.ts";
 import type { SettingsPatch } from "./settings-patch.ts";
 import type { Snippet } from "./snippets.ts";
@@ -266,11 +268,21 @@ export type Snapshot = {
   account: AccountState;
 };
 
-export type PillSnapshot = Pick<Snapshot, "session"> & Pick<Settings, "alwaysShowPill">;
+export type PillSnapshot = Pick<Snapshot, "session"> &
+  Pick<Settings, "alwaysShowPill"> & { meeting: PillMeeting | null };
 
-export function toPillSnapshot({ session, settings }: Snapshot): PillSnapshot {
-  return { session, alwaysShowPill: settings.alwaysShowPill };
+export function toPillSnapshot(
+  { session, settings }: Snapshot,
+  meeting: PillMeeting | null,
+): PillSnapshot {
+  return { session, alwaysShowPill: settings.alwaysShowPill, meeting };
 }
+
+/** Dictation and transforms own the Flow Bar while they run; a meeting shows between them. */
+export const showsMeeting = (
+  snapshot: PillSnapshot,
+): snapshot is PillSnapshot & { meeting: PillMeeting } =>
+  snapshot.session.kind === "idle" && snapshot.meeting !== null;
 
 export type RestartChoice = "restart" | "copyTranscriptAndRestart";
 /**
@@ -292,6 +304,12 @@ type WindowApi = {
 export type PillApi = WindowApi & {
   getPillSnapshot(): Promise<PillSnapshot>;
   onPillSnapshot(listener: (snapshot: PillSnapshot) => void): () => void;
+  /**
+   * The Flow Bar lets clicks through to the app under it. While it shows a meeting, the pointer
+   * over the capsule makes it take clicks, and leaving gives them back.
+   */
+  setPillClickable(clickable: boolean): Promise<void>;
+  openNotepad(): Promise<void>;
 };
 
 /** An app found in the standard application folders. `browser` marks the apps the helper reads a page host from. */
@@ -381,13 +399,37 @@ export type HubApi = WindowApi & {
   keepMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   discardMeeting(id: MeetingId): Promise<MeetingCommandResult>;
   generateMeetingSummary(id: MeetingId): Promise<MeetingCommandResult>;
+  /** Shows the floating notepad for the current meeting without taking focus. */
+  openNotepad(): Promise<void>;
   /** Fires as transcript lines are saved during a meeting. */
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
   /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
   onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
 };
 
-export type VoiceApi = PillApi | HubApi;
+/** The meeting commands the Voice window and the notepad share. */
+export type MeetingControls = Pick<
+  HubApi,
+  | "getMeeting"
+  | "updateMeetingNotes"
+  | "pauseMeeting"
+  | "resumeMeeting"
+  | "stopMeeting"
+  | "keepMeeting"
+  | "discardMeeting"
+  | "onMeetingTranscript"
+>;
+
+export type NotepadApi = Pick<WindowApi, "diagnosticsStartedAtLaunch"> &
+  MeetingControls & {
+    /** Null when the notepad's meeting is gone. */
+    getNotepad(): Promise<NotepadState | null>;
+    onNotepad(listener: (state: NotepadState | null) => void): () => void;
+    /** Answers a prompt that needs nothing else, such as "Keep recording". */
+    dismissMeetingPrompt(): Promise<void>;
+  };
+
+export type VoiceApi = PillApi | HubApi | NotepadApi;
 
 export const Channel = {
   checkForUpdates: "voice:checkForUpdates",
@@ -455,4 +497,9 @@ export const Channel = {
   generateMeetingSummary: "voice:generateMeetingSummary",
   meetingTranscript: "voice:meetingTranscript",
   meetingNotice: "voice:meetingNotice",
+  openNotepad: "voice:openNotepad",
+  setPillClickable: "voice:setPillClickable",
+  getNotepad: "voice:getNotepad",
+  notepad: "voice:notepad",
+  dismissMeetingPrompt: "voice:dismissMeetingPrompt",
 } as const;

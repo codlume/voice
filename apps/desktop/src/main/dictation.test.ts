@@ -51,6 +51,7 @@ import {
   idle,
   type SessionEvent,
 } from "./session.ts";
+import { noMeetingFocus } from "./meeting-focus.ts";
 import { idleRun } from "./transform-run.ts";
 import type { TransformRequest, TransformResult } from "./transform-model.ts";
 import { createStore, toSnapshot } from "./store.ts";
@@ -104,6 +105,7 @@ function harness(opts: Options = {}) {
     },
     session: idle,
     transform: idleRun,
+    meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
     loginItem: "off",
     models: {

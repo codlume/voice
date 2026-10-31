@@ -1,7 +1,20 @@
-import type { InsertFailure, Outcome, PillState, TransformOutcome } from "../shared/api.ts";
+import {
+  showsMeeting,
+  type InsertFailure,
+  type Outcome,
+  type PillSnapshot,
+  type PillState,
+  type TransformOutcome,
+} from "../shared/api.ts";
+import { clock } from "../shared/meeting-markdown.ts";
+import type { PillMeeting } from "../shared/meetings.ts";
+
+/** `recording` is the only look that says audio is being captured. */
+export type MeetingLook = "recording" | "paused" | "waiting" | "prompt";
 
 type PillView =
   | { kind: "idle" }
+  | { kind: "meeting"; look: MeetingLook; text: string }
   | { kind: "listening" }
   | { kind: "processing" }
   | { kind: "inserted"; method: Extract<Outcome, { kind: "inserted" }>["method"] }
@@ -110,6 +123,47 @@ export function pillView(session: PillState): PillView {
       return session;
   }
 }
+
+const MINUTE_MS = 60_000;
+
+const meeting = (look: MeetingLook, text: string) => ({ kind: "meeting", look, text }) as const;
+
+function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): PillView {
+  // The notepad carries a notice's full text and the answers; the Flow Bar only asks.
+  switch (prompt?.kind) {
+    case "startedByMistake":
+      return meeting("prompt", "Started by mistake?");
+    case "silence":
+      return meeting("prompt", "Still in a meeting?");
+    case "maxLengthSoon": {
+      const minutes = Math.max(1, Math.ceil((prompt.endsAt - now) / MINUTE_MS));
+      return meeting("prompt", `Recording ends in ${minutes} min`);
+    }
+  }
+  switch (status.kind) {
+    case "starting":
+      return meeting("waiting", "Starting…");
+    case "recording":
+      return meeting("recording", clock(closedMs + Math.max(0, now - status.since)));
+    case "paused":
+      return meeting("paused", `Paused · ${clock(closedMs)}`);
+    case "finishing":
+      return meeting("waiting", "Wrapping up…");
+    case "confirmingShort":
+      return meeting("prompt", "Started by mistake?");
+  }
+}
+
+/** Dictation and transforms show as usual mid-meeting, and the meeting comes back after them. */
+export function flowBarView(snapshot: PillSnapshot, now: number): PillView {
+  return showsMeeting(snapshot) ? meetingView(snapshot.meeting, now) : pillView(snapshot.session);
+}
+
+/** The clock moves only while a meeting records or counts down to its maximum length. */
+export const ticks = (snapshot: PillSnapshot) =>
+  showsMeeting(snapshot) &&
+  (snapshot.meeting.status.kind === "recording" ||
+    snapshot.meeting.prompt?.kind === "maxLengthSoon");
 
 export const BAR_COUNT = 11;
 export const MIN_BAR_SCALE = 0.18;
