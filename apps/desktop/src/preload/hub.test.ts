@@ -107,6 +107,7 @@ describe("hub preload", () => {
       "updateMeetingNotes",
       "updateMeetingsSettings",
       "updateSettings",
+      "watchMeetingPermissions",
     ]);
   });
 

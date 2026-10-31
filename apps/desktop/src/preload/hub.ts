@@ -50,6 +50,8 @@ const voice: HubApi = {
   updateSettings: (patch) => ipcRenderer.invoke(Channel.updateSettings, patch),
   requestPermission: (kind) => ipcRenderer.invoke(Channel.requestPermission, kind),
   downloadSpeakerModel: () => ipcRenderer.invoke(Channel.downloadSpeakerModel),
+  watchMeetingPermissions: (watching) =>
+    ipcRenderer.invoke(Channel.watchMeetingPermissions, watching),
   setOpenAtLogin: (on) => ipcRenderer.invoke(Channel.setOpenAtLogin, on),
   startMicrophoneTest: () => ipcRenderer.invoke(Channel.startMicrophoneTest),
   stopMicrophoneTest: () => ipcRenderer.invoke(Channel.stopMicrophoneTest),

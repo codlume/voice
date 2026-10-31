@@ -418,6 +418,13 @@ function MeetingsPage({
   const summaryModel = summaryModelRow(snapshot);
   const opened = meetings.find(({ id }) => id === openId);
   const selected = meetings.find(({ id }) => id === selectedId) ?? days[0]?.meetings[0] ?? null;
+  // Main checks System Audio Recording again only while Set up Meetings asks for it.
+  const asksForSetup = !setup.ready && !opened;
+  useEffect(() => {
+    if (!asksForSetup) return;
+    void hubApi().watchMeetingPermissions(true);
+    return () => void hubApi().watchMeetingPermissions(false);
+  }, [asksForSetup]);
 
   const startMeeting = () =>
     void start.run(async () => {

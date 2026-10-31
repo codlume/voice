@@ -188,6 +188,7 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     updateMeetingsSettings: vi.fn(async () => {}),
     requestPermission: vi.fn(async () => {}),
     downloadSpeakerModel: vi.fn(async () => {}),
+    watchMeetingPermissions: vi.fn(async () => {}),
     installModel: vi.fn(async () => {}),
     generateMeetingSummary: vi.fn(async (meetingId: MeetingId) => {
       const index = state.meetings.findIndex((m) => m.id === meetingId);

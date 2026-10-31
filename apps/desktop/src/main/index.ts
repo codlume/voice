@@ -231,8 +231,12 @@ function applyZoom(hub: BrowserWindow, zoomLevel: number) {
   });
 }
 
-const allGranted = (state: AppState) =>
-  Object.values(state.permissions).every((permission) => permission === "granted");
+// Dictation needs these two. System Audio Recording is checked only while Set up Meetings asks
+// for it, so a Mac that never records a meeting is not polled for it forever.
+const dictationGranted = ({ permissions }: AppState) =>
+  permissions.microphone === "granted" && permissions.accessibility === "granted";
+const systemAudioSettled = ({ permissions }: AppState) =>
+  permissions.systemAudio === "granted" || permissions.systemAudio === "unavailable";
 
 async function main() {
   const userData = app.getPath("userData");
@@ -547,12 +551,15 @@ async function main() {
   const hubVisible = () => hub !== undefined && !hub.isDestroyed() && hub.isVisible();
 
   let permissionPoll: NodeJS.Timeout | null = null;
+  let meetingSetupShown = false;
   function stopPermissionPolling() {
     if (permissionPoll) clearInterval(permissionPoll);
     permissionPoll = null;
   }
   function syncPermissionPolling() {
-    const wanted = lifecycle === "running" && hubVisible() && !allGranted(store.state);
+    const missing =
+      !dictationGranted(store.state) || (meetingSetupShown && !systemAudioSettled(store.state));
+    const wanted = lifecycle === "running" && hubVisible() && missing;
     if (wanted && !permissionPoll) {
       permissionPoll = setInterval(
         () => helper.send({ type: "permissions.check" }),
@@ -842,6 +849,11 @@ async function main() {
     updateSettings,
     requestPermission,
     downloadSpeakerModel: () => void helper.send({ type: "meeting.models.download" }),
+    watchMeetingPermissions: (watching) => {
+      meetingSetupShown = watching;
+      if (watching) helper.send({ type: "permissions.check" });
+      syncPermissionPolling();
+    },
     refreshLoginItem,
     microphoneTest,
     modelControls,
