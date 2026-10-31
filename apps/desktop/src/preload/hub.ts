@@ -6,8 +6,6 @@ import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../sh
 import type { HistoryChange } from "../shared/history.ts";
 import type { Insights } from "../shared/insights.ts";
 import type {
-  MeetingNotice,
-  MeetingId,
   MeetingsChange,
   MeetingTranscriptChange,
   MeetingPartial,
@@ -101,8 +99,7 @@ const voice: HubApi = {
   onMeetingTranscript: (listener) =>
     subscribe<MeetingTranscriptChange>(Channel.meetingTranscript, listener),
   onMeetingPartial: (listener) => subscribe<MeetingPartial>(Channel.meetingPartial, listener),
-  onMeetingNotice: (listener) =>
-    subscribe<{ id: MeetingId; notice: MeetingNotice }>(Channel.meetingNotice, listener),
+  dismissMeetingNotice: (key) => ipcRenderer.invoke(Channel.dismissMeetingNotice, key),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);

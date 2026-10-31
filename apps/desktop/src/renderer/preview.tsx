@@ -87,6 +87,7 @@ const base: Snapshot = {
   },
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
+  meetingNotices: [],
 };
 
 const ready: Snapshot = {
@@ -826,7 +827,7 @@ function fakeMeetings(
     generateMeetingSummary: unavailable,
     onMeetingTranscript: () => () => {},
     onMeetingPartial: () => () => {},
-    onMeetingNotice: () => () => {},
+    dismissMeetingNotice: async () => {},
   };
 }
 

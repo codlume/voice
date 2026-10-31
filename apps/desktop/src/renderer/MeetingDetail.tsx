@@ -9,6 +9,7 @@ import {
   titleText,
   type Folder,
   type Meeting,
+  type MeetingBanner,
   type MeetingCommandResult,
   type MeetingId,
   type Speaker,
@@ -22,6 +23,7 @@ import type { ChecklistRow } from "./checklist.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SetupChecklist } from "./Home.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
+import { MeetingNotices } from "./MeetingNotices.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
 import {
   durationLabel,
@@ -475,11 +477,14 @@ const feedbackText = { copied: "Copied as Markdown", saved: "Saved" } as const;
 export function MeetingDetail({
   meeting,
   folders,
+  notices,
   summaryModel,
   onBack,
 }: {
   meeting: Meeting;
   folders: readonly Folder[];
+  /** This meeting's notices. */
+  notices: readonly MeetingBanner[];
   /** The summary model's row while it is not on disk, else null. */
   summaryModel: ChecklistRow | null;
   onBack: () => void;
@@ -566,6 +571,7 @@ export function MeetingDetail({
       <p role="status" {...stylex.props(feedback ? styles.muted : a11y.visuallyHidden)}>
         {feedback && feedbackText[feedback]}
       </p>
+      <MeetingNotices notices={notices} />
       <Tabs.Root
         value={tab}
         onValueChange={(value: unknown) => {

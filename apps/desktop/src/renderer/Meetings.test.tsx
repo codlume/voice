@@ -124,6 +124,7 @@ const setUp: Snapshot = {
   },
   settings: DEFAULT_SETTINGS,
   account: { kind: "signedOut" },
+  meetingNotices: [],
 };
 
 // Holds state like main and publishes every change; spies record the commands.
@@ -343,6 +344,32 @@ describe("Past notes", () => {
     await click(document.querySelector("h1")!.parentElement!.querySelector("button:last-child")!);
     expect(main.startMeeting).toHaveBeenCalledOnce();
     expect(document.querySelector("[role=status]")?.textContent).toMatch(/not available/);
+  });
+});
+
+describe("meeting notices", () => {
+  test("show on the page with their meeting, open it, and dismiss through main", async () => {
+    fakeMain(sample());
+    const dismissMeetingNotice = vi.fn(async () => {});
+    window.voice = { ...window.voice, dismissMeetingNotice } as HubApi;
+    await render({
+      ...setUp,
+      meetingNotices: [
+        { key: 2, id: id(1), text: "The summary could not be written." },
+        { key: 1, id: id(9), text: "Recording did not start." },
+      ],
+    });
+    const notices = [...document.querySelectorAll("[role=status]")].map((p) => p.textContent);
+    expect(notices).toEqual([
+      "Weekly product sync The summary could not be written.",
+      "Recording did not start.",
+    ]);
+    await click(byText("Dismiss"));
+    expect(dismissMeetingNotice).toHaveBeenCalledWith(2);
+    await click(byText("Open"));
+    await waitForText("All meetings");
+    expect(text()).toContain("The summary could not be written.");
+    expect(text()).not.toContain("Recording did not start.");
   });
 });
 

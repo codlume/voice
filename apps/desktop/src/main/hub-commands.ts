@@ -34,6 +34,7 @@ import type { InsightsStore } from "./insights.ts";
 import type { InstalledApps } from "./installed-apps.ts";
 import type { Commands } from "./ipc.ts";
 import type { MeetingRecorder } from "./meeting-recorder.ts";
+import { dismissBanner } from "./meeting-focus.ts";
 import type { MeetingsStore } from "./meetings-store.ts";
 import type { MicrophoneTest } from "./microphone-test.ts";
 import { editAssignments, type SettingsQueue } from "./settings-queue.ts";
@@ -355,4 +356,8 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
   hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
   hubCommands.handle(Channel.openNotepad, () => deps.openNotepad());
+  hubCommands.handle(Channel.dismissMeetingNotice, (_event, key: unknown) => {
+    if (typeof key !== "number") return;
+    deps.store.update((s) => ({ ...s, meeting: dismissBanner(s.meeting, key) }));
+  });
 }

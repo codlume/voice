@@ -22,6 +22,7 @@ import { SetupChecklist } from "./Home.tsx";
 import { MeetingDetail } from "./MeetingDetail.tsx";
 import { MeetingFolders } from "./MeetingFolders.tsx";
 import { MeetingList } from "./MeetingList.tsx";
+import { MeetingNotices } from "./MeetingNotices.tsx";
 import { MeetingsSettingsDialog } from "./MeetingsSettingsDialog.tsx";
 import { Inline } from "./MeetingSummary.tsx";
 import {
@@ -407,6 +408,7 @@ function MeetingsPage({
       <MeetingDetail
         meeting={opened}
         folders={folders}
+        notices={snapshot.meetingNotices.filter(({ id }) => id === opened.id)}
         summaryModel={summaryModel}
         onBack={() => setOpenId(null)}
       />
@@ -474,6 +476,11 @@ function MeetingsPage({
               {start.error}
             </p>
           )}
+          <MeetingNotices
+            notices={snapshot.meetingNotices}
+            meetings={meetings}
+            onOpen={setOpenId}
+          />
           {live && <LiveCard meeting={live} onOpen={() => setOpenId(live.id)} />}
           {!setup.ready && <SetupChecklist title="Set up Meetings" rows={setup.rows} />}
           {summaryModel && (

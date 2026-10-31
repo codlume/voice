@@ -13,6 +13,7 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meetings-delete`: "Delete “<title>”?" then `Delete` returns to the list.
 - `meetings-folders`: `New folder`, edit, delete ("Only the folder is deleted. Its meetings stay."), the `Automatic folders` switch, and a folder's own list.
 - `meetings-settings`: Maximum length, Ask after 10 minutes of silence, Open summary when ready, Keep meetings (with a sentence saying how long transcripts stay; a shorter choice that deletes meetings asks first), Automatic folders.
+- `meetings-notices`: a failed start, a lost capture, the maximum length, a failed final pass or a failed summary shows a notice at the top of the Meetings page, in the notepad's words, with the meeting's title, `Open` and `Dismiss`; the meeting's own page shows its notices. Dismissing it there or in the notepad dismisses both. It goes by itself once it no longer applies (a resume, a retried summary, a new recording after a failed start). `snapshot().meetingNotices` lists them.
 - `meetings-live`: while a meeting records, a card above the tabs shows its timer and Pause or Resume, and Stop.
 - `meeting-record`: `startMeeting()` returns `{ kind: "ok", id }`, the meeting goes `starting` then `recording`, and `<userData>/meetings/<id>/` gains `mic.pcm` and `system.pcm` (16 kHz mono Int16) that grow as audio arrives.
 - `meeting-live-transcript`: segments land in `transcript.ndjson` while recording (`getMeeting(id).transcript`), mic as `source: "mic"`, system as `source: "system"` with `speakerId: null`.

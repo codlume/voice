@@ -38,6 +38,7 @@ describe("toSnapshot", () => {
     expect(Object.keys(snapshot).toSorted()).toEqual([
       "account",
       "loginItem",
+      "meetingNotices",
       "microphoneTest",
       "microphones",
       "models",

@@ -4,12 +4,15 @@ import type { AudioLoss, Meeting, MeetingId, MeetingStatus } from "../shared/mee
 import {
   currentMeeting,
   dismiss,
+  dismissBanner,
   follow,
+  meetingBanners,
   noMeetingFocus,
   noticePrompt,
   promptFor,
   raise,
   toPillMeeting,
+  type MeetingFocus,
 } from "./meeting-focus.ts";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}` as MeetingId;
@@ -120,6 +123,97 @@ describe("prompts", () => {
       0,
     );
     expect(promptFor(live, focus)).toBeNull();
+  });
+});
+
+const texts = (focus: MeetingFocus) => meetingBanners(focus).map(({ text }) => text);
+
+describe("notices on the Meetings page", () => {
+  test("outcomes show in the words the notepad uses; questions and summary ready do not", () => {
+    const paused = meeting(1, { kind: "paused" });
+    let focus = follow(noMeetingFocus, [paused]);
+    for (const notice of [
+      { kind: "captureLost", loss: { source: "mic", reason: "device" } },
+      { kind: "maxLengthReached" },
+      { kind: "silence" },
+      { kind: "maxLengthSoon", inMs: 1000 },
+      { kind: "summaryReady", open: true },
+    ] as const) {
+      focus = raise(focus, paused.id, notice, 0);
+    }
+    expect(texts(focus)).toEqual([
+      "Recording stopped at the maximum length.",
+      lostText({ source: "mic", reason: "device" }),
+    ]);
+    expect(meetingBanners(focus)[1]).toEqual({
+      key: 1,
+      id: paused.id,
+      text: lostText({ source: "mic", reason: "device" }),
+    });
+  });
+
+  test("dismissing in the notepad or on the page dismisses the notice in both", () => {
+    const paused = meeting(1, { kind: "paused" });
+    const lost = { kind: "captureLost", loss: null } as const;
+    const focus = raise(follow(noMeetingFocus, [paused]), paused.id, lost, 0);
+    expect(texts(focus)).toHaveLength(1);
+    expect(texts(dismiss(focus))).toEqual([]);
+    const [banner] = meetingBanners(focus);
+    const fromPage = dismissBanner(focus, banner!.key);
+    expect(texts(fromPage)).toEqual([]);
+    expect(promptFor(paused, fromPage)).toBeNull();
+  });
+
+  test("a notice goes once it no longer applies", () => {
+    const paused = meeting(1, { kind: "paused" });
+    const lost = raise(
+      follow(noMeetingFocus, [paused]),
+      paused.id,
+      { kind: "captureLost", loss: null },
+      0,
+    );
+    expect(texts(follow(lost, [recording(1)]))).toEqual([]);
+    expect(texts(follow(lost, []))).toEqual([]);
+
+    const failed = meeting(
+      2,
+      { kind: "ready" },
+      {
+        summary: { kind: "failed", message: "No model", previous: null },
+      },
+    );
+    const summary = raise(
+      follow(noMeetingFocus, [failed]),
+      failed.id,
+      { kind: "summaryFailed" },
+      0,
+    );
+    expect(texts(summary)).toEqual(["The summary could not be written."]);
+    expect(texts(follow(summary, [{ ...failed, status: { kind: "summarizing" } }]))).toEqual([]);
+
+    const done = meeting(3, { kind: "ready" });
+    const pass = raise(follow(noMeetingFocus, [done]), done.id, { kind: "finalPassFailed" }, 0);
+    expect(texts(follow(pass, [done]))).toHaveLength(1);
+    expect(texts(follow(pass, []))).toEqual([]);
+  });
+
+  test("a failed start has no meeting; it stays until one records", () => {
+    const start = { kind: "startFailed", message: "Recording did not start." } as const;
+    const focus = raise(noMeetingFocus, id(1), start, 0);
+    expect(texts(follow(focus, []))).toEqual(["Recording did not start."]);
+    expect(texts(follow(focus, [recording(2)]))).toEqual([]);
+  });
+
+  test("the same notice again replaces the earlier one", () => {
+    const paused = meeting(1, { kind: "paused" });
+    const lost = { kind: "captureLost", loss: null } as const;
+    const twice = raise(
+      raise(follow(noMeetingFocus, [paused]), paused.id, lost, 0),
+      paused.id,
+      lost,
+      1,
+    );
+    expect(meetingBanners(twice).map(({ key }) => key)).toEqual([2]);
   });
 });
 

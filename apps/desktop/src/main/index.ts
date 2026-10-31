@@ -507,7 +507,6 @@ async function main() {
     },
     onNotice: (id, notice) => {
       log(`meetings: ${id} notice ${notice.kind}`);
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.meetingNotice, { id, notice });
       store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
     },
     log,

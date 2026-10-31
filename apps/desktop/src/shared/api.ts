@@ -17,7 +17,7 @@ import {
   type MeetingsChange,
   type MeetingsSettingsPatch,
   type MeetingsState,
-  type MeetingNotice,
+  type MeetingBanner,
   type MeetingTranscriptChange,
   type MeetingPartial,
   type NotepadState,
@@ -277,6 +277,7 @@ export type Snapshot = {
   models: Record<ModelId, ModelStatus>;
   settings: Settings;
   account: AccountState;
+  meetingNotices: readonly MeetingBanner[];
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &
@@ -420,8 +421,8 @@ export type HubApi = WindowApi & {
   onMeetingTranscript(listener: (change: MeetingTranscriptChange) => void): () => void;
   /** Fires with unconfirmed text while a meeting records, for the live view. */
   onMeetingPartial(listener: (partial: MeetingPartial) => void): () => void;
-  /** Warnings and prompts a meeting raises: max length, silence, failures, summary ready. */
-  onMeetingNotice(listener: (notice: { id: MeetingId; notice: MeetingNotice }) => void): () => void;
+  /** Takes a notice off the Meetings page, and off the notepad when it shows the same one. */
+  dismissMeetingNotice(key: number): Promise<void>;
 };
 
 /** The meeting commands the Voice window and the notepad share. */
@@ -517,7 +518,7 @@ export const Channel = {
   generateMeetingSummary: "voice:generateMeetingSummary",
   meetingTranscript: "voice:meetingTranscript",
   meetingPartial: "voice:meetingPartial",
-  meetingNotice: "voice:meetingNotice",
+  dismissMeetingNotice: "voice:dismissMeetingNotice",
   openNotepad: "voice:openNotepad",
   setPillClickable: "voice:setPillClickable",
   getNotepad: "voice:getNotepad",

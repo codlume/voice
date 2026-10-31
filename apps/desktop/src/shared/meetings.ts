@@ -263,6 +263,47 @@ export type MeetingPrompt =
   | { kind: "maxLengthSoon"; endsAt: number }
   | { kind: "notice"; text: string };
 
+/**
+ * A notice the Meetings page shows until the user dismisses it or it no longer applies. `key`
+ * tells two notices apart; the notepad's prompt from the same notice shares it.
+ */
+export type MeetingBanner = { key: number; id: MeetingId; text: string };
+
+function lostText(loss: AudioLoss | null): string {
+  const what =
+    loss === null
+      ? "Audio stopped coming in"
+      : loss.reason === "permission"
+        ? `Voice is no longer allowed to record ${loss.source === "mic" ? "the microphone" : "system audio"}`
+        : loss.source === "mic"
+          ? "The microphone stopped"
+          : "System audio stopped";
+  return `${what}, so the meeting is paused. Resume to keep recording.`;
+}
+
+/** What a notice says, or null for one that asks a question or opens the summary instead. */
+export function noticeText(notice: MeetingNotice): string | null {
+  switch (notice.kind) {
+    case "startFailed":
+    case "resumeFailed":
+      return notice.message;
+    case "captureLost":
+      return lostText(notice.loss);
+    case "maxLengthReached":
+      return "Recording stopped at the maximum length.";
+    case "atMaxLength":
+      return "This meeting is at its maximum length and cannot record more.";
+    case "finalPassFailed":
+      return "The final transcript could not be made, so the live transcript and the audio are kept.";
+    case "summaryFailed":
+      return "The summary could not be written.";
+    case "maxLengthSoon":
+    case "silence":
+    case "summaryReady":
+      return null;
+  }
+}
+
 /** The meeting the floating notepad shows, with the prompt it waits on. */
 export type NotepadState = { meeting: Meeting; prompt: MeetingPrompt | null };
 

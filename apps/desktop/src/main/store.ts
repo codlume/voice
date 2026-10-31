@@ -1,9 +1,9 @@
 import { toPillSnapshot, type PillSnapshot, type PillState, type Snapshot } from "../shared/api.ts";
-import { toPillMeeting, type MeetingFocus } from "./meeting-focus.ts";
+import { meetingBanners, toPillMeeting, type MeetingFocus } from "./meeting-focus.ts";
 import { dictating, toPillState, type Session } from "./session.ts";
 import { toPillState as toTransformPillState, type TransformRun } from "./transform-run.ts";
 
-export type AppState = Omit<Snapshot, "session"> & {
+export type AppState = Omit<Snapshot, "session" | "meetingNotices"> & {
   session: Session;
   transform: TransformRun;
   meeting: MeetingFocus;
@@ -33,6 +33,7 @@ export function toSnapshot(state: AppState): Snapshot {
     models: state.models,
     settings: state.settings,
     account: state.account,
+    meetingNotices: meetingBanners(state.meeting),
   };
 }
 
