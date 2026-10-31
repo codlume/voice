@@ -9,7 +9,7 @@ import {
   type TranscriptEntry,
 } from "./meetings.ts";
 
-const markerText: Record<MarkerKind, string> = {
+export const markerText: Record<MarkerKind, string> = {
   paused: "Paused",
   resumed: "Resumed",
   dictated: "Dictated",
@@ -18,7 +18,7 @@ const markerText: Record<MarkerKind, string> = {
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-function clock(ms: number): string {
+export function clock(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   const hours = Math.floor(seconds / 3600);
   const minutesSeconds = `${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
