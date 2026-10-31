@@ -283,10 +283,64 @@ describe("meeting recorder", () => {
     await h.settle();
     expect(h.sent).toEqual([]);
     h.setHelperRunning(true);
-    h.emit({ type: "ready", version: 16 });
+    h.emit({ type: "ready", version: 17 });
     await h.settle();
     expect(h.sentTypes()).toEqual(["meeting.transcribe"]);
     expect(h.sent[0]).toMatchObject({ id });
+  });
+
+  test("the toggle starts a meeting, waits while it starts, then stops it", async () => {
+    const h = harness();
+    const started = await h.recorder.toggle();
+    if (started.kind !== "ok") throw new Error("the toggle did not start a meeting");
+    expect(await h.recorder.toggle()).toEqual({
+      kind: "refused",
+      message: "The meeting is still starting.",
+    });
+    expect(h.sentTypes()).toEqual(["meeting.start"]);
+
+    h.emit({ type: "meeting.started", id: started.id, mic: "active", system: "active" });
+    await h.settle();
+    expect(await h.recorder.toggle()).toEqual({ kind: "ok", id: started.id });
+    expect(h.store.get(started.id)?.status.kind).toBe("finishing");
+    expect(h.sentTypes()).toEqual(["meeting.start", "meeting.stop"]);
+  });
+
+  test("the toggle stops a paused meeting instead of starting another", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.recorder.pause(id);
+    expect(await h.recorder.toggle()).toEqual({ kind: "ok", id });
+    expect(h.store.get(id)?.status.kind).toBe("finishing");
+    expect(h.store.state().meetings).toHaveLength(1);
+  });
+
+  test("two presses at once start one meeting", async () => {
+    const h = harness();
+    const results = await Promise.all([h.recorder.toggle(), h.recorder.start()]);
+    expect(results.map(({ kind }) => kind)).toEqual(["ok", "refused"]);
+    expect(h.sentTypes()).toEqual(["meeting.start"]);
+    expect(h.store.state().meetings).toHaveLength(1);
+  });
+
+  test("a press during launch starts a new meeting and leaves the one recovery finishes", async () => {
+    const first = harness();
+    const left = await first.start();
+    await first.store.settled();
+
+    const h = harness();
+    h.advance(60_000);
+    const recovering = h.recorder.recover();
+    const pressed = await h.recorder.toggle();
+    await recovering;
+    await h.settle();
+    if (pressed.kind !== "ok") throw new Error("the press did not start a meeting");
+    expect(pressed.id).not.toBe(left);
+    expect(h.store.get(left)?.status.kind).toBe("transcribing");
+    expect(h.sent.map((command) => [command.type, "id" in command && command.id])).toEqual([
+      ["meeting.transcribe", left],
+      ["meeting.start", pressed.id],
+    ]);
   });
 
   test("a helper exit mid-meeting pauses it with a gap, and resume starts a new leg", async () => {

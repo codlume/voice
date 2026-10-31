@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import type { Microphone } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import {
+  meetingToggle,
   recordedMs,
   type Meeting,
   type MeetingCommandResult,
@@ -26,6 +27,8 @@ import type { HelperCommand, HelperEvent, MeetingCursor } from "./protocol.ts";
 
 export type MeetingRecorder = {
   start(): Promise<MeetingCommandResult>;
+  /** Stops the meeting that records or is paused, or starts one; a meeting still starting waits. */
+  toggle(): Promise<MeetingCommandResult>;
   pause(id: MeetingId): Promise<MeetingCommandResult>;
   resume(id: MeetingId): Promise<MeetingCommandResult>;
   stop(id: MeetingId): Promise<MeetingCommandResult>;
@@ -88,6 +91,15 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   // Meetings whose final pass waits for `meeting.drained`; resent when the helper comes back.
   const finalPending = new Set<MeetingId>();
   let queue: Promise<unknown> = Promise.resolve();
+  // Starts, toggles and the launch recovery run one at a time and each decides on the state the
+  // one before left, so two quick presses never start two meetings and a press during launch
+  // never stops a meeting recovery is about to finish.
+  let decisions: Promise<unknown> = Promise.resolve();
+  function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+    const decided = decisions.then(work);
+    decisions = decided.catch(() => {});
+    return decided;
+  }
   // Helper events start work outside the queue; `settled` waits for it too.
   const inflight = new Set<Promise<unknown>>();
 
@@ -364,18 +376,33 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return { kind: "ok", id };
   }
 
+  async function start(): Promise<MeetingCommandResult> {
+    await store.loaded();
+    if (store.state().meetings.some(live)) {
+      return { kind: "refused", message: "A meeting is already recording." };
+    }
+    const id = randomUUID() as MeetingId;
+    await dispatch(id, { type: "start", id });
+    return store.get(id)
+      ? { kind: "ok", id }
+      : { kind: "refused", message: "Recording did not start." };
+  }
+
   return {
-    async start() {
-      await store.loaded();
-      if (store.state().meetings.some(live)) {
-        return { kind: "refused", message: "A meeting is already recording." };
-      }
-      const id = randomUUID() as MeetingId;
-      await dispatch(id, { type: "start", id });
-      return store.get(id)
-        ? { kind: "ok", id }
-        : { kind: "refused", message: "Recording did not start." };
-    },
+    start: () => oneAtATime(start),
+    toggle: () =>
+      oneAtATime(async () => {
+        await store.loaded();
+        const next = meetingToggle(store.state().meetings);
+        switch (next.kind) {
+          case "start":
+            return start();
+          case "stop":
+            return command(next.id, { type: "stop" });
+          case "wait":
+            return { kind: "refused", message: "The meeting is still starting." };
+        }
+      }),
     pause: (id) => command(id, { type: "pause" }),
     resume: (id) => command(id, { type: "resume" }),
     async stop(id) {
@@ -445,12 +472,13 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         );
       }
     },
-    async recover() {
-      await store.loaded();
-      for (const { meeting, lastWriteAt } of await store.unfinished()) {
-        await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt });
-      }
-    },
+    recover: () =>
+      oneAtATime(async () => {
+        await store.loaded();
+        for (const { meeting, lastWriteAt } of await store.unfinished()) {
+          await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt });
+        }
+      }),
     async settled() {
       while (true) {
         const current = queue;

@@ -43,7 +43,7 @@ import { Card } from "./Card.tsx";
 import { CommitSlider } from "./CommitSlider.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { droppedBy } from "./historyView.ts";
-import { dictatesWithFn, hotkeyLabel } from "./hotkeys.ts";
+import { dictatesWithFn, dictationKeys, hotkeyLabel } from "./hotkeys.ts";
 import { Keys } from "./Keycap.tsx";
 import { MicrophoneRow } from "./MicrophoneRow.tsx";
 import { activityOf, modelView, type Activity, type ModelAction } from "./modelView.ts";
@@ -51,7 +51,8 @@ import { PageAnimationPreview } from "./PageAnimationPreview.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
 import { SettingTitle } from "./SettingTitle.tsx";
-import { shortcutKeys } from "./shortcutCapture.ts";
+import { MEETING_SHORTCUT_TITLE, shortcutKeys } from "./shortcutCapture.ts";
+import { ShortcutPicker } from "./ShortcutPicker.tsx";
 import { jumpShortcuts, shortcuts } from "./shortcuts.ts";
 import { shortcutsHint } from "./transformsView.ts";
 import { useAction } from "./useAction.ts";
@@ -951,6 +952,7 @@ export function ShortcutsSettings({
   onOpenTransforms: () => void;
 }) {
   const hotkeyAction = useAction();
+  const meetingAction = useAction();
   const layout = useKeyboardLayout();
   const transforms = settings.transforms;
   const changeHotkey = (hotkey: Hotkey) => update(hotkeyAction, { hotkey });
@@ -1003,6 +1005,32 @@ export function ShortcutsSettings({
           </p>
         )}
         {dictatesWithFn(settings) && <GlobeHint />}
+      </Section>
+
+      <Section label="Meetings">
+        <Card>
+          <div {...stylex.props(styles.row)}>
+            <div {...stylex.props(styles.rowText)}>
+              <ShortcutPicker
+                label={MEETING_SHORTCUT_TITLE}
+                value={settings.meetingShortcut}
+                others={transforms.items}
+                layout={layout}
+                dictationKeys={dictationKeys(settings)}
+                invalid={false}
+                onChange={(meetingShortcut) => update(meetingAction, { meetingShortcut })}
+              />
+            </div>
+          </div>
+        </Card>
+        <p {...stylex.props(styles.hint)}>
+          Press it in any app to start a meeting, and again to stop it.
+        </p>
+        {meetingAction.error && (
+          <p role="alert" {...stylex.props(pageStyles.error)}>
+            {meetingAction.error}
+          </p>
+        )}
       </Section>
 
       <Section label="Transforms">

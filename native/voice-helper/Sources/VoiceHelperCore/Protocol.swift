@@ -68,6 +68,17 @@ public struct TransformShortcut: Equatable, Sendable {
     }
 }
 
+/// A key with modifiers, as the meeting shortcut names it.
+public struct KeyCombo: Equatable, Sendable {
+    public let keycode: Int64
+    public let modifiers: [Modifier]
+
+    public init(keycode: Int64, modifiers: [Modifier]) {
+        self.keycode = keycode
+        self.modifiers = modifiers
+    }
+}
+
 public enum SelectionResult: Equatable, Sendable {
     case selected(text: String, via: SelectionVia)
     case failed(SelectionFailure)
@@ -104,7 +115,7 @@ public struct Transcript: Equatable, Sendable {
 }
 
 public enum HelperCommand: Equatable, Sendable {
-    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut])
+    case hotkeyConfigure(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut], meeting: KeyCombo?)
     case microphoneConfigure(microphone: Microphone?)
     /// `outputVolumeScale` is the fraction of each output's level to keep while capturing, at least 0
     /// and below 1; 0 mutes and nil leaves outputs alone. `detectHost` is main's say on whether the
@@ -174,7 +185,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 16
+public let helperProtocolVersion = 17
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -184,6 +195,8 @@ public enum HelperEvent: Equatable, Sendable {
     /// answers with, so the helper measures the round trip without keeping the event around.
     case hotkey(action: HotkeyAction, uptimeMs: Double)
     case transform(transformId: String)
+    /// The meeting shortcut was pressed; main decides whether that starts or stops a meeting.
+    case meetingShortcut
     case selectionResult(id: String, result: SelectionResult)
     /// `startMs` runs from the hotkey event that started the session, or from `capture.start`
     /// when none did (a fixture-driven test), to the first audio. `relayMs` is the part of it
@@ -227,7 +240,7 @@ private enum Key: String, CodingKey {
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
-    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure
+    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting
 }
 
 extension HelperCommand: Decodable {
@@ -238,7 +251,8 @@ extension HelperCommand: Decodable {
         case "hotkey.configure":
             self = .hotkeyConfigure(key: try c.decode(HotkeyKey.self, forKey: .key),
                                     toggleKey: try c.decode(HotkeyKey?.self, forKey: .toggleKey),
-                                    transforms: try c.decode([TransformShortcut].self, forKey: .transforms))
+                                    transforms: try c.decode([TransformShortcut].self, forKey: .transforms),
+                                    meeting: try c.decode(KeyCombo?.self, forKey: .meeting))
         case "microphone.configure":
             self = .microphoneConfigure(microphone: try c.decode(Microphone?.self, forKey: .microphone))
         case "capture.start":
@@ -340,6 +354,8 @@ extension HelperEvent: Encodable {
         case .transform(let transformId):
             try c.encode("transform", forKey: .type)
             try c.encode(transformId, forKey: .transformId)
+        case .meetingShortcut:
+            try c.encode("meeting.shortcut", forKey: .type)
         case .selectionResult(let id, let result):
             try c.encode("selection.result", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -476,14 +492,27 @@ extension TransformShortcut: Decodable {
         let c = try decoder.container(keyedBy: Key.self)
         id = try c.decode(String.self, forKey: .id)
         keycode = try c.decode(Int64.self, forKey: .keycode)
-        modifiers = try c.decode([Modifier].self, forKey: .modifiers)
-        // The event tap swallows a matching press system-wide, so a shortcut Shift alone (or
-        // nothing) modifies would eat plain typing in every app.
-        guard modifiers.contains(where: { $0 != .shift }) else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .modifiers, in: c, debugDescription: "a transform shortcut needs a modifier other than shift")
-        }
+        modifiers = try decodeShortcutModifiers(c)
     }
+}
+
+extension KeyCombo: Decodable {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        keycode = try c.decode(Int64.self, forKey: .keycode)
+        modifiers = try decodeShortcutModifiers(c)
+    }
+}
+
+// The event tap swallows a matching press system-wide, so a shortcut Shift alone (or nothing)
+// modifies would eat plain typing in every app.
+private func decodeShortcutModifiers(_ c: KeyedDecodingContainer<Key>) throws -> [Modifier] {
+    let modifiers = try c.decode([Modifier].self, forKey: .modifiers)
+    guard modifiers.contains(where: { $0 != .shift }) else {
+        throw DecodingError.dataCorruptedError(
+            forKey: .modifiers, in: c, debugDescription: "a shortcut needs a modifier other than shift")
+    }
+    return modifiers
 }
 
 extension MeetingCursor: Decodable {

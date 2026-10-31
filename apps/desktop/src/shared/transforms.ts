@@ -54,6 +54,9 @@ export const DEFAULT_TRANSFORMS: TransformSettings = {
   autoApply: null,
 };
 
+/** Anything that can hold a shortcut, so two holders never share one. */
+export type ShortcutHolder = Pick<Transform, "name" | "shortcut">;
+
 export type HelperShortcut = { id: TransformId; keycode: number; modifiers: readonly Modifier[] };
 
 export type LastTransform = { name: string; before: string; after: string; finishedAt: number };
@@ -100,7 +103,7 @@ export function parseShortcut(raw: unknown): Shortcut | null {
 
 export function transformProblem(
   transform: Transform,
-  others: readonly Transform[],
+  others: readonly ShortcutHolder[],
 ): TransformProblem | null {
   const { name, instruction, shortcut } = transform;
   if (name.trim() === "") return { field: "name", message: "Enter a name." };

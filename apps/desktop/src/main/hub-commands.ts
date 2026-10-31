@@ -340,6 +340,7 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
     return "saved";
   });
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
+  hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
   hubCommands.handle(Channel.openNotepad, () => deps.openNotepad());
 }

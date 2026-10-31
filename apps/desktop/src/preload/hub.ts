@@ -87,6 +87,7 @@ const voice: HubApi = {
   copyMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.copyMeetingMarkdown, id),
   exportMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.exportMeetingMarkdown, id),
   startMeeting: () => ipcRenderer.invoke(Channel.startMeeting),
+  toggleMeeting: () => ipcRenderer.invoke(Channel.toggleMeeting),
   pauseMeeting: (id) => ipcRenderer.invoke(Channel.pauseMeeting, id),
   resumeMeeting: (id) => ipcRenderer.invoke(Channel.resumeMeeting, id),
   stopMeeting: (id) => ipcRenderer.invoke(Channel.stopMeeting, id),

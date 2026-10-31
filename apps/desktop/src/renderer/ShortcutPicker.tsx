@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useId, useState, type KeyboardEvent } from "react";
 
 import type { Hotkey } from "../shared/api.ts";
-import type { Modifier, Shortcut, Transform } from "../shared/transforms.ts";
+import type { Modifier, Shortcut, ShortcutHolder } from "../shared/transforms.ts";
 import { Button } from "./Button.tsx";
 import { Keys } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
@@ -46,6 +46,7 @@ const styles = stylex.create({
 type Recording = { modifiers: readonly Modifier[]; refusal: string | null };
 
 export function ShortcutPicker({
+  label = "Shortcut",
   value,
   others,
   layout,
@@ -53,8 +54,9 @@ export function ShortcutPicker({
   invalid,
   onChange,
 }: {
+  label?: string;
   value: Shortcut | null;
-  others: readonly Transform[];
+  others: readonly ShortcutHolder[];
   layout: KeyboardLayout | null;
   dictationKeys: readonly Hotkey[];
   invalid: boolean;
@@ -96,7 +98,7 @@ export function ShortcutPicker({
   return (
     <div {...stylex.props(form.field)}>
       <span id={labelId} {...stylex.props(settings.sectionLabel)}>
-        Shortcut
+        {label}
       </span>
       <div {...stylex.props(styles.row)}>
         <button

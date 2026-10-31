@@ -1,3 +1,5 @@
+import type { Shortcut } from "./transforms.ts";
+
 export type MeetingId = string & { readonly __brand: "MeetingId" };
 export type FolderId = string & { readonly __brand: "FolderId" };
 
@@ -185,6 +187,24 @@ export function applyMeetingsChange(
     ...change.upsert,
   ].toSorted(newestFirst);
   return { meetings, folders: change.folders, settings: change.settings };
+}
+
+/** Option+M, on the "M" key's position whatever the layout types there. */
+export const DEFAULT_MEETING_SHORTCUT: Shortcut = { keycode: 46, modifiers: ["option"] };
+
+/**
+ * What the meeting shortcut and the menu bar item do now: stop the meeting that records or is
+ * paused, wait while one starts, or start one.
+ */
+export type MeetingToggle = { kind: "start" } | { kind: "stop" | "wait"; id: MeetingId };
+
+export function meetingToggle(meetings: readonly Meeting[]): MeetingToggle {
+  const live = meetings.find(
+    ({ status }) =>
+      status.kind === "starting" || status.kind === "recording" || status.kind === "paused",
+  );
+  if (!live) return { kind: "start" };
+  return { kind: live.status.kind === "starting" ? "wait" : "stop", id: live.id };
 }
 
 /** `refused` carries a message for the user; `unavailable` is a command a later step builds. */

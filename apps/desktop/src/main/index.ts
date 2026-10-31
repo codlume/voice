@@ -410,6 +410,10 @@ async function main() {
     env: helperEnv(),
     onEvent: (event) => {
       if (lifecycle !== "running") return;
+      // A press the helper caught before it heard the shortcut was turned off changes nothing.
+      if (event.type === "meeting.shortcut" && store.state.settings.meetingShortcut !== null) {
+        toggleMeeting("shortcut");
+      }
       dictation.onHelperEvent(event);
       transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
@@ -546,6 +550,14 @@ async function main() {
   }
   // A launch only ever finishes what a crash or quit left; it never records.
   meetingRecorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
+  function toggleMeeting(from: "shortcut" | "tray") {
+    meetingRecorder.toggle().then(
+      (result) => {
+        if (result.kind === "refused") log(`meetings: ${from} toggle refused (${result.message})`);
+      },
+      (error) => log(`meetings: ${from} toggle failed (${String(error)})`),
+    );
+  }
   powerMonitor.on("resume", () => {
     meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));
   });

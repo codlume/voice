@@ -94,6 +94,7 @@ describe("hub preload", () => {
       "stopMeeting",
       "stopMicrophoneTest",
       "submitSignInCode",
+      "toggleMeeting",
       "uninstallModel",
       "updateAccountName",
       "updateFolder",

@@ -94,12 +94,14 @@ private func line(_ wire: [String: ContractJSON]) throws -> String {
 private func commandCases() -> [String: HelperCommand] {
     let microphone = Microphone(uid: "usb", name: "Synthetic USB")
     return [
-        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: []),
-        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand, transforms: []),
+        "hotkey.configure": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [], meeting: nil),
+        "hotkey.configure.toggle": .hotkeyConfigure(key: .rightOption, toggleKey: .rightCommand, transforms: [], meeting: nil),
         "hotkey.configure.transforms": .hotkeyConfigure(key: .rightOption, toggleKey: nil, transforms: [
             TransformShortcut(id: "polish", keycode: 18, modifiers: [.option]),
             TransformShortcut(id: "c1", keycode: 40, modifiers: [.control, .option, .command]),
-        ]),
+        ], meeting: nil),
+        "hotkey.configure.meeting": .hotkeyConfigure(key: .fn, toggleKey: nil, transforms: [],
+                                                     meeting: KeyCombo(keycode: 46, modifiers: [.option])),
         "microphone.configure": .microphoneConfigure(microphone: microphone),
         "microphone.configure.default": .microphoneConfigure(microphone: nil),
         "capture.start": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true, hotkeyUptimeMs: 1234.5),
@@ -153,6 +155,7 @@ private func eventCases() -> [String: HelperEvent] {
         "hotkey.cancel": .hotkey(action: .cancel, uptimeMs: 1),
         "hotkey.toggle": .hotkey(action: .toggle, uptimeMs: 1),
         "transform": .transform(transformId: "polish"),
+        "meeting.shortcut": .meetingShortcut,
         "selection.result.selected": .selectionResult(id: "r1", result: .selected(text: "Zażółć /tmp/synthetic\nAda 42", via: .copy)),
         "selection.result.accessibility": .selectionResult(id: "r1", result: .selected(text: "Synthetic selection", via: .accessibility)),
         "selection.result.failed": .selectionResult(id: "r1", result: .failed(.noSelection)),
@@ -236,6 +239,7 @@ private func eventType(_ event: HelperEvent) -> String {
     case .ready: "ready"
     case .hotkey: "hotkey"
     case .transform: "transform"
+    case .meetingShortcut: "meeting.shortcut"
     case .selectionResult: "selection.result"
     case .captureStarted: "capture.started"
     case .captureLevel: "capture.level"
