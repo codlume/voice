@@ -1,4 +1,4 @@
-import type { ChatWrapper, LlamaModel } from "node-llama-cpp";
+import type { ChatWrapper, GbnfJsonObjectSchema, LlamaModel } from "node-llama-cpp";
 
 import { llamaHost, openLlama } from "../llama-host.ts";
 
@@ -25,15 +25,32 @@ export type TransformRequest = {
   signal: AbortSignal;
 };
 
+/** One free-form step on the loaded model, such as a meeting summary step. */
+export type GenerateRequest = {
+  system: string;
+  user: string;
+  maxTokens: number;
+  temperature: number;
+  /** Constrains the output to JSON of this shape. */
+  jsonSchema?: GbnfJsonObjectSchema | undefined;
+  budgetMs: number;
+  signal: AbortSignal;
+};
+
+export type GenerateResult =
+  | { ok: true; text: string; truncated: boolean }
+  | { ok: false; failure: { kind: "tooLong" } | { kind: "timedOut" } };
+
 export type TransformEngine = {
   load(): Promise<void>;
-  // One run at a time. Expected failures resolve as data; aborting rejects with the signal's
-  // reason, and a broken model rejects with its error.
+  // One run at a time, transforms and generate steps alike. Expected failures resolve as data;
+  // aborting rejects with the signal's reason, and a broken model rejects with its error.
   transform(request: TransformRequest): Promise<TransformResult>;
+  generate(request: GenerateRequest): Promise<GenerateResult>;
   dispose(): Promise<void>;
 };
 
-const TIMED_OUT: TransformResult = { ok: false, failure: { kind: "timedOut" } };
+const TIMED_OUT = { ok: false, failure: { kind: "timedOut" } } as const;
 
 export function createTransformEngine({ modelPath }: { modelPath: string }): TransformEngine {
   const { load, serialize, withdrawal, dispose } = llamaHost(
@@ -67,7 +84,7 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
       {
         words: countWords(request.text),
         textTokens: model.tokenize(request.text).length,
-        promptTokens: promptTokens(session.chatWrapper, model, user),
+        promptTokens: promptTokens(session.chatWrapper, model, SYSTEM_PROMPT, user),
       },
       TRANSFORM_MODEL,
     );
@@ -95,23 +112,69 @@ export function createTransformEngine({ modelPath }: { modelPath: string }): Tra
       : { ok: false, failure: { kind: "rejected" } };
   }
 
+  async function generateStep(
+    request: GenerateRequest,
+    deadline: AbortSignal,
+  ): Promise<GenerateResult> {
+    const withdraw = withdrawal(request.signal);
+    withdraw.throwIfAborted();
+    const { llama, model, session } = await load();
+    withdraw.throwIfAborted();
+    if (deadline.aborted) return TIMED_OUT;
+
+    await session.sequence.clearHistory();
+    session.setChatHistory([{ type: "system", text: request.system }]);
+    const prompt = promptTokens(session.chatWrapper, model, request.system, request.user);
+    if (prompt + request.maxTokens > TRANSFORM_MODEL.contextSize) {
+      return { ok: false, failure: { kind: "tooLong" } };
+    }
+    const grammar = request.jsonSchema
+      ? await llama.createGrammarForJsonSchema(request.jsonSchema)
+      : undefined;
+    try {
+      const output = await session.promptWithMeta(request.user, {
+        temperature: request.temperature,
+        maxTokens: request.maxTokens,
+        ...(grammar && { grammar }),
+        signal: AbortSignal.any([withdraw, deadline]),
+      });
+      withdraw.throwIfAborted();
+      return { ok: true, text: output.responseText, truncated: output.stopReason === "maxTokens" };
+    } catch (error) {
+      withdraw.throwIfAborted();
+      if (deadline.aborted) return TIMED_OUT;
+      throw error;
+    }
+  }
+
+  function withBudget<R, T extends { budgetMs: number }>(
+    request: T,
+    run: (request: T, deadline: AbortSignal) => Promise<R>,
+  ): Promise<R> {
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), request.budgetMs);
+    return serialize(() => run(request, deadline.signal)).finally(() => clearTimeout(timer));
+  }
+
   return {
     load: async () => {
       await load();
     },
-    transform: (request) => {
-      const deadline = new AbortController();
-      const timer = setTimeout(() => deadline.abort(), request.budgetMs);
-      return serialize(() => attempt(request, deadline.signal)).finally(() => clearTimeout(timer));
-    },
+    transform: (request) => withBudget(request, attempt),
+    generate: (request) => withBudget(request, generateStep),
     dispose,
   };
 }
 
-function promptTokens(chatWrapper: ChatWrapper, model: LlamaModel, user: string): number {
+function promptTokens(
+  chatWrapper: ChatWrapper,
+  model: LlamaModel,
+  system: string,
+  user: string,
+): number {
   const { contextText } = chatWrapper.generateContextState({
     chatHistory: [
-      { type: "system", text: SYSTEM_PROMPT },
+      { type: "system", text: system },
       { type: "user", text: user },
       { type: "model", response: [] },
     ],

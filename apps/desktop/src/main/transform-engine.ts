@@ -1,4 +1,10 @@
-import type { TransformEngine } from "@voice/cleanup/transform";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  TransformEngine,
+  TransformResult,
+} from "@voice/cleanup/transform";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
@@ -20,7 +26,21 @@ const TransformSchema = Schema.Struct({
   budgetMs: Schema.Finite,
 });
 
-const ResultSchema = Schema.Union([
+const GenerateSchema = Schema.Struct({
+  type: Schema.Literal("generate"),
+  id: Schema.Int,
+  system: Schema.String,
+  user: Schema.String,
+  maxTokens: Schema.Int,
+  temperature: Schema.Finite,
+  // node-llama-cpp validates the schema when it builds the grammar.
+  jsonSchema: Schema.optionalKey(Schema.Unknown),
+  budgetMs: Schema.Finite,
+});
+
+const WorkSchema = Schema.Union([TransformSchema, GenerateSchema]);
+
+const TransformResultSchema = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), text: Schema.String }),
   Schema.Struct({
     ok: Schema.Literal(false),
@@ -32,7 +52,20 @@ const ResultSchema = Schema.Union([
   }),
 ]);
 
-const decodeTransform = Schema.decodeUnknownOption(TransformSchema);
+const GenerateResultSchema = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), text: Schema.String, truncated: Schema.Boolean }),
+  Schema.Struct({
+    ok: Schema.Literal(false),
+    failure: Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("tooLong") }),
+      Schema.Struct({ kind: Schema.Literal("timedOut") }),
+    ]),
+  }),
+]);
+
+const decodeWork = Schema.decodeUnknownOption(WorkSchema);
+const decodeTransformResult = Schema.decodeUnknownOption(TransformResultSchema);
+const decodeGenerateResult = Schema.decodeUnknownOption(GenerateResultSchema);
 
 export function serve(
   port: ParentPort,
@@ -41,9 +74,19 @@ export function serve(
   serveEngine(port, {
     name: "transform model",
     create: createEngine,
-    decodeWork: decodeTransform,
-    work: (engine, { type: _type, id: _id, ...fields }, signal) =>
-      engine.transform({ ...fields, signal }),
+    decodeWork,
+    work: (engine, job, signal): Promise<TransformResult | GenerateResult> => {
+      if (job.type === "transform") {
+        const { type: _type, id: _id, ...fields } = job;
+        return engine.transform({ ...fields, signal });
+      }
+      const { type: _type, id: _id, jsonSchema, ...fields } = job;
+      return engine.generate({
+        ...fields,
+        jsonSchema: jsonSchema as GenerateRequest["jsonSchema"],
+        signal,
+      });
+    },
   });
 }
 
@@ -56,18 +99,36 @@ export function createTransformProcess({
   fork: ForkEngine;
   onLost: (message: string) => void;
 }): TransformEngine {
-  const engine = createEngineProcess<typeof TransformSchema.Type, typeof ResultSchema.Type>({
+  // Each call decodes the reply as its own kind of result.
+  const engine = createEngineProcess<typeof WorkSchema.Type, unknown>({
     name: "transform model",
     modelPath,
     fork,
-    decodeResult: Schema.decodeUnknownOption(ResultSchema),
+    decodeResult: Option.some,
     onLost,
   });
+
+  const narrow =
+    <T>(decode: (result: unknown) => Option.Option<T>) =>
+    (result: unknown) => {
+      const value = Option.getOrUndefined(decode(result));
+      if (value === undefined) throw new Error("The transform model returned a malformed result.");
+      return value;
+    };
 
   return {
     load: engine.load,
     transform: ({ signal, ...fields }) =>
-      engine.run((id) => ({ type: "transform", id, ...fields }), signal),
+      engine
+        .run((id) => ({ type: "transform", id, ...fields }), signal)
+        .then(narrow(decodeTransformResult)),
+    generate: ({ signal, jsonSchema, ...fields }) =>
+      engine
+        .run(
+          (id) => ({ type: "generate", id, ...fields, ...(jsonSchema && { jsonSchema }) }),
+          signal,
+        )
+        .then(narrow(decodeGenerateResult)),
     dispose: engine.dispose,
   };
 }
