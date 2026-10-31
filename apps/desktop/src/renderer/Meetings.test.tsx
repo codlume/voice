@@ -305,6 +305,18 @@ describe("Past notes", () => {
     expect(panel.textContent).not.toContain("Decisions");
   });
 
+  test("the overview shows a rename at once, from the same summary", async () => {
+    const main = fakeMain(sample());
+    await render();
+    const panel = document.querySelector("aside[aria-label='Meeting overview']")!;
+    await waitForText("Overview");
+
+    await act(() => main.renameMeetingSpeaker(id(1), PRIYA, "Priya S."));
+
+    await vi.waitFor(() => expect(panel.querySelector("mark")?.textContent).toBe("Priya S."));
+    expect(panel.textContent).not.toContain("{{speaker:");
+  });
+
   test("search shows where each meeting matched, and says when nothing does", async () => {
     const main = fakeMain(sample());
     await render();

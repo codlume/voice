@@ -83,6 +83,12 @@ describe("summary", () => {
     expect(overview("### Decisions\n- None")).toBeNull();
   });
 
+  test("a summary with no overview paragraph has no overview, not its first owner", () => {
+    expect(
+      overview("### Decisions\n\n- Ship\n\n### Next Steps\n\n**{{speaker:s1}}**\n- Tell support\n"),
+    ).toBeNull();
+  });
+
   test("next steps keep their owners with the owner's tasks", () => {
     const blocks = summaryBlocks(markdown);
     expect(blocks.map((block) => block.kind)).toEqual([

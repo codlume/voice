@@ -133,9 +133,12 @@ export function summaryBlocks(markdown: string): Block[] {
   return blocks;
 }
 
-/** The summary's first paragraph, which the side panel shows as the overview. */
+/**
+ * The paragraph a summary opens with, which the side panel shows as the overview. A summary that
+ * opens with a heading has none: its first paragraph further down is an owner's name.
+ */
 export function overview(markdown: string): string | null {
-  const first = summaryBlocks(markdown).find((block) => block.kind === "paragraph");
+  const [first] = summaryBlocks(markdown);
   return first?.kind === "paragraph" ? first.text : null;
 }
 
