@@ -140,14 +140,16 @@ describe("meeting recorder", () => {
     expect(h.pushed).toEqual(transcript);
   });
 
-  test("a second start while one records is refused and records nothing", async () => {
+  test("a second start while one records or is paused is refused and records nothing", async () => {
     const h = harness();
-    await h.start();
-    expect(await h.recorder.start()).toEqual({
-      kind: "refused",
-      message: "A meeting is already recording.",
-    });
-    expect(h.sentTypes()).toEqual(["meeting.start"]);
+    const id = await h.start();
+    const refused = { kind: "refused", message: "A meeting is already recording or paused." };
+    expect(await h.recorder.start()).toEqual(refused);
+    await h.recorder.pause(id);
+    await h.settle();
+    expect(await h.recorder.start()).toEqual(refused);
+    expect(h.sentTypes()).toEqual(["meeting.start", "meeting.stop"]);
+    expect(h.store.state().meetings).toHaveLength(1);
   });
 
   test("a start the helper refuses leaves no meeting behind", async () => {

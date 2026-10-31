@@ -61,18 +61,6 @@ export function durationLabel(ms: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
 }
 
-/** Statuses that hold a capture open or can resume one, where the page shows the controls. */
-export type LiveStatus = Extract<MeetingStatus, { kind: "starting" | "recording" | "paused" }>;
-export type LiveMeeting = Meeting & { status: LiveStatus };
-
-const isLive = (meeting: Meeting): meeting is LiveMeeting =>
-  meeting.status.kind === "starting" ||
-  meeting.status.kind === "recording" ||
-  meeting.status.kind === "paused";
-
-export const liveMeeting = (meetings: readonly Meeting[]): LiveMeeting | null =>
-  meetings.find(isLive) ?? null;
-
 const statusLabels: Record<MeetingStatus["kind"], string | null> = {
   starting: "Starting…",
   recording: "Recording",

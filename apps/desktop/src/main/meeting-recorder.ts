@@ -5,6 +5,8 @@ import * as NodePath from "node:path";
 import type { Microphone } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import {
+  isCapturing,
+  isLive,
   meetingToggle,
   recordedMs,
   type Marker,
@@ -77,8 +79,6 @@ const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
 const AUDIO_FILES = [...PCM_FILES, "audio.json", "output.ndjson"] as const;
 /** 16 kHz mono Int16. */
 const PCM_BYTES_PER_MS = 32;
-const live = (meeting: Meeting) =>
-  meeting.status.kind === "recording" || meeting.status.kind === "starting";
 
 /**
  * Drives `meeting-lifecycle.ts` against the helper: each event is stepped one at a time, the
@@ -385,7 +385,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       return typeof saved === "number" && Number.isFinite(saved) && saved >= 0 ? saved : 0;
     }
     const baseMs = Math.max(recordedMs(meeting, now()), reach(await store.transcript(meeting.id)));
-    if (live(meeting)) {
+    if (isCapturing(meeting)) {
       await writeFile(file, JSON.stringify({ baseMs }), { mode: 0o600 });
     }
     return baseMs;
@@ -458,8 +458,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     if (!store.get(id))
       return { kind: "refused", message: "This meeting is no longer on this Mac." };
     if (event.type === "resume") {
-      const other = store.state().meetings.find((meeting) => meeting.id !== id && live(meeting));
-      if (other) return { kind: "refused", message: "Stop the meeting that is recording first." };
+      const other = store.state().meetings.find((meeting) => meeting.id !== id && isLive(meeting));
+      if (other) return { kind: "refused", message: "Stop the other meeting first." };
     }
     await dispatch(id, event);
     return { kind: "ok", id };
@@ -467,8 +467,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
 
   async function start(): Promise<MeetingCommandResult> {
     await store.loaded();
-    if (store.state().meetings.some(live)) {
-      return { kind: "refused", message: "A meeting is already recording." };
+    if (store.state().meetings.some(isLive)) {
+      return { kind: "refused", message: "A meeting is already recording or paused." };
     }
     const id = randomUUID() as MeetingId;
     await dispatch(id, { type: "start", id });
@@ -582,7 +582,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     },
     helperExited() {
       for (const meeting of store.state().meetings) {
-        if (!live(meeting)) continue;
+        if (!isCapturing(meeting)) continue;
         unwatch(meeting.id);
         background(
           "helper exit",
