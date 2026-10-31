@@ -58,7 +58,7 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
       return () => notepadListeners.delete(listener);
     },
     dismissMeetingPrompt: vi.fn(async () => {}),
-    getMeeting: async () => ({ meeting: first.meeting, transcript }),
+    getMeeting: async () => ({ meeting: first.meeting, transcript: [...transcript] }),
     updateMeetingNotes: vi.fn(async () => {}),
     pauseMeeting: vi.fn(ok),
     resumeMeeting: vi.fn(ok),
@@ -178,6 +178,30 @@ describe("the notepad", () => {
       prompt: null,
     });
     expect(document.querySelector("ol li")?.textContent).toBe("Ann00:00Ship it Friday");
+  });
+
+  test("shows the final transcript with its speakers once the meeting is ready", async () => {
+    const transcript = [said("a", "Ship it Fridy", "system")];
+    const { push } = fakeNotepad({ meeting, prompt: null }, transcript);
+    await render();
+    expect(lines()).toEqual(["Others00:00Ship it Fridy"]);
+
+    const s1 = "s1" as SpeakerId;
+    transcript.splice(0, 1, {
+      ...said("f", "Ship it Friday", "system"),
+      speakerId: s1,
+    } as TranscriptEntry);
+    await act(async () =>
+      push({
+        meeting: {
+          ...meeting,
+          status: { kind: "ready" },
+          speakers: [{ id: s1, label: "Speaker 1", name: null }],
+        },
+        prompt: null,
+      }),
+    );
+    expect(lines()).toEqual(["Speaker 100:00Ship it Friday"]);
   });
 
   test("offers Pause and Stop while recording, and says so", async () => {
