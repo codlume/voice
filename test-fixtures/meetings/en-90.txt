@@ -1,0 +1,733 @@
+[00:00:00] You: Okay, I think it's recording now. Can everyone hear me okay?
+[00:00:05] Speaker 1: Yeah, loud and clear.
+[00:00:08] Speaker 2: Yep.
+[00:00:09] Speaker 3: Uh, give me one sec, my headphones are doing the thing again. Okay. Okay, yeah, I'm here.
+[00:00:17] You: Cool. Um, are we still, I think we're waiting on, no, actually that's everyone. Everyone's here.
+[00:00:24] Speaker 2: Did you get back okay? I saw your flight was like, delayed on the board for hours.
+[00:00:32] You: Oh, it was a whole thing. We sat on the tarmac for, I want to say two hours? Two and a half. And then they made us get off the plane and get back on the same plane.
+[00:00:49] Speaker 1: Classic.
+[00:00:50] You: So I got home at like one in the morning.
+[00:00:55] Speaker 3: Oof.
+[00:00:56] Speaker 2: At least it was the same plane. Last time they moved my gate and then the gate changed again and I just, I stood in the wrong line for forty minutes holding a sandwich.
+[00:01:12] Speaker 3: Speaking of lines, has anyone tried the new coffee machine on four?
+[00:01:17] Speaker 1: The one with the touchscreen?
+[00:01:20] Speaker 3: Yeah. It asked me to update its firmware. The coffee machine. It wanted a firmware update before it would make coffee.
+[00:01:30] Speaker 2: That's, honestly, that's very on brand for us.
+[00:01:34] You: Did it work after?
+[00:01:36] Speaker 3: It made me a cappuccino eventually. It was fine. It was like a seven out of ten.
+[00:01:44] Speaker 1: That's better than the old one. The old one was a three.
+[00:01:50] Speaker 2: The old one was a kettle with ambition.
+[00:01:54] Speaker 3: Mhm.
+[00:01:55] You: Okay, okay. Um, did anyone do anything fun over the weekend, or was it just, uh, recovering?
+[00:02:03] Speaker 1: We took the kids up to the lake. It rained the entire time, so mostly we played cards in the cabin. My youngest learned poker and now she's, uh, she's unbearable.
+[00:02:17] Speaker 3: That's amazing.
+[00:02:18] Speaker 1: She took like eleven dollars off my brother. In pennies, but still.
+[00:02:24] Speaker 2: She's going to end up in finance.
+[00:02:28] Speaker 1: God, I hope not.
+[00:02:30] Speaker 3: I mostly just walked the dog. He's, um, he's terrified of the new neighbor's sprinkler, so every walk is like a negotiation. We go around the block the long way now.
+[00:02:44] Speaker 2: Mhm.
+[00:02:45] You: Okay. Alright. So, um, let's, let's get into it. We have ninety minutes and I'd like to actually use them, because last quarter we ran over and we never got to pricing at all.
+[00:03:01] Speaker 3: Yeah, that was painful.
+[00:03:03] You: So, agenda. I sent it around yesterday but, quickly. Budget first, then hiring, then the SMS vendor thing, because the Pingwell renewal is coming up, then roadmap for Q3, then the pricing change, and then the follow-up on the reminder incident from the second. And then wrap-up. Conference stuff kind of goes under budget, so we'll hit it there.
+[00:03:29] Speaker 1: Works for me.
+[00:03:31] Speaker 2: Can we, um, can we make sure the incident piece doesn't get squeezed? Like last time it got five minutes at the very end.
+[00:03:42] You: Yes. I'll, uh, I'll protect it. If we're running long I'll cut the roadmap tangents.
+[00:03:49] Speaker 2: Thank you.
+[00:03:51] Speaker 3: The roadmap tangents are the best part though.
+[00:03:55] You: That's exactly why I'll cut them.
+[00:03:58] You: Okay, budget. Do you want to walk us through where we landed?
+[00:04:04] Speaker 1: Sure. So, um, quick version. Q2 we're going to close at about two point three eight million in operating spend. So slightly under the two point four we planned, um, mostly because the two hires we budgeted for in May slipped into June. So that's, that's timing, really, not savings.
+[00:04:26] Speaker 2: Right.
+[00:04:27] Speaker 1: For Q3, the original asks from all the teams added up to, uh, two point seven one. Which is, you know, about three hundred and ten thousand over where I think we can be, given where revenue is.
+[00:04:44] You: And where is revenue?
+[00:04:47] Speaker 1: We're tracking to about, um, three point one million recognized for Q2. Growth is fine, it's like six percent quarter over quarter, but it's not, it's not thirteen percent spend growth, if that makes sense.
+[00:05:03] Speaker 3: Is that including the Halverson renewal? Because that one should, that should land this week.
+[00:05:10] Speaker 1: It includes it probability weighted. So like seventy percent of it.
+[00:05:15] Speaker 3: Okay. I think it's closer to ninety, but, sure.
+[00:05:20] Speaker 1: I'll take ninety the day you get a signature.
+[00:05:24] Speaker 3: Working on it. Working on it.
+[00:05:27] You: So what's your, what's the recommendation?
+[00:05:30] Speaker 1: My recommendation is we hold Q3 flat. Two point four, same as Q2. And then each team figures out its trade-offs inside that number, rather than me, uh, rather than me cutting things line by line from a spreadsheet.
+[00:05:48] Speaker 2: Flat including the hires? Because if two backend people come in, um, mid-quarter, that's...
+[00:05:55] Speaker 1: Flat including whatever hires we agree on today. Which is why I wanted budget before hiring, honestly.
+[00:06:03] Speaker 2: Okay. I mean, I can live with flat if, if hiring comes out of it in a sane way.
+[00:06:12] Speaker 3: I'm, yeah, I'm okay with flat. My team's extra ask was mostly the events stuff anyway.
+[00:06:19] You: So are we agreed? Q3 operating budget held flat at two point four million, and the teams do the trade-offs inside it.
+[00:06:29] Speaker 1: Yes.
+[00:06:30] Speaker 2: Yeah, agreed.
+[00:06:32] Speaker 3: Agreed.
+[00:06:33] You: Great. Okay. Flat at two point four.
+[00:06:36] Speaker 1: I'll, um, I'll redo the budget sheet with the flat number and the team envelopes and send it to everyone. By Friday?
+[00:06:46] You: By Friday is good.
+[00:06:49] Speaker 1: And I'll put in a, a column for where each team's original ask was, so people can see what they gave up.
+[00:06:59] Speaker 3: That's going to be a fun column.
+[00:07:02] Speaker 1: It's a very fun column.
+[00:07:05] You: Okay. So the obvious place it has to come from first is the events line, right? Because that's the big one.
+[00:07:15] Speaker 3: Mm, yeah. So events. The big one is OpsWorld in September. The booth package we were looking at is about thirty-five thousand all in. Booth, travel, the swag, the, uh, the customer dinner.
+[00:07:30] Speaker 1: Thirty-five is basically the whole events overage, more or less.
+[00:07:35] Speaker 3: Right. And last year we got, what, um, I think it was sixty-something leads, and maybe four closed. So it's not nothing. But it's not amazing.
+[00:07:47] Speaker 2: Four closed deals on thirty-five K is, I mean, depending on size that might be fine?
+[00:07:54] Speaker 3: Two of them were tiny. Like Starter plan tiny.
+[00:07:59] Speaker 2: Ah.
+[00:08:00] You: Honestly, I'd, I'd drop it. Given a flat budget I'd rather put that money toward hiring. We can send one or two people to walk the floor without a booth.
+[00:08:13] Speaker 1: I'm for that.
+[00:08:15] Speaker 3: Uh, I mean, I don't love it, but... yeah. Okay. Let's drop the booth.
+[00:08:22] Speaker 2: Fine by me.
+[00:08:24] You: Okay, so no OpsWorld booth this year. That's thirty-five back.
+[00:08:29] Speaker 3: Mhm.
+[00:08:30] Speaker 1: That gets us most of the way, actually. The rest is, um, the rest is smaller stuff. Some software renewals, the, uh, the cloud line.
+[00:08:41] Speaker 2: The cloud line went up.
+[00:08:44] Speaker 1: It went up eleven percent quarter over quarter. Which, I wanted to ask you about that.
+[00:08:51] Speaker 2: Yeah, I've seen it. I think part of it is the reminder retries from the incident, honestly, we were hammering the queue for like a day and a half. But I don't think that's all of it. I think there are some, like, staging environments nobody turned off.
+[00:09:13] Speaker 1: Can you, um, can you dig into what's driving it? I'd like to know if eleven percent is the new normal or a blip before I lock the cloud line.
+[00:09:27] Speaker 2: Yeah. I'll pull the AWS breakdown by service and, and by environment. I can have something by next Wednesday.
+[00:09:36] Speaker 1: Next Wednesday works.
+[00:09:37] You: And if it's the staging stuff, just, just kill it.
+[00:09:42] Speaker 2: Oh, believe me.
+[00:09:44] Speaker 3: Is there anything in the software renewals I should know about? Because the CRM renewal is mine and it's, it's going up.
+[00:09:54] Speaker 1: How much?
+[00:09:56] Speaker 3: Like eight percent. They sent the quote last week. I was going to push back anyway.
+[00:10:03] Speaker 1: Push back. If you can get it flat, great. If not, um, it's inside your envelope, it's fine.
+[00:10:12] Speaker 3: Okay.
+[00:10:13] Speaker 2: Is that the same CRM that, um, that logs everyone out every Monday?
+[00:10:19] Speaker 3: The very same.
+[00:10:21] Speaker 2: Then push back hard.
+[00:10:23] Speaker 3: Oh, I'm planning to. I'm going to bring up the Monday thing, actually. Last month it logged out my whole team right before the, uh, the end of quarter calls. We lost like a morning.
+[00:10:39] Speaker 1: Put that in writing to them. Vendors respond to that stuff when it's in an email and not just, like, a grumpy call.
+[00:10:49] Speaker 3: Mhm. It's going to be a very polite, very grumpy email.
+[00:10:55] Speaker 1: The best kind.
+[00:10:57] You: How many seats are we on with them now?
+[00:11:01] Speaker 3: Forty-one. Which is, honestly, probably six more than we need. There are a few people who left and nobody took the seat back.
+[00:11:12] Speaker 1: Oh, that's, that's free money. Every one of those is, what, a hundred and something a month?
+[00:11:20] Speaker 3: About a hundred and ten. That's, uh, that's going to come up in the renewal conversation anyway.
+[00:11:28] Speaker 2: The same thing is happening with the design tool, by the way. We have, like, four seats for people who are gone.
+[00:11:38] Speaker 1: Okay. Somebody should keep a list of, uh, of ghosts.
+[00:11:43] Speaker 2: A ghost list. I love it.
+[00:11:46] Speaker 1: It's going to be a short list, but it's going to be a satisfying list.
+[00:11:53] You: Anything else on budget before we move on?
+[00:11:57] Speaker 1: Um, the only other thing is travel. We were, uh, we were at about forty-two thousand in Q2 for travel, and that was with the sales offsite. Q3 doesn't have an offsite, so it should come down on its own. I don't think we need to decide anything there.
+[00:12:19] You: Okay. Good. Let's not decide anything then.
+[00:12:23] Speaker 2: A rare moment.
+[00:12:25] You: Okay. Hiring. So, um, the plan going in was three backend engineers and a data analyst in Q3. Under a flat budget that's, that's not happening, I think. Is that fair?
+[00:12:39] Speaker 1: That's fair. Three backend plus the analyst, fully loaded, half a quarter each, that's, uh, roughly two hundred and twenty thousand in Q3 alone, and then it's a lot more in Q4 when they're there the whole quarter.
+[00:12:56] Speaker 2: Okay, so, so can I make the case for what I actually need? Because I think the number is less about, like, heads and more about the Outlook sync and the reminder service. Those are the two things that are on fire, or, well, one is on fire and one is the thing everyone's asking for.
+[00:13:21] You: Go for it.
+[00:13:23] Speaker 2: So right now I have, um, four people on the platform side, and one of them is basically full time on reminder reliability since the incident. Which is the right call but it means Outlook two-way sync has, like, one and a half people on it. And that's the thing sales keeps getting asked about.
+[00:13:48] Speaker 3: Every, every single enterprise call. Every one.
+[00:13:51] Speaker 2: So I really need two backend people. I could make an argument for three but honestly onboarding three at once with the team I have would be, I'd be spending all my time onboarding.
+[00:14:07] Speaker 1: So two is, two is your real number?
+[00:14:11] Speaker 2: Two is my real number.
+[00:14:13] Speaker 3: Can I throw something out? Because I was, I was talking to a friend who runs ops at another SaaS company, and they used Bluepeak Staffing for a whole year. Contract engineers. Like, uh, offshore, but good ones, they said. And it was like half the cost of a full-time hire and you can turn it off whenever.
+[00:14:40] Speaker 2: Mm.
+[00:14:40] Speaker 3: So instead of two full-time hires, what if we did, like, four Bluepeak contractors for six months? We'd get more hands on Outlook sync faster and we don't have the long-term cost.
+[00:14:55] Speaker 1: What do they charge?
+[00:14:57] Speaker 3: My friend said something like sixty-five an hour? Sixty to seventy. Per engineer.
+[00:15:04] Speaker 1: Okay so that's, uh, four of them, full time, six months, that's, that's actually not half. That's like, two hundred and seventy thousand for the six months. It's more than two hires in the same window.
+[00:15:20] Speaker 3: Oh. Okay, I, I was doing the math with two in my head.
+[00:15:26] Speaker 2: And honestly, um, even if the money worked, I'm not sure I want contractors on the sync engine. It's, it's the most stateful part of the whole product. Calendar sync is all edge cases. Recurring events, time zones, delegate access. Someone who leaves in six months takes all of that context with them.
+[00:15:50] You: Yeah, that's my worry too. We did the contractor thing for the, um, the mobile rewrite two years ago and we're still paying for it.
+[00:16:02] Speaker 2: We are still paying for it. Every week.
+[00:16:06] Speaker 3: Fair. Okay. I mean, it was, it was worth asking.
+[00:16:10] Speaker 1: It was worth asking. The numbers just don't, they don't work in our favor here.
+[00:16:18] You: So, I think, I think we say no to the Bluepeak option. Contractors don't fit the sync work. Everyone okay with that?
+[00:16:28] Speaker 2: Yes.
+[00:16:29] Speaker 1: Yeah.
+[00:16:30] Speaker 3: Yeah, no, that's fine. Kill it.
+[00:16:33] You: Okay. So no contractors. So then the question is, um, two backend engineers in Q3, and what happens to the analyst?
+[00:16:43] Speaker 1: The analyst is, um, the analyst was my ask, partly, and partly yours, right? For the, the funnel reporting.
+[00:16:51] You: Mine and sales, yeah.
+[00:16:54] Speaker 3: I want it, but I'd rather have Outlook sync shipped than a dashboard telling me how many deals we lost because Outlook sync didn't ship.
+[00:17:05] Speaker 2: That's very dark.
+[00:17:07] Speaker 3: It's very true.
+[00:17:09] Speaker 1: So if we push the analyst to Q4, two backend hires starting, say, mid-August, that's, uh, roughly a hundred and ten thousand in Q3. Which fits. Combined with the OpsWorld savings and if the cloud line behaves, that fits inside two point four.
+[00:17:28] You: Okay. So proposal: we hire two backend engineers in Q3, and the data analyst role moves to Q4. Agreed?
+[00:17:37] Speaker 2: Agreed.
+[00:17:38] Speaker 3: Yep.
+[00:17:39] Speaker 1: Agreed.
+[00:17:40] You: Okay, that's, that's decided. Two backend in Q3, analyst in Q4.
+[00:17:45] Speaker 2: Thank you. Seriously.
+[00:17:47] Speaker 1: Senior or mid-level? Because that changes my number quite a bit.
+[00:17:53] Speaker 2: Um, I modeled it as one senior and one mid. The senior for the integrations side, because of the calendar stuff, and a mid-level for the platform side who can grow into it.
+[00:18:08] Speaker 1: Okay. That's, uh, that's what I assumed too. Good, so the hundred and ten holds.
+[00:18:15] Speaker 2: If we find two amazing seniors I'm not going to say no, but I'm not planning on it.
+[00:18:23] Speaker 3: Is it remote? Because the last time we hired in-office only, it took forever.
+[00:18:30] Speaker 2: Remote, within, um, within the US and Canada time zones. I don't want someone twelve hours off on the sync engine. That's when the incidents happen, at three in the morning, and then you're waiting a whole day for the one person who understands it.
+[00:18:50] Speaker 3: That's fair.
+[00:18:51] Speaker 1: Mhm.
+[00:18:52] You: So what do we need to actually get these open? Because last time it took like five weeks just to get a req posted.
+[00:19:03] Speaker 2: The job descriptions are, um, I have an old one from last year for the platform role. It's out of date. It still mentions the old, uh, the old queue system. I can rewrite it, and do a second one that's more integrations focused, because one of these people should really be someone who's done calendar APIs before.
+[00:19:30] You: When can you have those?
+[00:19:32] Speaker 2: Um, give me till the nineteenth? I want to get them right, especially the integrations one.
+[00:19:40] You: The nineteenth is fine. That's, that's next Friday basically.
+[00:19:44] Speaker 2: Yeah.
+[00:19:45] Speaker 1: Do the reqs need to go through, um, people ops again with the new approval form?
+[00:19:53] You: Yeah, they do. That's the thing that took five weeks last time, it sat in someone's queue. I'll take that. I'll get the two reqs approved with Elena in people ops this week, so by the time the descriptions are done they're ready to post.
+[00:20:13] Speaker 1: Great. Can you, uh, can you copy me on that? Because she's going to ask about the budget code.
+[00:20:22] You: Yep, I'll cc you.
+[00:20:24] Speaker 3: And who's running the interviews? Because last time the interview loop was, um, like, six rounds and we lost two candidates to that.
+[00:20:35] Speaker 2: I want to cut it to four. Phone screen, a technical, a system design, and a, like, values and team one.
+[00:20:45] Speaker 3: Can someone from my team be on the values one? Because a lot of the integrations work is customer facing, kind of.
+[00:20:55] Speaker 2: Yeah, that'd actually be great. Someone from support would be good. Like someone who's been on the escalations side.
+[00:21:04] Speaker 3: Yeah, there's, there's a couple of people who'd be really good at that.
+[00:21:10] You: Is that, are we deciding the four-round loop? Or is that just your call?
+[00:21:17] Speaker 2: I think that's just my call, honestly. It's my team's process.
+[00:21:22] You: Fair enough. Okay.
+[00:21:24] Speaker 1: One more thing on hiring. Um, the referral bonus. We've had it at, uh, two thousand for a while. Does anyone want to change it for these roles?
+[00:21:37] Speaker 2: I mean, more is always nice, but I don't think that's the bottleneck. The bottleneck has been the process.
+[00:21:45] Speaker 3: I don't have a strong view.
+[00:21:49] Speaker 1: Okay. It's not urgent anyway, it can wait.
+[00:21:53] You: Okay. Uh, anything else on hiring? Recruiting agency, anything like that?
+[00:21:58] Speaker 2: No, I think, I think we try it ourselves first. If we don't have candidates in the pipe by, like, end of July, we can talk about it again.
+[00:22:11] You: Okay. Sounds good.
+[00:22:13] Speaker 3: Can I, sorry, a quick, uh, very quick question that's kind of hiring. The support coordinator role I asked about. Is that, is that in the flat budget or not?
+[00:22:27] Speaker 1: That's a backfill, right? Not new headcount.
+[00:22:30] Speaker 3: It's a backfill. She left in April.
+[00:22:34] Speaker 1: Backfills are already in the run rate. So yes, it's in. You don't need to ask.
+[00:22:41] Speaker 3: Oh. Okay, great. I've been, I've been waiting for permission I didn't need.
+[00:22:48] You: Classic.
+[00:22:49] Speaker 2: Mhm.
+[00:22:50] You: Okay. SMS vendor. So for context, um, our contract with Pingwell is up on July thirty-first. They sent the renewal terms two weeks ago and they want to go from, what was it, point seven five cents per message to point nine.
+[00:23:09] Speaker 1: Point nine. So about a twenty percent increase. On, um, on a line that's already our third biggest vendor after AWS and payroll software.
+[00:23:20] Speaker 2: And that's after the incident, which, I mean, part of the incident was on them.
+[00:23:27] Speaker 3: Wait, was it? I thought it was us.
+[00:23:31] Speaker 2: It was both. Our retry logic made it worse, but the root trigger was their API returning, like, five hundreds for about forty minutes and then succeeding on messages it had already told us failed. So we retried, and they had actually sent them. So people got the same reminder two, three, sometimes four times.
+[00:23:56] Speaker 3: Oh. Okay. I didn't know about the Pingwell side of it.
+[00:24:01] Speaker 2: We'll get into it in the incident section, but yeah. Their status page said "degraded performance" for like ten minutes and then just went back to green.
+[00:24:13] You: So, alternatives. We looked at three, and honestly one of them was clearly the frontrunner. Brightline Messaging.
+[00:24:21] Speaker 1: Can you remind me of the Brightline numbers?
+[00:24:25] You: Yeah. So Brightline came in at point six cents per message on our current volume, which is, uh, roughly four point two million messages a month. They're claiming ninety nine point two percent delivery on US carriers, which is about what Pingwell claims too, so, roughly a wash there. And they have proper idempotency keys on the send API, which Pingwell doesn't.
+[00:24:53] Speaker 2: That last part matters more to me than the price, honestly. If we had idempotency keys on the second, the duplicate thing just doesn't happen. Or, well, it happens way less.
+[00:25:07] Speaker 1: Point six versus point nine on four point two million a month. That's, um, let me just, that's about twelve thousand six hundred a month difference. So roughly a hundred and fifty K a year.
+[00:25:23] Speaker 3: Whoa. Okay.
+[00:25:25] Speaker 1: Yeah. That's real money. That's more than one of the backend hires.
+[00:25:30] You: The other two we looked at were Sendara and, uh, the one with the weird name.
+[00:25:38] Speaker 2: Quillio.
+[00:25:39] You: Quillio. Sendara was cheaper than Pingwell but more expensive than Brightline, and they don't do international, which, we have, what, eight percent of our volume going to the UK and Canada?
+[00:25:53] Speaker 3: About that. A bit more in Canada since the, um, since the clinic chain signed.
+[00:26:00] You: And Quillio was, honestly, a startup. Very nice people. Nice API. Twelve employees.
+[00:26:06] Speaker 2: I'm not putting the reminder pipeline on a twelve-person company.
+[00:26:11] Speaker 3: How do we know Brightline is actually good, though? Like, beyond the sales deck?
+[00:26:18] You: I called two references. One was a, um, a pharmacy chain, and the other was a, a home services company. Both on Brightline for over two years. The pharmacy said their support is, quote, "annoyingly responsive."
+[00:26:34] Speaker 2: Annoyingly responsive is the dream.
+[00:26:37] You: The home services one said their dashboard is bad. Like, really bad. But that the delivery itself has been rock solid.
+[00:26:47] Speaker 2: I don't care about the dashboard. We'll pull everything through the API anyway.
+[00:26:53] Speaker 1: What's the support SLA? Because Pingwell's was, uh, I think it was "next business day," which is useless at eight in the morning when everything's on fire.
+[00:27:05] You: Brightline's is one hour for severity one, around the clock. It's in the contract.
+[00:27:12] Speaker 2: Okay. That alone would have helped on the second.
+[00:27:17] You: Right. So, so it's really Pingwell renewal versus Brightline.
+[00:27:21] Speaker 2: What's the contract length on Brightline?
+[00:27:24] You: They offered two options. One year at point six, or three years at point five five.
+[00:27:32] Speaker 1: Point five five for three years is tempting. That's another, uh, twenty-five thousand or so a year on top.
+[00:27:41] Speaker 2: I'd, I'd really rather not lock in three years with a vendor we've never run in production. If they're bad, we're stuck. One year we can prove them out.
+[00:27:54] Speaker 3: Yeah, I'm with that. Three years is a long time for a new vendor.
+[00:28:00] Speaker 1: I mean, I hear that. I'd rather save the money but, okay, I don't want to fight about five hundredths of a cent.
+[00:28:11] You: So, so let's be clear. The proposal is: we don't renew with Pingwell, we move SMS to Brightline Messaging on a one-year contract at point six cents per message. Agreed?
+[00:28:25] Speaker 2: Agreed.
+[00:28:26] Speaker 1: Agreed.
+[00:28:27] Speaker 3: Yes.
+[00:28:28] You: Okay. Brightline, one year. That's decided.
+[00:28:31] Speaker 2: Okay, so the, the migration. How long do we have? July thirty-first is the hard end?
+[00:28:38] You: July thirty-first is when Pingwell ends. But, um, their contract has a thirty-day notice period for non-renewal. So we have to tell them before July first or it auto renews for another year.
+[00:28:53] Speaker 1: Auto renews at the new price?
+[00:28:57] You: At the new price. Yeah.
+[00:28:59] Speaker 1: Oh, that's, that would be bad.
+[00:29:02] You: So I'll send Pingwell the non-renewal notice. I'll do it well before July first, probably next week, I just want to make sure Brightline's paper is signed first.
+[00:29:15] Speaker 1: Makes sense. Don't send the notice before we have a signed contract.
+[00:29:21] You: Right.
+[00:29:22] Speaker 1: And on the Brightline paper, um, I want to push them on the volume tier. Because four point two million is our average, but we spike at the start of every month and in September with the schools. If we can get, like, a tier where above five million it drops, that's worth asking for.
+[00:29:47] You: That makes sense. Do you want to run that?
+[00:29:51] Speaker 1: Yeah, I'll set up a call with Brightline to negotiate the volume tier. Their account person seemed pretty flexible.
+[00:30:00] You: Great.
+[00:30:01] Speaker 1: And I'll send the contract to Priya in legal once we have a draft. She'll want to look at the data processing addendum, because, you know, phone numbers and appointment times are personal data.
+[00:30:16] Speaker 2: Yeah, and the, um, the appointment text is sometimes kind of sensitive. Like, for the clinics, the reminder says what the appointment is.
+[00:30:27] Speaker 3: Oh, right. "Your colonoscopy is tomorrow at nine."
+[00:30:31] Speaker 2: Exactly that.
+[00:30:32] Speaker 1: I'll flag that to Priya specifically.
+[00:30:36] You: Okay. And the engineering side?
+[00:30:38] Speaker 2: So I'll write up a migration plan for the SMS cutover. Like, a dual-send period where we, um, we route a small percent to Brightline first, watch delivery, then ramp. I'll have the plan by the twenty-sixth. That still gives us all of July to actually do it.
+[00:31:00] You: The twenty-sixth of June.
+[00:31:02] Speaker 2: The twenty-sixth of June, yes.
+[00:31:05] Speaker 3: Do customers need to know? Because some of our bigger accounts have, um, they have the sender ID whitelisted. Like, the short code.
+[00:31:16] Speaker 2: Oh. That's a good point. The short code. Uh, Brightline said they can port the short code, but it takes, um, I think they said four to six weeks with the carriers.
+[00:31:30] You: Four to six weeks from when?
+[00:31:33] Speaker 2: From when we file. So we'd want to file pretty much as soon as the contract is signed.
+[00:31:42] Speaker 1: Which is another reason to get the contract done quickly.
+[00:31:47] Speaker 2: Yeah. I'll put the short code port in the migration plan as, like, the long pole.
+[00:31:54] Speaker 3: And if the port doesn't make it in time?
+[00:31:59] Speaker 2: Then I think we'd run on a temporary number for a couple of weeks. Which isn't great for the whitelisted accounts but, but it's not the end of the world.
+[00:32:12] Speaker 3: Okay.
+[00:32:13] Speaker 2: And, um, the other thing. If Brightline's delivery rate drops below, like, ninety eight percent in the first month, I guess we'd maybe have to think about keeping Pingwell around as a fallback, month to month or something.
+[00:32:31] Speaker 1: Would Pingwell even do month to month?
+[00:32:34] Speaker 2: No idea. Probably at a terrible price.
+[00:32:38] You: Let's, let's not plan for that now. We'll see how the ramp goes. If it comes to that we'll talk about it then.
+[00:32:48] Speaker 2: Yeah, fair. It's just a, a what-if.
+[00:32:52] Speaker 3: Mhm.
+[00:32:53] You: Okay. Anything else on the vendor?
+[00:32:56] Speaker 1: Um, just that I'll, I'll need the final volume numbers for the Brightline contract. Like, the trailing twelve months.
+[00:33:05] Speaker 2: That's all in the usage dashboard. You should already have access to it.
+[00:33:11] Speaker 1: Perfect.
+[00:33:12] You: Okay. Good. That was faster than I expected.
+[00:33:16] Speaker 3: It's because the math was obvious.
+[00:33:19] You: It usually is when it's a hundred and fifty grand.
+[00:33:24] You: Okay, roadmap. So, um, I want to come out of this with a clear top priority for Q3, because last quarter we had, like, five "top priorities" and we shipped one and a half of them.
+[00:33:41] Speaker 2: One and a quarter.
+[00:33:43] You: One and a quarter. So the candidates, as I see them. Outlook two-way sync. Group booking, which is the, the round robin plus multiple attendees thing. The mobile app redesign. And the, um, the AI rescheduling assistant, which our CEO has been, uh, very excited about since the board meeting.
+[00:34:05] Speaker 3: Very excited is one way to put it.
+[00:34:09] You: Let's go one at a time. Outlook sync.
+[00:34:13] Speaker 3: Okay, so from my side, um, Outlook two-way sync is the number one thing blocking enterprise deals. Right now we only do one-way, we read their Outlook calendar for availability but we don't write bookings back properly, it goes through that ICS email thing which, honestly, IT departments hate. I have, um, I think it's nine open opportunities where it's come up as a blocker, and the total on those is around, uh, three hundred and forty thousand ARR.
+[00:34:49] Speaker 1: Three forty is a lot. That's, that's like ten percent of annual revenue.
+[00:34:55] Speaker 3: It's a lot. And those are just the ones that told us. There's more that just quietly went with Agendo.
+[00:35:04] Speaker 2: And engineering-wise it's, it's the right next thing. We've already got the Graph API auth done from the read side. The write path is the hard part, conflict handling, recurring series, all that. But it's like, um, I'd say ten to twelve weeks with the two new people ramping in. Maybe a beta by end of August, GA in late September.
+[00:35:32] You: Okay. Group booking?
+[00:35:33] Speaker 3: Group booking is the most requested feature in the, uh, in the feedback portal. Like by votes. But it's mostly from Starter and Team customers. Small teams. It matters, it's just, it's not blocking big deals the way Outlook is.
+[00:35:52] Speaker 2: Group booking is also smaller. I think it's like five, six weeks. And it touches different parts of the code so it could actually run in parallel with a, a smaller crew.
+[00:36:06] You: Mobile redesign?
+[00:36:08] Speaker 2: Honestly, um, I'd push it. The mobile app is ugly but it works. The redesign is a lot of work for something that doesn't move revenue.
+[00:36:19] Speaker 3: The app store reviews are not great though.
+[00:36:24] Speaker 2: The app store reviews are mostly about, um, notifications. Which is the reminder service. Which we're fixing anyway.
+[00:36:32] Speaker 3: Okay, that's fair.
+[00:36:34] You: So, so I think the proposal is: Outlook two-way sync is the number one Q3 priority. Group booking is second, and it goes in parallel with a smaller team. Mobile redesign is not in Q3.
+[00:36:50] Speaker 1: That sounds right to me.
+[00:36:52] Speaker 3: Yes. Please. Yes.
+[00:36:54] Speaker 2: Agreed. As long as the reminder reliability work isn't, isn't cannibalized by this. That stays as like a, a must-do, not a priority.
+[00:37:05] You: Agreed. Reliability is not on the list because it's not optional.
+[00:37:10] Speaker 2: Okay. Then agreed.
+[00:37:12] You: Great. Outlook two-way sync first, group booking second, mobile redesign out of Q3.
+[00:37:18] Speaker 3: That's going to make my week.
+[00:37:21] You: Okay, and then the AI rescheduling assistant.
+[00:37:25] Speaker 2: Mm.
+[00:37:26] Speaker 1: Here we go.
+[00:37:28] You: So, for context, the idea is when someone cancels, the assistant, um, automatically finds the next best slot, messages the client, negotiates a time over SMS or email, and rebooks. Without the business owner doing anything.
+[00:37:44] Speaker 3: Customers would love that. Honestly, the salons would love that. The no-show problem is like, it's their biggest problem.
+[00:37:53] Speaker 2: Customers would love it if it worked. My worry is, um, it's sending messages to our customers' clients, on their behalf, written by a model. If it says something weird, that's a real problem. Like, it double books someone, or it offers a time that doesn't exist, or it's rude.
+[00:38:15] Speaker 1: And the cost. I have no idea what the cost looks like. Is it, like, per message? Per conversation?
+[00:38:24] Speaker 2: Depends on the model and how chatty the conversations get. Could be, I don't know, a few cents per reschedule. Could be more.
+[00:38:35] Speaker 3: We could charge for it, though. Like an add-on.
+[00:38:39] Speaker 1: We could. I just don't know what to charge until we know what it costs us.
+[00:38:47] You: So do we, do we put it in Q3 or not?
+[00:38:52] Speaker 2: I don't think I can staff it in Q3 without hurting Outlook sync. Like, if we're serious about Outlook being number one.
+[00:39:03] Speaker 3: Could we do, like, a small prototype? Not a product, just a, a, like a demo?
+[00:39:10] Speaker 2: Maybe. I'd have to, I'd have to see. Honestly I'm not sure even a prototype is cheap.
+[00:39:18] You: Okay. I don't think we're going to settle this today. There's also the question of what the CEO actually wants versus what he said at the board.
+[00:39:30] Speaker 1: Those are often different.
+[00:39:33] You: They're often different. Let's, um, let's leave the assistant open for now. Not in, not out. We'll come back to it.
+[00:39:43] Speaker 3: Okay.
+[00:39:43] Speaker 2: That's fine with me.
+[00:39:46] You: Okay. Parking it.
+[00:39:48] Speaker 3: Did you all see what Agendo put out last week, by the way? Their, um, their "smart calendar" thing?
+[00:39:56] Speaker 1: I saw the LinkedIn post. I didn't actually look at it.
+[00:40:02] Speaker 3: So I signed up for a trial under my personal email, because, you know, research.
+[00:40:09] Speaker 2: Of course you did.
+[00:40:11] Speaker 3: And it's, honestly, it's mostly a chatbot on top of their booking page. You type "find me a time next week with the dentist" and it shows you, like, three slots. Which is, it's the same three slots the booking page shows you. It just takes longer.
+[00:40:32] Speaker 2: That's very funny.
+[00:40:34] Speaker 3: But the marketing is really good. The video is really good. Like, the woman in the video is so relaxed. Nobody who runs a clinic is that relaxed.
+[00:40:47] Speaker 1: Nobody who runs a clinic has ever been that relaxed.
+[00:40:52] Speaker 3: And the thing is, prospects watch that video and then they ask me, "do you have AI?" And I'm like, um, we have a booking page that works.
+[00:41:05] You: Which is honestly not a bad answer.
+[00:41:08] Speaker 3: It's a good answer for, like, a practice manager. It's not a good answer for a VP who just got back from a conference.
+[00:41:19] Speaker 2: Mhm.
+[00:41:20] Speaker 2: I looked at their API docs a while ago, actually. Agendo's. Their webhooks don't even retry. Like, if your endpoint's down, you just, you lose the event.
+[00:41:33] Speaker 1: Is that bad?
+[00:41:35] Speaker 2: It's bad. It's really bad if you're syncing a calendar. You miss a cancellation and now someone shows up for an appointment that doesn't exist.
+[00:41:46] Speaker 3: That literally happened to one of their customers, by the way. That's how we got Maple Dental Group. Do you remember that?
+[00:41:56] Speaker 1: The dental one? The, um, the one with the eleven locations?
+[00:42:02] Speaker 3: Twelve now. They opened one in, uh, I want to say Burlington. But yeah. So a patient showed up for a cleaning at seven in the morning, the office wasn't even open, because the cancellation never synced. And the patient was, um, the patient was the office manager's mother-in-law.
+[00:42:24] Speaker 2: No.
+[00:42:25] Speaker 3: Yes. And she, she apparently stood outside in the rain for like twenty minutes. And that was the end of Agendo at Maple.
+[00:42:35] Speaker 1: That's a, that's a better sales pitch than any feature.
+[00:42:40] Speaker 3: I can't exactly put "we will not make your mother-in-law stand in the rain" on the website.
+[00:42:48] Speaker 2: You could put it on a t-shirt.
+[00:42:52] You: Put it on the booth.
+[00:42:54] Speaker 3: We don't have a booth anymore.
+[00:42:58] You: Right. Right.
+[00:42:59] Speaker 1: Speaking of Maple, are they on the Outlook side or Google side?
+[00:43:05] Speaker 3: Outlook. Very much Outlook. Actually, uh, their IT person told me they still have an on-prem Exchange server at two of the locations. Like a physical box in a closet.
+[00:43:18] Speaker 2: Oh no.
+[00:43:20] Speaker 3: Is that bad for the sync?
+[00:43:23] Speaker 2: It's, um, it's not great. Graph API only works with Exchange Online. On-prem Exchange is a whole different protocol. EWS. Which Microsoft keeps saying they're going to kill, and then they don't, and then they say it again.
+[00:43:40] Speaker 1: Like the coffee machine firmware.
+[00:43:43] Speaker 2: Kind of like the coffee machine firmware, yeah. Honestly most of the on-prem people are moving to Exchange Online anyway. When I was at my last job we had a customer who'd been "migrating to Exchange Online" for four years. Four years. Every quarterly review it was "next quarter."
+[00:44:05] Speaker 3: That's a lot of quarters.
+[00:44:08] Speaker 2: It was so many quarters. And the guy who owned the migration, he kept getting promoted. Like, he was a manager, then a director, and the migration just followed him around like a, like a pet.
+[00:44:24] Speaker 1: That's every IT project I've ever seen, honestly.
+[00:44:28] Speaker 2: Mhm. And the Graph throttling is its own adventure. Like, Microsoft will just, um, they'll send you a four twenty nine and a retry-after header, and the retry-after is sometimes like, a second, and sometimes it's like, two minutes. And there's no pattern. People on the forums have theories, like it depends on the tenant size or the time of day, but nobody really knows.
+[00:44:57] Speaker 3: That sounds miserable.
+[00:44:59] Speaker 2: It's fine. It's a puzzle. I kind of like it, honestly.
+[00:45:04] You: You say that now.
+[00:45:07] Speaker 2: I say that now.
+[00:45:09] Speaker 1: How did the CEO demo go, by the way? The one at the board meeting? I only heard secondhand.
+[00:45:18] You: Oh, um. It went, it went fine. The booking flow worked. Then someone on the board asked if it could book a meeting in Tokyo time, and the demo account was set to, uh, Pacific, and there was a moment.
+[00:45:36] Speaker 3: Uh oh.
+[00:45:37] You: It worked! It worked. It was just a moment. He was clicking around the time zone dropdown and it's, you know, it's alphabetical, and there's a lot of time zones before Tokyo.
+[00:45:52] Speaker 2: There are a lot of time zones.
+[00:45:56] You: And while he was scrolling, the board member said, "this is why I just use email." Which, um, didn't land great.
+[00:46:05] Speaker 1: Oof.
+[00:46:06] Speaker 3: To be fair, that's what half my prospects say too. "We just use email." And then you ask them how many no-shows they have and it's, like, fifteen percent.
+[00:46:20] Speaker 1: Fifteen percent is a lot of money for a clinic.
+[00:46:24] Speaker 3: It's a ton. That's, um, that's actually the number I lead with now. Not the features. Just, "what's your no-show rate," and they don't know, and then they go find out, and then they call me back.
+[00:46:41] Speaker 2: That's pretty good.
+[00:46:43] Speaker 3: It works like a third of the time. Which for cold outreach is, it's amazing.
+[00:46:50] You: When did you start doing that?
+[00:46:53] Speaker 3: Uh, maybe in April? One of the newer reps tried it, and it just, it worked better than the deck, so now everyone does it.
+[00:47:05] Speaker 1: I love that the deck lost to one question.
+[00:47:09] Speaker 3: The deck is forty slides. Of course it lost.
+[00:47:14] Speaker 2: Who made the deck?
+[00:47:16] Speaker 3: Marketing, two years ago. Nobody's touched it since. It still has the old logo on slide thirty one.
+[00:47:24] Speaker 2: The one that looked like a, like a clock with eyebrows?
+[00:47:30] Speaker 3: That one, yeah.
+[00:47:32] Speaker 1: I liked the eyebrows.
+[00:47:34] Speaker 2: You're the only one.
+[00:47:36] Speaker 1: I'm okay with that.
+[00:47:38] Speaker 3: You know what's funny, I tried to book a haircut last weekend and the salon uses a, uh, I won't say who, a competitor. And it made me create an account. To book a haircut. With a password with a special character.
+[00:47:57] Speaker 2: For a haircut.
+[00:47:59] Speaker 3: For a haircut. And then it sent me a verification email that went to spam. So I just called them. On the phone. Like it's nineteen ninety five.
+[00:48:12] You: Did you get the haircut?
+[00:48:15] Speaker 3: I got the haircut. It was, it was a good haircut. The guy was very nice. He said half his clients just text him.
+[00:48:26] Speaker 1: So the competition is texting.
+[00:48:29] Speaker 3: The competition is always texting. And email. And a paper calendar at the front desk.
+[00:48:36] Speaker 2: The paper calendar is undefeated.
+[00:48:38] Speaker 3: It really is. Zero downtime.
+[00:48:41] Speaker 2: No incidents. No Pingwell.
+[00:48:43] Speaker 1: No AWS bill.
+[00:48:45] You: It does have a, uh, a coffee spill risk.
+[00:48:50] Speaker 2: That's true. Single point of failure.
+[00:48:53] Speaker 1: Has anyone here actually used our mobile app in the last month? Like, not for testing, just as a, as a user?
+[00:49:03] Speaker 2: I use it to check my own one-on-ones. It's, um, it's fine. It's slow to open. Like three seconds.
+[00:49:12] Speaker 3: I don't use it. I use the web on my phone. Which, I know, I know.
+[00:49:19] Speaker 2: Honestly that's what most customers do. Like sixty percent of our mobile traffic is the web app, not the native one.
+[00:49:29] Speaker 1: Oh, I didn't know that.
+[00:49:32] Speaker 2: Yeah. The native app is mostly, um, front desk staff who keep it open all day on a tablet. Like an iPad on the counter. That's the core user.
+[00:49:45] Speaker 3: The iPad on the counter is, honestly, our whole market. That's it. That's the business.
+[00:49:52] You: Somebody should put that in the deck.
+[00:49:56] Speaker 3: Slide forty one.
+[00:49:58] Speaker 1: It's funny, when I joined I thought we were selling to, like, executives. Corporate scheduling. And then the first customer call I sat in on was a dog groomer in Ohio.
+[00:50:12] Speaker 3: The dog groomers are some of our best customers. They pay on time. They never churn.
+[00:50:19] Speaker 2: They do have a lot of feature requests about, um, about pet names in the booking form.
+[00:50:27] Speaker 3: That's fair. They really want the pet name field.
+[00:50:32] Speaker 1: Do we have a pet name field?
+[00:50:35] Speaker 2: We have a custom field. They use the custom field. They just want it to be called "pet name" by default.
+[00:50:45] Speaker 1: That seems very reasonable.
+[00:50:47] Speaker 2: It is very reasonable. It's just never been the top of anything.
+[00:50:53] Speaker 3: One groomer told me she has a client with nine dogs. Nine. And every booking is for, like, three of them at a time, in rotation.
+[00:51:05] Speaker 1: That's a group booking.
+[00:51:07] Speaker 2: That's technically a group booking, yeah.
+[00:51:11] Speaker 3: That's the most important group booking use case in the company.
+[00:51:16] Speaker 2: Nine dogs. That's a scheduling problem in itself.
+[00:51:20] Speaker 1: Do you know their names?
+[00:51:23] Speaker 3: She told me. I don't remember. There was a Biscuit. I think there were two Biscuits, actually.
+[00:51:31] Speaker 2: Two Biscuits. That's a data integrity problem.
+[00:51:34] Speaker 3: That's exactly what she said.
+[00:51:37] Speaker 1: Did she ever get the second Biscuit renamed?
+[00:51:41] Speaker 3: No. She calls them Big Biscuit and Small Biscuit. In the booking notes. It's in our database. Big Biscuit, Small Biscuit.
+[00:51:51] Speaker 2: That's honestly beautiful.
+[00:51:52] Speaker 1: I want to meet Small Biscuit.
+[00:51:56] Speaker 3: Small Biscuit is apparently the troublemaker. He ate a, um, a reminder card once. Like the physical card they hand out at the front desk.
+[00:52:07] Speaker 2: See, that's the problem with paper. Small Biscuit is the downtime.
+[00:52:12] Speaker 1: Paper finally has an incident.
+[00:52:15] Speaker 2: A Sev one. Customer-facing.
+[00:52:17] Speaker 3: I'll tell her you said that.
+[00:52:21] Speaker 2: Mhm. You know, the, the real thing I keep thinking about with these small customers is, um, they don't read release notes. Ever. Like, when we shipped the waitlist feature last year, I think, what, four percent of the groomers turned it on?
+[00:52:40] Speaker 3: Something like that. Most of them still don't know it exists.
+[00:52:45] Speaker 2: And it's, honestly, it's one of the best things we've built. It fills cancellations automatically. It's basically, um, half of what the AI assistant pitch is, without the AI.
+[00:52:59] Speaker 1: Huh. I didn't realize it did that.
+[00:53:02] Speaker 2: See? Even we don't know.
+[00:53:05] Speaker 3: That's a little embarrassing.
+[00:53:07] Speaker 2: It's very embarrassing. It's a great feature with, like, no marketing. The, uh, the page for it is one paragraph and a screenshot from the old design.
+[00:53:20] Speaker 1: With the eyebrows logo?
+[00:53:22] Speaker 2: Probably with the eyebrows logo, honestly.
+[00:53:25] Speaker 3: The eyebrows live on.
+[00:53:27] You: Okay. Okay. We are, uh, we are well into the tangent zone. I promised to cut these and I did not.
+[00:53:37] Speaker 2: It was a good tangent though.
+[00:53:40] You: It was a great tangent. But, um, before we leave roadmap entirely. The three forty in blocked Outlook deals. Can I get the actual list? Because when I talk to the CEO about the assistant, I want to be able to say, here are the nine accounts, here's the ARR, this is what Outlook sync is worth.
+[00:54:06] Speaker 3: Yeah. I'll pull the list of accounts blocked on Outlook sync, with the ARR and the stage for each one. I can have it to you by next Tuesday.
+[00:54:19] You: Next Tuesday's great. And include the ones that went to Agendo if you know them.
+[00:54:26] Speaker 3: The ones I know about, sure. I'll mark them as lost.
+[00:54:32] You: Perfect. Okay, pricing. This is the one I really want to land today, because we've been circling it for two quarters.
+[00:54:41] Speaker 1: Three quarters.
+[00:54:43] You: Three quarters. So, um, recap of where we are. Slotwise has three paid plans. Starter at six dollars a seat a month, Team at twelve, Business at twenty-nine. Team is, uh, about sixty percent of our seats. And Team hasn't changed price since, what, launch?
+[00:55:03] Speaker 1: Since launch. Four years. Twelve dollars for four years. Meanwhile our cost per seat, mostly SMS and infrastructure, has gone up about thirty percent.
+[00:55:14] Speaker 3: And the competition has moved. Agendo's comparable plan is sixteen. The, um, the other one, Bookly, is fourteen ninety-nine.
+[00:55:23] Speaker 1: My proposal was sixteen. Match Agendo.
+[00:55:26] Speaker 3: I think sixteen is, um, it's too much of a jump at once. That's thirty three percent. For a small business, that's the kind of number that makes them go look at alternatives even if they were happy.
+[00:55:43] Speaker 1: But they'd be looking at Agendo, which is sixteen.
+[00:55:48] Speaker 3: Or Bookly, which is fifteen. Or a spreadsheet, which is free.
+[00:55:53] Speaker 2: Or the paper calendar.
+[00:55:55] Speaker 3: The paper calendar, which is undefeated, yes.
+[00:55:59] Speaker 1: Okay. What were you going to propose?
+[00:56:03] Speaker 3: I was going to say fourteen. Honestly I'd go fourteen and then revisit in a year.
+[00:56:10] Speaker 1: Fourteen barely covers the cost increase. I did the model. At fourteen we, um, we basically just get back to where our margin was two years ago.
+[00:56:23] You: What does fifteen look like?
+[00:56:25] Speaker 1: Fifteen is, uh, give me a second. Fifteen, with my churn assumption, which is that we lose maybe an extra two percent of Team accounts over the first two quarters, that's roughly a hundred and ninety thousand more ARR in the first year from new customers alone. And more once existing customers move over.
+[00:56:50] Speaker 3: Two percent extra churn feels optimistic to me.
+[00:56:54] Speaker 1: What would you say?
+[00:56:56] Speaker 3: Maybe three. Three to four for the price-sensitive ones. The, um, the salons, the solo practitioners.
+[00:57:03] Speaker 1: Even at four it's still positive. Not as much, but positive.
+[00:57:09] Speaker 2: Can I ask a dumb question? Is this for new customers, existing, or both?
+[00:57:15] You: That's, that's actually the second question. Let's do the number first. Is fifteen something everyone can live with?
+[00:57:24] Speaker 3: Fifteen I can live with. It's just under Bookly, it's under Agendo. I can sell fifteen.
+[00:57:31] Speaker 1: I'd still rather sixteen, but fifteen is fine. Fifteen is a real improvement.
+[00:57:38] Speaker 2: I have no strong opinion. Fifteen sounds fine.
+[00:57:42] You: And timing. I was thinking September first. That gives us the summer to tell people, and it lines up with the, um, the September spike, which, I know, is kind of bold.
+[00:57:56] Speaker 3: September is when the schools and the tutoring places sign up. That's, um, that's a lot of new Team customers. They'd all come in at the new price.
+[00:58:09] Speaker 1: Which is good for us.
+[00:58:12] Speaker 3: Which is good for us. As long as the pricing page is updated before then. Last time we changed the Business price the old one was on the page for like two weeks.
+[00:58:27] Speaker 2: That was the CMS thing. That's fixed. It's all from the billing config now.
+[00:58:33] You: Okay. So the proposal: the Team plan goes from twelve to fifteen dollars per seat per month for new customers, effective September first. Agreed?
+[00:58:45] Speaker 1: Agreed.
+[00:58:45] Speaker 3: Agreed.
+[00:58:46] Speaker 2: Yep.
+[00:58:47] You: Okay. Team plan, fifteen dollars, new customers, September first.
+[00:58:52] Speaker 1: Finally.
+[00:58:53] Speaker 3: Can I, um, can I say something about the pricing page while we're here? Because it's kind of related.
+[00:59:02] You: Quickly.
+[00:59:03] Speaker 3: People don't understand the difference between Team and Business. Like, half my discovery calls, someone asks, "what do I get on Business?" and honestly, the page doesn't make it clear. It's just a big table with, like, forty check marks.
+[00:59:21] Speaker 2: Forty-three check marks.
+[00:59:23] Speaker 3: You counted?
+[00:59:24] Speaker 2: I wrote half of them.
+[00:59:27] Speaker 3: So if Team is going up to fifteen, I'm worried more people look at Business and go, "well, what's the extra fourteen dollars for?" and they can't tell.
+[00:59:39] Speaker 1: That's, I mean, that might actually be good for us. Some of them might move up.
+[00:59:47] Speaker 3: Or they get confused and go to Bookly. Confused people don't upgrade, they leave.
+[00:59:54] Speaker 2: The honest difference is SSO, the audit log, and, uh, the round robin routing. That's really it. Everything else is the same.
+[01:00:04] Speaker 3: So say that! Say that on the page! Three bullets!
+[01:00:09] You: Okay, I hear you. I don't want to redesign the pricing page in this meeting. But it's a real point.
+[01:00:18] Speaker 3: That's all I wanted. Somebody to hear it.
+[01:00:22] Speaker 1: We heard it.
+[01:00:24] You: Okay, now the existing customers. This is the harder one.
+[01:00:29] Speaker 3: So, um, my strong preference is that existing customers don't see a change for a while. At least six months. Ideally a year. These are people who've been paying twelve dollars for years, some of them since the beta. If they get an email in August saying "your price goes up next week," that's, I'll get so many calls.
+[01:00:55] Speaker 1: A year is a long time to have two prices for the same plan.
+[01:01:02] Speaker 3: Okay, so six months.
+[01:01:04] Speaker 1: Six months from September would be, uh, end of February.
+[01:01:09] You: What about end of Q1? March thirty-first. It's a clean date, it's the end of a quarter, it's easy to remember, and it's about seven months.
+[01:01:21] Speaker 3: March thirty-first is fine. I can work with March thirty-first.
+[01:01:26] Speaker 1: Yeah, end of quarter is nicer for the books too.
+[01:01:31] Speaker 2: And then on April first they just, they automatically move to fifteen?
+[01:01:37] You: Automatically, with notice. They'd get notice well ahead. I'd say at least sixty days.
+[01:01:43] Speaker 3: Sixty days is good.
+[01:01:46] Speaker 2: Okay. Engineering-wise that's, um, that's straightforward. It's two price IDs and a migration on April first.
+[01:01:53] You: So: existing Team customers keep the twelve dollar price until March thirty-first next year, and then move to fifteen. Everyone good?
+[01:02:03] Speaker 1: Good.
+[01:02:04] Speaker 3: Good.
+[01:02:05] Speaker 2: Good.
+[01:02:06] You: Okay. Existing customers grandfathered until March thirty-first.
+[01:02:09] Speaker 1: I'll update the pricing model with the fifteen dollar number and both churn cases, the two percent and the four percent, so we have a, like, a range. By Monday.
+[01:02:23] You: Monday's good. Send it to the whole group.
+[01:02:27] Speaker 1: Will do.
+[01:02:28] Speaker 3: And the customer announcement. We need an email, and probably an in-app banner, and a FAQ for support, because they'll get the questions first.
+[01:02:40] You: Can you own that?
+[01:02:42] Speaker 3: Yeah, I'll draft the customer email announcing the price change, plus a short FAQ for support. I'll have a draft by the end of next week.
+[01:02:54] You: Great. Let's make sure it clearly says existing customers aren't affected until April.
+[01:03:00] Speaker 3: That's going to be the first line. Bold.
+[01:03:04] Speaker 1: What about annual plans? Do we change the annual discount?
+[01:03:09] Speaker 3: Right now annual is, um, two months free. So effectively a sixteen percent discount.
+[01:03:16] Speaker 1: I'd thought about cutting it to one month free. But, honestly, with the price change, maybe that's too many changes at once.
+[01:03:26] You: I agree. Let's not touch annual this quarter. Two months free stays.
+[01:03:32] Speaker 3: Yeah, one change at a time.
+[01:03:35] Speaker 1: Okay. Leaving annual alone.
+[01:03:37] Speaker 2: Does anything change for Starter or Business?
+[01:03:41] You: No. Just Team.
+[01:03:42] Speaker 2: Okay. Good. Simple.
+[01:03:44] Speaker 3: One thing I want to flag. Some of our Team customers are on, um, nonprofit discount. Like twenty percent off. Do they get the new price minus twenty?
+[01:03:57] Speaker 1: Off the top of my head I'd say, um, yes? The discount is a percentage. But don't quote me, I'd have to look at how those contracts are written.
+[01:04:10] Speaker 3: Okay. I won't say anything to them yet.
+[01:04:14] You: Okay. Pricing done. That's, that's genuinely the first time in three quarters.
+[01:04:20] Speaker 1: I'm going to frame it.
+[01:04:23] You: Okay, the incident. As promised, protected time. Do you want to walk through it?
+[01:04:30] Speaker 2: Yeah. So, um, I'll keep the timeline short because the internal write-up has all of it. On the second, at about eight fifteen in the morning Eastern, Pingwell's send API started returning five hundreds. Intermittently, maybe thirty percent of requests. That went on for about forty minutes.
+[01:04:51] Speaker 1: Mhm.
+[01:04:52] Speaker 2: Our reminder worker treats a five hundred as a failure and retries. Which is fine in principle. The problem is that a lot of those five hundreds were, um, were lies. Pingwell had actually accepted and sent the message, and then their gateway timed out on the response. So we retried messages that had already gone out. And because we didn't have any dedupe on our side, every retry was a new message.
+[01:05:24] Speaker 3: And some people got four.
+[01:05:27] Speaker 2: Some people got four. The worst case we found was six, actually, for one, uh, one phone number at a physio clinic.
+[01:05:37] Speaker 3: Oh god. Was that Castellan?
+[01:05:40] Speaker 2: That was Castellan.
+[01:05:42] Speaker 3: Yeah, they called me. The owner called me personally. She was, um, she was not happy. One of her patients thought it was a scam and reported the number.
+[01:05:55] Speaker 1: How many people total?
+[01:05:57] Speaker 2: About fourteen thousand end users got at least one duplicate. Across, um, two hundred and thirty-one customer accounts. And then there's a second, smaller problem, which is the backlog. While we were retrying, the queue backed up, and when it drained, about nine hundred reminders went out late. Some of them, uh, went out at like three in the morning local time on the West Coast, because the queue didn't care what time it was.
+[01:06:31] Speaker 3: That's the part people were angrier about, honestly. The three a.m. texts.
+[01:06:37] Speaker 2: Yeah. I believe it.
+[01:06:39] You: And where are we on fixes?
+[01:06:42] Speaker 2: So, three things. One, the dedupe. We generate an idempotency key per reminder, per recipient, per scheduled time, and we don't send twice for the same key. Even with Pingwell, before Brightline, we can do that on our side with a, um, a send log. That's the big one. Two, a circuit breaker, so if the provider error rate goes over some threshold we stop retrying and just, like, pause and alert. And three, quiet hours. Don't send reminders between, I don't know, ten p.m. and seven a.m. in the recipient's time zone, unless the appointment is, like, before nine.
+[01:07:27] Speaker 1: The quiet hours one sounds like a product decision.
+[01:07:31] Speaker 2: It kind of is. I'd want the clinics to be able to turn it off, maybe. Some of them have, um, five a.m. appointments for, like, surgery prep.
+[01:07:44] Speaker 3: Right, the surgery centers would hate a blanket rule.
+[01:07:48] Speaker 2: So quiet hours I'd put in the backlog, not this sprint. The dedupe I want this sprint.
+[01:07:56] You: When's the end of the sprint?
+[01:07:59] Speaker 2: Next Friday. So I'll ship the dedupe fix for reminder retries by end of sprint, next Friday. And the circuit breaker right after, probably the following week, but the dedupe is the, the one I'm committing to.
+[01:08:16] You: Okay. Good.
+[01:08:18] Speaker 1: Is the dedupe fix in production behind a flag, or, like, how do we know it worked?
+[01:08:26] Speaker 2: We can replay the incident in staging. We kept the, um, the Pingwell response logs. So we can fake their five hundreds and see that we send once.
+[01:08:38] Speaker 1: Okay, I like that.
+[01:08:41] Speaker 2: It's actually the best thing to come out of the whole incident. We finally have a real test for this.
+[01:08:50] You: Okay. So, um, two other things I want to settle. Communication, and credits.
+[01:08:56] Speaker 3: Yes. Please.
+[01:08:58] You: Communication first. What did we actually send customers?
+[01:09:02] Speaker 3: So on the fourth we sent a short email to the affected accounts. Like, "we're aware, it's fixed, we're sorry." Three sentences. And then, um, Castellan and a couple of others got a call.
+[01:09:17] Speaker 2: And the internal postmortem was done on the fifth. But we never sent anything detailed to customers.
+[01:09:25] Speaker 3: And some of them asked for it. Specifically. Like, "what happened and how do I know it won't happen again." Two of the bigger accounts asked. One of them has a, um, a vendor review process and they need it in writing.
+[01:09:44] You: So I want to propose a rule going forward. For any Sev one, we publish a customer-facing postmortem within five business days. Not the internal one, a cleaned-up version. What happened, impact, what we changed.
+[01:10:00] Speaker 2: Five business days is doable. The internal one is usually done in three.
+[01:10:06] Speaker 3: I love that. Honestly, it would have saved me, like, ten calls this time.
+[01:10:13] Speaker 1: Who signs off on it? Because I don't want, um, I don't want us admitting liability for things in a public doc without someone looking.
+[01:10:25] You: Fair. Legal reviews it. Priya can turn those around fast, she did for the outage last year.
+[01:10:33] Speaker 1: Okay. Then I'm fine with it.
+[01:10:36] You: So, agreed? Every Sev one gets a customer-facing postmortem within five business days, reviewed by legal.
+[01:10:43] Speaker 2: Agreed.
+[01:10:44] Speaker 3: Agreed.
+[01:10:45] Speaker 1: Agreed.
+[01:10:46] You: Okay. That's the rule from now on.
+[01:10:50] Speaker 3: Does it apply to this one? Retroactively?
+[01:10:53] Speaker 2: I mean, we're past five days anyway. And the two accounts that asked, um, I already sent them a cleaned-up version of the internal doc yesterday. It was like an hour of editing.
+[01:11:08] You: Oh, great. Then that's covered.
+[01:11:11] Speaker 3: Okay. Good.
+[01:11:12] You: Okay, credits.
+[01:11:14] Speaker 1: So I had, um, I had a number in mind. My first thought was five percent off the June invoice for the affected accounts. Because, you know, the actual harm was a few extra texts.
+[01:11:30] Speaker 3: I think five is, honestly, it reads as a token. Some of these people had patients calling them at three in the morning. Castellan had someone report them as a scam.
+[01:11:44] Speaker 1: What would you do?
+[01:11:46] Speaker 3: I was going to say fifteen. But, I mean, I know that's a lot.
+[01:11:53] Speaker 1: Fifteen percent on two hundred and thirty-one accounts is, uh, it's not huge actually, most of them are Team plan, it's maybe, um, eight thousand dollars total? But it sets a precedent I don't love.
+[01:12:09] You: What about ten? Ten percent off the June invoice for the affected accounts. It's meaningful, it's not, um, not a precedent we'll regret.
+[01:12:19] Speaker 3: Ten I can live with.
+[01:12:22] Speaker 1: Ten is about fifty-four hundred, give or take. Fine.
+[01:12:26] Speaker 2: No opinion, I just want it to not happen again.
+[01:12:31] You: Okay. So: all two hundred and thirty-one affected accounts get a ten percent credit on their June invoice. Agreed?
+[01:12:40] Speaker 1: Agreed.
+[01:12:41] Speaker 3: Agreed.
+[01:12:42] Speaker 2: Yeah.
+[01:12:43] You: Okay. Ten percent credit.
+[01:12:45] Speaker 1: I'll apply the credits in billing before the July invoice run. The run is on the first, so I'll have them in by, um, by the twenty-ninth to be safe.
+[01:12:59] Speaker 3: And I'll email the affected accounts to let them know about the credit. I'd like to do that this week, so, um, by Thursday. Before they see it on the invoice and wonder what it is.
+[01:13:15] You: Good. Make sure Castellan gets a call, not just the email.
+[01:13:21] Speaker 3: Oh, absolutely. I'll call her myself.
+[01:13:24] Speaker 2: Can I add one more thing on the incident? Not a decision, just, um, a thing I've been thinking about.
+[01:13:33] You: Sure.
+[01:13:34] Speaker 2: The thing that actually saved us was that a customer told us. Not our monitoring. Someone at a dental office emailed support saying "your system is spamming my patients," and support escalated it. That was twenty-five minutes in. Our alerts fired at, like, forty.
+[01:13:54] Speaker 1: Huh.
+[01:13:55] Speaker 2: Because the alerts were on failure rate, and from our side the failure rate looked fine after the retries succeeded. We were measuring the wrong thing. We were measuring "did the send succeed," not "did we send the same thing twice."
+[01:14:14] Speaker 3: That's kind of terrifying.
+[01:14:16] Speaker 2: It's very normal, honestly. It's how most monitoring works. You measure the thing you thought could go wrong.
+[01:14:24] You: But the dedupe fix covers that?
+[01:14:27] Speaker 2: The dedupe covers the duplicates. The monitoring gap is separate. I'm, um, I'm still thinking about the right metric. Like, sends per appointment, maybe. Anything over one is an alarm.
+[01:14:41] Speaker 1: That seems simple.
+[01:14:43] Speaker 2: Simple ideas are the good ones. I just don't have the answer yet.
+[01:14:49] You: Okay. Anything else on the incident?
+[01:14:52] Speaker 3: Just, um, thank you to support. They took like four hundred tickets in two days.
+[01:14:59] Speaker 2: Yeah. Huge.
+[01:15:01] You: Agreed. They were amazing. Genuinely.
+[01:15:03] You: Okay. Um, before wrap-up, quick round of anything else. Short updates. Anyone?
+[01:15:09] Speaker 2: I've got a quick one on SOC two. Just status, nothing to decide.
+[01:15:15] You: Go.
+[01:15:16] Speaker 2: So the, um, the Type two observation window started in April. We're, I think we're in decent shape. The auditor's mid-window check-in was last week, and they flagged two things. One, our access reviews were late in May, like eight days late. And two, a couple of laptops didn't have the disk encryption policy reporting in.
+[01:15:42] Speaker 1: Is that bad?
+[01:15:43] Speaker 2: It's not bad bad. It's the kind of thing they write up as an observation, not an exception. As long as it doesn't happen again. The laptops were, um, two of them were new hires whose machines got set up before the MDM profile was pushed. That's fixed now.
+[01:16:06] Speaker 3: Was one of them mine? I got a new laptop in May.
+[01:16:11] Speaker 2: It might have been, honestly. It's fine now. You don't have to do anything.
+[01:16:18] Speaker 3: Okay, phew.
+[01:16:19] Speaker 2: And the access review thing is just a calendar problem. Literally. The reminder for it went to someone who left.
+[01:16:29] Speaker 1: A scheduling company with a scheduling problem.
+[01:16:32] Speaker 2: I'm aware of the irony. Believe me.
+[01:16:36] You: When does the window close?
+[01:16:39] Speaker 2: End of September. Report in, um, late October, early November probably. Which matters for sales, right? Because a few of the enterprise deals are asking.
+[01:16:50] Speaker 3: Three of the nine Outlook deals have SOC two in their security questionnaire. Two of them would accept the Type one for now. One of them, the, uh, the hospital network, wants Type two. No exceptions.
+[01:17:06] Speaker 2: Then they'll have to wait until November.
+[01:17:10] Speaker 3: They're a hospital network. They're used to waiting. Their procurement process is, like, nine months anyway.
+[01:17:18] Speaker 1: Nine months. Wow.
+[01:17:19] Speaker 3: Last one I did was eleven months. And then they asked us to fill out the security questionnaire again because it had "expired."
+[01:17:30] Speaker 2: The questionnaire expired.
+[01:17:32] Speaker 3: It had a date on it. It was more than six months old. So, new questionnaire. Same three hundred questions.
+[01:17:41] You: Okay, okay. Pipeline, since you're talking. Anything else we should know?
+[01:17:46] Speaker 3: Um, quick version. Q2 bookings are at about ninety-one percent of target with, uh, three weeks to go. Halverson is the big one. If Halverson signs this week, we're at a hundred and four.
+[01:18:02] Speaker 1: And if it doesn't?
+[01:18:04] Speaker 3: It'll sign. They're, um, they're just waiting for their CFO to come back from vacation. She's in Portugal.
+[01:18:13] Speaker 2: Good for her.
+[01:18:14] Speaker 3: Very good for her. Lisbon, I think. She posted pictures.
+[01:18:19] Speaker 1: I've always wanted to go to Lisbon.
+[01:18:23] Speaker 3: Everyone always wants to go to Lisbon. Nobody actually goes.
+[01:18:28] Speaker 1: My sister went. She said the hills are no joke. Like, she came back with calves of steel.
+[01:18:36] Speaker 2: That's the dream.
+[01:18:38] Speaker 3: The other thing on pipeline, um, churn's been fine. Gross churn for the quarter is about one point eight percent, which is a little better than Q1. The biggest loss was the, uh, the tutoring franchise in Texas, but they got acquired, so that's not really on us.
+[01:19:00] Speaker 1: Who acquired them?
+[01:19:02] Speaker 3: Some private equity group. They're consolidating everything onto one system. Which, sadly, isn't us. They had a three-year deal with someone else already.
+[01:19:12] You: Okay. Anything on your side?
+[01:19:15] Speaker 1: Collections. Very quick. Our, uh, days sales outstanding crept up to about forty-four days. It was thirty-eight last quarter. Mostly it's two of the Business accounts paying late, and one of them is, um, it's a school district, so it's a purchase order thing, they always pay, they just pay in their own time.
+[01:19:39] Speaker 3: The school districts are like that. They pay like clockwork, just, a very slow clock.
+[01:19:46] Speaker 1: A geological clock.
+[01:19:48] Speaker 2: Mhm.
+[01:19:49] Speaker 1: It's not a problem yet. I'm just watching it. If it goes over fifty, I'll make noise.
+[01:19:57] You: Okay. Thanks. That's, honestly, that's all in pretty good shape.
+[01:20:02] Speaker 2: Can I complain about one thing that isn't on the agenda?
+[01:20:07] You: You have one minute.
+[01:20:10] Speaker 2: The, um, the staging environments. I know I said I'd look at the AWS bill. But I already peeked, and there's a, an entire copy of production in a region nobody uses. Running since, like, March.
+[01:20:26] Speaker 1: Since March?
+[01:20:27] Speaker 2: Since March. Someone spun it up for a load test and never turned it off. I'm pretty sure that's a big chunk of the eleven percent.
+[01:20:39] Speaker 1: How big is big?
+[01:20:42] Speaker 2: I don't know yet. That's what the breakdown is for. I just wanted to, uh, I wanted to vent.
+[01:20:50] Speaker 3: That's a good vent.
+[01:20:53] Speaker 1: That's a great vent. It's the best news I've heard all meeting.
+[01:20:58] You: Okay. Okay, that's a minute.
+[01:21:01] You: Okay. We've got, um, about fifteen minutes. Let's start wrapping up.
+[01:21:07] Speaker 2: Can I ask one thing about the Outlook beta first? It's a question, not a, not a request.
+[01:21:15] You: Sure.
+[01:21:16] Speaker 2: When we get to the beta in August, um, how many customers are we thinking? Because the write path is the risky part, and I'd want the first ones to be people who'll actually tell us when something's off. Not people who'll just quietly churn.
+[01:21:36] Speaker 3: Honestly, Maple would be perfect. They complain about everything. In a good way.
+[01:21:42] Speaker 2: They'd be great except for the on-prem Exchange boxes.
+[01:21:47] Speaker 3: Oh, right. The closet.
+[01:21:49] Speaker 2: The closet. They could do it for the ten locations that are on Exchange Online, I guess. But then their front desk has two different behaviors depending on the location, and that's, um, that's confusing.
+[01:22:05] Speaker 1: How many beta customers did we have for the Google two-way sync? Back when we did that?
+[01:22:13] Speaker 2: Uh, I think twelve? Twelve or fifteen. And we found, like, most of the real bugs with the first three.
+[01:22:22] Speaker 3: The first three were the ones who called every day.
+[01:22:27] Speaker 2: The ones who called every day were the best ones.
+[01:22:32] You: I think we figure out the beta list once we have the list of blocked deals. Some of those nine might jump at it.
+[01:22:43] Speaker 3: Yeah, some of them would sign tomorrow if they could get the beta.
+[01:22:50] Speaker 2: Okay, that's fair. I just wanted it on people's radar.
+[01:22:54] You: It's on the radar. Okay. Um, one thing I actually want to revisit before the recap. OpsWorld.
+[01:23:02] Speaker 3: Oh. Yes. Okay, good, because I was going to bring it up.
+[01:23:08] You: Go ahead.
+[01:23:10] Speaker 3: So, um, while we were on the incident section I was, uh, I was checking a couple things. Two things changed my mind. One, the hospital network, and two of the other Outlook deals, they're all confirmed attending OpsWorld this year. The procurement people and, in one case, the actual CIO. That's, like, three of our biggest open deals in one room. And two, the organizers have a smaller option. Not the big booth. It's a ten by ten kiosk in the, um, the integrations pavilion. With travel for two people and a smaller dinner it comes to about eighteen thousand.
+[01:23:55] Speaker 1: Eighteen, versus thirty-five.
+[01:23:56] Speaker 3: Eighteen versus thirty-five. Half, basically.
+[01:23:59] Speaker 2: Do we need a booth to meet them, though? Could we just, you know, set up meetings?
+[01:24:07] Speaker 3: We could. But, um, for the CIO meeting especially, having a place to actually demo the Outlook beta, on a real screen, not on my laptop in a hallway, that's a big deal. And honestly the kiosk is in the integrations area, which is exactly where people looking for calendar sync will be walking.
+[01:24:31] Speaker 1: And the money?
+[01:24:33] Speaker 3: That's your department.
+[01:24:35] Speaker 1: Okay so. Um. If the staging environment thing is real, that's probably a few thousand a month off the cloud line. And Brightline saves, uh, about twelve and a half thousand a month starting in August. So Q3 gets maybe two months of that, call it twenty-five thousand. So, yes, eighteen fits inside the flat two point four. Comfortably, actually.
+[01:25:02] Speaker 2: Then I'm fine with it. As long as it doesn't, uh, come out of hiring.
+[01:25:09] Speaker 1: It doesn't come out of hiring.
+[01:25:12] You: Okay. So I'm reversing what I said at the start. We do OpsWorld after all, but the small kiosk, not the big booth, and capped at eighteen thousand all in. Everyone okay with that?
+[01:25:28] Speaker 3: Yes. Very.
+[01:25:29] Speaker 1: Capped at eighteen. Yes.
+[01:25:31] Speaker 2: Yep.
+[01:25:32] You: Okay. Small OpsWorld booth, eighteen thousand cap.
+[01:25:36] Speaker 3: When do they need an answer?
+[01:25:39] Speaker 3: Oh, sorry, answering my own question. The kiosk hold expires on the fifteenth.
+[01:25:45] You: Okay. Then I'll confirm the smaller booth with Daniel in marketing and get it booked before the fifteenth. He's going to need the budget code anyway.
+[01:25:57] Speaker 1: It'll show up in the sheet as its own line, then. So it's visible.
+[01:26:04] You: Good.
+[01:26:05] Speaker 1: Oh, and one more thing, actually, about the Brightline call. I just looked at their account person's email. He can only do the week of the twenty-second. And I'm out that entire week. It's my, um, it's my sister's wedding.
+[01:26:23] Speaker 3: Oh, congrats to her!
+[01:26:25] Speaker 1: Thank you. It's in, uh, upstate. No signal. Very intentional.
+[01:26:30] Speaker 2: That sounds wonderful.
+[01:26:32] Speaker 1: So can you take the Brightline call? The volume tier negotiation?
+[01:26:37] You: Yeah, I'll take it. I'll do the Brightline call and push on the volume tier above five million.
+[01:26:46] Speaker 1: Thank you. The notes on what we want are already in the shared doc. Above five million a month, and ideally something for the September spike.
+[01:26:58] You: Got it. And that, um, that's before I send the Pingwell notice anyway, so the timing works.
+[01:27:06] Speaker 1: Yeah, it lines up.
+[01:27:08] You: Okay. Recap. Quick. Um, budget flat at two point four. Two backend engineers in Q3, analyst moves to Q4. We're going with Brightline on a one-year contract. Outlook two-way sync is the top priority, group booking second. Team plan goes to fifteen dollars for new customers September first. And the small OpsWorld kiosk. Um, and the incident stuff, which, I think, I think everybody knows what they're doing there.
+[01:27:39] Speaker 2: I definitely know what I'm doing there.
+[01:27:42] Speaker 3: And I've got my, um, my list for next Tuesday, and the email.
+[01:27:49] You: Right. I think that's, that's most of it. Anything I missed that's going to bite us?
+[01:27:56] Speaker 1: I don't think so. Or, I mean, probably, but I can't think of it right now.
+[01:28:04] Speaker 2: That's the honest answer.
+[01:28:06] You: That's always the honest answer. Okay. Um, thank you, everyone. This was, honestly, this was the most productive one of these we've had in a while.
+[01:28:18] Speaker 3: We got through pricing!
+[01:28:20] Speaker 1: We got through pricing. I'm still going to frame it.
+[01:28:25] Speaker 2: I'm going to go turn off a copy of production in a region nobody uses.
+[01:28:32] Speaker 1: Please do. Please do that first.
+[01:28:35] You: Okay. Enjoy the wedding, if I don't talk to you before.
+[01:28:41] Speaker 1: Thanks. I will. I'm going to be completely offline. It's going to be amazing.
+[01:28:47] Speaker 3: Give the dog my best.
+[01:28:50] Speaker 3: Wait, that's my dog. Never mind. I'll give the dog my best.
+[01:28:56] Speaker 2: The sprinkler dog.
+[01:28:58] Speaker 3: The sprinkler dog. He says hi.
+[01:29:01] You: Okay. Bye, everyone.
+[01:29:03] Speaker 2: Bye.
+[01:29:04] Speaker 1: Bye bye.
+[01:29:05] Speaker 3: Bye!

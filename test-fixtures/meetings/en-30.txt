@@ -1,0 +1,270 @@
+[00:00:03] You: Okay, I think we're, are we all here? I see both of you.
+[00:00:08] Speaker 1: Yep, I'm here.
+[00:00:10] Speaker 2: Here, sorry, one sec, my, uh, my headphones keep switching to the laptop speakers. Okay. Can you hear me now?
+[00:00:17] You: Yeah, loud and clear.
+[00:00:20] Speaker 2: Great. God, this weather. It rained the entire weekend, I didn't leave the flat once.
+[00:00:26] Speaker 1: Honestly same, I just, I rebuilt my keyboard. Like, new switches, the whole thing.
+[00:00:31] Speaker 2: Of course you did.
+[00:00:33] Speaker 1: It's very clicky now. You'll hear it on calls, sorry in advance.
+[00:00:38] Speaker 2: How long did that take you?
+[00:00:41] Speaker 1: Uh, the whole Saturday? I had to desolder the old switches, which, yeah, I burned my thumb twice.
+[00:00:48] You: That sounds like a terrible way to spend a Saturday.
+[00:00:53] Speaker 1: No, it was great, it was very calming. Like, no Slack, no TestFlight, just tiny metal pins.
+[00:00:59] Speaker 2: I watched an entire season of that, um, that baking show. So, equally productive.
+[00:01:05] You: I went to my sister's thing, the, it was my nephew's birthday, so eight kids and a bouncy castle in the rain. Don't recommend.
+[00:01:15] Speaker 2: Oh no. In the rain?
+[00:01:17] You: In the rain. Indoors, actually, they put it in the garage. It was loud.
+[00:01:23] You: Great, great. Okay. So, um, the point of today is the launch plan for Ritual. I want us to leave with the beta plan, the date, analytics, and the marketing stuff, like who's doing what. I blocked thirty minutes, so let's, let's try to actually stay in thirty.
+[00:01:41] Speaker 2: Famous last words.
+[00:01:43] You: I know. Okay, beta first, because that's the closest thing. Where are we with the build?
+[00:01:49] Speaker 1: So, um, the build is in decent shape. We've got the, uh, the internal TestFlight group running, that's basically the twelve of us plus a couple of friends. Crash-free sessions are at like ninety-nine point something, the only real crash is the widget on iOS sixteen, which I have a fix for.
+[00:02:08] You: Nice.
+[00:02:10] Speaker 1: The bigger question is external testing. External TestFlight needs a beta review from Apple, it's usually like a day, sometimes less. And then we can invite up to ten thousand people, which, obviously we're not going to do.
+[00:02:25] You: Right. How big is the waitlist now?
+[00:02:28] Speaker 2: Last time I checked, which was Friday, it was, uh, eleven hundred and something. Eleven forty, I think. Mostly from the landing page and that one Reddit thread.
+[00:02:39] You: Okay. So I don't want to blow the whole list on the beta. I'd rather keep, like, a chunk of them for launch day so they get the "you're in" moment.
+[00:02:50] Speaker 2: Agreed. Also, the beta people are the ones who leave the first reviews, so, um, we want them happy, not, you know, overwhelmed by a buggy widget.
+[00:03:01] Speaker 1: What number are you thinking?
+[00:03:03] You: I was thinking five hundred. Cap the beta at five hundred testers, and we invite them in two waves of two fifty, so if something explodes in wave one it's only half the people.
+[00:03:16] Speaker 1: Five hundred is fine for me. Two waves is smart, actually, because I want to see the, the sync load before everyone's in.
+[00:03:25] Speaker 2: And the rest of the waitlist, like six hundred something, they get the launch email.
+[00:03:31] You: Exactly. Okay, so that's decided. Beta is external TestFlight, capped at five hundred, two waves of two hundred and fifty.
+[00:03:39] Speaker 1: Yep.
+[00:03:41] Speaker 2: Do we do Android beta too? Because a lot of the Reddit people were, uh, asking for Android.
+[00:03:48] Speaker 1: I mean, the Android build exists, it's just, it's a lot rougher. Let's, can we park Android for a sec? It's a bigger conversation.
+[00:03:58] You: Yeah, park it, we'll come back to it. So wave one. Who sends the invites? I'm happy to do it, I have the list in Airtable already.
+[00:04:08] Speaker 2: Please, yes.
+[00:04:10] You: Okay, I'll send wave one, the first two hundred and fifty, on Monday morning, assuming the beta review is through.
+[00:04:18] Speaker 1: It should be. I'll submit the build for beta review tonight.
+[00:04:22] You: Cool. And wave two, let's say a week later, depending on the crash numbers.
+[00:04:28] Speaker 1: Sounds right.
+[00:04:30] You: Okay. Date. Let's talk about the launch date, because marketing needs it to plan anything.
+[00:04:36] Speaker 2: Yes please, I've been, like, I've been writing "launch day" in every doc with a big question mark.
+[00:04:43] You: So my proposal was Tuesday, November tenth. That gives the beta about a week and a bit, and Tuesday is a good day for, uh, for Product Hunt and for press.
+[00:04:55] Speaker 1: Hmm. Tenth. That's tight but, okay, what does that mean for App Store review?
+[00:05:01] You: We'd need to submit the release build by, like, the Thursday before? Thursday the fifth?
+[00:05:07] Speaker 1: I mean, review is usually twenty-four to forty-eight hours now. So, technically, yes.
+[00:05:12] Speaker 2: Can we just lock it? I really need a date, even a provisional one, to brief people.
+[00:05:19] You: Okay, let's lock it. Launch is Tuesday, November tenth.
+[00:05:23] Speaker 2: Amazing. Writing it down.
+[00:05:25] Speaker 1: Okay.
+[00:05:26] You: Analytics. So right now we have, what, nothing? Just the crash reporting?
+[00:05:31] Speaker 1: Just Crashlytics, yeah. And App Store Connect, which gives you downloads and that's about it.
+[00:05:38] You: Right. So for launch I want to actually know if people finish onboarding and if they come back on day two, day seven. Like, the basic retention stuff.
+[00:05:48] Speaker 2: And I need to know which channel people came from. Like, did the creator videos do anything or not.
+[00:05:56] You: Right. So, options. I know you looked at a few.
+[00:06:00] Speaker 1: Yeah, so I looked at three, basically. Mixpanel, Firebase Analytics, and PostHog. Firebase is free, but the, um, the funnels are honestly painful and I don't love sending everything to Google for a habit app.
+[00:06:13] Speaker 2: Yeah, the privacy angle matters for us, we literally put "your habits stay yours" on the landing page.
+[00:06:21] Speaker 1: Right. Mixpanel is really nice, the funnels and the retention charts are great. But the pricing jumps fast once we go past the free tier, and I did the math, if launch goes well we're paying, uh, something like eight hundred a month by January.
+[00:06:38] You: Ouch.
+[00:06:39] Speaker 1: PostHog has an EU cloud, the free tier is a million events a month, and we get session replay and feature flags in the same tool. It's a bit uglier, but it does the job.
+[00:06:53] You: Do we need session replay? That sounds like, I don't know, that sounds like a privacy problem waiting to happen.
+[00:07:01] Speaker 1: We don't need it, I'd keep replay off. I just mean we can use the flags.
+[00:07:07] Speaker 2: I'm fine with whatever as long as I get the attribution stuff.
+[00:07:12] Speaker 1: PostHog does UTM capture out of the box, and for the App Store side we'd use the campaign links from App Store Connect.
+[00:07:21] You: Okay. Then let's go PostHog, EU cloud, with session replay turned off.
+[00:07:26] Speaker 1: Cool.
+[00:07:28] Speaker 2: Mixpanel's out then?
+[00:07:29] You: Yeah, Mixpanel's out, mostly the pricing. If we outgrow PostHog we can talk again, but not now.
+[00:07:36] Speaker 2: Fine by me.
+[00:07:38] You: So can you own the integration? Like, the SDK and the actual events.
+[00:07:43] Speaker 1: Yeah, I'll do it. I'll add the PostHog SDK and I'll, um, I'll write up the event list first, like, onboarding completed, habit created, check-in, streak broken, paywall viewed, subscription started. And I'll send it to you two before I wire it up so we agree on names.
+[00:08:01] You: When can that be in the build?
+[00:08:05] Speaker 1: I want it in before wave one, so, uh, I'll have it in by Sunday night. Otherwise we lose the first week of beta data.
+[00:08:14] You: Perfect.
+[00:08:16] Speaker 2: Can you add one for, like, notification permission granted? Because I swear that's where we lose people.
+[00:08:23] Speaker 1: Yeah, good one, adding it.
+[00:08:25] You: And, um, so, this is the thing I'm slightly worried about. If we add analytics, the App Store privacy label changes, right? The nutrition label thing.
+[00:08:35] Speaker 1: Yes. We'd have to declare usage data and probably, uh, identifiers. And the privacy policy has to say we use PostHog.
+[00:08:44] You: Okay. I'll take that one. I'll ask Tom in legal to update the privacy policy and check the App Privacy answers before we submit.
+[00:08:53] Speaker 1: Thank you, I really don't want to be the one filling in that form.
+[00:08:59] You: Yeah, I'll get it to him this week. He's usually quick if you give him a, a clear list.
+[00:09:06] Speaker 2: Do you want the event list for that?
+[00:09:10] You: Yeah, actually, I'll attach the event list once it's done. That's exactly what he'll ask for.
+[00:09:16] Speaker 1: Okay. Can I, um, before marketing, can I quickly talk about feedback from the beta? Because I don't want five hundred people emailing me directly.
+[00:09:26] You: Yes, please, good call.
+[00:09:28] Speaker 1: So TestFlight has the built-in feedback thing, you take a screenshot and it sends it to App Store Connect. It's okay. It's fine for bugs. It's terrible for, like, "I don't get what a streak freeze is".
+[00:09:42] Speaker 2: We have the Discord though. Like, there's two hundred people in there already, mostly from Reddit.
+[00:09:48] Speaker 1: Right, but Discord is chaos. Half of it is people posting their own habit setups, which is cute, but it's not, it's not something I can triage.
+[00:09:59] You: I mean, the setups are actually useful for us. That's how we found out people use it for, like, medication.
+[00:10:07] Speaker 2: Yeah, that was a whole thing. That one woman with the, the three-times-a-day reminder.
+[00:10:13] Speaker 1: Sure, it's useful for product. I just mean bugs. Bugs should go to TestFlight feedback, and the, um, the fuzzy stuff can go to Discord.
+[00:10:22] You: That seems fine. I'll mention it in the invite email, like, "found a bug, shake the phone, ideas, Discord".
+[00:10:30] Speaker 1: Shake doesn't do anything in TestFlight, it's a screenshot. But, yeah, roughly.
+[00:10:35] You: Screenshot. Okay. Fine.
+[00:10:36] Speaker 2: And can we talk about onboarding for a sec? From the internal group, what are people doing?
+[00:10:43] Speaker 1: So, uh, anecdotally, because we don't have analytics yet, which is the whole point, people get stuck on the notification screen. We ask for permission on screen two, before they've even made a habit.
+[00:10:56] Speaker 2: That's too early. Everyone says that's too early.
+[00:11:00] Speaker 1: I know, I know. It was a placeholder. The plan is to ask right after they create their first habit, like, "want a reminder for this?" and then the system prompt.
+[00:11:12] You: That makes more sense. People understand why.
+[00:11:15] Speaker 1: Right. And then the second thing is the, um, the template picker. People don't scroll past the first row. So "drink water", "read", and "walk" are like eighty percent of the habits people create.
+[00:11:28] Speaker 2: Ha. That's kind of hilarious. Everyone's just drinking water.
+[00:11:32] You: Honestly that's fine for day one. As long as they come back on day two.
+[00:11:38] Speaker 1: Which, again, we'll know with PostHog.
+[00:11:41] You: Right. Okay. Is the notification thing in the beta build or after?
+[00:11:46] Speaker 1: It's in. I moved it last week, it's just not in TestFlight yet, it'll be in the build I submit tonight.
+[00:11:54] You: Great.
+[00:11:56] Speaker 2: Sorry, is that your keyboard? It sounds like rain.
+[00:12:00] Speaker 1: Yes. Sorry. I'm taking notes. I warned you.
+[00:12:03] Speaker 2: It's very, uh, very satisfying, actually.
+[00:12:06] Speaker 1: Thank you. They're the, the tactile ones, not the clicky ones, believe it or not.
+[00:12:12] You: Those are not clicky? Okay, wow. Anyway. One more beta thing. Do we give beta testers anything? Like, a reward?
+[00:12:20] Speaker 2: I was thinking a free year of premium. It's cheap for us, and it makes people feel like insiders.
+[00:12:27] Speaker 1: That's, um, technically that's an offer code. We can generate offer codes once subscriptions are live, so they'd get it at launch, not during beta. During beta everything is free anyway, it's TestFlight sandbox.
+[00:12:40] You: I like the idea, but I don't want to promise it before we know the numbers. Like, if a thousand people end up eligible somehow, that's real money down the line.
+[00:12:52] Speaker 2: It's five hundred max.
+[00:12:54] You: Still. Let me think about it, I'm not saying no, I just don't want it in the invite email yet.
+[00:13:02] Speaker 2: Okay, fair. I'll keep it out of the copy.
+[00:13:06] You: Okay, cool. Anything else on beta before marketing?
+[00:13:10] Speaker 1: Just, uh, one thing for the record, if the crash rate in wave one goes above, like, one percent, I'd want to pause wave two. Not a big deal, just, that's my line.
+[00:13:22] You: Yeah, that's reasonable. One percent.
+[00:13:25] Speaker 2: Good to know.
+[00:13:26] You: Okay, marketing. Over to you.
+[00:13:29] Speaker 2: Okay, so, um, I have like four things. Press kit, creators, the App Store listing, and paid ads. Let me go in that order.
+[00:13:38] You: Go.
+[00:13:40] Speaker 2: Press kit. So Northlight, the PR agency, they said they need the kit at least a week before launch if we want any embargoed coverage. That means screenshots, the founder story, a short demo video, logo files, and like a one-page fact sheet.
+[00:13:56] Speaker 1: Do they need a build? Like, a promo code for journalists?
+[00:14:01] Speaker 2: Yes, good point, they'll want promo codes. Can you generate, like, twenty?
+[00:14:06] Speaker 1: Sure, that's two minutes in App Store Connect. Just remind me.
+[00:14:10] Speaker 2: Okay. So I'll put the press kit together and send it to Northlight.
+[00:14:16] You: By when?
+[00:14:18] Speaker 2: If we launch on the tenth, then, uh, by the third? Which is, oof, which is very soon.
+[00:14:25] You: Yeah. Let's keep going and see.
+[00:14:28] Speaker 2: Okay. Creators. So, I've been talking to five creators, mostly productivity YouTube and a couple of TikTok people. The one I'm most excited about is Priya, she does the, um, the "systems not goals" channel, like three hundred thousand subscribers.
+[00:14:43] Speaker 1: Oh, I watch her. She's good.
+[00:14:46] Speaker 2: Right? And she actually uses a habit tracker on camera, so it's not a weird fit. Her rate is two thousand for a dedicated video, the others are smaller, like five hundred to eight hundred each.
+[00:14:59] You: So total, what, four-ish?
+[00:15:01] Speaker 2: Around four thousand dollars for all five, yeah. And that's sort of where the paid ads question comes in.
+[00:15:09] You: Okay, go.
+[00:15:11] Speaker 2: So the original plan had like three thousand on Meta ads launch week. And I'll be honest, I don't think it's worth it. For a new app with zero reviews, the cost per install is going to be awful, like four, five dollars. And Apple Search Ads, same thing, we don't have any rating yet.
+[00:15:31] Speaker 1: Yeah, I'd rather we get some ratings first.
+[00:15:35] Speaker 2: So my proposal is no paid ads in launch week at all. We put the money into creators, the four thousand, and we revisit paid ads in December when we have, hopefully, a four point something rating.
+[00:15:49] You: I like that. I was gonna push for some search ads, but, no, you're right, without ratings it's just burning money.
+[00:15:57] Speaker 1: Plus the creators' videos keep working, ads stop the second you stop paying.
+[00:16:02] You: Okay. Decided. No paid ads in launch week, the budget goes to the creators, about four thousand dollars, and we look at paid again in December.
+[00:16:12] Speaker 2: Yes. Okay. So can I go ahead and confirm the five creators? I'll brief them and get the contracts signed.
+[00:16:20] You: Yes. When do they need to film?
+[00:16:24] Speaker 2: They need the build like ten days before they post. So, um, I'll get them briefed and send them TestFlight access by, uh, by next Friday. Contracts too.
+[00:16:34] You: Okay. Make sure they're in wave one then, or, actually, put them in their own group so their feedback doesn't get mixed in.
+[00:16:43] Speaker 1: I can make a separate TestFlight group, it's easy.
+[00:16:47] Speaker 2: Perfect. Okay, third thing, the App Store listing. The screenshots, the subtitle, the description, the keywords. I can do that one too, I've got the brand voice stuff already.
+[00:16:58] You: Are you sure? That's a lot on top of the press kit.
+[00:17:03] Speaker 2: It's fine, I'll do it, I'll do the listing copy and the screenshot captions.
+[00:17:09] You: Okay.
+[00:17:11] Speaker 1: Just keep in mind the subtitle is thirty characters. And the keywords field is a hundred characters, comma separated, no spaces.
+[00:17:19] Speaker 2: Yeah, I know, I know. I did it for the last app.
+[00:17:24] Speaker 1: Sorry, I just, last time we got rejected for, um, for putting "free" in the subtitle when there was a paywall. So. Scar tissue.
+[00:17:33] Speaker 2: Fair enough.
+[00:17:35] You: Wait, we got rejected for that? On the old app?
+[00:17:39] Speaker 1: Yeah, the first submission. And then the second time it was the subscription terms, like, we didn't show the price and the renewal period clearly enough on the paywall. Took us, all in, like, nine days to get approved.
+[00:17:54] You: Nine days.
+[00:17:56] Speaker 1: Nine days. That's, uh, that's actually the thing I wanted to bring up about the date.
+[00:18:02] You: Okay, hold on, let me, let me just finish marketing and then we come back to the date, because I think that's going to be a whole thing.
+[00:18:13] Speaker 1: Sure, sure.
+[00:18:15] You: Anything else on marketing?
+[00:18:17] Speaker 2: Product Hunt. I want to do a Product Hunt launch the same day. I've got a hunter lined up, she's done a few, uh, a few top five launches.
+[00:18:28] You: Nice. Is that a lot of work?
+[00:18:31] Speaker 2: It's mostly assets and being online all day replying to comments. It's the same assets as the press kit, more or less.
+[00:18:40] You: Okay, fine. And the launch email to the rest of the waitlist?
+[00:18:45] Speaker 2: Yeah, I'll write that. That's small, it's, like, part of the launch day stuff.
+[00:18:51] You: Okay. Hmm. So that's press kit, creators, listing, Product Hunt, launch email. That's, that's a lot for one person.
+[00:18:58] Speaker 2: It is a lot. I'm aware.
+[00:19:01] You: Let's see how it looks after we fix the date. Okay. Sorry, back to you. The date.
+[00:19:08] Speaker 1: Right. So, okay. I'm kind of worried about the tenth. Not because of the code, the code is fine, but because of review. If we submit Thursday the fifth and get rejected once, which we did twice last time, we're dead. There's no buffer at all.
+[00:19:25] You: Hmm.
+[00:19:27] Speaker 1: And also, we're adding subscriptions for the first time on this app. Subscriptions always get extra scrutiny, like they check the paywall, the restore purchases button, the terms links, everything.
+[00:19:38] Speaker 2: But can't we, like, ask for expedited review if it goes wrong?
+[00:19:43] Speaker 1: You can, but they only grant it for, like, critical bug fixes or time-sensitive events. A marketing launch, honestly, it's a coin flip.
+[00:19:52] You: Okay. What would you want?
+[00:19:55] Speaker 1: I'd want a week of buffer. Submit on Friday the sixth, launch on Tuesday the seventeenth. That gives us room for one, even two rejections, and we can hit "release" manually when we're ready.
+[00:20:08] Speaker 2: The seventeenth. Hmm. That's, wait, that's actually better for me too. The press kit by the third was going to be brutal, and the creators would have like, nine days with the build.
+[00:20:20] You: And the beta gets an extra week, which, honestly, the widget thing makes me want that anyway.
+[00:20:27] Speaker 1: Exactly.
+[00:20:29] You: Any reason not to do the seventeenth? Like, anything happening that week?
+[00:20:34] Speaker 2: Let me think. There's no big Apple event or anything. Black Friday is the week after, which is actually fine, we're not competing with the sales emails yet.
+[00:20:45] You: Okay. So, okay, let's change it. Launch moves to Tuesday, November seventeenth, not the tenth. We submit the release build on Friday the sixth and use manual release.
+[00:20:56] Speaker 2: Changing it everywhere. Seventeenth.
+[00:20:58] Speaker 1: Thank you. Okay, so then I'll do the release candidate and submit it for App Store review by Friday the sixth, with manual release turned on.
+[00:21:08] You: And please, like, triple-check the paywall stuff. Price, renewal period, restore button, the terms and privacy links.
+[00:21:14] Speaker 1: Yeah, I'm going to go through the guidelines checklist line by line. I'll screenshot the paywall for you before I submit.
+[00:21:23] You: Great.
+[00:21:24] Speaker 2: So the press kit can go to Northlight on, uh, on the ninth instead? Like, a week before launch, more or less.
+[00:21:33] You: Yeah, the ninth works.
+[00:21:35] Speaker 2: Okay, press kit to Northlight by Monday the ninth.
+[00:21:39] You: Okay. Now Android, since we parked it.
+[00:21:42] Speaker 1: Right. So, um, the honest status is the Android build works, but it's maybe two weeks behind iOS. The widget isn't done, notifications are flaky on some Samsung phones because of the battery optimization stuff, and the billing library integration is half done.
+[00:21:58] Speaker 2: But the Reddit people, like, a third of the waitlist said they're on Android. I put a question in the signup form.
+[00:22:07] You: A third? Huh. I thought it'd be less.
+[00:22:11] Speaker 2: Thirty-two percent. I checked.
+[00:22:13] You: Okay. So the options are, launch Android the same day, on the seventeenth, or launch iOS first and Android a few weeks later.
+[00:22:22] Speaker 1: Same day is possible if I drop everything else, but then I'm not, I'm not the person triple-checking the iOS paywall. Something gives.
+[00:22:31] Speaker 2: What if we launch Android in, like, open beta on the same day? Then it's not "launched" but people can get it.
+[00:22:39] Speaker 1: Hmm, maybe. Play has open testing, it shows up in the store with a beta label. That's, um, that's not crazy.
+[00:22:48] You: I don't know. A beta label on launch day feels kind of, I don't know, half-done. But making a third of the list wait also sucks.
+[00:22:58] Speaker 2: We could ask the waitlist. Like, a quick poll.
+[00:23:02] You: Maybe. Honestly, I don't want to decide this today without seeing how the Samsung notification thing goes. Let's, let's leave Android open and come back to it next week.
+[00:23:13] Speaker 1: Works for me. I'll know more about the notification bug by then.
+[00:23:18] Speaker 2: Okay, but can I at least say "Android coming soon" in the press kit?
+[00:23:23] You: Yeah, "coming soon" is safe. Just no date.
+[00:23:27] Speaker 2: Got it.
+[00:23:29] You: Okay, pricing. This one I think is quick, we've talked about it a lot already.
+[00:23:35] Speaker 1: The paywall needs final numbers, like, this week, by the way. The products have to be set up in App Store Connect before I submit.
+[00:23:44] You: Right. So the proposal on the table was three ninety-nine a month, twenty-nine ninety-nine a year, and a seven-day free trial on the annual plan.
+[00:23:54] Speaker 2: I still kind of want a lifetime option. Like, a hundred bucks once. People love lifetime deals in the productivity crowd.
+[00:24:02] Speaker 1: Lifetime is a pain though. It's a non-consumable, separate restore logic, and it, uh, it kind of caps your revenue from your best users forever.
+[00:24:12] You: Yeah, I'd rather not do lifetime at launch. We can always add it later as a, like, a Black Friday thing, but we can never take it away.
+[00:24:23] Speaker 2: Okay, fair, that's fair.
+[00:24:25] You: So, final. Three ninety-nine monthly, twenty-nine ninety-nine yearly, seven-day free trial on yearly, no lifetime plan for now.
+[00:24:32] Speaker 1: Great, I'll set those up in App Store Connect. That's part of the release candidate work anyway.
+[00:24:39] Speaker 2: Do we do a launch discount for the waitlist? Like, fifty percent off the first year?
+[00:24:45] You: Hmm. If launch day downloads are really bad, we'd maybe throw in a discount code for the waitlist later, but I don't want to start with a discount. Let's see.
+[00:24:57] Speaker 1: Also, introductory offers on the App Store are a whole other setup, so I'm happy not to do it now.
+[00:25:05] Speaker 2: Okay. Noted. No discount, for now.
+[00:25:08] You: Okay, so, um, let me get back to the workload thing, because I'm looking at the list and it's, it's a lot of stuff on your side.
+[00:25:18] Speaker 2: It is. Press kit by the ninth, creators by next Friday, Product Hunt, launch email, and the App Store listing.
+[00:25:26] You: And the listing has to be done before Friday the sixth, right? Because it goes in with the submission.
+[00:25:34] Speaker 1: Yeah, screenshots and description have to be in App Store Connect when I submit. Well, technically you can edit the description later, but the screenshots, uh, changing them needs a new submission. Kind of. It's complicated.
+[00:25:47] Speaker 2: Okay, so that's, that's the collision. The listing and the creator briefs are both this week.
+[00:25:54] You: Let me take the listing then. I'll do the App Store description, the subtitle, the keywords, and the screenshot captions. You've got enough.
+[00:26:03] Speaker 2: Are you sure? I mean, I'd love that, honestly.
+[00:26:07] You: Yeah, I wrote most of the landing page copy anyway, so it's the same words. I'll have a draft by Wednesday the fourth and you can do a pass for brand voice.
+[00:26:19] Speaker 2: Deal. Thank you. I'll send you the brand voice doc and the screenshot templates from Figma, the ones the designer did.
+[00:26:27] You: Is that Dana's file?
+[00:26:29] Speaker 2: Yeah, Dana's file. The latest version has the dark mode ones too.
+[00:26:34] Speaker 1: Can I ask, for the screenshots, please use the six point nine inch size as the main one. Apple scales down from that now.
+[00:26:44] You: Okay, six point nine. Noted.
+[00:26:46] Speaker 1: And no "free" in the subtitle.
+[00:26:49] You: No "free" in the subtitle. Got it. Scar tissue.
+[00:26:53] Speaker 1: Scar tissue.
+[00:26:54] Speaker 2: Oh, one random thing, totally unrelated. Did anyone see the new Streaks update? They added, like, a whole AI coach thing.
+[00:27:03] Speaker 1: I saw it. It's, um, it's a chatbot that tells you to drink water.
+[00:27:08] Speaker 2: That's what I thought! People in the reviews are kind of mad about it.
+[00:27:14] You: Okay, that's, honestly, that's good for us, we're the simple one. But let's not go down that path now, we have like five minutes.
+[00:27:23] Speaker 2: Right, sorry. But, like, that's maybe a line for the press kit? "No chatbot, just your habits."
+[00:27:30] Speaker 1: Ha. I'd download that.
+[00:27:32] You: Write it down, maybe, but let's not dunk on them by name. Okay.
+[00:27:38] You: No, it's good to know. Okay. Can I do a quick recap so we're all on the same page?
+[00:27:45] Speaker 1: Go for it.
+[00:27:47] You: Okay. Beta. External TestFlight, capped at five hundred, two waves of two hundred and fifty. I send wave one on Monday.
+[00:27:55] Speaker 2: Yep.
+[00:27:57] You: Launch is Tuesday the seventeenth, not the tenth. Release build goes to review by Friday the sixth with manual release, that's you.
+[00:28:06] Speaker 1: That's me.
+[00:28:07] You: Analytics is PostHog, EU cloud, no session replay. You send the event list and have the SDK in by Sunday night, and I get Tom in legal to update the privacy policy and the App Privacy answers.
+[00:28:21] Speaker 1: Yes.
+[00:28:23] You: Marketing. No paid ads in launch week, the four thousand goes to creators, and we look at ads again in December. You brief the five creators and get contracts signed by next Friday, and the press kit goes to Northlight by Monday the ninth.
+[00:28:40] Speaker 2: Yes, and the creators get their own TestFlight group.
+[00:28:44] Speaker 1: Which I'll make. Tiny thing.
+[00:28:46] You: Right. And I do the App Store listing copy and captions, draft by Wednesday the fourth. Pricing is three ninety-nine, twenty-nine ninety-nine, seven-day trial, no lifetime. And Android is still open, we decide next week.
+[00:28:59] Speaker 2: Perfect. That's, okay, that's actually a really clear list.
+[00:29:03] Speaker 1: One thing, sorry. The promo codes for Northlight, remind me like two days before, because they expire after twenty-eight days or something.
+[00:29:12] Speaker 2: I'll ping you.
+[00:29:14] You: Okay. Anything else? Any, like, blockers I should know about?
+[00:29:18] Speaker 1: Not really. Just, the widget fix needs to go in before wave one, and I'm pretty confident about that.
+[00:29:25] Speaker 2: Nothing from me. Oh, actually, can we move this meeting to a recurring thing? Like, same time every Monday until launch?
+[00:29:34] You: Yeah, good idea, I'll make it recurring. Thirty minutes.
+[00:29:38] Speaker 2: Thirty minutes, he says.
+[00:29:40] You: We did it in thirty today! Basically.
+[00:29:43] Speaker 1: Basically.
+[00:29:45] You: Okay, thanks both. Talk Monday.
+[00:29:47] Speaker 2: Bye!
+[00:29:49] Speaker 1: Bye.

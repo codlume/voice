@@ -1,0 +1,283 @@
+[00:00:03] You: Dobra, słychać mnie? Bo coś mi się mikrofon zawiesił przed chwilą.
+[00:00:08] Speaker 1: Słychać, słychać.
+[00:00:09] Speaker 2: Tak, jest okej. Tylko obraz ci trochę zamarza.
+[00:00:13] You: No to trudno, obraz nie jest potrzebny. Yyy, jak tam u was? Przeżyliście ten weekend?
+[00:00:20] Speaker 2: Ledwo. Mam katar od czwartku, więc jakby co, to przepraszam, że tak brzmię.
+[00:00:26] Speaker 1: A ja w sumie spoko, tylko kot mi zrzucił monitor w sobotę. Na szczęście działa, ale ma taką rysę teraz na środku.
+[00:00:36] You: Ojej. Duży ten kot?
+[00:00:38] Speaker 1: Sześć kilo. To nie jest kot, to jest, wiesz, mały tygrys.
+[00:00:43] Speaker 2: Ha, mój by się zmieścił w kubku.
+[00:00:47] Speaker 2: A co pijecie? Bo ja dzisiaj z tej nowej paczki z Gwatemali, którą przysłali na próbę.
+[00:00:54] Speaker 1: Ja tę kenijską, z zeszłego tygodnia. Trochę za kwaśna jak dla mnie, szczerze mówiąc, ale z mlekiem idzie.
+[00:01:02] You: Ja w ogóle jeszcze nic, bo młynek mi się zatkał rano. Dlatego jestem taki, wiesz, nieprzytomny.
+[00:01:09] Speaker 2: Szewc bez butów chodzi.
+[00:01:11] You: No dokładnie. Sklep z kawą, a ja bez kawy.
+[00:01:16] You: Dobra, to, yyy, zaczynamy, bo mam o jedenastej kuriera. Dwa tematy dzisiaj. Pierwszy to przejście na nowego operatora płatności, drugi to promocja na koniec listopada. I chciałbym, żebyśmy wyszli z tego z konkretami, kto co robi i do kiedy.
+[00:01:32] Speaker 1: Jasne.
+[00:01:34] Speaker 2: Okej.
+[00:01:36] You: No to płatności. Ty to sprawdzałeś, tak? Te oferty?
+[00:01:40] Speaker 1: Tak, no, porównałem trzy rzeczy. To, co mamy teraz, czyli PayU, potem Przelewy24 i Tpay. Znaczy, Stripe też patrzyłem, ale u nas większość ludzi płaci BLIK-iem, więc Stripe odpadł dość szybko.
+[00:01:54] You: Ile my teraz płacimy na PayU?
+[00:01:57] Speaker 1: Teraz mamy jeden przecinek dziewięć procent od transakcji. Przy naszym obrocie, to jest jakieś czterdzieści tysięcy miesięcznie, wychodzi, yyy, około siedemset sześćdziesiąt złotych prowizji miesięcznie.
+[00:02:08] Speaker 2: Kurczę, sporo.
+[00:02:09] Speaker 1: No. Przelewy24 dali nam ofertę na jeden przecinek cztery procent. Tpay nawet jeden przecinek trzy.
+[00:02:16] You: To czemu nie Tpay, skoro taniej?
+[00:02:19] Speaker 1: Bo, znaczy, różnica to jest jakieś czterdzieści złotych miesięcznie, a wtyczka Tpay do WooCommerce ma, wiesz, takie sobie opinie. Ludzie piszą, że po aktualizacjach się sypie statusy zamówień. A Przelewy24 ma oficjalną wtyczkę, którą sami utrzymują, i ma porządne zwroty z panelu.
+[00:02:37] You: Zwroty z panelu, to znaczy, że nie trzeba ręcznie robić przelewu klientowi?
+[00:02:43] Speaker 1: Dokładnie. Klikasz w zamówieniu zwrot i pieniądze same wracają. Teraz na PayU też tak jest, więc nie chciałbym tego stracić.
+[00:02:51] Speaker 2: Mi to jest w sumie najważniejsze, bo to ja robię zwroty. Jak mam robić przelewy ręcznie, to ja się zabiję w grudniu.
+[00:03:01] You: Dobra. A BLIK jest w Przelewach24 normalnie?
+[00:03:05] Speaker 1: Jest. BLIK, karty, Google Pay, Apple Pay, zwykłe przelewy, raty też są, chociaż raty nam raczej nie potrzebne, przy kawie.
+[00:03:14] You: No, nikt nie bierze kawy na raty. Chyba że ekspres.
+[00:03:18] Speaker 1: No, ekspres może.
+[00:03:20] You: Dobra, to ja nie widzę powodu, żeby kombinować. Idziemy w Przelewy24.
+[00:03:25] Speaker 2: Okej.
+[00:03:27] Speaker 1: Super. To, yyy, to teraz pytanie, kiedy przełączamy.
+[00:03:31] You: Ja bym chciał jak najszybciej. Wiesz, każdy miesiąc to jest te kilkaset złotych.
+[00:03:37] Speaker 1: No to technicznie wtyczkę mogę postawić w jeden dzień. Najdłużej trwa założenie konta i weryfikacja.
+[00:03:44] You: To może poniedziałek, dziewiątego? Tak, żeby był zapas przed promocją.
+[00:03:48] Speaker 1: Dziewiąty, no, da się, jeśli dokumenty pójdą szybko.
+[00:03:52] You: Dobra, to przełączamy w poniedziałek dziewiątego listopada.
+[00:03:56] Speaker 2: Zapisuję.
+[00:03:58] You: Dokumenty to pewnie ja muszę wysłać, nie? Bo to wszystko na mnie jest, firma.
+[00:04:04] Speaker 1: No tak, to musi być właściciel. Potrzebują wpis z CEIDG, skan dowodu, potwierdzenie numeru konta, najlepiej wyciąg z banku z nagłówkiem, no i ten formularz z informacją o tym, co sprzedajemy.
+[00:04:17] You: Dobra, to ja to zrobię. Wyślę wszystkie dokumenty do Przelewów24 do poniedziałku.
+[00:04:23] Speaker 1: Tylko na wyciągu muszą być widoczne dane firmy i numer konta, bo ostatnio przy PayU odbili nam za pierwszym razem.
+[00:04:32] You: Pamiętam, pamiętam. Wtedy wysłałem zrzut ekranu z aplikacji i się nie podobało.
+[00:04:37] Speaker 2: Ha, no.
+[00:04:39] You: To teraz ściągnę normalny PDF z banku.
+[00:04:43] Speaker 1: Dokładnie. A ja w międzyczasie postawię wtyczkę na stagingu, na tej kopii sklepu, i zrobię płatności testowe. Wszystkie metody, BLIK, karta, przelew, i zwrot też przetestuję.
+[00:04:54] You: Do kiedy dasz radę?
+[00:04:56] Speaker 1: Yyy, myślę, że do czwartku, dwunastego. Bo oni dają dane do sandboksa od razu po założeniu konta, nawet przed weryfikacją.
+[00:05:05] You: Super, czwartek dwunasty.
+[00:05:07] Speaker 2: A mogę też coś przetestować? Bo ja widzę, jak klienci się gubią. Na przykład na telefonie, czy przycisk BLIK jest widoczny od razu, czy trzeba gdzieś przewijać.
+[00:05:19] Speaker 1: Jasne, dam ci link do stagingu, przeklikaj sobie na telefonie.
+[00:05:23] Speaker 2: Okej.
+[00:05:25] You: Jeszcze jedna rzecz, faktury i księgowość. Bo z PayU przychodzi co miesiąc taka zbiorcza faktura za prowizję i raport wypłat, i Kasia z biura rachunkowego to jakoś paruje z zamówieniami.
+[00:05:38] Speaker 1: Przelewy24 też ma raporty, tylko pewnie w innym formacie. Mogę do niej zadzwonić i ustalić, czego potrzebuje, żeby jej się nic nie rozjechało.
+[00:05:48] You: Dobra, to dzwoń. Tylko zanim przełączymy, bo inaczej w grudniu będzie płacz.
+[00:05:54] Speaker 1: Jasne, ja to ogarnę.
+[00:05:56] Speaker 2: A PayU od razu wyłączamy? Czy jakiś czas obie bramki?
+[00:06:01] Speaker 1: Znaczy, ja bym zostawił PayU włączone, ale schowane, przez jakieś dwa tygodnie, bo jeszcze mogą przyjść zwroty do starych zamówień. Zwrot musi pójść tą samą bramką, którą klient zapłacił.
+[00:06:13] You: Aha, no tak. Dobra, to PayU zostaje w tle na zwroty, ale klient widzi tylko Przelewy24.
+[00:06:20] Speaker 1: Tak.
+[00:06:22] You: A samo przełączenie, to jak to wygląda? Bo nie chcę, żeby sklep leżał w środku dnia.
+[00:06:29] Speaker 1: Nie, nie, sklep w ogóle nie leży. Ja po prostu w panelu włączam nową bramkę i chowam starą. To jest, wiesz, dwa kliknięcia. Tylko zrobię to wieczorem, tak koło dziesiątej, jak jest najmniejszy ruch.
+[00:06:44] Speaker 2: A jak ktoś akurat będzie w trakcie płacenia?
+[00:06:48] Speaker 1: To dokończy starą bramką, bo zamówienie już ma przypisaną metodę. Nic się nie zgubi.
+[00:06:54] You: I zaraz po przełączeniu robisz jedną prawdziwą płatność?
+[00:06:58] Speaker 1: Tak, zamówię coś za złotówkę, taki produkt testowy ukryty, zapłacę BLIK-iem i od razu zrobię zwrot. Jak to przejdzie, to znaczy, że wszystko działa na produkcji.
+[00:07:10] You: Dobra. A jakby coś się wysypało?
+[00:07:13] Speaker 1: To w pięć minut włączam z powrotem PayU. Dlatego nie chcę go od razu kasować.
+[00:07:19] You: Okej, to mi się podoba. Mamy drogę powrotu.
+[00:07:23] Speaker 2: Znaczy, ja tylko powiem, że jak coś nie będzie działać, to ja się dowiem pierwsza, bo klienci od razu piszą na Messengerze. Więc dajcie mi znać, kiedy dokładnie przełączacie, żebym patrzyła na wiadomości.
+[00:07:38] Speaker 1: Jasne, napiszę na grupie godzinę przed.
+[00:07:41] Speaker 2: Dzięki.
+[00:07:42] You: Yyy, i jeszcze, wiesz, czy to wpływa jakoś na Allegro? Bo tam też sprzedajemy trochę.
+[00:07:49] Speaker 1: Nie, Allegro ma swoje płatności, to jest zupełnie osobno. Tego w ogóle nie ruszamy.
+[00:07:56] You: No dobra, to dobrze. Jedna rzecz mniej.
+[00:07:59] Speaker 2: Ile w ogóle idzie przez Allegro teraz?
+[00:08:03] You: Mało. Może dziesięć procent. Coraz mniej, odkąd podnieśli prowizje.
+[00:08:07] Speaker 2: No to w sumie nawet lepiej, że ludzie przychodzą do nas bezpośrednio.
+[00:08:12] You: No, lepiej. Dobra, wracajmy.
+[00:08:15] Speaker 2: A skoro już jesteśmy przy płatnościach, to mogę powiedzieć, co mi ludzie piszą o checkoucie? Bo to się trochę łączy.
+[00:08:24] You: Jasne, mów.
+[00:08:25] Speaker 2: No więc, yyy, najczęstsza rzecz to jest to, że na telefonie po wybraniu BLIK-a przekierowuje ich na stronę PayU, potem muszą wpisać kod, potem wracają, i czasem ta strona powrotu się nie ładuje. I wtedy piszą do mnie, czy zamówienie przeszło, czy nie.
+[00:08:44] Speaker 1: To jest akurat znany problem z tym przekierowaniem. W Przelewach24 jest BLIK bezpośrednio na naszej stronie, wpisujesz sześć cyfr w okienku u nas i nie ma żadnego skakania.
+[00:08:56] Speaker 2: Serio? To by było super. Bo ja mam takich wiadomości z pięć, sześć tygodniowo.
+[00:09:02] You: Ile mamy porzuconych koszyków na etapie płatności? Wiesz może?
+[00:09:06] Speaker 1: Z tego, co widzę w statystykach, jakieś osiemnaście procent ludzi, którzy dochodzą do płatności, nie kończy. To nie jest tragedia, ale, no, nie jest też dobrze.
+[00:09:18] You: Osiemnaście procent. Kurczę. Przy czterdziestu tysiącach obrotu to są spore pieniądze.
+[00:09:23] Speaker 1: No, nie wszystko to przez płatność, część ludzi po prostu patrzy na koszt dostawy i rezygnuje. Ale część na pewno.
+[00:09:32] Speaker 2: To się łączy z tą dostawą, o której chciałam mówić przy promocji, ale to później.
+[00:09:39] You: Dobra, to później. Znaczy, tym bardziej warto przejść. Nawet nie dla prowizji, tylko dla tego BLIK-a.
+[00:09:46] Speaker 1: No właśnie. Ja bym powiedział, że to jest ważniejsze niż te kilkaset złotych.
+[00:09:52] Speaker 2: Wiesz, że ostatnio pani napisała do nas, że zapłaciła dwa razy, bo myślała, że pierwsza płatność nie przeszła?
+[00:10:00] You: I co, oddaliśmy?
+[00:10:02] Speaker 2: Oddaliśmy, jasne, zwrotem z panelu. Ale była zła, napisała opinię na trzy gwiazdki.
+[00:10:08] You: Ech. No dobra.
+[00:10:10] You: Dobra. To teraz promocja. Ty masz jakiś plan, tak? Bo pisałaś coś na Messengerze.
+[00:10:16] Speaker 2: Tak, no, znaczy, mam taki szkic. Yyy, w zeszłym roku zrobiliśmy tylko Black Friday, jeden dzień, i szczerze mówiąc, połowa ludzi to przegapiła, bo ten newsletter poszedł w piątek o dziesiątej, a wtedy każdy sklep wysyła maile i nasz po prostu utonął.
+[00:10:34] You: No, pamiętam. Zrobiliśmy wtedy chyba siedem tysięcy w jeden dzień?
+[00:10:39] Speaker 2: Sześć i pół. Ale to i tak był najlepszy dzień w roku.
+[00:10:44] Speaker 1: A cały listopad?
+[00:10:46] Speaker 2: Cały listopad coś koło czterdziestu pięciu tysięcy. Więc w sumie normalnie, tylko z tym jednym pikiem.
+[00:10:53] You: Okej. I co proponujesz?
+[00:10:56] Speaker 2: Proponuję zrobić cały tydzień, taki Black Week. Od poniedziałku, dwudziestego trzeciego, do poniedziałku trzydziestego, żeby złapać też Cyber Monday. Wtedy ludzie mają czas, wypłaty już są, no i nie ginie nam to w jednym dniu.
+[00:11:11] You: Tydzień mi się podoba. A rabat?
+[00:11:14] Speaker 2: No i tu jest, yyy, tu jest moja śmiała propozycja. Minus trzydzieści procent na wszystko.
+[00:11:20] Speaker 1: Uuu.
+[00:11:22] You: Trzydzieści. Hmm. Na wszystko, czyli na ekspresy też?
+[00:11:26] Speaker 2: No, na wszystko. Bo konkurencja daje po trzydzieści, i wtedy to wygląda, wiesz, poważnie.
+[00:11:32] You: Wiesz, ja to policzyłem kiedyś. Na kawie mamy marżę jakieś czterdzieści procent, ale na ekspresach i młynkach to jest może piętnaście. Jak damy minus trzydzieści na ekspres, to my do każdego dopłacamy.
+[00:11:46] Speaker 2: Aha. Kurczę, aż tak mało na ekspresach?
+[00:11:50] You: No, niestety. Dystrybutor trzyma ceny. Więc trzydzieści procent odpada, nie ma opcji.
+[00:11:55] Speaker 2: Okej, no dobra. To ile?
+[00:11:58] You: Ja bym dał dwadzieścia na całą kawę, akcesoria, herbaty, wszystko, ale bez ekspresów i młynków. Na ekspresy możemy dać, nie wiem, gratis paczkę kawy do zamówienia albo coś.
+[00:12:10] Speaker 1: To jest akurat łatwe do ustawienia, wykluczenie kategorii. W WooCommerce zrobię to jednym kuponem albo regułą.
+[00:12:17] Speaker 2: Dwadzieścia. No dobra, dwadzieścia też brzmi okej. Tylko żeby było widoczne, takie duże minus dwadzieścia na banerze.
+[00:12:25] You: To ustalamy. Black Week od dwudziestego trzeciego do trzydziestego listopada, minus dwadzieścia procent na wszystko oprócz ekspresów i młynków.
+[00:12:33] Speaker 2: Super.
+[00:12:35] Speaker 1: A te ekspresy z gratisem, to też mam ustawić?
+[00:12:39] You: W sumie, yyy, nie, zostawmy. Nie chcę komplikować. Ekspresy po prostu nie są w promocji, i tyle.
+[00:12:47] Speaker 1: Okej, tym lepiej.
+[00:12:49] Speaker 2: Dobra, to teraz dostawa. Bo to jest coś, o co ludzie pytają na Instagramie non stop. Teraz mamy darmową dostawę od dwustu złotych.
+[00:12:59] You: No.
+[00:13:01] Speaker 2: I wiesz, średni koszyk u nas to jest jakieś sto trzydzieści złotych. Czyli prawie nikt nie łapie się na darmową.
+[00:13:10] Speaker 1: Sto trzydzieści dwa, sprawdzałem w zeszłym tygodniu w raportach.
+[00:13:14] Speaker 2: No właśnie. To ja bym chciała na czas promocji obniżyć próg. Na sto pięćdziesiąt.
+[00:13:20] You: Ile nas kosztuje paczka? Średnio?
+[00:13:23] Speaker 1: Paczkomat to jest teraz jakieś czternaście złotych, kurier szesnaście z groszami.
+[00:13:28] You: No to przy koszyku sto pięćdziesiąt i rabacie dwadzieścia procent, to jeszcze się spina. Dobra. Na czas Black Weeku darmowa dostawa od stu pięćdziesięciu złotych.
+[00:13:39] Speaker 2: Tak!
+[00:13:41] You: Ale tylko na promocję. Potem wraca dwieście.
+[00:13:44] Speaker 2: Jasne, jasne. Chociaż, no, zobaczymy, jak zadziała.
+[00:13:48] You: Zobaczymy. Ale teraz tylko promocja.
+[00:13:50] Speaker 1: To ja to ustawię razem z rabatem. Te same daty.
+[00:13:55] You: Okej. To jak już jesteśmy przy ustawianiu. Kto robi stronę promocji? Ten landing, banery w sklepie i ten kupon?
+[00:14:04] Speaker 1: Ja. Zrobię landing pod Black Week, ustawię rabat dwadzieścia procent z wykluczeniem ekspresów i młynków, i ten próg darmowej dostawy.
+[00:14:13] You: Do kiedy?
+[00:14:14] Speaker 1: Do dwudziestego, do piątku. Tak, żeby był weekend na sprawdzenie, zanim w poniedziałek ruszy.
+[00:14:21] Speaker 2: Tylko grafiki ode mnie potrzebujesz, nie?
+[00:14:24] Speaker 1: No tak, baner główny i takie dwa mniejsze. Najlepiej do środy.
+[00:14:29] Speaker 2: Do środy osiemnastego dam radę. I to i tak robię razem z newsletterem, więc, no, to jest jedna robota.
+[00:14:37] You: No to właśnie, newsletter. Kiedy wysyłamy?
+[00:14:40] Speaker 2: Ja bym zrobiła dwa maile. Jeden zapowiedź w piątek, dwudziestego, taki "w poniedziałek startujemy", i drugi w poniedziałek rano, dwudziestego trzeciego, o, nie wiem, o siódmej, żeby ludzie przy kawie zobaczyli.
+[00:14:54] Speaker 1: Przy kawie. Dobre.
+[00:14:56] Speaker 2: No przecież. To jest nasz cały branding.
+[00:14:59] You: Dobra, to ty bierzesz newsletter i grafiki? Oba maile?
+[00:15:03] Speaker 2: Tak, ja to zrobię. Przygotuję oba newslettery i wszystkie grafiki, banery do sklepu do osiemnastego, a mail startowy pójdzie dwudziestego trzeciego rano.
+[00:15:13] You: Super. Ile mamy teraz ludzi na liście?
+[00:15:17] Speaker 2: Trochę ponad cztery tysiące. Cztery tysiące dwieście, coś takiego. Otwieralność około trzydziestu pięciu procent, więc nieźle.
+[00:15:24] You: Nieźle, no. Dobra, a reklamy? Bo w zeszłym roku nic nie dawaliśmy.
+[00:15:29] Speaker 2: No i to był błąd, moim zdaniem. Ja bym chciała dać jakieś pieniądze na Meta, Facebook i Instagram, głównie na remarketing. Ludzie, którzy byli w sklepie, oglądali coś i nie kupili.
+[00:15:43] You: Ile?
+[00:15:45] Speaker 2: Ja myślałam o trzech tysiącach.
+[00:15:47] You: Trzy tysiące to jest dużo, przy tym, co zarabiamy na tym tygodniu. Wiesz, to jest jedna trzecia marży z całej promocji, jak dobrze pójdzie.
+[00:15:58] Speaker 2: Mhm. No to ile byś dał?
+[00:16:01] You: Półtora tysiąca. Tysiąc pięćset złotych na cały tydzień, tylko remarketing. Jak to zadziała, to w grudniu przed świętami możemy dać więcej.
+[00:16:10] Speaker 2: Okej, półtora tysiąca. Da się z tym coś zrobić, jak się nie rozpraszamy na zimny ruch.
+[00:16:17] You: To ustalone. Budżet na reklamy w Meta półtora tysiąca złotych, tylko remarketing.
+[00:16:23] Speaker 2: I ja tę kampanię ustawiam, tak? Ty nie masz w ogóle dostępu do Business Managera chyba.
+[00:16:30] You: Nie mam i nie chcę mieć. Ty ustawiasz.
+[00:16:34] Speaker 2: Dobra, to ja ustawię kampanię remarketingową w Meta, półtora tysiąca, start dwudziestego trzeciego.
+[00:16:40] Speaker 1: Tylko piksel. Piksel musi działać na nowej stronie płatności, bo jak klient wraca z Przelewów24, to tam jest inna strona podziękowania, i jak to się rozjedzie, to nie będziesz widzieć zakupów.
+[00:16:53] Speaker 2: O, kurczę, dobrze, że mówisz.
+[00:16:56] Speaker 1: Sprawdzę to przy testach na stagingu. To jest, wiesz, pięć minut.
+[00:17:01] Speaker 1: Słuchajcie, a jeszcze jedno przy promocji, bo to jest prawne. Omnibus.
+[00:17:06] Speaker 2: Ojej, to.
+[00:17:08] Speaker 1: No to. Jak dajemy obniżkę, to przy każdym produkcie musi być pokazana najniższa cena z ostatnich trzydziestu dni. Inaczej UOKiK może się przyczepić, a teraz przy Black Friday oni naprawdę sprawdzają.
+[00:17:21] You: A my to mamy w sklepie?
+[00:17:25] Speaker 1: Mamy, mamy, jest wtyczka, która to liczy sama. Tylko trzeba uważać, żeby nikt w tym miesiącu nie zmieniał cen tak przed promocją, bo wtedy to wygląda na sztuczne podbijanie.
+[00:17:37] Speaker 2: Ja nic nie ruszam, przysięgam.
+[00:17:40] You: Ja też nie. Ceny stoją, jak stoją. Znaczy, palarnia mi podniosła cenę na Etiopię o dwa złote za kilo, ale to ja wezmę na siebie do końca roku.
+[00:17:52] Speaker 1: No to dobrze. Bo to by było dokładnie w złym momencie.
+[00:17:57] You: Wiem, wiem. Dlatego nie ruszam.
+[00:18:00] Speaker 2: A czy na stronie promocji mam pisać "do minus dwudziestu procent" czy po prostu "minus dwadzieścia procent"?
+[00:18:07] Speaker 1: Skoro ekspresy są wyłączone, to ja bym napisał wprost, że rabat nie obejmuje ekspresów i młynków. Małym drukiem, ale żeby było.
+[00:18:17] You: Tak, wprost. Nie chcę maili od ludzi, że oszukaliśmy.
+[00:18:21] Speaker 2: Okej. Mały druk, ale widoczny.
+[00:18:24] Speaker 2: A, i jeszcze jedno do promocji. Pisała do mnie Ola, ta od kanału o parzeniu kawy na Instagramie, wiecie, która robi te filmiki z dripem.
+[00:18:35] Speaker 1: Ta z kotem w tle?
+[00:18:37] Speaker 2: Ta, z kotem. Ma jakieś czterdzieści tysięcy obserwujących. Pytała, czy nie chcemy współpracy przy Black Weeku, ona by pokazała dwie, trzy kawy i dała kod.
+[00:18:48] You: Ile chce?
+[00:18:50] Speaker 2: Nie podała jeszcze stawki. Pewnie, nie wiem, jakieś tysiąc, półtora za relację i post.
+[00:18:56] You: Hmm. To by nam zjadło cały budżet na reklamy.
+[00:19:01] Speaker 2: No, wiem. Dlatego tylko mówię, nic nie obiecywałam. Może by się zgodziła na barter, na paczkę kawy i procent od kodu.
+[00:19:10] You: Barter to w sumie czemu nie. Ale nie chcę dziś tego ustalać, za mało wiemy. Dopytaj ją po prostu, na jakich warunkach, i wrócimy do tego.
+[00:19:21] Speaker 2: Okej, dopytam.
+[00:19:23] Speaker 1: Tylko jak będzie kod dla niej, to mi powiedz wcześniej, bo kody rabatowe z tym wykluczeniem ekspresów to się trochę gryzą. Muszę ustawić, żeby się nie sumowały.
+[00:19:35] You: O, właśnie, kody się nie sumują. Żadnych podwójnych rabatów, minus dwadzieścia to jest maksimum.
+[00:19:41] Speaker 1: Tak zrobię.
+[00:19:43] You: Dobra. Yyy, a co z obsługą w tym tygodniu? Bo jak będzie dwa razy więcej zamówień, to kto to spakuje?
+[00:19:52] Speaker 2: No właśnie, chciałam o to zapytać. W zeszłym roku pakowaliśmy do pierwszej w nocy, pamiętasz?
+[00:19:58] You: Pamiętam. Pizza o północy i taśma klejąca wszędzie.
+[00:20:02] Speaker 2: Ha, no. I ja wtedy nie odpisywałam na wiadomości przez dwa dni, bo stałam przy kartonach.
+[00:20:10] You: Moja siostra mówiła, że może przyjść pomóc w tym tygodniu, ona ma urlop. To by było jedna para rąk więcej przy pakowaniu.
+[00:20:19] Speaker 2: O, to super. To ja bym wtedy siedziała tylko na wiadomościach i zwrotach.
+[00:20:25] Speaker 1: A może jakaś automatyczna odpowiedź na Messengerze? Że w tym tygodniu odpisujemy do dwudziestu czterech godzin, czy coś.
+[00:20:33] Speaker 2: W sumie można. Znaczy, i tak ludzie piszą "gdzie moja paczka" po dwóch godzinach od zamówienia, ale zawsze coś.
+[00:20:42] You: No, to jest ten typ klienta. Dobra, to już szczegóły, ogarniecie to.
+[00:20:47] Speaker 2: Słuchajcie, a zestawy prezentowe? Bo to już jest prawie grudzień i ludzie szukają prezentów.
+[00:20:54] You: Jakie zestawy?
+[00:20:55] Speaker 2: No, takie pudełko, trzy małe kawy po sto gramów, jakiś kubek albo filtr, ładnie zapakowane. Inne palarnie tak robią i to podobno świetnie schodzi przed świętami.
+[00:21:07] Speaker 1: Technicznie to jest nowy produkt w sklepie, z wariantami, to nie jest problem. Problem to pudełka.
+[00:21:14] You: No właśnie, pudełka. Kto je zaprojektuje, kto wydrukuje, i w jakim terminie? Drukarnia przed świętami to jest, wiesz, trzy tygodnie minimum.
+[00:21:23] Speaker 2: No tak. Kurczę, w sumie późno już.
+[00:21:27] You: Ja bym to zrobił, ale porządnie, na przyszły rok. Albo na Walentynki, jak już. Teraz nie zdążymy zrobić tego dobrze.
+[00:21:36] Speaker 2: Okej, rozumiem. To zapiszę sobie na luty.
+[00:21:39] You: Zapisz. Pomysł jest dobry, tylko czas zły.
+[00:21:43] Speaker 1: Słuchajcie, bo ja w międzyczasie sprawdziłem jedną rzecz na stronie Przelewów24. I mamy problem z tym dziewiątym.
+[00:21:50] You: Jaki problem?
+[00:21:52] Speaker 1: Weryfikacja konta trwa u nich do pięciu dni roboczych od momentu, jak mają komplet dokumentów. Jak ty wyślesz w poniedziałek, to w najgorszym razie skończą w następny poniedziałek. Czyli dziewiątego nie ma szans, żebyśmy już przyjmowali płatności.
+[00:22:08] You: Aha. No tak. Kurczę, ja myślałem, że to jest jeden dzień.
+[00:22:13] Speaker 1: Czasem jest jeden dzień, ale ja bym na to nie liczył. Plus ja chcę mieć te dwa, trzy dni po weryfikacji na produkcyjne klucze i jedną prawdziwą płatność na złotówkę.
+[00:22:26] Speaker 2: Ale to dalej przed promocją, tak?
+[00:22:29] Speaker 1: No tak, to jest kwestia tygodnia.
+[00:22:32] You: Dobra, to przesuwamy. Nie dziewiąty, tylko poniedziałek, szesnasty listopada. Wtedy jeszcze mamy cały tydzień przed Black Weekiem na łapanie błędów.
+[00:22:41] Speaker 1: Szesnasty jest dużo bezpieczniejszy. Dzięki.
+[00:22:44] Speaker 2: Szesnasty, zmieniam w notatkach.
+[00:22:46] You: A jakby z jakiegoś powodu weryfikacja się przeciągnęła i nie zdążymy do szesnastego, to może w ogóle bym został na PayU na czas promocji i przełączył dopiero w grudniu. Ale to tylko taka myśl, nie chcę tego teraz planować.
+[00:23:03] Speaker 1: No, w sumie to by było rozsądne. Nie przełącza się płatności w środku największego tygodnia w roku.
+[00:23:10] Speaker 2: Dokładnie, ja bym zwariowała.
+[00:23:12] You: No. Ale zakładam, że zdążymy. Tylko dokumenty muszą pójść w poniedziałek, bez przesuwania.
+[00:23:18] Speaker 1: I jeszcze jedno. Bo ja teraz patrzę na moją listę i się trochę przestraszyłem. Wtyczka, testy, piksel, landing, rabaty, dostawa. I jeszcze miałem dzwonić do Kasi.
+[00:23:30] You: No, to dużo.
+[00:23:32] Speaker 1: Trochę dużo. Znaczy, dam radę, ale ta rozmowa z Kasią to będzie pewnie godzina, bo ona będzie chciała przejść przez wszystkie raporty po kolei.
+[00:23:42] You: Wiesz co, ja i tak w środę dzwonię do niej w sprawie VAT-u za październik. To ja to z nią ustalę. Zapytam, w jakim formacie chce raporty z Przelewów24 i jak mamy księgować te wypłaty, żeby się zgadzało z zamówieniami.
+[00:23:59] Speaker 1: Serio? Byłoby super.
+[00:24:01] You: Serio. Ty się skup na sklepie. Jak będzie miała jakieś techniczne pytania, to ci przekażę.
+[00:24:08] Speaker 1: Jasne. Mogę ci wysłać przykładowy raport z sandboksa, jak już będę miał, to jej pokażesz.
+[00:24:15] You: O, to dobre. Wyślij.
+[00:24:17] Speaker 2: A mogę jeszcze o jedną rzecz? Bo to jest, wiesz, taki temat poboczny, ale trochę ważny.
+[00:24:24] You: Dawaj.
+[00:24:26] Speaker 2: Zapasy. Bo jak zrobimy dwa razy więcej zamówień, a ja już teraz widzę, że Etiopia i ta Kolumbia z Huila schodzą bardzo szybko, to w połowie tygodnia nie będziemy mieli co sprzedawać.
+[00:24:40] You: No właśnie, to jest moja działka. Rozmawiałem już wstępnie z Palarnią Wilk, oni potrzebują jakieś dziesięć dni na wypalenie większego zamówienia.
+[00:24:49] Speaker 1: Dziesięć dni? To trzeba zamawiać teraz praktycznie.
+[00:24:52] You: No, dlatego. Ja bym zamówił tak mniej więcej na podwójny tydzień. Wychodzi coś koło dwunastu tysięcy złotych.
+[00:25:00] Speaker 2: Dwanaście tysięcy. Uff. A starczy nam na to, jak jeszcze płacimy za reklamy i w ogóle?
+[00:25:07] You: Starczy. Na koncie jest okej, a to się zwróci w promocji. Tylko nie chcę przesadzić z tymi bardziej egzotycznymi, bo jak zostanie, to po trzech miesiącach to już nie jest świeża kawa.
+[00:25:21] Speaker 2: No tak. To ja bym dała więcej Brazylii i tej mieszanki do espresso, bo to idzie zawsze. I tej Etiopii też, bo ona jest teraz na topie.
+[00:25:33] You: Dobra, wyślij mi w ogóle listę, co najlepiej schodzi w tym miesiącu.
+[00:25:38] Speaker 2: Mam to w raporcie, wyślę ci dzisiaj.
+[00:25:42] Speaker 1: A bezkofeinowa? Bo ona w zeszłym roku zeszła cała w dwa dni, pamiętacie? I potem ludzie pisali przez tydzień.
+[00:25:50] Speaker 2: O matko, tak. "Kiedy będzie decaf", codziennie.
+[00:25:54] You: Bezkofeinowej nie robi Palarnia Wilk, to bierzemy z tej drugiej palarni, z Poznania. Ale tam jest mniej roboty, bo oni mają na stanie, wysyłają w trzy dni.
+[00:26:06] Speaker 1: No to dobrze.
+[00:26:07] You: Znaczy, to jest mała kwota, kilkaset złotych, to dorzucę przy okazji. To nie jest problem.
+[00:26:14] Speaker 2: A herbaty? Bo herbat mamy chyba jeszcze sporo z października.
+[00:26:19] You: Herbat mamy na pewno dużo, nic nie domawiam. Jak coś, to herbaty niech się wyprzedadzą w promocji, to w ogóle super.
+[00:26:28] Speaker 2: Okej. To w newsletterze mogę dać herbaty trochę wyżej, nie? Żeby schodziły.
+[00:26:34] You: Możesz, czemu nie.
+[00:26:36] You: Okej. To ja złożę zamówienie w Palarni Wilk do piątku, na jakieś dwanaście tysięcy, z większą ilością Brazylii, espresso i Etiopii.
+[00:26:45] Speaker 1: A dostawa od nich jest na czas? Bo pamiętam, że w zeszłym roku coś się spóźnili.
+[00:26:52] You: Spóźnili się dwa dni, bo kurier im zgubił paletę. Ale tym razem mamy zapas, jak zamówię w piątek, to dziesięć dni plus dwa, i dalej jest przed dwudziestym trzecim.
+[00:27:05] Speaker 1: No okej, to się spina.
+[00:27:07] Speaker 2: A czy stałych klientów jakoś uprzedzamy o tej zmianie płatności? Bo niektórzy mają na przykład zapisane karty w PayU i mogą się zdziwić.
+[00:27:18] Speaker 1: Zapisanych kart u nas prawie nie ma, sprawdzałem, kilkanaście osób. Większość płaci BLIK-iem i przelewem.
+[00:27:24] You: To nie robiłbym z tego osobnego maila. Wiesz, nikt nie lubi maili o tym, że zmieniamy operatora. Raczej jakaś mała informacja na stronie płatności w sklepie.
+[00:27:36] Speaker 2: Okej, czyli bez maila. Może tylko jedno zdanie w newsletterze na dole, że są nowe, wygodniejsze płatności BLIK.
+[00:27:44] You: To tak, to może być, jako plus. "Płacisz BLIK-iem bez wychodzenia ze sklepu." To jest dobra wiadomość, nie zła.
+[00:27:52] Speaker 2: Dobra, to dopiszę na dole.
+[00:27:55] Speaker 2: Dobra, i jeszcze tak w ogóle, zmienimy coś na stronie, że są nowe płatności? Bo ludzie, którzy kupują od lat, mogą się przestraszyć, że coś jest inaczej.
+[00:28:07] Speaker 1: Zaktualizuję stronę "Płatności i dostawa" i regulamin, tam jest wprost napisane PayU. To szybka rzecz, zrobię razem z przełączeniem.
+[00:28:15] You: Okej, dobrze, że pamiętasz o regulaminie.
+[00:28:18] Speaker 1: No, raz już za to dostaliśmy maila od jakiegoś klienta, że nieaktualne.
+[00:28:24] You: Dobra. Zróbmy szybkie podsumowanie, bo za chwilę muszę lecieć.
+[00:28:28] Speaker 2: Dawaj.
+[00:28:30] You: Przechodzimy na Przelewy24, przełączenie w poniedziałek szesnastego, nie dziewiątego. PayU zostaje w tle tylko na zwroty ze starych zamówień. Ja wysyłam dokumenty do weryfikacji do poniedziałku.
+[00:28:41] Speaker 1: Tak.
+[00:28:43] You: Ty stawiasz wtyczkę na stagingu i robisz płatności testowe, BLIK, karta, przelew i zwrot, do czwartku dwunastego. Przy okazji sprawdzasz piksel.
+[00:28:52] Speaker 1: Zgadza się.
+[00:28:54] You: Ja dzwonię do Kasi z biura rachunkowego w sprawie raportów i księgowania. Black Week od dwudziestego trzeciego do trzydziestego, minus dwadzieścia procent na wszystko oprócz ekspresów i młynków, darmowa dostawa od stu pięćdziesięciu złotych tylko w promocji.
+[00:29:10] Speaker 2: Tak.
+[00:29:11] You: Landing, rabat i dostawa ustawione do piątku dwudziestego, to ty. Grafiki do środy osiemnastego, newslettery, zapowiedź dwudziestego i start dwudziestego trzeciego rano, to ty. Reklamy w Meta, półtora tysiąca, tylko remarketing, też ty.
+[00:29:25] Speaker 2: Tak jest.
+[00:29:27] You: A ja zamawiam kawę w Palarni Wilk do piątku. Coś pominąłem?
+[00:29:32] Speaker 1: Chyba nie. A, tylko ta lista najlepiej schodzących kaw.
+[00:29:37] Speaker 2: Wyślę dzisiaj, mówiłam.
+[00:29:38] You: Dobra. To dzięki wielkie. Zdrowiej, z tym katarem.
+[00:29:42] Speaker 2: Dzięki. A ty pozdrów kota.
+[00:29:45] Speaker 1: Przekażę. Znaczy, tygrysowi.
+[00:29:47] Speaker 2: Ha, tygrysowi. Pa!
+[00:29:49] You: Na razie.
