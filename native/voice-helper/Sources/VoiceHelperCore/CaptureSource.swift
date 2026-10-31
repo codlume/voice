@@ -25,3 +25,32 @@ public enum MeetingAudioSource: Equatable, Sendable {
         return .fixture(mic: mic, system: environment["VOICE_HELPER_TEST_MEETING_SYSTEM"] ?? "", speed: speed)
     }
 }
+
+/// Why a meeting source stopped mid-leg: the user took the permission away, or the device
+/// stopped delivering audio.
+public enum MeetingLossReason: String, Codable, Sendable { case permission, device }
+
+public struct AudioLoss: Equatable, Sendable {
+    public let source: MeetingSource
+    public let reason: MeetingLossReason
+
+    public init(source: MeetingSource, reason: MeetingLossReason) {
+        self.source = source
+        self.reason = reason
+    }
+}
+
+/// What a recording leg checks every few seconds, so a revoked permission or a dead microphone
+/// pauses the meeting instead of recording silence that looks like a quiet room. System audio
+/// legitimately goes quiet, so only its permission counts; the microphone always delivers.
+public enum MeetingWatch {
+    public static let micStallMs = 5000.0
+
+    /// `msSinceMicAudio` is nil while the microphone reopens after a device change.
+    public static func loss(micAllowed: Bool, systemRecording: Bool, systemAllowed: Bool, msSinceMicAudio: Double?) -> AudioLoss? {
+        if !micAllowed { return AudioLoss(source: .mic, reason: .permission) }
+        if systemRecording, !systemAllowed { return AudioLoss(source: .system, reason: .permission) }
+        if let msSinceMicAudio, msSinceMicAudio >= micStallMs { return AudioLoss(source: .mic, reason: .device) }
+        return nil
+    }
+}

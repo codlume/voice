@@ -22,6 +22,7 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meeting-speakers`: `renameMeetingSpeaker(id, speakerId, name)` (the Transcript tab's field) sets `name: { text, source: "user" }`; the transcript, the summary's `{{speaker:<id>}}` tokens, the overview and the Markdown export show it. A blank name clears it.
 - `meeting-short`: under ten transcribed words the meeting waits in `confirmingShort`; `keepMeeting` finishes it and `discardMeeting` deletes its folder.
 - `meeting-dictated`: dictating while a meeting records inserts as usual and adds a `dictated` marker to the meeting transcript instead of the dictated words.
+- `meeting-audio-lost`: when a live leg loses the microphone or system audio permission, or the microphone stops delivering audio for 5 s, the helper ends the leg with `meeting.lost`; the meeting goes `paused` with an Audio lost (`gap`) marker and a `captureLost` notice naming the source and reason. Test mode cannot produce it: fixtures never use a device or a permission.
 - `meeting-recovery`: a meeting left `recording` by a quit becomes `ready` on the next launch, its leg closed at the last audio write, and the helper plays no fixture and opens no device.
 
 ## How to get to it (user POV)
