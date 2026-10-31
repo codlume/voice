@@ -541,6 +541,21 @@ describe("a meeting", () => {
     await waitForText("Writing the summary…");
   });
 
+  test("a long meeting without a summary offers one in words that fit its length and state", async () => {
+    const stored = meeting(5, "Planning", hoursAgo(1));
+    const transcribing = meeting(6, "Retro", hoursAgo(2), { status: { kind: "transcribing" } });
+    const main = fakeMain([stored, transcribing]);
+    await render();
+    await click(byText("Planning"));
+    await waitForText("This meeting has no summary yet.");
+    expect(text()).not.toContain("Short meetings");
+    await click(byText("Generate summary"));
+    expect(main.generateMeetingSummary).toHaveBeenCalledWith(id(5));
+    await click(byText("All meetings"));
+    await click(byText("Retro"));
+    await waitForText("The summary is written once the transcript is final.");
+  });
+
   test("a summary that needed the missing model offers its download above the failure", async () => {
     const meetings = sample();
     const message = "Download the summary model, then try again.";

@@ -345,6 +345,13 @@ export const recordedMs = (meeting: Meeting, now: number): number =>
   closedMs(meeting) +
   (meeting.status.kind === "recording" ? Math.max(0, now - meeting.status.since) : 0);
 
+/** Spec 7: meetings of 5 minutes or less wait for a manual "Generate summary". */
+export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
+
+/** Whether the meeting's recording is long enough to be summarized after Stop without asking. */
+export const summarizesOnStop = (meeting: Meeting): boolean =>
+  closedMs(meeting) > AUTO_SUMMARY_MIN_MS;
+
 /** True once a resume recorded more than the summary covers, so "Update summary" applies. */
 export const summaryStale = (meeting: Meeting): boolean =>
   meeting.summary.kind === "ready" && meeting.summary.summary.coversUntilMs < closedMs(meeting);

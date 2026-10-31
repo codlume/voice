@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import {
   recordedMs,
+  summarizesOnStop,
   summaryStale,
   titleText,
   type Folder,
@@ -303,8 +304,20 @@ function SummaryPanel({
       : summary.kind === "failed"
         ? summary.previous
         : null;
+  const short = "Short meetings get a summary only when you ask for one.";
   const notice = (() => {
     if (status.kind === "summarizing") return <Banner text="Writing the summary…" />;
+    if (status.kind === "transcribing" && summary.kind === "none") {
+      return (
+        <Banner
+          text={
+            summarizesOnStop(meeting)
+              ? "The summary is written once the transcript is final."
+              : short
+          }
+        />
+      );
+    }
     if (status.kind !== "ready") {
       return <Banner text="The summary is written when the meeting ends." />;
     }
@@ -320,7 +333,7 @@ function SummaryPanel({
     if (summary.kind === "none") {
       return (
         <Banner
-          text="Short meetings get a summary only when you ask for one."
+          text={summarizesOnStop(meeting) ? "This meeting has no summary yet." : short}
           action={generate("Generate summary")}
         />
       );

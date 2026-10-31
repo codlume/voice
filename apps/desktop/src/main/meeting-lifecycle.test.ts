@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import {
+  AUTO_SUMMARY_MIN_MS,
   DEFAULT_MEETINGS_SETTINGS,
   summaryStale,
   type Meeting,
@@ -8,7 +9,6 @@ import {
   type MeetingStatus,
 } from "../shared/meetings.ts";
 import {
-  AUTO_SUMMARY_MIN_MS,
   MAX_LENGTH_WARNING_MS,
   step,
   type LifecycleConfig,

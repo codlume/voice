@@ -1,6 +1,7 @@
 import {
   maxLengthMs,
   recordedMs,
+  summarizesOnStop,
   type AudioLoss,
   type MarkerKind,
   type Meeting,
@@ -66,8 +67,6 @@ export type Step = { meeting: Meeting | null; effects: MeetingEffect[] };
 
 export const MAX_LENGTH_WARNING_MS = 5 * 60_000;
 export const SILENCE_PROMPT_MS = 10 * 60_000;
-/** Spec 7: meetings of 5 minutes or less wait for a manual "Generate summary". */
-export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
 /** Below this the user is asked "Started by mistake?" before anything else runs. */
 export const SHORT_RECORDING_WORDS = 10;
 
@@ -99,7 +98,7 @@ const summarizing = (meeting: Meeting): Step => ({
 // A resumed meeting keeps its summary, which is now stale and offers "Update summary". The
 // summary writes a blank title; without one, the title is written on its own.
 function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
-  if (meeting.summary.kind === "none" && recordedMs(meeting, 0) > AUTO_SUMMARY_MIN_MS) {
+  if (meeting.summary.kind === "none" && summarizesOnStop(meeting)) {
     const next = summarizing(meeting);
     return { ...next, effects: [...effects, ...next.effects] };
   }
