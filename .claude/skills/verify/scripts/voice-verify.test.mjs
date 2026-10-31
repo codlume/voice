@@ -78,7 +78,7 @@ test("cold doctor and help run without dependencies and leave caches untouched",
   });
   assert.equal(report.instance, "none");
   assert.deepEqual(report.testModels, { asr: "will download", cleanup: "will download" });
-  assert.deepEqual(report.optionalTestModels, { transform: "missing" });
+  assert.deepEqual(report.optionalTestModels, { transform: "missing", speakers: "missing" });
   assert.equal(existsSync(cache), false);
   assert.deepEqual(readdirSync(temp), []);
   const help = run("help");
