@@ -46,8 +46,8 @@ public struct FinalSegment: Equatable, Sendable {
 }
 
 /// Builds the final transcript from both streams' timed words and the system stream's speaker
-/// turns: words become segments at pauses, long runs and speaker changes, and mic segments that
-/// only echo the other side are dropped, as during the meeting.
+/// turns: words become segments at pauses, long runs and speaker changes, and the mic words
+/// `EchoPolicy` finds echo the other side are dropped, as during the meeting.
 public enum FinalTranscript {
     /// A pause this long between two words starts a new segment.
     static let pauseMs = 800.0
@@ -90,19 +90,16 @@ public enum FinalTranscript {
     }
 
     /// `turns` is nil when there was no diarization, which leaves every system speaker nil.
-    public static func segments(mic: [TimedWord], system: [TimedWord], turns: [SpeakerTurn]?) -> [FinalSegment] {
-        let systemRuns = group(system, speakers: turns.map { turns in assign(system, to: turns) })
-        var filter = EchoFilter()
-        for run in systemRuns { filter.add(TimedText(source: .system, startMs: run.startMs, endMs: run.endMs, text: run.text)) }
-        let micRuns = group(mic, speakers: echoMarks(mic, system: system)).filter {
-            !filter.isEcho(TimedText(source: .mic, startMs: $0.startMs, endMs: $0.endMs, text: $0.text))
-        }
+    public static func segments(mic: [TimedWord], system: [TimedWord], turns: [SpeakerTurn]?, output: OutputTimeline) -> [FinalSegment] {
+        let systemRuns = group(system, voices: turns.map { turns in assign(system, to: turns).map(Voice.speaker) })
+        let echoes = EchoPolicy.echoes(mic: mic, system: system, output: output)
+        let micRuns = group(mic, voices: echoes.map { $0 ? .echo : .user }).filter { $0.voice != .echo }
         var numbers: [String: Int] = [:]
         let named = systemRuns.map { run in
-            let number = run.speaker.map { speaker in
-                if let known = numbers[speaker] { return known }
-                numbers[speaker] = numbers.count
-                return numbers.count - 1
+            var number: Int?
+            if case .speaker(let speaker?) = run.voice {
+                number = numbers[speaker] ?? numbers.count
+                numbers[speaker] = number
             }
             return FinalSegment(source: .system, startMs: run.startMs, endMs: run.endMs, text: run.text, speaker: number)
         }
@@ -110,60 +107,44 @@ public enum FinalTranscript {
         return (named + mine).sorted { $0.startMs < $1.startMs }
     }
 
+    /// Who said a word: on the mic the user or the other side's echo; on system audio a
+    /// diarizer cluster, nil where none covers it.
+    private enum Voice: Equatable {
+        case user
+        case echo
+        case speaker(String?)
+    }
+
     private struct Run {
         let startMs: Double
         let endMs: Double
         let text: String
-        let speaker: String?
+        let voice: Voice
     }
 
-    private static func group(_ words: [TimedWord], speakers: [String?]?) -> [Run] {
+    private static func group(_ words: [TimedWord], voices: [Voice]?) -> [Run] {
         var runs: [Run] = []
         var current: [TimedWord] = []
-        var speaker: String?
+        var voice = Voice.speaker(nil)
         func close() {
             guard let first = current.first, let last = current.last else { return }
-            runs.append(Run(startMs: first.startMs, endMs: last.endMs, text: current.map(\.text).joined(separator: " "), speaker: speaker))
+            runs.append(Run(startMs: first.startMs, endMs: last.endMs, text: current.map(\.text).joined(separator: " "), voice: voice))
             current = []
         }
         for (index, word) in words.enumerated() {
-            let next = speakers?[index] ?? nil
+            let next = voices?[index] ?? .speaker(nil)
             if let first = current.first, let last = current.last {
                 let length = last.endMs - first.startMs
                 let sentenceEnd = last.text.last.map { ".?!".contains($0) } ?? false
-                if word.startMs - last.endMs >= pauseMs || next != speaker || length >= 2 * longMs || (length >= longMs && sentenceEnd) {
+                if word.startMs - last.endMs >= pauseMs || next != voice || length >= 2 * longMs || (length >= longMs && sentenceEnd) {
                     close()
                 }
             }
-            speaker = next
+            voice = next
             current.append(word)
         }
         close()
         return runs
-    }
-
-    /// Fewer echoed words in a row than this stay the user's: both sides say "yes" and "the".
-    static let echoRun = 3
-
-    // Marks the mic words that repeat system words heard around the same time, in runs of at
-    // least `echoRun`, so a mic run splits where the user's own words turn into the speakers' echo.
-    private static func echoMarks(_ mic: [TimedWord], system: [TimedWord]) -> [String?] {
-        var low = 0
-        let heard = mic.map { word -> Bool in
-            while low < system.count, system[low].endMs < word.startMs - EchoFilter.toleranceMs { low += 1 }
-            let spoken = Set(EchoFilter.words(word.text))
-            return system[low...].prefix { $0.startMs <= word.endMs + EchoFilter.toleranceMs }
-                .contains { !spoken.isDisjoint(with: EchoFilter.words($0.text)) }
-        }
-        var marks = [String?](repeating: nil, count: mic.count)
-        var start = 0
-        while start < mic.count {
-            var end = start
-            while end < mic.count, heard[end] { end += 1 }
-            if end - start >= echoRun { for index in start..<end { marks[index] = "echo" } }
-            start = max(end, start + 1)
-        }
-        return marks
     }
 
     // Each word takes the turn it overlaps most, else the nearest close turn, else the speaker

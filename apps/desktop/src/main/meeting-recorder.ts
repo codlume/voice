@@ -74,7 +74,7 @@ export const TRANSCRIBE_IDLE_MS = 60_000;
 export const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
 
 const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
-const AUDIO_FILES = [...PCM_FILES, "audio.json"] as const;
+const AUDIO_FILES = [...PCM_FILES, "audio.json", "output.ndjson"] as const;
 /** 16 kHz mono Int16. */
 const PCM_BYTES_PER_MS = 32;
 const live = (meeting: Meeting) =>

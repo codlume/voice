@@ -45,12 +45,12 @@ private final class Harness {
         try writeTone(to: systemPath, amplitude: systemAmplitude, segments: [(3.5, true), (2.5, false), (1, true)])
         meetings = Meetings(
             output: output, devices: devices,
-            source: .fixture(mic: mic.path, system: system ? systemPath.path : "", speed: speed),
+            source: .fixture(mic: mic.path, system: system ? systemPath.path : "", speed: speed, output: ""),
             decode: { [unowned self] samples, _ in
                 decodes += 1
                 let peak = samples.map(abs).max() ?? 0
-                if echo { return "we ship on friday" }
-                return peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)"
+                if echo { return spokenWords("we ship on friday", in: samples) }
+                return spokenWords(peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)", in: samples)
             },
             finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false }),
             isDictating: { [unowned self] in dictating })
@@ -165,7 +165,8 @@ struct MeetingsTests {
         try await h.waitForFixtures(count: 2)
         h.meetings.stop(id: "m1")
         try await h.waitForDrained()
-        #expect(h.segments() == ["system@3500-6000"], "the mic heard the same words, so only system audio keeps them")
+        #expect(h.segments() == ["mic@0-2500", "system@3500-6000"],
+                "the mic heard the system's words as it played them, so only system audio keeps them; the same words earlier are the user's")
     }
 
     @Test func dictationSilencesTheMeetingMicAndHoldsMeetingDecodes() async throws {
@@ -210,7 +211,7 @@ struct MeetingsTests {
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
         let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false })
-        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in "" }, finalPass: finalPass,
+        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in [] }, finalPass: finalPass,
                                 isDictating: { false })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-meetings-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -218,6 +219,6 @@ struct MeetingsTests {
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST": "1"]) == .disabled)
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST_MEETING_MIC": "/m.wav"]) == .live)
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_MEETING_MIC": "/m.wav",
-                                                         "VOICE_HELPER_TEST_MEETING_SPEED": "8"]) == .fixture(mic: "/m.wav", system: "", speed: 8))
+                                                         "VOICE_HELPER_TEST_MEETING_SPEED": "8"]) == .fixture(mic: "/m.wav", system: "", speed: 8, output: ""))
     }
 }
