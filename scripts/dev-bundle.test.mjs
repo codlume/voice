@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -66,5 +67,24 @@ test(
     assert.equal(devElectronPath(stock, devDir), stock);
     assert.equal(errors.mock.callCount(), 1);
     assert.match(errors.mock.calls[0].arguments[0], unavailable);
+  },
+);
+
+test(
+  "the bundle asks for the microphone and system audio in Voice's own words",
+  { skip: process.platform !== "darwin" },
+  (t) => {
+    const { stock, devDir, bin } = fixture(t);
+    // Stops right after the Info.plist edits, which leaves the staged copy to read.
+    failingCommand(t, bin, "codesign");
+    devElectronPath(stock, devDir);
+    const plist = join(devDir, "staging/Voice Dev.app/Contents/Info.plist");
+    const read = (key) =>
+      execFileSync("plutil", ["-extract", key, "raw", plist], { encoding: "utf8" }).trim();
+    assert.equal(
+      read("NSMicrophoneUsageDescription"),
+      "Voice uses your microphone only while you dictate or during a meeting you start.",
+    );
+    assert.match(read("NSAudioCaptureUsageDescription"), /^Voice records sound from other apps/);
   },
 );
