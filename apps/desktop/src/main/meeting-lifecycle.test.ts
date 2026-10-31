@@ -116,10 +116,7 @@ describe("meeting lifecycle", () => {
     ]);
     expect(meeting?.status).toEqual({ kind: "finishing" });
     const marks = effects.flatMap((effect) => (effect.type === "mark" ? [effect.marker] : []));
-    expect(marks).toEqual([
-      { kind: "marker", marker: "paused", atMs: 10 * MIN },
-      { kind: "marker", marker: "resumed", atMs: 10 * MIN },
-    ]);
+    expect(marks).toEqual(["paused", "resumed"]);
     expect(effects).toContainEqual({ type: "startCapture", leg: 1 });
   });
 
@@ -158,10 +155,7 @@ describe("meeting lifecycle", () => {
       [{ type: "captureLost", leg: 0 }, 7 * MIN],
     ]);
     expect(meeting?.status).toEqual({ kind: "paused" });
-    expect(effects).toContainEqual({
-      type: "mark",
-      marker: { kind: "marker", marker: "gap", atMs: 7 * MIN },
-    });
+    expect(effects).toContainEqual({ type: "mark", marker: "gap" });
     expect(notices(effects)).toEqual(["captureLost"]);
     expect(kinds(effects).filter((kind) => kind === "startCapture")).toHaveLength(1);
   });

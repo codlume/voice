@@ -7,6 +7,8 @@ import type { DictationLanguage } from "../shared/dictation-language.ts";
 import {
   meetingToggle,
   recordedMs,
+  type Marker,
+  type MarkerKind,
   type Meeting,
   type MeetingCommandResult,
   type MeetingId,
@@ -66,7 +68,10 @@ export type MeetingRecorderDeps = {
 export const START_TIMEOUT_MS = 10_000;
 export const TRANSCRIBE_IDLE_MS = 60_000;
 
-const AUDIO_FILES = ["mic.pcm", "system.pcm", "audio.json"] as const;
+const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
+const AUDIO_FILES = [...PCM_FILES, "audio.json"] as const;
+/** 16 kHz mono Int16. */
+const PCM_BYTES_PER_MS = 32;
 const live = (meeting: Meeting) =>
   meeting.status.kind === "recording" || meeting.status.kind === "starting";
 const noFinalPass = async () => {};
@@ -176,8 +181,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         return;
       }
       case "mark":
-        await store.append(id, [effect.marker]);
-        deps.onTranscript(id, [effect.marker]);
+        if (meeting === null) return;
+        await mark(meeting, effect.marker);
         return;
       case "transcribeFinal":
         finalPending.add(id);
@@ -274,41 +279,59 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     if (silence.has(id)) armSilence(id);
   }
 
-  // A dictation mid-meeting: the helper records silence for it, and the transcript says why.
-  async function dictated() {
-    const meeting = store.state().meetings.find(({ status }) => status.kind === "recording");
-    if (!meeting) return;
-    const marker = {
-      kind: "marker",
-      marker: "dictated",
-      atMs: recordedMs(meeting, now()),
-    } as const;
+  async function mark(meeting: Meeting, kind: MarkerKind) {
+    const marker: Marker = { kind: "marker", marker: kind, atMs: await audioNow(meeting) };
     await store.append(meeting.id, [marker]);
     deps.onTranscript(meeting.id, [marker]);
   }
 
+  // A dictation mid-meeting: the helper records silence for it, and the transcript says why.
+  async function dictated() {
+    const meeting = store.state().meetings.find(({ status }) => status.kind === "recording");
+    if (meeting) await mark(meeting, "dictated");
+  }
+
+  /** The longer audio file's length in ms, or null while neither exists. */
+  async function audioLength(id: MeetingId): Promise<number | null> {
+    const sizes = await Promise.all(
+      PCM_FILES.map((name) =>
+        stat(NodePath.join(folder(id), name)).then(
+          ({ size }) => size,
+          () => null,
+        ),
+      ),
+    );
+    const found = sizes.filter((size) => size !== null);
+    return found.length === 0 ? null : Math.max(...found) / PCM_BYTES_PER_MS;
+  }
+
   /**
    * Meeting time at the audio files' first byte. It is 0 until the audio is deleted after a final
-   * transcript; a resume after that starts new files at the time recorded so far.
+   * transcript; a resume after that starts new files after everything already transcribed.
    */
   async function audioBase(meeting: Meeting): Promise<number> {
     const file = NodePath.join(folder(meeting.id), "audio.json");
-    const hasAudio = await stat(NodePath.join(folder(meeting.id), "mic.pcm")).then(
-      () => true,
-      () => false,
-    );
-    if (hasAudio) {
+    if ((await audioLength(meeting.id)) !== null) {
       const saved = await readFile(file, "utf8").then(
         (text) => (JSON.parse(text) as { baseMs?: unknown }).baseMs,
         () => 0,
       );
       return typeof saved === "number" && Number.isFinite(saved) && saved >= 0 ? saved : 0;
     }
-    const baseMs = recordedMs(meeting, now());
+    const baseMs = Math.max(recordedMs(meeting, now()), reach(await store.transcript(meeting.id)));
     if (live(meeting)) {
       await writeFile(file, JSON.stringify({ baseMs }), { mode: 0o600 });
     }
     return baseMs;
+  }
+
+  /** Meeting time at the end of the recorded audio, the time base segments use. */
+  async function audioNow(meeting: Meeting): Promise<number> {
+    const length = await audioLength(meeting.id);
+    if (length === null) {
+      return Math.max(recordedMs(meeting, now()), reach(await store.transcript(meeting.id)));
+    }
+    return (await audioBase(meeting)) + length;
   }
 
   async function cursor(id: MeetingId): Promise<MeetingCursor> {
@@ -489,6 +512,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     },
   };
 }
+
+/** The latest meeting time the transcript holds anything at. */
+const reach = (transcript: readonly TranscriptEntry[]) =>
+  Math.max(0, ...transcript.map((entry) => (entry.kind === "segment" ? entry.endMs : entry.atMs)));
 
 const words = (transcript: readonly TranscriptEntry[]) =>
   transcript.reduce(

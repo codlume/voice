@@ -71,9 +71,10 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     },
     sentTypes: () => sent.map(({ type }) => type),
     folder: (id: MeetingId) => NodePath.join(dir, id),
-    async audio(id: MeetingId) {
-      await writeFile(NodePath.join(dir, id, "mic.pcm"), Buffer.alloc(3200));
-      await writeFile(NodePath.join(dir, id, "system.pcm"), Buffer.alloc(3200));
+    /** Grows both audio files to `ms` of 16 kHz mono Int16, as the helper writes them. */
+    async audio(id: MeetingId, ms = 100) {
+      await writeFile(NodePath.join(dir, id, "mic.pcm"), Buffer.alloc(ms * 32));
+      await writeFile(NodePath.join(dir, id, "system.pcm"), Buffer.alloc(ms * 32));
     },
     async start() {
       const result = await recorder.start();
@@ -146,6 +147,7 @@ describe("meeting recorder", () => {
     const id = await h.start();
     await h.segment(id, "mic", 1000, "First part");
     h.advance(60_000);
+    await h.audio(id, 60_000);
     await h.recorder.pause(id);
     await h.settle();
     expect(h.sentTypes()).toEqual(["meeting.start", "meeting.stop"]);
@@ -347,6 +349,7 @@ describe("meeting recorder", () => {
     const h = harness();
     const id = await h.start();
     h.advance(30_000);
+    await h.audio(id, 30_000);
     h.recorder.helperExited();
     await h.settle();
     expect(h.store.get(id)?.status.kind).toBe("paused");
@@ -358,6 +361,7 @@ describe("meeting recorder", () => {
     const h = harness();
     const id = await h.start();
     h.advance(42_000);
+    await h.audio(id, 42_000);
     const before = h.sent.length;
     h.emit({
       type: "capture.started",
@@ -392,6 +396,49 @@ describe("meeting recorder", () => {
     expect(h.notices).toContain("maxLengthReached");
     expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
     expect(h.store.get(id)?.status.kind).toBe("finishing");
+  });
+
+  test("markers sit at the end of the recorded audio, so they sort among segments at any playback speed", async () => {
+    const h = harness();
+    const id = await h.start();
+    // Fixture playback runs 8x: one wall-clock second records eight seconds of audio.
+    h.advance(1000);
+    await h.audio(id, 8000);
+    await h.segment(id, "mic", 5000, "Before the pause");
+    await h.recorder.pause(id);
+    await h.settle();
+    h.advance(1000);
+    await h.recorder.resume(id);
+    h.emit({ type: "meeting.started", id, mic: "active", system: "active" });
+    await h.settle();
+    await h.audio(id, 16_000);
+    await h.segment(id, "mic", 9000, "After the resume");
+
+    const order = (await h.store.transcript(id)).map((entry) =>
+      entry.kind === "marker" ? entry.marker : entry.text,
+    );
+    expect(order).toEqual(["Before the pause", "paused", "resumed", "After the resume"]);
+    expect(await h.store.transcript(id)).toContainEqual({
+      kind: "marker",
+      marker: "paused",
+      atMs: 8000,
+    });
+  });
+
+  test("a resume after the audio was deleted starts new files after everything transcribed", async () => {
+    const h = harness();
+    const id = await h.start();
+    h.advance(10_000);
+    await h.audio(id, 80_000);
+    await h.segment(id, "mic", 70_000, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    await h.drained(id);
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+
+    await h.recorder.resume(id);
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 72_000 });
   });
 
   test("a resume after the audio was deleted starts new files at the time recorded so far", async () => {
