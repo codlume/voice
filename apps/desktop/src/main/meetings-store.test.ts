@@ -274,11 +274,27 @@ describe("meetings store", () => {
         .toSorted(),
     ).toEqual([B, C]);
     expect(existsSync(meetingDir(A))).toBe(false);
+    expect(later.logs).toContain("meetings: deleted 1 past the week retention");
 
     await later.store.updateSettings({ retention: "forever" });
     later.clock.now = START + 400 * DAY;
     await later.store.expire();
     expect(later.store.state().meetings).toHaveLength(2);
+  });
+
+  test("a meeting a crash left unfinished is not deleted in the launch that finishes it", async () => {
+    const first = harness();
+    await first.loaded;
+    await seed(first.store, meeting(A, { status: { kind: "paused" } }));
+    await first.store.updateSettings({ retention: "day" });
+
+    const later = await relaunch({ now: START + 30 * DAY });
+    await later.store.upsert(A, (found) => found && { ...found, status: { kind: "ready" } });
+    await later.store.expire();
+    expect(later.store.get(A)?.status.kind).toBe("ready");
+
+    const next = await relaunch({ now: START + 30 * DAY });
+    expect(next.store.get(A)).toBeNull();
   });
 
   test("forever is the default and keeps old meetings", async () => {

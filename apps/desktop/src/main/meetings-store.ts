@@ -112,6 +112,9 @@ export function createMeetingsStore(options: {
   const tombstones = new Set<MeetingId>();
   // Transcripts whose last line this run checked, so an append never joins a line a crash tore.
   const appendChecked = new Set<MeetingId>();
+  // Meetings this launch found unfinished. Recovery finishes them; retention waits a launch, so
+  // a meeting is never deleted the moment it comes back, before the user saw it.
+  const recovered = new Set<MeetingId>();
   let ready = false;
   let expiry: NodeJS.Timeout | null = null;
   let queue: Promise<void> = Promise.resolve();
@@ -190,6 +193,9 @@ export function createMeetingsStore(options: {
     }
     const ids = names.flatMap((name) => parseMeetingId(name) ?? []);
     await Promise.all(ids.map(loadMeeting));
+    for (const meeting of meetings.values()) {
+      if (meeting.status.kind !== "ready") recovered.add(meeting.id);
+    }
     try {
       const found = await readJson(foldersFile);
       if (found) folders = parseFolders(found.folders);
@@ -209,7 +215,7 @@ export function createMeetingsStore(options: {
   }
 
   function expiresAt(meeting: Meeting): number {
-    if (meeting.status.kind !== "ready") return Infinity;
+    if (meeting.status.kind !== "ready" || recovered.has(meeting.id)) return Infinity;
     return (endedAt(meeting) ?? meeting.createdAt) + meetingRetentionMs[settings.retention];
   }
 
@@ -236,6 +242,8 @@ export function createMeetingsStore(options: {
       const cutoff = now();
       const old = [...meetings.values()].filter((meeting) => expiresAt(meeting) <= cutoff);
       for (const { id } of old) await removeNow(id);
+      if (old.length > 0)
+        log(`meetings: deleted ${old.length} past the ${settings.retention} retention`);
       scheduleExpiry();
     });
 
