@@ -1,0 +1,46 @@
+[00:00:03] You: Hey, can you hear me okay?
+[00:00:05] Speaker 1: Yeah, yeah, you're good. Sorry, I'm, uh, still on my first coffee.
+[00:00:10] You: Same. Okay so this should be quick, I just wanna figure out the CSV thing before standup eats the morning.
+[00:00:18] Speaker 1: Right, the export. So, um, I looked at it last night. It's broken since four point twelve point zero, the release on Tuesday.
+[00:00:26] You: Broken how exactly? Because support said, like, the columns are all shifted.
+[00:00:31] Speaker 1: Yeah so two things. The first one is if a customer name has a comma in it, like, uh, "Smith, Jones and Partners", the field isn't quoted anymore, so it splits into two columns and everything after it shifts over by one.
+[00:00:47] You: Oh no.
+[00:00:48] Speaker 1: And the second thing is we dropped the, the UTF-8 BOM, so when people open the file in Excel any accented characters turn into garbage. Like the ü in Müller shows up as, you know, the weird A with the tilde.
+[00:01:03] You: Okay. And that came from the serializer change?
+[00:01:07] Speaker 1: Yeah, the new serializer we swapped in. It doesn't quote by default, and nobody, uh, nobody caught it because our fixture data has no commas. Which is, yeah, kind of embarrassing.
+[00:01:18] You: How many customers are hitting it?
+[00:01:21] Speaker 1: Support has three tickets so far. The loudest one is Brightline Logistics, they run a weekly export into their accounting system and it, it just failed on Wednesday.
+[00:01:31] You: Okay. So, um, my first instinct was honestly just roll back four twelve entirely and be done with it.
+[00:01:39] Speaker 1: I mean, we could, but four twelve has the billing migration in it. If we roll back we'd have to undo the schema change and that's, that's way scarier than the bug.
+[00:01:50] You: Yeah, no, you're right. Rolling back isn't worth it. Let's not touch the billing stuff.
+[00:01:56] Speaker 1: Yeah.
+[00:01:58] You: So then it's a hotfix. Do we wait for the Thursday release train or do we just ship it?
+[00:02:05] Speaker 1: I'd rather not wait. Brightline runs their export again on Monday, and, uh, Thursday is technically fine but then everyone else is broken for another, what, five days?
+[00:02:16] You: Okay, let's do it. We ship four point twelve point one as a hotfix today, outside the train.
+[00:02:23] Speaker 1: Cool.
+[00:02:24] You: What's the scope though? Because Marta also forwarded that request about reordering the columns, the, uh, putting the invoice date first.
+[00:02:32] Speaker 1: I saw that. I'd really keep it out. If we change the column order in a hotfix, anyone with a script parsing the file breaks again, just in a different way.
+[00:02:44] You: Fair. Okay so, hotfix is only the quoting and the BOM. The column order thing goes into next sprint.
+[00:02:51] Speaker 1: Yep.
+[00:02:53] You: So who, um, okay, can you take the actual fix?
+[00:02:57] Speaker 1: Yeah, I'll do it. I'll turn quoting back on, add the BOM back, and I'll add a regression test with a name that has a comma and an umlaut in it so this doesn't happen again.
+[00:03:10] You: When do you think you'll have a PR up?
+[00:03:14] Speaker 1: Uh, by two? Two o'clock today should be fine, it's like ten lines plus the test.
+[00:03:20] You: Perfect. I'll review it as soon as it's up, and then I'll run it through QA on staging and do the deploy myself this afternoon.
+[00:03:30] Speaker 1: Oh nice, okay. Do you want me on standby for the deploy?
+[00:03:34] You: Just, yeah, just be on Slack in case the migration check complains. It shouldn't, there's no schema change.
+[00:03:41] Speaker 1: Sure.
+[00:03:43] You: And, um, what about support? Marta needs something to tell Brightline.
+[00:03:47] Speaker 1: Do you want me to write to her?
+[00:03:51] You: No, I'll do it, I'm talking to her at eleven anyway. I'll tell her the fix goes out today and she can answer the three tickets.
+[00:04:01] Speaker 1: Okay. Should we also, like, tell them they have to re-run the export? The old files are still wrong.
+[00:04:08] You: Good point. Yeah, I'll mention that, they need to re-export anything from Tuesday on.
+[00:04:13] Speaker 1: Cool. Oh, and side note, the staging box is slow again, so QA might take a bit longer than usual.
+[00:04:21] You: Ugh, of course it is. Is that the, the disk thing again or something new?
+[00:04:27] Speaker 1: No idea honestly. Platform said they'd look at it this week, but, you know.
+[00:04:32] You: Yeah. It's fine, I'll start early.
+[00:04:35] Speaker 1: Anything else?
+[00:04:37] You: Um, no, I think that's it. Quoting and BOM, PR by two, I review and deploy, and I'll handle Marta.
+[00:04:44] Speaker 1: Sounds good.
+[00:04:46] You: Thanks. Okay, see you at standup.
+[00:04:49] Speaker 1: See you.
