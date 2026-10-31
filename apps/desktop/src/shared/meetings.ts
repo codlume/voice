@@ -279,11 +279,27 @@ export type MeetingPrompt =
   | { kind: "maxLengthSoon"; endsAt: number }
   | { kind: "notice"; text: string };
 
+/** What the user can do from a notice besides dismissing it. */
+export type MeetingNoticeAction = "viewSummary" | "retryFinalPass" | "deleteAudio";
+
 /**
  * A notice the Meetings page shows until the user dismisses it or it no longer applies. `key`
- * tells two notices apart; the notepad's prompt from the same notice shares it.
+ * tells two notices apart; the notepad's prompt from the same notice shares it. One that is not
+ * `dismissable` stays until what it reports is resolved.
  */
-export type MeetingBanner = { key: number; id: MeetingId; text: string };
+export type MeetingBanner = {
+  key: number;
+  id: MeetingId;
+  text: string;
+  actions: readonly MeetingNoticeAction[];
+  dismissable: boolean;
+};
+
+export const meetingNoticeActionLabels: Record<MeetingNoticeAction, string> = {
+  viewSummary: "View summary",
+  retryFinalPass: "Try again",
+  deleteAudio: "Delete audio",
+};
 
 function lostText(loss: AudioLoss | null): string {
   const what =

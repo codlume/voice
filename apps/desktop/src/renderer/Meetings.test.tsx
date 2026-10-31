@@ -360,8 +360,14 @@ describe("meeting notices", () => {
     await render({
       ...setUp,
       meetingNotices: [
-        { key: 2, id: id(1), text: "The summary could not be written." },
-        { key: 1, id: id(9), text: "Recording did not start." },
+        {
+          key: 2,
+          id: id(1),
+          text: "The summary could not be written.",
+          actions: [],
+          dismissable: true,
+        },
+        { key: 1, id: id(9), text: "Recording did not start.", actions: [], dismissable: true },
       ],
     });
     const notices = [...document.querySelectorAll("[role=status]")].map((p) => p.textContent);
@@ -375,6 +381,37 @@ describe("meeting notices", () => {
     await waitForText("All meetings");
     expect(text()).toContain("The summary could not be written.");
     expect(text()).not.toContain("Recording did not start.");
+  });
+});
+
+describe("a failed final pass", () => {
+  test("offers to try again or delete the kept audio, and cannot be dismissed", async () => {
+    fakeMain(sample());
+    const retryMeetingTranscript = vi.fn(
+      async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const,
+    );
+    const deleteMeetingAudio = vi.fn(
+      async () => ({ kind: "refused", message: "There is no kept audio to delete." }) as const,
+    );
+    window.voice = { ...window.voice, retryMeetingTranscript, deleteMeetingAudio } as HubApi;
+    await render({
+      ...setUp,
+      meetingNotices: [
+        {
+          key: 3,
+          id: id(1),
+          text: "The final transcript could not be made.",
+          actions: ["retryFinalPass", "deleteAudio"],
+          dismissable: false,
+        },
+      ],
+    });
+    expect(text()).not.toContain("Dismiss");
+    await click(byText("Try again"));
+    expect(retryMeetingTranscript).toHaveBeenCalledWith(id(1));
+    await click(byText("Delete audio"));
+    expect(deleteMeetingAudio).toHaveBeenCalledWith(id(1));
+    await waitForText("There is no kept audio to delete.");
   });
 });
 

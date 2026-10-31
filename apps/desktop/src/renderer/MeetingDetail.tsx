@@ -583,7 +583,7 @@ export function MeetingDetail({
       <p role="status" {...stylex.props(feedback ? styles.muted : a11y.visuallyHidden)}>
         {feedback && feedbackText[feedback]}
       </p>
-      <MeetingNotices notices={notices} />
+      <MeetingNotices notices={notices} onViewSummary={() => setTab("summary")} />
       <Tabs.Root
         value={tab}
         onValueChange={(value: unknown) => {

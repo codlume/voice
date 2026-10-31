@@ -824,6 +824,8 @@ function fakeMeetings(
     keepMeeting: unavailable,
     discardMeeting: unavailable,
     generateMeetingSummary: unavailable,
+    retryMeetingTranscript: unavailable,
+    deleteMeetingAudio: unavailable,
     onMeetingTranscript: () => () => {},
     onMeetingPartial: () => () => {},
     dismissMeetingNotice: async () => {},

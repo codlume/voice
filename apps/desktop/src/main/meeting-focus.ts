@@ -6,6 +6,7 @@ import {
   type MeetingBanner,
   type MeetingId,
   type MeetingNotice,
+  type MeetingNoticeAction,
   type MeetingPrompt,
   type PillMeeting,
   type PillMeetingStatus,
@@ -86,14 +87,14 @@ function stillApplies(prompt: MeetingPrompt, meeting: Meeting): boolean {
 }
 
 // A failed start has no meeting; it is moot once one records. A failed summary goes once it is
-// tried again, and a failed final pass stays.
+// tried again, and a failed final pass once the pass is made or its audio deleted.
 function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   if (banner.kind === "startFailed") return !meetings.some(isCapturing);
   const meeting = meetings.find(({ id }) => id === banner.id);
   if (!meeting) return false;
   switch (banner.kind) {
     case "finalPassFailed":
-      return true;
+      return meeting.finalPassFailed;
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
     default:
@@ -125,13 +126,26 @@ export function raise(
   if (text === null) return prompt ? { ...focus, raised: { id, prompt, key: null } } : focus;
   const key = focus.nextKey;
   const others = focus.banners.filter((banner) => banner.id !== id || banner.kind !== notice.kind);
+  const banner: Banner = {
+    key,
+    id,
+    kind: notice.kind,
+    text,
+    actions: noticeActions[notice.kind] ?? [],
+    dismissable: notice.kind !== "finalPassFailed",
+  };
   return {
     ...focus,
     raised: prompt ? { id, prompt, key } : focus.raised,
-    banners: [{ key, id, kind: notice.kind, text }, ...others],
+    banners: [banner, ...others],
     nextKey: key + 1,
   };
 }
+
+const noticeActions: Partial<Record<MeetingNotice["kind"], readonly MeetingNoticeAction[]>> = {
+  finalPassFailed: ["retryFinalPass", "deleteAudio"],
+  summaryReady: ["viewSummary"],
+};
 
 /** Answers the notepad's prompt, and takes the notice it came from off the Meetings page. */
 export const dismiss = (focus: MeetingFocus): MeetingFocus =>
@@ -146,7 +160,7 @@ export function dismissBanner(focus: MeetingFocus, key: number | null): MeetingF
 }
 
 export const meetingBanners = (focus: MeetingFocus): MeetingBanner[] =>
-  focus.banners.map(({ key, id, text }) => ({ key, id, text }));
+  focus.banners.map(({ kind: _kind, ...banner }) => banner);
 
 /** "Started by mistake?" holds the meeting, so it comes before anything a notice raised. */
 export function promptFor(meeting: Meeting, focus: MeetingFocus): MeetingPrompt | null {
