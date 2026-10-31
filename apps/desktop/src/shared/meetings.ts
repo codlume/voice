@@ -285,20 +285,37 @@ export function foldTranscript(lines: readonly TranscriptEntry[]): TranscriptEnt
     .toSorted((a, b) => entryMs(a) - entryMs(b));
 }
 
+const ruleMatches = (meeting: Meeting, folder: FolderKind): boolean =>
+  folder.kind === "auto" &&
+  meeting.title !== null &&
+  folder.rule.text.trim() !== "" &&
+  meeting.title.text.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
+
 export function autoFolderIds(
   meeting: Meeting,
   folders: readonly Folder[],
   settings: MeetingsSettings,
 ): FolderId[] {
-  if (!settings.autoFolders || meeting.title === null) return [];
-  const title = meeting.title.text.toLocaleLowerCase();
-  return folders.flatMap((folder) =>
-    folder.kind === "auto" &&
-    folder.rule.text.trim() !== "" &&
-    title.includes(folder.rule.text.trim().toLocaleLowerCase())
-      ? [folder.id]
-      : [],
-  );
+  if (!settings.autoFolders) return [];
+  return folders.flatMap((folder) => (ruleMatches(meeting, folder) ? [folder.id] : []));
+}
+
+/**
+ * Files an existing meeting into `folder` after the folder was made (`before` null), its rule
+ * changed, or automatic folders were turned on. A meeting the new rule matches joins; one only
+ * the old rule matched leaves; one added by hand stays. Running it twice changes nothing.
+ */
+export function refile(meeting: Meeting, folder: Folder, before: FolderKind | null): Meeting {
+  const inFolder = meeting.folderIds.includes(folder.id);
+  if (ruleMatches(meeting, folder)) {
+    return inFolder ? meeting : { ...meeting, folderIds: [...meeting.folderIds, folder.id] };
+  }
+  // A folder turned manual keeps what it holds.
+  const left =
+    inFolder && folder.kind === "auto" && before !== null && ruleMatches(meeting, before);
+  return left
+    ? { ...meeting, folderIds: meeting.folderIds.filter((id) => id !== folder.id) }
+    : meeting;
 }
 
 const SNIPPET_CONTEXT = 40;
