@@ -11,15 +11,20 @@ final class Meetings {
     private let source: MeetingAudioSource
     private let decode: MeetingTranscription.Decode
     private let isDictating: () -> Bool
+    private let finalPass: MeetingFinalPass
     private var legs: [String: MeetingCapture] = [:]
     private var jobs: [String: MeetingTranscription] = [:]
+    private var finals: [String: Task<Void, Never>] = [:]
+    // Final passes run one after another, so two meetings never hold two diarizers at once.
+    private var lastFinal: Task<Void, Never>?
 
     init(output: Output, devices: AudioInputDevices, source: MeetingAudioSource, decode: @escaping MeetingTranscription.Decode,
-         isDictating: @escaping () -> Bool) {
+         finalPass: MeetingFinalPass, isDictating: @escaping () -> Bool) {
         self.output = output
         self.devices = devices
         self.source = source
         self.decode = decode
+        self.finalPass = finalPass
         self.isDictating = isDictating
     }
 
@@ -55,6 +60,7 @@ final class Meetings {
     func cancel(id: String) {
         legs.removeValue(forKey: id)?.stop()
         jobs.removeValue(forKey: id)?.cancel()
+        finals.removeValue(forKey: id)?.cancel()
     }
 
     func transcribe(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) {
@@ -62,11 +68,28 @@ final class Meetings {
         if legs[id] == nil { job.drain() }
     }
 
+    /// A second request while this meeting's pass runs starts no second pass.
+    func finalize(id: String, dir: String, baseMs: Double, language: DictationLanguage) {
+        guard finals[id] == nil else { return }
+        let previous = lastFinal
+        let pass = finalPass
+        let task = Task { [weak self] in
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await pass.run(id: id, dir: URL(fileURLWithPath: dir), baseMs: baseMs, language: language)
+            self?.finals[id] = nil
+        }
+        finals[id] = task
+        lastFinal = task
+    }
+
     func shutdown() {
         legs.values.forEach { $0.stop() }
         legs = [:]
         jobs.values.forEach { $0.cancel() }
         jobs = [:]
+        finals.values.forEach { $0.cancel() }
+        finals = [:]
     }
 
     private func job(id: String, dir: URL, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) -> MeetingTranscription {
@@ -237,5 +260,79 @@ final class MeetingTranscription {
 
     private func file(_ source: MeetingSource) -> URL {
         dir.appendingPathComponent("\(source.rawValue).pcm")
+    }
+}
+
+/// The more accurate pass after Stop: both files transcribed again in long windows with word
+/// times, then the system file diarized. The two run one after the other, so the diarizer never
+/// shares memory with a decode. Dictation comes first: no window or diarization starts while a
+/// dictation runs.
+@MainActor
+final class MeetingFinalPass {
+    typealias DecodeWords = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
+    /// Speaker turns in ms from the start of the file, or nil when the voices cannot be told apart.
+    typealias Diarize = (_ url: URL) async -> [SpeakerTurn]?
+
+    private let output: Output
+    private let decode: DecodeWords
+    private let diarize: Diarize
+    private let isDictating: () -> Bool
+    private let idle: Duration
+
+    init(output: Output, decode: @escaping DecodeWords, diarize: @escaping Diarize, isDictating: @escaping () -> Bool,
+         idle: Duration = .milliseconds(300)) {
+        self.output = output
+        self.decode = decode
+        self.diarize = diarize
+        self.isDictating = isDictating
+        self.idle = idle
+    }
+
+    func run(id: String, dir: URL, baseMs: Double, language: DictationLanguage) async {
+        let systemURL = dir.appendingPathComponent("\(MeetingSource.system.rawValue).pcm")
+        do {
+            let mic = try await words(in: dir.appendingPathComponent("\(MeetingSource.mic.rawValue).pcm"), baseMs: baseMs, language: language)
+            let system = try await words(in: systemURL, baseMs: baseMs, language: language)
+            var turns: [SpeakerTurn]?
+            if !system.isEmpty {
+                try await dictationDone()
+                turns = await diarize(systemURL)?.map {
+                    SpeakerTurn(speaker: $0.speaker, startMs: baseMs + $0.startMs, endMs: baseMs + $0.endMs)
+                }
+            }
+            try Task.checkCancellation()
+            output.emit(.meetingFinalized(id: id, segments: FinalTranscript.segments(mic: mic, system: system, turns: turns)))
+        } catch is CancellationError {
+            return
+        } catch {
+            output.emit(.meetingFinalizeFailed(id: id, message: (error as? TranscribeError)?.message ?? "\(error)"))
+        }
+    }
+
+    private func words(in url: URL, baseMs: Double, language: DictationLanguage) async throws -> [TimedWord] {
+        let total = PcmFile.frames(at: url)
+        var offset = 0
+        var words: [TimedWord] = []
+        while offset < total {
+            try await dictationDone()
+            let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
+            guard !samples.isEmpty else { break }
+            let window = Array(samples.prefix(MeetingChunker.finalCut(samples)))
+            if let speech = MeetingChunker.speech(in: window) {
+                let startMs = baseMs + PcmFile.milliseconds(offset + speech.lowerBound)
+                words += try await decode(Array(window[speech]), language).map {
+                    TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
+                }
+            }
+            offset += window.count
+        }
+        return words
+    }
+
+    private func dictationDone() async throws {
+        while isDictating() {
+            try await Task.sleep(for: idle)
+        }
+        try Task.checkCancellation()
     }
 }

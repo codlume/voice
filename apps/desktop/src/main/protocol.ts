@@ -15,7 +15,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 17;
+export const HELPER_PROTOCOL_VERSION = 18;
 
 export type HelperCommand =
   | {
@@ -77,6 +77,15 @@ export type HelperCommand =
       dir: string;
       baseMs: number;
       fromMs: MeetingCursor;
+      language: DictationLanguage;
+    }
+  // Transcribes both files again in full and tells the system voices apart; meeting.finalized
+  // or meeting.finalizeFailed follows. The files are only read.
+  | {
+      type: "meeting.finalize";
+      id: string;
+      dir: string;
+      baseMs: number;
       language: DictationLanguage;
     };
 
@@ -307,6 +316,26 @@ const HelperEventSchema = Schema.Union([
     type: Schema.Literal("meeting.drained"),
     id: Schema.String,
     failure: nullOnInvalid(Schema.String),
+  }),
+  // `speaker` numbers the system voices from 0 in the order they first speak; null on the mic
+  // and when the voices could not be told apart.
+  Schema.Struct({
+    type: Schema.Literal("meeting.finalized"),
+    id: Schema.String,
+    segments: Schema.Array(
+      Schema.Struct({
+        source: Schema.Literals(["mic", "system"]),
+        startMs: Schema.Finite,
+        endMs: Schema.Finite,
+        text: Schema.String,
+        speaker: Schema.NullOr(Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))),
+      }),
+    ),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("meeting.finalizeFailed"),
+    id: Schema.String,
+    message: Schema.String,
   }),
   Schema.Struct({
     type: Schema.Literal("log"),

@@ -18,6 +18,7 @@ import {
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import type { Log } from "./diagnostics-scrub.ts";
+import { applyFinalPass, type FinalSegment } from "./meeting-final-pass.ts";
 import {
   SILENCE_PROMPT_MS,
   step,
@@ -53,11 +54,6 @@ export type MeetingRecorderDeps = {
   capture: () => { language: DictationLanguage; microphone: Microphone | null };
   onTranscript: (id: MeetingId, entries: readonly TranscriptEntry[]) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
-  /**
-   * Step 3's more accurate pass over the whole recording. It runs once the live transcript has
-   * caught up and before the audio is deleted, so it may still read the files.
-   */
-  finalPass?: (id: MeetingId) => Promise<void>;
   /** Step 4's summary. Until it exists a summary request fails and the transcript is kept. */
   summarize?: (id: MeetingId) => Promise<string>;
   log: Log;
@@ -67,6 +63,8 @@ export type MeetingRecorderDeps = {
 /** Without a word from the helper for this long, a start, drain or final pass counts as failed. */
 export const START_TIMEOUT_MS = 10_000;
 export const TRANSCRIBE_IDLE_MS = 60_000;
+/** The final pass reports only when done: three hours of audio, plus a first model download. */
+export const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
 
 const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
 const AUDIO_FILES = [...PCM_FILES, "audio.json"] as const;
@@ -74,7 +72,6 @@ const AUDIO_FILES = [...PCM_FILES, "audio.json"] as const;
 const PCM_BYTES_PER_MS = 32;
 const live = (meeting: Meeting) =>
   meeting.status.kind === "recording" || meeting.status.kind === "starting";
-const noFinalPass = async () => {};
 const noSummary = async (): Promise<string> => {
   throw new Error("Summaries are not available yet.");
 };
@@ -88,13 +85,13 @@ const noSummary = async (): Promise<string> => {
 export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorder {
   const { store, log } = deps;
   const now = deps.now ?? Date.now;
-  const finalPass = deps.finalPass ?? noFinalPass;
   const summarize = deps.summarize ?? noSummary;
   const timers = new Map<MeetingId, NodeJS.Timeout[]>();
   const watchdogs = new Map<MeetingId, NodeJS.Timeout>();
   const silence = new Map<MeetingId, NodeJS.Timeout>();
-  // Meetings whose final pass waits for `meeting.drained`; resent when the helper comes back.
-  const finalPending = new Set<MeetingId>();
+  // Meetings in their final pass: catching the live transcript up, then the helper's pass over
+  // the whole recording. Each step is sent again when the helper comes back.
+  const finalPending = new Map<MeetingId, "draining" | "finalizing">();
   let queue: Promise<unknown> = Promise.resolve();
   // Starts, toggles and the launch recovery run one at a time and each decides on the state the
   // one before left, so two quick presses never start two meetings and a press during launch
@@ -185,7 +182,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         await mark(meeting, effect.marker);
         return;
       case "transcribeFinal":
-        finalPending.add(id);
+        finalPending.set(id, "draining");
         await sendTranscribe(id);
         return;
       case "summarize":
@@ -230,6 +227,19 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     if (sent) watch(id, TRANSCRIBE_IDLE_MS, () => drained(id, "transcription stalled"));
   }
 
+  async function sendFinalize(id: MeetingId) {
+    const meeting = store.get(id);
+    if (!meeting) return;
+    const sent = deps.send({
+      type: "meeting.finalize",
+      id,
+      dir: folder(id),
+      baseMs: await audioBase(meeting),
+      language: deps.capture().language,
+    });
+    if (sent) watch(id, FINAL_PASS_TIMEOUT_MS, () => keepLive(id, "the final pass timed out"));
+  }
+
   // The live transcript has caught up with the audio, or gave up.
   async function drained(id: MeetingId, failure: string | null) {
     unwatch(id);
@@ -239,21 +249,46 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       await dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
       return;
     }
-    if (meeting.status.kind !== "transcribing" || !finalPending.delete(id)) return;
+    if (meeting.status.kind !== "transcribing" || finalPending.get(id) !== "draining") return;
     if (failure !== null) {
-      log(`meetings: final transcription failed (${failure}); the audio is kept`);
-      await dispatch(id, { type: "transcribeFailed" });
+      await keepLive(id, `the live transcript could not catch up (${failure})`);
       return;
     }
+    finalPending.set(id, "finalizing");
+    await sendFinalize(id);
+  }
+
+  // The helper's pass over the whole recording replaces the live transcript, then the audio goes.
+  async function finalized(id: MeetingId, segments: readonly FinalSegment[]) {
+    const meeting = store.get(id);
+    if (meeting?.status.kind !== "transcribing" || finalPending.get(id) !== "finalizing") return;
+    unwatch(id);
+    finalPending.delete(id);
     try {
-      await finalPass(id);
+      const fromMs = await audioBase(meeting);
+      const heard = await store.transcript(id);
+      // An empty pass over audio the live transcript found words in failed, whatever it says.
+      if (segments.length === 0 && heard.some((e) => e.kind === "segment" && e.startMs >= fromMs)) {
+        await keepLive(id, "the final pass found no words");
+        return;
+      }
+      await store.replaceTranscript(id, (current, transcript) =>
+        applyFinalPass(current, transcript, segments, fromMs),
+      );
       await deleteAudio(id);
     } catch (error) {
-      log(`meetings: finishing the transcript failed (${String(error)})`);
-      await dispatch(id, { type: "transcribeFailed" });
+      await keepLive(id, `saving it failed (${String(error)})`);
       return;
     }
     await dispatch(id, { type: "transcribed" });
+  }
+
+  // Any failure after Stop keeps the live transcript as the meeting's transcript, and the audio.
+  async function keepLive(id: MeetingId, why: string) {
+    unwatch(id);
+    finalPending.delete(id);
+    log(`meetings: final transcript not made, ${why}; the live transcript and the audio are kept`);
+    await dispatch(id, { type: "transcribeFailed" });
   }
 
   async function segment(event: Extract<HelperEvent, { type: "meeting.segment" }>) {
@@ -444,7 +479,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     onHelperEvent(event) {
       switch (event.type) {
         case "ready":
-          for (const id of finalPending) background("final pass", sendTranscribe(id));
+          for (const [id, phase] of finalPending) {
+            background("final pass", phase === "draining" ? sendTranscribe(id) : sendFinalize(id));
+          }
           for (const meeting of store.state().meetings) {
             if (meeting.status.kind === "finishing")
               background("drain", sendTranscribe(meeting.id));
@@ -477,6 +514,15 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.drained":
           background("drain", drained(event.id as MeetingId, event.failure));
           return;
+        case "meeting.finalized":
+          background("final pass", finalized(event.id as MeetingId, event.segments));
+          return;
+        case "meeting.finalizeFailed": {
+          const id = event.id as MeetingId;
+          if (finalPending.get(id) !== "finalizing") return;
+          background("final pass", keepLive(id, `the helper failed (${event.message})`));
+          return;
+        }
         default:
           return;
       }

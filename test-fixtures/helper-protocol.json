@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 17,
+  "protocolVersion": 18,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 16,
+      "version": 17,
       "compatible": false
     },
     {
-      "version": 17,
+      "version": 18,
       "compatible": true
     },
     {
-      "version": 18,
+      "version": 19,
       "compatible": false
     }
   ],
@@ -411,6 +411,17 @@
       "required": ["type", "id", "dir", "baseMs", "fromMs", "language"]
     },
     {
+      "name": "meeting.finalize",
+      "wire": {
+        "type": "meeting.finalize",
+        "id": "m1",
+        "dir": "/tmp/synthetic/meetings/m1",
+        "baseMs": 600000,
+        "language": "pl"
+      },
+      "required": ["type", "id", "dir", "baseMs", "language"]
+    },
+    {
       "name": "permissions.request.systemAudio",
       "wire": {
         "type": "permissions.request",
@@ -608,11 +619,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 17
+        "version": 18
       },
       "parsed": {
         "type": "ready",
-        "version": 17
+        "version": 18
       },
       "required": ["type", "version"]
     },
@@ -1436,6 +1447,108 @@
         "failure": "speech model is not downloaded"
       },
       "required": ["type", "id"]
+    },
+    {
+      "name": "meeting.finalized",
+      "wire": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "mic",
+            "startMs": 0,
+            "endMs": 1500.5,
+            "text": "Zażółć Ada 42",
+            "speaker": null
+          },
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": 0
+          },
+          {
+            "source": "system",
+            "startMs": 4500,
+            "endMs": 6000,
+            "text": "Synthetic second voice",
+            "speaker": 1
+          }
+        ]
+      },
+      "parsed": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "mic",
+            "startMs": 0,
+            "endMs": 1500.5,
+            "text": "Zażółć Ada 42",
+            "speaker": null
+          },
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": 0
+          },
+          {
+            "source": "system",
+            "startMs": 4500,
+            "endMs": 6000,
+            "text": "Synthetic second voice",
+            "speaker": 1
+          }
+        ]
+      },
+      "required": ["type", "id", "segments"]
+    },
+    {
+      "name": "meeting.finalized.undiarized",
+      "wire": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": null
+          }
+        ]
+      },
+      "parsed": {
+        "type": "meeting.finalized",
+        "id": "m1",
+        "segments": [
+          {
+            "source": "system",
+            "startMs": 2000,
+            "endMs": 4000,
+            "text": "Synthetic reply",
+            "speaker": null
+          }
+        ]
+      },
+      "required": ["type", "id", "segments"]
+    },
+    {
+      "name": "meeting.finalizeFailed",
+      "wire": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "message": "speech model is not downloaded"
+      },
+      "parsed": {
+        "type": "meeting.finalizeFailed",
+        "id": "m1",
+        "message": "speech model is not downloaded"
+      },
+      "required": ["type", "id", "message"]
     }
   ],
   "normalizedEvents": [

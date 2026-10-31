@@ -50,8 +50,19 @@ export type MeetingsStore = {
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
   append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
-  /** Swaps in a whole transcript, as the final pass does, atomically. */
-  replaceTranscript(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
+  /**
+   * Swaps in a whole transcript and the meeting that goes with it, as the final pass does. The
+   * transcript is written first, atomically, so a crash between the two leaves a transcript
+   * whose new speakers read as Others and a meeting that runs the pass again. False when the
+   * meeting is gone.
+   */
+  replaceTranscript(
+    id: MeetingId,
+    change: (
+      meeting: Meeting,
+      transcript: TranscriptEntry[],
+    ) => { meeting: Meeting; transcript: readonly TranscriptEntry[] },
+  ): Promise<boolean>;
   /** Deletes the meeting's folder: transcript, notes, summary and any audio. */
   remove(id: MeetingId): Promise<void>;
   createFolder(draft: FolderDraft): Promise<Folder>;
@@ -291,12 +302,19 @@ export function createMeetingsStore(options: {
         await appendFile(file, lead + lines(entries), { mode: FILE_MODE });
         appendChecked.add(id);
       }),
-    replaceTranscript: (id, entries) =>
+    replaceTranscript: (id, change) =>
       serial(async () => {
-        if (tombstones.has(id)) return;
-        await mkdir(meetingDir(id), { recursive: true, mode: DIR_MODE });
-        await writeFileAtomic(transcriptFile(id), lines(entries), { mode: FILE_MODE });
+        const meeting = meetings.get(id);
+        if (!meeting) return false;
+        const next = change(meeting, await readTranscript(id));
+        await writeFileAtomic(transcriptFile(id), lines(next.transcript), { mode: FILE_MODE });
         appendChecked.add(id);
+        if (next.meeting !== meeting) {
+          await writeMeeting(next.meeting);
+          meetings.set(id, next.meeting);
+          publish([next.meeting]);
+        }
+        return true;
       }),
     remove: (id) => serial(() => removeNow(id)),
     createFolder: (draft) =>

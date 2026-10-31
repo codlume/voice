@@ -150,6 +150,9 @@ public enum HelperCommand: Equatable, Sendable {
     case meetingCancel(id: String)
     /// Transcribes whatever of the files the transcript does not reach yet, without recording.
     case meetingTranscribe(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage)
+    /// Transcribes both files again in full, tells the voices in `system.pcm` apart, and answers
+    /// with `meeting.finalized` or `meeting.finalizeFailed`. The files are only read.
+    case meetingFinalize(id: String, dir: String, baseMs: Double, language: DictationLanguage)
 }
 
 /// Meeting time, per source, that a transcript already covers.
@@ -185,7 +188,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 17
+public let helperProtocolVersion = 18
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -226,6 +229,10 @@ public enum HelperEvent: Equatable, Sendable {
     /// Capture is stopped and everything recorded is transcribed, or `failure` says why the rest
     /// could not be; the audio stays on disk either way.
     case meetingDrained(id: String, failure: String?)
+    /// The final pass over the files, in meeting time. Its speakers number the system voices.
+    case meetingFinalized(id: String, segments: [FinalSegment])
+    /// The final pass could not finish; the live transcript and the audio stay as they are.
+    case meetingFinalizeFailed(id: String, message: String)
 }
 
 public struct ProtocolError: Error, Equatable, CustomStringConvertible, Sendable {
@@ -240,7 +247,8 @@ private enum Key: String, CodingKey {
     case paths, apps, name, icons, png, modifiedMs, browser
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
-    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting
+    case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting, segments
+    case speaker
 }
 
 extension HelperCommand: Decodable {
@@ -302,6 +310,10 @@ extension HelperCommand: Decodable {
             self = .meetingTranscribe(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
                                       baseMs: try c.decode(Double.self, forKey: .baseMs), fromMs: try c.decode(MeetingCursor.self, forKey: .fromMs),
                                       language: try c.decode(DictationLanguage.self, forKey: .language))
+        case "meeting.finalize":
+            self = .meetingFinalize(id: try c.decode(String.self, forKey: .id), dir: try c.decode(String.self, forKey: .dir),
+                                    baseMs: try c.decode(Double.self, forKey: .baseMs),
+                                    language: try c.decode(DictationLanguage.self, forKey: .language))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown command type \"\(type)\"")
         }
@@ -473,6 +485,14 @@ extension HelperEvent: Encodable {
             try c.encode("meeting.drained", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(failure, forKey: .failure)
+        case .meetingFinalized(let id, let segments):
+            try c.encode("meeting.finalized", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(segments, forKey: .segments)
+        case .meetingFinalizeFailed(let id, let message):
+            try c.encode("meeting.finalizeFailed", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(message, forKey: .message)
         }
     }
 
@@ -523,6 +543,17 @@ extension MeetingCursor: Decodable {
         guard mic.isFinite, system.isFinite, mic >= 0, system >= 0 else {
             throw DecodingError.dataCorruptedError(forKey: .mic, in: c, debugDescription: "cursor times must be finite and not negative")
         }
+    }
+}
+
+extension FinalSegment: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(source, forKey: .source)
+        try c.encode(finite(startMs), forKey: .startMs)
+        try c.encode(finite(endMs), forKey: .endMs)
+        try c.encode(text, forKey: .text)
+        try c.encode(speaker, forKey: .speaker)
     }
 }
 

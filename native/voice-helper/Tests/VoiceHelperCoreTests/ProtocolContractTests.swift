@@ -139,6 +139,7 @@ private func commandCases() -> [String: HelperCommand] {
         "meeting.cancel": .meetingCancel(id: "m1"),
         "meeting.transcribe": .meetingTranscribe(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 0,
                                                  fromMs: MeetingCursor(mic: 1250.5, system: 0), language: .en),
+        "meeting.finalize": .meetingFinalize(id: "m1", dir: "/tmp/synthetic/meetings/m1", baseMs: 600_000, language: .pl),
     ]
 }
 
@@ -202,6 +203,15 @@ private func eventCases() -> [String: HelperEvent] {
         "meeting.segment.system": .meetingSegment(id: "m1", source: .system, startMs: 5000, endMs: 9000, text: "Synthetic reply"),
         "meeting.drained": .meetingDrained(id: "m1", failure: nil),
         "meeting.drained.failure": .meetingDrained(id: "m1", failure: "speech model is not downloaded"),
+        "meeting.finalized": .meetingFinalized(id: "m1", segments: [
+            FinalSegment(source: .mic, startMs: 0, endMs: 1500.5, text: "Zażółć Ada 42", speaker: nil),
+            FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: 0),
+            FinalSegment(source: .system, startMs: 4500, endMs: 6000, text: "Synthetic second voice", speaker: 1),
+        ]),
+        "meeting.finalized.undiarized": .meetingFinalized(id: "m1", segments: [
+            FinalSegment(source: .system, startMs: 2000, endMs: 4000, text: "Synthetic reply", speaker: nil),
+        ]),
+        "meeting.finalizeFailed": .meetingFinalizeFailed(id: "m1", message: "speech model is not downloaded"),
     ]
 }
 
@@ -229,6 +239,7 @@ private func commandType(_ command: HelperCommand) -> String {
     case .meetingStop: "meeting.stop"
     case .meetingCancel: "meeting.cancel"
     case .meetingTranscribe: "meeting.transcribe"
+    case .meetingFinalize: "meeting.finalize"
     }
 }
 
@@ -262,6 +273,8 @@ private func eventType(_ event: HelperEvent) -> String {
     case .meetingFailed: "meeting.failed"
     case .meetingSegment: "meeting.segment"
     case .meetingDrained: "meeting.drained"
+    case .meetingFinalized: "meeting.finalized"
+    case .meetingFinalizeFailed: "meeting.finalizeFailed"
     }
 }
 

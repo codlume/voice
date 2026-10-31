@@ -166,17 +166,27 @@ describe("meetings store", () => {
     ]);
   });
 
-  test("replacing the transcript swaps in the final pass whole", async () => {
-    const { store, loaded } = harness();
+  test("replacing the transcript swaps in the final pass whole, with its meeting", async () => {
+    const { store, loaded, hub } = harness();
     await loaded;
     await store.put(meeting(A));
     await store.append(A, [segment("live", "helo wrld")]);
-    await store.replaceTranscript(A, [segment("final", "Hello world")]);
+    const speakers = [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }];
+    const seen: TranscriptEntry[][] = [];
+    const replaced = await store.replaceTranscript(A, (current, transcript) => {
+      seen.push(transcript);
+      return { meeting: { ...current, speakers }, transcript: [segment("final", "Hello world")] };
+    });
     await store.append(A, [{ kind: "marker", marker: "resumed", atMs: 5000 }]);
+    expect(replaced).toBe(true);
+    expect(seen).toEqual([[segment("live", "helo wrld")]]);
     expect(await store.transcript(A)).toEqual([
       segment("final", "Hello world"),
       { kind: "marker", marker: "resumed", atMs: 5000 },
     ]);
+    expect(hub()?.meetings[0]?.speakers).toEqual(speakers);
+    expect((await relaunch()).store.get(A)?.speakers).toEqual(speakers);
+    expect(await store.replaceTranscript(B, (m) => ({ meeting: m, transcript: [] }))).toBe(false);
   });
 
   test("deleting a meeting removes its folder, audio included, and late writes do not bring it back", async () => {
