@@ -15,7 +15,7 @@ Style lets a user turn text cleanup on or off and choose how cleaned-up dictatio
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Style`.
-- Keyboard: Cmd-3 in the Voice nav jumps to the third sidebar item. In the tab list, the arrow keys move between tabs.
+- Keyboard: Cmd-4 in the Voice nav jumps to the fourth sidebar item. In the tab list, the arrow keys move between tabs.
 
 ## Driving it with voice-verify
 

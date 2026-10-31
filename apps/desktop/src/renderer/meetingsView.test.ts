@@ -1,0 +1,231 @@
+import { describe, expect, test } from "vite-plus/test";
+
+import type { DayKey } from "../shared/insights.ts";
+import type { Meeting, MeetingId, TranscriptEntry } from "../shared/meetings.ts";
+import {
+  expiredBy,
+  inlineRuns,
+  liveMeeting,
+  meetingDays,
+  overview,
+  retentionSentence,
+  searchResults,
+  speakerNames,
+  summaryBlocks,
+  transcriptRows,
+} from "./meetingsView.ts";
+
+const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).getTime();
+
+function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): Meeting {
+  return {
+    id: id as MeetingId,
+    title: { text: id, source: "user" },
+    createdAt: startedAt,
+    spans: [{ startedAt, endedAt: startedAt + 30 * 60_000 }],
+    status: { kind: "ready" },
+    folderIds: [],
+    notes: "",
+    summary: { kind: "none" },
+    ...patch,
+  };
+}
+
+const today = "2026-10-22" as DayKey;
+
+describe("meetingDays", () => {
+  test("groups newest first by local day, with Today and Yesterday named", () => {
+    const meetings = [
+      meeting("standup", at(22, 9)),
+      meeting("retro", at(21, 16)),
+      meeting("planning", at(21, 10)),
+      meeting("kickoff", at(14, 11)),
+    ];
+    const days = meetingDays(meetings, today, "en-US");
+    expect(days.map(({ label }) => label)).toEqual(["Today", "Yesterday", "October 14, 2026"]);
+    expect(days[1]!.meetings.map(({ id }) => id)).toEqual(["retro", "planning"]);
+  });
+
+  test("files a meeting that never recorded under the day it was made", () => {
+    const empty = meeting("empty", at(20, 8), {
+      spans: [],
+      status: { kind: "starting", from: "new" },
+    });
+    expect(meetingDays([empty], today, "en-US")[0]!.label).toBe("October 20, 2026");
+  });
+});
+
+describe("summary", () => {
+  const markdown = [
+    "Ania and Tomek agreed to ship the beta on Friday. Annual planning moves to November.",
+    "",
+    "### Decisions",
+    "- Ship the **beta** on Friday",
+    "",
+    "### Next Steps",
+    "- **Ania**",
+    "  - Send the release notes",
+    "  - Book the demo",
+    "- **Tomek**",
+    "  - Fix the export bug",
+  ].join("\n");
+
+  test("the overview is the first paragraph", () => {
+    expect(overview(markdown)).toBe(
+      "Ania and Tomek agreed to ship the beta on Friday. Annual planning moves to November.",
+    );
+    expect(overview("### Decisions\n- None")).toBeNull();
+  });
+
+  test("next steps keep their owners with the owner's tasks", () => {
+    const blocks = summaryBlocks(markdown);
+    expect(blocks.map((block) => block.kind)).toEqual([
+      "paragraph",
+      "heading",
+      "list",
+      "heading",
+      "list",
+    ]);
+    expect(blocks[4]).toEqual({
+      kind: "list",
+      line: 6,
+      items: [
+        {
+          line: 6,
+          text: "**Ania**",
+          children: [
+            { line: 7, text: "Send the release notes" },
+            { line: 8, text: "Book the demo" },
+          ],
+        },
+        { line: 9, text: "**Tomek**", children: [{ line: 10, text: "Fix the export bug" }] },
+      ],
+    });
+  });
+
+  test("highlights speaker names as whole words and keeps bold", () => {
+    const runs = inlineRuns("Ania met Ann about the **Annual** plan", ["Ann", "Ania"]);
+    expect(runs.filter((run) => run.name).map((run) => run.text)).toEqual(["Ania", "Ann"]);
+    expect(runs.find((run) => run.text === "Annual")).toEqual({
+      text: "Annual",
+      bold: true,
+      name: false,
+      at: 25,
+    });
+    expect(runs.map((run) => run.text).join("")).toBe("Ania met Ann about the Annual plan");
+  });
+
+  test("names the system voices once, never the user's own mic", () => {
+    const transcript: TranscriptEntry[] = [
+      { kind: "segment", id: "1", startMs: 0, endMs: 1, text: "Hi", final: true, source: "mic" },
+      {
+        kind: "segment",
+        id: "2",
+        startMs: 1,
+        endMs: 2,
+        text: "Hej",
+        final: true,
+        source: "system",
+        speaker: "Ania",
+      },
+      {
+        kind: "segment",
+        id: "3",
+        startMs: 2,
+        endMs: 3,
+        text: "Yo",
+        final: true,
+        source: "system",
+        speaker: null,
+      },
+      {
+        kind: "segment",
+        id: "4",
+        startMs: 3,
+        endMs: 4,
+        text: "Ok",
+        final: true,
+        source: "system",
+        speaker: "Ania",
+      },
+    ];
+    expect(speakerNames(transcript)).toEqual(["Ania"]);
+  });
+});
+
+test("transcript rows name each voice once per turn and mark pauses and dictation", () => {
+  const rows = transcriptRows([
+    { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", final: true, source: "mic" },
+    {
+      kind: "segment",
+      id: "b",
+      startMs: 2000,
+      endMs: 3000,
+      text: "again",
+      final: true,
+      source: "mic",
+    },
+    { kind: "marker", marker: "dictated", atMs: 4000 },
+    {
+      kind: "segment",
+      id: "c",
+      startMs: 65_000,
+      endMs: 66_000,
+      text: "Hi",
+      final: false,
+      source: "system",
+      speaker: null,
+    },
+    { kind: "marker", marker: "paused", atMs: 70_000 },
+  ]);
+  expect(rows).toEqual([
+    expect.objectContaining({ speaker: "You", mine: true, time: "00:00", continues: false }),
+    expect.objectContaining({ speaker: "You", continues: true }),
+    expect.objectContaining({ kind: "marker", text: "Dictated at 00:04" }),
+    expect.objectContaining({ speaker: "Others", mine: false, final: false, continues: false }),
+    expect.objectContaining({ kind: "marker", text: "Paused at 01:10" }),
+  ]);
+});
+
+test("search results follow main's order, say where they matched, and skip deleted meetings", () => {
+  const a = meeting("a", at(22, 9));
+  const b = meeting("b", at(21, 9));
+  const results = searchResults(
+    [a, b],
+    [
+      { id: b.id, field: "transcript", snippet: "…the export bug…" },
+      { id: "gone" as MeetingId, field: "title", snippet: "gone" },
+      { id: a.id, field: "title", snippet: "a" },
+    ],
+  );
+  expect(results.map((result) => [result.meeting.id, result.where])).toEqual([
+    ["b", "Transcript"],
+    ["a", null],
+  ]);
+});
+
+test("the live meeting is the one recording, paused or starting", () => {
+  const recording = meeting("live", at(22, 9), { status: { kind: "recording", since: at(22, 9) } });
+  expect(liveMeeting([meeting("done", at(22, 8)), recording])?.id).toBe("live");
+  expect(liveMeeting([meeting("done", at(22, 8))])).toBeNull();
+});
+
+describe("retention", () => {
+  test("states how long transcripts are kept", () => {
+    expect(retentionSentence("month")).toMatch(
+      /stay on this Mac for 30 days, then they are deleted/,
+    );
+    expect(retentionSentence("forever")).toMatch(/until you delete them/);
+  });
+
+  test("counts only finished meetings past the window", () => {
+    const now = at(31, 12);
+    const meetings = [
+      meeting("old", at(1, 9)),
+      meeting("recent", at(30, 9)),
+      meeting("old but recording", at(1, 9), { status: { kind: "paused" } }),
+    ];
+    expect(expiredBy(meetings, "week", now)).toBe(1);
+    expect(expiredBy(meetings, "forever", now)).toBe(0);
+  });
+});

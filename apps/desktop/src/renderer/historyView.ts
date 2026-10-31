@@ -18,7 +18,7 @@ const localDate = (day: DayKey, offset = 0) => {
 };
 
 // A formatter is costly to build and every row needs one, so each locale builds it once.
-function formatterCache(options: Intl.DateTimeFormatOptions) {
+export function formatterCache(options: Intl.DateTimeFormatOptions) {
   const byLocale = new Map<string | undefined, Intl.DateTimeFormat>();
   return (locale: string | undefined) => {
     let format = byLocale.get(locale);
@@ -33,7 +33,7 @@ function formatterCache(options: Intl.DateTimeFormatOptions) {
 const longDate = formatterCache({ dateStyle: "long" });
 const shortTime = formatterCache({ timeStyle: "short" });
 
-function dayLabel(day: DayKey, today: DayKey, locale?: string): string {
+export function dayLabel(day: DayKey, today: DayKey, locale?: string): string {
   if (day === today) return "Today";
   if (day === dayKey(localDate(today, -1))) return "Yesterday";
   return longDate(locale).format(localDate(day));

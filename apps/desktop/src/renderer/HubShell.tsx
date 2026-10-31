@@ -14,6 +14,7 @@ import {
   SlidersHorizontalIcon,
   TextQuoteIcon,
   UserIcon,
+  UsersIcon,
   WandSparklesIcon,
   XIcon,
   type LucideIcon,
@@ -29,6 +30,7 @@ import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.
 import { Dictionary } from "./Dictionary.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { Meetings } from "./Meetings.tsx";
 import { pageMotion } from "./pageMotion.ts";
 import {
   DataPrivacySettings,
@@ -58,6 +60,7 @@ import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 const appPageGroups = [
   [
     { id: "home", label: "Home", icon: HouseIcon },
+    { id: "meetings", label: "Meetings", icon: UsersIcon },
     { id: "insights", label: "Insights", icon: ChartColumnIcon },
     { id: "style", label: "Style", icon: PenLineIcon },
     { id: "transforms", label: "Transforms", icon: WandSparklesIcon },
@@ -80,9 +83,10 @@ const settingsPageGroups = [
 ] as const;
 
 const appPages = appPageGroups.flat();
+const widePages: ReadonlySet<AppPage> = new Set(["meetings"]);
 const settingsPages = settingsPageGroups.flat();
 
-type AppPage = (typeof appPages)[number]["id"];
+export type AppPage = (typeof appPages)[number]["id"];
 type SettingsPage = (typeof settingsPages)[number]["id"];
 
 type PageView = {
@@ -96,6 +100,7 @@ const appPageViews: Record<AppPage, (view: PageView) => ReactNode> = {
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
+  meetings: () => <Meetings />,
   insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
   transforms: ({ snapshot, openSettingsPage }) => (
@@ -351,6 +356,8 @@ const styles = stylex.create({
     borderRadius: radius.large,
   },
   column: { maxWidth: 800, marginInline: "auto" },
+  // Meetings sets its list beside an overview panel.
+  columnWide: { maxWidth: 1120 },
   settingsViewport: {
     position: "fixed",
     inset: 0,
@@ -630,8 +637,17 @@ function SettingsModal({
   );
 }
 
-export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: HistoryState }) {
-  const [appPage, setAppPage] = useState<AppPage>("home");
+export function HubShell({
+  snapshot,
+  history,
+  initialPage = "home",
+}: {
+  snapshot: Snapshot;
+  history: HistoryState;
+  /** The preview harness opens a scene's page directly. */
+  initialPage?: AppPage;
+}) {
+  const [appPage, setAppPage] = useState<AppPage>(initialPage);
   const [settings, setSettings] = useState<SettingsModalState>({
     open: false,
     section: "general",
@@ -758,7 +774,14 @@ export function HubShell({ snapshot, history }: { snapshot: Snapshot; history: H
         </aside>
       </SidebarTooltip>
       <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
-        <div key={appPage} {...stylex.props(styles.column, shown.rises && pageMotion.rise)}>
+        <div
+          key={appPage}
+          {...stylex.props(
+            styles.column,
+            widePages.has(appPage) && styles.columnWide,
+            shown.rises && pageMotion.rise,
+          )}
+        >
           <AppPageView {...view} />
         </div>
       </main>

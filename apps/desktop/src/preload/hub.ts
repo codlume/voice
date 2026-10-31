@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { Channel, DIAGNOSTICS_ARGUMENT, type HubApi, type Snapshot } from "../shared/api.ts";
 import type { HistoryChange } from "../shared/history.ts";
 import type { Insights } from "../shared/insights.ts";
+import type { MeetingsChange } from "../shared/meetings.ts";
 import type { LastTransform } from "../shared/transforms.ts";
 import { subscribe } from "./subscribe.ts";
 
@@ -65,6 +66,26 @@ const voice: HubApi = {
   getLastTransform: () => ipcRenderer.invoke(Channel.getLastTransform),
   onLastTransform: (listener) => subscribe<LastTransform | null>(Channel.lastTransform, listener),
   copyLastTransform: (which) => ipcRenderer.invoke(Channel.copyLastTransform, which),
+  getMeetings: () => ipcRenderer.invoke(Channel.getMeetings),
+  onMeetings: (listener) => subscribe<MeetingsChange>(Channel.meetings, listener),
+  getMeeting: (id) => ipcRenderer.invoke(Channel.getMeeting, id),
+  renameMeeting: (id, title) => ipcRenderer.invoke(Channel.renameMeeting, id, title),
+  updateMeetingNotes: (id, notes) => ipcRenderer.invoke(Channel.updateMeetingNotes, id, notes),
+  deleteMeeting: (id) => ipcRenderer.invoke(Channel.deleteMeeting, id),
+  createFolder: (draft) => ipcRenderer.invoke(Channel.createFolder, draft),
+  updateFolder: (id, draft) => ipcRenderer.invoke(Channel.updateFolder, id, draft),
+  deleteFolder: (id) => ipcRenderer.invoke(Channel.deleteFolder, id),
+  setMeetingInFolder: (meetingId, folderId, inFolder) =>
+    ipcRenderer.invoke(Channel.setMeetingInFolder, meetingId, folderId, inFolder),
+  searchMeetings: (query) => ipcRenderer.invoke(Channel.searchMeetings, query),
+  updateMeetingsSettings: (patch) => ipcRenderer.invoke(Channel.updateMeetingsSettings, patch),
+  copyMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.copyMeetingMarkdown, id),
+  exportMeetingMarkdown: (id) => ipcRenderer.invoke(Channel.exportMeetingMarkdown, id),
+  startMeeting: () => ipcRenderer.invoke(Channel.startMeeting),
+  pauseMeeting: (id) => ipcRenderer.invoke(Channel.pauseMeeting, id),
+  resumeMeeting: (id) => ipcRenderer.invoke(Channel.resumeMeeting, id),
+  stopMeeting: (id) => ipcRenderer.invoke(Channel.stopMeeting, id),
+  generateMeetingSummary: (id) => ipcRenderer.invoke(Channel.generateMeetingSummary, id),
 };
 
 contextBridge.exposeInMainWorld("voice", voice);
