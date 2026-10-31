@@ -507,10 +507,11 @@ export function refile(meeting: Meeting, folder: Folder, before: FolderKind | nu
 
 const SNIPPET_CONTEXT = 40;
 
+const flat = (part: string) => part.replace(/\s+/g, " ");
+
 function snippet(text: string, start: number, end: number): MeetingSnippet {
   const from = Math.max(0, start - SNIPPET_CONTEXT);
   const to = Math.min(text.length, end + SNIPPET_CONTEXT);
-  const flat = (part: string) => part.replace(/\s+/g, " ");
   return {
     before: `${from > 0 ? "…" : ""}${flat(text.slice(from, start)).trimStart()}`,
     match: flat(text.slice(start, end)),
