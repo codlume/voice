@@ -43,17 +43,23 @@ describe("notepadStatus", () => {
     });
   });
 
-  test("says recording only while it records, and offers no controls after Stop", () => {
+  test("says recording only while it records, and offers only Resume once saved", () => {
     const statuses: MeetingStatus[] = [
       { kind: "finishing" },
       { kind: "confirmingShort" },
       { kind: "transcribing", step: "finalizing" },
-      { kind: "ready" },
     ];
     for (const done of statuses) {
       const status = notepadStatus(meeting(done), 0);
       expect(status.tone).not.toBe("recording");
       expect(status.controls).toEqual([]);
+    }
+    for (const saved of [{ kind: "ready" }, { kind: "summarizing", progress: null }] as const) {
+      expect(notepadStatus(meeting(saved), 0)).toMatchObject({
+        tone: "done",
+        label: "Saved to Meetings",
+        controls: ["resume"],
+      });
     }
     expect(notepadStatus(meeting({ kind: "starting", from: "new" }), 0).tone).toBe("busy");
   });

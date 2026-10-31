@@ -25,8 +25,9 @@ const labels: Record<Meeting["status"]["kind"], Omit<NotepadStatus, "clock">> = 
   finishing: { tone: "busy", label: "Wrapping up…", controls: [] },
   confirmingShort: { tone: "busy", label: "Short recording", controls: [] },
   transcribing: { tone: "busy", label: "Transcribing…", controls: [] },
-  summarizing: { tone: "done", label: "Saved to Meetings", controls: [] },
-  ready: { tone: "done", label: "Saved to Meetings", controls: [] },
+  // Resume appends to the same meeting, then offers "Update summary".
+  summarizing: { tone: "done", label: "Saved to Meetings", controls: ["resume"] },
+  ready: { tone: "done", label: "Saved to Meetings", controls: ["resume"] },
 };
 
 export function notepadStatus(meeting: Meeting, now: number): NotepadStatus {

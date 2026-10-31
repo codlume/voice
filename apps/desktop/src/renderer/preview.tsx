@@ -747,7 +747,8 @@ type MeetingsApi = Pick<
   Extract<keyof HubApi, `${string}Meeting${string}` | `${string}Folder${string}`>
 >;
 
-const unavailable = async () => ({ kind: "unavailable" }) as const;
+const unavailable = async () =>
+  ({ kind: "refused", message: "The preview does not record meetings." }) as const;
 
 // Holds what the page sets in memory. Recording waits for the real recorder, like main.
 function fakeMeetings(
