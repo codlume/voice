@@ -263,47 +263,38 @@ describe("meeting lifecycle", () => {
       ...recording(30),
       [{ type: "drained", words: 4000 }, 30 * MIN],
       [{ type: "transcribeFailed" }, 31 * MIN],
-      [{ type: "summarized", markdown: "Overview." }, 32 * MIN],
+      [{ type: "summarized" }, 32 * MIN],
     ]);
     expect(notices(effects)).toEqual(["finalPassFailed", "summaryReady"]);
     expect(meeting?.status).toEqual({ kind: "ready" });
   });
 
-  test("a summary covers what was recorded, and opens when the setting says so", () => {
-    const done = step(
-      meetingAt({ kind: "summarizing" }),
-      { type: "summarized", markdown: "Overview." },
-      T0 + 25 * MIN,
-      { ...config, openSummaryWhenReady: false },
-    );
-    expect(done.meeting?.summary).toEqual({
-      kind: "ready",
-      summary: { markdown: "Overview.", generatedAt: T0 + 25 * MIN, coversUntilMs: 20 * MIN },
+  test("a finished summary opens when the setting says so and leaves the summary to meeting-summary", () => {
+    const summarizing = meetingAt({ kind: "summarizing" });
+    const done = step(summarizing, { type: "summarized" }, T0 + 25 * MIN, {
+      ...config,
+      openSummaryWhenReady: false,
     });
+    expect(done.meeting).toEqual({ ...summarizing, status: { kind: "ready" } });
     expect(done.effects).toEqual([
       { type: "notify", notice: { kind: "summaryReady", open: false } },
     ]);
   });
 
-  test("a failed summary keeps the meeting ready with the previous summary", () => {
-    const previous = { markdown: "Old.", generatedAt: T0, coversUntilMs: 10 * MIN };
-    const failed = step(
-      meetingAt({ kind: "summarizing" }, { summary: { kind: "ready", summary: previous } }),
-      { type: "summaryFailed", message: "The model stopped" },
-      T0 + 25 * MIN,
-      config,
-    );
-    expect(failed.meeting?.status).toEqual({ kind: "ready" });
-    expect(failed.meeting?.summary).toEqual({
-      kind: "failed",
-      message: "The model stopped",
-      previous,
-    });
+  test("a failed summary still reaches ready", () => {
+    const summarizing = meetingAt({ kind: "summarizing" });
+    const failed = step(summarizing, { type: "summaryFailed" }, T0 + 25 * MIN, config);
+    expect(failed.meeting).toEqual({ ...summarizing, status: { kind: "ready" } });
     expect(notices(failed.effects)).toEqual(["summaryFailed"]);
   });
 
   test("resuming a summarized meeting appends, leaves the summary stale and does not regenerate it", () => {
-    const summary = { markdown: "Overview.", generatedAt: T0, coversUntilMs: 20 * MIN };
+    const summary = {
+      markdown: "Overview.",
+      overview: "Overview.",
+      generatedAt: T0,
+      coversUntilMs: 20 * MIN,
+    };
     let meeting: Meeting | null = meetingAt(
       { kind: "ready" },
       { summary: { kind: "ready", summary } },
@@ -359,7 +350,7 @@ describe("meeting lifecycle", () => {
       [{ kind: "finishing" }, { type: "drained", words: 100 }],
       [{ kind: "confirmingShort" }, { type: "keep" }],
       [{ kind: "transcribing" }, { type: "transcribeFailed" }],
-      [{ kind: "summarizing" }, { type: "summaryFailed", message: "x" }],
+      [{ kind: "summarizing" }, { type: "summaryFailed" }],
       [{ kind: "ready" }, { type: "generateSummary" }],
     ];
     for (const [status, event] of exits) {

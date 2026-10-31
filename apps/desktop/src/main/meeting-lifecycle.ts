@@ -8,7 +8,6 @@ import {
   type MeetingNotice,
   type MeetingStatus,
   type MeetingsSettings,
-  type SummaryState,
 } from "../shared/meetings.ts";
 
 export type LifecycleConfig = Pick<
@@ -40,8 +39,9 @@ export type MeetingEvent =
   | { type: "transcribed" }
   | { type: "transcribeFailed" }
   | { type: "generateSummary" }
-  | { type: "summarized"; markdown: string }
-  | { type: "summaryFailed"; message: string }
+  /** `meeting-summary.ts` has written the summary, or the failure with the previous one, to the meeting. */
+  | { type: "summarized" }
+  | { type: "summaryFailed" }
   /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
   | { type: "recover"; lastAudioAt: number };
 
@@ -119,9 +119,6 @@ const lossMessage = ({ source, reason }: AudioLoss) => {
   }
   return source === "mic" ? "The microphone stopped." : "System audio stopped.";
 };
-
-const lastSummary = (summary: SummaryState) =>
-  summary.kind === "ready" ? summary.summary : summary.kind === "failed" ? summary.previous : null;
 
 /**
  * One meeting's lifecycle: starting, recording and paused, then finishing, an optional
@@ -306,31 +303,12 @@ export function step(
       switch (event.type) {
         case "summarized":
           return {
-            meeting: {
-              ...meeting,
-              status: { kind: "ready" },
-              summary: {
-                kind: "ready",
-                summary: {
-                  markdown: event.markdown,
-                  generatedAt: now,
-                  coversUntilMs: recordedMs(meeting, now),
-                },
-              },
-            },
+            meeting: withStatus(meeting, { kind: "ready" }),
             effects: [notify({ kind: "summaryReady", open: config.openSummaryWhenReady })],
           };
         case "summaryFailed":
           return {
-            meeting: {
-              ...meeting,
-              status: { kind: "ready" },
-              summary: {
-                kind: "failed",
-                message: event.message,
-                previous: lastSummary(meeting.summary),
-              },
-            },
+            meeting: withStatus(meeting, { kind: "ready" }),
             effects: [notify({ kind: "summaryFailed" })],
           };
         default:
