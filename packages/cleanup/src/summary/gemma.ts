@@ -28,8 +28,8 @@ export type GenerateStep = (request: Omit<GenerateRequest, "budgetMs">) => Promi
 
 // A 16,384-token context holds about 12,000 tokens of transcript with the prompt and the reply,
 // so a 30 minute meeting is read whole. Longer ones go in parts of about 6,000 tokens: on the 90
-// minute fixture, two 12,000-token parts lost most of each part's second half, and four parts
-// found 9 of 10 decisions and 11 to 15 of 15 actions (measured, summary-eval).
+// minute fixture, two 12,000-token parts found 6 of 10 decisions, and four 6,000-token parts found
+// 9 or 10 decisions and 11 to 15 of 15 actions over five runs (measured, summary-eval).
 export const WHOLE_TOKENS = 12_000;
 export const PART_TOKENS = 6_000;
 
