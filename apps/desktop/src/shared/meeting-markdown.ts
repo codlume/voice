@@ -1,5 +1,5 @@
 import {
-  foldTranscript,
+  sortTranscript,
   resolveSpeakerTokens,
   speakerName,
   startedAt,
@@ -51,7 +51,7 @@ export function meetingMarkdown(
     sections.push(`## Summary\n\n${markdown.trim()}`);
   }
   if (meeting.notes.trim() !== "") sections.push(`## My thoughts\n\n${meeting.notes.trim()}`);
-  const lines = foldTranscript(transcript).flatMap((entry) => {
+  const lines = sortTranscript(transcript).flatMap((entry) => {
     if (entry.kind === "marker") return [markerLine(entry)];
     const text = entry.text.trim();
     return text === ""

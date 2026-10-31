@@ -234,7 +234,6 @@ const said = (atMinute: number, text: string, speaker: string | null | "you" = "
     startMs,
     endMs: startMs + 8000,
     text,
-    final: true,
     ...voice,
   };
 };
@@ -248,7 +247,7 @@ function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker[] {
   return [...new Set(names)].map((name, index) => ({
     id: name,
     label: `Speaker ${index + 1}`,
-    name: { text: name, source: "user" },
+    name: name,
   }));
 }
 
@@ -272,7 +271,7 @@ function fixtureMeeting(
 ): Meeting {
   return {
     id: fixtureId(n),
-    title: title === null ? null : { text: title, source: "generated" },
+    title: title === null ? null : title,
     createdAt: startedAt,
     spans: [{ startedAt, endedAt: startedAt + minutes * MINUTE }],
     status: { kind: "ready" },
@@ -287,7 +286,6 @@ function fixtureMeeting(
 
 const summaryOf = (markdown: string, coversMinutes: number, at: number) => ({
   markdown,
-  generatedAt: at,
   coversUntilMs: coversMinutes * MINUTE,
 });
 
@@ -417,7 +415,7 @@ function sampleMeetings({ recording = false } = {}): MeetingFixtures {
     ...(recording && {
       [fixtureId(6)]: [
         said(0.1, "Okay, recording. Let's go through the roadmap."),
-        { ...said(0.4, "Can everyone hear me", null), final: false },
+        { ...said(0.4, "Can everyone hear me", null) },
       ],
     }),
   };

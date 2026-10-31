@@ -2,8 +2,8 @@ import { dayKey, type DayKey } from "../shared/insights.ts";
 import { clock, markerText } from "../shared/meeting-markdown.ts";
 import {
   endedAt,
-  foldTranscript,
   meetingRetentionMs,
+  sortTranscript,
   OTHERS,
   YOU,
   SPEAKER_TOKEN,
@@ -214,7 +214,7 @@ export function transcriptRows(
 ): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   let lastSpeaker: string | null = null;
-  for (const [index, entry] of foldTranscript(lines).entries()) {
+  for (const [index, entry] of sortTranscript(lines).entries()) {
     if (entry.kind === "marker") {
       rows.push({
         kind: "marker",
@@ -232,7 +232,7 @@ export function transcriptRows(
       mine: entry.source === "mic",
       time: clock(entry.startMs),
       text: entry.text,
-      final: entry.final,
+      final: true,
       continues: speaker === lastSpeaker,
     });
     lastSpeaker = speaker;

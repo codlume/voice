@@ -13,9 +13,6 @@ export const parseMeetingId = (value: unknown): MeetingId | null =>
 export const parseFolderId = (value: unknown): FolderId | null =>
   typeof value === "string" && UUID.test(value) ? (value as FolderId) : null;
 
-/** A blank title is null, which lets the summary step generate one. */
-export type MeetingTitle = { text: string; source: "user" | "generated" };
-
 /** One recording leg, start to stop or pause, in wall-clock ms. */
 export type Span = { startedAt: number; endedAt: number };
 
@@ -41,7 +38,7 @@ export type MeetingStatus =
  * `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale.
  * `markdown` names speakers with `speakerToken`, so a rename needs no regeneration.
  */
-export type Summary = { markdown: string; generatedAt: number; coversUntilMs: number };
+export type Summary = { markdown: string; coversUntilMs: number };
 
 export type SummaryState =
   | { kind: "none" }
@@ -50,19 +47,18 @@ export type SummaryState =
 
 export type SpeakerId = string & { readonly __brand: "SpeakerId" };
 
-/** A name for a speaker: the user's rename, or one read from the meeting app's window later on. */
-export type SpeakerName = { text: string; source: "user" | "meetingApp" };
-
 /**
  * One voice on system audio, found by diarization. The id and the "Speaker N" label never change,
- * so a rename shows everywhere the id is used, including summaries written before it.
+ * so a rename shows everywhere the id is used, including summaries written before it. `name` is
+ * the user's rename.
  */
-export type Speaker = { id: SpeakerId; label: string; name: SpeakerName | null };
+export type Speaker = { id: SpeakerId; label: string; name: string | null };
 
 /** What `meeting.json` holds. The transcript lives in its own append-only file. */
 export type Meeting = {
   id: MeetingId;
-  title: MeetingTitle | null;
+  /** A blank title is null, which lets the summary step generate one. */
+  title: string | null;
   createdAt: number;
   /** Closed legs, oldest first. An open leg is `status.since`. */
   spans: readonly Span[];
@@ -87,8 +83,6 @@ export type Segment = {
   startMs: number;
   endMs: number;
   text: string;
-  /** False for a partial, which a later line with the same id replaces. */
-  final: boolean;
 } & Voice;
 
 /** The mic is the user. System audio is everyone else: one speaker once diarized, else null. */
@@ -380,12 +374,12 @@ export const summarizesOnStop = (meeting: Meeting): boolean =>
 export const summaryStale = (meeting: Meeting): boolean =>
   meeting.summary.kind === "ready" && meeting.summary.summary.coversUntilMs < closedMs(meeting);
 
-export const titleText = (meeting: Meeting) => meeting.title?.text ?? "Untitled meeting";
+export const titleText = (meeting: Meeting) => meeting.title ?? "Untitled meeting";
 
 export const YOU = "You";
 export const OTHERS = "Others";
 
-export const speakerDisplayName = (speaker: Speaker) => speaker.name?.text ?? speaker.label;
+export const speakerDisplayName = (speaker: Speaker) => speaker.name ?? speaker.label;
 
 /** Who spoke a segment: You, a speaker's name or label, or Others before diarization. */
 export function speakerName(segment: Segment, speakers: readonly Speaker[]): string {
@@ -416,9 +410,7 @@ export function renameSpeaker(meeting: Meeting, id: SpeakerId, text: string): Me
   const trimmed = text.trim();
   if (!meeting.speakers.some((speaker) => speaker.id === id)) return meeting;
   const speakers = meeting.speakers.map((speaker) =>
-    speaker.id === id
-      ? { ...speaker, name: trimmed === "" ? null : { text: trimmed, source: "user" as const } }
-      : speaker,
+    speaker.id === id ? { ...speaker, name: trimmed === "" ? null : trimmed } : speaker,
   );
   return { ...meeting, speakers };
 }
@@ -444,31 +436,15 @@ export function addSpeakers(
 
 const entryMs = (entry: TranscriptEntry) => (entry.kind === "segment" ? entry.startMs : entry.atMs);
 
-/**
- * The transcript as the file's lines mean it: a later segment with an id replaces the earlier
- * one, and entries run in time order, ties in file order.
- */
-export function foldTranscript(lines: readonly TranscriptEntry[]): TranscriptEntry[] {
-  const order: (TranscriptEntry | string)[] = [];
-  const segments = new Map<string, Segment>();
-  for (const line of lines) {
-    if (line.kind === "marker") {
-      order.push(line);
-      continue;
-    }
-    if (!segments.has(line.id)) order.push(line.id);
-    segments.set(line.id, line);
-  }
-  return order
-    .map((item) => (typeof item === "string" ? segments.get(item)! : item))
-    .toSorted((a, b) => entryMs(a) - entryMs(b));
-}
+/** Entries in time order, ties in file order: the two sources' lines land out of order. */
+export const sortTranscript = (lines: readonly TranscriptEntry[]): TranscriptEntry[] =>
+  lines.toSorted((a, b) => entryMs(a) - entryMs(b));
 
 const ruleMatches = (meeting: Meeting, folder: FolderKind): boolean =>
   folder.kind === "auto" &&
   meeting.title !== null &&
   folder.rule.text.trim() !== "" &&
-  meeting.title.text.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
+  meeting.title.toLocaleLowerCase().includes(folder.rule.text.trim().toLocaleLowerCase());
 
 export function autoFolderIds(
   meeting: Meeting,
@@ -520,7 +496,7 @@ export function searchMeeting(
       : "";
   const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
   const fields: [MeetingSearchField, string][] = [
-    ["title", meeting.title?.text ?? ""],
+    ["title", meeting.title ?? ""],
     ["summary", summary],
     ["notes", meeting.notes],
     ["transcript", spoken.join("\n")],
@@ -542,7 +518,7 @@ export function retitle(
   const trimmed = text.trim();
   const titled: Meeting = {
     ...meeting,
-    title: trimmed === "" ? null : { text: trimmed, source: "user" },
+    title: trimmed === "" ? null : trimmed,
   };
   const added = autoFolderIds(titled, folders, settings).filter(
     (id) => !meeting.folderIds.includes(id),

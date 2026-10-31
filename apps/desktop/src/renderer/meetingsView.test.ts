@@ -18,13 +18,13 @@ const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).getTim
 const named = (id: string, label: string, name: string | null): Speaker => ({
   id: id as SpeakerId,
   label,
-  name: name === null ? null : { text: name, source: "user" },
+  name: name === null ? null : name,
 });
 
 function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): Meeting {
   return {
     id: id as MeetingId,
-    title: { text: id, source: "user" },
+    title: id,
     createdAt: startedAt,
     spans: [{ startedAt, endedAt: startedAt + 30 * 60_000 }],
     status: { kind: "ready" },
@@ -150,14 +150,13 @@ describe("summary", () => {
 test("transcript rows name each voice once per turn and mark pauses and dictation", () => {
   const rows = transcriptRows(
     [
-      { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", final: true, source: "mic" },
+      { kind: "segment", id: "a", startMs: 0, endMs: 1, text: "Hello", source: "mic" },
       {
         kind: "segment",
         id: "b",
         startMs: 2000,
         endMs: 3000,
         text: "again",
-        final: true,
         source: "mic",
       },
       { kind: "marker", marker: "dictated", atMs: 4000 },
@@ -167,7 +166,6 @@ test("transcript rows name each voice once per turn and mark pauses and dictatio
         startMs: 65_000,
         endMs: 66_000,
         text: "Hi",
-        final: false,
         source: "system",
         speakerId: null,
       },
@@ -179,7 +177,7 @@ test("transcript rows name each voice once per turn and mark pauses and dictatio
     expect.objectContaining({ speaker: "You", mine: true, time: "00:00", continues: false }),
     expect.objectContaining({ speaker: "You", continues: true }),
     expect.objectContaining({ kind: "marker", text: "Dictated at 00:04" }),
-    expect.objectContaining({ speaker: "Others", mine: false, final: false, continues: false }),
+    expect.objectContaining({ speaker: "Others", mine: false, continues: false }),
     expect.objectContaining({ kind: "marker", text: "Paused at 01:10" }),
   ]);
 });

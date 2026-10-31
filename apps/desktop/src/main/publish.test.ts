@@ -111,7 +111,7 @@ describe("publish", () => {
     const { pill, update } = harness();
     const meeting: Meeting = {
       id: "00000000-0000-4000-8000-000000000001" as MeetingId,
-      title: { text: "Pricing review", source: "user" },
+      title: "Pricing review",
       createdAt: 0,
       spans: [{ startedAt: 0, endedAt: 60_000 }],
       status: { kind: "recording", since: 90_000 },

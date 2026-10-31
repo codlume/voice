@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import {
   DEFAULT_MEETINGS_SETTINGS,
   endedAt,
-  foldTranscript,
+  sortTranscript,
   markerKinds,
   meetingRetentionMs,
   parseFolderId,
@@ -247,7 +247,7 @@ export function createMeetingsStore(options: {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
-    return foldTranscript(text.split("\n").flatMap(parseLine));
+    return sortTranscript(text.split("\n").flatMap(parseLine));
   }
 
   const loading = serial(async () => {
@@ -498,8 +498,8 @@ function parseStatus(raw: unknown): MeetingStatus | null {
 
 function parseSummaryBody(raw: unknown): Summary | null {
   if (!isRecord(raw) || !isText(raw.markdown)) return null;
-  if (!isTime(raw.generatedAt) || !isTime(raw.coversUntilMs)) return null;
-  return { markdown: raw.markdown, generatedAt: raw.generatedAt, coversUntilMs: raw.coversUntilMs };
+  if (!isTime(raw.coversUntilMs)) return null;
+  return { markdown: raw.markdown, coversUntilMs: raw.coversUntilMs };
 }
 
 function parseSummary(raw: unknown): SummaryState | null {
@@ -525,15 +525,10 @@ function parseMeeting(raw: unknown): Meeting | null {
   if (!Array.isArray(raw.spans) || !Array.isArray(raw.folderIds)) return null;
   const spans = raw.spans.map(parseSpan);
   if (spans.some((span) => span === null)) return null;
-  let title: Meeting["title"] = null;
-  if (raw.title !== null) {
-    const { text, source } = isRecord(raw.title) ? raw.title : {};
-    if (!isText(text) || (source !== "user" && source !== "generated")) return null;
-    title = { text, source };
-  }
+  if (raw.title !== null && !isText(raw.title)) return null;
   return {
     id,
-    title,
+    title: raw.title,
     createdAt: raw.createdAt,
     spans: spans as Span[],
     status,
@@ -548,10 +543,8 @@ function parseMeeting(raw: unknown): Meeting | null {
 function parseSpeaker(raw: unknown): Speaker[] {
   if (!isRecord(raw) || !isText(raw.id) || !isText(raw.label)) return [];
   const speaker = { id: raw.id as SpeakerId, label: raw.label };
-  if (raw.name === null) return [{ ...speaker, name: null }];
-  const { text, source } = isRecord(raw.name) ? raw.name : {};
-  if (!isText(text) || (source !== "user" && source !== "meetingApp")) return [];
-  return [{ ...speaker, name: { text, source } }];
+  if (raw.name !== null && !isText(raw.name)) return [];
+  return [{ ...speaker, name: raw.name }];
 }
 
 function parseFolders(raw: unknown): Folder[] {
@@ -584,14 +577,13 @@ function parseLine(line: string): TranscriptEntry[] {
     return marker && isTime(raw.atMs) ? [{ kind: "marker", marker, atMs: raw.atMs }] : [];
   }
   if (raw.kind !== "segment" || !isText(raw.id) || !isText(raw.text)) return [];
-  if (!isTime(raw.startMs) || !isTime(raw.endMs) || typeof raw.final !== "boolean") return [];
+  if (!isTime(raw.startMs) || !isTime(raw.endMs)) return [];
   const base = {
     kind: "segment" as const,
     id: raw.id,
     startMs: raw.startMs,
     endMs: raw.endMs,
     text: raw.text,
-    final: raw.final,
   };
   if (raw.source === "mic") return [{ ...base, source: "mic" }];
   if (raw.source === "system") {

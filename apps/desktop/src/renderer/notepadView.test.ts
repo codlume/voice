@@ -19,13 +19,12 @@ const meeting = (status: MeetingStatus): Meeting => ({
 const commands = (view: ReturnType<typeof promptView>) =>
   view.actions.map(({ label, command }) => [label, command]);
 
-const segment = (id: string, text: string, final: boolean): TranscriptEntry => ({
+const segment = (id: string, text: string): TranscriptEntry => ({
   kind: "segment",
   id,
   startMs: 0,
   endMs: 1000,
   text,
-  final,
   source: "mic",
 });
 
@@ -101,15 +100,10 @@ describe("mergeTranscript", () => {
   const marker: TranscriptEntry = { kind: "marker", marker: "dictated", atMs: 500 };
 
   test("live lines the read already holds are not added twice", () => {
-    const read = [segment("a", "Hello", true), marker];
-    expect(mergeTranscript(read, [marker, segment("b", "there", true)])).toEqual([
+    const read = [segment("a", "Hello"), marker];
+    expect(mergeTranscript(read, [marker, segment("b", "there")])).toEqual([
       ...read,
-      segment("b", "there", true),
+      segment("b", "there"),
     ]);
-  });
-
-  test("a partial the read already finalized does not come back", () => {
-    const read = [segment("a", "Hel", false), segment("a", "Hello", true)];
-    expect(mergeTranscript(read, [segment("a", "Hel", false)])).toEqual(read);
   });
 });

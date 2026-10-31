@@ -7,7 +7,7 @@ const START = Date.UTC(2026, 9, 31, 14, 5);
 
 const meeting: Meeting = {
   id: "11111111-1111-4111-8111-111111111111" as MeetingId,
-  title: { text: "Launch plan", source: "generated" },
+  title: "Launch plan",
   createdAt: START - 1000,
   spans: [{ startedAt: START, endedAt: START + 3_700_000 }],
   status: { kind: "ready" },
@@ -18,11 +18,10 @@ const meeting: Meeting = {
     summary: {
       markdown:
         "We agreed to ship on Friday.\n\n### Decisions\n- Ship Friday\n\n### Next Steps\n**{{speaker:s1}}**\n- Draft the post",
-      generatedAt: START + 3_800_000,
       coversUntilMs: 3_700_000,
     },
   },
-  speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" } }],
+  speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: "Ana" }],
   finalPassFailed: false,
 };
 
@@ -35,7 +34,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 4000,
     endMs: 6000,
     text: "Friday works.",
-    final: true,
   },
   {
     kind: "segment",
@@ -44,7 +42,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 0,
     endMs: 3000,
     text: "Can we ship Friday?",
-    final: true,
   },
   {
     kind: "segment",
@@ -54,9 +51,8 @@ const transcript: TranscriptEntry[] = [
     startMs: 3_661_000,
     endMs: 3_662_000,
     text: "Bye",
-    final: true,
   },
-  { kind: "segment", id: "e", source: "mic", startMs: 9000, endMs: 9000, text: "  ", final: true },
+  { kind: "segment", id: "e", source: "mic", startMs: 9000, endMs: 9000, text: "  " },
   { kind: "marker", marker: "paused", atMs: 10_000 },
 ];
 

@@ -45,7 +45,7 @@ function meeting(
 ): Meeting {
   return {
     id: id(n),
-    title: { text: title, source: "user" },
+    title: title,
     createdAt: startedAt,
     spans: [{ startedAt, endedAt: startedAt + 30 * MINUTE }],
     status: { kind: "ready" },
@@ -60,13 +60,13 @@ function meeting(
 
 const summary = (markdown: string) => ({
   kind: "ready" as const,
-  summary: { markdown, generatedAt: 0, coversUntilMs: 30 * MINUTE },
+  summary: { markdown, coversUntilMs: 30 * MINUTE },
 });
 
 const PRIYA = "s1" as SpeakerId;
 const TOM = "s2" as SpeakerId;
 const syncSpeakers: Speaker[] = [
-  { id: PRIYA, label: "Speaker 1", name: { text: "Priya Shah", source: "user" } },
+  { id: PRIYA, label: "Speaker 1", name: "Priya Shah" },
   { id: TOM, label: "Speaker 2", name: null },
 ];
 const syncSummary =
@@ -79,7 +79,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 0,
     endMs: 1,
     text: "Morning all",
-    final: true,
     source: "mic",
   },
   { kind: "marker", marker: "dictated", atMs: 2000 },
@@ -89,7 +88,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 3000,
     endMs: 4000,
     text: "The export bug is fixed",
-    final: true,
     source: "system",
     speakerId: PRIYA,
   },
@@ -99,7 +97,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 5000,
     endMs: 6000,
     text: "I will draft the email",
-    final: true,
     source: "system",
     speakerId: TOM,
   },
@@ -454,7 +451,6 @@ describe("a meeting", () => {
           startMs: 0,
           endMs: 1000,
           text: "So the export works.",
-          final: true,
           source: "system",
           speakerId: null,
         },
@@ -496,7 +492,6 @@ describe("a meeting", () => {
           startMs: 0,
           endMs: 1000,
           text: "Pushed during the read.",
-          final: true,
           source: "mic",
         },
       ],

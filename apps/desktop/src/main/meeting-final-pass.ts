@@ -46,7 +46,6 @@ export function applyFinalPass(
       startMs: segment.startMs,
       endMs: segment.endMs,
       text: segment.text,
-      final: true,
     } as const;
     return segment.source === "mic"
       ? { ...base, source: "mic" }
