@@ -15,6 +15,7 @@ const meeting = (status: MeetingStatus): Meeting => ({
   summary: { kind: "none" },
   speakers: [],
   finalPassFailed: false,
+  transcriptRevision: 0,
 });
 
 const commands = (view: ReturnType<typeof promptView>) =>

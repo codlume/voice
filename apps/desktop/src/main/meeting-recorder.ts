@@ -16,6 +16,7 @@ import {
   type MeetingNotice,
   type MeetingPartial,
   type MeetingSource,
+  type MeetingTranscriptChange,
   type Segment,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
@@ -69,7 +70,7 @@ export type MeetingRecorderDeps = {
   dir: string;
   send: (command: HelperCommand) => boolean;
   capture: () => { language: DictationLanguage; microphone: Microphone | null };
-  onTranscript: (id: MeetingId, entries: readonly TranscriptEntry[]) => void;
+  onTranscript: (change: MeetingTranscriptChange) => void;
   /** Unconfirmed live text, passed straight on and never saved. */
   onPartial?: (partial: MeetingPartial) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
@@ -385,8 +386,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       event.source === "mic"
         ? { ...base, source: "mic" }
         : { ...base, source: "system", speakerId: null };
-    await store.append(id, [entry]);
-    deps.onTranscript(id, [entry]);
+    await save(id, [entry]);
     if (watchdogs.get(id)?.watch === "drain") progress(id);
     if (silence.has(id)) heard(id);
   }
@@ -395,8 +395,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     const resumedAt = kind === "resumed" ? legStart.get(meeting.id) : undefined;
     const atMs = resumedAt ?? (await audioNow(meeting));
     const marker: Marker = { kind: "marker", marker: kind, atMs };
-    await store.append(meeting.id, [marker]);
-    deps.onTranscript(meeting.id, [marker]);
+    await save(meeting.id, [marker]);
+  }
+
+  async function save(id: MeetingId, entries: readonly TranscriptEntry[]) {
+    const revision = await store.append(id, entries);
+    if (revision !== null) deps.onTranscript({ id, entries, revision });
   }
 
   // A dictation mid-meeting: the helper records silence for it, and the transcript says why.

@@ -29,6 +29,7 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...patch,
   };
 }

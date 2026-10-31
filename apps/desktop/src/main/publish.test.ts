@@ -121,6 +121,7 @@ describe("publish", () => {
       summary: { kind: "none" },
       speakers: [],
       finalPassFailed: false,
+      transcriptRevision: 0,
     };
     update({ meeting: follow(noMeetingFocus, [meeting]) });
     update({ meeting: follow(noMeetingFocus, [{ ...meeting, notes: "Ask about the deadline" }]) });

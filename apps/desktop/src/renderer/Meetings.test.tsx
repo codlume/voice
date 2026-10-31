@@ -51,6 +51,7 @@ function meeting(
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...patch,
   };
 }
@@ -586,6 +587,7 @@ describe("a meeting", () => {
           speakerId: null,
         },
       ],
+      revision: 1,
     });
     await main.push({ id: id(4), source: "system", text: "" });
     await waitForText("So the export works.");
@@ -613,9 +615,7 @@ describe("a meeting", () => {
       getMeeting(meetingId).then(
         (detail) => new Promise((resolve) => answers.push(() => resolve(detail))),
       );
-    await act(async () =>
-      main.publish({ ...live, status: { kind: "transcribing", step: "finalizing" } }),
-    );
+    await act(async () => main.publish({ ...live, transcriptRevision: 1 }));
     await main.push({
       id: id(4),
       entries: [
@@ -628,12 +628,13 @@ describe("a meeting", () => {
           source: "mic",
         },
       ],
+      revision: 2,
     });
     await act(async () => answers.forEach((answer) => answer()));
     await waitForText("Pushed during the read.");
   });
 
-  test("an edit to the meeting does not read its transcript again", async () => {
+  test("only a rewrite of the transcript reads it again, not an edit, a status or a pushed line", async () => {
     const main = await openSync();
     await click(byText("Transcript"));
     await waitForText("I will draft the email");
@@ -642,10 +643,17 @@ describe("a meeting", () => {
     await act(async () => main.publish({ ...synced!, notes: "edited in the notepad" }));
     await act(async () => main.renameMeetingSpeaker(id(1), TOM, "Tom Becker"));
     await waitForText("Tom Becker");
-    expect(main.getMeeting).not.toHaveBeenCalled();
+    const line = { kind: "marker", marker: "dictated", atMs: 0 } as const;
+    await main.push({ id: id(1), entries: [line], revision: 1 });
     await act(async () =>
-      main.publish({ ...synced!, status: { kind: "summarizing", progress: null } }),
+      main.publish({
+        ...synced!,
+        status: { kind: "summarizing", progress: null },
+        transcriptRevision: 1,
+      }),
     );
+    expect(main.getMeeting).not.toHaveBeenCalled();
+    await act(async () => main.publish({ ...synced!, transcriptRevision: 2 }));
     expect(main.getMeeting).toHaveBeenCalledOnce();
   });
 

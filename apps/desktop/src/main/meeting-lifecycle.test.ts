@@ -56,6 +56,7 @@ function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Mee
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...overrides,
   };
 }

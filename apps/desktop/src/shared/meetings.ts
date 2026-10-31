@@ -74,6 +74,12 @@ export type Meeting = {
    * tries again or deletes it.
    */
   finalPassFailed: boolean;
+  /**
+   * Counts every write to the transcript file, appends and rewrites alike. Appends reach open
+   * windows as lines tagged with their revision; a meeting whose revision is ahead of the lines a
+   * window holds was rewritten, so the window reads the file again.
+   */
+  transcriptRevision: number;
 };
 
 /** Transcript times are ms of recorded audio from the meeting's start, pauses left out. */
@@ -361,7 +367,12 @@ export type PillMeeting = {
 };
 
 /** Live transcript lines, pushed as they are written so an open meeting view can append them. */
-export type MeetingTranscriptChange = { id: MeetingId; entries: readonly TranscriptEntry[] };
+/** Lines appended to a transcript; `revision` is the meeting's `transcriptRevision` after them. */
+export type MeetingTranscriptChange = {
+  id: MeetingId;
+  entries: readonly TranscriptEntry[];
+  revision: number;
+};
 
 /** What a source said since its last segment, which may still change. Never saved; empty clears it. */
 export type MeetingPartial = { id: MeetingId; source: MeetingSource; text: string };

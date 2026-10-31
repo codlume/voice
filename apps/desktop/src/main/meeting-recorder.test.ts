@@ -47,7 +47,7 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       return true;
     },
     capture: () => ({ language: "en", microphone: null }),
-    onTranscript: (_id, entries) => pushed.push(...entries),
+    onTranscript: ({ entries }) => pushed.push(...entries),
     onNotice: (_id, notice) => notices.push(notice.kind),
     summarizer: {
       summarizeMeeting: async () => ({ ok: true }),

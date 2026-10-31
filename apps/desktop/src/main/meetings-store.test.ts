@@ -51,6 +51,7 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...overrides,
   };
 }
@@ -188,6 +189,20 @@ describe("meetings store", () => {
     expect(hub()?.meetings[0]?.speakers).toEqual(speakers);
     expect((await relaunch()).store.get(A)?.speakers).toEqual(speakers);
     expect(await store.replaceTranscript(B, (m) => ({ meeting: m, transcript: [] }))).toBe(false);
+  });
+
+  test("every write to the transcript moves its revision on; only a rewrite publishes it", async () => {
+    const { store, loaded, hub } = harness();
+    await loaded;
+    await seed(store, meeting(A));
+    expect(await store.append(A, [segment("s1", "Hello")])).toBe(1);
+    expect(await store.append(A, [segment("s2", "again", 2000)])).toBe(2);
+    expect(store.get(A)?.transcriptRevision).toBe(2);
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(0);
+    await store.replaceTranscript(A, (current) => ({ meeting: current, transcript: [] }));
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(3);
+    expect((await relaunch()).store.get(A)?.transcriptRevision).toBe(3);
+    expect(await store.append(B, [segment("s1", "Hello")])).toBeNull();
   });
 
   test("interleaved changes each see the one queued before, so none is lost", async () => {

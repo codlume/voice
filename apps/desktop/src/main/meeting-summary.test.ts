@@ -100,6 +100,7 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     summary: { kind: "none" },
     speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...overrides,
   };
 }

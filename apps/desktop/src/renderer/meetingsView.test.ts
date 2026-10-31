@@ -33,6 +33,7 @@ function meeting(id: string, startedAt: number, patch: Partial<Meeting> = {}): M
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...patch,
   };
 }

@@ -96,9 +96,9 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       language: store.state.settings.dictationLanguage,
       microphone: store.state.settings.microphone,
     }),
-    onTranscript: (id, entries) => {
-      toHub(Channel.meetingTranscript, { id, entries });
-      if (notepad.meetingId() === id) notepad.send(Channel.meetingTranscript, { id, entries });
+    onTranscript: (change) => {
+      toHub(Channel.meetingTranscript, change);
+      if (notepad.meetingId() === change.id) notepad.send(Channel.meetingTranscript, change);
     },
     onPartial: (partial) => {
       toHub(Channel.meetingPartial, partial);

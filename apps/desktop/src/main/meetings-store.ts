@@ -53,7 +53,8 @@ export type MeetingsStore = {
   upsert(id: MeetingId, change: (meeting: Meeting | null) => Meeting | null): Promise<void>;
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
-  append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
+  /** Resolves with the meeting's `transcriptRevision` after the lines, or null when none landed. */
+  append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<number | null>;
   /**
    * Swaps in a whole transcript and the meeting that goes with it, as the final pass does. The
    * transcript is written first, atomically, so a crash between the two leaves a transcript
@@ -310,12 +311,19 @@ export function createMeetingsStore(options: {
       }),
     append: (id, entries) =>
       serial(async () => {
-        if (tombstones.has(id) || entries.length === 0) return;
+        if (tombstones.has(id) || entries.length === 0) return null;
         const file = transcriptFile(id);
         await mkdir(meetingDir(id), { recursive: true, mode: DIR_MODE });
         const lead = !appendChecked.has(id) && (await tornTail(file)) ? "\n" : "";
         await appendFile(file, lead + lines(entries), { mode: FILE_MODE });
         appendChecked.add(id);
+        const meeting = meetings.get(id);
+        if (!meeting) return null;
+        // Neither written nor published: the caller sends the lines on with this revision, and
+        // the next write of the meeting carries it.
+        const transcriptRevision = meeting.transcriptRevision + 1;
+        meetings.set(id, { ...meeting, transcriptRevision });
+        return transcriptRevision;
       }),
     replaceTranscript: (id, change) =>
       serial(async () => {
@@ -324,11 +332,10 @@ export function createMeetingsStore(options: {
         const next = change(meeting, await readTranscript(id));
         await writeFileAtomic(transcriptFile(id), lines(next.transcript), { mode: FILE_MODE });
         appendChecked.add(id);
-        if (next.meeting !== meeting) {
-          await writeMeeting(next.meeting);
-          meetings.set(id, next.meeting);
-          publish([next.meeting]);
-        }
+        const rewritten = { ...next.meeting, transcriptRevision: meeting.transcriptRevision + 1 };
+        await writeMeeting(rewritten);
+        meetings.set(id, rewritten);
+        publish([rewritten]);
         return true;
       }),
     remove: (id) => serial(() => removeNow(id)),
@@ -530,6 +537,7 @@ function parseMeeting(raw: unknown): Meeting | null {
   const summary = parseSummary(raw.summary);
   if (!id || !status || !summary || !isTime(raw.createdAt) || !isText(raw.notes)) return null;
   if (typeof raw.finalPassFailed !== "boolean") return null;
+  if (!Number.isSafeInteger(raw.transcriptRevision)) return null;
   if (!Array.isArray(raw.spans) || !Array.isArray(raw.folderIds)) return null;
   const spans = raw.spans.map(parseSpan);
   if (spans.some((span) => span === null)) return null;
@@ -545,6 +553,7 @@ function parseMeeting(raw: unknown): Meeting | null {
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
     finalPassFailed: raw.finalPassFailed,
+    transcriptRevision: raw.transcriptRevision as number,
   };
 }
 

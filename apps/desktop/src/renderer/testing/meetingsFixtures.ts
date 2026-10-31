@@ -90,6 +90,7 @@ export function fixtureMeeting(
     summary: { kind: "none" },
     speakers: [],
     finalPassFailed: false,
+    transcriptRevision: 0,
     ...patch,
   };
 }

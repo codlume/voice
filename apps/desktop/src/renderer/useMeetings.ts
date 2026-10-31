@@ -7,6 +7,7 @@ import {
   type MeetingId,
   type MeetingSource,
   type MeetingsState,
+  type MeetingTranscriptChange,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { mergeTranscript } from "./meetingsView.ts";
@@ -30,12 +31,12 @@ export function useMeetings(): MeetingsState | null {
 }
 
 /**
- * The meeting's transcript, grown by the lines main pushes while it records. Main rewrites the
- * file only when a pass over the recording ends, which always moves the status on, so the file
- * is read again on a status change and never for edits like notes or names. A line pushed while
- * a read is out is kept and merged in, since main may have read the file before writing it.
- * Until a read lands the last one stays; undefined before the first read of this meeting, null
- * once the meeting is gone.
+ * The meeting's transcript, grown by the lines main pushes while it records. Pushed lines carry
+ * the transcript revision they bring the file to; a meeting whose revision is ahead of the lines
+ * held was rewritten, so the file is read again, and never for edits like notes or names. A line
+ * pushed while a read is out is kept and merged in, since main may have read the file before
+ * writing it. Until a read lands the last one stays; undefined before the first read of this
+ * meeting, null once the meeting is gone.
  */
 export function useMeetingTranscript(
   api: Pick<MeetingControls, "getMeeting" | "onMeetingTranscript">,
@@ -45,32 +46,52 @@ export function useMeetingTranscript(
     id: MeetingId;
     read: readonly TranscriptEntry[] | null;
     live: readonly TranscriptEntry[];
+    revision: number;
   } | null>(null);
   const id = meeting?.id ?? null;
-  const step = meeting?.status.kind;
+  const revision = meeting?.transcriptRevision ?? 0;
+  const [readFor, setReadFor] = useState({ id, revision });
+  if (lines?.id === id && revision > lines.revision && readFor.revision < revision) {
+    setReadFor({ id, revision });
+  }
   useEffect(() => {
     if (!id) return;
     let current = true;
     // Lines pushed after this read was asked for; the lines pushed before it belong to the last one.
-    let pending: TranscriptEntry[] | null = [];
+    let pending: MeetingTranscriptChange[] | null = [];
     const unsubscribe = api.onMeetingTranscript((change) => {
       if (change.id !== id) return;
-      if (pending) pending.push(...change.entries);
-      else setLines((was) => was && { ...was, live: [...was.live, ...change.entries] });
+      if (pending) pending.push(change);
+      else {
+        setLines(
+          (was) =>
+            was && {
+              ...was,
+              live: [...was.live, ...change.entries],
+              revision: Math.max(was.revision, change.revision),
+            },
+        );
+      }
     });
     void api.getMeeting(id).then((detail) => {
       if (!current || !pending) return;
-      const live = pending;
+      const pushed = pending;
       pending = null;
-      setLines({ id, read: detail?.transcript ?? null, live });
+      setLines({
+        id,
+        read: detail?.transcript ?? null,
+        live: pushed.flatMap((change) => change.entries),
+        revision: Math.max(
+          detail?.meeting.transcriptRevision ?? 0,
+          ...pushed.map((change) => change.revision),
+        ),
+      });
     });
     return () => {
       current = false;
       unsubscribe();
     };
-    // The status is not read here: its change is the signal that the file was rewritten.
-    // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [api, id, step]);
+  }, [api, id, readFor]);
   return useMemo(() => {
     if (!id) return null;
     if (lines?.id !== id) return undefined;

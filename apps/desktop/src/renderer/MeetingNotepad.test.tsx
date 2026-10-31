@@ -30,6 +30,7 @@ const meeting: Meeting = {
   summary: { kind: "none" },
   speakers: [],
   finalPassFailed: false,
+  transcriptRevision: 0,
 };
 
 const said = (segmentId: string, text: string, source: "mic" | "system"): TranscriptEntry =>
@@ -81,7 +82,7 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
     push: (state: NotepadState | null) =>
       act(() => notepadListeners.forEach((listener) => listener(state))),
     hear: (entries: TranscriptEntry[]) =>
-      act(() => transcriptListeners.forEach((listener) => listener({ id, entries }))),
+      act(() => transcriptListeners.forEach((listener) => listener({ id, entries, revision: 1 }))),
     murmur: (source: MeetingSource, text: string) =>
       act(() => partialListeners.forEach((listener) => listener({ id, source, text }))),
   };
@@ -192,7 +193,7 @@ describe("the notepad", () => {
     expect(document.querySelector("ol li")?.textContent).toBe("Ann00:00Ship it Friday");
   });
 
-  test("shows the final transcript with its speakers once the meeting is ready", async () => {
+  test("shows the final transcript with its speakers once main rewrites it", async () => {
     const transcript = [said("a", "Ship it Fridy", "system")];
     const { push } = fakeNotepad({ meeting, prompt: null }, transcript);
     await render();
@@ -209,6 +210,7 @@ describe("the notepad", () => {
           ...meeting,
           status: { kind: "ready" },
           speakers: [{ id: s1, label: "Speaker 1", name: null }],
+          transcriptRevision: 1,
         },
         prompt: null,
       }),

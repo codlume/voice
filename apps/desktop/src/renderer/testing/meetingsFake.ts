@@ -86,6 +86,7 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
       summary: { kind: "none" },
       speakers: [],
       finalPassFailed: false,
+      transcriptRevision: 0,
     };
     set({ meetings: [meeting, ...state.meetings] });
     return ok(meeting.id);

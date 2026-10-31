@@ -207,6 +207,7 @@ export function step(
         summary: { kind: "none" },
         speakers: [],
         finalPassFailed: false,
+        transcriptRevision: 0,
       },
       effects: [watch("start"), { type: "startCapture", leg: 0 }],
     };
