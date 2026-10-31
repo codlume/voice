@@ -161,6 +161,13 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
       live.partial.add(listener);
       return () => live.partial.delete(listener);
     },
+    renameMeeting: vi.fn(async (meetingId: MeetingId, title: string) =>
+      set({
+        meetings: state.meetings.map((m) =>
+          m.id === meetingId ? { ...m, title: title ? { text: title, source: "user" } : null } : m,
+        ),
+      }),
+    ),
     renameMeetingSpeaker: vi.fn(async (meetingId: MeetingId, speakerId: SpeakerId, name: string) =>
       set({
         meetings: state.meetings.map((m) =>
@@ -280,6 +287,12 @@ async function type(element: HTMLInputElement | HTMLTextAreaElement, value: stri
   await act(async () => {
     Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function press(field: HTMLInputElement, key: string) {
+  await act(async () => {
+    field.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
   });
 }
 
@@ -546,6 +559,41 @@ describe("a meeting", () => {
       const marks = [...document.querySelectorAll("mark")].map((mark) => mark.textContent);
       expect(marks).toEqual(["Priya Shah", "Tom Becker"]);
     });
+  });
+
+  test("Escape puts back the title and a speaker's name without saving them", async () => {
+    const main = await openSync();
+    const title = document.querySelector<HTMLInputElement>("input[aria-label='Meeting title']")!;
+    await act(async () => title.focus());
+    await type(title, "Temp title");
+    await press(title, "Escape");
+    expect(title.value).toBe("Weekly product sync");
+    expect(main.renameMeeting).not.toHaveBeenCalled();
+
+    await click(byText("Transcript"));
+    await waitForText("I will draft the email");
+    const name = document.querySelector<HTMLInputElement>(
+      "input[aria-label='Name for Speaker 1']",
+    )!;
+    await act(async () => name.focus());
+    await type(name, "Wrong");
+    await press(name, "Escape");
+    expect(name.value).toBe("Priya Shah");
+    expect(main.renameMeetingSpeaker).not.toHaveBeenCalled();
+  });
+
+  test("a title main writes while the user types it does not replace the draft", async () => {
+    const main = await openSync();
+    const title = document.querySelector<HTMLInputElement>("input[aria-label='Meeting title']")!;
+    await act(async () => title.focus());
+    await type(title, "Q4 pricing");
+    const [synced] = sample();
+    await act(async () =>
+      main.publish({ ...synced!, title: { text: "Generated", source: "generated" } }),
+    );
+    expect(title.value).toBe("Q4 pricing");
+    await press(title, "Enter");
+    expect(main.renameMeeting).toHaveBeenCalledWith(id(1), "Q4 pricing");
   });
 
   test("while it records, saved lines append and unconfirmed text shows in gray until replaced", async () => {

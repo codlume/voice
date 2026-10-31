@@ -1,7 +1,7 @@
 import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { ChevronLeftIcon, CopyIcon, DownloadIcon, FolderPlusIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 
 import {
   commandRefusal,
@@ -269,35 +269,60 @@ function RecordingControls({ meeting }: { meeting: Meeting }) {
   );
 }
 
+/**
+ * A field that saves on Enter or on leaving it and goes back to `saved` on Escape. While it has
+ * focus the draft stays, so a name main writes meanwhile does not replace what the user types.
+ */
+function DraftInput({
+  saved,
+  save,
+  style,
+  ...input
+}: {
+  saved: string;
+  save: (text: string) => void;
+  style: stylex.StyleXStyles;
+} & Pick<InputHTMLAttributes<HTMLInputElement>, "aria-label" | "placeholder">) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape blurs too, and the blur must not save what Escape threw away.
+  const reverting = useRef(false);
+  return (
+    <input
+      {...input}
+      value={draft ?? saved}
+      spellCheck={false}
+      onFocus={() => setDraft(saved)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (!reverting.current && draft !== null && draft.trim() !== saved) save(draft);
+        reverting.current = false;
+        setDraft(null);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") reverting.current = true;
+        if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
+      }}
+      {...stylex.props(style)}
+    />
+  );
+}
+
 function TitleField({ meeting }: { meeting: Meeting }) {
-  const saved = meeting.title ?? "";
-  const [draft, setDraft] = useState(saved);
   const action = useAction();
-  const commit = () => {
-    if (draft.trim() === saved) return;
-    void action.run(
-      () => hubApi().renameMeeting(meeting.id, draft),
-      "Could not rename this meeting.",
-    );
-  };
   return (
     <>
       <h1 {...stylex.props(pageStyles.headline)}>
-        <input
+        <DraftInput
           aria-label="Meeting title"
-          value={draft}
           placeholder="Untitled meeting"
-          spellCheck={false}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-            if (event.key === "Escape") {
-              setDraft(saved);
-              event.currentTarget.blur();
-            }
-          }}
-          {...stylex.props(styles.titleInput)}
+          saved={meeting.title ?? ""}
+          save={(title) =>
+            void action.run(
+              () => hubApi().renameMeeting(meeting.id, title),
+              "Could not rename this meeting.",
+            )
+          }
+          style={styles.titleInput}
         />
       </h1>
       {action.error && (
@@ -472,35 +497,22 @@ function Thoughts({ meeting }: { meeting: Meeting }) {
   );
 }
 
-/** A speaker's name, saved on Enter or leaving the field; blank goes back to "Speaker N". */
+/** A speaker's name; blank goes back to "Speaker N". */
 function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: Speaker }) {
-  const saved = speaker.name ?? "";
-  const [draft, setDraft] = useState(saved);
   const action = useAction();
-  const commit = () => {
-    if (draft.trim() === saved) return;
-    void action.run(
-      () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, draft),
-      "Could not rename this speaker.",
-    );
-  };
   return (
     <>
-      <input
+      <DraftInput
         aria-label={`Name for ${speaker.label}`}
-        value={draft}
         placeholder={speaker.label}
-        spellCheck={false}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") {
-            setDraft(saved);
-            event.currentTarget.blur();
-          }
-        }}
-        {...stylex.props(styles.speakerInput)}
+        saved={speaker.name ?? ""}
+        save={(name) =>
+          void action.run(
+            () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, name),
+            "Could not rename this speaker.",
+          )
+        }
+        style={styles.speakerInput}
       />
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
@@ -533,11 +545,7 @@ function Transcript({
       {meeting.speakers.length > 0 && (
         <fieldset aria-label="Speakers" {...stylex.props(styles.speakers)}>
           {meeting.speakers.map((speaker) => (
-            <SpeakerField
-              key={`${speaker.id}:${speaker.name ?? ""}`}
-              meetingId={meeting.id}
-              speaker={speaker}
-            />
+            <SpeakerField key={speaker.id} meetingId={meeting.id} speaker={speaker} />
           ))}
         </fieldset>
       )}
@@ -623,7 +631,7 @@ export function MeetingDetail({
       </div>
       <div {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.heading)}>
-          <TitleField key={meeting.title ?? ""} meeting={meeting} />
+          <TitleField meeting={meeting} />
           <p {...stylex.props(styles.when)}>{when.join(" · ")}</p>
         </div>
         <div {...stylex.props(styles.actions)}>
