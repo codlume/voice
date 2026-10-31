@@ -57,8 +57,11 @@ export type MeetingRecorderDeps = {
   /** Unconfirmed live text, passed straight on and never saved. */
   onPartial?: (partial: MeetingPartial) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
-  /** Step 4's summary. Until it exists a summary request fails and the transcript is kept. */
-  summarize?: (id: MeetingId) => Promise<string>;
+  /**
+   * Writes the summary, or the failure with the previous summary kept, to the meeting
+   * (`meeting-summary.ts`). Aborted when the meeting is deleted. Without it a summary fails.
+   */
+  summarize?: (id: MeetingId, signal: AbortSignal) => Promise<{ ok: boolean }>;
   log: Log;
   now?: () => number;
 };
@@ -75,9 +78,6 @@ const AUDIO_FILES = [...PCM_FILES, "audio.json"] as const;
 const PCM_BYTES_PER_MS = 32;
 const live = (meeting: Meeting) =>
   meeting.status.kind === "recording" || meeting.status.kind === "starting";
-const noSummary = async (): Promise<string> => {
-  throw new Error("Summaries are not available yet.");
-};
 
 /**
  * Drives `meeting-lifecycle.ts` against the helper: each event is stepped one at a time, the
@@ -88,7 +88,8 @@ const noSummary = async (): Promise<string> => {
 export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorder {
   const { store, log } = deps;
   const now = deps.now ?? Date.now;
-  const summarize = deps.summarize ?? noSummary;
+  const summarize = deps.summarize ?? (async () => ({ ok: false }));
+  const summaries = new Map<MeetingId, AbortController>();
   const timers = new Map<MeetingId, NodeJS.Timeout[]>();
   const watchdogs = new Map<MeetingId, NodeJS.Timeout>();
   const silence = new Map<MeetingId, NodeJS.Timeout>();
@@ -188,20 +189,29 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         finalPending.set(id, "draining");
         await sendTranscribe(id);
         return;
-      case "summarize":
+      case "summarize": {
+        summaries.get(id)?.abort();
+        const controller = new AbortController();
+        summaries.set(id, controller);
         background(
           "summary",
-          summarize(id).then(
-            (markdown) => dispatch(id, { type: "summarized", markdown }),
-            (error: unknown) =>
-              dispatch(id, {
-                type: "summaryFailed",
-                message: error instanceof Error ? error.message : String(error),
-              }),
-          ),
+          (async () => {
+            let ok = false;
+            try {
+              ({ ok } = await summarize(id, controller.signal));
+            } catch (error) {
+              if (controller.signal.aborted) return;
+              log(`meetings: summary failed (${String(error)})`);
+            } finally {
+              if (summaries.get(id) === controller) summaries.delete(id);
+            }
+            await dispatch(id, { type: ok ? "summarized" : "summaryFailed" });
+          })(),
         );
         return;
+      }
       case "delete":
+        summaries.get(id)?.abort(new Error("Meeting deleted"));
         clearTimers(id);
         clearSilence(id);
         unwatch(id);

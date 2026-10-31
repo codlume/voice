@@ -1,4 +1,4 @@
-import { overviewOf, replaceSpeakerTokens } from "@voice/cleanup/summary";
+import { SPEAKER_TOKEN } from "@voice/cleanup/summary";
 import type { Shortcut } from "./transforms.ts";
 
 export type MeetingId = string & { readonly __brand: "MeetingId" };
@@ -35,15 +35,9 @@ export type MeetingStatus =
 
 /**
  * `coversUntilMs` is the recorded length the summary was made from; more recording makes it stale.
- * `markdown` names speakers with chips (`speakerToken`), so a rename needs no regeneration.
- * `overview` is the generated overview paragraph, null once the user edits the Markdown.
+ * `markdown` names speakers with `speakerToken`, so a rename needs no regeneration.
  */
-export type Summary = {
-  markdown: string;
-  overview: string | null;
-  generatedAt: number;
-  coversUntilMs: number;
-};
+export type Summary = { markdown: string; generatedAt: number; coversUntilMs: number };
 
 export type SummaryState =
   | { kind: "none" }
@@ -314,14 +308,6 @@ export const recordedMs = (meeting: Meeting, now: number): number =>
 export const summaryStale = (meeting: Meeting): boolean =>
   meeting.summary.kind === "ready" && meeting.summary.summary.coversUntilMs < closedMs(meeting);
 
-/** The overview the right panel shows: the stored one, else Wispr's first-paragraph rule. */
-export const summaryOverview = (summary: Summary) =>
-  summary.overview ?? overviewOf(summary.markdown);
-
-/** Summary Markdown with every speaker chip as its plain label, for search and copying. */
-export const plainSpeakers = (markdown: string, render = (label: string) => label) =>
-  replaceSpeakerTokens(markdown, ({ label }) => render(label));
-
 export const titleText = (meeting: Meeting) => meeting.title?.text ?? "Untitled meeting";
 
 export const YOU = "You";
@@ -336,15 +322,15 @@ export function speakerName(segment: Segment, speakers: readonly Speaker[]): str
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
 
-/** The token a summary writes for a speaker, `you` for the user, so a later rename shows in it. */
-export const speakerToken = (id: SpeakerId | "you") => `{{speaker:${id}}}`;
+export { SPEAKER_TOKEN, speakerToken } from "@voice/cleanup/summary";
 
-/** Matches `speakerToken`; group 1 is the id. */
-export const SPEAKER_TOKEN = /\{\{speaker:([A-Za-z0-9_-]+)\}\}/g;
+/** The token ids a summary uses besides the meeting's speakers: the user, and voices not told apart. */
+export const YOU_ID = "you";
+export const OTHERS_ID = "others";
 
 /** The name a summary token stands for; an id the meeting no longer has reads as Others. */
 export function tokenName(id: string, speakers: readonly Speaker[]): string {
-  if (id === "you") return YOU;
+  if (id === YOU_ID) return YOU;
   const speaker = speakers.find((candidate) => candidate.id === id);
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
@@ -458,7 +444,7 @@ export function searchMeeting(
   if (needle === "") return null;
   const summary =
     meeting.summary.kind === "ready"
-      ? plainSpeakers(resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers))
+      ? resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers)
       : "";
   const spoken = transcript.flatMap((entry) => (entry.kind === "segment" ? [entry.text] : []));
   const fields: [MeetingSearchField, string][] = [

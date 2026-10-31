@@ -18,7 +18,6 @@ const meeting: Meeting = {
     summary: {
       markdown:
         "We agreed to ship on Friday.\n\n### Decisions\n- Ship Friday\n\n### Next Steps\n**{{speaker:s1}}**\n- Draft the post",
-      overview: null,
       generatedAt: START + 3_800_000,
       coversUntilMs: 3_700_000,
     },
@@ -61,7 +60,7 @@ const transcript: TranscriptEntry[] = [
 ];
 
 describe("meeting markdown", () => {
-  test("has the title, date, summary with speakers in bold, My thoughts and the transcript in time order", () => {
+  test("has the title, date, summary, My thoughts and the transcript in time order", () => {
     expect(meetingMarkdown(meeting, transcript, { locale: "en-US", timeZone: "UTC" })).toBe(
       [
         "# Launch plan",

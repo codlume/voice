@@ -11,11 +11,16 @@ import {
 
 import {
   autoFolderIds,
+  OTHERS,
+  OTHERS_ID,
   recordedMs,
-  speakerName,
+  speakerDisplayName,
+  YOU,
+  YOU_ID,
   type Meeting,
   type MeetingId,
   type Segment,
+  type Speaker as MeetingSpeaker,
   type SummaryState,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
@@ -61,29 +66,42 @@ export const summaryFailureMessage: Record<SummaryOutcomeFailure["kind"], string
   stopped: "The summary model stopped.",
 };
 
-const MIC_SPEAKER = "you";
-
-const speakerId = (segment: Segment) =>
-  segment.source === "mic" ? MIC_SPEAKER : (segment.speaker ?? "others");
-
-/** The transcript as the provider reads it; You first, then everyone in order of first word. */
-export function summaryInput(transcript: readonly TranscriptEntry[]): {
-  lines: TranscriptLine[];
-  speakers: Speaker[];
-} {
+/**
+ * The transcript as the provider reads it, with the ids the summary's tokens use: You first, then
+ * everyone in order of first word, and Others for system audio no speaker was found for. A name
+ * another speaker already goes by falls back to the "Speaker N" label, so owners stay distinct.
+ */
+export function summaryInput(
+  transcript: readonly TranscriptEntry[],
+  meetingSpeakers: readonly MeetingSpeaker[],
+): { lines: TranscriptLine[]; speakers: Speaker[] } {
   const segments = transcript.filter(
     (entry): entry is Segment => entry.kind === "segment" && entry.text.trim() !== "",
   );
   const speakers = new Map<string, Speaker>();
+  const labels = new Set<string>();
+  const speakerOf = (segment: Segment): Speaker => {
+    const known =
+      segment.source === "system"
+        ? meetingSpeakers.find(({ id }) => id === segment.speakerId)
+        : undefined;
+    const id = segment.source === "mic" ? YOU_ID : (known?.id ?? OTHERS_ID);
+    const existing = speakers.get(id);
+    if (existing) return existing;
+    const name = segment.source === "mic" ? YOU : known ? speakerDisplayName(known) : OTHERS;
+    const speaker = { id, label: labels.has(name) && known ? known.label : name };
+    speakers.set(id, speaker);
+    labels.add(speaker.label);
+    return speaker;
+  };
   for (const segment of segments.toSorted(
     (a, b) => Number(b.source === "mic") - Number(a.source === "mic"),
   )) {
-    const id = speakerId(segment);
-    if (!speakers.has(id)) speakers.set(id, { id, label: speakerName(segment) });
+    speakerOf(segment);
   }
   return {
     lines: segments.map((segment) => ({
-      speaker: speakerId(segment),
+      speaker: speakerOf(segment).id,
       startMs: segment.startMs,
       text: segment.text,
     })),
@@ -152,7 +170,7 @@ export function createMeetingSummarizer({
       const meeting = store.get(id);
       if (meeting === null) return { ok: false, failure: { kind: "noTranscript" } };
       const coversUntilMs = recordedMs(meeting, now());
-      const input = summaryInput(await store.transcript(id));
+      const input = summaryInput(await store.transcript(id), meeting.speakers);
       const outcome = await run(signal, () =>
         provider.summarize({
           ...input,
@@ -168,13 +186,10 @@ export function createMeetingSummarizer({
         return outcome;
       }
       const { summary } = outcome;
-      const { markdown, overview } = renderSummaryMarkdown(summary, input.speakers);
+      const markdown = renderSummaryMarkdown(summary, input.speakers);
       await store.update(id, (latest) => ({
         ...withTitle(latest, summary.title),
-        summary: {
-          kind: "ready",
-          summary: { markdown, overview, generatedAt: now(), coversUntilMs },
-        },
+        summary: { kind: "ready", summary: { markdown, generatedAt: now(), coversUntilMs } },
       }));
       return { ok: true };
     },
@@ -183,7 +198,7 @@ export function createMeetingSummarizer({
       signal.throwIfAborted();
       const meeting = store.get(id);
       if (meeting === null || meeting.title !== null) return { ok: true, title: null };
-      const input = summaryInput(await store.transcript(id));
+      const input = summaryInput(await store.transcript(id), meeting.speakers);
       const outcome = await run(signal, () =>
         provider.generateTitle({ ...input, notes: meeting.notes, signal }),
       );

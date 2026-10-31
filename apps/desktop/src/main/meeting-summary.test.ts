@@ -5,7 +5,15 @@ import * as NodePath from "node:path";
 import type { MeetingSummary, SummaryProvider, SummaryResult } from "@voice/cleanup/summary";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
-import type { Meeting, MeetingId, Summary, TranscriptEntry } from "../shared/meetings.ts";
+import {
+  renameSpeaker,
+  resolveSpeakerTokens,
+  type Meeting,
+  type MeetingId,
+  type SpeakerId,
+  type Summary,
+  type TranscriptEntry,
+} from "../shared/meetings.ts";
 import { meetingMarkdown } from "../shared/meeting-markdown.ts";
 import {
   createMeetingSummarizer,
@@ -35,7 +43,7 @@ const transcript: TranscriptEntry[] = [
     kind: "segment",
     id: "a",
     source: "system",
-    speaker: "Speaker 1",
+    speakerId: "s1" as SpeakerId,
     startMs: 0,
     endMs: 4000,
     text: "Can you ship the hotfix today?",
@@ -55,7 +63,7 @@ const transcript: TranscriptEntry[] = [
     kind: "segment",
     id: "c",
     source: "system",
-    speaker: null,
+    speakerId: null,
     startMs: 10_000,
     endMs: 12_000,
     text: "  ",
@@ -68,12 +76,14 @@ const summary: MeetingSummary = {
   language: "en",
   overview: "The hotfix ships today, as Speaker 1 asked.",
   decisions: ["Ship the hotfix today."],
-  nextSteps: [{ owner: "you", task: "Ship the hotfix." }],
+  nextSteps: [
+    { owner: "you", task: "Ship the hotfix." },
+    { owner: "s1", task: "Tell support." },
+  ],
 };
 
 const previous: Summary = {
   markdown: "Old summary.",
-  overview: "Old summary.",
   generatedAt: START,
   coversUntilMs: 10 * MIN,
 };
@@ -88,6 +98,7 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     folderIds: [],
     notes: "ship today",
     summary: { kind: "none" },
+    speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }],
     ...overrides,
   };
 }
@@ -140,7 +151,7 @@ async function harness({
 const signal = () => new AbortController().signal;
 
 describe("summarizeMeeting", () => {
-  test("writes the summary with speaker chips, its overview, and a title for a blank one", async () => {
+  test("writes the summary with speaker tokens, and a title for a blank one", async () => {
     const { summarizer, store, saved } = await harness({ provider: {} });
     const folder = await store.createFolder({
       name: "Hotfixes",
@@ -158,7 +169,7 @@ describe("summarizeMeeting", () => {
       kind: "ready",
       summary: {
         markdown: [
-          'The hotfix ships today, as <voice-speaker id="Speaker 1">Speaker 1</voice-speaker> asked.',
+          "The hotfix ships today, as {{speaker:s1}} asked.",
           "",
           "### Decisions",
           "",
@@ -166,19 +177,36 @@ describe("summarizeMeeting", () => {
           "",
           "### Next Steps",
           "",
-          '<voice-speaker id="you">You</voice-speaker>',
+          "**{{speaker:you}}**",
           "- Ship the hotfix.",
           "",
+          "**{{speaker:s1}}**",
+          "- Tell support.",
+          "",
         ].join("\n"),
-        overview:
-          'The hotfix ships today, as <voice-speaker id="Speaker 1">Speaker 1</voice-speaker> asked.',
         generatedAt: START + 40 * MIN,
         coversUntilMs: 30 * MIN,
       },
     });
-    const exported = meetingMarkdown(written, await store.transcript(ID));
-    expect(exported).toContain("as **Speaker 1** asked");
-    expect(exported).toContain("### Next Steps\n\n**You**\n- Ship the hotfix.");
+  });
+
+  test("a rename shows in the summary and its export without regenerating", async () => {
+    const { summarizer, store, calls } = await harness({ provider: {} });
+    await summarizer.summarizeMeeting(ID, { signal: signal() });
+
+    const renamed = await store.update(ID, (latest) =>
+      renameSpeaker(latest, "s1" as SpeakerId, "Ana"),
+    );
+
+    const { summary: state } = renamed!;
+    const markdown = state.kind === "ready" ? state.summary.markdown : "";
+    expect(resolveSpeakerTokens(markdown, renamed!.speakers).split("\n")[0]).toBe(
+      "The hotfix ships today, as Ana asked.",
+    );
+    const exported = meetingMarkdown(renamed!, await store.transcript(ID));
+    expect(exported).toContain("as Ana asked");
+    expect(exported).toContain("**You**\n- Ship the hotfix.\n\n**Ana**\n- Tell support.");
+    expect(calls).toEqual(["summarize"]);
   });
 
   test("keeps a title the user typed while the summary ran", async () => {
@@ -217,12 +245,12 @@ describe("summarizeMeeting", () => {
       title: "keep",
       notes: "ship today",
       lines: [
-        { speaker: "Speaker 1", startMs: 0, text: "Can you ship the hotfix today?" },
+        { speaker: "s1", startMs: 0, text: "Can you ship the hotfix today?" },
         { speaker: "you", startMs: 5000, text: "Yes, I will." },
       ],
       speakers: [
         { id: "you", label: "You" },
-        { id: "Speaker 1", label: "Speaker 1" },
+        { id: "s1", label: "Speaker 1" },
       ],
     });
   });
@@ -352,9 +380,11 @@ describe("summarizeMeeting", () => {
 
     expect(steps.map(({ budgetMs }) => budgetMs)).toEqual([STEP_BUDGET_MS, STEP_BUDGET_MS]);
     expect(progress).toEqual([0.5, 1]);
-    expect(await saved()).toMatchObject({
-      title: { text: "Hotfix Plan For Today", source: "generated" },
-      summary: { kind: "ready", summary: { overview: "The hotfix ships today." } },
+    const written = await saved();
+    expect(written.title).toEqual({ text: "Hotfix Plan For Today", source: "generated" });
+    expect(written.summary).toMatchObject({
+      kind: "ready",
+      summary: { markdown: expect.stringMatching(/^The hotfix ships today\.\n/) },
     });
   });
 });
@@ -396,25 +426,44 @@ describe("generateTitle", () => {
   });
 });
 
-test("summaryInput names the mic You, an unknown voice Others, and drops blank segments", () => {
-  const { lines, speakers } = summaryInput([
-    ...transcript,
-    {
-      kind: "segment",
-      id: "e",
-      source: "system",
-      speaker: null,
-      startMs: 13_000,
-      endMs: 14_000,
-      text: "Bye.",
-      final: true,
-    },
-  ]);
+test("summaryInput names the mic You, speakers by their name, an unknown voice Others, and drops blank segments", () => {
+  const speakers = [
+    { id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" as const } },
+    { id: "s2" as SpeakerId, label: "Speaker 2", name: { text: "Ana", source: "user" as const } },
+  ];
+  const { lines, speakers: read } = summaryInput(
+    [
+      ...transcript,
+      {
+        kind: "segment",
+        id: "e",
+        source: "system",
+        speakerId: null,
+        startMs: 13_000,
+        endMs: 14_000,
+        text: "Bye.",
+        final: true,
+      },
+      {
+        kind: "segment",
+        id: "f",
+        source: "system",
+        speakerId: "s2" as SpeakerId,
+        startMs: 15_000,
+        endMs: 16_000,
+        text: "Bye all.",
+        final: true,
+      },
+    ],
+    speakers,
+  );
 
-  expect(speakers).toEqual([
+  // A second Ana keeps her label, so each owner the model names is one speaker.
+  expect(read).toEqual([
     { id: "you", label: "You" },
-    { id: "Speaker 1", label: "Speaker 1" },
+    { id: "s1", label: "Ana" },
     { id: "others", label: "Others" },
+    { id: "s2", label: "Speaker 2" },
   ]);
-  expect(lines.map(({ speaker }) => speaker)).toEqual(["Speaker 1", "you", "others"]);
+  expect(lines.map(({ speaker }) => speaker)).toEqual(["s1", "you", "others", "s2"]);
 });

@@ -1,6 +1,5 @@
 import {
   foldTranscript,
-  plainSpeakers,
   resolveSpeakerTokens,
   speakerName,
   startedAt,
@@ -48,10 +47,7 @@ export function meetingMarkdown(
     }).format(at),
   );
   if (meeting.summary.kind === "ready") {
-    const markdown = plainSpeakers(
-      resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers),
-      (name) => `**${name}**`,
-    );
+    const markdown = resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers);
     sections.push(`## Summary\n\n${markdown.trim()}`);
   }
   if (meeting.notes.trim() !== "") sections.push(`## My thoughts\n\n${meeting.notes.trim()}`);

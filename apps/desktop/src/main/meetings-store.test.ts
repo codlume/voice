@@ -275,9 +275,7 @@ describe("meetings store", () => {
         summary: {
           kind: "ready",
           summary: {
-            markdown:
-              'We chose Postgres with <voice-speaker id="Speaker 1">Speaker 1</voice-speaker>.',
-            overview: null,
+            markdown: "We chose Postgres with {{speaker:you}}.",
             generatedAt: START,
             coversUntilMs: 1,
           },
@@ -291,11 +289,11 @@ describe("meetings store", () => {
       { id: C, field: "transcript", snippet: "The quarterly ROADMAP slipped by a week" },
       { id: A, field: "title", snippet: "Roadmap review" },
     ]);
-    expect(await store.search("postgres with speaker")).toEqual([
-      { id: B, field: "summary", snippet: "We chose Postgres with Speaker 1." },
+    expect(await store.search("postgres with you")).toEqual([
+      { id: B, field: "summary", snippet: "We chose Postgres with You." },
     ]);
-    // Chip markup is not text the user wrote.
-    expect(await store.search("voice-speaker")).toEqual([]);
+    // Token markup is not text the user wrote.
+    expect(await store.search("speaker:")).toEqual([]);
     expect((await store.search("hiring")).map(({ field }) => field)).toEqual(["notes"]);
     expect(await store.search("   ")).toEqual([]);
   });

@@ -1,11 +1,6 @@
 export { createGemmaSummaryProvider, estimateTokens, type GenerateStep } from "./gemma.ts";
 export { detectLanguage, headingsFor, type SummaryLanguage } from "./language.ts";
-export {
-  overviewOf,
-  renderSummaryMarkdown,
-  replaceSpeakerTokens,
-  speakerToken,
-} from "./markdown.ts";
+export { renderSummaryMarkdown, SPEAKER_TOKEN, speakerToken } from "./markdown.ts";
 export type {
   MeetingSummary,
   NextStep,

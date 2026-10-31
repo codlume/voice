@@ -1,4 +1,4 @@
-/** "you" for the mic, otherwise whatever names a diarized voice, such as "Speaker 1". */
+/** "you" for the mic, otherwise the meeting's id for a voice, such as "s1". */
 export type SpeakerId = string;
 
 /** `label` is what the transcript calls the speaker now, which a rename can change. */
@@ -22,7 +22,7 @@ export type SummaryRequest = {
 
 export type NextStep = { owner: SpeakerId | null; task: string };
 
-/** Free text is plain; owners are ids, so the renderer, not the model, writes every speaker chip. */
+/** Free text is plain; owners are ids, so the renderer, not the model, writes every speaker token. */
 export type MeetingSummary = {
   title: string | null;
   /** The transcript's language, which picks the headings. */

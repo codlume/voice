@@ -487,12 +487,7 @@ function parseStatus(raw: unknown): MeetingStatus | null {
 function parseSummaryBody(raw: unknown): Summary | null {
   if (!isRecord(raw) || !isText(raw.markdown)) return null;
   if (!isTime(raw.generatedAt) || !isTime(raw.coversUntilMs)) return null;
-  return {
-    markdown: raw.markdown,
-    overview: isText(raw.overview) ? raw.overview : null,
-    generatedAt: raw.generatedAt,
-    coversUntilMs: raw.coversUntilMs,
-  };
+  return { markdown: raw.markdown, generatedAt: raw.generatedAt, coversUntilMs: raw.coversUntilMs };
 }
 
 function parseSummary(raw: unknown): SummaryState | null {

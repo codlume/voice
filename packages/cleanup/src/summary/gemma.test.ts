@@ -19,8 +19,8 @@ const isPart = (step: Step) => "topics" in (step.jsonSchema?.properties ?? {});
 
 const speakers: Speaker[] = [
   { id: "you", label: "You" },
-  { id: "Speaker 1", label: "Speaker 1" },
-  { id: "Speaker 2", label: "Speaker 2" },
+  { id: "s1", label: "Speaker 1" },
+  { id: "s2", label: "Speaker 2" },
 ];
 
 const sentence =
@@ -28,7 +28,7 @@ const sentence =
 
 function transcript(lineCount: number, words = sentence): TranscriptLine[] {
   return Array.from({ length: lineCount }, (_, index) => ({
-    speaker: index % 2 === 0 ? "you" : "Speaker 1",
+    speaker: index % 2 === 0 ? "you" : "s1",
     startMs: index * 5000,
     text: words,
   }));
@@ -108,7 +108,7 @@ describe("summarize", () => {
         language: "en",
         overview: "The hotfix ships today and Speaker 1 writes the release notes by Friday.",
         decisions: ["Ship the hotfix today."],
-        nextSteps: [{ owner: "Speaker 1", task: "Write the release notes by Friday." }],
+        nextSteps: [{ owner: "s1", task: "Write the release notes by Friday." }],
       },
     });
   });

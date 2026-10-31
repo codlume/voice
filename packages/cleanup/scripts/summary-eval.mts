@@ -16,7 +16,7 @@ import { parseArgs } from "node:util";
 
 import { createGemmaSummaryProvider, estimateTokens } from "../src/summary/gemma.ts";
 import { SUMMARY_LANGUAGES } from "../src/summary/language.ts";
-import { renderSummaryMarkdown, replaceSpeakerTokens } from "../src/summary/markdown.ts";
+import { renderSummaryMarkdown, SPEAKER_TOKEN } from "../src/summary/markdown.ts";
 import type { Speaker, TranscriptLine } from "../src/summary/provider.ts";
 import { createTransformEngine } from "../src/transform/engine.ts";
 
@@ -141,6 +141,10 @@ function print(
   return result;
 }
 
+// The fixtures' labels as the app's speaker ids: You is "you", Speaker N is "sN".
+const idOf = (label: string) => (label === "You" ? "you" : label.replace(/^Speaker (\d+)$/, "s$1"));
+const labelOf = (id: string) => (id === "you" ? "You" : id.replace(/^s(\d+)$/, "Speaker $1"));
+
 function readFixture(fixture: string): {
   lines: TranscriptLine[];
   speakers: Speaker[];
@@ -154,16 +158,17 @@ function readFixture(fixture: string): {
       if (!match) return [];
       const [, h, m, sec, label, text] = match;
       const startMs = ((Number(h) * 60 + Number(m)) * 60 + Number(sec)) * 1000;
-      return [{ speaker: label === "You" ? "you" : label!.trim(), startMs, text: text!.trim() }];
+      return [{ speaker: idOf(label!.trim()), startMs, text: text!.trim() }];
     });
   const speakers = [...new Set(lines.map(({ speaker }) => speaker))].map((id) => ({
     id,
-    label: id === "you" ? "You" : id,
+    label: labelOf(id),
   }));
   return { lines, speakers, notes: key.notes };
 }
 
-const asBold = (markdown: string) => replaceSpeakerTokens(markdown, ({ label }) => `**${label}**`);
+const asLabels = (markdown: string) =>
+  markdown.replace(SPEAKER_TOKEN, (_, id: string) => labelOf(id));
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -181,7 +186,7 @@ if (values.rescore) {
     const fixture = name.match(/^([a-z]{2}-\d{2})/)?.[1];
     if (!fixture) continue;
     const text = readFileSync(join(values.rescore, name), "utf8").replace(/^# .*\n+/, "");
-    print(name.replace(/\.md$/, ""), fixture, asBold(text));
+    print(name.replace(/\.md$/, ""), fixture, asLabels(text));
   }
   process.exit(0);
 }
@@ -225,13 +230,13 @@ for (const fixture of fixtures) {
     console.log(`${fixture}: failed ${result.failure.kind} after ${totalMs} ms`);
     continue;
   }
-  const { markdown } = renderSummaryMarkdown(result.summary, speakers);
+  const markdown = renderSummaryMarkdown(result.summary, speakers);
   writeFileSync(
     join(values.out, `${fixture}.md`),
     `# ${result.summary.title ?? ""}\n\n${markdown}`,
   );
   writeFileSync(join(values.out, `${fixture}.json`), JSON.stringify({ result, steps }, null, 2));
-  const scored = print(fixture, fixture, asBold(markdown), {
+  const scored = print(fixture, fixture, asLabels(markdown), {
     s: (totalMs / 1000).toFixed(1),
     steps: steps.map(({ ms }) => (ms / 1000).toFixed(1)).join("+"),
     title: JSON.stringify(result.summary.title),
