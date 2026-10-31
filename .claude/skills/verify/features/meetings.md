@@ -23,12 +23,17 @@ A meeting records the user's microphone and the sound other apps play (other par
 - `meeting-notepad`: a meeting that starts brings up the floating notepad (`notepad.html`, title "Meeting notepad") at the top right of the main display, or where the user last dragged it (`<userData>/notepad.json`), without taking focus from the frontmost app. It shows the status (`Starting…`, `Recording`, `Paused`, `Wrapping up…`, `Saved to Meetings`) with the meeting clock, `Pause` or `Resume` (icon buttons) and `Stop`, and the `Transcript` (live, You and Others, partials gray) and `My thoughts` tabs. My thoughts is the same text as the hub's tab, both ways. Closing it does not stop recording. A discarded meeting closes it.
 - `meeting-pill`: with no dictation running, the Flow Bar shows the current meeting: a red light and the clock while recording, `Paused · <clock>`, `Starting…`, `Wrapping up…`, or a yellow light with a question. Dictation states replace it while dictating and it comes back after. Clicking it opens the notepad focused, without raising the Voice window.
 - `meeting-prompts`: `Started by mistake?` (Keep, Discard) after a short recording, `Still in a meeting?` (Stop, Keep recording) after ten silent minutes, `Approaching the time limit` (End recording, Dismiss) five minutes before the maximum length, and notices such as a lost capture (Dismiss). The notepad comes up for the first three, and the Flow Bar asks the question in place of the clock.
+- `meetings-setup`: `Set up Meetings` at the top of the page (Microphone, System Audio Recording, Try Meetings) until all are done; System Audio Recording below macOS 14.4 reads "Needs macOS 14.4 or later" and does not hold it open. A `Summaries` row offers the transform model while it is not on disk.
+- `meeting-toggle`: the meeting shortcut (default ⌥M, Settings > Shortcuts > Meetings) and the tray's `meeting` item stop the meeting that records or is paused, or start one; while one starts the tray reads `Starting meeting…` and a press does nothing.
+- `meetings-privacy-settings`: Settings > Data and Privacy > Meetings states the retention and `Meeting settings…` opens the Meetings page's dialog.
 - `meeting-recovery`: a meeting left `recording` by a quit becomes `ready` on the next launch, its leg closed at the last audio write, and the helper plays no fixture and opens no device.
 
 ## How to get to it (user POV)
 
 - Voice window sidebar: `Meetings`, after Home.
 - Keyboard: Cmd-2 in the Voice nav.
+- ⌥M in any app, or the shortcut set in Settings > Shortcuts. The helper's tap answers it, except while the Voice window has focus, where the hub does.
+- Menu bar: `Start meeting` / `Stop meeting`.
 
 ## Driving it with voice-verify
 
@@ -41,6 +46,9 @@ Preconditions: baseline. A fresh userData has no meetings.
 - `vv meeting [meeting-mic.wav|meeting-mic-speakers.wav] [--no-system]` copies the synthetic fixtures into the userData, starts a meeting through the hub API, waits until both fixtures have played (8x real time), stops it, keeps it if asked, and prints the transcript, the files left in the meeting's folder, and timings. Evidence JSON goes to the evidence dir.
 - Dictation mid-meeting: copy both fixtures to `<userData>/meeting-mic.wav` and `meeting-system.wav`, `vv eval hub 'window.voice.startMeeting()'`, run `vv dictate short.wav`, stop the meeting, and read its transcript for the `dictated` marker.
 - **Notepad and Flow Bar.** Copy both fixtures as above, `vv click Meetings`, start a meeting, then `vv eval notepad 'document.body.innerText'`, `vv click Pause notepad`, `vv shot notepad-paused notepad`, `vv shot pill-paused pill`, `vv eval pill 'window.voice.getPillSnapshot()'`. Stop it within a second of starting to reach `Started by mistake?`. `shot` captures the page only; for the window with its traffic lights, `screencapture -l <id>` with the id from `getMediaSourceId()` in the main process captures that one window.
+- **Tray.** Copy both fixtures into the userData, then `vv tray meeting` starts a meeting and `vv tray` shows the item as `Stop meeting`; `vv tray meeting` again stops it.
+- **Shortcut in the Voice window.** With the fixtures in place, `vv front`, then `vv key KeyM option` starts a meeting and the same key stops it.
+- **Shortcut in another app.** Needs an exclusive desktop, as `dictate` does. Bring another app to the front so the helper's tap holds the shortcut, then run `.build/debug/fnpost combo 46 option --side=left` from `native/voice-helper`.
 - Recovery: start a meeting as above, `vv stop --keep-user-data` while it records, `vv launch --keep-user-data`, then `vv wait hub` for the meeting's status to be `ready` and list its folder.
 
 ## Gotchas
