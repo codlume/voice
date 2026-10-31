@@ -7,6 +7,8 @@ public enum MeetingChunker {
     /// The most audio `cut` looks at; more would never be taken in one window.
     public static let windowSamples = maximumFrames * frameSamples
     static let pauseFrames = 6
+    /// A pause this long ends a window shorter than the minimum, so a short reply shows soon.
+    static let longPauseFrames = 10
     /// Below this RMS a 100 ms frame counts as quiet: about -46 dBFS.
     static let quietRms: Float = 0.005
 
@@ -15,6 +17,11 @@ public enum MeetingChunker {
     public static func cut(_ samples: [Float], final: Bool) -> Int? {
         if samples.isEmpty { return nil }
         let levels = frameLevels(samples)
+        // Silence before any speech is taken at once, so the other stream never waits on it, and
+        // the next window keeps a short lead-in before the speech.
+        let lead = levels.prefix { $0 < quietRms }.count
+        if lead == levels.count, final { return samples.count }
+        if lead >= pauseFrames { return (lead - pauseFrames / 2) * frameSamples }
         if let pause = firstPause(levels) { return pause * frameSamples }
         if levels.count >= maximumFrames {
             // No pause inside the window: cut at its quietest frame in the last 4 s.
@@ -65,13 +72,14 @@ public enum MeetingChunker {
         }
     }
 
-    // The middle of the first quiet run of `pauseFrames` that starts after the minimum window.
+    // The middle of the first quiet run of at least `pauseFrames` whose middle comes after the
+    // minimum window, or of the first run of `longPauseFrames`, as far as the run reaches yet.
     private static func firstPause(_ levels: [Float]) -> Int? {
         var run = 0
         for (index, level) in levels.enumerated().prefix(maximumFrames) {
             run = level < quietRms ? run + 1 : 0
-            let start = index - run + 1
-            if run == pauseFrames, start >= minimumFrames { return start + pauseFrames / 2 }
+            let middle = index - run + 1 + run / 2
+            if run >= pauseFrames, middle >= minimumFrames || run >= longPauseFrames { return middle }
         }
         return nil
     }

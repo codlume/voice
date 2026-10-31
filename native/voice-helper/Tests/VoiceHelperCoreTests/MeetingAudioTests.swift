@@ -70,9 +70,28 @@ private func silence(seconds: Double) -> [Float] {
 
 @Suite struct MeetingChunkerTests {
     @Test func waitsForMoreAudioUntilAPauseFollowsTwoSecondsOfSpeech() {
-        #expect(MeetingChunker.cut(tone(seconds: 1.5) + silence(seconds: 1), final: false) == nil)
+        #expect(MeetingChunker.cut(tone(seconds: 1.5) + silence(seconds: 0.8), final: false) == nil)
         let cut = MeetingChunker.cut(tone(seconds: 3) + silence(seconds: 1) + tone(seconds: 1), final: false)
         #expect(cut == Int(3.3 * 16_000), "cuts in the middle of the first pause")
+    }
+
+    @Test func aShortReplyEndsItsWindowOnceASecondOfSilenceFollows() {
+        // "Yes." right after a cut: its pause starts before the two-second minimum.
+        let reply = tone(seconds: 0.8) + silence(seconds: 1)
+        #expect(MeetingChunker.cut(reply, final: false) == Int(1.3 * 16_000))
+        #expect(MeetingChunker.cut(reply + silence(seconds: 5), final: false) == Int(1.3 * 16_000), "a pause that keeps growing still cuts")
+    }
+
+    @Test func aPauseThatStartsEarlyCutsBeforeTheNextTurnInsteadOfInsideIt() {
+        let cut = MeetingChunker.cut(tone(seconds: 1.8) + silence(seconds: 3) + tone(seconds: 12), final: false)
+        #expect(cut.map { (18 * 1600..<48 * 1600).contains($0) } == true, "\(String(describing: cut))")
+    }
+
+    @Test func leadingSilenceIsTakenAtOnceAndLeavesALeadInBeforeSpeech() {
+        #expect(MeetingChunker.cut(silence(seconds: 0.5), final: false) == nil)
+        #expect(MeetingChunker.cut(silence(seconds: 5), final: false) == Int(4.7 * 16_000))
+        #expect(MeetingChunker.cut(silence(seconds: 2) + tone(seconds: 1), final: false) == Int(1.7 * 16_000))
+        #expect(MeetingChunker.cut(silence(seconds: 2), final: true) == 2 * 16_000)
     }
 
     @Test func cutsALongStretchWithoutPausesAtItsQuietestMomentBeforeFifteenSeconds() throws {
