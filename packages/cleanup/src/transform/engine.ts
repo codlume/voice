@@ -52,7 +52,7 @@ export type TransformEngine = {
 
 const TIMED_OUT = { ok: false, failure: { kind: "timedOut" } } as const;
 
-/** With these, a Transform waited at most 0.87 s for a summary step to stop (M1 Pro, transform-wait.mts). */
+/** node-llama-cpp's default batch size. A Transform waited at most 0.87 s for a summary step to stop (M1 Pro, transform-wait.mts). */
 const PREFILL_SLICE_TOKENS = 512;
 
 export function createTransformEngine({
@@ -146,11 +146,14 @@ export function createTransformEngine({
     try {
       // node-llama-cpp reads a whole prompt in one call that never checks the signal, about 15 s
       // for 12,000 tokens. Read in slices first, a step stops within one slice when a Transform
-      // goes first, and the prompt call below reuses what the slices read.
-      for (let start = 0; start < prompt.length - 1; start += PREFILL_SLICE_TOKENS) {
+      // goes first, and the prompt call below reuses what the slices read. The slices are the
+      // batches that call would read anyway and it reads the last one itself, so the numbers,
+      // and the summary, come out the same.
+      const sliced = Math.floor((prompt.length - 1) / PREFILL_SLICE_TOKENS) * PREFILL_SLICE_TOKENS;
+      for (let start = 0; start < sliced; start += PREFILL_SLICE_TOKENS) {
         stop.throwIfAborted();
         await session.sequence.evaluateWithoutGeneratingNewTokens(
-          prompt.slice(start, Math.min(start + PREFILL_SLICE_TOKENS, prompt.length - 1)),
+          prompt.slice(start, start + PREFILL_SLICE_TOKENS),
         );
       }
       const output = await session.promptWithMeta(request.user, {
