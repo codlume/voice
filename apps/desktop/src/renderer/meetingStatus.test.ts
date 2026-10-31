@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import type { Meeting, MeetingId, MeetingStatus, TranscriptEntry } from "../shared/meetings.ts";
-import { mergeTranscript, notepadStatus, notepadTicks, promptView } from "./notepadView.ts";
+import { mergeTranscript } from "./meetingsView.ts";
+import { clockTicks, promptView, statusClock, statusLabel, statusView } from "./meetingStatus.ts";
 
 const meeting = (status: MeetingStatus): Meeting => ({
   id: "00000000-0000-4000-8000-000000000001" as MeetingId,
@@ -28,48 +29,43 @@ const segment = (id: string, text: string): TranscriptEntry => ({
   source: "mic",
 });
 
-describe("notepadStatus", () => {
+describe("statusView", () => {
   test("offers pause while recording and resume while paused, with Stop for both", () => {
-    expect(notepadStatus(meeting({ kind: "recording", since: 100_000 }), 110_000)).toEqual({
+    expect(statusView({ kind: "recording" })).toEqual({
       tone: "recording",
       label: "Recording",
-      clock: "00:40",
       controls: ["pause", "stop"],
     });
-    expect(notepadStatus(meeting({ kind: "paused" }), 110_000)).toMatchObject({
+    expect(statusView({ kind: "paused" })).toMatchObject({
       tone: "paused",
-      clock: "00:30",
       controls: ["resume", "stop"],
     });
+    expect(statusClock(meeting({ kind: "recording", since: 100_000 }), 110_000)).toBe("00:40");
+    expect(statusClock(meeting({ kind: "paused" }), 110_000)).toBe("00:30");
   });
 
   test("says recording only while it records, and offers only Resume once saved", () => {
-    const statuses: MeetingStatus[] = [
-      { kind: "finishing" },
-      { kind: "confirmingShort" },
-      { kind: "transcribing", step: "finalizing" },
-    ];
-    for (const done of statuses) {
-      const status = notepadStatus(meeting(done), 0);
+    for (const kind of ["finishing", "confirmingShort", "transcribing"] as const) {
+      const status = statusView({ kind });
       expect(status.tone).not.toBe("recording");
       expect(status.controls).toEqual([]);
     }
-    for (const saved of [{ kind: "ready" }, { kind: "summarizing", progress: null }] as const) {
-      expect(notepadStatus(meeting(saved), 0)).toMatchObject({
-        tone: "done",
-        label: "Saved to Meetings",
-        controls: ["resume"],
-      });
+    for (const kind of ["summarizing", "ready"] as const) {
+      expect(statusView({ kind })).toMatchObject({ tone: "done", controls: ["resume"] });
     }
-    expect(notepadStatus(meeting({ kind: "starting", from: "new" }), 0).tone).toBe("busy");
+    expect(statusView({ kind: "starting" }).tone).toBe("busy");
+  });
+
+  test("a ready meeting needs no status word in lists, and the rest use the same words everywhere", () => {
+    expect(statusLabel(meeting({ kind: "ready" }))).toBeNull();
+    expect(statusLabel(meeting({ kind: "finishing" }))).toBe("Wrapping up…");
+    expect(statusLabel(meeting({ kind: "summarizing", progress: null }))).toBe("Writing summary…");
   });
 
   test("the clock runs only while recording or counting down to the limit", () => {
-    expect(notepadTicks(meeting({ kind: "recording", since: 0 }), null)).toBe(true);
-    expect(notepadTicks(meeting({ kind: "paused" }), null)).toBe(false);
-    expect(notepadTicks(meeting({ kind: "paused" }), { kind: "maxLengthSoon", endsAt: 1 })).toBe(
-      true,
-    );
+    expect(clockTicks({ kind: "recording" }, null)).toBe(true);
+    expect(clockTicks({ kind: "paused" }, null)).toBe(false);
+    expect(clockTicks({ kind: "paused" }, { kind: "maxLengthSoon", endsAt: 1 })).toBe(true);
   });
 });
 

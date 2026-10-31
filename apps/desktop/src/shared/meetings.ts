@@ -249,10 +249,6 @@ export type MeetingCommandResult =
   | { kind: "ok"; id: MeetingId }
   | { kind: "refused"; message: string };
 
-/** Says why a meeting command did nothing, or null when it went ahead. */
-export const commandRefusal = (result: MeetingCommandResult) =>
-  result.kind === "refused" ? result.message : null;
-
 /** Why a source stopped mid-meeting: its permission was taken away, or its device went silent. */
 export type AudioLoss = { source: MeetingSource; reason: "permission" | "device" };
 

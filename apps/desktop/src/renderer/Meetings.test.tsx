@@ -164,7 +164,7 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     renameMeeting: vi.fn(async (meetingId: MeetingId, title: string) =>
       set({
         meetings: state.meetings.map((m) =>
-          m.id === meetingId ? { ...m, title: title ? { text: title, source: "user" } : null } : m,
+          m.id === meetingId ? { ...m, title: title || null } : m,
         ),
       }),
     ),
@@ -209,6 +209,7 @@ function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
     startMeeting: vi.fn(
       async () => ({ kind: "refused", message: "Recording did not start." }) as const,
     ),
+    pauseMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
   };
   (window as { voice?: HubApi }).voice = {
     getSnapshot: () => Promise.reject(new Error("not needed")),
@@ -373,7 +374,7 @@ describe("Past notes", () => {
     await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
     expect(overviewTitle()).toBe("Planowanie sprintu");
     await type(document.querySelector<HTMLInputElement>("input[type=search]")!, "export bug");
-    await waitForText("Transcript: Morning all");
+    await waitForText("Transcript: You: Morning all");
     expect(overviewTitle()).toBe("Weekly product sync");
   });
 
@@ -497,7 +498,7 @@ describe("a meeting's recording controls", () => {
 
   test("a finished meeting resumes into itself, and can be deleted", async () => {
     const commands = await open({ kind: "ready" });
-    await click(byText("Resume recording"));
+    await click(byText("Resume"));
     expect(commands.resumeMeeting).toHaveBeenCalledWith(id(1));
     expect(document.querySelector("[aria-label='Delete meeting']")).not.toBeNull();
   });
@@ -604,9 +605,7 @@ describe("a meeting", () => {
     await act(async () => title.focus());
     await type(title, "Q4 pricing");
     const [synced] = sample();
-    await act(async () =>
-      main.publish({ ...synced!, title: { text: "Generated", source: "generated" } }),
-    );
+    await act(async () => main.publish({ ...synced!, title: "Generated" }));
     expect(title.value).toBe("Q4 pricing");
     await press(title, "Enter");
     expect(main.renameMeeting).toHaveBeenCalledWith(id(1), "Q4 pricing");
@@ -700,6 +699,39 @@ describe("a meeting", () => {
     await type(area, "Ask Tom about drivers today");
     await click(byText("All meetings"));
     expect(main.updateMeetingNotes).toHaveBeenLastCalledWith(id(1), "Ask Tom about drivers today");
+  });
+
+  test("a live meeting's page offers the same controls and words as the notepad", async () => {
+    const recording = meeting(4, "Live sync", hoursAgo(0), {
+      spans: [],
+      status: { kind: "recording", since: Date.now() },
+    });
+    const main = fakeMain([recording]);
+    await render();
+    await click(byText("Live sync"));
+    await waitForText("All meetings");
+    await click(document.querySelector("[aria-label='Pause']")!);
+    expect(main.pauseMeeting).toHaveBeenCalledWith(id(4));
+    await act(async () => main.publish({ ...recording, status: { kind: "finishing" } }));
+    expect(text()).toContain("Wrapping up…");
+    expect(document.querySelector("[aria-label='Stop']")).toBeNull();
+  });
+
+  test("a short meeting's overview and page say the same about its missing summary", async () => {
+    const at = hoursAgo(1);
+    fakeMain([
+      meeting(7, "Quick check", at, { spans: [{ startedAt: at, endedAt: at + 3 * MINUTE }] }),
+    ]);
+    await render();
+    const row = [...document.querySelectorAll("li")].find((li) =>
+      li.textContent?.includes("Quick check"),
+    )!;
+    await act(async () => row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
+    const short = "Short meetings get a summary only when you ask for one.";
+    expect(document.querySelector("aside")?.textContent).toContain(short);
+    await click(byText("Quick check"));
+    await waitForText("All meetings");
+    expect(text()).toContain(short);
   });
 
   test("asks before deleting, then returns to the list", async () => {

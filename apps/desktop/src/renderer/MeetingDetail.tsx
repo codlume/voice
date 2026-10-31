@@ -4,20 +4,15 @@ import { ChevronLeftIcon, CopyIcon, DownloadIcon, FolderPlusIcon, Trash2Icon } f
 import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 
 import {
-  commandRefusal,
+  closedMs,
   isLive,
-  recordedMs,
-  summarizesOnStop,
-  summaryStale,
   titleText,
   type Folder,
   type Meeting,
   type MeetingBanner,
-  type MeetingCommandResult,
   type MeetingId,
   type Speaker,
   type Summary,
-  type TranscriptEntry,
 } from "../shared/meetings.ts";
 import { shownSummary } from "../shared/meeting-markdown.ts";
 import { a11y } from "./a11y.ts";
@@ -28,19 +23,25 @@ import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SetupChecklist } from "./Home.tsx";
 import { FolderMenu } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
+import {
+  MeetingTabs,
+  RecordingControls,
+  TranscriptList,
+  useTranscriptRows,
+} from "./MeetingParts.tsx";
 import { ThoughtsEditor } from "./MeetingThoughts.tsx";
 import { SummaryMarkdown } from "./MeetingSummary.tsx";
+import { durationLabel, meetingWhen, summaryNotice } from "./meetingsView.ts";
 import {
-  durationLabel,
-  meetingWhen,
-  partialRows,
+  commandRefusal,
+  promptView,
   statusLabel,
-  transcriptRows,
-} from "./meetingsView.ts";
+  type PromptCommand,
+  type RecordingCommand,
+} from "./meetingStatus.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -78,33 +79,6 @@ const styles = stylex.create({
     cursor: "pointer",
   },
   iconButtonOpen: { backgroundColor: color.accent, color: color.foreground },
-  tabList: {
-    display: "inline-grid",
-    alignSelf: "flex-start",
-    gridAutoFlow: "column",
-    gap: 2,
-    padding: 3,
-    borderRadius: radius.medium,
-    backgroundColor: color.segmentTrack,
-  },
-  tab: {
-    paddingBlock: 6,
-    paddingInline: space.md,
-    borderWidth: 0,
-    borderRadius: 7,
-    backgroundColor: "transparent",
-    color: color.mutedForeground,
-    fontFamily: "inherit",
-    fontSize: 13,
-    cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-  },
-  tabOn: {
-    backgroundColor: color.segmentSelected,
-    color: color.foreground,
-    fontWeight: 500,
-    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-  },
   panel: {
     display: "flex",
     flexDirection: "column",
@@ -148,111 +122,15 @@ const styles = stylex.create({
     fontWeight: 600,
     outline: "none",
   },
-  transcript: { margin: 0, padding: space.lg, listStyle: "none" },
-  turn: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-    columnGap: space.md,
-    paddingTop: { default: space.md, ":first-child": 0 },
-  },
-  turnContinued: { paddingTop: 4 },
-  speaker: { margin: 0, fontSize: 13, fontWeight: 600 },
-  speakerOthers: { color: color.primary },
-  time: {
-    color: color.mutedForeground,
-    fontSize: 12,
-    fontVariantNumeric: "tabular-nums",
-  },
-  speech: { gridColumn: "1 / -1", margin: 0, fontSize: 15, lineHeight: 1.55 },
-  partial: { color: color.mutedForeground, fontStyle: "italic" },
-  marker: {
-    display: "flex",
-    alignItems: "center",
-    gap: space.sm,
-    paddingTop: space.md,
-    color: color.mutedForeground,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    "::before": { content: "''", flexGrow: 1, height: 1, backgroundColor: color.border },
-    "::after": { content: "''", flexGrow: 1, height: 1, backgroundColor: color.border },
-  },
+  transcript: { padding: space.lg },
 });
 
 type DetailTab = "summary" | "thoughts" | "transcript";
-const tabs: readonly { value: DetailTab; label: string }[] = [
+const tabs = [
   { value: "summary", label: "Summary" },
   { value: "thoughts", label: "My thoughts" },
   { value: "transcript", label: "Transcript" },
-];
-
-type Control = {
-  label: string;
-  primary: boolean;
-  run: (id: MeetingId) => Promise<MeetingCommandResult>;
-};
-
-/**
- * What the page can do to the recording now. A finished meeting resumes into itself; resuming
- * while its summary is written stops the summary, which can be updated after.
- */
-function recordingControls(meeting: Meeting): Control[] {
-  const api = hubApi();
-  const resume: Control = { label: "Resume recording", primary: false, run: api.resumeMeeting };
-  const stop: Control = { label: "Stop", primary: true, run: api.stopMeeting };
-  switch (meeting.status.kind) {
-    case "starting":
-      return [stop];
-    case "recording":
-      return [{ label: "Pause", primary: false, run: api.pauseMeeting }, stop];
-    case "paused":
-      return [{ ...resume, label: "Resume" }, stop];
-    case "confirmingShort":
-      return [
-        { label: "Discard", primary: false, run: api.discardMeeting },
-        { label: "Keep", primary: true, run: api.keepMeeting },
-      ];
-    case "summarizing":
-    case "ready":
-      return [resume];
-    case "finishing":
-    case "transcribing":
-      return [];
-  }
-}
-
-function RecordingControls({ meeting }: { meeting: Meeting }) {
-  const action = useAction();
-  const controls = recordingControls(meeting);
-  if (controls.length === 0) return null;
-  return (
-    <div {...stylex.props(styles.controls)}>
-      {meeting.status.kind === "confirmingShort" && (
-        <p {...stylex.props(styles.when)}>Started by mistake? Only a few words were captured.</p>
-      )}
-      {controls.map(({ label, primary, run }) => (
-        <Button
-          key={label}
-          variant={primary ? "primary" : "secondary"}
-          disabled={action.pending}
-          onClick={() =>
-            void action.run(async () => {
-              const refusal = commandRefusal(await run(meeting.id));
-              if (refusal) throw new Error(refusal);
-            }, "Could not change the recording.")
-          }
-        >
-          {label}
-        </Button>
-      ))}
-      {action.error && (
-        <p role="alert" {...stylex.props(pageStyles.error)}>
-          {action.error}
-        </p>
-      )}
-    </div>
-  );
-}
+] as const satisfies readonly { value: DetailTab; label: string }[];
 
 /**
  * A field that saves on Enter or on leaving it and goes back to `saved` on Escape. While it has
@@ -342,7 +220,7 @@ function Banner({
 }: {
   text: string;
   error?: boolean;
-  action?: { label: string; onClick: () => void; disabled: boolean };
+  action?: { label: string; onClick: () => void; disabled: boolean } | null;
 }) {
   return (
     <Card style={styles.banner}>
@@ -356,6 +234,45 @@ function Banner({
   );
 }
 
+type PageCommand = RecordingCommand | Extract<PromptCommand, "keep" | "discard">;
+
+/** The page's side of "Started by mistake?", in the notepad's words. */
+function ShortRecording({
+  pending,
+  onCommand,
+}: {
+  pending: boolean;
+  onCommand: (command: PageCommand) => void;
+}) {
+  const { title, body, actions } = promptView({ kind: "startedByMistake" }, 0);
+  return (
+    <Card style={styles.banner}>
+      <p {...stylex.props(styles.bannerText)}>
+        {title} {body}
+      </p>
+      {actions.map(
+        ({ label, command, primary }) =>
+          (command === "keep" || command === "discard") && (
+            <Button
+              key={command}
+              variant={primary ? "primary" : "secondary"}
+              disabled={pending}
+              onClick={() => onCommand(command)}
+            >
+              {label}
+            </Button>
+          ),
+      )}
+    </Card>
+  );
+}
+
+const noticeActions = {
+  generate: "Generate summary",
+  retry: "Try again",
+  update: "Update summary",
+} as const;
+
 function SummaryPanel({
   meeting,
   summaryModel,
@@ -363,90 +280,42 @@ function SummaryPanel({
   meeting: Meeting;
   summaryModel: ChecklistRow | null;
 }) {
-  const { speakers } = meeting;
   const action = useAction();
-  const generate = (label: string) => ({
-    label,
-    disabled: action.pending,
-    onClick: () =>
-      void action.run(async () => {
-        const refusal = commandRefusal(await hubApi().generateMeetingSummary(meeting.id));
-        if (refusal) throw new Error(refusal);
-      }, "Could not start the summary."),
-  });
-  const { summary, status } = meeting;
-  const previous = shownSummary(meeting);
-  const short = "Short meetings get a summary only when you ask for one.";
-  const notice = (() => {
-    if (status.kind === "summarizing") {
-      const { progress } = status;
-      const step =
-        progress && progress.total > 1 ? ` Step ${progress.step} of ${progress.total}.` : "";
-      return <Banner text={`Writing the summary…${step}`} />;
-    }
-    if (status.kind === "transcribing" && summary.kind === "none") {
-      return (
-        <Banner
-          text={
-            summarizesOnStop(meeting)
-              ? "The summary is written once the transcript is final."
-              : short
-          }
-        />
-      );
-    }
-    if (status.kind !== "ready") {
-      return (
-        <Banner
-          text={
-            previous
-              ? "Update the summary after the meeting ends."
-              : "The summary is written when the meeting ends."
-          }
-        />
-      );
-    }
-    if (summary.kind === "failed") {
-      const shown = summary.previous ? " Showing the previous summary." : "";
-      return (
-        <Banner
-          error
-          text={`The summary could not be written. ${summary.message}${shown}`}
-          action={generate("Try again")}
-        />
-      );
-    }
-    if (summary.kind === "none") {
-      return (
-        <Banner
-          text={summarizesOnStop(meeting) ? "This meeting has no summary yet." : short}
-          action={generate("Generate summary")}
-        />
-      );
-    }
-    if (summaryStale(meeting)) {
-      return (
-        <Banner text="New recording since this summary." action={generate("Update summary")} />
-      );
-    }
-    return null;
-  })();
+  const notice = summaryNotice(meeting);
+  const shown = shownSummary(meeting);
+  const generate = () =>
+    void action.run(async () => {
+      const refusal = commandRefusal(await hubApi().generateMeetingSummary(meeting.id));
+      if (refusal) throw new Error(refusal);
+    }, "Could not start the summary.");
   return (
     <>
-      {summaryModel && summary.kind !== "ready" && (
+      {summaryModel && meeting.summary.kind !== "ready" && (
         <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
       )}
-      {notice}
+      {notice && (
+        <Banner
+          text={notice.text}
+          error={notice.error}
+          action={
+            notice.action && {
+              label: noticeActions[notice.action],
+              onClick: generate,
+              disabled: action.pending,
+            }
+          }
+        />
+      )}
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
           {action.error}
         </p>
       )}
-      {previous && (
+      {shown && (
         <SummaryCard
-          summary={previous}
-          speakers={speakers}
-          dimmed={status.kind === "summarizing"}
+          summary={shown}
+          speakers={meeting.speakers}
+          dimmed={meeting.status.kind === "summarizing"}
         />
       )}
     </>
@@ -479,16 +348,9 @@ function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: S
   );
 }
 
-function Transcript({
-  meeting,
-  transcript,
-}: {
-  meeting: Meeting;
-  transcript: readonly TranscriptEntry[] | null | undefined;
-}) {
-  const partials = useMeetingPartials(hubApi(), meeting.id, meeting.status.kind === "recording");
-  if (!transcript) return null;
-  const rows = [...transcriptRows(transcript, meeting.speakers), ...partialRows(partials)];
+function Transcript({ meeting }: { meeting: Meeting }) {
+  const rows = useTranscriptRows(hubApi(), meeting);
+  if (!rows) return null;
   if (rows.length === 0) {
     return (
       <Card style={styles.summaryCard}>
@@ -505,27 +367,9 @@ function Transcript({
           ))}
         </fieldset>
       )}
-      <ol aria-label="Transcript" {...stylex.props(styles.transcript)}>
-        {rows.map((row) =>
-          row.kind === "marker" ? (
-            <li key={row.id} {...stylex.props(styles.marker)}>
-              {row.text}
-            </li>
-          ) : (
-            <li key={row.id} {...stylex.props(styles.turn, row.continues && styles.turnContinued)}>
-              {!row.continues && (
-                <>
-                  <p {...stylex.props(styles.speaker, !row.mine && styles.speakerOthers)}>
-                    {row.speaker}
-                  </p>
-                  <span {...stylex.props(styles.time)}>{row.time}</span>
-                </>
-              )}
-              <p {...stylex.props(styles.speech, !row.final && styles.partial)}>{row.text}</p>
-            </li>
-          ),
-        )}
-      </ol>
+      <div {...stylex.props(styles.transcript)}>
+        <TranscriptList rows={rows} look="page" />
+      </div>
     </Card>
   );
 }
@@ -547,14 +391,26 @@ export function MeetingDetail({
   summaryModel: ChecklistRow | null;
   onBack: () => void;
 }) {
-  const transcript = useMeetingTranscript(hubApi(), meeting);
   const [tab, setTab] = useState<DetailTab>("summary");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [feedback, setFeedback] = useState<keyof typeof feedbackText | null>(null);
   const action = useAction();
   const status = statusLabel(meeting);
-  // Without a status word the meeting is ready, so it has no open leg for `now` to count.
-  const when = [meetingWhen(meeting), status ?? durationLabel(recordedMs(meeting, 0))];
+  const when = [meetingWhen(meeting), status ?? durationLabel(closedMs(meeting))];
+  const recording = useAction();
+  const command = (name: PageCommand) =>
+    void recording.run(async () => {
+      const api = hubApi();
+      const send = {
+        pause: api.pauseMeeting,
+        resume: api.resumeMeeting,
+        stop: api.stopMeeting,
+        keep: api.keepMeeting,
+        discard: api.discardMeeting,
+      };
+      const refusal = commandRefusal(await send[name](meeting.id));
+      if (refusal) throw new Error(refusal);
+    }, "Could not change the recording. Try again.");
 
   useEffect(() => {
     if (!feedback) return;
@@ -591,6 +447,12 @@ export function MeetingDetail({
           <p {...stylex.props(styles.when)}>{when.join(" · ")}</p>
         </div>
         <div {...stylex.props(styles.actions)}>
+          <RecordingControls
+            meeting={meeting}
+            look="page"
+            pending={recording.pending}
+            onCommand={command}
+          />
           <FolderMenu
             meeting={meeting}
             folders={folders}
@@ -622,35 +484,22 @@ export function MeetingDetail({
           )}
         </div>
       </div>
-      <RecordingControls meeting={meeting} />
-      {action.error && (
-        <p role="alert" {...stylex.props(pageStyles.error)}>
-          {action.error}
-        </p>
+      {[action.error, recording.error].map(
+        (error) =>
+          error && (
+            <p key={error} role="alert" {...stylex.props(pageStyles.error)}>
+              {error}
+            </p>
+          ),
       )}
       <p role="status" {...stylex.props(feedback ? styles.muted : a11y.visuallyHidden)}>
         {feedback && feedbackText[feedback]}
       </p>
       <MeetingNotices notices={notices} onViewSummary={() => setTab("summary")} />
-      <Tabs.Root
-        value={tab}
-        onValueChange={(value: unknown) => {
-          const next = tabs.find((candidate) => candidate.value === value);
-          if (next) setTab(next.value);
-        }}
-        {...stylex.props(styles.page)}
-      >
-        <Tabs.List {...stylex.props(styles.tabList)}>
-          {tabs.map(({ value, label }) => (
-            <Tabs.Tab
-              key={value}
-              value={value}
-              {...stylex.props(styles.tab, value === tab && styles.tabOn)}
-            >
-              {label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+      {meeting.status.kind === "confirmingShort" && (
+        <ShortRecording pending={recording.pending} onCommand={command} />
+      )}
+      <MeetingTabs tabs={tabs} value={tab} onChange={setTab} look="page" style={styles.page}>
         <Tabs.Panel value="summary" {...stylex.props(styles.panel)}>
           <SummaryPanel meeting={meeting} summaryModel={summaryModel} />
         </Tabs.Panel>
@@ -663,9 +512,9 @@ export function MeetingDetail({
           />
         </Tabs.Panel>
         <Tabs.Panel value="transcript" {...stylex.props(styles.panel)}>
-          <Transcript meeting={meeting} transcript={transcript} />
+          <Transcript meeting={meeting} />
         </Tabs.Panel>
-      </Tabs.Root>
+      </MeetingTabs>
       <ConfirmDialog
         open={confirmingDelete}
         onOpenChange={setConfirmingDelete}

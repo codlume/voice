@@ -4,15 +4,12 @@ import { AudioLinesIcon, CircleDotIcon, SearchIcon, SettingsIcon } from "lucide-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DayKey } from "../shared/insights.ts";
-import { clock, shownSummary } from "../shared/meeting-markdown.ts";
+import { shownSummary } from "../shared/meeting-markdown.ts";
 import {
-  commandRefusal,
   liveMeeting,
-  recordedMs,
   titleText,
   type LiveMeeting,
   type Meeting,
-  type MeetingCommandResult,
   type MeetingId,
   type MeetingSearchHit,
   type MeetingsState,
@@ -27,6 +24,7 @@ import { MeetingDetail } from "./MeetingDetail.tsx";
 import { MeetingFolders } from "./MeetingFolders.tsx";
 import { MeetingList } from "./MeetingList.tsx";
 import { MeetingNotices } from "./MeetingNotices.tsx";
+import { MeetingTabs, RecordingControls, StatusClock } from "./MeetingParts.tsx";
 import { MeetingsSettingsDialog } from "./MeetingsSettingsDialog.tsx";
 import { Inline } from "./MeetingSummary.tsx";
 import {
@@ -35,14 +33,15 @@ import {
   meetingWhen,
   overview,
   searchResults,
+  summaryNotice,
 } from "./meetingsView.ts";
+import { commandRefusal, statusView, type RecordingCommand } from "./meetingStatus.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcutLabel } from "./shortcutCapture.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { useKeyboardLayout } from "./useKeyboardLayout.ts";
-import { useNow } from "./useNow.ts";
 import { useMeetings } from "./useMeetings.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
@@ -63,33 +62,6 @@ const styles = stylex.create({
   headline: { flexGrow: 1 },
   notice: { margin: 0, color: color.mutedForeground, fontSize: 12.5 },
   tabs: { display: "flex", flexDirection: "column", gap: space.lg },
-  tabBar: { display: "flex", alignItems: "center", gap: space.md, minHeight: 30 },
-  tabList: {
-    display: "inline-grid",
-    gridAutoFlow: "column",
-    gap: 2,
-    padding: 3,
-    borderRadius: radius.medium,
-    backgroundColor: color.segmentTrack,
-  },
-  tab: {
-    paddingBlock: 6,
-    paddingInline: space.md,
-    borderWidth: 0,
-    borderRadius: 7,
-    backgroundColor: "transparent",
-    color: color.mutedForeground,
-    fontFamily: "inherit",
-    fontSize: 13,
-    cursor: "pointer",
-    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
-  },
-  tabOn: {
-    backgroundColor: color.segmentSelected,
-    color: color.foreground,
-    fontWeight: 500,
-    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
-  },
   search: { position: "relative", display: "flex", alignItems: "center", marginLeft: "auto" },
   searchIcon: {
     position: "absolute",
@@ -261,14 +233,14 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
 
 function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => void }) {
   const { status } = meeting;
-  const now = useNow(status.kind === "recording");
   const action = useAction();
-  const run = (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
+  const run = (command: RecordingCommand) =>
     void action.run(async () => {
-      const refusal = commandRefusal(await command(meeting.id));
+      const api = hubApi();
+      const send = { pause: api.pauseMeeting, resume: api.resumeMeeting, stop: api.stopMeeting };
+      const refusal = commandRefusal(await send[command](meeting.id));
       if (refusal) throw new Error(refusal);
     }, "Could not change the recording.");
-  const label = { starting: "Starting…", recording: "Recording", paused: "Paused" }[status.kind];
   return (
     <>
       <Card style={styles.live}>
@@ -281,23 +253,10 @@ function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => voi
             {titleText(meeting)}
           </button>
           <span {...stylex.props(styles.liveMeta)}>
-            {label} · <time>{clock(recordedMs(meeting, now))}</time>
+            {statusView(status).label} · <StatusClock meeting={meeting} />
           </span>
         </div>
-        {status.kind === "paused" ? (
-          <Button variant="secondary" onClick={() => run((id) => hubApi().resumeMeeting(id))}>
-            Resume
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            disabled={status.kind === "starting"}
-            onClick={() => run((id) => hubApi().pauseMeeting(id))}
-          >
-            Pause
-          </Button>
-        )}
-        <Button onClick={() => run((id) => hubApi().stopMeeting(id))}>Stop</Button>
+        <RecordingControls meeting={meeting} look="page" pending={action.pending} onCommand={run} />
       </Card>
       {action.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
@@ -306,13 +265,6 @@ function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => voi
       )}
     </>
   );
-}
-
-function emptyOverview(meeting: Meeting): string {
-  if (meeting.status.kind === "summarizing") return "Writing the summary…";
-  if (meeting.status.kind !== "ready") return "The summary is written when the meeting ends.";
-  if (meeting.summary.kind === "failed") return "The summary could not be written.";
-  return "No summary yet.";
 }
 
 function OverviewPanel({ meeting }: { meeting: Meeting }) {
@@ -329,13 +281,19 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
           <Inline text={text} speakers={meeting.speakers} />
         </p>
       ) : (
-        <p {...stylex.props(styles.overviewEmpty)}>{emptyOverview(meeting)}</p>
+        <p {...stylex.props(styles.overviewEmpty)}>
+          {summaryNotice(meeting)?.text ?? "This summary has no overview."}
+        </p>
       )}
     </aside>
   );
 }
 
 type PageTab = "notes" | "folders";
+const pageTabs = [
+  { value: "notes", label: "Past notes" },
+  { value: "folders", label: "Folders" },
+] as const satisfies readonly { value: PageTab; label: string }[];
 
 type SettingsDialog = { open: boolean; setOpen: (open: boolean) => void };
 
@@ -521,30 +479,16 @@ function MeetingsPage({
           {summaryModel && (
             <SetupChecklist title="Summaries" rows={[summaryModel]} counted={false} />
           )}
-          <Tabs.Root
+          <MeetingTabs
+            tabs={pageTabs}
             value={tab}
-            onValueChange={(value: unknown) => setTab(value === "folders" ? "folders" : "notes")}
-            {...stylex.props(styles.tabs)}
+            onChange={setTab}
+            look="page"
+            end={
+              tab === "notes" && meetings.length > 0 && <Search query={query} onChange={setQuery} />
+            }
+            style={styles.tabs}
           >
-            <div {...stylex.props(styles.tabBar)}>
-              <Tabs.List {...stylex.props(styles.tabList)}>
-                <Tabs.Tab
-                  value="notes"
-                  {...stylex.props(styles.tab, tab === "notes" && styles.tabOn)}
-                >
-                  Past notes
-                </Tabs.Tab>
-                <Tabs.Tab
-                  value="folders"
-                  {...stylex.props(styles.tab, tab === "folders" && styles.tabOn)}
-                >
-                  Folders
-                </Tabs.Tab>
-              </Tabs.List>
-              {tab === "notes" && meetings.length > 0 && (
-                <Search query={query} onChange={setQuery} />
-              )}
-            </div>
             <Tabs.Panel value="notes" {...stylex.props(styles.panel)}>
               {notes}
             </Tabs.Panel>
@@ -557,7 +501,7 @@ function MeetingsPage({
                 onOpen={setOpenId}
               />
             </Tabs.Panel>
-          </Tabs.Root>
+          </MeetingTabs>
         </div>
         {selected && <OverviewPanel meeting={selected} />}
       </div>

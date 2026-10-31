@@ -9,7 +9,7 @@ import {
   type MeetingsState,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
-import { mergeTranscript } from "./notepadView.ts";
+import { mergeTranscript } from "./meetingsView.ts";
 import { hubApi } from "./voice.ts";
 
 /** Null until the first list arrives. */

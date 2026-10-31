@@ -1,5 +1,5 @@
 import { dayKey, type DayKey } from "../shared/insights.ts";
-import { clock, markerText } from "../shared/meeting-markdown.ts";
+import { clock, markerText, shownSummary } from "../shared/meeting-markdown.ts";
 import {
   endedAt,
   meetingRetentionMs,
@@ -10,6 +10,8 @@ import {
   speakerDisplayName,
   speakerName,
   startedAt,
+  summarizesOnStop,
+  summaryStale,
   tokenName,
   type MaxLength,
   type Meeting,
@@ -24,10 +26,10 @@ import {
 } from "../shared/meetings.ts";
 import { dayLabel, formatterCache, timeLabel } from "./historyView.ts";
 
-/** When the meeting began, or when it was made if it never recorded. */
 /** Shown where a first meeting starts: the setup checklist and the notepad before anyone speaks. */
 export const CONSENT_REMINDER = "Always get consent before recording others.";
 
+/** When the meeting began, or when it was made if it never recorded. */
 export const meetingAt = (meeting: Meeting) => startedAt(meeting) ?? meeting.createdAt;
 
 export type MeetingDay = { day: DayKey; label: string; meetings: readonly Meeting[] };
@@ -62,19 +64,55 @@ export function durationLabel(ms: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
 }
 
-const statusLabels: Record<MeetingStatus["kind"], string | null> = {
-  starting: "Starting…",
-  recording: "Recording",
-  paused: "Paused",
-  finishing: "Finishing…",
-  confirmingShort: "Short recording",
-  transcribing: "Transcribing…",
-  summarizing: "Writing summary…",
-  ready: null,
+export type SummaryNotice = {
+  text: string;
+  error: boolean;
+  /** What the notice offers to do about it. */
+  action: "generate" | "retry" | "update" | null;
 };
 
-/** A word for a row whose meeting is not done yet. */
-export const statusLabel = (meeting: Meeting) => statusLabels[meeting.status.kind];
+const SHORT = "Short meetings get a summary only when you ask for one.";
+
+const say = (text: string, action: SummaryNotice["action"] = null, error = false) => ({
+  text,
+  error,
+  action,
+});
+
+/**
+ * What to say about the meeting's summary beside or instead of it, the same on the meeting page
+ * and in the overview panel; null when the summary needs no words.
+ */
+export function summaryNotice(meeting: Meeting): SummaryNotice | null {
+  const { summary, status } = meeting;
+  if (status.kind === "summarizing") {
+    const { progress } = status;
+    const step =
+      progress && progress.total > 1 ? ` Step ${progress.step} of ${progress.total}.` : "";
+    return say(`Writing the summary…${step}`);
+  }
+  if (status.kind === "transcribing" && summary.kind === "none") {
+    return say(
+      summarizesOnStop(meeting) ? "The summary is written once the transcript is final." : SHORT,
+    );
+  }
+  if (status.kind !== "ready") {
+    return say(
+      shownSummary(meeting)
+        ? "Update the summary after the meeting ends."
+        : "The summary is written when the meeting ends.",
+    );
+  }
+  if (summary.kind === "failed") {
+    const shown = summary.previous ? " Showing the previous summary." : "";
+    return say(`The summary could not be written. ${summary.message}${shown}`, "retry", true);
+  }
+  if (summary.kind === "none") {
+    return say(summarizesOnStop(meeting) ? "This meeting has no summary yet." : SHORT, "generate");
+  }
+  if (summaryStale(meeting)) return say("New recording since this summary.", "update");
+  return null;
+}
 
 // Summary Markdown, limited to what the summary step writes: headings, paragraphs, and bullet
 // lists one level deep, with **bold** inline.
@@ -324,4 +362,19 @@ export function expiredBy(
       meeting.status.kind === "ready" &&
       (endedAt(meeting) ?? meeting.createdAt) + meetingRetentionMs[retention] <= now,
   ).length;
+}
+
+const entryKey = (entry: TranscriptEntry) => JSON.stringify(entry);
+
+/**
+ * The transcript read from main plus the live lines that arrived while it loaded. A live line the
+ * read already holds is left out, so a marker is not doubled and a partial does not come back
+ * after its final line.
+ */
+export function mergeTranscript(
+  read: readonly TranscriptEntry[],
+  live: readonly TranscriptEntry[],
+): TranscriptEntry[] {
+  const seen = new Set(read.map(entryKey));
+  return [...read, ...live.filter((entry) => !seen.has(entryKey(entry)))];
 }
