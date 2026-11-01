@@ -104,9 +104,10 @@ function readAsarProblems(app) {
 }
 
 async function readFuses(app) {
-  const require = appBuilderRequire();
-  const { getCurrentFuseWire, FuseV1Options } = require("@electron/fuses");
-  const { FuseState } = require("@electron/fuses/dist/constants");
+  // Not named `require`: checkJs would resolve that call as a CommonJS import from scripts/.
+  const load = appBuilderRequire();
+  const { getCurrentFuseWire, FuseV1Options } = load("@electron/fuses");
+  const { FuseState } = load("@electron/fuses/dist/constants");
   const wire = await getCurrentFuseWire(join(app, "Contents", "MacOS", "Voice"));
   // The wire also holds a `version` key and fuses newer than this @electron/fuses can name.
   return Object.fromEntries(

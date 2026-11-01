@@ -180,18 +180,33 @@ final class Transcriber: Transcribing {
     ) async throws -> (text: String, asrMs: Double) {
         let started = DispatchTime.now()
         defer { lastDecodeFinishedAt = .now() }
+        var streamed: String?
         if let stream {
-            if let text = try await stream.finish(sampleCount: samples.count) {
+            switch try await stream.finish(sampleCount: samples.count) {
+            case .complete(let text):
                 output.log(.info, "streaming ASR finalized \(samples.count) samples")
                 return (text, started.millisecondsToNow())
+            case .incomplete(let partial):
+                streamed = partial
+                output.log(.error, "streaming ASR incomplete; retrying complete capture")
             }
-            output.log(.error, "streaming ASR incomplete; retrying complete capture")
         }
+        do {
+            return (try await decodeComplete(samples, language: language, pauseDecode: pauseDecode), started.millisecondsToNow())
+        } catch let error as TranscribeError {
+            // Text that misses part of the capture still beats losing the whole session.
+            guard let streamed, !streamed.isEmpty else { throw error }
+            output.log(.error, "complete-capture ASR failed; keeping the incomplete streamed text")
+            return (streamed, started.millisecondsToNow())
+        }
+    }
+
+    private func decodeComplete(_ samples: [Float], language: DictationLanguage, pauseDecode: PauseDecode?) async throws -> String {
         if let pauseDecode {
             do {
                 let text = try await pauseDecode.task.value
                 output.log(.info, "ASR reused the decode from the last pause")
-                return (text, started.millisecondsToNow())
+                return text
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -214,8 +229,7 @@ final class Transcriber: Transcribing {
             throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(message)")
         }
         do {
-            let text = try await Self.decode(samples, with: manager, language: language.asrLanguage)
-            return (text, started.millisecondsToNow())
+            return try await Self.decode(samples, with: manager, language: language.asrLanguage)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -274,6 +288,13 @@ final class Transcriber: Transcribing {
         try Task.checkCancellation()
         return try await manager.transcribe(padded, decoderState: &state, language: language).text
     }
+}
+
+/// `incomplete` carries the text the stream produced, if any, for when no complete decode can
+/// replace it.
+enum StreamingResult {
+    case complete(String)
+    case incomplete(partial: String?)
 }
 
 final class StreamingTranscription {
@@ -343,12 +364,12 @@ final class StreamingTranscription {
         input.yield(samples)
     }
 
-    func finish(sampleCount: Int) async throws -> String? {
+    func finish(sampleCount: Int) async throws -> StreamingResult {
         input.finish()
         let result = await worker.value
         guard !worker.isCancelled else { throw CancellationError() }
-        guard coverage.withLock({ $0.covers(sampleCount) }) else { return nil }
-        return result
+        guard let result, coverage.withLock({ $0.covers(sampleCount) }) else { return .incomplete(partial: result) }
+        return .complete(result)
     }
 
     func cancel() {

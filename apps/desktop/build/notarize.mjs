@@ -12,17 +12,20 @@ const staple = (app) =>
 
 export async function stapleWithRetry(
   app,
-  { run = staple, delays = STAPLE_DELAYS_MS, wait = sleep } = {},
+  /** @type {{ run?: (app: string) => unknown, delays?: number[], wait?: (ms: number) => Promise<unknown> }} */ {
+    run = staple,
+    delays = STAPLE_DELAYS_MS,
+    wait = sleep,
+  } = {},
 ) {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return run(app);
     } catch (error) {
-      if (attempt >= delays.length) throw error;
-      console.warn(
-        `stapler failed; retry ${attempt + 1} of ${delays.length} in ${delays[attempt] / 1000}s`,
-      );
-      await wait(delays[attempt]);
+      const delay = delays[attempt];
+      if (delay === undefined) throw error;
+      console.warn(`stapler failed; retry ${attempt + 1} of ${delays.length} in ${delay / 1000}s`);
+      await wait(delay);
     }
   }
 }
@@ -31,7 +34,9 @@ export async function stapleWithRetry(
 // stapled app.
 export default async function notarize(
   { appOutDir, packager },
-  { stapleApp = stapleWithRetry } = {},
+  /** @type {{ stapleApp?: (app: string) => Promise<unknown> }} */ {
+    stapleApp = stapleWithRetry,
+  } = {},
 ) {
   const {
     APPLE_ID: appleId,
