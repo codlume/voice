@@ -32,23 +32,35 @@ final class Pasteboard {
         }
     }
 
-    func write(text: String, html: String?, saved: Saved) -> Int {
+    /// Nil `saved` keeps the text on the clipboard: no restore follows, and any earlier paste's
+    /// pending restore backs off. The markers stay so clipboard managers still skip the item.
+    func write(text: String, html: String?, saved: Saved?) -> Int {
         // Host-only keeps Universal Clipboard from offering the transcript to the user's other devices.
         pasteboard.prepareForNewContents(with: .currentHostOnly)
-        let item = NSPasteboardItem()
         // Without the charset, readers decode the HTML as Latin-1 and garble non-ASCII text.
-        if let html { item.setString("<meta charset=\"utf-8\">" + html, forType: .html) }
-        item.setString(text, forType: .string)
-        item.setString(text, forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        item.setString(text, forType: NSPasteboard.PasteboardType(concealedPasteboardType))
+        let entries: [(NSPasteboard.PasteboardType, String)] = (html.map { [(.html, "<meta charset=\"utf-8\">" + $0)] } ?? []) + [
+            (.string, text),
+            (NSPasteboard.PasteboardType("org.nspasteboard.TransientType"), text),
+            (NSPasteboard.PasteboardType(concealedPasteboardType), text),
+        ]
+        let item = NSPasteboardItem()
+        for (type, value) in entries { item.setString(value, forType: type) }
         pasteboard.writeObjects([item])
         let write = pasteboard.changeCount
-        tracker.wrote(write, saved: saved)
+        if let saved {
+            tracker.wrote(write, saved: saved)
+        } else {
+            tracker.kept(write, contents: .items([entries.map { ($0, Data($1.utf8)) }]))
+        }
         return write
     }
 
     func restore(write: Int) {
-        restore(write: write, changed: "clipboard changed during paste; not restoring previous contents")
+        switch tracker.restore(write: write, changeCount: pasteboard.changeCount) {
+        case .restore(let saved): put(saved)
+        case .superseded: output.log(.info, "clipboard superseded by a later paste; not restoring previous contents")
+        case .changed: output.log(.info, "clipboard changed by someone else during paste; not restoring previous contents")
+        }
     }
 
     func copyFromFocusedApp() async -> CopyOutcome {
@@ -77,7 +89,11 @@ final class Pasteboard {
                     let emptySelection = pasteboard.data(forType: NSPasteboard.PasteboardType(chromiumWebCustomDataType))
                         .map(isMonacoEmptySelectionCopy) ?? false
                     let text = pasteboard.string(forType: .string) ?? ""
-                    restore(write: write, changed: "clipboard changed during copy; not restoring previous contents")
+                    if case .restore(let saved) = tracker.restore(write: write, changeCount: pasteboard.changeCount) {
+                        put(saved)
+                    } else {
+                        output.log(.info, "clipboard changed during copy; not restoring previous contents")
+                    }
                     if concealed { return .concealed }
                     return emptySelection ? .lineOfEmptySelection : .text(text)
                 }
@@ -90,14 +106,6 @@ final class Pasteboard {
     /// the transcript on the user's clipboard.
     func flush() {
         guard let saved = tracker.flush(changeCount: pasteboard.changeCount) else { return }
-        put(saved)
-    }
-
-    private func restore(write: Int, changed log: String) {
-        guard let saved = tracker.restore(write: write, changeCount: pasteboard.changeCount) else {
-            output.log(.info, log)
-            return
-        }
         put(saved)
     }
 

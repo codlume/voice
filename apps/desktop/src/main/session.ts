@@ -107,7 +107,7 @@ export type Command =
   | ({ type: "capture.start"; id: string } & HotkeyTime)
   | ({ type: "capture.stop"; id: string; releasedAt: number } & HotkeyTime)
   | { type: "capture.cancel"; id: string }
-  | { type: "insert"; id: string; output: Output };
+  | { type: "insert"; id: string; output: Output; keepOnClipboard: boolean };
 
 export type Effect =
   | { type: "send"; command: Command }
@@ -222,12 +222,12 @@ function inserting(
 }
 
 function insert(state: Inserting): Step {
-  const { id, raw, output } = state;
+  const { id, raw, output, copyToClipboard } = state;
   return {
     state,
     effects: [
       { type: "remember", id, raw, text: output.text, status: "pending" },
-      send({ type: "insert", id, output }),
+      send({ type: "insert", id, output, keepOnClipboard: copyToClipboard }),
     ],
   };
 }
@@ -246,7 +246,9 @@ function produced(
   const kept: Effect[] = [
     { type: "dictated", id, raw, insertedCleanup, dictionaryFixes, destination },
   ];
-  if (!copyToClipboard) {
+  // A paste sent with keepOnClipboard already left the output on the clipboard.
+  const pasted = outcome.kind === "inserted" && outcome.method === "paste";
+  if (!copyToClipboard || pasted) {
     const settled: Outcome =
       outcome.kind === "notInserted" ? { ...outcome, copied: false } : outcome;
     return finish(id, settled, ...effects, ...kept);

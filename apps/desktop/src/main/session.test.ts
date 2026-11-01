@@ -410,7 +410,12 @@ describe("transcript", () => {
       remembered("hello world", "hello world"),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "hello world", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "hello world", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
   });
@@ -431,7 +436,12 @@ describe("transcript", () => {
       remembered("long dictation", "long dictation"),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "long dictation", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_100)).toEqual({
@@ -500,7 +510,12 @@ describe("capture the helper stops on its own", () => {
       remembered("long dictation", "long dictation"),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "long dictation", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "long dictation", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
     expect(step(state, { type: "hotkeyUp" }, 600_600)).toEqual({
@@ -539,7 +554,12 @@ describe("cleanup", () => {
       remembered("hello um world", "Hello, world."),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "Hello, world.", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
   });
@@ -558,7 +578,12 @@ describe("cleanup", () => {
     });
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: "hello um world", html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: "hello um world", html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -590,7 +615,12 @@ describe("cleanup", () => {
       remembered("hello um world", "Hello, world."),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "Hello, world.", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "Hello, world.", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
   });
@@ -637,7 +667,15 @@ describe("snippets", () => {
     });
     expect(effects).toEqual([
       remembered("My email.", EMAIL),
-      { type: "send", command: { type: "insert", id: ID, output: { text: EMAIL, html: null } } },
+      {
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: EMAIL, html: null },
+          keepOnClipboard: false,
+        },
+      },
     ]);
   });
 
@@ -648,7 +686,12 @@ describe("snippets", () => {
     ]);
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: `send it to ${EMAIL}`, html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -665,7 +708,12 @@ describe("snippets", () => {
     const { effects } = run([...cleaningSentence, cleaned(" Send it to my email. ")]);
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: `Send it to ${EMAIL}.`, html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: `Send it to ${EMAIL}.`, html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -676,7 +724,12 @@ describe("snippets", () => {
       remembered("send it to my email", `send it to ${EMAIL}`),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: `send it to ${EMAIL}`, html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
   });
@@ -689,7 +742,12 @@ describe("snippets", () => {
     ]);
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: EMAIL, html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: EMAIL, html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -698,7 +756,12 @@ describe("snippets", () => {
     expect(state.phase).toBe("inserting");
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: `send it to ${EMAIL}`, html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -706,7 +769,12 @@ describe("snippets", () => {
     const { effects } = run([...cleaningSentence, [{ type: "cleanupFailed", id: ID }, 2300]]);
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: `send it to ${EMAIL}`, html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: `send it to ${EMAIL}`, html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -726,7 +794,12 @@ describe("snippets", () => {
     ]);
     expect(effects).toContainEqual({
       type: "send",
-      command: { type: "insert", id: ID, output: { text: "Best,\nAlex\n", html: null } },
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: "Best,\nAlex\n", html: null },
+        keepOnClipboard: false,
+      },
     });
   });
 
@@ -758,7 +831,12 @@ describe("snippets", () => {
       remembered("My name.", "Ana"),
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "Ana", html: "<em>Ana</em>" } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "Ana", html: "<em>Ana</em>" },
+          keepOnClipboard: false,
+        },
       },
     ]);
     const cleanedSentence = run([
@@ -774,6 +852,7 @@ describe("snippets", () => {
           type: "insert",
           id: ID,
           output: { text: "Sign it, Ana.", html: "Sign it, <em>Ana</em>." },
+          keepOnClipboard: false,
         },
       },
     ]);
@@ -809,7 +888,15 @@ describe("dictionary", () => {
     const { effects } = run([...toTranscribing, said(RAW, null)]);
     expect(effects).toEqual([
       remembered(RAW, FIXED),
-      { type: "send", command: { type: "insert", id: ID, output: { text: FIXED, html: null } } },
+      {
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: FIXED, html: null },
+          keepOnClipboard: false,
+        },
+      },
     ]);
   });
 
@@ -828,6 +915,7 @@ describe("dictionary", () => {
           type: "insert",
           id: ID,
           output: { text: "by the way, ask Hadryś about Wispr Flow.", html: null },
+          keepOnClipboard: false,
         },
       },
     ]);
@@ -856,7 +944,15 @@ describe("dictionary", () => {
     const { effects } = run([...cleaning, [{ type: "cleanupFailed", id: ID }, 2300]]);
     expect(effects).toEqual([
       remembered(RAW, FIXED),
-      { type: "send", command: { type: "insert", id: ID, output: { text: FIXED, html: null } } },
+      {
+        type: "send",
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: FIXED, html: null },
+          keepOnClipboard: false,
+        },
+      },
     ]);
   });
 
@@ -872,6 +968,7 @@ describe("dictionary", () => {
         type: "insert",
         id: ID,
         output: { text: "Hadryś wants wispr flow, btw, hadrys", html: null },
+        keepOnClipboard: false,
       },
     });
   });
@@ -886,6 +983,7 @@ describe("dictionary", () => {
           type: "insert",
           id: ID,
           output: { text: "wispr flow, btw, hadrys", html: null },
+          keepOnClipboard: false,
         },
       },
     ]);
@@ -895,14 +993,24 @@ describe("dictionary", () => {
     const typed = [
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "see my signature", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "see my signature", html: null },
+          keepOnClipboard: false,
+        },
       },
     ];
     expect(inserts([...toTranscribing, said("idk", null)])).toEqual(typed);
     expect(inserts([...toTranscribing, said("idk", STYLE), cleaned("Idk.")])).toEqual([
       {
         type: "send",
-        command: { type: "insert", id: ID, output: { text: "see my signature.", html: null } },
+        command: {
+          type: "insert",
+          id: ID,
+          output: { text: "see my signature.", html: null },
+          keepOnClipboard: false,
+        },
       },
     ]);
     expect(
@@ -949,8 +1057,34 @@ const copying = (text: string, cleanup: CleanupWork | null, rewrites = NONE) =>
   transcript(text, cleanup, 2000, rewrites, true);
 
 describe("copy to clipboard", () => {
+  test("asks the helper to keep the pasted output on the clipboard", () => {
+    const { effects } = run([...toTranscribing, copying("hello world", null)]);
+    expect(effects).toContainEqual({
+      type: "send",
+      command: {
+        type: "insert",
+        id: ID,
+        output: { text: "hello world", html: null },
+        keepOnClipboard: true,
+      },
+    });
+  });
+
+  test("writes the clipboard itself only when the helper did not paste", () => {
+    const { state, all } = run([
+      ...toTranscribing,
+      copying("hello world", null),
+      [{ type: "insertResult", id: ID, method: "paste", reason: null }, 2100],
+    ]);
+    expect(types(all)).not.toContain("copy");
+    expect(state).toMatchObject({ phase: "done", outcome: { kind: "inserted", method: "paste" } });
+  });
+
   test.each<[string, SessionEvent]>([
-    ["inserted", { type: "insertResult", id: ID, method: "paste", reason: null }],
+    [
+      "inserted by accessibility",
+      { type: "insertResult", id: ID, method: "accessibility", reason: null },
+    ],
     ["not inserted", { type: "insertResult", id: ID, method: "none", reason: "focusChanged" }],
     ["timed out", { type: "timedOut", id: ID }],
     ["lost with the helper", { type: "helperExited" }],

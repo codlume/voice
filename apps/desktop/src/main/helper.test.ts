@@ -140,7 +140,13 @@ describe("startHelper", () => {
     expect(transcript).toMatchObject({ id: "s1", text: "call ada tomorrow", asrMs: 40 });
     expect(transcript.audioMs).toBeGreaterThanOrEqual(100);
 
-    h.helper.send({ type: "insert", id: "s1", text: transcript.text, html: null });
+    h.helper.send({
+      type: "insert",
+      id: "s1",
+      text: transcript.text,
+      html: null,
+      keepOnClipboard: false,
+    });
     await h.waitFor((e) => e.type === "insert.result");
     expect(h.of("insert.result")[0]?.event).toEqual({
       type: "insert.result",
@@ -320,7 +326,9 @@ describe("startHelper", () => {
     await h.waitFor((e) => e.type === "ready");
     await sleep(60);
     const text = "x".repeat(1 << 20);
-    expect(() => h.helper.send({ type: "insert", id: "s1", text, html: null })).not.toThrow();
+    expect(() =>
+      h.helper.send({ type: "insert", id: "s1", text, html: null, keepOnClipboard: false }),
+    ).not.toThrow();
     await expect.poll(() => h.logs.join("\n")).toMatch(/helper: stdin .*EPIPE/);
     expect(h.entries).toContainEqual({
       message: "helper stdin failed",

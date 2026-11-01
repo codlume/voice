@@ -42,7 +42,7 @@ try {
       const expected = `Voice ${mode} insert ${randomUUID()}`;
       const capture = await dictateFixture(helper, "short.wav", id);
       assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
-      helper.send({ type: "insert", id, text: expected, html: null });
+      helper.send({ type: "insert", id, text: expected, html: null, keepOnClipboard: false });
       const result = await helper.waitFor(
         (event) => event.type === "insert.result" && event.id === id,
         {

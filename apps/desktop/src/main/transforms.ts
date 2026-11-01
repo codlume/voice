@@ -168,7 +168,13 @@ export function createTransforms(options: TransformsOptions): Transforms {
         return;
       case "insert":
         track(effect.id, { insertStartedAt: now() });
-        send({ type: "insert", id: effect.id, text: effect.text, html: null });
+        send({
+          type: "insert",
+          id: effect.id,
+          text: effect.text,
+          html: null,
+          keepOnClipboard: false,
+        });
         return;
       case "endRun":
         if (active?.id === effect.id) active.controller.abort(ABORTED);

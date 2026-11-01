@@ -134,7 +134,8 @@ public enum HelperCommand: Equatable, Sendable {
     case captureCancel(id: String)
     case microphoneTestStart(id: String, microphone: Microphone?)
     case microphoneTestStop(id: String)
-    case insert(id: String, text: String, html: String?)
+    /// keepOnClipboard leaves a pasted transcript on the clipboard instead of restoring the user's contents.
+    case insert(id: String, text: String, html: String?, keepOnClipboard: Bool)
     case selectionRead(id: String)
     /// Ends the run; idempotent, an unknown id is ignored.
     case transformEnd(id: String)
@@ -197,7 +198,7 @@ public struct TranscriptTarget: Equatable, Sendable {
 
 /// Wire version the helper announces in `ready`. The desktop rejects any other value, and
 /// `test-fixtures/helper-protocol.json` pins it for both sides' contract tests.
-public let helperProtocolVersion = 19
+public let helperProtocolVersion = 20
 
 public enum HelperEvent: Equatable, Sendable {
     case microphonesChanged(devices: [Microphone], defaultUid: String?)
@@ -265,7 +266,7 @@ private enum Key: String, CodingKey {
     case transforms, transformId, keycode, modifiers, outcome, via, route, clipboardSaveMs
     case uptimeMs, hotkeyUptimeMs, asrState
     case systemAudio, dir, baseMs, fromMs, mic, system, source, endMs, failure, meeting, segments
-    case speaker, atMs
+    case speaker, atMs, keepOnClipboard
 }
 
 extension HelperCommand: Decodable {
@@ -302,7 +303,8 @@ extension HelperCommand: Decodable {
         case "insert":
             self = .insert(id: try c.decode(String.self, forKey: .id),
                            text: try c.decode(String.self, forKey: .text),
-                           html: try c.decodeIfPresent(String.self, forKey: .html))
+                           html: try c.decodeIfPresent(String.self, forKey: .html),
+                           keepOnClipboard: try c.decode(Bool.self, forKey: .keepOnClipboard))
         case "selection.read": self = .selectionRead(id: try c.decode(String.self, forKey: .id))
         case "transform.end": self = .transformEnd(id: try c.decode(String.self, forKey: .id))
         case "permissions.check": self = .permissionsCheck

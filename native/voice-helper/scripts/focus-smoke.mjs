@@ -45,7 +45,7 @@ async function settle(read, expected, timeoutMs = 3_000) {
 }
 
 async function insert(helper, id, text) {
-  helper.send({ type: "insert", id, text, html: null });
+  helper.send({ type: "insert", id, text, html: null, keepOnClipboard: false });
   return helper.waitFor((event) => event.type === "insert.result" && event.id === id, {
     label: "insert.result",
   });

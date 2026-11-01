@@ -15,7 +15,7 @@ import type { Target } from "../shared/style.ts";
 import type { HelperShortcut, Shortcut } from "../shared/transforms.ts";
 
 // Bump together with the helper's `ready` version whenever a line's shape changes.
-export const HELPER_PROTOCOL_VERSION = 19;
+export const HELPER_PROTOCOL_VERSION = 20;
 
 export type HelperCommand =
   | {
@@ -44,7 +44,7 @@ export type HelperCommand =
   | { type: "capture.cancel"; id: string }
   | { type: "microphone.test.start"; id: string; microphone: Microphone | null }
   | { type: "microphone.test.stop"; id: string }
-  | { type: "insert"; id: string; text: string; html: string | null }
+  | { type: "insert"; id: string; text: string; html: string | null; keepOnClipboard: boolean }
   | { type: "selection.read"; id: string }
   | { type: "transform.end"; id: string }
   | { type: "permissions.check" }
