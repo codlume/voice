@@ -11,9 +11,9 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.3",
+    "@astrojs/cloudflare": "14.4.3",
     "@stylexjs/stylex": "catalog:",
-    "astro": "7.3.5",
+    "astro": "7.4.4",
     "yaml": "catalog:"
   },
   "devDependencies": {
