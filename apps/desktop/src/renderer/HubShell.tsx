@@ -526,7 +526,7 @@ function NavItems<Id extends string>({
 }) {
   let index = 0;
   return groups.map((items, groupIndex) => (
-    <Fragment key={groupIndex}>
+    <Fragment key={items[0]?.id}>
       {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
       {items.map(({ id, label, icon }) => (
         <NavItem
@@ -583,6 +583,8 @@ function SettingsModal({
   useLayoutEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0 });
     scrollerRef.current?.focus({ preventScroll: true });
+    // state.section is not read here: a new section is the signal to scroll back to the top.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [state.section]);
   const SectionView = settingsPageViews[state.section];
   return (
@@ -697,6 +699,8 @@ export function HubShell({
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
+    // appPage is not read here: a new page is the signal to scroll back to the top.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [appPage]);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
@@ -734,6 +738,8 @@ export function HubShell({
       : [
           { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
           { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
+          // selectAppPage focuses main through a ref, but jumpBindings only wraps it for keydown.
+          // eslint-disable-next-line react/refs
           ...jumpBindings(appPages, selectAppPage),
         ],
     { reachAppModal: true },
