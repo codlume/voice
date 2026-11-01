@@ -22,6 +22,7 @@ jobs:
   release-please:
     if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       pull-requests: write
@@ -147,6 +148,7 @@ jobs:
   nightly-due:
     if: github.ref == 'refs/heads/main' && github.event_name != 'push' && inputs.stable_tag == ''
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       # Reads CI's result for HEAD.
@@ -170,123 +172,78 @@ jobs:
           version="$(node scripts/release-version.mjs nightly)"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-  nightly-notes:
-    needs: nightly-due
-    if: needs.nightly-due.outputs.due == 'true'
+  # Stable and Nightly ship through the same build, publish, and release jobs. This job picks the
+  # channel, version, commit, and notes once. Both never apply, because a Stable commit is never
+  # due a Nightly; Stable would win.
+  plan:
+    needs: [release-please, nightly-due]
+    if: >-
+      ${{ !cancelled() &&
+      ((needs.release-please.result == 'success' && needs.release-please.outputs.stable == 'true') ||
+      (needs.nightly-due.result == 'success' && needs.nightly-due.outputs.due == 'true')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       # The generate-notes endpoint requires write access.
       contents: write
     outputs:
-      notes: ${{ steps.notes.outputs.notes }}
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+      notes: ${{ steps.plan.outputs.notes }}
     steps:
-      - id: notes
+      - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          STABLE: ${{ needs.release-please.outputs.stable }}
+          STABLE_VERSION: ${{ needs.release-please.outputs.stable_version }}
+          STABLE_SHA: ${{ needs.release-please.outputs.stable_sha }}
+          NIGHTLY_VERSION: ${{ needs.nightly-due.outputs.version }}
           PREVIOUS_NIGHTLY: ${{ needs.nightly-due.outputs.previous }}
         shell: bash
         run: |
           set -euo pipefail
-          since=()
-          if [[ -n "${PREVIOUS_NIGHTLY}" ]]; then since=(-f previous_tag_name="${PREVIOUS_NIGHTLY}"); fi
-          notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="v${RELEASE_VERSION}" \
-            -f target_commitish="${GITHUB_SHA}" \
-            "${since[@]}" \
-            --jq .body)"
+          if [[ "${STABLE}" == true ]]; then
+            channel=stable version="${STABLE_VERSION}" sha="${STABLE_SHA}"
+            notes="$(gh release view "v${version}" --json body --jq .body)"
+          else
+            channel=nightly version="${NIGHTLY_VERSION}" sha="${GITHUB_SHA}"
+            since=()
+            if [[ -n "${PREVIOUS_NIGHTLY}" ]]; then since=(-f previous_tag_name="${PREVIOUS_NIGHTLY}"); fi
+            notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="v${version}" \
+              -f target_commitish="${sha}" \
+              "${since[@]}" \
+              --jq .body)"
+          fi
           delimiter="notes_$(openssl rand -hex 16)"
-          printf 'notes<<%s\n%s\n%s\n' "${delimiter}" "${notes}" "${delimiter}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "channel=${channel}"
+            echo "version=${version}"
+            echo "sha=${sha}"
+            printf 'notes<<%s\n%s\n%s\n' "${delimiter}" "${notes}" "${delimiter}"
+          } >> "${GITHUB_OUTPUT}"
 
-  nightly-build:
-    needs: nightly-due
-    if: needs.nightly-due.outputs.due == 'true'
+  build:
+    needs: plan
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      RELEASE_CHANNEL: nightly
-      RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.plan.outputs.channel }}
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       SENTRY_ORG: ${{ vars.SENTRY_ORG }}
       SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       VOICE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-      - run: aws --version
-      - name: Check published version
-        id: preflight
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: node scripts/release-preflight.mjs
-      # stapler reaches Apple over HTTP/3, which GitHub's macOS runners drop; blocking UDP 443
-      # forces TCP. https://github.com/actions/runner-images/issues/14924
-      - name: Force stapler onto TCP
-        if: steps.preflight.outputs.skip != 'true'
-        run: |
-          echo "block return out quick proto udp from any to any port 443" | sudo pfctl -f -
-          sudo pfctl -E
-      - name: Import Developer ID certificate
-        if: steps.preflight.outputs.skip != 'true'
-        env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bash scripts/release-keychain.sh
-      - name: Build, sign, notarize, and verify
-        if: steps.preflight.outputs.skip != 'true'
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: node scripts/release-build.mjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: steps.preflight.outputs.skip != 'true'
-        with:
-          name: nightly-mac-arm64
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest-mac.yml
-          if-no-files-found: error
-          retention-days: 7
-      - name: Remove temporary keychain
-        if: always()
-        run: bash scripts/release-keychain.sh cleanup
     outputs:
       skip: ${{ steps.preflight.outputs.skip }}
-
-  stable-build:
-    needs: release-please
-    if: needs.release-please.outputs.stable == 'true'
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      RELEASE_CHANNEL: stable
-      RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
-      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
-      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET: ${{ vars.R2_BUCKET }}
-      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-      VOICE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.stable_sha }}
+          ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
@@ -330,7 +287,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.preflight.outputs.skip != 'true'
         with:
-          name: stable-mac-arm64
+          name: ${{ needs.plan.outputs.channel }}-mac-arm64
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
@@ -341,19 +298,18 @@ jobs:
       - name: Remove temporary keychain
         if: always()
         run: bash scripts/release-keychain.sh cleanup
-    outputs:
-      skip: ${{ steps.preflight.outputs.skip }}
 
-  nightly-publish:
-    needs: [nightly-due, nightly-notes, nightly-build]
-    if: needs.nightly-build.outputs.skip != 'true'
+  publish:
+    needs: [plan, build]
+    if: needs.build.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
-      group: release-publish-nightly
+      group: release-publish-${{ needs.plan.outputs.channel }}
       cancel-in-progress: false
     env:
-      RELEASE_CHANNEL: nightly
-      RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.plan.outputs.channel }}
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
       RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
@@ -362,6 +318,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
@@ -371,11 +328,11 @@ jobs:
       - run: aws --version
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: nightly-mac-arm64
+          name: ${{ needs.plan.outputs.channel }}-mac-arm64
           path: apps/desktop/release/
       - id: publish
         env:
-          RELEASE_NOTES: ${{ needs.nightly-notes.outputs.notes }}
+          RELEASE_NOTES: ${{ needs.plan.outputs.notes }}
           RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -385,27 +342,31 @@ jobs:
           echo "${result}"
           echo "result=${result}" >> "${GITHUB_OUTPUT}"
 
-  nightly-release:
-    needs: [nightly-due, nightly-notes, nightly-publish]
-    if: needs.nightly-publish.outputs.result != 'skipped-older'
+  # A rebuilt older Stable still gets its DMG, though publish leaves the feed alone.
+  release:
+    needs: [plan, publish]
+    if: needs.plan.outputs.channel == 'stable' || needs.publish.outputs.result != 'skipped-older'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
-    # A separate group, because a job waiting in release-publish-nightly would cancel a pending publish.
+    # A separate group, because a job waiting in release-publish-* would cancel a pending publish.
     concurrency:
-      group: release-github-nightly
+      group: release-github-${{ needs.plan.outputs.channel }}
       cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: nightly-mac-arm64
+          name: ${{ needs.plan.outputs.channel }}-mac-arm64
           path: release/
-      - name: Publish GitHub prerelease
+      # release-please already created the Stable release; a Nightly creates its prerelease here.
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_VERSION: ${{ needs.nightly-due.outputs.version }}
-          RELEASE_NOTES: ${{ needs.nightly-notes.outputs.notes }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+          RELEASE_SHA: ${{ needs.plan.outputs.sha }}
+          RELEASE_NOTES: ${{ needs.plan.outputs.notes }}
         shell: bash
         run: |
           set -euo pipefail
@@ -414,65 +375,10 @@ jobs:
             gh release upload "${tag}" release/*.dmg --clobber
           else
             notes="${RUNNER_TEMP}/prerelease-notes.md"
-            printf 'Unstable build of %s. Installed Nightlies update themselves.\n\n%s\n' "${GITHUB_SHA}" "${RELEASE_NOTES}" > "${notes}"
+            printf 'Unstable build of %s. Installed Nightlies update themselves.\n\n%s\n' "${RELEASE_SHA}" "${RELEASE_NOTES}" > "${notes}"
             gh release create "${tag}" release/*.dmg \
               --prerelease \
-              --target "${GITHUB_SHA}" \
-              --title "Voice Nightly ${RELEASE_VERSION} (${GITHUB_SHA::12})" \
+              --target "${RELEASE_SHA}" \
+              --title "Voice Nightly ${RELEASE_VERSION} (${RELEASE_SHA::12})" \
               --notes-file "${notes}"
           fi
-
-  stable-publish:
-    needs: [release-please, stable-build]
-    if: needs.stable-build.result == 'success' && needs.stable-build.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: release-publish-stable
-      cancel-in-progress: false
-    env:
-      RELEASE_CHANNEL: stable
-      RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
-      RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
-      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET: ${{ vars.R2_BUCKET }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release-please.outputs.stable_sha }}
-          persist-credentials: false
-      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          node-version-file: package.json
-          run-install: |
-            args: ["--workspace-root"]
-      - run: aws --version
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: stable-mac-arm64
-          path: apps/desktop/release/
-      - name: Read release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release view "v${RELEASE_VERSION}" --json body --jq .body > "${RUNNER_TEMP}/release-notes.md"
-      - env:
-          RELEASE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: node scripts/release-publish.mjs
-
-  stable-release:
-    needs: [release-please, stable-publish]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: stable-mac-arm64
-          path: release/
-      - name: Attach DMG to GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_VERSION: ${{ needs.release-please.outputs.stable_version }}
-        run: gh release upload "v${RELEASE_VERSION}" release/*.dmg --clobber
