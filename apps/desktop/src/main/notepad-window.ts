@@ -33,7 +33,7 @@ export function notepadBounds(
   return { x: primary.x + primary.width - width - MARGIN, y: primary.y + MARGIN, width, height };
 }
 
-export function notepadWindowOptions(
+function notepadWindowOptions(
   bounds: Rectangle,
   webPreferences: WebPreferences,
   dark: boolean,
