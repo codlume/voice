@@ -399,6 +399,7 @@ describe("saved history", () => {
     expect(changes).toEqual([
       { kind: "all", state: { entries: [], retention: "day", saveFailed: false } },
     ]);
+    await history.settled();
   });
 
   test("the file is readable by this user only", async () => {
