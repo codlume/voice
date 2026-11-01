@@ -88,7 +88,7 @@ export type MeetingRecorderDeps = {
 export const START_TIMEOUT_MS = 10_000;
 export const TRANSCRIBE_IDLE_MS = 60_000;
 /** The final pass reports only when done, for up to three hours of audio. */
-export const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
+const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
 const WATCH_MS: Record<Watch, number> = {
   start: START_TIMEOUT_MS,
   drain: TRANSCRIBE_IDLE_MS,

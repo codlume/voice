@@ -30,7 +30,7 @@ export type Cleanup = {
   dispose(): Promise<void>;
 };
 
-export type CleanupOptions = {
+type CleanupOptions = {
   modelsDir: string;
   baseUrl?: string | undefined;
   shouldLoad: () => boolean;

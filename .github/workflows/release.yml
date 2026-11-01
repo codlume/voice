@@ -7,6 +7,11 @@ on:
     # Nightlies are throttled to one per slot, like T3 Code; minute 17 avoids the busy top of the hour.
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      stable_tag:
+        description: Rebuild an existing stable release, for example v0.20.1. Leave empty for a Nightly.
+        required: false
+        default: ""
 
 # Only jobs that run no dependency code get write access. A write token can push to main,
 # and the next Nightly would sign and ship that commit.
@@ -31,6 +36,7 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+        if: inputs.stable_tag == ''
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           config-file: release-please-config.json
@@ -46,23 +52,27 @@ jobs:
           ACTION_RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
           ACTION_RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
           ACTION_RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          STABLE_TAG: ${{ inputs.stable_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${ACTION_RELEASE_CREATED}" == true ]]; then
+          if [[ -n "${STABLE_TAG}" ]]; then
+            [[ "${STABLE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "stable_tag must look like v1.2.3" >&2; exit 1; }
+            tag="${STABLE_TAG}"
+          elif [[ "${ACTION_RELEASE_CREATED}" == true ]]; then
             tag="${ACTION_RELEASE_TAG}"
           else
             tag="v$(node -p 'require("./package.json").version')"
           fi
           if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            [[ "${ACTION_RELEASE_CREATED}" != true ]] && exit 0
-            echo "release-please reported a release without a tag" >&2
+            [[ "${ACTION_RELEASE_CREATED}" != true && -z "${STABLE_TAG}" ]] && exit 0
+            echo "Tag ${tag} does not exist" >&2
             exit 1
           fi
           sha="$(git rev-list -n 1 "${tag}")"
           if [[ "${ACTION_RELEASE_CREATED}" == true ]]; then
             [[ "${sha}" == "${ACTION_RELEASE_SHA}" ]] || exit 1
-          else
+          elif [[ -z "${STABLE_TAG}" ]]; then
             [[ "${sha}" == "${GITHUB_SHA}" ]] || exit 0
           fi
           version="$(git show "${tag}:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
@@ -74,9 +84,10 @@ jobs:
             echo "stable_version=${version}"
             echo "stable_sha=${sha}"
           } >> "${GITHUB_OUTPUT}"
+      # A rebuild never redeploys the API, because the live API may already be newer than the tag.
       - name: Detect Stable API changes
         id: api
-        if: steps.detect.outputs.stable == 'true'
+        if: steps.detect.outputs.stable == 'true' && inputs.stable_tag == ''
         env:
           STABLE_SHA: ${{ steps.detect.outputs.stable_sha }}
         shell: bash
@@ -131,7 +142,7 @@ jobs:
         run: curl --fail --silent --show-error --retry 20 --retry-delay 15 --retry-all-errors https://api.voice.codlume.com/health
 
   nightly-due:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'push' && inputs.stable_tag == ''
     runs-on: ubuntu-latest
     outputs:
       due: ${{ steps.due.outputs.due }}
@@ -276,8 +287,11 @@ jobs:
           cache: true
           run-install: true
       - run: aws --version
+      # The feed already holds a newer version when an older tag is rebuilt, and the tag's own
+      # preflight would skip it. Publish still refuses to move the feed backwards.
       - name: Check published version
         id: preflight
+        if: inputs.stable_tag == ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

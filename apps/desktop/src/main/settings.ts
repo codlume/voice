@@ -177,7 +177,7 @@ export function applyPatch(
   return parseSettings(next);
 }
 
-export type SettingsFile = {
+type SettingsFile = {
   settings: Settings;
   /**
    * Writes over the file's record, so top-level keys this build does not know survive a downgrade.

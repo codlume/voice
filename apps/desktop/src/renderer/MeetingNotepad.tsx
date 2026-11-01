@@ -2,7 +2,12 @@ import { Tabs } from "@base-ui/react/tabs";
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { MeetingId, MeetingPrompt, NotepadState } from "../shared/meetings.ts";
+import type {
+  MeetingCommandResult,
+  MeetingId,
+  MeetingPrompt,
+  NotepadState,
+} from "../shared/meetings.ts";
 import { Button } from "./Button.tsx";
 import {
   MeetingTabs,
@@ -179,7 +184,7 @@ function Prompt({
   );
 }
 
-async function send(command: PromptCommand, id: MeetingId) {
+async function send(command: PromptCommand, id: MeetingId): Promise<MeetingCommandResult | null> {
   const api = notepadApi();
   switch (command) {
     case "pause":

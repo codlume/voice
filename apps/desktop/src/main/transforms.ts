@@ -20,7 +20,7 @@ import {
   type TransformRun,
 } from "./transform-run.ts";
 
-export type TransformsOptions = {
+type TransformsOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
   model: Pick<TransformModel, "run" | "warm">;

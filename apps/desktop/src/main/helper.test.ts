@@ -355,7 +355,7 @@ describe("startHelper", () => {
     const h = boot({ script: [{ at: 10, action: "exit" }] });
     helper = h.helper;
     await h.waitFor((e) => e.type === "ready");
-    await sleep(60);
+    await expect.poll(() => h.exits.length).toBe(1);
     expect(() => h.helper.send({ type: "permissions.check" })).not.toThrow();
     expect(h.logs.some((line) => line.includes("dropped permissions.check"))).toBe(true);
     expect(h.entries).toContainEqual({

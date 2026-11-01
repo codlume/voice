@@ -37,7 +37,7 @@ import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 
 /** A meeting a crash or quit left mid-lifecycle. `lastWriteAt` is the newest file in its folder. */
-export type Unfinished = { meeting: Meeting; lastWriteAt: number };
+type Unfinished = { meeting: Meeting; lastWriteAt: number };
 
 export type MeetingsStore = {
   /** Resolves once the launch read is in and retention has run. */

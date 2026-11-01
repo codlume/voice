@@ -16,6 +16,7 @@ import {
   session,
   shell,
   Tray,
+  type WebContents,
   type WebPreferences,
 } from "electron";
 import * as Option from "effect/Option";
@@ -171,6 +172,15 @@ const rendererDir = NodePath.join(__dirname, "../dist/renderer");
 
 function loadPage(window: BrowserWindow, page: Page) {
   void window.loadURL(pageUrl(page, { development, env: process.env, rendererDir }));
+}
+
+// A message sent while the hub is still loading would reach the old document and be lost.
+function sendWhenLoaded(contents: WebContents, send: (contents: WebContents) => void) {
+  const sendIfLive = () => {
+    if (!contents.isDestroyed()) send(contents);
+  };
+  if (contents.isLoading()) contents.once("did-finish-load", sendIfLive);
+  else sendIfLive();
 }
 
 function createPillWindow(webPreferencesFor: (page: Page) => WebPreferences) {
@@ -342,6 +352,9 @@ async function main() {
   };
   const webPreferencesFor = (page: Page): WebPreferences => ({
     preload: NodePath.join(__dirname, `${page}-preload.cjs`),
+    sandbox: true,
+    contextIsolation: true,
+    nodeIntegration: false,
     additionalArguments: diagnostics.active ? [DIAGNOSTICS_ARGUMENT] : [],
   });
 
@@ -384,7 +397,8 @@ async function main() {
   let installedApps: InstalledApps;
   let meetingsApp: MeetingsApp;
   let sentHotkeys: ReturnType<typeof hotkeyConfigure> | null = null;
-  const hubFocused = () => hub !== undefined && !hub.isDestroyed() && hub.isFocused();
+  const liveHub = () => (hub && !hub.isDestroyed() ? hub : undefined);
+  const hubFocused = () => liveHub()?.isFocused() ?? false;
   const hotkeys = () => hotkeyConfigure(store.state.settings, hubFocused());
   function syncHotkeys() {
     const next = hotkeys();
@@ -440,7 +454,7 @@ async function main() {
     file: NodePath.join(userData, "history.json"),
     log,
     onChange: (change) => {
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.history, change);
+      liveHub()?.webContents.send(Channel.history, change);
       const hasEntry = history.entries().length > 0;
       if (hasEntry === trayHasEntry) return;
       trayHasEntry = hasEntry;
@@ -467,7 +481,7 @@ async function main() {
     file: NodePath.join(userData, "insights.json"),
     log,
     onChange: (value) => {
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.insights, value);
+      liveHub()?.webContents.send(Channel.insights, value);
     },
   });
   dictation = createDictation({
@@ -497,7 +511,7 @@ async function main() {
     log,
     copy: (text) => clipboard.writeText(text),
     onLastTransform: (value) => {
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.lastTransform, value);
+      liveHub()?.webContents.send(Channel.lastTransform, value);
     },
   });
   // The pill keeps dictation levels; the hub's onLevel carries only test levels.
@@ -505,7 +519,7 @@ async function main() {
     store,
     send: helper.send,
     onLevel: (level) => {
-      if (hub && !hub.isDestroyed()) hub.webContents.send(Channel.level, level);
+      liveHub()?.webContents.send(Channel.level, level);
     },
   });
 
@@ -548,7 +562,7 @@ async function main() {
     },
   });
 
-  const hubVisible = () => hub !== undefined && !hub.isDestroyed() && hub.isVisible();
+  const hubVisible = () => liveHub()?.isVisible() ?? false;
 
   let permissionPoll: NodeJS.Timeout | null = null;
   let meetingSetupShown = false;
@@ -631,22 +645,13 @@ async function main() {
   }
 
   function showMeeting(id: MeetingId, options: { activate: boolean }) {
-    const contents = openHub(options).webContents;
-    const send = () => {
-      if (!contents.isDestroyed()) contents.send(Channel.openMeeting, { id, tab: "summary" });
-    };
-    if (contents.isLoading()) contents.once("did-finish-load", send);
-    else send();
+    sendWhenLoaded(openHub(options).webContents, (contents) =>
+      contents.send(Channel.openMeeting, { id, tab: "summary" }),
+    );
   }
 
-  // A request sent while the hub is still loading would reach the old document and be lost.
   function requestRestart() {
-    const contents = showHub().webContents;
-    const send = () => {
-      if (!contents.isDestroyed()) contents.send(Channel.requestRestart);
-    };
-    if (contents.isLoading()) contents.once("did-finish-load", send);
-    else send();
+    sendWhenLoaded(showHub().webContents, (contents) => contents.send(Channel.requestRestart));
   }
 
   const syncDock = createDockSync({
@@ -782,8 +787,8 @@ async function main() {
         helper.send({ type: "microphone.configure", microphone: next.microphone });
       if (next.theme !== previous.theme) nativeTheme.themeSource = next.theme;
       if (next.showInDock !== previous.showInDock) void syncDock();
-      if (next.zoomLevel !== previous.zoomLevel && hub && !hub.isDestroyed())
-        applyZoom(hub, next.zoomLevel);
+      const zoomHub = liveHub();
+      if (next.zoomLevel !== previous.zoomLevel && zoomHub) applyZoom(zoomHub, next.zoomLevel);
     },
   });
 

@@ -201,7 +201,8 @@ export type PillState =
 export type ModelStatus =
   | { state: "missing" }
   | { state: "downloading"; progress?: number }
-  | { state: "loading" }
+  /** `preparing` once a load runs long enough to be a first-time compile for this Mac. */
+  | { state: "loading"; preparing?: true }
   | { state: "ready" }
   | { state: "installed" }
   | { state: "failed"; message: string };
