@@ -25,8 +25,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    # A group holds one running and one pending job, and a newly queued job cancels the pending
+    # one. A rebuild skips release-please, so each tag gets its own group and back-to-back rebuilds
+    # of different tags all run.
     concurrency:
-      group: release-please-main
+      group: ${{ inputs.stable_tag && format('release-rebuild-{0}', inputs.stable_tag) || 'release-please-main' }}
       cancel-in-progress: false
     outputs:
       stable: ${{ steps.detect.outputs.stable }}
