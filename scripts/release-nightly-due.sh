@@ -2,6 +2,7 @@
 # Prints GitHub outputs `previous=<last Nightly tag>` and `due=true|false` for building a Nightly of HEAD.
 # Scheduled runs build only when main moved since the last Nightly; MANUAL=true forces a build.
 # A Stable release commit never gets a Nightly because that build would duplicate Stable.
+# A commit without green CI never gets one, even on a manual run.
 set -euo pipefail
 
 head="$(git rev-parse HEAD)"
@@ -12,6 +13,10 @@ echo "previous=${previous}"
 stable="v$(node -p 'require("./package.json").version')"
 if [[ "$(git rev-parse -q --verify "refs/tags/${stable}^{commit}" || true)" == "${head}" ]]; then
   echo "HEAD is Stable ${stable}; skipping Nightly" >&2
+  echo "due=false"
+  exit 0
+fi
+if ! bash scripts/release-ci-passed.sh "${head}"; then
   echo "due=false"
   exit 0
 fi

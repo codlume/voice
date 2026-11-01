@@ -290,6 +290,22 @@ describe("meeting recorder", () => {
     }
   });
 
+  test("a start and a resume pressed together record one meeting, not two", async () => {
+    const h = harness();
+    const finished = await h.start();
+    await h.segment(finished, "system", 0, TEN_WORDS);
+    await h.recorder.stop(finished);
+    await h.finish(finished);
+    expect(h.store.get(finished)?.status.kind).toBe("ready");
+    const before = h.sent.length;
+
+    const [started, resumed] = await Promise.all([h.recorder.start(), h.recorder.resume(finished)]);
+    await h.settle();
+
+    expect(h.sent.slice(before).filter(({ type }) => type === "meeting.start")).toHaveLength(1);
+    expect([started.kind, resumed.kind].toSorted()).toEqual(["ok", "refused"]);
+  });
+
   test("a final pass keeps markers and the transcript of audio an earlier pass already deleted", async () => {
     const h = harness();
     const id = await h.start();

@@ -107,12 +107,21 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    /// True from a dictation's start until its transcript, so meetings keep their mic and the
-    /// speech model clear of it.
+    /// True from a dictation's start until its transcript, so meetings keep the speech model clear
+    /// of it.
     var isDictating: Bool {
         switch state {
         case .starting, .recording, .transcribing: true
         case .idle, .testing: false
+        }
+    }
+
+    /// True while a dictation takes in audio, so meetings keep its words out of their mic. Once
+    /// the key is released, what the user says belongs to the meeting again.
+    var isCapturingDictation: Bool {
+        switch state {
+        case .starting, .recording: true
+        case .idle, .testing, .transcribing: false
         }
     }
 

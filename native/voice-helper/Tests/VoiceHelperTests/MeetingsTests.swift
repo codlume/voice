@@ -31,6 +31,7 @@ private final class Harness {
     let devices: AudioInputDevices
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("voice-meetings-\(UUID().uuidString)")
     var dictating = false
+    var capturingDictation = false
     var decodes = 0
     var echo = false
     var meetings: Meetings!
@@ -53,7 +54,7 @@ private final class Harness {
                 return spokenWords(peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)", in: samples)
             },
             finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false }),
-            isDictating: { [unowned self] in dictating })
+            isDictating: { [unowned self] in dictating }, isCapturingDictation: { [unowned self] in capturingDictation })
     }
 
     var dir: URL { root.appendingPathComponent("m1") }
@@ -173,6 +174,7 @@ struct MeetingsTests {
         let h = try Harness()
         defer { h.meetings.shutdown(); h.devices.shutdown() }
         h.dictating = true
+        h.capturingDictation = true
         h.start()
         try await h.waitForFixtures(count: 2)
         h.meetings.stop(id: "m1")
@@ -183,8 +185,26 @@ struct MeetingsTests {
         #expect(mic.allSatisfy { $0 == 0 }, "dictated words never reach the meeting audio")
 
         h.dictating = false
+        h.capturingDictation = false
         try await h.waitForDrained()
         #expect(h.events("meeting.segment").map { $0["source"] as? String } == ["system"])
+    }
+
+    @Test func aDictationBeingTranscribedKeepsTheMeetingMicButStillHoldsMeetingDecodes() async throws {
+        let h = try Harness()
+        defer { h.meetings.shutdown(); h.devices.shutdown() }
+        h.dictating = true
+        h.start()
+        try await h.waitForFixtures(count: 2)
+        h.meetings.stop(id: "m1")
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.decodes == 0, "the dictation's decode keeps the speech model")
+        let mic = try PcmFile.read(at: h.dir.appendingPathComponent("mic.pcm"), offset: 0, count: 7 * 16_000)
+        #expect(mic.contains { $0 != 0 }, "after the key is released, the user speaks to the meeting again")
+
+        h.dictating = false
+        try await h.waitForDrained()
+        #expect(Set(h.segments()) == ["mic@0-2500", "mic@3500-6000", "system@3500-6000"])
     }
 
     @Test func recoveryTranscribesOnlyWhatTheTranscriptDoesNotReachWithoutRecording() async throws {
@@ -212,7 +232,7 @@ struct MeetingsTests {
         defer { devices.shutdown() }
         let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false })
         let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in [] }, finalPass: finalPass,
-                                isDictating: { false })
+                                isDictating: { false }, isCapturingDictation: { false })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-meetings-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         meetings.start(id: "m1", dir: dir.path, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en, microphone: nil)

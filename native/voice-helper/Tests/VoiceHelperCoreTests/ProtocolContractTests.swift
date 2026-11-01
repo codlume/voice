@@ -337,6 +337,21 @@ private func eventType(_ event: HelperEvent) -> String {
         }
     }
 
+    // Keyed decoding ignores unknown keys, so a field TypeScript sends that Swift never reads
+    // would otherwise still decode to the expected command.
+    @Test func readsEveryOptionalCommandField() throws {
+        let corpus = try readCorpus()
+        for fixture in corpus.commands + corpus.nativeCommands {
+            let full = HelperCommand.decode(line: try line(fixture.wire))
+            for (field, value) in fixture.wire where !fixture.required.contains(field) && value != .null {
+                var missing = fixture.wire
+                missing.removeValue(forKey: field)
+                let reduced = try HelperCommand.decode(line: line(missing)).get()
+                #expect(.success(reduced) != full, Comment(rawValue: "\(fixture.name).\(field)"))
+            }
+        }
+    }
+
     @Test func normalizesOptionalCommandFields() throws {
         let corpus = try readCorpus()
         let expected: [String: HelperCommand] = [

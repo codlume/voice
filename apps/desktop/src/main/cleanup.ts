@@ -134,13 +134,21 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     if (model.phase !== "none") return;
     options.onStatus({ state: "loading" });
     let created: CleanupEngine | undefined;
+    let warmedUp = false;
     try {
       const candidate = module.createS1Mini({
         modelPath,
         onLost: (lostMessage) => {
           if (!owns(candidate)) return;
           model = { phase: "none" };
-          options.onStatus({ state: "failed", message: lostMessage });
+          // Only a model that once reached ready comes back on its own; one that dies loading or
+          // warming up would only die again, so it waits for Retry.
+          if (!warmedUp) {
+            options.onStatus({ state: "failed", message: lostMessage });
+            return;
+          }
+          options.log(`cleanup: model lost (${lostMessage}), reloading`);
+          void serialize(loadIfOnDisk);
         },
       });
       created = candidate;
@@ -158,7 +166,9 @@ export function createCleanup(options: CleanupOptions): Cleanup {
     if (!owns(created)) return;
     model = { phase: "loaded", model: created };
     await created.clean(WARM_UP_TEXT, WARM_UP_STYLE).catch(() => undefined);
-    if (owns(created)) options.onStatus({ state: "ready" });
+    if (!owns(created)) return;
+    warmedUp = true;
+    options.onStatus({ state: "ready" });
   }
 
   async function loadIfOnDisk() {

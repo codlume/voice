@@ -15,23 +15,18 @@ catalog:
   "@stylexjs/stylex": 0.19.1
   "@stylexjs/unplugin": 0.19.1
   "@types/node": 24.12.4
-  "@vitejs/plugin-react": 6.1.1
-  react: 19.3.0
-  react-dom: 19.3.0
+  "@vitejs/plugin-react": 6.1.2
+  react: 19.3.1
+  react-dom: 19.3.1
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@0.3.3
   vite-plus: 0.3.3
+  wrangler: 4.147.0
+  yaml: 2.8.3
 
 overrides:
   vite: "catalog:"
 
-packageExtensions:
-  vite-plus@*:
-    dependencies:
-      vite: "catalog:"
-
 peerDependencyRules:
   allowAny:
     - vite
-  allowedVersions:
-    vite: "*"

@@ -679,7 +679,10 @@ async function main() {
         enabled: trayHasEntry,
         click: () => {
           const [latest] = history.entries();
-          if (latest) clipboard.writeText(copyText(latest));
+          if (!latest) return;
+          clipboard
+            .writeText(copyText(latest))
+            .catch((error) => log(`tray: copy last transcript failed (${String(error)})`));
         },
       },
       { type: "separator" },
@@ -889,11 +892,14 @@ async function main() {
   });
   app.on("activate", showHub);
   Menu.setApplicationMenu(
-    createApplicationMenu((step) => {
-      updateSettings((current) =>
-        applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
-      ).catch(() => {});
-    }),
+    createApplicationMenu(
+      (step) => {
+        updateSettings((current) =>
+          applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
+        ).catch(() => {});
+      },
+      { development },
+    ),
   );
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});

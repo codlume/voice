@@ -1,13 +1,12 @@
 name: Deploy website
 
+# Deploy only after CI passes on a push to main. A manual run deploys main without a change, but
+# still needs green CI.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - apps/web/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .github/workflows/web.yml
   workflow_dispatch:
 
 permissions:
@@ -18,13 +17,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  due:
+    # A fork's pull request from a branch named main also completes CI. Only main's own pushes deploy.
+    if: >-
+      github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+      sha: ${{ steps.due.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+          bash scripts/deploy-due.sh web.yml apps/web pnpm-lock.yaml pnpm-workspace.yaml .github/workflows/web.yml >> "${GITHUB_OUTPUT}"
+
   deploy:
-    if: github.ref == 'refs/heads/main'
+    needs: due
+    if: needs.due.outputs.due == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.due.outputs.sha }}
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:

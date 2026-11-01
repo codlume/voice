@@ -125,7 +125,9 @@ function wavDurationMs(buffer) {
 }
 
 function parseTiming(line) {
-  const [, id, outcome, rest] = /\[voice\] session (\w+) outcome=(\w+)(.*)$/.exec(line);
+  const [, id, outcome, rest] = /** @type {RegExpExecArray & [string, string, string, string]} */ (
+    /\[voice\] session (\w+) outcome=(\w+)(.*)$/.exec(line)
+  );
   const timing = { id, outcome };
   for (const [, key, value] of rest.matchAll(/(\w+)=(\d+)/g)) timing[key] = Number(value);
   return timing;
