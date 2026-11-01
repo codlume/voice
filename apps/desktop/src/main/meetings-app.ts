@@ -187,13 +187,16 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
   // A launch only ever finishes what a crash or quit left; it never records.
   recorder.recover().catch((error) => log(`meetings: recovery failed (${String(error)})`));
   // Audio a failed final pass kept is still on disk after a relaunch, and so is its notice.
-  void meetings.loaded().then(() => {
-    for (const { id, finalPassFailed } of meetings.state().meetings) {
-      if (!finalPassFailed) continue;
-      const notice = { kind: "finalPassFailed", reason: finalPassFailed } as const;
-      store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
-    }
-  });
+  meetings
+    .loaded()
+    .then(() => {
+      for (const { id, finalPassFailed } of meetings.state().meetings) {
+        if (!finalPassFailed) continue;
+        const notice = { kind: "finalPassFailed", reason: finalPassFailed } as const;
+        store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
+      }
+    })
+    .catch((error) => log(`meetings: load failed (${String(error)})`));
   // The expiry timer counts awake time only, so a window that ended during sleep ends on wake.
   powerMonitor.on("resume", () => {
     meetings.expire().catch((error) => log(`meetings: expiry failed (${String(error)})`));

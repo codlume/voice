@@ -3,18 +3,27 @@ import { Menu, type MenuItemConstructorOptions } from "electron";
 import type { ZoomStep } from "../shared/zoom.ts";
 
 // The zoom roles would zoom whichever page has focus, for this launch only.
-export function createApplicationMenu(zoom: (step: ZoomStep) => void): Menu {
-  const template: MenuItemConstructorOptions[] = [
+export function applicationMenuTemplate(
+  zoom: (step: ZoomStep) => void,
+  { development }: { development: boolean },
+): MenuItemConstructorOptions[] {
+  // Reload drops the page's state and DevTools opens the app's internals, so users never see them.
+  const developer: MenuItemConstructorOptions[] = development
+    ? [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+      ]
+    : [];
+  return [
     ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
     { role: "fileMenu" },
     { role: "editMenu" },
     {
       label: "View",
       submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
+        ...developer,
         {
           id: "zoom-reset",
           label: "Actual Size",
@@ -37,5 +46,11 @@ export function createApplicationMenu(zoom: (step: ZoomStep) => void): Menu {
     },
     { role: "windowMenu" },
   ];
-  return Menu.buildFromTemplate(template);
+}
+
+export function createApplicationMenu(
+  zoom: (step: ZoomStep) => void,
+  options: { development: boolean },
+): Menu {
+  return Menu.buildFromTemplate(applicationMenuTemplate(zoom, options));
 }
