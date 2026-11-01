@@ -14,7 +14,6 @@ import { createTransformProcess } from "./transform-engine.ts";
 export type {
   GenerateRequest,
   GenerateResult,
-  TransformFailure,
   TransformRequest,
   TransformResult,
 } from "@voice/cleanup/transform";
@@ -54,7 +53,7 @@ export type TransformModule = Pick<
   createProcess(options: { modelPath: string; onLost: (message: string) => void }): TransformEngine;
 };
 
-export type TransformModelOptions = {
+type TransformModelOptions = {
   modelsDir: string;
   baseUrl?: string | undefined;
   /** True while a transform runs after every dictation. Read whenever residency is decided. */

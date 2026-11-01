@@ -8,6 +8,8 @@ import { clipboardKept, restoreClipboard, saveClipboard } from "../../../../scri
 const PNG = "iVBORw0KGgo=";
 const RTF = "e1xydGYxIHN5bnRoZXRpY30=";
 
+const data = (base64) => `$.NSData.alloc.initWithBase64EncodedStringOptions("${base64}", 0)`;
+
 // A private pasteboard, so the test never reads or writes the user's clipboard.
 function scratchPasteboard(t) {
   const pasteboard = `voice-test-${randomUUID()}`;
@@ -22,7 +24,6 @@ function scratchPasteboard(t) {
       ],
       { encoding: "utf8" },
     ).trim();
-  const data = (base64) => `$.NSData.alloc.initWithBase64EncodedStringOptions("${base64}", 0)`;
   t.after(() => jxa("board.releaseGlobally; ''"));
   return {
     pasteboard,

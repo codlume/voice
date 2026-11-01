@@ -33,7 +33,7 @@ export const noMeetingFocus: MeetingFocus = {
   nextKey: 1,
 };
 
-export type CurrentMeeting = Meeting & { status: PillMeetingStatus };
+type CurrentMeeting = Meeting & { status: PillMeetingStatus };
 
 // A capture comes first, then an answer the user owes, then a meeting they can resume.
 const rank: Record<PillMeetingStatus["kind"], number> = {

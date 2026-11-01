@@ -91,6 +91,11 @@ export function ShortcutPicker({
       case "recorded":
         onChange(result.shortcut);
         setRecording(null);
+        return;
+      default: {
+        const exhaustive: never = result;
+        return exhaustive;
+      }
     }
   }
 

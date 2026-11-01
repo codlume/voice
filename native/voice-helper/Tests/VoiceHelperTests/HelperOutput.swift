@@ -8,6 +8,7 @@ final class EmittedLines: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = Data()
     private var lines: [[String: Any]] = []
+    private var unparseable: [String] = []
 
     init() {
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -25,6 +26,8 @@ final class EmittedLines: @unchecked Sendable {
         for part in parts where !part.isEmpty {
             if let object = try? JSONSerialization.jsonObject(with: Data(part.utf8)) as? [String: Any] {
                 lines.append(object)
+            } else {
+                unparseable.append(part)
             }
         }
     }
@@ -35,9 +38,17 @@ final class EmittedLines: @unchecked Sendable {
         return lines
     }
 
+    private func firstUnparseable() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return unparseable.first
+    }
+
     func wait(for type: String, timeout: Duration = .seconds(5)) async throws -> [[String: Any]] {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
+            // Electron drops a line it cannot parse, events included.
+            if let line = firstUnparseable() { throw ProtocolError("unparseable helper line: \(line)") }
             let current = snapshot()
             if current.contains(where: { $0["type"] as? String == type }) { return current }
             try await Task.sleep(for: .milliseconds(20))
