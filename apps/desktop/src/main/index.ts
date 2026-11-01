@@ -887,11 +887,14 @@ async function main() {
   });
   app.on("activate", showHub);
   Menu.setApplicationMenu(
-    createApplicationMenu((step) => {
-      updateSettings((current) =>
-        applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
-      ).catch(() => {});
-    }),
+    createApplicationMenu(
+      (step) => {
+        updateSettings((current) =>
+          applyPatch(current, { zoomLevel: nextZoomLevel(current.zoomLevel, step) }),
+        ).catch(() => {});
+      },
+      { development },
+    ),
   );
   // The tray keeps the app alive after the hub window closes.
   app.on("window-all-closed", () => {});

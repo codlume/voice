@@ -210,7 +210,10 @@ export function openSettings(
         log,
       );
       launchIgnoredFile = false;
-      await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`);
+      // Dictionary words and snippet expansions are the user's own text, kept like history.
+      await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`, {
+        mode: 0o600,
+      });
     },
   };
 }
