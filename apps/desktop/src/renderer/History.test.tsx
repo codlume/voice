@@ -7,6 +7,12 @@ import type { HubApi } from "../shared/api.ts";
 import type { HistoryEntry, HistoryState } from "../shared/history.ts";
 import { dayKey } from "../shared/insights.ts";
 import { History } from "./History.tsx";
+import { timeLabel } from "./historyView.ts";
+
+vi.mock("./historyView.ts", async (actual) => {
+  const view = await actual<typeof import("./historyView.ts")>();
+  return { ...view, timeLabel: vi.fn(view.timeLabel) };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -111,5 +117,19 @@ describe("History", () => {
     await click(button(/^Copy dictation .*Meet Anna/));
     expect(host.querySelector('[role="alert"]')?.textContent).toBe("Clipboard is busy.");
     expect(status()).toBe("");
+  });
+
+  test("a snapshot that leaves the history alone does not re-render its rows", async () => {
+    const page = (snapshotId: number) => (
+      <div data-snapshot={snapshotId}>
+        <History history={history} today={today} />
+      </div>
+    );
+    await render(page(1));
+    vi.mocked(timeLabel).mockClear();
+    await render(page(2));
+    expect(timeLabel).not.toHaveBeenCalled();
+    await render(<History history={{ ...history, entries: [missed] }} today={today} />);
+    expect(timeLabel).toHaveBeenCalledTimes(1);
   });
 });
