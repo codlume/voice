@@ -99,7 +99,7 @@ export const SILENCE_PROMPT_MS = 10 * 60_000;
 /** An unanswered "Still in a meeting?" stops the recording after this long, as Wispr does. */
 export const SILENCE_STOP_MS = 30_000;
 /** Below this the user is asked "Started by mistake?" before anything else runs. */
-export const SHORT_RECORDING_WORDS = 10;
+const SHORT_RECORDING_WORDS = 10;
 
 const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
 const mark = (marker: MarkerKind): MeetingEffect => ({ type: "mark", marker });
