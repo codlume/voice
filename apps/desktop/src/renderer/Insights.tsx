@@ -206,6 +206,7 @@ function Info({ label, children }: { label: string; children: string }) {
       <Tooltip.Trigger
         render={<button type="button" />}
         aria-label={`About ${label}`}
+        aria-description={children}
         {...stylex.props(styles.info)}
       >
         <InfoIcon size={13} aria-hidden="true" />

@@ -117,7 +117,6 @@ const styles = stylex.create({
     color: color.foreground,
     font: "inherit",
     fontSize: 13,
-    outline: "none",
   },
   list: {
     display: "flex",

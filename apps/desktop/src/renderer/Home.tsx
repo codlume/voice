@@ -20,6 +20,8 @@ import { useAction } from "./useAction.ts";
 import { useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
+const reducedMotion = "@media (prefers-reduced-motion: reduce)";
+
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl, containerType: "inline-size" },
   columns: {
@@ -84,7 +86,7 @@ const styles = stylex.create({
     height: "100%",
     backgroundColor: color.primary,
     transitionProperty: "width",
-    transitionDuration: "300ms",
+    transitionDuration: { default: "300ms", [reducedMotion]: "0s" },
   },
   mark: {
     display: "grid",
@@ -120,7 +122,6 @@ const styles = stylex.create({
     fontSize: 15,
     lineHeight: 1.5,
     resize: "vertical",
-    outline: "none",
   },
 });
 

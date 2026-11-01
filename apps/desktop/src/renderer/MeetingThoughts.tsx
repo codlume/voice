@@ -11,7 +11,6 @@ const styles = stylex.create({
     width: "100%",
     color: color.foreground,
     font: "inherit",
-    outline: "none",
   },
   page: {
     minHeight: 280,
@@ -30,6 +29,7 @@ const styles = stylex.create({
     minHeight: 0,
     padding: space.md,
     borderWidth: 0,
+    outlineOffset: -2,
     backgroundColor: "transparent",
     fontSize: 14,
     lineHeight: 1.55,

@@ -3,6 +3,7 @@ import { CheckIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { PillSnapshot } from "../shared/api.ts";
+import { a11y } from "./a11y.ts";
 import {
   BAR_COUNT,
   MIN_BAR_SCALE,
@@ -16,6 +17,7 @@ import { font, darkPill, radius } from "./tokens.stylex.ts";
 import { useNow } from "./useNow.ts";
 import { pillApi } from "./voice.ts";
 
+const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 const spring = "cubic-bezier(0.34, 1.36, 0.64, 1)";
 const settle = "cubic-bezier(0.32, 0.72, 0, 1)";
 
@@ -44,7 +46,7 @@ const styles = stylex.create({
     borderRadius: radius.round,
     backgroundColor: darkPill.surface,
     transitionProperty: "width, height, opacity, box-shadow",
-    transitionDuration: "420ms",
+    transitionDuration: { default: "420ms", [reducedMotion]: "0s" },
     transitionTimingFunction: spring,
   },
   idle: {
@@ -52,7 +54,7 @@ const styles = stylex.create({
     height: 8,
     opacity: 0.55,
     boxShadow: "none",
-    transitionDuration: "360ms",
+    transitionDuration: { default: "360ms", [reducedMotion]: "0s" },
     transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
   },
   open: {
@@ -110,7 +112,7 @@ const styles = stylex.create({
     height: 5,
     borderRadius: radius.round,
     backgroundColor: darkPill.glyph,
-    animationName: pulse,
+    animationName: { default: pulse, [reducedMotion]: "none" },
     animationDuration: "1.1s",
     animationIterationCount: "infinite",
     animationTimingFunction: "ease-in-out",
@@ -126,7 +128,7 @@ const styles = stylex.create({
   checkStroke: {
     stroke: darkPill.glyph,
     strokeDasharray: 23,
-    animationName: draw,
+    animationName: { default: draw, [reducedMotion]: "none" },
     animationDuration: "280ms",
     animationDelay: "60ms",
     animationTimingFunction: settle,
@@ -165,6 +167,7 @@ function Wave() {
   }, []);
   return (
     <div {...stylex.props(styles.content, styles.wave)}>
+      <span {...stylex.props(a11y.visuallyHidden)}>Listening</span>
       {scales.map((scale, i) => (
         <div key={barKeys[i]} {...stylex.props(styles.bar, styles.barScale(scale))} />
       ))}

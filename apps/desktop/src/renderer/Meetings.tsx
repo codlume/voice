@@ -94,7 +94,10 @@ const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
   },
-  panel: { outline: "none" },
+  panel: {
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+    outlineOffset: 3,
+  },
   empty: {
     display: "flex",
     flexDirection: "column",
