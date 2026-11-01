@@ -124,6 +124,8 @@ Stable handles:
 
 `dictate` posts a real synthetic key event. It refuses to run while any other Voice helper or `pnpm dev` is running, because that app's hotkey tap would hear the press and record the room with the real microphone. Another worktree's verify instance counts too, because the hotkey is global. If it refuses, ask the user to quit Voice.app, or wait for the other session to `stop`. Never kill it yourself. It also brings the scratch target window to the front, which leaves the Voice window covered. `transform` posts the Option shortcut and Escape the same way, so it needs the same exclusive desktop and refuses the same way.
 
+A `--key=hold` session holds a synthetic key, and any input from another source, including your own trackpad, mouse, or keyboard, releases it. The helper then ends the session early, often as `tooShort`. `dictate` reports that run as `BLOCKED` with the reason. A real held key and `--key=toggle` are unaffected.
+
 A covered Voice window reports `document.visibilityState === "hidden"` and stops animation frames, so a closed dialog, menu, or outgoing tab panel stays in the DOM, and a menu does not open. Run `front` after `dictate` and before driving those, or check `vv eval hub 'document.visibilityState'`.
 
 ## Evidence

@@ -94,7 +94,10 @@ const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
   },
-  panel: { outline: "none" },
+  panel: {
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+    outlineOffset: 3,
+  },
   empty: {
     display: "flex",
     flexDirection: "column",
@@ -275,7 +278,7 @@ function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => voi
       const send = { pause: api.pauseMeeting, resume: api.resumeMeeting, stop: api.stopMeeting };
       const refusal = commandRefusal(await send[command](meeting.id));
       if (refusal) throw new Error(refusal);
-    }, "Could not change the recording.");
+    }, "Could not change the recording. Try again.");
   return (
     <>
       <Card style={styles.live}>

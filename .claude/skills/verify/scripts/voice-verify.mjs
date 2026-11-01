@@ -295,7 +295,11 @@ function exclusiveDesktop(state, { recheckInstance = false } = {}) {
     check();
     execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
   };
-  return { check, fnpost };
+  const keyState = (key) =>
+    execFileSync(join(helperDir, ".build/debug/fnpost"), [key, "state"], {
+      encoding: "utf8",
+    }).trim();
+  return { check, fnpost, keyState };
 }
 
 function interruptible(message) {
@@ -1310,7 +1314,11 @@ const commands = {
     }
     const { end, mode, app } = parsed;
     const state = requireInstance();
-    const { check: checkAccess, fnpost } = exclusiveDesktop(state, {
+    const {
+      check: checkAccess,
+      fnpost,
+      keyState,
+    } = exclusiveDesktop(state, {
       recheckInstance: Boolean(scenarioOwner),
     });
     checkAccess();
@@ -1375,6 +1383,7 @@ const commands = {
       const captureEndedEarly = earlyEnd && {
         afterMs: Math.round(performance.now() - pressedAt),
         session: earlyEnd.session.kind,
+        ...(mode === "hold" && { heldKey: keyState(key) }),
       };
       if (end === "escape") fnpost("escape");
       else finish();
@@ -1433,6 +1442,12 @@ const commands = {
       );
       writeFileSync(path, JSON.stringify(result, null, 2));
       out({ ...result, evidence: path });
+      if (captureEndedEarly?.heldKey === "up") {
+        throw new VerificationBlocked(
+          `other input on this Mac released the synthetic ${key} hold, so the helper ended the session ${captureEndedEarly.afterMs} ms after the press; keep the keyboard, trackpad, and mouse idle during hold sessions, or use --key=toggle`,
+          { desktop: ["input from another source during the hold"] },
+        );
+      }
       if (captureEndedEarly) {
         throw new Error(
           `capture ended by ${captureEndedEarly.afterMs} ms after the press, before ${wav} finished, before dictate ended it`,

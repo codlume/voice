@@ -42,7 +42,7 @@ import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { CommitSlider } from "./CommitSlider.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
-import { droppedBy } from "./historyView.ts";
+import { retentionLoss, type RetentionLoss } from "./historyView.ts";
 import { retentionSentence } from "./meetingsView.ts";
 import { dictatesWithFn, dictationKeys, hotkeyLabel } from "./hotkeys.ts";
 import { Keys } from "./Keycap.tsx";
@@ -143,10 +143,20 @@ const retentionOptions = historyRetentions.map((value) => ({
   label: retentionLabels[value],
 }));
 // Outside the component so the purity lint sees the clock read happens on a click, not a render.
-const dropsNow = (entries: readonly HistoryEntry[], to: HistoryRetention) =>
-  droppedBy(entries, to, Date.now());
-const shorteningDescription = (drops: number) =>
-  `${drops === 1 ? "1 older transcript is" : `${drops} older transcripts are`} deleted from your history. This cannot be undone.`;
+const lossNow = (entries: readonly HistoryEntry[], from: HistoryRetention, to: HistoryRetention) =>
+  retentionLoss(entries, from, to, Date.now());
+const lossQuestion = (to: HistoryRetention, { kind, count }: RetentionLoss) =>
+  kind === "older"
+    ? {
+        title: `Keep history for ${retentionLabels[to]}?`,
+        description: `${count === 1 ? "1 older transcript is" : `${count} older transcripts are`} deleted from your history. This cannot be undone.`,
+        confirm: "Delete older",
+      }
+    : {
+        title: "Keep history only until you quit Voice?",
+        description: `${count === 1 ? "1 saved transcript is" : `${count} saved transcripts are`} deleted from this Mac now. Home shows them until you quit Voice. This cannot be undone.`,
+        confirm: "Delete from this Mac",
+      };
 const updateChannels = [
   { value: "stable", label: "Stable" },
   { value: "nightly", label: "Nightly" },
@@ -747,9 +757,9 @@ export function DataPrivacySettings({
   );
 }
 
-// A shorter window that would drop entries on screen asks first. The dialog keeps what it asked
-// while it fades out, so it stays mounted with `open: false` rather than losing its content.
-type Shortening = { open: boolean; to: HistoryRetention; drops: number };
+// A change that would lose saved entries asks first. The dialog keeps what it asked while it
+// fades out, so it stays mounted with `open: false` rather than losing its content.
+type Asking = { open: boolean; to: HistoryRetention } & ReturnType<typeof lossQuestion>;
 
 function HistorySection({ history: { entries, retention } }: { history: HistoryState }) {
   const action = useAction();
@@ -758,10 +768,10 @@ function HistorySection({ history: { entries, retention } }: { history: HistoryS
       () => hubApi().setHistoryRetention(to),
       "Could not change where your history is kept.",
     );
-  const [shortening, setShortening] = useState<Shortening | null>(null);
+  const [asking, setAsking] = useState<Asking | null>(null);
   const change = (to: HistoryRetention) => {
-    const drops = dropsNow(entries, to);
-    if (drops > 0) setShortening({ open: true, to, drops });
+    const loss = lossNow(entries, retention, to);
+    if (loss) setAsking({ open: true, to, ...lossQuestion(to, loss) });
     else apply(to);
   };
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -801,14 +811,14 @@ function HistorySection({ history: { entries, retention } }: { history: HistoryS
           {action.error}
         </p>
       )}
-      {shortening && (
+      {asking && (
         <ConfirmDialog
-          open={shortening.open}
-          onOpenChange={(open) => setShortening({ ...shortening, open })}
-          title={`Keep history for ${retentionLabels[shortening.to]}?`}
-          description={shorteningDescription(shortening.drops)}
+          open={asking.open}
+          onOpenChange={(open) => setAsking({ ...asking, open })}
+          title={asking.title}
+          description={asking.description}
           actions={[
-            { label: "Delete older", variant: "destructive", onClick: () => apply(shortening.to) },
+            { label: asking.confirm, variant: "destructive", onClick: () => apply(asking.to) },
           ]}
         />
       )}
