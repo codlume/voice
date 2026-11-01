@@ -141,7 +141,7 @@ export async function preflightRelease({ store, channel, version, baseUrl }) {
     if (typeof item?.url !== "string") throw new Error("Invalid published feed file");
     let name;
     try {
-      name = artifactName(decodeURIComponent(new URL(item.url).pathname.split("/").at(-1)));
+      name = artifactName(decodeURIComponent(new URL(item.url).pathname.split("/").at(-1) ?? ""));
     } catch {
       throw new Error(`Invalid published artifact URL: ${item.url}`);
     }
@@ -243,7 +243,8 @@ export function r2Store(bucket) {
           rmSync(path, { force: true });
         }
       } catch (error) {
-        if (/NoSuchKey|404|Not Found/.test(String(error.stderr || error))) return null;
+        const { stderr } = /** @type {{ stderr?: Buffer }} */ (error);
+        if (/NoSuchKey|404|Not Found/.test(String(stderr || error))) return null;
         throw error;
       }
     },
