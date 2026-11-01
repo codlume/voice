@@ -21,6 +21,6 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "wrangler": "4.140.0"
+    "wrangler": "catalog:"
   }
 }

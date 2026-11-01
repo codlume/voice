@@ -19,7 +19,7 @@ import {
 } from "../shared/rewrite.ts";
 
 /** Which key started the session: held for its length, or tapped once to start and again to stop. */
-export type DictationMode = "hold" | "toggle";
+type DictationMode = "hold" | "toggle";
 
 /** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };

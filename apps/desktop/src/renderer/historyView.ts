@@ -12,7 +12,7 @@ function matches(entry: HistoryEntry, query: string): boolean {
   );
 }
 
-const localDate = (day: DayKey, offset = 0) => {
+export const localDate = (day: DayKey, offset = 0) => {
   const [year, month, date] = day.split("-").map(Number) as [number, number, number];
   return new Date(year, month - 1, date + offset);
 };

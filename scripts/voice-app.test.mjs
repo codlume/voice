@@ -232,9 +232,10 @@ test(
       // The first request ends the connection unanswered, as when the app exits mid-call.
       socket.once("data", () => socket.destroy());
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(undefined)));
     t.after(() => server.close());
-    const page = await Page.open(`ws://127.0.0.1:${server.address().port}`);
+    const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
+    const page = await Page.open(`ws://127.0.0.1:${port}`);
     await assert.rejects(
       page.call("Runtime.evaluate", { expression: "1" }),
       /CDP socket (closed|failed) before Runtime\.evaluate answered/,
@@ -255,17 +256,19 @@ test("reads the ports Chromium and Node announce, in either order", async () => 
 
 test("concurrent inspectors announce distinct OS-assigned ports", async (t) => {
   const inspectors = Array.from({ length: 2 }, () => {
-    const child = spawn(process.execPath, ["--inspect=0", "-e", "process.stdin.resume()"], {
+    const inspector = spawn(process.execPath, ["--inspect=0", "-e", "process.stdin.resume()"], {
       stdio: ["pipe", "ignore", "pipe"],
     });
-    const exited = once(child, "exit");
+    const exited = once(inspector, "exit");
     t.after(async () => {
-      child.stdin.end();
+      inspector.stdin.end();
       await exited;
     });
-    return child;
+    return inspector;
   });
-  const ports = await Promise.all(inspectors.map((child) => announcedPorts(child, ["Debugger"])));
+  const ports = await Promise.all(
+    inspectors.map((inspector) => announcedPorts(inspector, ["Debugger"])),
+  );
   assert.notEqual(ports[0].Debugger, ports[1].Debugger);
   for (const { Debugger: port } of ports) {
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
@@ -341,7 +344,8 @@ setInterval(() => {}, 1000);`,
   );
   const childPid = Number(String(await once(parent.stdout, "data")).trim());
   t.after(() => {
-    for (const pid of [childPid, parent.pid]) if (alive(pid)) process.kill(pid, "SIGKILL");
+    for (const pid of [childPid, /** @type {number} */ (parent.pid)])
+      if (alive(pid)) process.kill(pid, "SIGKILL");
   });
   assert.equal(alive(childPid), true);
   parent.kill("SIGHUP");
@@ -384,7 +388,7 @@ test("a packaged app that exits before ready fails the smoke with its output", a
     `console.error("Error: Cannot find module 'does-not-exist'");
 process.exit(1);`,
   );
-  await assert.rejects(smokePackagedApp(app, { timeoutMs: 5000 }), (error) => {
+  await assert.rejects(smokePackagedApp(app, { timeoutMs: 5000 }), (/** @type {Error} */ error) => {
     assert.match(error.message, /exited \(code 1, signal null\) before its helper was ready/);
     assert.match(error.message, /Cannot find module 'does-not-exist'/);
     return true;
