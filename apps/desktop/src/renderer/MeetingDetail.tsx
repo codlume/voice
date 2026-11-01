@@ -119,7 +119,6 @@ const styles = stylex.create({
     font: "inherit",
     fontSize: 13,
     fontWeight: 600,
-    outline: "none",
   },
   transcript: { padding: space.lg },
 });

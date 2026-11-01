@@ -202,18 +202,24 @@ describe("flowBarView", () => {
     });
   });
 
-  test("asks the meeting's questions in place of the clock", () => {
+  test("asks the meeting's questions in place of the clock, and still says it is recording", () => {
     expect(at({ ...recording, prompt: { kind: "silence" } })).toMatchObject({
-      look: "prompt",
+      look: "recordingPrompt",
       text: "Still in a meeting?",
     });
+    expect(
+      at({ ...recording, prompt: { kind: "maxLengthSoon", endsAt: 165_000 + 4 * 60_000 + 1 } }),
+    ).toMatchObject({ look: "recordingPrompt", text: "Recording ends in 5 min" });
+  });
+
+  test("a question while nothing is captured does not look like recording", () => {
     expect(at({ ...recording, status: { kind: "confirmingShort" } })).toMatchObject({
       look: "prompt",
       text: "Started by mistake?",
     });
     expect(
-      at({ ...recording, prompt: { kind: "maxLengthSoon", endsAt: 165_000 + 4 * 60_000 + 1 } }),
-    ).toMatchObject({ look: "prompt", text: "Recording ends in 5 min" });
+      at({ ...recording, status: { kind: "paused" }, prompt: { kind: "silence" } }),
+    ).toMatchObject({ look: "prompt", text: "Still in a meeting?" });
   });
 
   test("a notice is left to the notepad; the Flow Bar keeps the status", () => {

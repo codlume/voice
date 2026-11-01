@@ -88,7 +88,8 @@ const styles = stylex.create({
     flexDirection: "column",
     flexGrow: 1,
     minHeight: 0,
-    outline: "none",
+    outline: { default: "none", ":focus-visible": `2px solid ${color["--ring"]}` },
+    outlineOffset: -2,
   },
   scroll: {
     flexGrow: 1,

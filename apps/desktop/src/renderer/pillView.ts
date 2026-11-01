@@ -10,8 +10,8 @@ import { clock } from "../shared/meeting-markdown.ts";
 import type { PillMeeting } from "../shared/meetings.ts";
 import { clockTicks, minutesLeft, promptTitles, statusView } from "./meetingStatus.ts";
 
-/** `recording` is the only look that says audio is being captured. */
-export type MeetingLook = "recording" | "paused" | "waiting" | "prompt";
+/** `recording` and `recordingPrompt` are the only looks that say audio is being captured. */
+export type MeetingLook = "recording" | "recordingPrompt" | "paused" | "waiting" | "prompt";
 
 type PillView =
   | { kind: "idle" }
@@ -127,14 +127,23 @@ export function pillView(session: PillState): PillView {
 
 const meeting = (look: MeetingLook, text: string) => ({ kind: "meeting", look, text }) as const;
 
-function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): PillView {
+function promptText(prompt: PillMeeting["prompt"], now: number): string | null {
   // The notepad carries a notice's full text and the answers; the Flow Bar only asks.
   switch (prompt?.kind) {
     case "startedByMistake":
     case "silence":
-      return meeting("prompt", promptTitles[prompt.kind]);
+      return promptTitles[prompt.kind];
     case "maxLengthSoon":
-      return meeting("prompt", `Recording ends in ${minutesLeft(prompt.endsAt, now)} min`);
+      return `Recording ends in ${minutesLeft(prompt.endsAt, now)} min`;
+    default:
+      return null;
+  }
+}
+
+function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): PillView {
+  const asking = promptText(prompt, now);
+  if (asking !== null) {
+    return meeting(status.kind === "recording" ? "recordingPrompt" : "prompt", asking);
   }
   const { label } = statusView(status);
   switch (status.kind) {
