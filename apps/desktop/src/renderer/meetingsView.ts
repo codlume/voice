@@ -23,7 +23,7 @@ import {
   type Speaker,
   type TranscriptEntry,
 } from "../shared/meetings.ts";
-import { dayLabel, formatterCache, timeLabel } from "./historyView.ts";
+import { dayLabel, formatterCache, localDate, timeLabel } from "./historyView.ts";
 
 /** Shown where a first meeting starts: the setup checklist and the notepad before anyone speaks. */
 export const CONSENT_REMINDER = "Always get consent before recording others.";
@@ -59,9 +59,8 @@ const shortDateWithYear = formatterCache({
 function meetingDayLabel(day: DayKey, today: DayKey, locale?: string): string {
   const named = dayLabel(day, today, locale);
   if (named === "Today" || named === "Yesterday") return named;
-  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
   const format = day.slice(0, 4) === today.slice(0, 4) ? shortDate : shortDateWithYear;
-  return format(locale).format(new Date(year, month - 1, date));
+  return format(locale).format(localDate(day));
 }
 
 /** "Thu, Oct 22 · 5:28 PM", the line under a meeting's title. */

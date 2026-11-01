@@ -70,6 +70,9 @@ export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
+// A cached speech model loads in about a second. Past this, macOS is compiling it for the Neural
+// Engine, which takes about 30 s once per model folder.
+export const ASR_PREPARING_AFTER_MS = 2000;
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -162,6 +165,7 @@ export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;
   let idleTimer: NodeJS.Timeout | null = null;
+  let asrPreparingTimer: NodeJS.Timeout | null = null;
   let started: Started | null = null;
 
   function track(id: string, patch: Partial<Omit<Started, "id" | "language" | "pressedAt">>) {
@@ -569,6 +573,21 @@ export function createDictation(options: DictationOptions): Dictation {
         );
         return;
       case "asr.status":
+        if (event.state !== "loading" && asrPreparingTimer) {
+          clearTimeout(asrPreparingTimer);
+          asrPreparingTimer = null;
+        }
+        if (event.state === "loading" && store.state.models.asr.state === "loading") return;
+        if (event.state === "loading") {
+          asrPreparingTimer = setTimeout(() => {
+            asrPreparingTimer = null;
+            if (store.state.models.asr.state !== "loading") return;
+            store.update((s) => ({
+              ...s,
+              models: { ...s.models, asr: { state: "loading", preparing: true } },
+            }));
+          }, ASR_PREPARING_AFTER_MS);
+        }
         store.update((s) => ({
           ...s,
           models: {
