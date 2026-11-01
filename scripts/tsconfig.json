@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    // Untyped parameters stay implicit any. The check is for wrong properties, nullability, and
+    // bad calls, not for annotating every script.
+    "noImplicitAny": false
+  },
+  "include": ["*.mjs"]
+}
