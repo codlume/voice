@@ -253,9 +253,18 @@ export function createMeetingsStore(options: {
     serial(async () => {
       const cutoff = now();
       const old = [...meetings.values()].filter((meeting) => expiresAt(meeting) <= cutoff);
-      for (const { id } of old) await removeNow(id);
-      if (old.length > 0)
-        log(`meetings: deleted ${old.length} past the ${settings.retention} retention`);
+      let deleted = 0;
+      // One folder that will not delete must not fail the launch that every meeting action awaits.
+      for (const { id } of old) {
+        try {
+          await removeNow(id);
+          deleted += 1;
+        } catch (error) {
+          tombstones.delete(id);
+          log(`meetings: could not delete ${id} past retention (${String(error)})`);
+        }
+      }
+      if (deleted > 0) log(`meetings: deleted ${deleted} past the ${settings.retention} retention`);
       scheduleExpiry();
     });
 
