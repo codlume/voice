@@ -255,17 +255,19 @@ test("reads the ports Chromium and Node announce, in either order", async () => 
 
 test("concurrent inspectors announce distinct OS-assigned ports", async (t) => {
   const inspectors = Array.from({ length: 2 }, () => {
-    const child = spawn(process.execPath, ["--inspect=0", "-e", "process.stdin.resume()"], {
+    const inspector = spawn(process.execPath, ["--inspect=0", "-e", "process.stdin.resume()"], {
       stdio: ["pipe", "ignore", "pipe"],
     });
-    const exited = once(child, "exit");
+    const exited = once(inspector, "exit");
     t.after(async () => {
-      child.stdin.end();
+      inspector.stdin.end();
       await exited;
     });
-    return child;
+    return inspector;
   });
-  const ports = await Promise.all(inspectors.map((child) => announcedPorts(child, ["Debugger"])));
+  const ports = await Promise.all(
+    inspectors.map((inspector) => announcedPorts(inspector, ["Debugger"])),
+  );
   assert.notEqual(ports[0].Debugger, ports[1].Debugger);
   for (const { Debugger: port } of ports) {
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
