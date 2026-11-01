@@ -10,7 +10,7 @@ import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { GoogleIcon } from "./Icons.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { styles as settings } from "./Settings.tsx";
+import { styles as settings } from "./settingsParts.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";

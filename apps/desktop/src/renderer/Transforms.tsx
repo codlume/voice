@@ -17,7 +17,7 @@ import { Keys } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
-import { styles as settingsStyles } from "./Settings.tsx";
+import { styles as settingsStyles } from "./settingsParts.tsx";
 import { meetingShortcutHolder, shortcutKeys } from "./shortcutCapture.ts";
 import { Switch } from "./Switch.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
