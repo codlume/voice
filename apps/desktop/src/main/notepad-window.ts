@@ -8,13 +8,15 @@ const MARGIN = 20;
 // The smallest visible strip of a saved window that still counts as on screen.
 const VISIBLE = 48;
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
 export function parseBounds(raw: unknown): Rectangle | null {
   if (typeof raw !== "object" || raw === null) return null;
   const { x, y, width, height } = raw as Record<string, unknown>;
-  const values = [x, y, width, height];
-  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return null;
-  const bounds = { x, y, width, height } as Rectangle;
-  return bounds.width >= MINIMUM.width && bounds.height >= MINIMUM.height ? bounds : null;
+  if (!isFiniteNumber(x) || !isFiniteNumber(y)) return null;
+  if (!isFiniteNumber(width) || !isFiniteNumber(height)) return null;
+  return width >= MINIMUM.width && height >= MINIMUM.height ? { x, y, width, height } : null;
 }
 
 const overlaps = (a: Rectangle, b: Rectangle) =>
