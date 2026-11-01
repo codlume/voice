@@ -34,8 +34,6 @@ catalogs:
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.3.3
 
-packageExtensionsChecksum: sha256-q5WdBF7BCWKzly/tgcivWtVAQ00t1e/WaEGl0+mhjaI=
-
 importers:
 
   .:

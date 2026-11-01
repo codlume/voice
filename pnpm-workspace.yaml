@@ -25,13 +25,6 @@ catalog:
 overrides:
   vite: "catalog:"
 
-packageExtensions:
-  vite-plus@*:
-    dependencies:
-      vite: "catalog:"
-
 peerDependencyRules:
   allowAny:
     - vite
-  allowedVersions:
-    vite: "*"
