@@ -338,6 +338,22 @@ function prepare({
   };
 }
 
+async function settle<T>(
+  request: Pick<SummaryRequest, "lines" | "speakers" | "signal">,
+  run: (prepared: Prepared) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; failure: SummaryFailure }> {
+  request.signal.throwIfAborted();
+  const prepared = prepare(request);
+  if (!prepared.ok) return prepared;
+  try {
+    return { ok: true, value: await run(prepared.prepared) };
+  } catch (error) {
+    request.signal.throwIfAborted();
+    if (error instanceof StepFailed) return { ok: false, failure: error.failure };
+    throw error;
+  }
+}
+
 export function createGemmaSummaryProvider({
   generate,
   tokens,
@@ -505,22 +521,6 @@ export function createGemmaSummaryProvider({
       generated = await title(grounding, notes, signal);
     }
     return { title: generated, overview, decisions, nextSteps };
-  }
-
-  async function settle<T>(
-    request: Pick<SummaryRequest, "lines" | "speakers" | "signal">,
-    run: (prepared: Prepared) => Promise<T>,
-  ): Promise<{ ok: true; value: T } | { ok: false; failure: SummaryFailure }> {
-    request.signal.throwIfAborted();
-    const prepared = prepare(request);
-    if (!prepared.ok) return prepared;
-    try {
-      return { ok: true, value: await run(prepared.prepared) };
-    } catch (error) {
-      request.signal.throwIfAborted();
-      if (error instanceof StepFailed) return { ok: false, failure: error.failure };
-      throw error;
-    }
   }
 
   return {

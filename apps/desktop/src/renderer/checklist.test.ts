@@ -290,10 +290,10 @@ test("speaker detection downloads only when asked, can be retried, and is option
   expect(rows(granted, { tried: true, shortcut: null }, "missing").ready).toBe(false);
 });
 
-describe("summaryModelRow", () => {
-  const withTransform = (transform: ModelStatus) =>
-    summaryModelRow({ models: { ...fresh.models, transform } });
+const withTransform = (transform: ModelStatus) =>
+  summaryModelRow({ models: { ...fresh.models, transform } });
 
+describe("summaryModelRow", () => {
   test("offers the transform model while it is not on disk", () => {
     expect(withTransform({ state: "missing" })).toMatchObject({
       title: "Summary model",

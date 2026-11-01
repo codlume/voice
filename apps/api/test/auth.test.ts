@@ -315,17 +315,17 @@ describe("disabled sign-in paths", () => {
   });
 });
 
-describe("a user row with no account", () => {
-  /** The user row a cut-off write left for `email`. */
-  async function orphanOf(email: string) {
-    const id = await env.DB.prepare("select id from user where email = ?")
-      .bind(email)
-      .first<string>("id");
-    expect(id).not.toBeNull();
-    expect(await rowsOf(id ?? "")).toEqual({ users: 1, accounts: 0, sessions: 0 });
-    return id ?? "";
-  }
+/** The user row a cut-off write left for `email`. */
+async function orphanOf(email: string) {
+  const id = await env.DB.prepare("select id from user where email = ?")
+    .bind(email)
+    .first<string>("id");
+  expect(id).not.toBeNull();
+  expect(await rowsOf(id ?? "")).toEqual({ users: 1, accounts: 0, sessions: 0 });
+  return id ?? "";
+}
 
+describe("a user row with no account", () => {
   it("survives a callback request with no state and no cookie (catches the sweep back on the request path, where any client can make it scan the user table)", async () => {
     await seedUserWithoutAccount("junk-callback-orphan");
     await age("junk-callback-orphan");
@@ -461,20 +461,20 @@ describe("account-info", () => {
   });
 });
 
-describe("origins", () => {
-  const exchangeFrom = (origin: string, url = `${base}/api/auth/electron/token`) =>
-    new Request(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "cf-connecting-ip": freshIp(),
-        // Better Auth checks the origin only when the request carries cookies, and the Electron client always sends them.
-        cookie: "better-auth.session_token=none",
-        origin,
-      },
-      body: JSON.stringify({ token: "unknown", state: "unknown", code_verifier: "unknown" }),
-    });
+const exchangeFrom = (origin: string, url = `${base}/api/auth/electron/token`) =>
+  new Request(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "cf-connecting-ip": freshIp(),
+      // Better Auth checks the origin only when the request carries cookies, and the Electron client always sends them.
+      cookie: "better-auth.session_token=none",
+      origin,
+    },
+    body: JSON.stringify({ token: "unknown", state: "unknown", code_verifier: "unknown" }),
+  });
 
+describe("origins", () => {
   it("rejects an untrusted origin (catches a disabled or widened origin check)", async () => {
     expect((await worker(exchangeFrom("https://evil.example"))).status).toBe(403);
   });
@@ -530,9 +530,12 @@ describe("electron token exchange", () => {
   });
 });
 
+const getSessionFrom = (ip: string | null, headers: Record<string, string> = {}) =>
+  worker(`${base}/api/auth/get-session`, { headers }, ip);
+
+const startSignIn = (ip: string) => worker(startUrl(), { redirect: "manual" }, ip);
+
 describe("rate limiting", () => {
-  const getSessionFrom = (ip: string | null, headers: Record<string, string> = {}) =>
-    worker(`${base}/api/auth/get-session`, { headers }, ip);
   const limited = [...Array<number>(100).fill(200), 429];
 
   it("is on although NODE_ENV is unset, as on a real Worker (catches Better Auth's NODE_ENV default)", async () => {
@@ -572,11 +575,10 @@ describe("rate limiting", () => {
   });
 
   it("keys sign-in starts on the user, not on one shared bucket (catches the electron plugin fetching the Worker's own /sign-in/social through Cloudflare)", async () => {
-    const start = (ip: string) => worker(startUrl(), { redirect: "manual" }, ip);
     const crowd = freshIp();
     const statuses = new Set<number>();
-    for (let attempt = 0; attempt < 100; attempt++) statuses.add((await start(crowd)).status);
-    statuses.add((await start(freshIp())).status);
+    for (let attempt = 0; attempt < 100; attempt++) statuses.add((await startSignIn(crowd)).status);
+    statuses.add((await startSignIn(freshIp())).status);
 
     expect([...statuses]).toEqual([302]);
   });
@@ -665,12 +667,13 @@ const fromPage = (secFetchSite: string) =>
 const cookieNames = (response: Response) =>
   response.headers.getSetCookie().map((line) => line.split("=")[0]);
 
-describe("a sign-in start that a web page opened", () => {
-  const codesMinted = () =>
-    count("select count(*) as n from verification where identifier like 'electron:%'");
+const codesMinted = () =>
+  count("select count(*) as n from verification where identifier like 'electron:%'");
 
+const rows = () => count("select count(*) as n from verification");
+
+describe("a sign-in start that a web page opened", () => {
   it("is sent to the landing page's start-in-voice state before Better Auth sees it, with one log line that names the header and not the state (catches a missing gate, one behind the limiter, or a log that quotes the query)", async () => {
-    const rows = () => count("select count(*) as n from verification");
     const before = await rows();
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
@@ -952,6 +955,19 @@ describe("account deletion", () => {
   });
 });
 
+const signInCookie = async (googleCode: string) =>
+  cookieHeader(storeCookies(await exchange(await browserSignIn(googleCode, { signOut: true }))));
+const updateUser = (cookie: string | null, body: unknown) =>
+  worker(`${base}/api/auth/update-user`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: appOrigin,
+      ...(cookie && { cookie }),
+    },
+    body: JSON.stringify(body),
+  });
+
 describe("names", () => {
   type Named = { name: string; firstName: string; lastName: string };
   const namesOf = async (cookie: string) => {
@@ -960,18 +976,6 @@ describe("names", () => {
     const { user } = await response.json<{ user: Named }>();
     return { name: user.name, firstName: user.firstName, lastName: user.lastName };
   };
-  const signInCookie = async (googleCode: string) =>
-    cookieHeader(storeCookies(await exchange(await browserSignIn(googleCode, { signOut: true }))));
-  const updateUser = (cookie: string | null, body: unknown) =>
-    worker(`${base}/api/auth/update-user`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: appOrigin,
-        ...(cookie && { cookie }),
-      },
-      body: JSON.stringify(body),
-    });
 
   it.each([
     ["jean-paul-sartre", { name: "Jean Paul Sartre", firstName: "Jean Paul", lastName: "Sartre" }],

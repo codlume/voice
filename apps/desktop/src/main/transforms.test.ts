@@ -518,31 +518,31 @@ describe("createTransforms", () => {
   });
 });
 
+// Wired as index.ts wires it: every store change goes through it with the previous state.
+function followed(opts: Options & { onDisk?: boolean } = {}) {
+  const h = harness(opts);
+  const calls: ("install" | "unload" | "follow")[] = [];
+  const model = {
+    onDisk: () => opts.onDisk ?? true,
+    install: async () => void calls.push("install"),
+    unload: async () => void calls.push("unload"),
+    follow: () => void calls.push("follow"),
+  };
+  h.store.subscribe((state, previous) =>
+    followTransformSettings(model, h.transforms, state, previous),
+  );
+  const setTransforms = (patch: Partial<TransformSettings>) =>
+    h.store.update((s) => ({
+      ...s,
+      settings: { ...s.settings, transforms: { ...s.settings.transforms, ...patch } },
+    }));
+  const setEnabled = (enabled: boolean) => setTransforms({ enabled });
+  return { ...h, calls, setEnabled, setTransforms };
+}
+
 describe("followTransformSettings", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-
-  // Wired as index.ts wires it: every store change goes through it with the previous state.
-  function followed(opts: Options & { onDisk?: boolean } = {}) {
-    const h = harness(opts);
-    const calls: ("install" | "unload" | "follow")[] = [];
-    const model = {
-      onDisk: () => opts.onDisk ?? true,
-      install: async () => void calls.push("install"),
-      unload: async () => void calls.push("unload"),
-      follow: () => void calls.push("follow"),
-    };
-    h.store.subscribe((state, previous) =>
-      followTransformSettings(model, h.transforms, state, previous),
-    );
-    const setTransforms = (patch: Partial<TransformSettings>) =>
-      h.store.update((s) => ({
-        ...s,
-        settings: { ...s.settings, transforms: { ...s.settings.transforms, ...patch } },
-      }));
-    const setEnabled = (enabled: boolean) => setTransforms({ enabled });
-    return { ...h, calls, setEnabled, setTransforms };
-  }
 
   test("turning Transforms on downloads the model once when it is missing", () => {
     const h = followed({ transforms: { enabled: false }, onDisk: false });

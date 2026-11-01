@@ -284,6 +284,11 @@ function openSecondCopy(state, ...extraArgs) {
   return spawnSync(electronPath(), [".", ...extraArgs], { cwd: desktopDir, env, timeout: 30_000 });
 }
 
+const readKeyState = (key) =>
+  execFileSync(join(helperDir, ".build/debug/fnpost"), [key, "state"], {
+    encoding: "utf8",
+  }).trim();
+
 function exclusiveDesktop(state, { recheckInstance = false } = {}) {
   const check = () => {
     if (recheckInstance) requireInstance();
@@ -295,11 +300,7 @@ function exclusiveDesktop(state, { recheckInstance = false } = {}) {
     check();
     execFileSync(join(helperDir, ".build/debug/fnpost"), keys, { stdio: "ignore" });
   };
-  const keyState = (key) =>
-    execFileSync(join(helperDir, ".build/debug/fnpost"), [key, "state"], {
-      encoding: "utf8",
-    }).trim();
-  return { check, fnpost, keyState };
+  return { check, fnpost, keyState: readKeyState };
 }
 
 function interruptible(message) {

@@ -95,6 +95,29 @@ const SEARCH_SLICE_MS = 8;
 
 class LeftAlone extends Error {}
 
+const envelope = (body: object) => `${JSON.stringify({ version: VERSION, ...body })}\n`;
+
+async function readJson(file: string): Promise<Record<string, unknown> | null> {
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new LeftAlone(`could not read ${NodePath.basename(file)} (${String(error)})`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new LeftAlone(`${NodePath.basename(file)} is not JSON`);
+  }
+  if (!isRecord(parsed)) throw new LeftAlone(`${NodePath.basename(file)} is not an object`);
+  if (parsed.version !== VERSION) {
+    throw new LeftAlone(`${NodePath.basename(file)} has version ${String(parsed.version)}`);
+  }
+  return parsed;
+}
+
 export function createMeetingsStore(options: {
   dir: string;
   log: Log;
@@ -148,8 +171,6 @@ export function createMeetingsStore(options: {
     scheduleExpiry();
   }
 
-  const envelope = (body: object) => `${JSON.stringify({ version: VERSION, ...body })}\n`;
-
   async function writeMeeting(meeting: Meeting) {
     await mkdir(meetingDir(meeting.id), { recursive: true, mode: DIR_MODE });
     await writeFileAtomic(meetingFile(meeting.id), envelope({ meeting }), { mode: FILE_MODE });
@@ -160,27 +181,6 @@ export function createMeetingsStore(options: {
     await mkdir(dir, { recursive: true, mode: DIR_MODE });
     await writeFileAtomic(foldersFile, envelope({ folders: next }), { mode: FILE_MODE });
     folders = next;
-  }
-
-  async function readJson(file: string): Promise<Record<string, unknown> | null> {
-    let text: string;
-    try {
-      text = await readFile(file, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw new LeftAlone(`could not read ${NodePath.basename(file)} (${String(error)})`);
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new LeftAlone(`${NodePath.basename(file)} is not JSON`);
-    }
-    if (!isRecord(parsed)) throw new LeftAlone(`${NodePath.basename(file)} is not an object`);
-    if (parsed.version !== VERSION) {
-      throw new LeftAlone(`${NodePath.basename(file)} has version ${String(parsed.version)}`);
-    }
-    return parsed;
   }
 
   async function loadMeeting(id: MeetingId) {

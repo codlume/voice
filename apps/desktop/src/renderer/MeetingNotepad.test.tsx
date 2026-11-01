@@ -46,11 +46,12 @@ const said = (segmentId: string, text: string, source: "mic" | "system"): Transc
         speakerId: null,
       };
 
+const ok = async () => ({ kind: "ok", id }) as const;
+
 function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
   const notepadListeners = new Set<(state: NotepadState | null) => void>();
   const transcriptListeners = new Set<(change: MeetingTranscriptChange) => void>();
   const partialListeners = new Set<(partial: MeetingPartial) => void>();
-  const ok = async () => ({ kind: "ok", id }) as const;
   const api = {
     diagnosticsStartedAtLaunch: false,
     getNotepad: async () => first,

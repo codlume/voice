@@ -32,6 +32,9 @@ const state: AppState = {
   account: { kind: "signedOut" },
 };
 
+const pill = (session: Session, transform: TransformRun) =>
+  toSnapshot({ ...state, session, transform }).session;
+
 describe("toSnapshot", () => {
   test("never carries the transform run to a window", () => {
     const snapshot = toSnapshot(state);
@@ -51,9 +54,6 @@ describe("toSnapshot", () => {
     ]);
     expect(snapshot.session).toEqual({ kind: "transforming", loading: false });
   });
-
-  const pill = (session: Session, transform: TransformRun) =>
-    toSnapshot({ ...state, session, transform }).session;
 
   test("the pill shows a dictation in progress over a transform run", () => {
     expect(pill(recording, reading)).toEqual({ kind: "listening" });

@@ -423,38 +423,34 @@ describe("a ready summary", () => {
   });
 });
 
-describe("a meeting's recording controls", () => {
-  async function open(status: Meeting["status"]) {
-    fakeMain([meeting(1, "Weekly product sync", hoursAgo(0), { status })]);
-    const commands = {
-      resumeMeeting: vi.fn(
-        async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const,
-      ),
-      keepMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
-      discardMeeting: vi.fn(
-        async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const,
-      ),
-      pauseMeeting: vi.fn(
-        async () => ({ kind: "refused", message: "The meeting is not recording." }) as const,
-      ),
-      stopMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
-    };
-    window.voice = { ...window.voice, ...commands } as HubApi;
-    await render();
-    await click(byText("Weekly product sync"));
-    await waitForText("All meetings");
-    return commands;
-  }
+async function openMeeting(status: Meeting["status"]) {
+  fakeMain([meeting(1, "Weekly product sync", hoursAgo(0), { status })]);
+  const commands = {
+    resumeMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
+    keepMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
+    discardMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
+    pauseMeeting: vi.fn(
+      async () => ({ kind: "refused", message: "The meeting is not recording." }) as const,
+    ),
+    stopMeeting: vi.fn(async (meetingId: MeetingId) => ({ kind: "ok", id: meetingId }) as const),
+  };
+  window.voice = { ...window.voice, ...commands } as HubApi;
+  await render();
+  await click(byText("Weekly product sync"));
+  await waitForText("All meetings");
+  return commands;
+}
 
+describe("a meeting's recording controls", () => {
   test("a finished meeting resumes into itself, and can be deleted", async () => {
-    const commands = await open({ kind: "ready" });
+    const commands = await openMeeting({ kind: "ready" });
     await click(byText("Resume"));
     expect(commands.resumeMeeting).toHaveBeenCalledWith(id(1));
     expect(document.querySelector("[aria-label='Delete meeting']")).not.toBeNull();
   });
 
   test("a meeting asking whether it started by mistake is kept or discarded from the page", async () => {
-    const commands = await open({ kind: "confirmingShort" });
+    const commands = await openMeeting({ kind: "confirmingShort" });
     expect(text()).toContain("Started by mistake?");
     await click(byText("Keep"));
     expect(commands.keepMeeting).toHaveBeenCalledWith(id(1));
@@ -463,7 +459,7 @@ describe("a meeting's recording controls", () => {
   });
 
   test("a live meeting pauses and stops from the page, shows why a command did nothing, and cannot be deleted", async () => {
-    const commands = await open({ kind: "recording", since: hoursAgo(0) });
+    const commands = await openMeeting({ kind: "recording", since: hoursAgo(0) });
     expect(document.querySelector("[aria-label='Delete meeting']")).toBeNull();
     await click(byText("Pause"));
     await waitForText("The meeting is not recording.");
@@ -472,20 +468,20 @@ describe("a meeting's recording controls", () => {
   });
 
   test("a summary in progress shows its step", async () => {
-    await open({ kind: "summarizing", progress: { step: 2, total: 3 } });
+    await openMeeting({ kind: "summarizing", progress: { step: 2, total: 3 } });
     expect(text()).toContain("Writing the summary… Step 2 of 3.");
   });
 });
 
-describe("a meeting", () => {
-  async function openSync() {
-    const main = fakeMain(sample());
-    await render();
-    await click(byText("Weekly product sync"));
-    await waitForText("All meetings");
-    return main;
-  }
+async function openSync() {
+  const main = fakeMain(sample());
+  await render();
+  await click(byText("Weekly product sync"));
+  await waitForText("All meetings");
+  return main;
+}
 
+describe("a meeting", () => {
   test("shows its summary, thoughts and transcript tabs", async () => {
     await openSync();
     expect(
