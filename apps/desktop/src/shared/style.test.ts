@@ -83,7 +83,7 @@ describe("classify", () => {
       { kind: "site", host: "slack.com", category: "work" },
     ];
     const at = (host: string) => target("com.google.Chrome", host);
-    for (const mine of [parseAssignments(sites), parseAssignments([...sites].reverse())]) {
+    for (const mine of [parseAssignments(sites), parseAssignments(sites.toReversed())]) {
       expect(classify(at("app.slack.com"), mine)).toBe("personal");
       expect(classify(at("team.app.slack.com"), mine)).toBe("personal");
       expect(classify(at("files.slack.com"), mine)).toBe("work");

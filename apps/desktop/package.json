@@ -47,7 +47,8 @@
     "semver": "7.8.5",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "yaml": "catalog:"
   },
   "productName": "Voice"
 }
