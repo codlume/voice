@@ -18,7 +18,7 @@ import { ConfirmDialog, DialogBackdrop, dialogStyles, transitionHidden } from ".
 import { expiredBy, maxLengthLabels, retentionLabels, retentionSentence } from "./meetingsView.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { Select } from "./Select.tsx";
-import { resetTo, Row } from "./Settings.tsx";
+import { resetTo, Row } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";

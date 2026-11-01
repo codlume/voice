@@ -28,18 +28,14 @@ import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.tsx";
+import { DataPrivacySettings } from "./DataPrivacySettings.tsx";
 import { Dictionary } from "./Dictionary.tsx";
+import { GeneralSettings } from "./GeneralSettings.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
 import { Meetings } from "./Meetings.tsx";
+import { ModelsSettings } from "./ModelsSettings.tsx";
 import { pageMotion } from "./pageMotion.ts";
-import {
-  DataPrivacySettings,
-  GeneralSettings,
-  ModelsSettings,
-  ShortcutsSettings,
-  SystemSettings,
-} from "./Settings.tsx";
 import {
   jumpShortcuts,
   shortcuts,
@@ -50,8 +46,10 @@ import {
   type Binding,
   type Shortcut,
 } from "./shortcuts.ts";
+import { ShortcutsSettings } from "./ShortcutsSettings.tsx";
 import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
+import { SystemSettings } from "./SystemSettings.tsx";
 import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";

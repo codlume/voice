@@ -13,7 +13,7 @@ import { YourStats } from "./HomeStats.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { GlobeHint } from "./Settings.tsx";
+import { GlobeHint } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
