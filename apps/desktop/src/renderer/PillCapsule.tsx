@@ -213,7 +213,7 @@ function MeetingGlyph({ look }: { look: MeetingLook }) {
       aria-hidden="true"
       {...stylex.props(
         styles.light,
-        look === "recording" ? styles.recordingLight : styles.promptLight,
+        look === "prompt" ? styles.promptLight : styles.recordingLight,
       )}
     />
   );
