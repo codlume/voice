@@ -38,6 +38,8 @@ function memoryStore() {
     async get(key) {
       return objects.get(key) ?? null;
     },
+    // Typed like the real store's put so tests can wrap it and forward the options.
+    /** @type {(key: string, bytes: Uint8Array, options?: { cache?: string, contentType?: string }) => Promise<void>} */
     async put(key, bytes) {
       objects.set(key, Buffer.from(bytes));
     },

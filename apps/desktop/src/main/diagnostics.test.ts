@@ -225,7 +225,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     onSessionDone: diagnostics.sessionDone,
     onDictated: () => {},
     history: { remember: () => {}, settle: () => {} },
-    copy: () => {},
+    copy: async () => {},
     now: () => clock,
   });
 
