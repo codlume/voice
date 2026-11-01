@@ -21,8 +21,8 @@ catalog:
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@0.3.3
   vite-plus: 0.3.3
-  wrangler: 4.147.0
-  yaml: 2.8.3
+  wrangler: 4.156.0
+  yaml: 2.9.1
 
 overrides:
   vite: "catalog:"
