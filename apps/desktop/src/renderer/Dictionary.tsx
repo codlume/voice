@@ -12,7 +12,7 @@ import {
 import type { Snippet } from "../shared/snippets.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { RecordList, styles, type Copy } from "./RecordList.tsx";
-import { styles as settings } from "./Settings.tsx";
+import { styles as settings } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, space } from "./tokens.stylex.ts";
 import { hubApi } from "./voice.ts";
