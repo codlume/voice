@@ -135,6 +135,11 @@ describe("checklist", () => {
       text: "Downloading",
     });
     expect(row(withAsr({ state: "loading" }), "asr").actions).toEqual([]);
+    expect(row(withAsr({ state: "loading" }), "asr").subtitle).toBe("Parakeet by NVIDIA");
+    expect(row(withAsr({ state: "loading", preparing: true }), "asr")).toMatchObject({
+      subtitle: "Preparing for this Mac, about 30 s",
+      status: { kind: "busy", text: "Loading" },
+    });
   });
 
   test("a cleanup model download offers Cancel, which uninstalls it", () => {
