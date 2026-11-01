@@ -272,8 +272,10 @@ final class MeetingCapture {
         write(chunk, to: system)
     }
 
+    // Keyed on the writer, not `stopped`: `stop` flushes the sources' tails through here before
+    // it closes the files.
     private func write(_ chunk: [Float], to writer: PcmWriter?) {
-        guard !stopped, let writer else { return }
+        guard let writer else { return }
         do {
             try writer.append(chunk)
         } catch {
@@ -282,7 +284,7 @@ final class MeetingCapture {
     }
 
     private func fail(_ message: String) {
-        guard !stopped else { return }
+        guard !stopped else { return output.log(.error, message) }
         stop()
         onFailed(message)
     }
