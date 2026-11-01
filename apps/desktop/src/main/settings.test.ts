@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -805,6 +805,13 @@ describe("load and save", () => {
     expect(settings.dictationLanguage).toBe(value);
     await openSettings(file).save(settings);
     expect(openSettings(file).settings).toEqual(settings);
+  });
+
+  test("saves the settings file readable by the user only", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, "{}\n", { mode: 0o644 });
+    await openSettings(file).save(DEFAULT_SETTINGS);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
   test("migrates a saved settings file without a language to English", async () => {

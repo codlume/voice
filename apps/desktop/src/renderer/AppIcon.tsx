@@ -5,7 +5,7 @@ import type { BundleId } from "../shared/app-categories.ts";
 import { iconLoader } from "./appIcons.ts";
 import { color } from "./tokens.stylex.ts";
 
-export function useAppIcon(bundleId: BundleId | null): string | null {
+function useAppIcon(bundleId: BundleId | null): string | null {
   useEffect(() => {
     if (bundleId === null) return;
     const load = () => void iconLoader.load(bundleId);

@@ -28,11 +28,11 @@ import type { MeetingsStore } from "./meetings-store.ts";
 import type { TransformModel } from "./transform-model.ts";
 
 /** `stopped` is a model that broke mid-run, as opposed to an answer it could not give. */
-export type SummaryOutcomeFailure = SummaryFailure | { kind: "stopped" };
+type SummaryOutcomeFailure = SummaryFailure | { kind: "stopped" };
 
-export type SummaryOutcome = { ok: true } | { ok: false; failure: SummaryOutcomeFailure };
+type SummaryOutcome = { ok: true } | { ok: false; failure: SummaryOutcomeFailure };
 
-export type TitleOutcome =
+type TitleOutcome =
   | { ok: true; title: string | null }
   | { ok: false; failure: SummaryOutcomeFailure };
 

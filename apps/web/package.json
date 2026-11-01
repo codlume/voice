@@ -14,13 +14,13 @@
     "@astrojs/cloudflare": "14.3.3",
     "@stylexjs/stylex": "catalog:",
     "astro": "7.3.5",
-    "yaml": "2.8.3"
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@stylexjs/unplugin": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "wrangler": "4.140.0"
+    "wrangler": "catalog:"
   }
 }

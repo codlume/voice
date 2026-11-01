@@ -11,6 +11,7 @@ final class Meetings {
     private let source: MeetingAudioSource
     private let decode: MeetingTranscription.Decode
     private let isDictating: () -> Bool
+    private let isCapturingDictation: () -> Bool
     private let finalPass: MeetingFinalPass
     private var legs: [String: MeetingCapture] = [:]
     private var jobs: [String: MeetingTranscription] = [:]
@@ -19,13 +20,14 @@ final class Meetings {
     private var lastFinal: Task<Void, Never>?
 
     init(output: Output, devices: AudioInputDevices, source: MeetingAudioSource, decode: @escaping MeetingTranscription.Decode,
-         finalPass: MeetingFinalPass, isDictating: @escaping () -> Bool) {
+         finalPass: MeetingFinalPass, isDictating: @escaping () -> Bool, isCapturingDictation: @escaping () -> Bool) {
         self.output = output
         self.devices = devices
         self.source = source
         self.decode = decode
         self.finalPass = finalPass
         self.isDictating = isDictating
+        self.isCapturingDictation = isCapturingDictation
     }
 
     func start(id: String, dir: String, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage, microphone: Microphone?) {
@@ -33,7 +35,7 @@ final class Meetings {
         let folder = URL(fileURLWithPath: dir)
         let job = job(id: id, dir: folder, baseMs: baseMs, fromMs: fromMs, language: language)
         let leg = MeetingCapture(dir: folder, microphone: microphone, source: source, output: output, devices: devices,
-                                 isDictating: isDictating, onFailed: { [weak self, output] message in
+                                 isCapturingDictation: isCapturingDictation, onFailed: { [weak self, output] message in
             self?.legs[id] = nil
             job.drain()
             output.emit(.meetingFailed(id: id, message: message))

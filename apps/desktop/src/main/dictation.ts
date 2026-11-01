@@ -26,6 +26,7 @@ import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnost
 import type { History } from "./history.ts";
 import type { AsrSessionState, HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
 import {
+  COPY_TIMEOUT_MS,
   INSERT_TIMEOUT_MS,
   step,
   type Command,
@@ -51,7 +52,7 @@ export type DictationOptions = {
   onSessionDone: (report: SessionReport) => void;
   onDictated: (dictated: Dictated) => void;
   history: Pick<History, "remember" | "settle">;
-  copy: (output: Output) => void;
+  copy: (output: Output) => Promise<void>;
   now?: () => number;
 };
 
@@ -70,6 +71,9 @@ export const TRANSCRIBE_TIMEOUT_MS = 30_000;
 // A release while the speech model is still loading waits for the load and the transcription.
 export const TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS = 60_000;
 export const TRANSCRIBE_OVERDUE_MIN_MS = 30_000;
+// A cached speech model loads in about a second. Past this, macOS is compiling it for the Neural
+// Engine, which takes about 30 s once per model folder.
+export const ASR_PREPARING_AFTER_MS = 2000;
 
 export type Dictation = {
   dispatch(event: SessionEvent): void;
@@ -162,6 +166,7 @@ export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;
   let idleTimer: NodeJS.Timeout | null = null;
+  let asrPreparingTimer: NodeJS.Timeout | null = null;
   let started: Started | null = null;
 
   function track(id: string, patch: Partial<Omit<Started, "id" | "language" | "pressedAt">>) {
@@ -226,6 +231,8 @@ export function createDictation(options: DictationOptions): Dictation {
       arm(state.id, ready ? TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS);
     } else if (state.phase === "inserting") {
       arm(state.id, INSERT_TIMEOUT_MS);
+    } else if (state.phase === "copying") {
+      arm(state.id, COPY_TIMEOUT_MS);
     }
   }
 
@@ -334,9 +341,18 @@ export function createDictation(options: DictationOptions): Dictation {
           now(),
         );
         return;
-      case "copy":
-        options.copy(effect.output);
+      case "copy": {
+        const { id } = effect;
+        // The executor runs now, so the write starts in this tick and a synchronous throw rejects.
+        void new Promise<void>((resolve) => resolve(options.copy(effect.output))).then(
+          () => dispatch({ type: "copied", id, ok: true }),
+          (error: unknown) => {
+            options.log(`dictation: copy to clipboard failed (${String(error)})`);
+            dispatch({ type: "copied", id, ok: false });
+          },
+        );
         return;
+      }
       case "dictated": {
         const s = started?.id === effect.id ? started : null;
         options.onDictated({
@@ -569,6 +585,21 @@ export function createDictation(options: DictationOptions): Dictation {
         );
         return;
       case "asr.status":
+        if (event.state !== "loading" && asrPreparingTimer) {
+          clearTimeout(asrPreparingTimer);
+          asrPreparingTimer = null;
+        }
+        if (event.state === "loading" && store.state.models.asr.state === "loading") return;
+        if (event.state === "loading") {
+          asrPreparingTimer = setTimeout(() => {
+            asrPreparingTimer = null;
+            if (store.state.models.asr.state !== "loading") return;
+            store.update((s) => ({
+              ...s,
+              models: { ...s.models, asr: { state: "loading", preparing: true } },
+            }));
+          }, ASR_PREPARING_AFTER_MS);
+        }
         store.update((s) => ({
           ...s,
           models: {

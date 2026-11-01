@@ -88,7 +88,7 @@ export type MeetingRecorderDeps = {
 export const START_TIMEOUT_MS = 10_000;
 export const TRANSCRIBE_IDLE_MS = 60_000;
 /** The final pass reports only when done, for up to three hours of audio. */
-export const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
+const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
 const WATCH_MS: Record<Watch, number> = {
   start: START_TIMEOUT_MS,
   drain: TRANSCRIBE_IDLE_MS,
@@ -138,9 +138,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   // False while speech recognition loads, as after a launch, when it cannot report yet.
   let recognizing = false;
   let queue: Promise<unknown> = Promise.resolve();
-  // Starts, toggles and the launch recovery run one at a time and each decides on the state the
-  // one before left, so two quick presses never start two meetings and a press during launch
-  // never stops a meeting recovery is about to finish.
+  // Starts, resumes, toggles and the launch recovery run one at a time and each decides on the
+  // state the one before left, so two quick presses never record two meetings and a press during
+  // launch never stops a meeting recovery is about to finish.
   let decisions: Promise<unknown> = Promise.resolve();
   function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
     const decided = decisions.then(work);
@@ -579,7 +579,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         }
       }),
     pause: (id) => command(id, { type: "pause" }),
-    resume: (id) => command(id, { type: "resume" }),
+    resume: (id) => oneAtATime(() => command(id, { type: "resume" })),
     stop: (id) => command(id, { type: "stop" }),
     keep: (id) => command(id, { type: "keep" }),
     discard: (id) => command(id, { type: "discard" }),
