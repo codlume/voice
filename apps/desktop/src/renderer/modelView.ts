@@ -1,6 +1,8 @@
 import type { ModelStatus, PillState } from "../shared/api.ts";
 import type { BusyDuring, Model } from "../shared/models.ts";
 
+export const PREPARING_TEXT = "Preparing for this Mac, about 30 s";
+
 export type ModelAction = "Install" | "Retry" | "Uninstall" | "Cancel";
 
 export type Activity = BusyDuring | "idle";
@@ -45,7 +47,7 @@ export function modelView(
         actions: model.cancelableDownload ? [cancel] : [],
       };
     case "loading":
-      return { text: "Loading", actions: [] };
+      return { text: status.preparing ? PREPARING_TEXT : "Loading", actions: [] };
     case "ready":
       return { text: "Installed", actions: [uninstall] };
     case "installed":

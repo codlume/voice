@@ -144,7 +144,7 @@ export function runSetupCommand(command: SetupCommand): Promise<void> {
   }
 }
 
-export function SetupRow({ row }: { row: ChecklistRow }) {
+function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
   return (
     <li {...stylex.props(styles.row)}>

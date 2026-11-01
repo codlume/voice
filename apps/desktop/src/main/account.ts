@@ -107,7 +107,7 @@ export type AuthSessionCheck =
 export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 
 /** A code as the landing page shows it, with the OAuth state it carries. */
-export type SignInCode = { code: string; state: string };
+type SignInCode = { code: string; state: string };
 
 // The confirmation dialog names the account by email; a cached id is the stricter test when present.
 const sameAccount = (confirmed: AccountIdentity, live: Identity) =>

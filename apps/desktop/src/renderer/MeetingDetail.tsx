@@ -65,7 +65,6 @@ const styles = stylex.create({
   },
   when: { margin: 0, color: color.mutedForeground, fontSize: 13.5 },
   actions: { display: "flex", alignItems: "center", gap: 2, paddingTop: 6 },
-  controls: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.sm },
   iconButton: {
     display: "inline-flex",
     alignItems: "center",
