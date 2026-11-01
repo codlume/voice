@@ -24,7 +24,7 @@ const config = {
     version,
     voiceRelease: { channel, updateUrl: baseUrl },
   },
-  mac: { notarize: true },
+  afterSign: "./build/notarize.mjs",
   publish: [
     { provider: "generic", url: `${baseUrl}/channels/${channel}/mac-arm64`, channel: "latest" },
   ],
