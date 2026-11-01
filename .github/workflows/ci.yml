@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    name: Check
+  js:
+    name: JS
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -30,10 +30,6 @@ jobs:
           # A pull request's cache could be restored only by that same PR, so only main saves.
           cache-save: ${{ github.event_name == 'push' }}
           run-install: true
-
-      - name: Locate Swift toolchain
-        id: swift
-        run: echo "version=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "${GITHUB_OUTPUT}"
 
       - name: Format
         run: vp run fmt:check
@@ -55,6 +51,18 @@ jobs:
 
       - name: Build desktop
         run: vp run build
+
+  swift:
+    name: Swift
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Locate Swift toolchain
+        id: swift
+        run: echo "version=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "${GITHUB_OUTPUT}"
 
       - name: Restore helper build cache
         id: swift-cache
