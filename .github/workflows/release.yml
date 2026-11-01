@@ -144,6 +144,10 @@ jobs:
   nightly-due:
     if: github.ref == 'refs/heads/main' && github.event_name != 'push' && inputs.stable_tag == ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Reads CI's result for HEAD.
+      actions: read
     outputs:
       due: ${{ steps.due.outputs.due }}
       previous: ${{ steps.due.outputs.previous }}
