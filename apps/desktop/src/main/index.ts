@@ -674,7 +674,10 @@ async function main() {
         enabled: trayHasEntry,
         click: () => {
           const [latest] = history.entries();
-          if (latest) clipboard.writeText(copyText(latest));
+          if (!latest) return;
+          clipboard
+            .writeText(copyText(latest))
+            .catch((error) => log(`tray: copy last transcript failed (${String(error)})`));
         },
       },
       { type: "separator" },

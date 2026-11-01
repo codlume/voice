@@ -138,12 +138,12 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
     if (typeof id !== "string" || version === null) return;
     const entry = history.entries().find((candidate) => candidate.id === id);
     if (!entry) throw new Error("This transcript is no longer in your history.");
-    clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
+    return clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
   });
   hubCommands.handle(Channel.getLastTransform, () => transforms.lastTransform());
   hubCommands.handle(Channel.copyLastTransform, (_event, which: unknown) => {
     if (which !== "before" && which !== "after") return;
-    transforms.copyLastTransform(which);
+    return transforms.copyLastTransform(which);
   });
   hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
     if (typeof id !== "string") return;
@@ -341,7 +341,7 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
   hubCommands.handle(Channel.copyMeetingMarkdown, async (_event, raw: unknown) => {
     const id = parseMeetingId(raw);
     if (!id) return;
-    clipboard.writeText((await markdownOf(id)).markdown);
+    await clipboard.writeText((await markdownOf(id)).markdown);
   });
   hubCommands.handle(Channel.exportMeetingMarkdown, async (event, raw: unknown) => {
     const id = parseMeetingId(raw);

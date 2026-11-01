@@ -26,6 +26,7 @@ import { errorType, isHelperLog, type DiagnosticLog, type Log } from "./diagnost
 import type { History } from "./history.ts";
 import type { AsrSessionState, HelperCommand, HelperEvent, InsertRoute } from "./protocol.ts";
 import {
+  COPY_TIMEOUT_MS,
   INSERT_TIMEOUT_MS,
   step,
   type Command,
@@ -51,7 +52,7 @@ export type DictationOptions = {
   onSessionDone: (report: SessionReport) => void;
   onDictated: (dictated: Dictated) => void;
   history: Pick<History, "remember" | "settle">;
-  copy: (output: Output) => void;
+  copy: (output: Output) => Promise<void>;
   now?: () => number;
 };
 
@@ -226,6 +227,8 @@ export function createDictation(options: DictationOptions): Dictation {
       arm(state.id, ready ? TRANSCRIBE_TIMEOUT_MS : TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS);
     } else if (state.phase === "inserting") {
       arm(state.id, INSERT_TIMEOUT_MS);
+    } else if (state.phase === "copying") {
+      arm(state.id, COPY_TIMEOUT_MS);
     }
   }
 
@@ -334,9 +337,18 @@ export function createDictation(options: DictationOptions): Dictation {
           now(),
         );
         return;
-      case "copy":
-        options.copy(effect.output);
+      case "copy": {
+        const { id } = effect;
+        // The executor runs now, so the write starts in this tick and a synchronous throw rejects.
+        void new Promise<void>((resolve) => resolve(options.copy(effect.output))).then(
+          () => dispatch({ type: "copied", id, ok: true }),
+          (error: unknown) => {
+            options.log(`dictation: copy to clipboard failed (${String(error)})`);
+            dispatch({ type: "copied", id, ok: false });
+          },
+        );
         return;
+      }
       case "dictated": {
         const s = started?.id === effect.id ? started : null;
         options.onDictated({

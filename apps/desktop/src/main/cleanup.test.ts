@@ -637,7 +637,7 @@ describe("followSettings", () => {
       onSessionDone: () => {},
       onDictated: () => {},
       history: { remember: () => {}, settle: () => {} },
-      copy: () => {},
+      copy: async () => {},
       now: () => clock,
     });
     const setLanguage = (dictationLanguage: DictationLanguage) =>
