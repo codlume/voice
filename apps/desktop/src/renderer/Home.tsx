@@ -17,7 +17,7 @@ import { GlobeHint } from "./Settings.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useToday } from "./useToday.ts";
+import { useClock, useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
@@ -124,7 +124,8 @@ const styles = stylex.create({
   },
 });
 
-function greeting(hour: number): string {
+function greetingAt(now: Date): string {
+  const hour = now.getHours();
   if (hour < 5) return "Working late";
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
@@ -305,10 +306,11 @@ export function Home({
 }) {
   const { ready, rows } = checklist(snapshot);
   const today = useToday();
+  const greeting = useClock(greetingAt);
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(pageStyles.headline)}>{greeting(new Date().getHours())}</h1>
+        <h1 {...stylex.props(pageStyles.headline)}>{greeting}</h1>
         <p {...stylex.props(styles.lede)}>
           Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
           {snapshot.settings.toggleHotkey && (

@@ -120,6 +120,20 @@ const takesLiveLines = (meeting: Meeting) =>
 
 type Watchdog = { watch: Watch; timer: NodeJS.Timeout | null };
 
+function failureOf(effect: MeetingEffect): MeetingEvent | null {
+  switch (effect.type) {
+    case "startCapture":
+      return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
+    case "drain":
+      return { type: "stalled", watch: "drain" };
+    case "finalize":
+    case "applyFinalPass":
+      return { type: "finalizeFailed", reason: "other" };
+    default:
+      return null;
+  }
+}
+
 /**
  * Executes `meeting-lifecycle.ts` against the helper: each event is stepped one at a time, the
  * meeting written, then its effects run. An effect that throws comes back as its failure event.
@@ -213,20 +227,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       log(`meetings: ${effect.type} failed (${String(error)})`);
       const failed = failureOf(effect);
       if (failed) background(effect.type, dispatch(id, failed));
-    }
-  }
-
-  function failureOf(effect: MeetingEffect): MeetingEvent | null {
-    switch (effect.type) {
-      case "startCapture":
-        return { type: "captureFailed", leg: effect.leg, message: FAILED_START };
-      case "drain":
-        return { type: "stalled", watch: "drain" };
-      case "finalize":
-      case "applyFinalPass":
-        return { type: "finalizeFailed", reason: "other" };
-      default:
-        return null;
     }
   }
 

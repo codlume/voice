@@ -30,6 +30,8 @@ const target = (bundleId: string, host: string | null = null): Target => {
   return { bundleId: app, host: host === null ? null : parseHost(host) };
 };
 
+const at = (host: string) => target("com.google.Chrome", host);
+
 describe("classify", () => {
   test.each<[string, Target | null, Category]>([
     ["no target", null, "other"],
@@ -82,7 +84,6 @@ describe("classify", () => {
       { kind: "site", host: "app.slack.com", category: "personal" },
       { kind: "site", host: "slack.com", category: "work" },
     ];
-    const at = (host: string) => target("com.google.Chrome", host);
     for (const mine of [parseAssignments(sites), parseAssignments(sites.toReversed())]) {
       expect(classify(at("app.slack.com"), mine)).toBe("personal");
       expect(classify(at("team.app.slack.com"), mine)).toBe("personal");
@@ -247,24 +248,24 @@ describe("cleanupStyleFor", () => {
 
 const list = (...items: unknown[]) => parseAssignments(items);
 
-describe("place and unassign", () => {
-  const textEdit = (category: Category) =>
-    list({
-      kind: "app",
-      bundleId: "com.apple.TextEdit",
-      name: "TextEdit",
-      category,
-    })[0] as Assignment;
-  const slack = (category: Category) =>
-    list({
-      kind: "app",
-      bundleId: "com.tinyspeck.slackmacgap",
-      name: "Slack",
-      category,
-    })[0] as Assignment;
-  const site = (host: string, category: Category) =>
-    list({ kind: "site", host, category })[0] as Assignment;
+const textEdit = (category: Category) =>
+  list({
+    kind: "app",
+    bundleId: "com.apple.TextEdit",
+    name: "TextEdit",
+    category,
+  })[0] as Assignment;
+const slack = (category: Category) =>
+  list({
+    kind: "app",
+    bundleId: "com.tinyspeck.slackmacgap",
+    name: "Slack",
+    category,
+  })[0] as Assignment;
+const site = (host: string, category: Category) =>
+  list({ kind: "site", host, category })[0] as Assignment;
 
+describe("place and unassign", () => {
   test.each<[string, Assignment[], Assignment, Assignment[]]>([
     ["adds an unknown app", [], textEdit("personal"), [textEdit("personal")]],
     ["adds an unknown app to Other", [], textEdit("other"), [textEdit("other")]],

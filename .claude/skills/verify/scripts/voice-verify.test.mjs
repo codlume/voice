@@ -36,14 +36,15 @@ import { processIdentity, scratchPath } from "../../../../scripts/voice-app.mjs"
 const script = fileURLToPath(new URL("voice-verify.mjs", import.meta.url));
 const worktree = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
+const sources = (directory) =>
+  readdirSync(join(worktree, directory))
+    .filter((file) => file.endsWith(".mjs") && !file.endsWith(".test.mjs"))
+    .map((file) => `${directory}/${file}`);
+
 test("cold doctor and help run without dependencies and leave caches untouched", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "voice-verify-cold-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const checkout = join(dir, "checkout");
-  const sources = (directory) =>
-    readdirSync(join(worktree, directory))
-      .filter((file) => file.endsWith(".mjs") && !file.endsWith(".test.mjs"))
-      .map((file) => `${directory}/${file}`);
   const paths = [
     ...sources(".claude/skills/verify/scripts"),
     ...sources("scripts"),

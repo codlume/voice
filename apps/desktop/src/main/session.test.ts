@@ -465,10 +465,10 @@ describe("transcript", () => {
   });
 });
 
-describe("capture the helper stops on its own", () => {
-  const stopped = (now: number) =>
-    [{ type: "captureStopped", id: ID }, now] as [SessionEvent, number];
+const stopped = (now: number) =>
+  [{ type: "captureStopped", id: ID }, now] as [SessionEvent, number];
 
+describe("capture the helper stops on its own", () => {
   test("leaves listening at once, commands nothing, and ignores the release of the still-held key", () => {
     const { state, effects } = run([...toRecording, stopped(600_000)]);
     expect(state).toEqual({ phase: "transcribing", id: ID, overdue: false });
@@ -607,13 +607,14 @@ describe("cleanup", () => {
   });
 });
 
+const cleaned = (text: string) =>
+  [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
+
 describe("snippets", () => {
   const EMAIL = "name@example.com";
   const snippets: Snippet[] = [
     { id: "1", trigger: "my email", expansion: EMAIL, expansionHtml: null, enabled: true },
   ];
-  const cleaned = (text: string) =>
-    [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
   const cleaningSentence = [
     ...toTranscribing,
     transcript("send it to my email", STYLE, 2000, { ...NONE, snippets }),
@@ -779,6 +780,9 @@ describe("snippets", () => {
   });
 });
 
+const inserts = (events: [SessionEvent, number][]) =>
+  run(events).all.filter((effect) => effect.type === "send" && effect.command.type === "insert");
+
 describe("dictionary", () => {
   const dictionary: DictionaryEntry[] = [
     { id: "1", phrase: "Wispr Flow", replacement: null },
@@ -797,8 +801,6 @@ describe("dictionary", () => {
   ];
   const RAW = "btw ask hadrys about wispr flow";
   const FIXED = "by the way ask Hadryś about Wispr Flow";
-  const cleaned = (text: string) =>
-    [{ type: "cleaned", id: ID, text }, 2300] as [SessionEvent, number];
   const said = (text: string, cleanup: CleanupWork | null) =>
     transcript(text, cleanup, 2000, { dictionary, snippets });
   const cleaning = [...toTranscribing, said(RAW, STYLE)];
@@ -890,10 +892,6 @@ describe("dictionary", () => {
   });
 
   test("a replacement whose text contains a trigger is typed as saved on every path", () => {
-    const inserts = (events: [SessionEvent, number][]) =>
-      run(events).all.filter(
-        (effect) => effect.type === "send" && effect.command.type === "insert",
-      );
     const typed = [
       {
         type: "send",
@@ -947,10 +945,10 @@ describe("insertion", () => {
   });
 });
 
-describe("copy to clipboard", () => {
-  const copying = (text: string, cleanup: CleanupWork | null, rewrites = NONE) =>
-    transcript(text, cleanup, 2000, rewrites, true);
+const copying = (text: string, cleanup: CleanupWork | null, rewrites = NONE) =>
+  transcript(text, cleanup, 2000, rewrites, true);
 
+describe("copy to clipboard", () => {
   test.each<[string, SessionEvent]>([
     ["inserted", { type: "insertResult", id: ID, method: "paste", reason: null }],
     ["not inserted", { type: "insertResult", id: ID, method: "none", reason: "focusChanged" }],

@@ -40,6 +40,9 @@ export function sameProcess(pid, identity) {
   return Boolean(identity) && processIdentity(pid) === identity;
 }
 
+const liveChildren = (state) =>
+  state.processes?.some(({ pid, identity }) => sameProcess(pid, identity));
+
 export async function claimScratch(userData) {
   if (claims.has(userData)) throw new Error(`scratch already owned by this process: ${userData}`);
   // The OS releases this lock on EOF or death. The file stays so contenders always lock the same inode.
@@ -69,8 +72,6 @@ export async function claimScratch(userData) {
     processes: /** @type {{ pid: number, identity: string | null }[]} */ ([]),
   };
   const save = () => writeFileSync(recordPath, JSON.stringify(record));
-  const liveChildren = (state) =>
-    state.processes?.some(({ pid, identity }) => sameProcess(pid, identity));
   try {
     const previous = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, "utf8")) : null;
     if (

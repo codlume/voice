@@ -163,11 +163,12 @@ function pairOf(earlier: Item, later: Item): Omit<Pair, "id"> | null {
   return { question: "same", earlier, later, drop: fuller ? later : earlier };
 }
 
+const of = (items: readonly Item[]) =>
+  items.flatMap((later, at) =>
+    items.slice(0, at).flatMap((earlier) => pairOf(earlier, later) ?? []),
+  );
+
 export function candidatePairs({ decisions, tasks }: Ledger): Pair[] {
-  const of = (items: readonly Item[]) =>
-    items.flatMap((later, at) =>
-      items.slice(0, at).flatMap((earlier) => pairOf(earlier, later) ?? []),
-    );
   // Decisions come first but leave tasks half the room: a hand-over is the most common change.
   const tasked = of(tasks);
   const share = Math.max(MAX_PAIRS / 2, MAX_PAIRS - tasked.length);

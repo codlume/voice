@@ -307,8 +307,8 @@ export const releaseUserData = releaseScratch;
 // this way never share a port.
 export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
   const ports = {};
+  const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
   return new Promise((resolvePorts, reject) => {
-    const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
     const timer = setTimeout(
       () => reject(new Error(`no ${missing()} port announced after ${timeoutMs} ms`)),
       timeoutMs,

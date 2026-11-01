@@ -81,12 +81,12 @@ describe("time label", () => {
   });
 });
 
-describe("history page", () => {
-  const hours = (count: number, text = (i: number) => `Note ${i}.`) =>
-    Array.from({ length: count }, (_, i) =>
-      entry(`e${i}`, new Date(NOW.getTime() - i * 3_600_000 * 7), text(i)),
-    );
+const hours = (count: number, text = (i: number) => `Note ${i}.`) =>
+  Array.from({ length: count }, (_, i) =>
+    entry(`e${i}`, new Date(NOW.getTime() - i * 3_600_000 * 7), text(i)),
+  );
 
+describe("history page", () => {
   test("shows the newest entries up to the limit, cutting the oldest day mid-way", () => {
     const entries = hours(6);
     expect(labels(page(entries, "", 4))).toEqual([
