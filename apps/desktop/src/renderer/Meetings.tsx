@@ -275,7 +275,7 @@ function LiveCard({ meeting, onOpen }: { meeting: LiveMeeting; onOpen: () => voi
       const send = { pause: api.pauseMeeting, resume: api.resumeMeeting, stop: api.stopMeeting };
       const refusal = commandRefusal(await send[command](meeting.id));
       if (refusal) throw new Error(refusal);
-    }, "Could not change the recording.");
+    }, "Could not change the recording. Try again.");
   return (
     <>
       <Card style={styles.live}>
