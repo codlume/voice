@@ -47,6 +47,7 @@ import {
   ASR_MISSING_MESSAGE,
   IDLE_AFTER_INSERTED_MS,
   IDLE_AFTER_OTHER_MS,
+  COPY_TIMEOUT_MS,
   INSERT_TIMEOUT_MS,
   TRANSCRIBE_GAVE_UP_MESSAGE,
   idle,
@@ -68,6 +69,7 @@ type Options = {
   cleanHangs?: boolean;
   cleanPartial?: boolean;
   copyToClipboard?: boolean;
+  clipboard?: "rejects" | "hangs";
   snippets?: readonly Snippet[];
   dictionary?: readonly DictionaryEntry[];
   autoApply?: TransformId;
@@ -224,7 +226,12 @@ function harness(opts: Options = {}) {
     onSessionDone: (report) => reports.push(report),
     onDictated: (session) => dictated.push(session),
     history,
-    copy: (output) => copies.push(output),
+    copy: (output) => {
+      copies.push(output);
+      if (opts.clipboard === "rejects") return Promise.reject(new Error("clipboard is busy"));
+      if (opts.clipboard === "hangs") return new Promise<void>(() => {});
+      return Promise.resolve();
+    },
   });
   const id = () => {
     const session = store.state.session;
@@ -1689,11 +1696,50 @@ describe("createDictation", () => {
         method: "none",
         reason: "noFocusedField",
       });
+      expect(h.store.state.session.phase).toBe("copying");
+      await flush();
       expect(h.store.state.session).toMatchObject({
         phase: "done",
         outcome: { kind: "notInserted", copied: true },
       });
       expect(h.copies).toEqual([{ text: "keep me", html: null }]);
+    });
+
+    test("says not copied when the clipboard write fails, and keeps the transcript", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false, clipboard: "rejects" });
+      const id = await dictate(h, "keep me");
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "none",
+        reason: "secureInput",
+      });
+      await flush();
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", reason: "secureInput", copied: false },
+      });
+      expect(h.latest()).toMatchObject({ raw: "keep me", status: "notInserted" });
+      expect(h.logs.some((line) => line.includes("copy to clipboard failed"))).toBe(true);
+    });
+
+    test("says not copied when the clipboard write never settles", async () => {
+      const h = harness({ copyToClipboard: true, cleanupEnabled: false, clipboard: "hangs" });
+      const id = await dictate(h, "keep me");
+      h.dictation.onHelperEvent({
+        type: "insert.result",
+        id,
+        method: "none",
+        reason: "secureInput",
+      });
+      vi.advanceTimersByTime(COPY_TIMEOUT_MS - 1);
+      expect(h.store.state.session.phase).toBe("copying");
+      vi.advanceTimersByTime(1);
+      expect(h.store.state.session).toMatchObject({
+        phase: "done",
+        outcome: { kind: "notInserted", copied: false },
+      });
+      expect(h.latest()).toMatchObject({ raw: "keep me", status: "notInserted" });
     });
 
     test("copies the text when the helper never answers the insert", async () => {
@@ -1709,6 +1755,7 @@ describe("createDictation", () => {
       const h = harness({ copyToClipboard: true, cleanupEnabled: false });
       await dictate(h, "x");
       h.dictation.dispatch({ type: "helperExited" });
+      await flush();
       expect(h.store.state.session).toMatchObject({
         phase: "done",
         outcome: { kind: "notInserted", reason: "failed" },
@@ -1723,6 +1770,7 @@ describe("createDictation", () => {
       await dictate(h, "x");
       expect(h.store.state.session.phase).toBe("cleaning");
       h.dictation.dispatch({ type: "helperExited" });
+      await flush();
       expect(h.store.state.session).toMatchObject({
         phase: "done",
         outcome: { kind: "notInserted", reason: "failed", copied: true },
