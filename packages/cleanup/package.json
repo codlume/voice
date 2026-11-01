@@ -33,7 +33,7 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "node-llama-cpp": "3.21.1"
+    "node-llama-cpp": "3.22.2"
   },
   "devDependencies": {
     "@types/node": "catalog:",
