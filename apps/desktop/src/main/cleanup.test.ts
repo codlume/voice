@@ -220,7 +220,7 @@ describe("createCleanup", () => {
     expect(cleanup.loaded()).toBe(false);
   });
 
-  test("an engine lost while loaded reports failed, and Retry loads a fresh engine", async () => {
+  test("an engine lost after it was ready reloads on its own", async () => {
     await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
     const fake = fakeModule();
     const cleanup = start(fake);
@@ -229,21 +229,31 @@ describe("createCleanup", () => {
 
     fake.calls.lost[0]!("The cleanup model stopped unexpectedly.");
 
-    expect(statuses).toEqual([
-      { state: "failed", message: "The cleanup model stopped unexpectedly." },
-    ]);
     expect(cleanup.loaded()).toBe(false);
     await expect(cleanup.clean("hello", style, request)).rejects.toThrow("not ready");
-
-    statuses = [];
-    await cleanup.install();
-
-    expect(statuses.at(-1)).toEqual({ state: "ready" });
+    await expect.poll(() => statuses.at(-1)).toEqual({ state: "ready" });
+    expect(statuses).toEqual([{ state: "loading" }, { state: "ready" }]);
     expect(fake.calls.creates).toBe(2);
     await expect(cleanup.clean("hello", style, request)).resolves.toEqual(whole("HELLO"));
     fake.calls.lost[0]!("late exit of the first engine");
     expect(statuses.at(-1)).toEqual({ state: "ready" });
     expect(cleanup.loaded()).toBe(true);
+  });
+
+  test("an engine lost after cleanup was turned off stays unloaded", async () => {
+    await writeFile(NodePath.join(dir, S1_MINI_FILE), "weights");
+    const fake = fakeModule();
+    let wanted = true;
+    const cleanup = start(fake, () => wanted);
+    await cleanup.loadIfDownloaded();
+    wanted = false;
+    statuses = [];
+
+    fake.calls.lost[0]!("engine stopped");
+
+    await expect.poll(() => statuses.at(-1)).toEqual({ state: "installed" });
+    expect(fake.calls.creates).toBe(1);
+    expect(cleanup.loaded()).toBe(false);
   });
 
   test("losing the engine during warm-up cannot restore ready", async () => {
