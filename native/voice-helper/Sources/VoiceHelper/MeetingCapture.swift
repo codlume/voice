@@ -11,7 +11,7 @@ final class MeetingCapture {
     private let output: Output
     private let devices: AudioInputDevices
     private let source: MeetingAudioSource
-    private let isDictating: () -> Bool
+    private let isCapturingDictation: () -> Bool
     private let onFailed: (String) -> Void
     private let onLost: (AudioLoss) -> Void
     private var watch: DispatchSourceTimer?
@@ -33,7 +33,7 @@ final class MeetingCapture {
     private var route: MeetingOutput?
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
-         isDictating: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
+         isCapturingDictation: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
         self.dir = dir
         micURL = dir.appendingPathComponent("mic.pcm")
         systemURL = dir.appendingPathComponent("system.pcm")
@@ -41,7 +41,7 @@ final class MeetingCapture {
         self.source = source
         self.output = output
         self.devices = devices
-        self.isDictating = isDictating
+        self.isCapturingDictation = isCapturingDictation
         self.onFailed = onFailed
         self.onLost = onLost
     }
@@ -265,7 +265,7 @@ final class MeetingCapture {
     private func receiveMic(_ chunk: [Float]) {
         lastMicAudio = .now()
         // Dictated words belong to wherever they were inserted, not to the meeting.
-        write(isDictating() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
+        write(isCapturingDictation() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
     }
 
     private func receiveSystem(_ chunk: [Float]) {
