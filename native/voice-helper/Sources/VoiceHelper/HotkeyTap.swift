@@ -22,6 +22,7 @@ final class HotkeyTap {
     private var hotkeys: Hotkeys
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
+    private var tapSource: CFRunLoopSource?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
@@ -76,7 +77,10 @@ final class HotkeyTap {
     }
 
     private func installOnTapThread() {
-        guard tap == nil else { return }
+        if let tap {
+            guard !CGEvent.tapIsEnabled(tap: tap) else { return }
+            removeTap()
+        }
         if tryInstall() {
             retry?.invalidate()
             retry = nil
@@ -88,6 +92,13 @@ final class HotkeyTap {
             self.retry?.invalidate()
             self.retry = nil
         }
+    }
+
+    private func removeTap() {
+        if let tapSource { CFRunLoopRemoveSource(runLoop, tapSource, .commonModes) }
+        if let tap { CFMachPortInvalidate(tap) }
+        tapSource = nil
+        tap = nil
     }
 
     private func tryInstall() -> Bool {
@@ -116,6 +127,7 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
+        tapSource = source
         hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting,
                           initialFlags: currentFlags())
         syncBackstop()
@@ -128,6 +140,9 @@ final class HotkeyTap {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             // Anything that happened while the tap was off is gone; the release may be among it.
             reconcile()
+            // A tap that stays off has lost Accessibility. It is replaced after this callback
+            // returns, at once or, until the grant is back, by the retry timer.
+            if let tap, !CGEvent.tapIsEnabled(tap: tap) { perform { self.installOnTapThread() } }
             return false
         }
         let kind: KeyEvent.Kind
