@@ -33,7 +33,7 @@ import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import type { AppState, Store } from "./store.ts";
 import type { TransformModel } from "./transform-model.ts";
 
-export type MeetingsAppDeps = {
+type MeetingsAppDeps = {
   userData: string;
   store: Store;
   send: (command: HelperCommand) => boolean;

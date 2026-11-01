@@ -58,6 +58,16 @@ const fixtures = [
 // a laptop microphone hears its own speakers. `<prefix>-turns.json` holds who said what when, so
 // a run can be scored: every user turn must survive, as itself and once. Numbers are written the
 // way the speech model writes them, so the score compares like with like.
+/**
+ * @typedef {{ gap?: number, overlap?: number }} TurnTiming
+ * @typedef {{
+ *   prefix: string,
+ *   speakers: Record<string, [source: string, voice: string]>,
+ *   echo?: string,
+ *   turns: [speaker: string, speech: string, timing?: TurnTiming][],
+ * }} Meeting
+ */
+/** @type {Meeting[]} */
 const meetings = [
   {
     prefix: "meeting",
@@ -162,6 +172,7 @@ const meetings = [
   },
 ];
 const gapSeconds = 1.2;
+/** @param {Meeting} meeting */
 const meetingFixtures = ({ prefix, echo }) => [
   `${prefix}-mic.wav`,
   `${prefix}-system.wav`,
@@ -226,6 +237,7 @@ function duration(file) {
   return Number(result.stdout.trim());
 }
 
+/** @param {Meeting} meeting */
 function generateMeeting({ prefix, speakers, echo, turns }) {
   const work = join(tmpdir(), `voice-fixture-${process.pid}-${prefix}`);
   mkdirSync(work, { recursive: true });
@@ -233,7 +245,7 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
     let previousStart = 0;
     let end = 0.5 - gapSeconds;
     const lines = turns.map(([speaker, speech, { gap = gapSeconds, overlap } = {}], index) => {
-      const [source, voice] = speakers[speaker];
+      const [source, voice] = /** @type {[string, string]} */ (speakers[speaker]);
       const file = join(work, `${index}.wav`);
       const aiff = join(work, `${index}.aiff`);
       run("say", ["-v", voice, "-o", aiff, speech]);

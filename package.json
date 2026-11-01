@@ -12,7 +12,7 @@
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",
     "lint": "vp lint --report-unused-disable-directives --deny-warnings",
-    "typecheck": "vp run -r typecheck",
+    "typecheck": "vp run -r typecheck && tsc -p scripts",
     "test": "vp run -r test",
     "e2e": "node scripts/e2e.mjs"
   },

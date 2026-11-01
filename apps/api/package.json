@@ -27,6 +27,6 @@
     "msw": "2.15.0",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
-    "wrangler": "4.147.0"
+    "wrangler": "catalog:"
   }
 }

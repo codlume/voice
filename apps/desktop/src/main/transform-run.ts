@@ -62,7 +62,7 @@ export type Step = { state: TransformRun; effects: TransformEffect[] };
 export const READ_TIMEOUT_MS = 5500;
 export const GENERATE_GRACE_MS = 2000;
 
-export const GENERATE_BUDGET: Budget = { base: 15_000, perWord: 40, max: 60_000 };
+const GENERATE_BUDGET: Budget = { base: 15_000, perWord: 40, max: 60_000 };
 export const generateBudgetMs = (words: number) => budget(GENERATE_BUDGET, words);
 
 export const SELECTION_FAILED_MESSAGE = "Could not read the selection";

@@ -31,6 +31,7 @@ import {
   CLEANUP_GRACE_MS,
   START_TIMEOUT_MS,
   TRANSCRIBE_OVERDUE_MIN_MS,
+  ASR_PREPARING_AFTER_MS,
   TRANSCRIBE_TIMEOUT_MS,
   TRANSCRIBE_WHILE_LOADING_TIMEOUT_MS,
   autoApplyBudgetMs,
@@ -2072,6 +2073,25 @@ describe("createDictation", () => {
       systemAudio: "unavailable",
     });
     expect(h.store.state.models.asr).toEqual({ state: "failed", message: "corrupt" });
+  });
+
+  test("a speech model load says it is preparing only once it runs past 2 s", () => {
+    const h = harness();
+    h.dictation.onHelperEvent({ type: "asr.status", state: "loading", message: null });
+    vi.advanceTimersByTime(ASR_PREPARING_AFTER_MS - 1);
+    h.dictation.onHelperEvent({ type: "asr.status", state: "ready", message: null });
+    vi.advanceTimersByTime(60_000);
+    expect(h.store.state.models.asr).toEqual({ state: "ready" });
+
+    h.dictation.onHelperEvent({ type: "asr.status", state: "loading", message: null });
+    vi.advanceTimersByTime(ASR_PREPARING_AFTER_MS - 1);
+    expect(h.store.state.models.asr).toEqual({ state: "loading" });
+    vi.advanceTimersByTime(1);
+    expect(h.store.state.models.asr).toEqual({ state: "loading", preparing: true });
+    h.dictation.onHelperEvent({ type: "asr.status", state: "loading", message: null });
+    expect(h.store.state.models.asr).toEqual({ state: "loading", preparing: true });
+    h.dictation.onHelperEvent({ type: "asr.status", state: "ready", message: null });
+    expect(h.store.state.models.asr).toEqual({ state: "ready" });
   });
 
   test("a permissions event that repeats the current state notifies no one", () => {

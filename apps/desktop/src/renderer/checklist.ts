@@ -8,6 +8,7 @@ import type {
 } from "../shared/api.ts";
 
 import { modelById, models, type Model, type ModelId } from "../shared/models.ts";
+import { PREPARING_TEXT } from "./modelView.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
@@ -96,6 +97,9 @@ function modelState(model: Model, status: ModelStatus): RowState {
   }
 }
 
+const preparing = (status: ModelStatus) =>
+  status.state === "loading" && status.preparing ? PREPARING_TEXT : undefined;
+
 export function checklist({ permissions, models: statuses, settings }: Snapshot): Checklist {
   const rows: ChecklistRow[] = [
     {
@@ -116,7 +120,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     rows.push({
       id: model.id,
       title: model.kind,
-      subtitle: `${model.name} by ${model.vendor}`,
+      subtitle: preparing(statuses[model.id]) ?? `${model.name} by ${model.vendor}`,
       ...modelState(model, statuses[model.id]),
     });
   }
