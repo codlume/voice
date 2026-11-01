@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -486,6 +486,25 @@ describe("meetings store", () => {
     await first.store.updateSettings({ autoFolders: false });
     const second = await relaunch();
     expect(second.store.get(A)?.folderIds).toEqual([]);
+  });
+
+  test("a meeting retention cannot delete leaves the store working and the meeting listed", async () => {
+    const first = harness();
+    await first.loaded;
+    await seed(first.store, meeting(A));
+    await first.store.updateSettings({ retention: "week" });
+    await chmod(meetingDir(A), 0o500);
+    try {
+      const later = await relaunch({ now: START + 8 * DAY });
+      expect(later.store.state().meetings.map(({ id }) => id)).toEqual([A]);
+      expect(later.logs.some((line) => line.startsWith(`meetings: could not delete ${A}`))).toBe(
+        true,
+      );
+      await later.store.updateSettings({ retention: "forever" });
+      expect(later.store.state().settings.retention).toBe("forever");
+    } finally {
+      await chmod(meetingDir(A), 0o700);
+    }
   });
 
   test("an unreadable meeting is left alone and never overwritten or expired", async () => {

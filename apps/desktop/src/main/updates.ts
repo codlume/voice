@@ -301,12 +301,13 @@ export function createUpdates({
       await running;
       if (expectedGeneration === generation) await check();
     },
-    async restart(beforeInstall?: () => void) {
+    async restart(beforeInstall?: () => Promise<void>) {
       if (!engine || disposed || snapshot.status.kind !== "ready")
         throw new Error("No update is ready to install.");
       if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
       const { version } = snapshot.status;
-      beforeInstall?.();
+      // The copy must land before the quit, or the transcript it carries is lost with the app.
+      if (beforeInstall) await beforeInstall();
       generation += 1;
       publish({ kind: "installing", version });
       try {

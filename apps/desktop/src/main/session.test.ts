@@ -88,7 +88,7 @@ const rememberedLate = (raw: string, id: string): Effect => ({
   text: raw,
   status: "notInserted",
 });
-const copy = (text: string): Effect => ({ type: "copy", output: { text, html: null } });
+const copy = (text: string): Effect => ({ type: "copy", id: ID, output: { text, html: null } });
 const dictated = (raw: string, dictionaryFixes = 0): Effect => ({
   type: "dictated",
   id: ID,
@@ -992,16 +992,56 @@ describe("copy to clipboard", () => {
     });
   });
 
-  test("the outcome records that the text was copied", () => {
+  const notInserted: [SessionEvent, number] = [
+    { type: "insertResult", id: ID, method: "none", reason: "focusChanged" },
+    2100,
+  ];
+
+  test("waits for the clipboard write before it settles", () => {
+    const { state } = run([...toTranscribing, copying("hello world", null), notInserted]);
+    expect(state).toEqual({ phase: "copying", id: ID, reason: "focusChanged" });
+  });
+
+  test.each([true, false])("the outcome records whether the write landed (%s)", (ok) => {
     const { state } = run([
       ...toTranscribing,
       copying("hello world", null),
-      [{ type: "insertResult", id: ID, method: "none", reason: "focusChanged" }, 2100],
+      notInserted,
+      [{ type: "copied", id: ID, ok }, 2110],
     ]);
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged", copied: true },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: ok },
+    });
+  });
+
+  test("a write that never settles times out as not copied", () => {
+    const { state } = run([
+      ...toTranscribing,
+      copying("hello world", null),
+      notInserted,
+      [{ type: "helperExited" }, 2105],
+      [{ type: "timedOut", id: ID }, 4100],
+    ]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
+    });
+  });
+
+  test("an inserted session settles at once and ignores the copy result", () => {
+    const { state } = run([
+      ...toTranscribing,
+      copying("hello world", null),
+      [{ type: "insertResult", id: ID, method: "paste", reason: null }, 2100],
+      [{ type: "copied", id: ID, ok: false }, 2110],
+    ]);
+    expect(state).toEqual({
+      phase: "done",
+      id: ID,
+      outcome: { kind: "inserted", method: "paste" },
     });
   });
 });
