@@ -85,7 +85,7 @@ final class Insertion {
         return target
     }
 
-    func insert(id: String, text: String, html: String?, target: InsertTarget?) {
+    func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?) {
         dispatchPrecondition(condition: .onQueue(.main))
         let focused: AXUIElement?
         switch check(id: id, target: target) {
@@ -114,7 +114,7 @@ final class Insertion {
         case .notEditable:
             output.emit(.insertResult(id: id, outcome: .refused(.noFocusedField)))
         case .paste(let route):
-            paste(id: id, text: text, html: html, route: route)
+            paste(id: id, text: text, html: html, route: route, keepOnClipboard: keepOnClipboard)
         case .unchanged(let focused, let before):
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
@@ -123,7 +123,7 @@ final class Insertion {
                     output.emit(.insertResult(id: id, outcome: .accessibility(.late)))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
-                    paste(id: id, text: text, html: html, route: .unchanged)
+                    paste(id: id, text: text, html: html, route: .unchanged, keepOnClipboard: keepOnClipboard)
                 }
             }
         }
@@ -224,19 +224,18 @@ final class Insertion {
         return text.utf16.count
     }
 
-    private func paste(id: String, text: String, html: String?, route: PasteRoute) {
+    private func paste(id: String, text: String, html: String?, route: PasteRoute, keepOnClipboard: Bool) {
         let saving = DispatchTime.now()
-        let saved = pasteboard.save()
+        let saved = keepOnClipboard ? nil : pasteboard.save()
         let clipboardSaveMs = saving.millisecondsToNow()
         let write = pasteboard.write(text: text, html: html, saved: saved)
         postCommand(typing: "v", fallback: PasteKey.ansiV)
         // The target handles Cmd+V asynchronously and nothing here can observe it land, so the
         // result reports the keystroke, not the insertion. The restore only protects the user's
         // clipboard. A slow target (Electron under load, a remote desktop) can read the
-        // pasteboard well after the keystroke, so the restore waits a full second. Main's copy
-        // effect writes the pasteboard right after this result, today with the same text; a
-        // different copy payload would reach a target that reads after it.
+        // pasteboard well after the keystroke, so the restore waits a full second.
         output.emit(.insertResult(id: id, outcome: .paste(route, clipboardSaveMs: clipboardSaveMs)))
+        guard !keepOnClipboard else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
             pasteboard.restore(write: write)
         }

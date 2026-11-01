@@ -189,7 +189,13 @@ describe("createTransforms", () => {
     await flush(10);
 
     expect(h.commands.map((c) => c.type)).toEqual(["selection.read", "insert", "transform.end"]);
-    expect(h.of("insert")[0]).toEqual({ type: "insert", id, text: RESULT, html: null });
+    expect(h.of("insert")[0]).toEqual({
+      type: "insert",
+      id,
+      text: RESULT,
+      html: null,
+      keepOnClipboard: false,
+    });
     expect(h.of("transform.end")[0]).toEqual({ type: "transform.end", id });
     expect(h.store.state.transform).toEqual({
       phase: "done",

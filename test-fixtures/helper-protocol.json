@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 19,
+  "protocolVersion": 20,
   "selectionReadMaxMs": 4400,
   "languages": [
     "auto",
@@ -31,15 +31,15 @@
   ],
   "versions": [
     {
-      "version": 18,
+      "version": 19,
       "compatible": false
     },
     {
-      "version": 19,
+      "version": 20,
       "compatible": true
     },
     {
-      "version": 20,
+      "version": 21,
       "compatible": false
     }
   ],
@@ -213,9 +213,21 @@
         "type": "insert",
         "id": "s1",
         "text": "Zażółć /tmp/synthetic\nAda 42",
-        "html": null
+        "html": null,
+        "keepOnClipboard": false
       },
-      "required": ["type", "id", "text"]
+      "required": ["type", "id", "text", "keepOnClipboard"]
+    },
+    {
+      "name": "insert.keepOnClipboard",
+      "wire": {
+        "type": "insert",
+        "id": "s1",
+        "text": "Ada 42",
+        "html": null,
+        "keepOnClipboard": true
+      },
+      "required": ["type", "id", "text", "keepOnClipboard"]
     },
     {
       "name": "insert.html",
@@ -223,9 +235,10 @@
         "type": "insert",
         "id": "s1",
         "text": "Hi Ada",
-        "html": "Hi <strong>Ada</strong>"
+        "html": "Hi <strong>Ada</strong>",
+        "keepOnClipboard": false
       },
-      "required": ["type", "id", "text"]
+      "required": ["type", "id", "text", "keepOnClipboard"]
     },
     {
       "name": "selection.read",
@@ -461,7 +474,8 @@
       "wire": {
         "type": "insert",
         "id": "s1",
-        "text": "Synthetic text"
+        "text": "Synthetic text",
+        "keepOnClipboard": false
       }
     },
     {
@@ -626,11 +640,11 @@
       "name": "ready",
       "wire": {
         "type": "ready",
-        "version": 19
+        "version": 20
       },
       "parsed": {
         "type": "ready",
-        "version": 19
+        "version": 20
       },
       "required": ["type", "version"]
     },

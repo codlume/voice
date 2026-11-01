@@ -112,8 +112,9 @@ private func commandCases() -> [String: HelperCommand] {
         "microphone.test.start": .microphoneTestStart(id: "t1", microphone: nil),
         "microphone.test.start.pinned": .microphoneTestStart(id: "t1", microphone: microphone),
         "microphone.test.stop": .microphoneTestStop(id: "t1"),
-        "insert": .insert(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", html: nil),
-        "insert.html": .insert(id: "s1", text: "Hi Ada", html: "Hi <strong>Ada</strong>"),
+        "insert": .insert(id: "s1", text: "Zażółć /tmp/synthetic\nAda 42", html: nil, keepOnClipboard: false),
+        "insert.keepOnClipboard": .insert(id: "s1", text: "Ada 42", html: nil, keepOnClipboard: true),
+        "insert.html": .insert(id: "s1", text: "Hi Ada", html: "Hi <strong>Ada</strong>", keepOnClipboard: false),
         "selection.read": .selectionRead(id: "r1"),
         "transform.end": .transformEnd(id: "r1"),
         "permissions.check": .permissionsCheck,
@@ -355,7 +356,7 @@ private func eventType(_ event: HelperEvent) -> String {
     @Test func normalizesOptionalCommandFields() throws {
         let corpus = try readCorpus()
         let expected: [String: HelperCommand] = [
-            "insert.html.missing": .insert(id: "s1", text: "Synthetic text", html: nil),
+            "insert.html.missing": .insert(id: "s1", text: "Synthetic text", html: nil, keepOnClipboard: false),
             "test.audioFile.missing": .testAudioFile(path: nil),
             "capture.start.hotkey.missing": .captureStart(id: "s1", language: .en, outputVolumeScale: nil, microphone: nil, detectHost: true,
                                                           hotkeyUptimeMs: nil),

@@ -698,6 +698,7 @@ describe("followSettings", () => {
           id,
           text: "FIRST",
           html: null,
+          keepOnClipboard: false,
         });
       expect(a.store.state.models.cleanup.state).toBe("ready");
       a.dictation.onHelperEvent({

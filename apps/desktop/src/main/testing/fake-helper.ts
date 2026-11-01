@@ -159,7 +159,7 @@ for (const { at, action } of config.script ?? []) {
   setTimeout(() => act(action), Math.max(0, startedAt + at - Date.now()));
 }
 
-const ready = () => emit({ type: "ready", version: config.version ?? 19 });
+const ready = () => emit({ type: "ready", version: config.version ?? 20 });
 
 if (config.control) {
   const path = config.control;

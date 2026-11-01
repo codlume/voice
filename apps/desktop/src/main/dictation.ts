@@ -270,6 +270,7 @@ export function createDictation(options: DictationOptions): Dictation {
           id: command.id,
           text: command.output.text,
           html: command.output.html,
+          keepOnClipboard: command.keepOnClipboard,
         });
         return;
     }
