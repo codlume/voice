@@ -33,6 +33,8 @@ import { Dictionary } from "./Dictionary.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { helpFor } from "./help.ts";
+import { HelpContext, helpClosed, HelpPopover, type HelpState } from "./HelpPopover.tsx";
 import { Meetings } from "./Meetings.tsx";
 import { ModelsSettings } from "./ModelsSettings.tsx";
 import { pageMotion } from "./pageMotion.ts";
@@ -678,7 +680,12 @@ export function HubShell({
     open: false,
     section: "general",
   });
-  const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
+  const [help, setHelp] = useState<HelpState>(helpClosed);
+  const [helpButton, setHelpButton] = useState<HTMLButtonElement | null>(null);
+  const openSettings = (section: SettingsPage) => {
+    setSettings({ open: true, section });
+    setHelp(helpClosed);
+  };
   const [meetingSettingsOpen, setMeetingSettingsOpen] = useState(false);
   const [openMeeting, setOpenMeeting] = useState<OpenMeetingRequest | null>(null);
   useEffect(
@@ -693,7 +700,17 @@ export function HubShell({
   const [sidebarSlot, setSidebarSlot] = useState<HTMLDivElement | null>(null);
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
-  if (shown.page !== appPage) setShown({ page: appPage, rises: true });
+  if (shown.page !== appPage) {
+    setShown({ page: appPage, rises: true });
+    // Open help follows the user to the next page, and closes on a page that has none.
+    if (help.kind !== "closed") setHelp(helpFor(appPage) ? { kind: "list" } : helpClosed);
+  }
+  // A page can drop its title, as Meetings does while a meeting is open; help goes with it.
+  if (help.kind !== "closed" && helpButton === null && shown.page === appPage) {
+    setHelp(helpClosed);
+  }
+  const toggleHelp = () =>
+    setHelp((current) => (current.kind === "closed" ? { kind: "list" } : helpClosed));
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
@@ -736,6 +753,7 @@ export function HubShell({
       : [
           { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
           { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
+          ...(helpButton ? [{ shortcut: shortcuts.help, run: toggleHelp }] : []),
           // selectAppPage focuses main through a ref, but jumpBindings only wraps it for keydown.
           // eslint-disable-next-line react/refs
           ...jumpBindings(appPages, selectAppPage),
@@ -833,9 +851,14 @@ export function HubShell({
             shown.rises && pageMotion.rise,
           )}
         >
-          <AppPageView {...view} />
+          <HelpContext
+            value={{ open: help.kind !== "closed", toggle: toggleHelp, setButton: setHelpButton }}
+          >
+            <AppPageView {...view} />
+          </HelpContext>
         </div>
       </main>
+      <HelpPopover page={appPage} state={help} onChange={setHelp} button={helpButton} />
       <SettingsModal
         state={settings}
         view={view}
