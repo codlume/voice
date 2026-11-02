@@ -20,11 +20,11 @@ import {
   type TransformRun,
 } from "./transform-run.ts";
 
-export type TransformsOptions = {
+type TransformsOptions = {
   store: Store;
   send: (command: HelperCommand) => void;
   model: Pick<TransformModel, "run" | "warm">;
-  copy: (text: string) => void;
+  copy: (text: string) => Promise<void>;
   onLastTransform: (value: LastTransform | null) => void;
   log: Log;
   now?: () => number;
@@ -34,7 +34,7 @@ export type Transforms = {
   onHelperEvent(event: HelperEvent): void;
   dispatch(event: TransformEvent): void;
   lastTransform(): LastTransform | null;
-  copyLastTransform(which: "before" | "after"): void;
+  copyLastTransform(which: "before" | "after"): Promise<void>;
   remember(value: Omit<LastTransform, "finishedAt">): void;
   clearLast(): void;
   dispose(): void;
@@ -168,7 +168,13 @@ export function createTransforms(options: TransformsOptions): Transforms {
         return;
       case "insert":
         track(effect.id, { insertStartedAt: now() });
-        send({ type: "insert", id: effect.id, text: effect.text, html: null });
+        send({
+          type: "insert",
+          id: effect.id,
+          text: effect.text,
+          html: null,
+          keepOnClipboard: false,
+        });
         return;
       case "endRun":
         if (active?.id === effect.id) active.controller.abort(ABORTED);
@@ -250,8 +256,8 @@ export function createTransforms(options: TransformsOptions): Transforms {
     dispatch,
     lastTransform: () => last,
     copyLastTransform: (which) => {
-      if (!last) throw new Error(NO_LAST_TRANSFORM_MESSAGE);
-      options.copy(last[which]);
+      if (!last) return Promise.reject(new Error(NO_LAST_TRANSFORM_MESSAGE));
+      return options.copy(last[which]);
     },
     remember: setLast,
     clearLast: () => setLast(null),

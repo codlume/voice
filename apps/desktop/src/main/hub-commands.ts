@@ -57,6 +57,8 @@ export type HubCommandDeps = {
   restartForUpdate: (request: RestartRequest) => Promise<void>;
   updateSettings: (change: (settings: Settings) => Settings) => Promise<void>;
   requestPermission: (kind: PermissionKind) => void;
+  downloadSpeakerModel: () => void;
+  watchMeetingPermissions: (watching: boolean) => void;
   refreshLoginItem: () => void;
   microphoneTest: Pick<MicrophoneTest, "start" | "stop">;
   modelControls: Record<ModelId, { install(): void; uninstall(): Promise<void> }>;
@@ -73,7 +75,10 @@ export type HubCommandDeps = {
   log: Log;
 };
 
-const UNAVAILABLE: MeetingCommandResult = { kind: "unavailable" };
+const GONE: MeetingCommandResult = {
+  kind: "refused",
+  message: "This meeting is no longer on this Mac.",
+};
 // Characters Finder or the save panel refuse in a file name.
 const UNSAFE_FILE_NAME = /[/\\:*?"<>|]/g;
 
@@ -96,6 +101,10 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
   });
   hubCommands.handle(Channel.requestPermission, (_event, kind) => {
     if (isPermissionKind(kind)) deps.requestPermission(kind);
+  });
+  hubCommands.handle(Channel.downloadSpeakerModel, () => deps.downloadSpeakerModel());
+  hubCommands.handle(Channel.watchMeetingPermissions, (_event, watching: unknown) => {
+    if (typeof watching === "boolean") deps.watchMeetingPermissions(watching);
   });
   hubCommands.handle(Channel.setOpenAtLogin, (_event, on: unknown) => {
     if (deps.development) return;
@@ -129,12 +138,12 @@ export function registerHubCommands(hubCommands: Commands<HubApi>, deps: HubComm
     if (typeof id !== "string" || version === null) return;
     const entry = history.entries().find((candidate) => candidate.id === id);
     if (!entry) throw new Error("This transcript is no longer in your history.");
-    clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
+    return clipboard.writeText(version === "raw" ? entry.raw : copyText(entry));
   });
   hubCommands.handle(Channel.getLastTransform, () => transforms.lastTransform());
   hubCommands.handle(Channel.copyLastTransform, (_event, which: unknown) => {
     if (which !== "before" && which !== "after") return;
-    transforms.copyLastTransform(which);
+    return transforms.copyLastTransform(which);
   });
   hubCommands.handle(Channel.deleteHistoryEntry, async (_event, id: unknown) => {
     if (typeof id !== "string") return;
@@ -220,7 +229,7 @@ const withMeeting =
   (command: (id: MeetingId) => Promise<MeetingCommandResult>) =>
   (_event: unknown, raw: unknown) => {
     const id = parseMeetingId(raw);
-    return id ? command(id) : UNAVAILABLE;
+    return id ? command(id) : GONE;
   };
 
 type MeetingControlDeps = Pick<HubCommandDeps, "meetings" | "meetingRecorder" | "log">;
@@ -332,7 +341,7 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
   hubCommands.handle(Channel.copyMeetingMarkdown, async (_event, raw: unknown) => {
     const id = parseMeetingId(raw);
     if (!id) return;
-    clipboard.writeText((await markdownOf(id)).markdown);
+    await clipboard.writeText((await markdownOf(id)).markdown);
   });
   hubCommands.handle(Channel.exportMeetingMarkdown, async (event, raw: unknown) => {
     const id = parseMeetingId(raw);
@@ -352,6 +361,8 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
     );
     return "saved";
   });
+  hubCommands.handle(Channel.retryMeetingTranscript, withMeeting(recorder.retryFinalPass));
+  hubCommands.handle(Channel.deleteMeetingAudio, withMeeting(recorder.deleteAudio));
   hubCommands.handle(Channel.startMeeting, () => recorder.start());
   hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));

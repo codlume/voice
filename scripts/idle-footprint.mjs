@@ -47,7 +47,9 @@ function tree(rootPid) {
     .trim()
     .split("\n")
     .map((line) => {
-      const [, pid, ppid, rss, time, args] = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+      const [, pid, ppid, rss, time, args] = /** @type {string[]} */ (
+        /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
+      );
       return {
         pid: Number(pid),
         ppid: Number(ppid),

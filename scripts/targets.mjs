@@ -49,6 +49,15 @@ export async function activate(pid, name) {
   );
 }
 
+const reading = (document) => async () => {
+  const { stdout } = await execFileAsync(
+    "osascript",
+    ["-e", `tell application "TextEdit" to get text of ${document.ref}`],
+    { encoding: "utf8", timeout: 1000, killSignal: "SIGKILL" },
+  );
+  return stdout.trim();
+};
+
 // Each document is a named file: an untitled one can fail to appear on a cold launch and is
 // renamed from its content, and closing one can raise a save sheet that blocks every later
 // AppleEvent. Only documents this target opened are closed, and TextEdit is quit only when this
@@ -58,15 +67,6 @@ export function textEditTarget(label) {
   const dir = mkdtempSync(join(tmpdir(), `voice-${label}-`));
   const documents = [];
   let current;
-
-  const reading = (document) => async () => {
-    const { stdout } = await execFileAsync(
-      "osascript",
-      ["-e", `tell application "TextEdit" to get text of ${document.ref}`],
-      { encoding: "utf8", timeout: 1000, killSignal: "SIGKILL" },
-    );
-    return stdout.trim();
-  };
 
   return {
     name: "TextEdit",

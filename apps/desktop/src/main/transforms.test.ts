@@ -61,6 +61,7 @@ function harness(opts: Options = {}) {
     transform: idleRun,
     meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+    speakerModel: "ready",
     loginItem: "off",
     models: {
       asr: { state: "ready" },
@@ -131,7 +132,9 @@ function harness(opts: Options = {}) {
           runs.push({ request, resolve, reject });
         }),
     },
-    copy: (text) => copies.push(text),
+    copy: async (text) => {
+      copies.push(text);
+    },
     onLastTransform: (value) => lasts.push(value),
     log: (message) => logs.push(message),
   });
@@ -186,7 +189,13 @@ describe("createTransforms", () => {
     await flush(10);
 
     expect(h.commands.map((c) => c.type)).toEqual(["selection.read", "insert", "transform.end"]);
-    expect(h.of("insert")[0]).toEqual({ type: "insert", id, text: RESULT, html: null });
+    expect(h.of("insert")[0]).toEqual({
+      type: "insert",
+      id,
+      text: RESULT,
+      html: null,
+      keepOnClipboard: false,
+    });
     expect(h.of("transform.end")[0]).toEqual({ type: "transform.end", id });
     expect(h.store.state.transform).toEqual({
       phase: "done",
@@ -368,7 +377,9 @@ describe("createTransforms", () => {
     const h = harness({ insertReason: "selectionChanged" });
     const run = await startGenerating(h);
     expect(h.transforms.lastTransform()).toBeNull();
-    expect(() => h.transforms.copyLastTransform("before")).toThrow(NO_LAST_TRANSFORM_MESSAGE);
+    await expect(h.transforms.copyLastTransform("before")).rejects.toThrow(
+      NO_LAST_TRANSFORM_MESSAGE,
+    );
 
     run.resolve({ ok: true, text: RESULT });
     await flush();
@@ -386,8 +397,8 @@ describe("createTransforms", () => {
       outcome: { kind: "notInserted", reason: "selectionChanged" },
     });
     expect(h.transforms.lastTransform()).toEqual(kept);
-    h.transforms.copyLastTransform("before");
-    h.transforms.copyLastTransform("after");
+    await h.transforms.copyLastTransform("before");
+    await h.transforms.copyLastTransform("after");
     expect(h.copies).toEqual([SELECTED, RESULT]);
 
     h.transforms.clearLast();
@@ -513,31 +524,31 @@ describe("createTransforms", () => {
   });
 });
 
+// Wired as index.ts wires it: every store change goes through it with the previous state.
+function followed(opts: Options & { onDisk?: boolean } = {}) {
+  const h = harness(opts);
+  const calls: ("install" | "unload" | "follow")[] = [];
+  const model = {
+    onDisk: () => opts.onDisk ?? true,
+    install: async () => void calls.push("install"),
+    unload: async () => void calls.push("unload"),
+    follow: () => void calls.push("follow"),
+  };
+  h.store.subscribe((state, previous) =>
+    followTransformSettings(model, h.transforms, state, previous),
+  );
+  const setTransforms = (patch: Partial<TransformSettings>) =>
+    h.store.update((s) => ({
+      ...s,
+      settings: { ...s.settings, transforms: { ...s.settings.transforms, ...patch } },
+    }));
+  const setEnabled = (enabled: boolean) => setTransforms({ enabled });
+  return { ...h, calls, setEnabled, setTransforms };
+}
+
 describe("followTransformSettings", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-
-  // Wired as index.ts wires it: every store change goes through it with the previous state.
-  function followed(opts: Options & { onDisk?: boolean } = {}) {
-    const h = harness(opts);
-    const calls: ("install" | "unload" | "follow")[] = [];
-    const model = {
-      onDisk: () => opts.onDisk ?? true,
-      install: async () => void calls.push("install"),
-      unload: async () => void calls.push("unload"),
-      follow: () => void calls.push("follow"),
-    };
-    h.store.subscribe((state, previous) =>
-      followTransformSettings(model, h.transforms, state, previous),
-    );
-    const setTransforms = (patch: Partial<TransformSettings>) =>
-      h.store.update((s) => ({
-        ...s,
-        settings: { ...s.settings, transforms: { ...s.settings.transforms, ...patch } },
-      }));
-    const setEnabled = (enabled: boolean) => setTransforms({ enabled });
-    return { ...h, calls, setEnabled, setTransforms };
-  }
 
   test("turning Transforms on downloads the model once when it is missing", () => {
     const h = followed({ transforms: { enabled: false }, onDisk: false });

@@ -54,7 +54,8 @@ final class Helper {
                                          diarize: { try await diarizer.turns(in: $0) }, isDictating: { capture.isDictating })
         meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
                             decode: { try await transcriber.decodeMeeting($0, language: $1) },
-                            finalPass: finalPass, isDictating: { capture.isDictating })
+                            finalPass: finalPass, isDictating: { capture.isDictating },
+                            isCapturingDictation: { capture.isCapturingDictation })
         diarizer.reportStatus()
     }
 
@@ -99,8 +100,8 @@ final class Helper {
             capture.startTest(id: id, microphone: microphone)
         case .microphoneTestStop(let id):
             capture.stopTest(id: id)
-        case .insert(let id, let text, let html):
-            insertion.insert(id: id, text: text, html: html, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
+        case .insert(let id, let text, let html, let keepOnClipboard):
+            insertion.insert(id: id, text: text, html: html, keepOnClipboard: keepOnClipboard, target: capture.takeLastTarget(id: id) ?? selection.take(id: id))
         case .selectionRead(let id):
             selection.read(id: id)
         case .transformEnd(let id):

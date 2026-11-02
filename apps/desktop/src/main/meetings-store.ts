@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import {
   DEFAULT_MEETINGS_SETTINGS,
   endedAt,
-  foldTranscript,
+  sortTranscript,
   markerKinds,
   meetingRetentionMs,
   parseFolderId,
@@ -13,6 +13,7 @@ import {
   parseMeetingsSettingsPatch,
   refile,
   searchMeeting,
+  spokenText,
   type Folder,
   type FolderDraft,
   type FolderId,
@@ -36,7 +37,7 @@ import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 
 /** A meeting a crash or quit left mid-lifecycle. `lastWriteAt` is the newest file in its folder. */
-export type Unfinished = { meeting: Meeting; lastWriteAt: number };
+type Unfinished = { meeting: Meeting; lastWriteAt: number };
 
 export type MeetingsStore = {
   /** Resolves once the launch read is in and retention has run. */
@@ -53,7 +54,8 @@ export type MeetingsStore = {
   upsert(id: MeetingId, change: (meeting: Meeting | null) => Meeting | null): Promise<void>;
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
-  append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<void>;
+  /** Resolves with the meeting's `transcriptRevision` after the lines, or null when none landed. */
+  append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<number | null>;
   /**
    * Swaps in a whole transcript and the meeting that goes with it, as the final pass does. The
    * transcript is written first, atomically, so a crash between the two leaves a transcript
@@ -86,8 +88,35 @@ const VERSION = 1;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const MAX_TIMER_MS = 2 ** 31 - 1;
+// Typing asks again at each pause, and each search reads every transcript, so their text is kept
+// until this long after the last search.
+const SEARCH_KEEP_MS = 60_000;
+const SEARCH_SLICE_MS = 8;
 
 class LeftAlone extends Error {}
+
+const envelope = (body: object) => `${JSON.stringify({ version: VERSION, ...body })}\n`;
+
+async function readJson(file: string): Promise<Record<string, unknown> | null> {
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new LeftAlone(`could not read ${NodePath.basename(file)} (${String(error)})`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new LeftAlone(`${NodePath.basename(file)} is not JSON`);
+  }
+  if (!isRecord(parsed)) throw new LeftAlone(`${NodePath.basename(file)} is not an object`);
+  if (parsed.version !== VERSION) {
+    throw new LeftAlone(`${NodePath.basename(file)} has version ${String(parsed.version)}`);
+  }
+  return parsed;
+}
 
 export function createMeetingsStore(options: {
   dir: string;
@@ -112,8 +141,17 @@ export function createMeetingsStore(options: {
   const tombstones = new Set<MeetingId>();
   // Transcripts whose last line this run checked, so an append never joins a line a crash tore.
   const appendChecked = new Set<MeetingId>();
+  // Meetings this launch found unfinished. Recovery finishes them; retention waits a launch, so
+  // a meeting is never deleted the moment it comes back, before the user saw it.
+  const recovered = new Set<MeetingId>();
   let ready = false;
   let expiry: NodeJS.Timeout | null = null;
+  // Spoken text by meeting while searches go on; a transcript write or a rename makes it stale.
+  const searchable = new Map<
+    MeetingId,
+    { revision: number; speakers: readonly Speaker[]; text: string }
+  >();
+  let forgetSearchable: NodeJS.Timeout | null = null;
   let queue: Promise<void> = Promise.resolve();
 
   function serial<T>(work: () => Promise<T>): Promise<T> {
@@ -133,8 +171,6 @@ export function createMeetingsStore(options: {
     scheduleExpiry();
   }
 
-  const envelope = (body: object) => `${JSON.stringify({ version: VERSION, ...body })}\n`;
-
   async function writeMeeting(meeting: Meeting) {
     await mkdir(meetingDir(meeting.id), { recursive: true, mode: DIR_MODE });
     await writeFileAtomic(meetingFile(meeting.id), envelope({ meeting }), { mode: FILE_MODE });
@@ -145,27 +181,6 @@ export function createMeetingsStore(options: {
     await mkdir(dir, { recursive: true, mode: DIR_MODE });
     await writeFileAtomic(foldersFile, envelope({ folders: next }), { mode: FILE_MODE });
     folders = next;
-  }
-
-  async function readJson(file: string): Promise<Record<string, unknown> | null> {
-    let text: string;
-    try {
-      text = await readFile(file, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw new LeftAlone(`could not read ${NodePath.basename(file)} (${String(error)})`);
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new LeftAlone(`${NodePath.basename(file)} is not JSON`);
-    }
-    if (!isRecord(parsed)) throw new LeftAlone(`${NodePath.basename(file)} is not an object`);
-    if (parsed.version !== VERSION) {
-      throw new LeftAlone(`${NodePath.basename(file)} has version ${String(parsed.version)}`);
-    }
-    return parsed;
   }
 
   async function loadMeeting(id: MeetingId) {
@@ -190,6 +205,9 @@ export function createMeetingsStore(options: {
     }
     const ids = names.flatMap((name) => parseMeetingId(name) ?? []);
     await Promise.all(ids.map(loadMeeting));
+    for (const meeting of meetings.values()) {
+      if (meeting.status.kind !== "ready") recovered.add(meeting.id);
+    }
     try {
       const found = await readJson(foldersFile);
       if (found) folders = parseFolders(found.folders);
@@ -209,7 +227,7 @@ export function createMeetingsStore(options: {
   }
 
   function expiresAt(meeting: Meeting): number {
-    if (meeting.status.kind !== "ready") return Infinity;
+    if (meeting.status.kind !== "ready" || recovered.has(meeting.id)) return Infinity;
     return (endedAt(meeting) ?? meeting.createdAt) + meetingRetentionMs[settings.retention];
   }
 
@@ -235,7 +253,18 @@ export function createMeetingsStore(options: {
     serial(async () => {
       const cutoff = now();
       const old = [...meetings.values()].filter((meeting) => expiresAt(meeting) <= cutoff);
-      for (const { id } of old) await removeNow(id);
+      let deleted = 0;
+      // One folder that will not delete must not fail the launch that every meeting action awaits.
+      for (const { id } of old) {
+        try {
+          await removeNow(id);
+          deleted += 1;
+        } catch (error) {
+          tombstones.delete(id);
+          log(`meetings: could not delete ${id} past retention (${String(error)})`);
+        }
+      }
+      if (deleted > 0) log(`meetings: deleted ${deleted} past the ${settings.retention} retention`);
       scheduleExpiry();
     });
 
@@ -247,7 +276,21 @@ export function createMeetingsStore(options: {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
-    return foldTranscript(text.split("\n").flatMap(parseLine));
+    return sortTranscript(text.split("\n").flatMap(parseLine));
+  }
+
+  async function searchableText(meeting: Meeting): Promise<string> {
+    const kept = searchable.get(meeting.id);
+    if (kept?.revision === meeting.transcriptRevision && kept.speakers === meeting.speakers) {
+      return kept.text;
+    }
+    const text = spokenText(meeting, await readTranscript(meeting.id));
+    searchable.set(meeting.id, {
+      revision: meeting.transcriptRevision,
+      speakers: meeting.speakers,
+      text,
+    });
+    return text;
   }
 
   const loading = serial(async () => {
@@ -302,12 +345,19 @@ export function createMeetingsStore(options: {
       }),
     append: (id, entries) =>
       serial(async () => {
-        if (tombstones.has(id) || entries.length === 0) return;
+        if (tombstones.has(id) || entries.length === 0) return null;
         const file = transcriptFile(id);
         await mkdir(meetingDir(id), { recursive: true, mode: DIR_MODE });
         const lead = !appendChecked.has(id) && (await tornTail(file)) ? "\n" : "";
         await appendFile(file, lead + lines(entries), { mode: FILE_MODE });
         appendChecked.add(id);
+        const meeting = meetings.get(id);
+        if (!meeting) return null;
+        // Neither written nor published: the caller sends the lines on with this revision, and
+        // the next write of the meeting carries it.
+        const transcriptRevision = meeting.transcriptRevision + 1;
+        meetings.set(id, { ...meeting, transcriptRevision });
+        return transcriptRevision;
       }),
     replaceTranscript: (id, change) =>
       serial(async () => {
@@ -316,11 +366,10 @@ export function createMeetingsStore(options: {
         const next = change(meeting, await readTranscript(id));
         await writeFileAtomic(transcriptFile(id), lines(next.transcript), { mode: FILE_MODE });
         appendChecked.add(id);
-        if (next.meeting !== meeting) {
-          await writeMeeting(next.meeting);
-          meetings.set(id, next.meeting);
-          publish([next.meeting]);
-        }
+        const rewritten = { ...next.meeting, transcriptRevision: meeting.transcriptRevision + 1 };
+        await writeMeeting(rewritten);
+        meetings.set(id, rewritten);
+        publish([rewritten]);
         return true;
       }),
     remove: (id) => serial(() => removeNow(id)),
@@ -387,10 +436,20 @@ export function createMeetingsStore(options: {
       if (patch.retention !== undefined) await expire();
     },
     async search(query) {
+      if (forgetSearchable) clearTimeout(forgetSearchable);
+      forgetSearchable = setTimeout(() => searchable.clear(), SEARCH_KEEP_MS);
+      forgetSearchable.unref();
       const hits: MeetingSearchHit[] = [];
+      let slice = performance.now();
       for (const meeting of list()) {
-        const quick = searchMeeting(meeting, [], query);
-        const hit = quick ?? searchMeeting(meeting, await readTranscript(meeting.id), query);
+        // Kept text makes the whole search synchronous, so it gives way to shortcuts and IPC.
+        if (performance.now() - slice > SEARCH_SLICE_MS) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          slice = performance.now();
+        }
+        const hit =
+          searchMeeting(meeting, "", query) ??
+          searchMeeting(meeting, await searchableText(meeting), query);
         if (hit) hits.push(hit);
       }
       return hits;
@@ -479,11 +538,16 @@ function parseStatus(raw: unknown): MeetingStatus | null {
         : null;
     case "recording":
       return isTime(raw.since) ? { kind: "recording", since: raw.since } : null;
+    case "transcribing":
+      return raw.step === "draining" || raw.step === "finalizing"
+        ? { kind: "transcribing", step: raw.step }
+        : null;
+    // Progress is only for the run that reported it.
+    case "summarizing":
+      return { kind: "summarizing", progress: null };
     case "paused":
     case "finishing":
     case "confirmingShort":
-    case "transcribing":
-    case "summarizing":
     case "ready":
       return { kind: raw.kind };
     default:
@@ -493,8 +557,8 @@ function parseStatus(raw: unknown): MeetingStatus | null {
 
 function parseSummaryBody(raw: unknown): Summary | null {
   if (!isRecord(raw) || !isText(raw.markdown)) return null;
-  if (!isTime(raw.generatedAt) || !isTime(raw.coversUntilMs)) return null;
-  return { markdown: raw.markdown, generatedAt: raw.generatedAt, coversUntilMs: raw.coversUntilMs };
+  if (!isTime(raw.coversUntilMs)) return null;
+  return { markdown: raw.markdown, coversUntilMs: raw.coversUntilMs };
 }
 
 function parseSummary(raw: unknown): SummaryState | null {
@@ -516,18 +580,21 @@ function parseMeeting(raw: unknown): Meeting | null {
   const status = parseStatus(raw.status);
   const summary = parseSummary(raw.summary);
   if (!id || !status || !summary || !isTime(raw.createdAt) || !isText(raw.notes)) return null;
+  const { finalPassFailed } = raw;
+  if (
+    finalPassFailed !== null &&
+    finalPassFailed !== "speakerModels" &&
+    finalPassFailed !== "other"
+  )
+    return null;
+  if (!Number.isSafeInteger(raw.transcriptRevision)) return null;
   if (!Array.isArray(raw.spans) || !Array.isArray(raw.folderIds)) return null;
   const spans = raw.spans.map(parseSpan);
   if (spans.some((span) => span === null)) return null;
-  let title: Meeting["title"] = null;
-  if (raw.title !== null) {
-    const { text, source } = isRecord(raw.title) ? raw.title : {};
-    if (!isText(text) || (source !== "user" && source !== "generated")) return null;
-    title = { text, source };
-  }
+  if (raw.title !== null && !isText(raw.title)) return null;
   return {
     id,
-    title,
+    title: raw.title,
     createdAt: raw.createdAt,
     spans: spans as Span[],
     status,
@@ -535,16 +602,16 @@ function parseMeeting(raw: unknown): Meeting | null {
     notes: raw.notes,
     summary,
     speakers: Array.isArray(raw.speakers) ? raw.speakers.flatMap(parseSpeaker) : [],
+    finalPassFailed,
+    transcriptRevision: raw.transcriptRevision as number,
   };
 }
 
 function parseSpeaker(raw: unknown): Speaker[] {
   if (!isRecord(raw) || !isText(raw.id) || !isText(raw.label)) return [];
   const speaker = { id: raw.id as SpeakerId, label: raw.label };
-  if (raw.name === null) return [{ ...speaker, name: null }];
-  const { text, source } = isRecord(raw.name) ? raw.name : {};
-  if (!isText(text) || (source !== "user" && source !== "meetingApp")) return [];
-  return [{ ...speaker, name: { text, source } }];
+  if (raw.name !== null && !isText(raw.name)) return [];
+  return [{ ...speaker, name: raw.name }];
 }
 
 function parseFolders(raw: unknown): Folder[] {
@@ -577,14 +644,13 @@ function parseLine(line: string): TranscriptEntry[] {
     return marker && isTime(raw.atMs) ? [{ kind: "marker", marker, atMs: raw.atMs }] : [];
   }
   if (raw.kind !== "segment" || !isText(raw.id) || !isText(raw.text)) return [];
-  if (!isTime(raw.startMs) || !isTime(raw.endMs) || typeof raw.final !== "boolean") return [];
+  if (!isTime(raw.startMs) || !isTime(raw.endMs)) return [];
   const base = {
     kind: "segment" as const,
     id: raw.id,
     startMs: raw.startMs,
     endMs: raw.endMs,
     text: raw.text,
-    final: raw.final,
   };
   if (raw.source === "mic") return [{ ...base, source: "mic" }];
   if (raw.source === "system") {

@@ -46,7 +46,7 @@ export function electronDependency(directory = desktopDir) {
   try {
     packagePath = createRequire(join(directory, "package.json")).resolve("electron/package.json");
   } catch (error) {
-    if (error.code !== "MODULE_NOT_FOUND") throw error;
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== "MODULE_NOT_FOUND") throw error;
     return { status: "missing: run pnpm install" };
   }
   const dir = dirname(packagePath);
@@ -66,6 +66,7 @@ export function electronPath() {
 }
 
 export function smokeEnvironment(userData, extraEnv = {}) {
+  /** @type {NodeJS.ProcessEnv} */
   const env = {
     ...process.env,
     ...extraEnv,
@@ -306,8 +307,8 @@ export const releaseUserData = releaseScratch;
 // this way never share a port.
 export function announcedPorts(child, servers, { timeoutMs = 30_000 } = {}) {
   const ports = {};
+  const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
   return new Promise((resolvePorts, reject) => {
-    const missing = () => servers.filter((server) => !(server in ports)).join(" and ");
     const timer = setTimeout(
       () => reject(new Error(`no ${missing()} port announced after ${timeoutMs} ms`)),
       timeoutMs,
@@ -420,7 +421,7 @@ export async function smokePackagedApp(app, { timeoutMs = 60_000 } = {}) {
         userData ??= /^\[voice\] userData (.+)$/.exec(line)?.[1];
         if (HELPER_READY.test(line)) {
           clearTimeout(timer);
-          resolve();
+          resolve(undefined);
         }
       });
     }
@@ -437,7 +438,10 @@ export async function smokePackagedApp(app, { timeoutMs = 60_000 } = {}) {
       );
     }
   } catch (error) {
-    throw new Error(`Packaged app ${app} ${error.message}\n${recent.join("\n")}`, { cause: error });
+    throw new Error(
+      `Packaged app ${app} ${/** @type {Error} */ (error).message}\n${recent.join("\n")}`,
+      { cause: error },
+    );
   } finally {
     await stopGroup(child);
     rmSync(userDataDir, { recursive: true, force: true });

@@ -19,24 +19,28 @@ struct CaptureRelayTests {
             output: output, transcriber: Transcriber(modelsDir: dir.appendingPathComponent("no-models"), output: output),
             devices: devices, outputLowering: OutputLowering(output: output, stateDir: dir), source: .fixture(file.path))
 
+        // The relay is exactly the gap the test chose, so it is checked against that gap. A loaded
+        // runner can stretch the sleep past any fixed upper bound.
         let pressedAt = DispatchTime.now().uptimeMs
         try await Task.sleep(for: .milliseconds(30))
-        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: .now(), hotkeyUptimeMs: pressedAt,
-                      outputVolumeScale: nil, microphone: nil)
+        let startReceivedAt = DispatchTime.now()
+        capture.start(id: "s1", language: .en, target: InsertTarget(pid: nil, bundleId: nil), receivedAt: startReceivedAt,
+                      hotkeyUptimeMs: pressedAt, outputVolumeScale: nil, microphone: nil)
         let started = try #require(sessionEvents(try await lines.wait(for: "capture.started")).last)
         let startMs = try #require(started["startMs"] as? Double)
         let pressRelayMs = try #require(started["relayMs"] as? Double)
         #expect(pressRelayMs >= 30)
-        #expect(pressRelayMs < 1000)
+        #expect(abs(pressRelayMs - (startReceivedAt.uptimeMs - pressedAt)) < 0.001)
         #expect(startMs >= pressRelayMs)
 
         let releasedAt = DispatchTime.now().uptimeMs
         try await Task.sleep(for: .milliseconds(20))
-        capture.stop(id: "s1", receivedAt: .now(), hotkeyUptimeMs: releasedAt)
+        let stopReceivedAt = DispatchTime.now()
+        capture.stop(id: "s1", receivedAt: stopReceivedAt, hotkeyUptimeMs: releasedAt)
         let transcript = try #require(sessionEvents(try await lines.wait(for: "transcript")).last)
         let releaseRelayMs = try #require(transcript["relayMs"] as? Double)
         #expect(releaseRelayMs >= 20)
-        #expect(releaseRelayMs < 1000)
+        #expect(abs(releaseRelayMs - (stopReceivedAt.uptimeMs - releasedAt)) < 0.001)
     }
 
     /// A command without a hotkey echo, and one echoing a time after the command arrived.

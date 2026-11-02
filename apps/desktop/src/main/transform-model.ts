@@ -6,7 +6,6 @@ import type {
   TransformResult,
 } from "@voice/cleanup/transform";
 import type { ModelSource } from "@voice/cleanup/download";
-import { transformsFirst } from "@voice/cleanup/transform/preempt";
 
 import type { ModelStatus } from "../shared/api.ts";
 import { forkUtility } from "./engine-process.ts";
@@ -15,7 +14,6 @@ import { createTransformProcess } from "./transform-engine.ts";
 export type {
   GenerateRequest,
   GenerateResult,
-  TransformFailure,
   TransformRequest,
   TransformResult,
 } from "@voice/cleanup/transform";
@@ -55,7 +53,7 @@ export type TransformModule = Pick<
   createProcess(options: { modelPath: string; onLost: (message: string) => void }): TransformEngine;
 };
 
-export type TransformModelOptions = {
+type TransformModelOptions = {
   modelsDir: string;
   baseUrl?: string | undefined;
   /** True while a transform runs after every dictation. Read whenever residency is decided. */
@@ -268,11 +266,6 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     }
   }
 
-  const turns = transformsFirst(
-    (request: TransformRequest) => onLoaded(request.signal, (engine) => engine.transform(request)),
-    (request: GenerateRequest) => onLoaded(request.signal, (engine) => engine.generate(request)),
-  );
-
   return {
     refresh: async () => {
       const { findModel, source } = await loadModule();
@@ -305,8 +298,8 @@ export function createTransformModel(options: TransformModelOptions): TransformM
       }
       void set({ phase: "missing" });
     },
-    run: turns.transform,
-    generate: turns.generate,
+    run: (request) => onLoaded(request.signal, (engine) => engine.transform(request)),
+    generate: (request) => onLoaded(request.signal, (engine) => engine.generate(request)),
     warm: () => {
       if (state.phase !== "installed" && !resident(state)) return;
       unloadWhenSettled = false;

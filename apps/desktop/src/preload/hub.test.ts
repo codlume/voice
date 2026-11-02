@@ -48,10 +48,12 @@ describe("hub preload", () => {
       "deleteFolder",
       "deleteHistoryEntry",
       "deleteMeeting",
+      "deleteMeetingAudio",
       "diagnosticsStartedAtLaunch",
       "discardMeeting",
       "dismissAccountError",
       "dismissMeetingNotice",
+      "downloadSpeakerModel",
       "downloadUpdate",
       "editAssignments",
       "exportMeetingMarkdown",
@@ -73,6 +75,7 @@ describe("hub preload", () => {
       "onMeetingPartial",
       "onMeetingTranscript",
       "onMeetings",
+      "onOpenMeeting",
       "onRestartRequest",
       "onSnapshot",
       "openNotepad",
@@ -85,6 +88,7 @@ describe("hub preload", () => {
       "restartForUpdate",
       "resumeMeeting",
       "retryAccountDeletion",
+      "retryMeetingTranscript",
       "searchMeetings",
       "setHistoryRetention",
       "setMeetingInFolder",
@@ -103,6 +107,7 @@ describe("hub preload", () => {
       "updateMeetingNotes",
       "updateMeetingsSettings",
       "updateSettings",
+      "watchMeetingPermissions",
     ]);
   });
 

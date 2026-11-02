@@ -28,6 +28,8 @@ function meeting(n: number, status: MeetingStatus, patch: Partial<Meeting> = {})
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: null,
+    transcriptRevision: 0,
     ...patch,
   };
 }
@@ -52,8 +54,8 @@ describe("currentMeeting", () => {
   test("finished meetings are never current", () => {
     const done = [
       meeting(1, { kind: "ready" }),
-      meeting(2, { kind: "transcribing" }),
-      meeting(3, { kind: "summarizing" }),
+      meeting(2, { kind: "transcribing", step: "finalizing" }),
+      meeting(3, { kind: "summarizing", progress: null }),
     ];
     expect(currentMeeting(done)).toBeNull();
   });
@@ -101,10 +103,35 @@ describe("prompts", () => {
     expect(lostText(null)).toMatch(/^Audio stopped coming in, /);
   });
 
-  test("summary outcomes stay in the Voice window", () => {
-    const live = recording(1);
-    const focus = follow(noMeetingFocus, [live]);
-    expect(raise(focus, live.id, { kind: "summaryReady", open: true }, 0)).toBe(focus);
+  test("a ready summary is offered in the notepad and on the Meetings page until it is viewed or dismissed", () => {
+    const done = meeting(
+      1,
+      { kind: "ready" },
+      {
+        summary: { kind: "ready", summary: { markdown: "Shipped.", coversUntilMs: 1000 } },
+      },
+    );
+    const focus = raise(
+      follow(noMeetingFocus, [done]),
+      done.id,
+      { kind: "summaryReady", open: true },
+      0,
+    );
+    expect(promptFor(done, focus)).toEqual({ kind: "summaryReady" });
+    expect(meetingBanners(focus)).toEqual([
+      {
+        key: 1,
+        id: done.id,
+        text: "Your summary is ready.",
+        actions: ["viewSummary"],
+        dismissable: true,
+      },
+    ]);
+    expect(meetingBanners(dismiss(focus))).toEqual([]);
+    // Recording again makes it moot.
+    const resumed = follow(focus, [{ ...done, status: { kind: "recording", since: 0 } }]);
+    expect(meetingBanners(resumed)).toEqual([]);
+    expect(resumed.raised).toBeNull();
   });
 
   test("a short recording asks Started by mistake, over anything a notice raised", () => {
@@ -129,7 +156,7 @@ describe("prompts", () => {
 const texts = (focus: MeetingFocus) => meetingBanners(focus).map(({ text }) => text);
 
 describe("notices on the Meetings page", () => {
-  test("outcomes show in the words the notepad uses; questions and summary ready do not", () => {
+  test("outcomes show in the words the notepad uses; questions do not", () => {
     const paused = meeting(1, { kind: "paused" });
     let focus = follow(noMeetingFocus, [paused]);
     for (const notice of [
@@ -137,7 +164,6 @@ describe("notices on the Meetings page", () => {
       { kind: "maxLengthReached" },
       { kind: "silence" },
       { kind: "maxLengthSoon", inMs: 1000 },
-      { kind: "summaryReady", open: true },
     ] as const) {
       focus = raise(focus, paused.id, notice, 0);
     }
@@ -149,6 +175,8 @@ describe("notices on the Meetings page", () => {
       key: 1,
       id: paused.id,
       text: lostText({ source: "mic", reason: "device" }),
+      actions: [],
+      dismissable: true,
     });
   });
 
@@ -185,15 +213,27 @@ describe("notices on the Meetings page", () => {
     const summary = raise(
       follow(noMeetingFocus, [failed]),
       failed.id,
-      { kind: "summaryFailed" },
+      { kind: "summaryFailed", message: "No model" },
       0,
     );
-    expect(texts(summary)).toEqual(["The summary could not be written."]);
-    expect(texts(follow(summary, [{ ...failed, status: { kind: "summarizing" } }]))).toEqual([]);
+    expect(texts(summary)).toEqual(["The summary could not be written. No model"]);
+    expect(
+      texts(follow(summary, [{ ...failed, status: { kind: "summarizing", progress: null } }])),
+    ).toEqual([]);
 
-    const done = meeting(3, { kind: "ready" });
-    const pass = raise(follow(noMeetingFocus, [done]), done.id, { kind: "finalPassFailed" }, 0);
+    const done = meeting(3, { kind: "ready" }, { finalPassFailed: "other" });
+    const pass = raise(
+      follow(noMeetingFocus, [done]),
+      done.id,
+      { kind: "finalPassFailed", reason: "other" },
+      0,
+    );
+    expect(meetingBanners(pass)[0]).toMatchObject({
+      actions: ["retryFinalPass", "deleteAudio"],
+      dismissable: false,
+    });
     expect(texts(follow(pass, [done]))).toHaveLength(1);
+    expect(texts(follow(pass, [{ ...done, finalPassFailed: null }]))).toEqual([]);
     expect(texts(follow(pass, []))).toEqual([]);
   });
 

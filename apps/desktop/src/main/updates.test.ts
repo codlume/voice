@@ -712,7 +712,7 @@ describe("updates", () => {
     const { updates, engine, canRestart } = setup();
     await updates.check();
     await updates.download();
-    const beforeInstall = vi.fn();
+    const beforeInstall = vi.fn(async () => {});
     canRestart.mockReturnValue(false);
     await expect(updates.restart(beforeInstall)).rejects.toThrow("Finish dictation");
     expect(beforeInstall).not.toHaveBeenCalled();
@@ -720,6 +720,20 @@ describe("updates", () => {
     await updates.restart(beforeInstall);
     expect(beforeInstall).toHaveBeenCalledOnce();
     expect(engine.quitAndInstall).toHaveBeenCalledOnce();
+  });
+
+  test("a pre-install copy that fails stops the restart before anything quits", async () => {
+    const { updates, engine, status } = setup();
+    await updates.check();
+    await updates.download();
+    const copy = Promise.withResolvers<void>();
+    const restarting = updates.restart(() => copy.promise);
+    await Promise.resolve();
+    expect(engine.quitAndInstall).not.toHaveBeenCalled();
+    copy.reject(new Error("clipboard is busy"));
+    await expect(restarting).rejects.toThrow("clipboard is busy");
+    expect(engine.quitAndInstall).not.toHaveBeenCalled();
+    expect(status().kind).toBe("ready");
   });
 
   test("install waits for native shutdown exactly once", async () => {

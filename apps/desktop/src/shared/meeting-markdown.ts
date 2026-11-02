@@ -1,5 +1,5 @@
 import {
-  foldTranscript,
+  sortTranscript,
   resolveSpeakerTokens,
   speakerName,
   startedAt,
@@ -7,6 +7,7 @@ import {
   type Marker,
   type Meeting,
   type MarkerKind,
+  type Summary,
   type TranscriptEntry,
 } from "./meetings.ts";
 
@@ -16,6 +17,12 @@ export const markerText: Record<MarkerKind, string> = {
   dictated: "Dictated",
   gap: "Audio lost",
 };
+
+/** The summary a meeting shows: the ready one, or the one a failed update left in place. */
+export function shownSummary({ summary }: Meeting): Summary | null {
+  if (summary.kind === "ready") return summary.summary;
+  return summary.kind === "failed" ? summary.previous : null;
+}
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -46,12 +53,15 @@ export function meetingMarkdown(
       timeZone: format.timeZone,
     }).format(at),
   );
-  if (meeting.summary.kind === "ready") {
-    const markdown = resolveSpeakerTokens(meeting.summary.summary.markdown, meeting.speakers);
-    sections.push(`## Summary\n\n${markdown.trim()}`);
+  const summary = shownSummary(meeting);
+  if (summary) {
+    const markdown = resolveSpeakerTokens(summary.markdown, meeting.speakers).trim();
+    const note =
+      meeting.summary.kind === "failed" ? "*Previous summary. Updating it failed.*\n\n" : "";
+    sections.push(`## Summary\n\n${note}${markdown}`);
   }
   if (meeting.notes.trim() !== "") sections.push(`## My thoughts\n\n${meeting.notes.trim()}`);
-  const lines = foldTranscript(transcript).flatMap((entry) => {
+  const lines = sortTranscript(transcript).flatMap((entry) => {
     if (entry.kind === "marker") return [markerLine(entry)];
     const text = entry.text.trim();
     return text === ""

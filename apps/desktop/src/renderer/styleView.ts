@@ -9,7 +9,7 @@ import {
 } from "../shared/app-categories.ts";
 import { assignedCategory, assignmentKey, type Assignment } from "../shared/style.ts";
 
-export const BANNER_ICONS = 4;
+const BANNER_ICONS = 4;
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   personal: "Personal messages",

@@ -8,9 +8,10 @@ import {
 } from "../shared/api.ts";
 import { clock } from "../shared/meeting-markdown.ts";
 import type { PillMeeting } from "../shared/meetings.ts";
+import { clockTicks, minutesLeft, promptTitles, statusView } from "./meetingStatus.ts";
 
-/** `recording` is the only look that says audio is being captured. */
-export type MeetingLook = "recording" | "paused" | "waiting" | "prompt";
+/** `recording` and `recordingPrompt` are the only looks that say audio is being captured. */
+export type MeetingLook = "recording" | "recordingPrompt" | "paused" | "waiting" | "prompt";
 
 type PillView =
   | { kind: "idle" }
@@ -124,33 +125,37 @@ export function pillView(session: PillState): PillView {
   }
 }
 
-const MINUTE_MS = 60_000;
-
 const meeting = (look: MeetingLook, text: string) => ({ kind: "meeting", look, text }) as const;
 
-function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): PillView {
+function promptText(prompt: PillMeeting["prompt"], now: number): string | null {
   // The notepad carries a notice's full text and the answers; the Flow Bar only asks.
   switch (prompt?.kind) {
     case "startedByMistake":
-      return meeting("prompt", "Started by mistake?");
     case "silence":
-      return meeting("prompt", "Still in a meeting?");
-    case "maxLengthSoon": {
-      const minutes = Math.max(1, Math.ceil((prompt.endsAt - now) / MINUTE_MS));
-      return meeting("prompt", `Recording ends in ${minutes} min`);
-    }
+      return promptTitles[prompt.kind];
+    case "maxLengthSoon":
+      return `Recording ends in ${minutesLeft(prompt.endsAt, now)} min`;
+    default:
+      return null;
   }
+}
+
+function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): PillView {
+  const asking = promptText(prompt, now);
+  if (asking !== null) {
+    return meeting(status.kind === "recording" ? "recordingPrompt" : "prompt", asking);
+  }
+  const { label } = statusView(status);
   switch (status.kind) {
     case "starting":
-      return meeting("waiting", "Starting…");
+    case "finishing":
+      return meeting("waiting", label);
     case "recording":
       return meeting("recording", clock(closedMs + Math.max(0, now - status.since)));
     case "paused":
-      return meeting("paused", `Paused · ${clock(closedMs)}`);
-    case "finishing":
-      return meeting("waiting", "Wrapping up…");
+      return meeting("paused", `${label} · ${clock(closedMs)}`);
     case "confirmingShort":
-      return meeting("prompt", "Started by mistake?");
+      return meeting("prompt", promptTitles.startedByMistake);
   }
 }
 
@@ -159,11 +164,8 @@ export function flowBarView(snapshot: PillSnapshot, now: number): PillView {
   return showsMeeting(snapshot) ? meetingView(snapshot.meeting, now) : pillView(snapshot.session);
 }
 
-/** The clock moves only while a meeting records or counts down to its maximum length. */
 export const ticks = (snapshot: PillSnapshot) =>
-  showsMeeting(snapshot) &&
-  (snapshot.meeting.status.kind === "recording" ||
-    snapshot.meeting.prompt?.kind === "maxLengthSoon");
+  showsMeeting(snapshot) && clockTicks(snapshot.meeting.status, snapshot.meeting.prompt);
 
 export const BAR_COUNT = 11;
 export const MIN_BAR_SCALE = 0.18;

@@ -19,7 +19,7 @@ import {
 } from "../shared/rewrite.ts";
 
 /** Which key started the session: held for its length, or tapped once to start and again to stop. */
-export type DictationMode = "hold" | "toggle";
+type DictationMode = "hold" | "toggle";
 
 /** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };
@@ -60,6 +60,8 @@ export type Session =
       destination: Destination | null;
       copyToClipboard: boolean;
     }
+  // Insertion failed and the transcript is going to the clipboard; done waits for the write.
+  | { phase: "copying"; id: string; reason: InsertFailure }
   | { phase: "done"; id: string; outcome: Outcome };
 
 type Cleaning = Extract<Session, { phase: "cleaning" }>;
@@ -92,6 +94,7 @@ export type SessionEvent =
   | { type: "cleaned"; id: string; text: string }
   | { type: "cleanupFailed"; id: string }
   | { type: "insertResult"; id: string; method: InsertMethod; reason: InsertFailure | null }
+  | { type: "copied"; id: string; ok: boolean }
   | { type: "helperExited" }
   | { type: "timedOut"; id: string }
   | { type: "idleTimeout"; id: string };
@@ -104,7 +107,7 @@ export type Command =
   | ({ type: "capture.start"; id: string } & HotkeyTime)
   | ({ type: "capture.stop"; id: string; releasedAt: number } & HotkeyTime)
   | { type: "capture.cancel"; id: string }
-  | { type: "insert"; id: string; output: Output };
+  | { type: "insert"; id: string; output: Output; keepOnClipboard: boolean };
 
 export type Effect =
   | { type: "send"; command: Command }
@@ -112,7 +115,7 @@ export type Effect =
   | { type: "cancelCleanup"; id: string }
   | { type: "keepTransform"; transformId: TransformId; before: string; after: string }
   | ({ type: "remember" } & Transcript)
-  | { type: "copy"; output: Output }
+  | { type: "copy"; id: string; output: Output }
   | {
       type: "dictated";
       id: string;
@@ -131,6 +134,7 @@ const MIN_HOLD_MS = 250;
 export const IDLE_AFTER_INSERTED_MS = 1300;
 export const IDLE_AFTER_OTHER_MS = 2500;
 export const INSERT_TIMEOUT_MS = 5000;
+export const COPY_TIMEOUT_MS = 2000;
 export const ASR_MISSING_MESSAGE = "Set up the speech model in Voice first";
 export const ASR_DOWNLOADING_MESSAGE = "The speech model is still downloading";
 export const HELPER_EXITED_MESSAGE = "Voice helper stopped";
@@ -218,12 +222,12 @@ function inserting(
 }
 
 function insert(state: Inserting): Step {
-  const { id, raw, output } = state;
+  const { id, raw, output, copyToClipboard } = state;
   return {
     state,
     effects: [
       { type: "remember", id, raw, text: output.text, status: "pending" },
-      send({ type: "insert", id, output }),
+      send({ type: "insert", id, output, keepOnClipboard: copyToClipboard }),
     ],
   };
 }
@@ -242,10 +246,19 @@ function produced(
   const kept: Effect[] = [
     { type: "dictated", id, raw, insertedCleanup, dictionaryFixes, destination },
   ];
-  if (copyToClipboard) kept.push({ type: "copy", output: state.output });
-  const settled: Outcome =
-    outcome.kind === "notInserted" ? { ...outcome, copied: copyToClipboard } : outcome;
-  return finish(id, settled, ...effects, ...kept);
+  // A paste sent with keepOnClipboard already left the output on the clipboard.
+  const pasted = outcome.kind === "inserted" && outcome.method === "paste";
+  if (!copyToClipboard || pasted) {
+    const settled: Outcome =
+      outcome.kind === "notInserted" ? { ...outcome, copied: false } : outcome;
+    return finish(id, settled, ...effects, ...kept);
+  }
+  kept.push({ type: "copy", id, output: state.output });
+  if (outcome.kind === "inserted") return finish(id, outcome, ...effects, ...kept);
+  return {
+    state: { phase: "copying", id, reason: outcome.reason },
+    effects: [...effects, ...kept],
+  };
 }
 
 export function step(state: Session, event: SessionEvent, now: number): Step {
@@ -307,7 +320,11 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       const raw = event.text.trim();
       const current = state.phase !== "idle" && state.id === event.id;
       // A second transcript for the session already being cleaned or inserted is a duplicate.
-      if (current && (state.phase === "cleaning" || state.phase === "inserting")) return same;
+      if (
+        current &&
+        (state.phase === "cleaning" || state.phase === "inserting" || state.phase === "copying")
+      )
+        return same;
       const sessionOver =
         !current || (state.phase !== "transcribing" && state.phase !== "recording");
       if (sessionOver) {
@@ -385,8 +402,13 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       }
       return produced(state, { kind: "inserted", method: event.method });
     }
+    case "copied": {
+      if (state.phase !== "copying") return same;
+      return finish(state.id, { kind: "notInserted", reason: state.reason, copied: event.ok });
+    }
     case "helperExited": {
-      if (state.phase === "idle" || state.phase === "done") return same;
+      if (state.phase === "idle" || state.phase === "done" || state.phase === "copying")
+        return same;
       const lost = { kind: "notInserted", reason: "failed" } as const;
       if (state.phase === "cleaning") {
         return produced(uncleaned(state), lost, { type: "cancelCleanup", id: state.id });
@@ -414,6 +436,10 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (state.phase === "inserting") {
         return produced(state, { kind: "notInserted", reason: "failed" });
       }
+      // A write that never settles must not hold the session; the user is not told it copied.
+      if (state.phase === "copying") {
+        return finish(state.id, { kind: "notInserted", reason: state.reason, copied: false });
+      }
       return same;
     }
     case "idleTimeout":
@@ -432,6 +458,7 @@ export function toPillState(session: Session): PillState {
       return { kind: "processing", overdue: session.overdue };
     case "cleaning":
     case "inserting":
+    case "copying":
       return { kind: "processing", overdue: false };
     case "done":
       return { kind: "done", outcome: session.outcome };

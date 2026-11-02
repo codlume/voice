@@ -18,7 +18,7 @@ export type HelperExit =
   | { code: number | null; signal: NodeJS.Signals | null; pid?: number | undefined }
   | { spawnError: string };
 
-export type HelperOptions = {
+type HelperOptions = {
   binary: string;
   modelsDir: string;
   stateDir: string;

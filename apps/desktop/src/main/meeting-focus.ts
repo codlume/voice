@@ -1,10 +1,12 @@
 import {
   closedMs,
+  isCapturing,
   noticeText,
   type Meeting,
   type MeetingBanner,
   type MeetingId,
   type MeetingNotice,
+  type MeetingNoticeAction,
   type MeetingPrompt,
   type PillMeeting,
   type PillMeetingStatus,
@@ -31,7 +33,7 @@ export const noMeetingFocus: MeetingFocus = {
   nextKey: 1,
 };
 
-export type CurrentMeeting = Meeting & { status: PillMeetingStatus };
+type CurrentMeeting = Meeting & { status: PillMeetingStatus };
 
 // A capture comes first, then an answer the user owes, then a meeting they can resume.
 const rank: Record<PillMeetingStatus["kind"], number> = {
@@ -56,7 +58,7 @@ export function currentMeeting(meetings: readonly Meeting[]): CurrentMeeting | n
 
 /**
  * The prompt a notice raises where the user is. A failed start leaves no meeting to show it on,
- * and the final pass and summary outcomes belong to the Voice window.
+ * and the final pass and a failed summary belong to the Voice window.
  */
 export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt | null {
   switch (notice.kind) {
@@ -64,6 +66,8 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
       return { kind: "silence" };
     case "maxLengthSoon":
       return { kind: "maxLengthSoon", endsAt: now + notice.inMs };
+    case "summaryReady":
+      return { kind: "summaryReady" };
     case "resumeFailed":
     case "captureLost":
     case "maxLengthReached":
@@ -81,26 +85,26 @@ function stillApplies(prompt: MeetingPrompt, meeting: Meeting): boolean {
   if (prompt.kind === "silence" || prompt.kind === "maxLengthSoon") {
     return meeting.status.kind === "recording";
   }
-  return !isLive(meeting);
+  return !isCapturing(meeting);
 }
 
 // A failed start has no meeting; it is moot once one records. A failed summary goes once it is
-// tried again, and a failed final pass stays.
+// tried again, and a failed final pass once the pass is made or its audio deleted.
 function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
-  if (banner.kind === "startFailed") return !meetings.some(isLive);
+  if (banner.kind === "startFailed") return !meetings.some(isCapturing);
   const meeting = meetings.find(({ id }) => id === banner.id);
   if (!meeting) return false;
   switch (banner.kind) {
     case "finalPassFailed":
-      return true;
+      return meeting.finalPassFailed !== null;
     case "summaryFailed":
       return meeting.summary.kind === "failed" && meeting.status.kind !== "summarizing";
+    case "summaryReady":
+      return meeting.summary.kind === "ready" && meeting.status.kind === "ready";
     default:
-      return !isLive(meeting);
+      return !isCapturing(meeting);
   }
 }
-
-const isLive = ({ status }: Meeting) => status.kind === "recording" || status.kind === "starting";
 
 /** Follows the meetings: picks the current one and drops prompts and notices that stopped applying. */
 export function follow(focus: MeetingFocus, meetings: readonly Meeting[]): MeetingFocus {
@@ -126,13 +130,26 @@ export function raise(
   if (text === null) return prompt ? { ...focus, raised: { id, prompt, key: null } } : focus;
   const key = focus.nextKey;
   const others = focus.banners.filter((banner) => banner.id !== id || banner.kind !== notice.kind);
+  const banner: Banner = {
+    key,
+    id,
+    kind: notice.kind,
+    text,
+    actions: noticeActions[notice.kind] ?? [],
+    dismissable: notice.kind !== "finalPassFailed",
+  };
   return {
     ...focus,
     raised: prompt ? { id, prompt, key } : focus.raised,
-    banners: [{ key, id, kind: notice.kind, text }, ...others],
+    banners: [banner, ...others],
     nextKey: key + 1,
   };
 }
+
+const noticeActions: Partial<Record<MeetingNotice["kind"], readonly MeetingNoticeAction[]>> = {
+  finalPassFailed: ["retryFinalPass", "deleteAudio"],
+  summaryReady: ["viewSummary"],
+};
 
 /** Answers the notepad's prompt, and takes the notice it came from off the Meetings page. */
 export const dismiss = (focus: MeetingFocus): MeetingFocus =>
@@ -147,7 +164,7 @@ export function dismissBanner(focus: MeetingFocus, key: number | null): MeetingF
 }
 
 export const meetingBanners = (focus: MeetingFocus): MeetingBanner[] =>
-  focus.banners.map(({ key, id, text }) => ({ key, id, text }));
+  focus.banners.map(({ kind: _kind, ...banner }) => banner);
 
 /** "Started by mistake?" holds the meeting, so it comes before anything a notice raised. */
 export function promptFor(meeting: Meeting, focus: MeetingFocus): MeetingPrompt | null {

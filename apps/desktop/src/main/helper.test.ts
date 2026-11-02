@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { DiagnosticLog } from "./diagnostics-scrub.ts";
 import { RESTART_MIN_MS, startHelper, type Helper, type HelperExit } from "./helper.ts";
-import { decodeTarget, type HelperEvent } from "./protocol.ts";
+import { decodeTarget, HELPER_PROTOCOL_VERSION, type HelperEvent } from "./protocol.ts";
 
 const FAKE = NodePath.join(import.meta.dirname, "testing/fake-helper.ts");
 
@@ -100,7 +100,7 @@ describe("startHelper", () => {
     const h = boot({ transcript: "call ada tomorrow", startMs: 20 });
     helper = h.helper;
     await h.waitFor((e) => e.type === "asr.status");
-    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: 18 });
+    expect(h.of("ready")[0]?.event).toEqual({ type: "ready", version: HELPER_PROTOCOL_VERSION });
     expect(h.of("log").map((e) => e.event.message)).toContain("hotkey configured: fn");
     expect(h.of("permissions")[0]?.event).toEqual({
       type: "permissions",
@@ -140,7 +140,13 @@ describe("startHelper", () => {
     expect(transcript).toMatchObject({ id: "s1", text: "call ada tomorrow", asrMs: 40 });
     expect(transcript.audioMs).toBeGreaterThanOrEqual(100);
 
-    h.helper.send({ type: "insert", id: "s1", text: transcript.text, html: null });
+    h.helper.send({
+      type: "insert",
+      id: "s1",
+      text: transcript.text,
+      html: null,
+      keepOnClipboard: false,
+    });
     await h.waitFor((e) => e.type === "insert.result");
     expect(h.of("insert.result")[0]?.event).toEqual({
       type: "insert.result",
@@ -229,12 +235,19 @@ describe("startHelper", () => {
     helper = h.helper;
     await expect
       .poll(() => h.logs.join("\n"))
-      .toMatch(/helper: speaks protocol v2 but this build expects v18; refusing/);
+      .toMatch(
+        new RegExp(
+          `helper: speaks protocol v2 but this build expects v${HELPER_PROTOCOL_VERSION}; refusing`,
+        ),
+      );
     expect(h.entries).toEqual([
       {
         message: "helper protocol mismatch",
         level: "fatal",
-        attributes: { "helper.protocol_version": 2, "helper.expected_version": 18 },
+        attributes: {
+          "helper.protocol_version": 2,
+          "helper.expected_version": HELPER_PROTOCOL_VERSION,
+        },
       },
     ]);
     await sleep(RESTART_MIN_MS + 150);
@@ -313,7 +326,9 @@ describe("startHelper", () => {
     await h.waitFor((e) => e.type === "ready");
     await sleep(60);
     const text = "x".repeat(1 << 20);
-    expect(() => h.helper.send({ type: "insert", id: "s1", text, html: null })).not.toThrow();
+    expect(() =>
+      h.helper.send({ type: "insert", id: "s1", text, html: null, keepOnClipboard: false }),
+    ).not.toThrow();
     await expect.poll(() => h.logs.join("\n")).toMatch(/helper: stdin .*EPIPE/);
     expect(h.entries).toContainEqual({
       message: "helper stdin failed",
@@ -348,7 +363,7 @@ describe("startHelper", () => {
     const h = boot({ script: [{ at: 10, action: "exit" }] });
     helper = h.helper;
     await h.waitFor((e) => e.type === "ready");
-    await sleep(60);
+    await expect.poll(() => h.exits.length).toBe(1);
     expect(() => h.helper.send({ type: "permissions.check" })).not.toThrow();
     expect(h.logs.some((line) => line.includes("dropped permissions.check"))).toBe(true);
     expect(h.entries).toContainEqual({

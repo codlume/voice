@@ -19,26 +19,34 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
+import type { OpenMeetingRequest } from "../shared/meetings.ts";
 import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
+import { Badge } from "./Badge.tsx";
 import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.tsx";
+import { DataPrivacySettings } from "./DataPrivacySettings.tsx";
 import { Dictionary } from "./Dictionary.tsx";
+import { GeneralSettings } from "./GeneralSettings.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
+import { helpFor } from "./help.ts";
+import { HelpContext, helpClosed, HelpPopover, type HelpState } from "./HelpPopover.tsx";
 import { Meetings } from "./Meetings.tsx";
+import { ModelsSettings } from "./ModelsSettings.tsx";
 import { pageMotion } from "./pageMotion.ts";
-import {
-  DataPrivacySettings,
-  GeneralSettings,
-  ModelsSettings,
-  ShortcutsSettings,
-  SystemSettings,
-} from "./Settings.tsx";
 import {
   jumpShortcuts,
   shortcuts,
@@ -49,8 +57,10 @@ import {
   type Binding,
   type Shortcut,
 } from "./shortcuts.ts";
+import { ShortcutsSettings } from "./ShortcutsSettings.tsx";
 import { Snippets } from "./Snippets.tsx";
 import { Style } from "./Style.tsx";
+import { SystemSettings } from "./SystemSettings.tsx";
 import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
@@ -62,7 +72,7 @@ import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 const appPageGroups = [
   [
     { id: "home", label: "Home", icon: HouseIcon },
-    { id: "meetings", label: "Meetings", icon: UsersIcon },
+    { id: "meetings", label: "Meetings", icon: UsersIcon, badge: "Beta" },
     { id: "insights", label: "Insights", icon: ChartColumnIcon },
     { id: "style", label: "Style", icon: PenLineIcon },
     { id: "transforms", label: "Transforms", icon: WandSparklesIcon },
@@ -98,14 +108,23 @@ type PageView = {
   openSettingsPage: (id: SettingsPage) => void;
   /** The Meetings page's own settings dialog, which Settings can open too. */
   meetingSettings: { open: boolean; setOpen: (open: boolean) => void };
+  /** The meeting main last asked to show; a new object each time it asks. */
+  openMeeting: OpenMeetingRequest | null;
+  /** Where a page can put a card under the nav; null while the sidebar is collapsed. */
+  sidebar: HTMLElement | null;
 };
 
 const appPageViews: Record<AppPage, (view: PageView) => ReactNode> = {
   home: ({ snapshot, history, openPage }) => (
     <Home snapshot={snapshot} history={history} onOpenInsights={() => openPage("insights")} />
   ),
-  meetings: ({ snapshot, meetingSettings }) => (
-    <Meetings snapshot={snapshot} settings={meetingSettings} />
+  meetings: ({ snapshot, meetingSettings, openMeeting, sidebar }) => (
+    <Meetings
+      snapshot={snapshot}
+      settings={meetingSettings}
+      request={openMeeting}
+      sidebar={sidebar}
+    />
   ),
   insights: ({ snapshot }) => <Insights assignments={snapshot.settings.cleanup.assignments} />,
   style: ({ snapshot }) => <Style settings={snapshot.settings} />,
@@ -303,6 +322,7 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
+  badge: { display: "flex", flexShrink: 0 },
   labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
   shortcutHint: {
     flexShrink: 0,
@@ -368,9 +388,12 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
   },
+  // Meetings sets its list beside an overview panel that runs the card's full height, so the page
+  // owns its block and right padding, and measures the card's height in cqh.
+  mainWide: { paddingBlock: 0, paddingRight: 0, containerType: "size" },
   column: { maxWidth: 800, marginInline: "auto" },
-  // Meetings sets its list beside an overview panel.
   columnWide: { maxWidth: 1120 },
+  sidebarSlot: { marginTop: space.lg },
   settingsViewport: {
     position: "fixed",
     inset: 0,
@@ -456,6 +479,7 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
 function NavItem({
   label,
   icon: Icon,
+  badge,
   shortcut,
   current,
   collapsed,
@@ -464,6 +488,7 @@ function NavItem({
 }: {
   label: string;
   icon: LucideIcon;
+  badge: string | undefined;
   shortcut: Shortcut | undefined;
   current: boolean;
   collapsed: boolean;
@@ -471,10 +496,14 @@ function NavItem({
   onClick: () => void;
 }) {
   const showHint = showShortcut && shortcut !== undefined;
+  // The row cannot fit the label, the badge and the hint, so the badge steps aside while Command is held.
+  const showBadge = badge !== undefined && !showHint;
   return (
     <Tooltip.Trigger
       payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
       type="button"
+      // One name, "Meetings, Beta", rather than the label and badge run together.
+      aria-label={badge === undefined ? undefined : `${label}, ${badge}`}
       aria-current={current ? "page" : undefined}
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent)}
@@ -489,6 +518,11 @@ function NavItem({
       >
         {label}
       </span>
+      {showBadge && (
+        <span {...stylex.props(styles.label, styles.badge, collapsed && styles.labelHidden)}>
+          <Badge>{badge}</Badge>
+        </span>
+      )}
       {showHint && (
         <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
           {shortcut.hint}
@@ -505,7 +539,7 @@ function NavItems<Id extends string>({
   showShortcut,
   onSelect,
 }: {
-  groups: readonly (readonly { id: Id; label: string; icon: LucideIcon }[])[];
+  groups: readonly (readonly { id: Id; label: string; icon: LucideIcon; badge?: string }[])[];
   current: Id;
   collapsed: boolean;
   showShortcut: boolean;
@@ -513,13 +547,14 @@ function NavItems<Id extends string>({
 }) {
   let index = 0;
   return groups.map((items, groupIndex) => (
-    <Fragment key={groupIndex}>
+    <Fragment key={items[0]?.id}>
       {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
-      {items.map(({ id, label, icon }) => (
+      {items.map(({ id, label, icon, badge }) => (
         <NavItem
           key={id}
           label={label}
           icon={icon}
+          badge={badge}
           shortcut={jumpShortcuts[index++]}
           current={current === id}
           collapsed={collapsed}
@@ -570,6 +605,8 @@ function SettingsModal({
   useLayoutEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0 });
     scrollerRef.current?.focus({ preventScroll: true });
+    // state.section is not read here: a new section is the signal to scroll back to the top.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [state.section]);
   const SectionView = settingsPageViews[state.section];
   return (
@@ -665,14 +702,54 @@ export function HubShell({
     open: false,
     section: "general",
   });
-  const openSettings = (section: SettingsPage) => setSettings({ open: true, section });
+  const [help, setHelp] = useState<HelpState>(helpClosed);
+  // The info button and the page it was on. A page still loading shows no button yet.
+  const [helpButtonOn, setHelpButtonOn] = useState<{
+    element: HTMLButtonElement | null;
+    page: AppPage;
+  } | null>(null);
+  const helpButton = helpButtonOn?.element ?? null;
+  const placeHelpButton = useCallback(
+    (element: HTMLButtonElement | null, page: AppPage) =>
+      setHelpButtonOn((current) =>
+        element ? { element, page } : current && { element: null, page: current.page },
+      ),
+    [],
+  );
+  const openSettings = (section: SettingsPage) => {
+    setSettings({ open: true, section });
+    setHelp(helpClosed);
+  };
   const [meetingSettingsOpen, setMeetingSettingsOpen] = useState(false);
+  const [openMeeting, setOpenMeeting] = useState<OpenMeetingRequest | null>(null);
+  useEffect(
+    () =>
+      hubApi().onOpenMeeting((request) => {
+        setAppPage("meetings");
+        setSettings((current) => ({ ...current, open: false }));
+        setOpenMeeting({ ...request });
+      }),
+    [],
+  );
+  const [sidebarSlot, setSidebarSlot] = useState<HTMLDivElement | null>(null);
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
-  if (shown.page !== appPage) setShown({ page: appPage, rises: true });
+  if (shown.page !== appPage) {
+    setShown({ page: appPage, rises: true });
+    // Open help follows the user to the next page, and closes on a page that has none.
+    if (help.kind !== "closed") setHelp(helpFor(appPage) ? { kind: "list" } : helpClosed);
+  }
+  // A page can drop its title, as Meetings does while a meeting is open; help goes with it.
+  if (help.kind !== "closed" && helpButton === null && helpButtonOn?.page === appPage) {
+    setHelp(helpClosed);
+  }
+  const toggleHelp = () =>
+    setHelp((current) => (current.kind === "closed" ? { kind: "list" } : helpClosed));
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
+    // appPage is not read here: a new page is the signal to scroll back to the top.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [appPage]);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
@@ -710,6 +787,9 @@ export function HubShell({
       : [
           { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
           { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
+          ...(helpButton ? [{ shortcut: shortcuts.help, run: toggleHelp }] : []),
+          // selectAppPage focuses main through a ref, but jumpBindings only wraps it for keydown.
+          // eslint-disable-next-line react/refs
           ...jumpBindings(appPages, selectAppPage),
         ],
     { reachAppModal: true },
@@ -725,6 +805,8 @@ export function HubShell({
     openPage: selectAppPage,
     openSettingsPage: openSettings,
     meetingSettings: { open: meetingSettingsOpen, setOpen: setMeetingSettingsOpen },
+    openMeeting,
+    sidebar: sidebarSlot,
   };
   const AppPageView = appPageViews[appPage];
   return (
@@ -768,6 +850,7 @@ export function HubShell({
               onSelect={selectAppPage}
             />
           </nav>
+          {!collapsed && <div ref={setSidebarSlot} {...stylex.props(styles.sidebarSlot)} />}
           <div {...stylex.props(styles.footer)}>
             <Tooltip.Trigger
               payload={settingsLabel}
@@ -789,7 +872,11 @@ export function HubShell({
           </div>
         </aside>
       </SidebarTooltip>
-      <main ref={mainRef} tabIndex={-1} {...stylex.props(styles.main)}>
+      <main
+        ref={mainRef}
+        tabIndex={-1}
+        {...stylex.props(styles.main, widePages.has(appPage) && styles.mainWide)}
+      >
         <div
           key={appPage}
           {...stylex.props(
@@ -798,9 +885,17 @@ export function HubShell({
             shown.rises && pageMotion.rise,
           )}
         >
-          <AppPageView {...view} />
+          <HelpContext
+            value={{
+              open: help.kind !== "closed",
+              placeButton: placeHelpButton,
+            }}
+          >
+            <AppPageView {...view} />
+          </HelpContext>
         </div>
       </main>
+      <HelpPopover page={appPage} state={help} onChange={setHelp} button={helpButton} />
       <SettingsModal
         state={settings}
         view={view}

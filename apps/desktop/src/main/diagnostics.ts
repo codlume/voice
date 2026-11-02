@@ -23,7 +23,7 @@ type StackFrame = SentryMain.StackFrame;
 type MakeTransport = NonNullable<NodeOptions["transport"]>;
 
 // Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
-export type DiagnosticsSdk = Pick<
+type DiagnosticsSdk = Pick<
   typeof SentryMain,
   "startInactiveSpan" | "setMeasurement" | "captureEvent" | "logger" | "withActiveSpan" | "flush"
 > & { init(options: NodeOptions): unknown; makeTransport: MakeTransport };

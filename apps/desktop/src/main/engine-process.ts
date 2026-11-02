@@ -148,7 +148,7 @@ export function forkUtility(
   };
 }
 
-export type EngineProcess<Work, Result, Notice> = {
+type EngineProcess<Work, Result, Notice> = {
   load(): Promise<void>;
   // Settles with the work's result; a failed reply rejects with the engine's error. Aborting
   // rejects at once with the reason and asks the child to stop. A child that has not answered

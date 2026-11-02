@@ -28,6 +28,7 @@ const electronPath = devElectronPath(
 // the microphone at all. disclaim makes Electron answer for itself, as the packaged Voice.app does.
 const disclaimPath = join(repoDir, "native/voice-helper/.build/debug/disclaim");
 const children = new Set();
+/** @type {import("node:child_process").ChildProcess | null} */
 let electron = null;
 let stopping = false;
 
@@ -72,6 +73,7 @@ function stop(code) {
 }
 
 function launchElectron() {
+  /** @type {NodeJS.ProcessEnv} */
   const env = { ...process.env, VITE_DEV_SERVER_URL: devServerUrl };
   // Set when the dev loop itself runs under Electron (for example inside an Electron-based IDE).
   delete env.ELECTRON_RUN_AS_NODE;
@@ -112,7 +114,8 @@ for (const args of [["dev"], ["pack", "--watch"]]) {
 }
 
 const devServerReady = waitForDevServer();
-let settleTimer = null;
+/** @type {NodeJS.Timeout | undefined} */
+let settleTimer;
 let relaunch = Promise.resolve();
 watch(distDir, () => {
   clearTimeout(settleTimer);

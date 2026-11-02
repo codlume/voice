@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
@@ -42,7 +42,7 @@ const seed = (store: MeetingsStore, saved: Meeting) => store.upsert(saved.id, ()
 function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
   return {
     id,
-    title: { text: "Weekly sync", source: "user" },
+    title: "Weekly sync",
     createdAt: START,
     spans: [{ startedAt: START, endedAt: START + 30 * 60_000 }],
     status: { kind: "ready" },
@@ -50,6 +50,8 @@ function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
     notes: "",
     summary: { kind: "none" },
     speakers: [],
+    finalPassFailed: null,
+    transcriptRevision: 0,
     ...overrides,
   };
 }
@@ -61,7 +63,6 @@ const segment = (id: string, text: string, startMs = 0): Segment => ({
   startMs,
   endMs: startMs + 1000,
   text,
-  final: true,
 });
 
 function harness(options: { now?: number } = {}) {
@@ -94,6 +95,8 @@ const rule = (text: string) => ({ kind: "titleContains", text }) as const;
 const meetingDir = (id: MeetingId) => NodePath.join(dir, id);
 const mode = async (file: string) => (await stat(file)).mode & 0o777;
 
+const snippet = (before: string, match: string, after: string) => ({ before, match, after });
+
 describe("meetings store", () => {
   test("a meeting and its transcript survive a relaunch", async () => {
     const first = harness();
@@ -122,9 +125,7 @@ describe("meetings store", () => {
     await first.store.update(A, (saved) => renameSpeaker(saved, s1, "  Ania "));
 
     const second = await relaunch();
-    expect(second.store.get(A)?.speakers).toEqual([
-      { id: s1, label: "Speaker 1", name: { text: "Ania", source: "user" } },
-    ]);
+    expect(second.store.get(A)?.speakers).toEqual([{ id: s1, label: "Speaker 1", name: "Ania" }]);
     expect(await second.store.transcript(A)).toEqual([said]);
   });
 
@@ -140,15 +141,16 @@ describe("meetings store", () => {
     expect(hub()?.meetings).toEqual([meeting(A)]);
   });
 
-  test("appends grow the file one line per entry and a later partial is replaced by its final", async () => {
+  test("appends grow the file one line per entry, read back in time order", async () => {
     const { store, loaded } = harness();
     await loaded;
     await seed(store, meeting(A));
-    await store.append(A, [{ ...segment("s1", "Hel"), final: false }]);
-    await store.append(A, [segment("s1", "Hello there")]);
+    const later = { ...segment("s2", "there"), startMs: 2000, endMs: 3000 };
+    await store.append(A, [later]);
+    await store.append(A, [segment("s1", "Hello")]);
     const file = await readFile(NodePath.join(meetingDir(A), "transcript.ndjson"), "utf8");
     expect(file.trimEnd().split("\n")).toHaveLength(2);
-    expect(await store.transcript(A)).toEqual([segment("s1", "Hello there")]);
+    expect(await store.transcript(A)).toEqual([segment("s1", "Hello"), later]);
   });
 
   test("a line a crash tore is skipped and the next append does not join it", async () => {
@@ -191,6 +193,20 @@ describe("meetings store", () => {
     expect(await store.replaceTranscript(B, (m) => ({ meeting: m, transcript: [] }))).toBe(false);
   });
 
+  test("every write to the transcript moves its revision on; only a rewrite publishes it", async () => {
+    const { store, loaded, hub } = harness();
+    await loaded;
+    await seed(store, meeting(A));
+    expect(await store.append(A, [segment("s1", "Hello")])).toBe(1);
+    expect(await store.append(A, [segment("s2", "again", 2000)])).toBe(2);
+    expect(store.get(A)?.transcriptRevision).toBe(2);
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(0);
+    await store.replaceTranscript(A, (current) => ({ meeting: current, transcript: [] }));
+    expect(hub()?.meetings[0]?.transcriptRevision).toBe(3);
+    expect((await relaunch()).store.get(A)?.transcriptRevision).toBe(3);
+    expect(await store.append(B, [segment("s1", "Hello")])).toBeNull();
+  });
+
   test("interleaved changes each see the one queued before, so none is lost", async () => {
     const { store, loaded } = harness();
     await loaded;
@@ -201,7 +217,7 @@ describe("meetings store", () => {
       store.setInFolder(A, folder.id, true),
       store.update(A, (m) => ({ ...m, notes: "ship it" })),
       store.upsert(A, (m) => m && { ...m, status: { kind: "paused" } }),
-      store.update(A, (m) => ({ ...m, title: { text: "Roadmap", source: "user" } })),
+      store.update(A, (m) => ({ ...m, title: "Roadmap" })),
       store.upsert(A, (m) => m && { ...m, speakers: [{ id: s1, label: "Speaker 1", name: null }] }),
       store.update(A, (m) => renameSpeaker(m, s1, "Ania")),
     ]);
@@ -209,8 +225,8 @@ describe("meetings store", () => {
       status: { kind: "paused" },
       folderIds: [folder.id],
       notes: "ship it",
-      title: { text: "Roadmap", source: "user" },
-      speakers: [{ id: s1, label: "Speaker 1", name: { text: "Ania", source: "user" } }],
+      title: "Roadmap",
+      speakers: [{ id: s1, label: "Speaker 1", name: "Ania" }],
     };
     expect(store.get(A)).toMatchObject(expected);
     expect((await relaunch()).store.get(A)).toMatchObject(expected);
@@ -251,7 +267,7 @@ describe("meetings store", () => {
     const first = harness();
     await first.loaded;
     await seed(first.store, meeting(A));
-    await seed(first.store, meeting(B, { status: { kind: "transcribing" } }));
+    await seed(first.store, meeting(B, { status: { kind: "transcribing", step: "finalizing" } }));
     await seed(
       first.store,
       meeting(C, {
@@ -275,11 +291,27 @@ describe("meetings store", () => {
         .toSorted(),
     ).toEqual([B, C]);
     expect(existsSync(meetingDir(A))).toBe(false);
+    expect(later.logs).toContain("meetings: deleted 1 past the week retention");
 
     await later.store.updateSettings({ retention: "forever" });
     later.clock.now = START + 400 * DAY;
     await later.store.expire();
     expect(later.store.state().meetings).toHaveLength(2);
+  });
+
+  test("a meeting a crash left unfinished is not deleted in the launch that finishes it", async () => {
+    const first = harness();
+    await first.loaded;
+    await seed(first.store, meeting(A, { status: { kind: "paused" } }));
+    await first.store.updateSettings({ retention: "day" });
+
+    const later = await relaunch({ now: START + 30 * DAY });
+    await later.store.upsert(A, (found) => found && { ...found, status: { kind: "ready" } });
+    await later.store.expire();
+    expect(later.store.get(A)?.status.kind).toBe("ready");
+
+    const next = await relaunch({ now: START + 30 * DAY });
+    expect(next.store.get(A)).toBeNull();
   });
 
   test("forever is the default and keeps old meetings", async () => {
@@ -294,7 +326,7 @@ describe("meetings store", () => {
   test("search finds titles, summaries, notes and full transcripts, ignoring case", async () => {
     const { store, loaded } = harness();
     await loaded;
-    await seed(store, meeting(A, { title: { text: "Roadmap review", source: "user" } }));
+    await seed(store, meeting(A, { title: "Roadmap review" }));
     await seed(
       store,
       meeting(B, {
@@ -305,7 +337,6 @@ describe("meetings store", () => {
           kind: "ready",
           summary: {
             markdown: "We chose Postgres with {{speaker:you}}.",
-            generatedAt: START,
             coversUntilMs: 1,
           },
         },
@@ -315,16 +346,47 @@ describe("meetings store", () => {
     await store.append(C, [segment("s1", "The quarterly ROADMAP slipped by a week")]);
 
     expect(await store.search("roadmap")).toEqual([
-      { id: C, field: "transcript", snippet: "The quarterly ROADMAP slipped by a week" },
-      { id: A, field: "title", snippet: "Roadmap review" },
+      {
+        id: C,
+        field: "transcript",
+        snippet: snippet("You: The quarterly ", "ROADMAP", " slipped by a week"),
+      },
+      { id: A, field: "title", snippet: snippet("", "Roadmap", " review") },
     ]);
     expect(await store.search("postgres with you")).toEqual([
-      { id: B, field: "summary", snippet: "We chose Postgres with You." },
+      { id: B, field: "summary", snippet: snippet("We chose ", "Postgres with You", ".") },
     ]);
     // Token markup is not text the user wrote.
     expect(await store.search("speaker:")).toEqual([]);
     expect((await store.search("hiring")).map(({ field }) => field)).toEqual(["notes"]);
     expect(await store.search("   ")).toEqual([]);
+  });
+
+  test("search sees lines, rewrites and speaker names that changed since the last search", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    const s1 = "s1" as SpeakerId;
+    await seed(store, meeting(A, { speakers: [{ id: s1, label: "Speaker 1", name: null }] }));
+    const said = (id: string, text: string): Segment => ({
+      ...segment(id, text),
+      source: "system",
+      speakerId: s1,
+    });
+    await store.append(A, [said("l1", "The budget is approved")]);
+    expect(await store.search("hiring")).toEqual([]);
+
+    await store.append(A, [said("l2", "Next we discuss hiring")]);
+    expect((await store.search("hiring")).map(({ id }) => id)).toEqual([A]);
+
+    await store.update(A, (current) => renameSpeaker(current, s1, "Ada"));
+    expect((await store.search("ada: next")).map(({ id }) => id)).toEqual([A]);
+
+    await store.replaceTranscript(A, (current) => ({
+      meeting: current,
+      transcript: [said("l3", "Only the roadmap")],
+    }));
+    expect(await store.search("hiring")).toEqual([]);
+    expect((await store.search("roadmap")).map(({ id }) => id)).toEqual([A]);
   });
 
   test("deleting a folder takes its meetings out of it and keeps them", async () => {
@@ -357,8 +419,8 @@ describe("meetings store", () => {
   test("a new or edited automatic folder files the existing meetings its rule matches", async () => {
     const first = harness();
     await first.loaded;
-    await seed(first.store, meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
-    await seed(first.store, meeting(B, { title: { text: "Weekly sync", source: "generated" } }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
+    await seed(first.store, meeting(B, { title: "Weekly sync" }));
     await seed(first.store, meeting(C, { title: null }));
     const folder = await first.store.createFolder({
       name: "1:1s",
@@ -389,7 +451,7 @@ describe("meetings store", () => {
   test("a folder turned manual keeps its meetings and drops its rule", async () => {
     const first = harness();
     await first.loaded;
-    await seed(first.store, meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
     const folder = await first.store.createFolder({
       name: "1:1s",
       kind: "auto",
@@ -406,7 +468,7 @@ describe("meetings store", () => {
     const first = harness();
     await first.loaded;
     await first.store.updateSettings({ autoFolders: false });
-    await seed(first.store, meeting(A, { title: { text: "Ana 1:1", source: "user" } }));
+    await seed(first.store, meeting(A, { title: "Ana 1:1" }));
     const folder = await first.store.createFolder({
       name: "1:1s",
       kind: "auto",
@@ -424,6 +486,25 @@ describe("meetings store", () => {
     await first.store.updateSettings({ autoFolders: false });
     const second = await relaunch();
     expect(second.store.get(A)?.folderIds).toEqual([]);
+  });
+
+  test("a meeting retention cannot delete leaves the store working and the meeting listed", async () => {
+    const first = harness();
+    await first.loaded;
+    await seed(first.store, meeting(A));
+    await first.store.updateSettings({ retention: "week" });
+    await chmod(meetingDir(A), 0o500);
+    try {
+      const later = await relaunch({ now: START + 8 * DAY });
+      expect(later.store.state().meetings.map(({ id }) => id)).toEqual([A]);
+      expect(later.logs.some((line) => line.startsWith(`meetings: could not delete ${A}`))).toBe(
+        true,
+      );
+      await later.store.updateSettings({ retention: "forever" });
+      expect(later.store.state().settings.retention).toBe("forever");
+    } finally {
+      await chmod(meetingDir(A), 0o700);
+    }
   });
 
   test("an unreadable meeting is left alone and never overwritten or expired", async () => {

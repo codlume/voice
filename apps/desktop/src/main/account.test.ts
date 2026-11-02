@@ -604,7 +604,7 @@ describe("createAccount", () => {
       onSessionDone: () => {},
       onDictated: () => {},
       history: { remember: () => {}, settle: () => {} },
-      copy: () => {},
+      copy: async () => {},
     });
     // The same wiring as index.ts: only a callback that changed the account shows the hub.
     const shownDuring: string[] = [];
@@ -700,7 +700,7 @@ describe("createAccount", () => {
       onSessionDone: () => {},
       onDictated: () => {},
       history: { remember: () => {}, settle: () => {} },
-      copy: () => {},
+      copy: async () => {},
     });
 
     h.account.handleCallbackUrl(callbackUrl(CODE));

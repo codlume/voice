@@ -105,7 +105,7 @@ async function readSelection(helper, id) {
 
 async function insert(helper, id, text) {
   const sentAt = performance.now();
-  helper.send({ type: "insert", id, text, html: null });
+  helper.send({ type: "insert", id, text, html: null, keepOnClipboard: false });
   const result = await helper.waitFor((e) => e.type === "insert.result" && e.id === id, {
     timeoutMs: 5_000,
     label: "insert.result",

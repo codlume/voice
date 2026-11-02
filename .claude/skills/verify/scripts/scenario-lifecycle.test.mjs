@@ -363,7 +363,8 @@ test(
 );
 
 for (const { mode, scenario } of ["replace-history", "replace-snapshot", "replace-key"].flatMap(
-  (mode) => ["short-dictation", "cleanup-failure"].map((scenario) => ({ mode, scenario })),
+  (replacement) =>
+    ["short-dictation", "cleanup-failure"].map((name) => ({ mode: replacement, scenario: name })),
 )) {
   test(
     `${scenario} leaves a replacement verifier alone after ${mode}`,

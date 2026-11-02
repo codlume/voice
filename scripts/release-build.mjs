@@ -9,7 +9,7 @@ import { smokePackagedApp, stopChildrenOnSignal } from "./voice-app.mjs";
 const channel = process.env.RELEASE_CHANNEL;
 const version = process.env.RELEASE_VERSION;
 const baseUrl = releaseBaseUrl(process.env.RELEASE_BASE_URL);
-if (!["stable", "nightly"].includes(channel) || !version) {
+if (!channel || !["stable", "nightly"].includes(channel) || !version) {
   throw new Error("RELEASE_CHANNEL, RELEASE_VERSION and HTTPS RELEASE_BASE_URL are required");
 }
 if ((channel === "stable") !== (parseVersion(version).nightly === null)) {
@@ -24,7 +24,7 @@ const config = {
     version,
     voiceRelease: { channel, updateUrl: baseUrl },
   },
-  mac: { notarize: true },
+  afterSign: "./build/notarize.mjs",
   publish: [
     { provider: "generic", url: `${baseUrl}/channels/${channel}/mac-arm64`, channel: "latest" },
   ],

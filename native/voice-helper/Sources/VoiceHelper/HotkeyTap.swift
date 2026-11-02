@@ -7,8 +7,11 @@ import os
 /// stalls, and a disabled tap loses the key release that ends recording, so nothing that can
 /// block (AX calls, engine start, pasteboard IO) may share this thread. Every stored property
 /// below the run loop is touched only on that thread; `configure` and `install` hop onto it.
+/// A stdout write can wait behind another producer's large line or a slow reader, so events
+/// leave this thread through `send` and are written in order on `outbox`.
 final class HotkeyTap {
     private let output: Output
+    private let outbox = DispatchQueue(label: "hotkey-tap.output", qos: .userInteractive)
     private let activity: () -> HelperActivity
     private let runLoop: CFRunLoop
     private let thread: Thread
@@ -19,6 +22,7 @@ final class HotkeyTap {
     private var hotkeys: Hotkeys
     private let heldShortcutKey: OSAllocatedUnfairLock<Int64?>
     private var tap: CFMachPort?
+    private var tapSource: CFRunLoopSource?
     private var retry: Timer?
     private var backstop: Timer?
     private var reportedFailure = false
@@ -73,7 +77,10 @@ final class HotkeyTap {
     }
 
     private func installOnTapThread() {
-        guard tap == nil else { return }
+        if let tap {
+            guard !CGEvent.tapIsEnabled(tap: tap) else { return }
+            removeTap()
+        }
         if tryInstall() {
             retry?.invalidate()
             retry = nil
@@ -85,6 +92,13 @@ final class HotkeyTap {
             self.retry?.invalidate()
             self.retry = nil
         }
+    }
+
+    private func removeTap() {
+        if let tapSource { CFRunLoopRemoveSource(runLoop, tapSource, .commonModes) }
+        if let tap { CFMachPortInvalidate(tap) }
+        tapSource = nil
+        tap = nil
     }
 
     private func tryInstall() -> Bool {
@@ -100,12 +114,12 @@ final class HotkeyTap {
         ) else {
             if !reportedFailure {
                 reportedFailure = true
-                output.log(
-                    .error,
-                    AXIsProcessTrusted()
+                send(.log(
+                    level: .error,
+                    message: AXIsProcessTrusted()
                         ? "hotkey tap unavailable: CGEvent.tapCreate returned nil"
                         : "hotkey tap unavailable: accessibility not granted"
-                )
+                ))
             }
             return false
         }
@@ -113,10 +127,11 @@ final class HotkeyTap {
         CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
         tap = port
+        tapSource = source
         hotkeys = Hotkeys(key: key, toggleKey: toggleKey, transforms: transforms, meeting: meeting,
                           initialFlags: currentFlags())
         syncBackstop()
-        output.log(.info, "hotkey tap installed")
+        send(.log(level: .info, message: "hotkey tap installed"))
         return true
     }
 
@@ -125,6 +140,9 @@ final class HotkeyTap {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             // Anything that happened while the tap was off is gone; the release may be among it.
             reconcile()
+            // A tap that stays off has lost Accessibility. It is replaced after this callback
+            // returns, at once or, until the grant is back, by the retry timer.
+            if let tap, !CGEvent.tapIsEnabled(tap: tap) { perform { self.installOnTapThread() } }
             return false
         }
         let kind: KeyEvent.Kind
@@ -146,9 +164,9 @@ final class HotkeyTap {
             emit(action)
         case .transform(let transformId):
             heldShortcutKey.withLock { $0 = keyEvent.keycode }
-            output.emit(.transform(transformId: transformId))
+            send(.transform(transformId: transformId))
         case .meeting:
-            output.emit(.meetingShortcut)
+            send(.meetingShortcut)
         case .nothing:
             break
         }
@@ -163,7 +181,11 @@ final class HotkeyTap {
 
     private func emit(_ action: HotkeyAction?) {
         guard let action else { return }
-        output.emit(.hotkey(action: action, uptimeMs: DispatchTime.now().uptimeMs))
+        send(.hotkey(action: action, uptimeMs: DispatchTime.now().uptimeMs))
+    }
+
+    private func send(_ event: HelperEvent) {
+        outbox.async { [output] in output.emit(event) }
     }
 
     /// While a key may be down, a cheap poll of the live modifier state catches a release the

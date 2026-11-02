@@ -34,6 +34,13 @@ describe("modelView", () => {
     });
   });
 
+  test("a long speech model load says it is preparing for this Mac", () => {
+    expect(modelView(asr, { state: "loading", preparing: true }, idle)).toEqual({
+      text: "Preparing for this Mac, about 30 s",
+      actions: [],
+    });
+  });
+
   test("a load in flight offers nothing to click", () => {
     expect(modelView(asr, { state: "loading" }, idle)).toEqual({ text: "Loading", actions: [] });
     expect(modelView(cleanup, { state: "loading" }, idle)).toEqual({

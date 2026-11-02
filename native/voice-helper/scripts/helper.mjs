@@ -68,7 +68,7 @@ function listProcesses(column, pids) {
     .map((line) => {
       const row = /^\s*(\d+) (.*?)\s*$/.exec(line);
       if (!row) throw new Error(`unexpected ps line: ${line}`);
-      return [row[1], row[2]];
+      return /** @type {[string, string]} */ ([row[1], row[2]]);
     });
 }
 
@@ -114,7 +114,13 @@ export class Helper {
     this.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
-  waitFor(predicate, { timeoutMs = 15_000, label = predicate.toString() } = {}) {
+  waitFor(
+    predicate,
+    /** @type {{ timeoutMs?: number | undefined, label?: string }} */ {
+      timeoutMs = 15_000,
+      label = predicate.toString(),
+    } = {},
+  ) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new Error(`timed out after ${timeoutMs} ms waiting for ${label}`)),
@@ -134,7 +140,10 @@ export class Helper {
     });
   }
 
-  waitForType(type, { timeoutMs, label = type } = {}) {
+  waitForType(
+    type,
+    /** @type {{ timeoutMs?: number, label?: string }} */ { timeoutMs, label = type } = {},
+  ) {
     return this.waitFor((event) => event.type === type, { timeoutMs, label });
   }
 
@@ -191,7 +200,13 @@ export async function prepareSpeakerModels(helper) {
   return status.state;
 }
 
-export async function dictateFixture(helper, name, id, language = "en", { onStarted } = {}) {
+export async function dictateFixture(
+  helper,
+  name,
+  id,
+  language = "en",
+  /** @type {{ onStarted?: () => unknown }} */ { onStarted } = {},
+) {
   helper.send({ type: "test.audioFile", path: fixture(name) });
   const levelsBefore = helper.events.length;
   helper.send({

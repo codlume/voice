@@ -2,7 +2,14 @@ import { describe, expect, test } from "vite-plus/test";
 
 import type { HistoryEntry } from "../shared/history.ts";
 import { dayKey } from "../shared/insights.ts";
-import { droppedBy, excerpt, historyPage, msUntilNextDay, timeLabel } from "./historyView.ts";
+import {
+  droppedBy,
+  excerpt,
+  historyPage,
+  msUntilNextDay,
+  retentionLoss,
+  timeLabel,
+} from "./historyView.ts";
 
 const ZONE_WEST_OF_UTC = "America/Los_Angeles";
 process.env.TZ = ZONE_WEST_OF_UTC;
@@ -81,12 +88,12 @@ describe("time label", () => {
   });
 });
 
-describe("history page", () => {
-  const hours = (count: number, text = (i: number) => `Note ${i}.`) =>
-    Array.from({ length: count }, (_, i) =>
-      entry(`e${i}`, new Date(NOW.getTime() - i * 3_600_000 * 7), text(i)),
-    );
+const hours = (count: number, text = (i: number) => `Note ${i}.`) =>
+  Array.from({ length: count }, (_, i) =>
+    entry(`e${i}`, new Date(NOW.getTime() - i * 3_600_000 * 7), text(i)),
+  );
 
+describe("history page", () => {
   test("shows the newest entries up to the limit, cutting the oldest day mid-way", () => {
     const entries = hours(6);
     expect(labels(page(entries, "", 4))).toEqual([
@@ -145,5 +152,29 @@ describe("droppedBy", () => {
     expect(droppedBy(entries, "forever", now)).toBe(0);
     expect(droppedBy(entries, "memory", now)).toBe(0);
     expect(droppedBy([], "day", now)).toBe(0);
+  });
+});
+
+describe("retentionLoss", () => {
+  const now = NOW.getTime();
+  const entries = [
+    entry("now", NOW, "Now."),
+    entry("week", new Date(now - 7 * 24 * 3_600_000), "A week old."),
+  ];
+
+  test("a shorter window loses the entries it drops now", () => {
+    expect(retentionLoss(entries, "forever", "day", now)).toEqual({ kind: "older", count: 1 });
+    expect(retentionLoss(entries, "forever", "month", now)).toBeNull();
+  });
+
+  test("leaving a saved window for memory loses every saved entry at quit", () => {
+    expect(retentionLoss(entries, "forever", "memory", now)).toEqual({ kind: "saved", count: 2 });
+    expect(retentionLoss(entries, "day", "memory", now)).toEqual({ kind: "saved", count: 2 });
+  });
+
+  test("nothing saved means nothing to lose", () => {
+    expect(retentionLoss([], "forever", "memory", now)).toBeNull();
+    expect(retentionLoss(entries, "memory", "memory", now)).toBeNull();
+    expect(retentionLoss(entries, "memory", "forever", now)).toBeNull();
   });
 });

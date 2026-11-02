@@ -13,12 +13,14 @@ import { YourStats } from "./HomeStats.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
-import { GlobeHint } from "./Settings.tsx";
+import { GlobeHint } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
 import { color, layout, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
-import { useToday } from "./useToday.ts";
+import { useClock, useToday } from "./useToday.ts";
 import { hubApi } from "./voice.ts";
+
+const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
 const styles = stylex.create({
   page: { display: "flex", flexDirection: "column", gap: space.xl, containerType: "inline-size" },
@@ -84,7 +86,7 @@ const styles = stylex.create({
     height: "100%",
     backgroundColor: color.primary,
     transitionProperty: "width",
-    transitionDuration: "300ms",
+    transitionDuration: { default: "300ms", [reducedMotion]: "0s" },
   },
   mark: {
     display: "grid",
@@ -120,18 +122,18 @@ const styles = stylex.create({
     fontSize: 15,
     lineHeight: 1.5,
     resize: "vertical",
-    outline: "none",
   },
 });
 
-function greeting(hour: number): string {
+function greetingAt(now: Date): string {
+  const hour = now.getHours();
   if (hour < 5) return "Working late";
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
 
-function run(command: SetupCommand): Promise<void> {
+export function runSetupCommand(command: SetupCommand): Promise<void> {
   switch (command.type) {
     case "installModel":
       return hubApi().installModel(command.id);
@@ -139,10 +141,12 @@ function run(command: SetupCommand): Promise<void> {
       return hubApi().uninstallModel(command.id);
     case "requestPermission":
       return hubApi().requestPermission(command.kind);
+    case "downloadSpeakerModel":
+      return hubApi().downloadSpeakerModel();
   }
 }
 
-export function SetupRow({ row }: { row: ChecklistRow }) {
+function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
   return (
     <li {...stylex.props(styles.row)}>
@@ -180,7 +184,7 @@ export function SetupRow({ row }: { row: ChecklistRow }) {
         <Button
           key={action.label}
           aria-label={`${action.label} ${row.title}`}
-          onClick={() => void run(action.command)}
+          onClick={() => void runSetupCommand(action.command)}
         >
           {action.label}
         </Button>
@@ -303,10 +307,11 @@ export function Home({
 }) {
   const { ready, rows } = checklist(snapshot);
   const today = useToday();
+  const greeting = useClock(greetingAt);
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(pageStyles.headline)}>{greeting(new Date().getHours())}</h1>
+        <h1 {...stylex.props(pageStyles.headline)}>{greeting}</h1>
         <p {...stylex.props(styles.lede)}>
           Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
           {snapshot.settings.toggleHotkey && (

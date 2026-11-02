@@ -30,13 +30,18 @@ export function processIdentity(pid) {
   if (result.status === 1 && !result.stdout.trim() && !result.stderr.trim()) return null;
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`cannot inspect process ${pid}: ${result.stderr}`);
-  const match = /^(\S+)\s+(.+)$/.exec(result.stdout.trim());
+  const match = /** @type {(RegExpExecArray & [string, string, string]) | null} */ (
+    /^(\S+)\s+(.+)$/.exec(result.stdout.trim())
+  );
   return match && !match[1].startsWith("Z") ? match[2].trim() : null;
 }
 
 export function sameProcess(pid, identity) {
   return Boolean(identity) && processIdentity(pid) === identity;
 }
+
+const liveChildren = (state) =>
+  state.processes?.some(({ pid, identity }) => sameProcess(pid, identity));
 
 export async function claimScratch(userData) {
   if (claims.has(userData)) throw new Error(`scratch already owned by this process: ${userData}`);
@@ -64,11 +69,9 @@ export async function claimScratch(userData) {
   const record = {
     ownerPid: process.pid,
     ownerIdentity: processIdentity(process.pid),
-    processes: [],
+    processes: /** @type {{ pid: number, identity: string | null }[]} */ ([]),
   };
   const save = () => writeFileSync(recordPath, JSON.stringify(record));
-  const liveChildren = (state) =>
-    state.processes?.some(({ pid, identity }) => sameProcess(pid, identity));
   try {
     const previous = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, "utf8")) : null;
     if (

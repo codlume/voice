@@ -16,11 +16,22 @@ public enum SavedClipboard<Item> {
 extension SavedClipboard: Equatable where Item: Equatable {}
 extension SavedClipboard: Sendable where Item: Sendable {}
 
+public enum RestoreOutcome<Contents> {
+    case restore(Contents)
+    /// A later write of ours replaced this paste's pending restore.
+    case superseded
+    /// The clipboard no longer holds this paste's write.
+    case changed
+}
+
+extension RestoreOutcome: Equatable where Contents: Equatable {}
+
 /// Tracks the user's clipboard across paste insertions, keyed by the pasteboard `changeCount`
 /// each paste's own write produced. Only the latest paste can restore: an earlier paste's
 /// restore finds the clipboard changed and backs off.
 public struct ClipboardRestore<Contents> {
     private var pending: (write: Int, saved: Contents)?
+    private var kept: (write: Int, contents: Contents)?
 
     public init() {}
 
@@ -29,6 +40,8 @@ public struct ClipboardRestore<Contents> {
     /// the user's contents, so the earlier paste's saved contents carry over.
     public func contentsToSave(changeCount: Int, current: () -> Contents) -> Contents {
         if let pending, pending.write == changeCount { return pending.saved }
+        // Our own kept transcript carries the concealed marker, which would read as a password.
+        if let kept, kept.write == changeCount { return kept.contents }
         return current()
     }
 
@@ -36,20 +49,26 @@ public struct ClipboardRestore<Contents> {
         pending = (write, saved)
     }
 
+    /// A paste that leaves its text on the clipboard. Nothing is left to restore, and a later
+    /// save while the clipboard still holds `write` saves `contents`.
+    public mutating func kept(_ write: Int, contents: Contents) {
+        pending = nil
+        kept = (write, contents)
+    }
+
     public var hasPending: Bool { pending != nil }
 
-    /// The contents to put back for the paste whose write was `write`, or nil when the clipboard
-    /// no longer holds that write.
-    public mutating func restore(write: Int, changeCount: Int) -> Contents? {
-        guard let pending, pending.write == write else { return nil }
+    public mutating func restore(write: Int, changeCount: Int) -> RestoreOutcome<Contents> {
+        guard let pending, pending.write == write else { return .superseded }
         self.pending = nil
-        return changeCount == write ? pending.saved : nil
+        return changeCount == write ? .restore(pending.saved) : .changed
     }
 
     /// The contents to put back right now, for a helper exiting before the scheduled restore
     /// ran. Nil when nothing is pending or the clipboard no longer holds our write.
     public mutating func flush(changeCount: Int) -> Contents? {
-        guard let pending else { return nil }
-        return restore(write: pending.write, changeCount: changeCount)
+        guard let pending, case .restore(let saved) = restore(write: pending.write, changeCount: changeCount)
+        else { return nil }
+        return saved
     }
 }

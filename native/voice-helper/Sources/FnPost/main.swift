@@ -37,7 +37,7 @@ let modifiers: [String: ModifierKey] = [
 func usage() -> Never {
     FileHandle.standardError.write(
         Data("""
-        usage: fnpost [fn|rightOption|rightCommand] [down|up|chord] | fnpost escape
+        usage: fnpost [fn|rightOption|rightCommand] [down|up|chord|state] | fnpost escape
                fnpost combo <keycode> <modifier>[,<modifier>...] [\(sideUsage)]
 
         """.utf8))
@@ -125,5 +125,11 @@ case "chord":
     }
     postKey(down: false)
     print("posted \(name) down, a, \(name) up")
+case "state":
+    // Any input from another source clears a posted modifier, as the helper's release
+    // backstop sees it, so a caller holding the key can tell its hold was lost.
+    let generic = key.flags.rawValue & 0xFFFF_0000
+    let down = CGEventSource.flagsState(.combinedSessionState).rawValue & generic == generic
+    print(down ? "down" : "up")
 default: usage()
 }

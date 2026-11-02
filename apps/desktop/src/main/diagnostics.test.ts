@@ -197,6 +197,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     transform: idleRun,
     meeting: noMeetingFocus,
     permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+    speakerModel: "ready",
     loginItem: "off",
     models: {
       asr: { state: "ready" },
@@ -224,7 +225,7 @@ function harness(initial: DiagnosticsConsent, dsn = DSN, tracesSampleRate = 1) {
     onSessionDone: diagnostics.sessionDone,
     onDictated: () => {},
     history: { remember: () => {}, settle: () => {} },
-    copy: () => {},
+    copy: async () => {},
     now: () => clock,
   });
 

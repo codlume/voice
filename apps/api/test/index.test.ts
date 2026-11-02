@@ -3,11 +3,6 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { app } from "../src/index.ts";
 
-// Registered before any request so the router includes it.
-app.get("/boom/:id", () => {
-  throw new Error("secret detail that must not leak");
-});
-
 function expectSecurityHeaders(response: Response) {
   expect(response.headers.get("Strict-Transport-Security")).toBe(
     "max-age=63072000; includeSubDomains",
@@ -61,9 +56,16 @@ describe("/health", () => {
 
 describe("errors", () => {
   it("return a generic 500 with security headers and the logged request id, and log one line without the URL, message or client request id (catches leaking details and errors nobody can trace)", async () => {
+    // A fresh module instance: the pool may already have served requests through the shared
+    // `app`, and Hono refuses new routes once its router is built.
+    vi.resetModules();
+    const { app: isolated } = await import("../src/index.ts");
+    isolated.get("/boom/:id", () => {
+      throw new Error("secret detail that must not leak");
+    });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const response = await app.fetch(
+    const response = await isolated.fetch(
       new Request("https://api.test/boom/user-7731?token=query-secret", {
         headers: { "X-Request-Id": "client-supplied-id" },
       }),

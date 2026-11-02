@@ -6,9 +6,14 @@ import * as NodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 import type { MeetingId, MeetingNotice, SpeakerId, TranscriptEntry } from "../shared/meetings.ts";
-import { MAX_LENGTH_WARNING_MS, SILENCE_PROMPT_MS } from "./meeting-lifecycle.ts";
+import { maxLengthWarningMs, SILENCE_PROMPT_MS, SILENCE_STOP_MS } from "./meeting-lifecycle.ts";
 import type { FinalSegment } from "./meeting-final-pass.ts";
-import { createMeetingRecorder, type MeetingRecorderDeps } from "./meeting-recorder.ts";
+import {
+  createMeetingRecorder,
+  START_TIMEOUT_MS,
+  TRANSCRIBE_IDLE_MS,
+  type MeetingRecorderDeps,
+} from "./meeting-recorder.ts";
 import { createMeetingsStore } from "./meetings-store.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 
@@ -42,7 +47,7 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       return true;
     },
     capture: () => ({ language: "en", microphone: null }),
-    onTranscript: (_id, entries) => pushed.push(...entries),
+    onTranscript: ({ entries }) => pushed.push(...entries),
     onNotice: (_id, notice) => notices.push(notice.kind),
     summarizer: {
       summarizeMeeting: async () => ({ ok: true }),
@@ -105,9 +110,8 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       h.emit({ type: "meeting.finalized", id, segments: segments ?? live });
       await h.settle();
     },
-    /** Stop, then the live tail, then the final pass. */
+    /** After Stop: the live tail, then the final pass. */
     async finish(id: MeetingId) {
-      await h.drained(id);
       await h.drained(id);
       await h.finalized(id);
     },
@@ -134,20 +138,22 @@ describe("meeting recorder", () => {
     await h.segment(id, "system", 2500, "Hi there");
     const transcript = await h.store.transcript(id);
     expect(transcript).toMatchObject([
-      { kind: "segment", source: "mic", startMs: 0, text: "Hello everyone", final: true },
+      { kind: "segment", source: "mic", startMs: 0, text: "Hello everyone" },
       { kind: "segment", source: "system", speakerId: null, startMs: 2500, text: "Hi there" },
     ]);
     expect(h.pushed).toEqual(transcript);
   });
 
-  test("a second start while one records is refused and records nothing", async () => {
+  test("a second start while one records or is paused is refused and records nothing", async () => {
     const h = harness();
-    await h.start();
-    expect(await h.recorder.start()).toEqual({
-      kind: "refused",
-      message: "A meeting is already recording.",
-    });
-    expect(h.sentTypes()).toEqual(["meeting.start"]);
+    const id = await h.start();
+    const refused = { kind: "refused", message: "A meeting is already recording or paused." };
+    expect(await h.recorder.start()).toEqual(refused);
+    await h.recorder.pause(id);
+    await h.settle();
+    expect(await h.recorder.start()).toEqual(refused);
+    expect(h.sentTypes()).toEqual(["meeting.start", "meeting.stop"]);
+    expect(h.store.state().meetings).toHaveLength(1);
   });
 
   test("a start the helper refuses leaves no meeting behind", async () => {
@@ -180,7 +186,7 @@ describe("meeting recorder", () => {
       baseMs: 0,
       fromMs: { mic: 3000, system: 0 },
     });
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "unavailable" });
+    h.emit({ type: "meeting.started", id, atMs: 60_000, mic: "active", system: "unavailable" });
     await h.settle();
     expect(h.store.get(id)?.status.kind).toBe("recording");
     const markers = (await h.store.transcript(id)).filter((entry) => entry.kind === "marker");
@@ -222,10 +228,7 @@ describe("meeting recorder", () => {
     expect(h.store.get(id)?.status.kind).toBe("finishing");
 
     await h.drained(id);
-    expect(h.store.get(id)?.status.kind).toBe("transcribing");
-    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.transcribe", fromMs: { mic: 2000 } });
-
-    await h.drained(id);
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
     expect(h.sent.at(-1)).toEqual({
       type: "meeting.finalize",
       id,
@@ -287,6 +290,22 @@ describe("meeting recorder", () => {
     }
   });
 
+  test("a start and a resume pressed together record one meeting, not two", async () => {
+    const h = harness();
+    const finished = await h.start();
+    await h.segment(finished, "system", 0, TEN_WORDS);
+    await h.recorder.stop(finished);
+    await h.finish(finished);
+    expect(h.store.get(finished)?.status.kind).toBe("ready");
+    const before = h.sent.length;
+
+    const [started, resumed] = await Promise.all([h.recorder.start(), h.recorder.resume(finished)]);
+    await h.settle();
+
+    expect(h.sent.slice(before).filter(({ type }) => type === "meeting.start")).toHaveLength(1);
+    expect([started.kind, resumed.kind].toSorted()).toEqual(["ok", "refused"]);
+  });
+
   test("a final pass keeps markers and the transcript of audio an earlier pass already deleted", async () => {
     const h = harness();
     const id = await h.start();
@@ -296,9 +315,7 @@ describe("meeting recorder", () => {
     expect(h.store.get(id)?.speakers).toEqual([]);
     await h.store.update(id, (meeting) => ({
       ...meeting,
-      speakers: [
-        { id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ania", source: "user" } },
-      ],
+      speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: "Ania" }],
     }));
     await h.store.replaceTranscript(id, (meeting, transcript) => ({
       meeting,
@@ -310,7 +327,7 @@ describe("meeting recorder", () => {
     }));
 
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 1000);
     await h.recorder.stop(id);
@@ -321,12 +338,10 @@ describe("meeting recorder", () => {
       { source: "system", startMs: 2100, endMs: 2900, text: "A new voice", speaker: 0 },
     ]);
 
-    expect(h.store.get(id)?.speakers.map(({ id: speaker, name }) => [speaker, name?.text])).toEqual(
-      [
-        ["s1", "Ania"],
-        ["s2", undefined],
-      ],
-    );
+    expect(h.store.get(id)?.speakers.map(({ id: speaker, name }) => [speaker, name])).toEqual([
+      ["s1", "Ania"],
+      ["s2", null],
+    ]);
     expect(await h.store.transcript(id)).toMatchObject([
       { kind: "segment", speakerId: "s1", text: TEN_WORDS },
       { kind: "marker", marker: "resumed", atMs: 2000 },
@@ -417,24 +432,33 @@ describe("meeting recorder", () => {
     await h.settle();
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.transcribe", id, fromMs: { mic: 2000 } });
     await h.drained(id);
-    expect(h.store.get(id)?.status.kind).toBe("transcribing");
-    await h.drained(id);
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.finalize", id });
     await h.finalized(id);
     expect(h.store.get(id)?.status.kind).toBe("ready");
   });
 
-  test("a final transcription that fails keeps the audio and the transcript", async () => {
+  test("the shortcut and the menu bar item finish a paused meeting the same way", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.pause(id);
+    await h.drained(id);
+    expect(await h.recorder.toggle()).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.transcribe", id });
+    await h.finish(id);
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+  });
+
+  test("a live transcript that could not catch up still gets the final pass", async () => {
     const h = harness();
     const id = await h.start();
     await h.segment(id, "mic", 0, TEN_WORDS);
     await h.recorder.stop(id);
-    await h.drained(id);
     await h.drained(id, "speech model is not downloaded");
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.finalize", id });
+    await h.finalized(id);
     expect(h.store.get(id)?.status.kind).toBe("ready");
-    expect(h.notices).toContain("finalPassFailed");
-    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
-    expect(await h.store.transcript(id)).toHaveLength(1);
   });
 
   test("a very short recording asks first: discard deletes it, keep finishes it", async () => {
@@ -455,8 +479,7 @@ describe("meeting recorder", () => {
     await h.drained(kept);
     await h.recorder.keep(kept);
     await h.settle();
-    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.transcribe", id: kept });
-    await h.drained(kept);
+    expect(h.sent.at(-1)).toMatchObject({ type: "meeting.finalize", id: kept });
     await h.finalized(kept);
     expect(h.store.get(kept)?.status.kind).toBe("ready");
   });
@@ -604,21 +627,17 @@ describe("meeting recorder", () => {
     ]);
   });
 
-  test("warns before the max length, then stops; ten silent minutes prompt", async () => {
+  test("warns before the max length, then stops", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const h = harness();
-    await h.store.updateSettings({ maxLength: "30m" });
+    await h.store.updateSettings({ maxLength: "30m", silencePrompt: false });
     const id = await h.start();
 
-    await vi.advanceTimersByTimeAsync(SILENCE_PROMPT_MS);
-    await h.settle();
-    expect(h.notices).toEqual(["silence"]);
-
     h.advance(30 * 60_000);
-    await vi.advanceTimersByTimeAsync(30 * 60_000 - SILENCE_PROMPT_MS - MAX_LENGTH_WARNING_MS);
+    await vi.advanceTimersByTimeAsync(30 * 60_000 - maxLengthWarningMs("30m"));
     await h.settle();
     expect(h.notices).toContain("maxLengthSoon");
-    await vi.advanceTimersByTimeAsync(MAX_LENGTH_WARNING_MS);
+    await vi.advanceTimersByTimeAsync(maxLengthWarningMs("30m"));
     await h.settle();
     expect(h.notices).toContain("maxLengthReached");
     expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
@@ -636,7 +655,7 @@ describe("meeting recorder", () => {
     await h.settle();
     h.advance(1000);
     await h.recorder.resume(id);
-    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
+    h.emit({ type: "meeting.started", id, atMs: 8000, mic: "active", system: "active" });
     await h.settle();
     await h.audio(id, 16_000);
     await h.segment(id, "mic", 9000, "After the resume");
@@ -679,5 +698,248 @@ describe("meeting recorder", () => {
     await h.recorder.resume(id);
     await h.settle();
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.start", baseMs: 90_000 });
+  });
+
+  test("deleting a meeting that records stops its capture, its timers and its folder", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    const id = await h.start();
+    await h.recorder.remove(id);
+    await h.settle();
+    expect(h.sentTypes()).toEqual(["meeting.start", "meeting.cancel"]);
+    expect(h.store.get(id)).toBeNull();
+    expect(existsSync(h.folder(id))).toBe(false);
+    // No timer of the deleted meeting fires into a new one.
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
+    await h.settle();
+    expect(h.notices).toEqual([]);
+    expect(h.sentTypes()).toEqual(["meeting.start", "meeting.cancel"]);
+    expect((await h.recorder.start()).kind).toBe("ok");
+  });
+
+  test("a delete in any status after Stop also cancels whatever the helper still does", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id, null);
+    expect(h.store.get(id)?.status.kind).toBe("transcribing");
+    await h.recorder.remove(id);
+    await h.settle();
+    expect(h.sent.at(-1)).toEqual({ type: "meeting.cancel", id });
+    // A pass that finishes anyway changes nothing.
+    await h.finalized(id, []);
+    expect(h.store.get(id)).toBeNull();
+  });
+
+  test("a resume whose start times out stops the capture it asked for, even when it starts late", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    const id = await h.start();
+    await h.recorder.pause(id);
+    await h.drained(id);
+    await h.recorder.resume(id);
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(START_TIMEOUT_MS);
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "paused" });
+    expect(h.notices).toEqual(["resumeFailed"]);
+    expect(h.sentTypes()).toEqual([
+      "meeting.start",
+      "meeting.stop",
+      "meeting.start",
+      "meeting.stop",
+    ]);
+
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "active" });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "paused" });
+    expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
+  });
+
+  test("a start whose meeting was given up on is cancelled when it comes back", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    const result = await h.recorder.start();
+    if (result.kind !== "ok") throw new Error("start refused");
+    await vi.advanceTimersByTimeAsync(START_TIMEOUT_MS);
+    await h.settle();
+    expect(h.store.get(result.id)).toBeNull();
+    expect(h.notices).toEqual(["startFailed"]);
+    h.emit({ type: "meeting.started", id: result.id, atMs: 0, mic: "active", system: "active" });
+    await h.settle();
+    expect(h.sent.at(-1)).toEqual({ type: "meeting.cancel", id: result.id });
+  });
+
+  test("a start that fails before it reaches the helper leaves nothing stuck in starting", async () => {
+    const h = harness();
+    const transcript = h.store.transcript;
+    h.store.transcript = async () => {
+      throw new Error("EIO");
+    };
+    expect(await h.recorder.start()).toEqual({
+      kind: "refused",
+      message: "Recording did not start.",
+    });
+    await h.settle();
+    expect(h.store.state().meetings).toEqual([]);
+    expect(h.notices).toEqual(["startFailed"]);
+    h.store.transcript = transcript;
+    expect((await h.recorder.start()).kind).toBe("ok");
+  });
+
+  test("a final pass does not time out while speech recognition is still loading", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.store.settled();
+
+    const h = harness();
+    await h.recorder.recover();
+    await h.settle();
+    h.emit({ type: "asr.status", state: "loading", message: null });
+    await vi.advanceTimersByTimeAsync(5 * TRANSCRIBE_IDLE_MS);
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "draining" });
+    expect(h.notices).toEqual([]);
+
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    await h.drained(id);
+    await h.finalized(id);
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+    expect(h.store.get(id)?.finalPassFailed).toBeNull();
+    expect(h.notices).not.toContain("finalPassFailed");
+  });
+
+  test("a final pass that never reports fails once recognition could have run it, and keeps the audio", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(h.notices).toEqual(["finalPassFailed"]);
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
+  test("a failed final pass can be tried again, or its audio deleted, after a relaunch too", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.recorder.stop(id);
+    await first.drained(id);
+    first.emit({
+      type: "meeting.finalizeFailed",
+      id,
+      reason: "speakerModels",
+      message: "speaker detection not downloaded",
+    });
+    await first.settle();
+    expect(first.store.get(id)?.finalPassFailed).toBe("speakerModels");
+
+    // The reason outlives the relaunch, so its notice still says to download speaker detection.
+    const h = harness();
+    await h.store.loaded();
+    expect(h.store.get(id)?.finalPassFailed).toBe("speakerModels");
+    expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.sentTypes()).toEqual(["meeting.finalize"]);
+    h.emit({ type: "meeting.finalizeFailed", id, reason: "speakers", message: "diarizer crashed" });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+
+    expect(await h.recorder.deleteAudio(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBeNull();
+    for (const name of ["mic.pcm", "system.pcm", "audio.json"]) {
+      expect(existsSync(NodePath.join(h.folder(id), name)), name).toBe(false);
+    }
+    expect(await h.store.transcript(id)).toMatchObject([{ kind: "segment", text: TEN_WORDS }]);
+    expect(await h.recorder.deleteAudio(id)).toEqual({
+      kind: "refused",
+      message: "There is no kept audio to delete.",
+    });
+  });
+
+  test("live lines that arrive after the meeting finished are not appended", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.finish(id);
+    expect(h.store.get(id)?.status.kind).toBe("ready");
+    const before = await h.store.transcript(id);
+    await h.segment(id, "system", 9000, "late line");
+    expect(await h.store.transcript(id)).toEqual(before);
+  });
+
+  test("starting a meeting keeps one still asking whether it started by mistake", async () => {
+    const h = harness();
+    const short = await h.start();
+    await h.recorder.stop(short);
+    await h.drained(short);
+    expect(h.store.get(short)?.status.kind).toBe("confirmingShort");
+    const next = await h.start();
+    expect(next).not.toBe(short);
+    expect(h.store.get(short)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+  });
+
+  test("an unanswered silence prompt stops the recording, and speech or a yes keeps it going", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    const id = await h.start();
+    const at = async (ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await h.settle();
+    };
+    await at(SILENCE_PROMPT_MS);
+    await h.segment(id, "system", 0, "still here");
+    await at(SILENCE_STOP_MS);
+    expect(h.store.get(id)?.status.kind).toBe("recording");
+
+    await at(SILENCE_PROMPT_MS - SILENCE_STOP_MS);
+    h.recorder.keepRecording(id);
+    await at(SILENCE_STOP_MS);
+    expect(h.store.get(id)?.status.kind).toBe("recording");
+
+    await at(SILENCE_PROMPT_MS);
+    expect(h.store.get(id)?.status.kind).toBe("finishing");
+    expect(h.notices).toEqual(["silence", "silence", "silence", "silenceStopped"]);
+  });
+
+  test("summary progress shows on the meeting, and closing Voice stops a summary without failing it", async () => {
+    const { promise: running, resolve: started } = Promise.withResolvers<void>();
+    const h = harness({
+      summarizer: {
+        summarizeMeeting: async (_id, { signal, onProgress }) => {
+          onProgress?.({ step: 1, total: 2 });
+          started();
+          await new Promise((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason)),
+          );
+          return { ok: true };
+        },
+        generateTitle: async () => ({ ok: true, title: null }),
+      },
+    });
+    const id = await h.start();
+    h.advance(6 * 60_000);
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    h.emit({ type: "meeting.finalized", id, segments: [] });
+    await running;
+    h.recorder.dispose();
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({
+      kind: "summarizing",
+      progress: { step: 1, total: 2 },
+    });
+    expect(h.store.get(id)?.summary).toEqual({ kind: "none" });
   });
 });

@@ -186,10 +186,11 @@ const capitalizeLikeS1Mini = (text: string) =>
     .map((part) => part[0]!.toUpperCase() + part.slice(1))
     .join("\n\n");
 
+const paragraph = (from: number) =>
+  `${Array.from({ length: 25 }, (_, i) => clause(from + i)).join(" and ")}.`;
+
 test("chunk seams inside a sentence leave no stray capital and paragraph breaks survive", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
-  const paragraph = (from: number) =>
-    `${Array.from({ length: 25 }, (_, i) => clause(from + i)).join(" and ")}.`;
   const raw = `${paragraph(0)}\n\n${paragraph(25)}`;
   native.reply = (chunk) => ({ response: capitalizeLikeS1Mini(chunk) });
 

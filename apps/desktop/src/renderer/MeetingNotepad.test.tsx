@@ -29,27 +29,29 @@ const meeting: Meeting = {
   notes: "",
   summary: { kind: "none" },
   speakers: [],
+  finalPassFailed: null,
+  transcriptRevision: 0,
 };
 
 const said = (segmentId: string, text: string, source: "mic" | "system"): TranscriptEntry =>
   source === "mic"
-    ? { kind: "segment", id: segmentId, startMs: 0, endMs: 1, text, final: true, source }
+    ? { kind: "segment", id: segmentId, startMs: 0, endMs: 1, text, source }
     : {
         kind: "segment",
         id: segmentId,
         startMs: 0,
         endMs: 1,
         text,
-        final: true,
         source,
         speakerId: null,
       };
+
+const ok = async () => ({ kind: "ok", id }) as const;
 
 function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
   const notepadListeners = new Set<(state: NotepadState | null) => void>();
   const transcriptListeners = new Set<(change: MeetingTranscriptChange) => void>();
   const partialListeners = new Set<(partial: MeetingPartial) => void>();
-  const ok = async () => ({ kind: "ok", id }) as const;
   const api = {
     diagnosticsStartedAtLaunch: false,
     getNotepad: async () => first,
@@ -58,8 +60,9 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
       return () => notepadListeners.delete(listener);
     },
     dismissMeetingPrompt: vi.fn(async () => {}),
+    viewMeetingSummary: vi.fn(async () => {}),
     getMeeting: async () => ({ meeting: first.meeting, transcript: [...transcript] }),
-    updateMeetingNotes: vi.fn(async () => {}),
+    updateMeetingNotes: vi.fn(async (_id: MeetingId, _notes: string) => {}),
     pauseMeeting: vi.fn(ok),
     resumeMeeting: vi.fn(ok),
     stopMeeting: vi.fn(ok),
@@ -80,7 +83,7 @@ function fakeNotepad(first: NotepadState, transcript: TranscriptEntry[] = []) {
     push: (state: NotepadState | null) =>
       act(() => notepadListeners.forEach((listener) => listener(state))),
     hear: (entries: TranscriptEntry[]) =>
-      act(() => transcriptListeners.forEach((listener) => listener({ id, entries }))),
+      act(() => transcriptListeners.forEach((listener) => listener({ id, entries, revision: 1 }))),
     murmur: (source: MeetingSource, text: string) =>
       act(() => partialListeners.forEach((listener) => listener({ id, source, text }))),
   };
@@ -162,7 +165,10 @@ describe("the notepad", () => {
       "YouGreat",
     ]);
 
-    push({ meeting: { ...meeting, status: { kind: "transcribing" } }, prompt: null });
+    push({
+      meeting: { ...meeting, status: { kind: "transcribing", step: "finalizing" } },
+      prompt: null,
+    });
     expect(lines()).toEqual(["You00:00Morning all", "Others00:00The export bug is fixed"]);
   });
 
@@ -181,14 +187,14 @@ describe("the notepad", () => {
     push({
       meeting: {
         ...done,
-        speakers: [{ id: s1, label: "Speaker 1", name: { text: "Ann", source: "user" } }],
+        speakers: [{ id: s1, label: "Speaker 1", name: "Ann" }],
       },
       prompt: null,
     });
     expect(document.querySelector("ol li")?.textContent).toBe("Ann00:00Ship it Friday");
   });
 
-  test("shows the final transcript with its speakers once the meeting is ready", async () => {
+  test("shows the final transcript with its speakers once main rewrites it", async () => {
     const transcript = [said("a", "Ship it Fridy", "system")];
     const { push } = fakeNotepad({ meeting, prompt: null }, transcript);
     await render();
@@ -205,6 +211,7 @@ describe("the notepad", () => {
           ...meeting,
           status: { kind: "ready" },
           speakers: [{ id: s1, label: "Speaker 1", name: null }],
+          transcriptRevision: 1,
         },
         prompt: null,
       }),
@@ -250,6 +257,30 @@ describe("My thoughts in the notepad", () => {
     expect(api.updateMeetingNotes).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTime(600));
     expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Ask about pricing");
+  });
+
+  test("saves what the delay has not sent when the window closes", async () => {
+    const { api } = fakeNotepad({ meeting, prompt: null });
+    await render();
+    await openThoughts();
+    type("Follow up with Tom on pricing");
+    act(() => window.dispatchEvent(new Event("beforeunload")));
+    expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Follow up with Tom on pricing");
+  });
+
+  test("a failed save keeps the text and saves it again on Try again", async () => {
+    const { api } = fakeNotepad({ meeting, prompt: null });
+    api.updateMeetingNotes.mockRejectedValueOnce(new Error("disk full"));
+    await render();
+    await openThoughts();
+    type("Ask about pricing");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(document.querySelector("[role=alert]")?.textContent).toBe("disk full");
+    expect(thoughts().value).toBe("Ask about pricing");
+    await act(async () => button("Try again")?.click());
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Ask about pricing");
+    expect(document.querySelector("[role=alert]")).toBeNull();
   });
 
   test("shows thoughts written in the Voice window", async () => {

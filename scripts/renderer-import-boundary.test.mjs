@@ -41,12 +41,14 @@ test("the real linter enforces desktop import boundaries", async (t) => {
   writeFileSync(join(probeRoot, "package.json"), '{"type":"module"}');
   writeFileSync(join(probeRoot, "vite.config.ts"), readFileSync(join(root, "vite.config.ts")));
   symlinkSync(join(root, "node_modules"), join(probeRoot, "node_modules"), "dir");
-  const dirs = Object.fromEntries(
-    ["renderer", "shared", "main", "preload"].map((area) => {
-      const dir = join(probeRoot, desktop, area);
-      mkdirSync(dir, { recursive: true });
-      return [area, dir];
-    }),
+  const dirs = /** @type {Record<"renderer" | "shared" | "main" | "preload", string>} */ (
+    Object.fromEntries(
+      ["renderer", "shared", "main", "preload"].map((area) => {
+        const dir = join(probeRoot, desktop, area);
+        mkdirSync(dir, { recursive: true });
+        return [area, dir];
+      }),
+    )
   );
 
   function fixture(area, name, source) {
@@ -107,6 +109,7 @@ test("the real linter enforces desktop import boundaries", async (t) => {
   );
 
   await t.test("privileged imports and re-exports report the intended restriction", () => {
+    /** @type {{ file: string, rule: string, specifier?: string | undefined }[]} */
     const cases = [
       [
         "node-prefix",

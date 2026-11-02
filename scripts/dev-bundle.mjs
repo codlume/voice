@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parse } from "yaml";
+
 import { VOICE_URL_SCHEME } from "../apps/desktop/src/shared/api.ts";
 
 const LSREGISTER =
@@ -21,6 +23,16 @@ export function devElectronPath(stockElectronPath, devDir) {
   }
 }
 
+// The permission prompts' wording, from the packaged app's config, so pnpm dev shows the words
+// users see instead of Electron's generic ones.
+function usageDescriptions() {
+  const config = parse(
+    readFileSync(new URL("../apps/desktop/electron-builder.yml", import.meta.url), "utf8"),
+  );
+  const { NSMicrophoneUsageDescription, NSAudioCaptureUsageDescription } = config.mac.extendInfo;
+  return { NSMicrophoneUsageDescription, NSAudioCaptureUsageDescription };
+}
+
 // macOS routes a URL scheme only to an app bundle that declares it, and the stock Electron.app
 // declares none. This clone declares Voice's scheme. Every worktree's clone shares one bundle id,
 // so the last-launched worktree receives the link.
@@ -34,6 +46,7 @@ function devBundleElectron(electronPath, devDir) {
     CFBundleName: "Voice Dev",
     CFBundleDisplayName: "Voice Dev",
     CFBundleURLTypes: [{ CFBundleURLName: "Voice Dev", CFBundleURLSchemes: [VOICE_URL_SCHEME] }],
+    ...usageDescriptions(),
   };
   const electronVersion = execFileSync(
     "plutil",

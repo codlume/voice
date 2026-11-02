@@ -8,9 +8,9 @@ export function parseVersion(value) {
     );
   if (!match) throw new Error(`Invalid Voice release version: ${value}`);
   return {
-    major: +match[1],
-    minor: +match[2],
-    patch: +match[3],
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
     nightly: match[4] === undefined ? null : match[4].split(".").map(Number),
   };
 }
@@ -25,7 +25,7 @@ export function compareVersions(left, right) {
   if (b.nightly === null) return -1;
   for (let index = 0; index < Math.min(a.nightly.length, b.nightly.length); index += 1) {
     if (a.nightly[index] !== b.nightly[index])
-      return Math.sign(a.nightly[index] - b.nightly[index]);
+      return Math.sign(Number(a.nightly[index]) - Number(b.nightly[index]));
   }
   return Math.sign(a.nightly.length - b.nightly.length);
 }

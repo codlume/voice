@@ -17,6 +17,7 @@ const state: AppState = {
   transform: reading,
   meeting: noMeetingFocus,
   permissions: { microphone: "granted", accessibility: "granted", systemAudio: "notDetermined" },
+  speakerModel: "ready",
   loginItem: "off",
   models: { asr: { state: "ready" }, cleanup: { state: "ready" }, transform: { state: "missing" } },
   settings: DEFAULT_SETTINGS,
@@ -30,6 +31,9 @@ const state: AppState = {
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
 };
+
+const pill = (session: Session, transform: TransformRun) =>
+  toSnapshot({ ...state, session, transform }).session;
 
 describe("toSnapshot", () => {
   test("never carries the transform run to a window", () => {
@@ -45,13 +49,11 @@ describe("toSnapshot", () => {
       "permissions",
       "session",
       "settings",
+      "speakerModel",
       "updates",
     ]);
     expect(snapshot.session).toEqual({ kind: "transforming", loading: false });
   });
-
-  const pill = (session: Session, transform: TransformRun) =>
-    toSnapshot({ ...state, session, transform }).session;
 
   test("the pill shows a dictation in progress over a transform run", () => {
     expect(pill(recording, reading)).toEqual({ kind: "listening" });

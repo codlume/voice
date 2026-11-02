@@ -9,6 +9,7 @@ const {
   R2_ACCOUNT_ID: account,
 } = process.env;
 if (
+  !channel ||
   !["stable", "nightly"].includes(channel) ||
   !version ||
   !baseUrl ||
@@ -20,6 +21,6 @@ if (
   throw new Error("Release channel, version, and R2 credentials are required");
 }
 if (await preflightRelease({ store: r2Store(bucket), channel, version, baseUrl })) {
-  appendFileSync(process.env.GITHUB_OUTPUT, "skip=true\n");
+  appendFileSync(/** @type {string} */ (process.env.GITHUB_OUTPUT), "skip=true\n");
   console.log(`Skipping ${version}; a complete release is already published`);
 }

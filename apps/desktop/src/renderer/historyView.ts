@@ -12,7 +12,7 @@ function matches(entry: HistoryEntry, query: string): boolean {
   );
 }
 
-const localDate = (day: DayKey, offset = 0) => {
+export const localDate = (day: DayKey, offset = 0) => {
   const [year, month, date] = day.split("-").map(Number) as [number, number, number];
   return new Date(year, month - 1, date + offset);
 };
@@ -90,4 +90,25 @@ export function droppedBy(
 ): number {
   const cutoff = now - retentionMs[retention];
   return entries.filter((entry) => entry.at <= cutoff).length;
+}
+
+/**
+ * What a change of window loses. A shorter window drops older entries now. Memory deletes the
+ * saved file now, so every entry is gone at quit, though none leaves the screen yet.
+ */
+export type RetentionLoss = { kind: "older" | "saved"; count: number };
+
+export function retentionLoss(
+  entries: readonly HistoryEntry[],
+  from: HistoryRetention,
+  to: HistoryRetention,
+  now: number,
+): RetentionLoss | null {
+  if (to === "memory") {
+    return from === "memory" || entries.length === 0
+      ? null
+      : { kind: "saved", count: entries.length };
+  }
+  const count = droppedBy(entries, to, now);
+  return count > 0 ? { kind: "older", count } : null;
 }

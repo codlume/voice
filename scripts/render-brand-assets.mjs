@@ -1,3 +1,4 @@
+/// <reference path="../apps/desktop/node_modules/electron/electron.d.ts" />
 import { readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

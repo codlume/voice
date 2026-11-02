@@ -7,7 +7,7 @@ import { Button } from "./Button.tsx";
 import { Keys } from "./Keycap.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as form } from "./RecordList.tsx";
-import { styles as settings } from "./Settings.tsx";
+import { styles as settings } from "./settingsParts.tsx";
 import {
   capture,
   heldModifiers,
@@ -91,6 +91,11 @@ export function ShortcutPicker({
       case "recorded":
         onChange(result.shortcut);
         setRecording(null);
+        return;
+      default: {
+        const exhaustive: never = result;
+        return exhaustive;
+      }
     }
   }
 

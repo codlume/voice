@@ -30,6 +30,20 @@ function mentionTokens(text: string, speakers: readonly Speaker[]): string {
 }
 
 /**
+ * Bullets read as sentences whatever the model wrote: a capital first letter, unless the first word
+ * is cased on purpose ("iOS"), and a closing period.
+ */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  const first = trimmed.match(/^\p{L}+/u)?.[0] ?? "";
+  const cased =
+    first === first.toLocaleLowerCase()
+      ? trimmed.charAt(0).toLocaleUpperCase() + trimmed.slice(1)
+      : trimmed;
+  return /[.!?…]["'”’)]*$/u.test(cased) ? cased : `${cased}.`;
+}
+
+/**
  * Wispr's shape: the overview paragraph, `### Decisions`, then `### Next Steps` grouped by owner
  * in speaker order, unassigned last. Headings are English in every language, as Wispr writes
  * them; the text under them is in the meeting's language.
@@ -45,13 +59,13 @@ export function renderSummaryMarkdown(
     const tasks = summary.nextSteps.filter((step) => step.owner === owner);
     if (tasks.length === 0) return [];
     const heading = `**${owner === null ? UNASSIGNED : speakerToken(owner)}**`;
-    return [[heading, ...tasks.map(({ task }) => `- ${inline(task)}`)].join("\n")];
+    return [[heading, ...tasks.map(({ task }) => `- ${inline(sentence(task))}`)].join("\n")];
   });
   const sections = overview === "" ? [] : [overview];
   if (summary.decisions.length > 0) {
     sections.push(
       "### Decisions",
-      summary.decisions.map((decision) => `- ${inline(decision)}`).join("\n"),
+      summary.decisions.map((decision) => `- ${inline(sentence(decision))}`).join("\n"),
     );
   }
   if (groups.length > 0) sections.push("### Next Steps", ...groups);

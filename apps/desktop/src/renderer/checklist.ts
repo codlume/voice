@@ -3,15 +3,18 @@ import type {
   PermissionKind,
   PermissionState,
   Snapshot,
+  SpeakerModelState,
   SystemAudioPermission,
 } from "../shared/api.ts";
 
 import { modelById, models, type Model, type ModelId } from "../shared/models.ts";
+import { PREPARING_TEXT } from "./modelView.ts";
 
 export type SetupCommand =
   | { type: "requestPermission"; kind: PermissionKind }
   | { type: "installModel"; id: ModelId }
-  | { type: "uninstallModel"; id: ModelId };
+  | { type: "uninstallModel"; id: ModelId }
+  | { type: "downloadSpeakerModel" };
 
 type Action = {
   label: "Grant" | "Open" | "Download" | "Retry" | "Cancel";
@@ -19,7 +22,7 @@ type Action = {
 };
 
 export type ChecklistRow = {
-  id: PermissionKind | ModelId | "tryMeetings";
+  id: PermissionKind | ModelId | "speakerModel" | "tryMeetings";
   title: string;
   subtitle: string;
   status:
@@ -94,6 +97,9 @@ function modelState(model: Model, status: ModelStatus): RowState {
   }
 }
 
+const preparing = (status: ModelStatus) =>
+  status.state === "loading" && status.preparing ? PREPARING_TEXT : undefined;
+
 export function checklist({ permissions, models: statuses, settings }: Snapshot): Checklist {
   const rows: ChecklistRow[] = [
     {
@@ -114,7 +120,7 @@ export function checklist({ permissions, models: statuses, settings }: Snapshot)
     rows.push({
       id: model.id,
       title: model.kind,
-      subtitle: `${model.name} by ${model.vendor}`,
+      subtitle: preparing(statuses[model.id]) ?? `${model.name} by ${model.vendor}`,
       ...modelState(model, statuses[model.id]),
     });
   }
@@ -126,12 +132,31 @@ function systemAudioState(state: SystemAudioPermission): RowState {
   return { status: { kind: "unavailable", text: "Needs macOS 14.4 or later" }, actions: [] };
 }
 
+function speakerModelState(state: SpeakerModelState): RowState {
+  const download: Action = { label: "Download", command: { type: "downloadSpeakerModel" } };
+  switch (state) {
+    case "ready":
+      return { status: { kind: "ready", text: "Downloaded" }, actions: [] };
+    case "missing":
+      return { status: { kind: "needed", text: "Not downloaded" }, actions: [download] };
+    case "downloading":
+      return { status: { kind: "busy", text: "Downloading" }, actions: [] };
+    case "failed":
+      return {
+        status: { kind: "failed", text: "Download failed" },
+        actions: [{ ...download, label: "Retry" }],
+      };
+    case "unavailable":
+      return { status: { kind: "unavailable", text: "Needs macOS 15 or later" }, actions: [] };
+  }
+}
+
 /**
- * "Set up Meetings": both permissions, then one meeting tried. `shortcut` is the meeting
- * shortcut as the keyboard shows it, or null when it is off.
+ * "Set up Meetings": both permissions, the speaker models, then one meeting tried. `shortcut`
+ * is the meeting shortcut as the keyboard shows it, or null when it is off.
  */
 export function meetingsChecklist(
-  { permissions }: Pick<Snapshot, "permissions">,
+  { permissions, speakerModel }: Pick<Snapshot, "permissions" | "speakerModel">,
   { tried, shortcut }: { tried: boolean; shortcut: string | null },
 ): Checklist {
   const rows: ChecklistRow[] = [
@@ -149,6 +174,15 @@ export function meetingsChecklist(
           ? "Meetings record only your microphone on this Mac"
           : "Hears the other participants through your Mac's sound",
       ...systemAudioState(permissions.systemAudio),
+    },
+    {
+      id: "speakerModel",
+      title: "Speaker detection",
+      subtitle:
+        speakerModel === "unavailable"
+          ? "Others stay one voice on this Mac"
+          : "Tells the other participants apart after a meeting (21 MB, on this Mac)",
+      ...speakerModelState(speakerModel),
     },
     {
       id: "tryMeetings",

@@ -19,6 +19,7 @@ const fresh: Snapshot = {
     accessibility: "notDetermined",
     systemAudio: "notDetermined",
   },
+  speakerModel: "ready",
   loginItem: "off",
   models: {
     asr: { state: "missing" },
@@ -134,6 +135,11 @@ describe("checklist", () => {
       text: "Downloading",
     });
     expect(row(withAsr({ state: "loading" }), "asr").actions).toEqual([]);
+    expect(row(withAsr({ state: "loading" }), "asr").subtitle).toBe("Parakeet by NVIDIA");
+    expect(row(withAsr({ state: "loading", preparing: true }), "asr")).toMatchObject({
+      subtitle: "Preparing for this Mac, about 30 s",
+      status: { kind: "busy", text: "Loading" },
+    });
   });
 
   test("a cleanup model download offers Cancel, which uninstalls it", () => {
@@ -209,27 +215,30 @@ describe("checklist", () => {
 const rows = (
   permissions: Snapshot["permissions"],
   options = { tried: false, shortcut: "⌥M" as string | null },
-) => meetingsChecklist({ permissions }, options);
+  speakerModel: Snapshot["speakerModel"] = "ready",
+) => meetingsChecklist({ permissions, speakerModel }, options);
 const summary = (list: ReturnType<typeof meetingsChecklist>) =>
   list.rows.map((r) => [r.id, r.status.kind, r.status.text, r.actions.map((a) => a.label)]);
 
 describe("meetingsChecklist", () => {
-  test("a fresh Mac asks for both permissions and a first meeting", () => {
-    const list = rows(fresh.permissions);
+  test("a fresh Mac asks for both permissions, the speaker models and a first meeting", () => {
+    const list = rows(fresh.permissions, undefined, "missing");
     expect(list.ready).toBe(false);
     expect(summary(list)).toEqual([
       ["microphone", "needed", "Needs access", ["Grant"]],
       ["systemAudio", "needed", "Needs access", ["Grant"]],
+      ["speakerModel", "needed", "Not downloaded", ["Download"]],
       ["tryMeetings", "needed", "Not yet", []],
     ]);
+    expect(list.rows[2]?.actions[0]?.command).toEqual({ type: "downloadSpeakerModel" });
     expect(list.rows[1]?.actions[0]?.command).toEqual({
       type: "requestPermission",
       kind: "systemAudio",
     });
-    expect(list.rows[2]?.subtitle).toBe(
+    expect(list.rows[3]?.subtitle).toBe(
       "Click Start meeting or press ⌥M, talk a little, then stop",
     );
-    expect(rows(fresh.permissions, { tried: false, shortcut: null }).rows[2]?.subtitle).toBe(
+    expect(rows(fresh.permissions, { tried: false, shortcut: null }).rows[3]?.subtitle).toBe(
       "Click Start meeting, talk a little, then stop",
     );
   });
@@ -264,10 +273,27 @@ describe("meetingsChecklist", () => {
   });
 });
 
-describe("summaryModelRow", () => {
-  const withTransform = (transform: ModelStatus) =>
-    summaryModelRow({ models: { ...fresh.models, transform } });
+test("speaker detection downloads only when asked, can be retried, and is optional where it cannot run", () => {
+  const granted = { ...fresh.permissions, microphone: "granted", systemAudio: "granted" } as const;
+  const speaker = (state: Snapshot["speakerModel"]) =>
+    summary(rows(granted, { tried: true, shortcut: null }, state))[2];
+  expect(speaker("downloading")).toEqual(["speakerModel", "busy", "Downloading", []]);
+  expect(speaker("failed")).toEqual(["speakerModel", "failed", "Download failed", ["Retry"]]);
+  expect(speaker("ready")).toEqual(["speakerModel", "ready", "Downloaded", []]);
+  expect(speaker("unavailable")).toEqual([
+    "speakerModel",
+    "unavailable",
+    "Needs macOS 15 or later",
+    [],
+  ]);
+  expect(rows(granted, { tried: true, shortcut: null }, "unavailable").ready).toBe(true);
+  expect(rows(granted, { tried: true, shortcut: null }, "missing").ready).toBe(false);
+});
 
+const withTransform = (transform: ModelStatus) =>
+  summaryModelRow({ models: { ...fresh.models, transform } });
+
+describe("summaryModelRow", () => {
   test("offers the transform model while it is not on disk", () => {
     expect(withTransform({ state: "missing" })).toMatchObject({
       title: "Summary model",

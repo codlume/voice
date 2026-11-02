@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, CopyIcon, FileTextIcon, SearchIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
 import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
@@ -231,7 +231,8 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
   );
 }
 
-export function History({
+// Home re-renders on every snapshot, several per dictation; the rows change only with the history.
+export const History = memo(function History({
   history: { entries, retention, saveFailed },
   today,
 }: {
@@ -328,4 +329,4 @@ export function History({
       )}
     </section>
   );
-}
+});

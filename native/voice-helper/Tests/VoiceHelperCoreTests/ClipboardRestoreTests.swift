@@ -5,13 +5,13 @@ import Testing
     var restore = ClipboardRestore<String>()
     let saved = restore.contentsToSave(changeCount: 1) { "user" }
     restore.wrote(2, saved: saved)
-    #expect(restore.restore(write: 2, changeCount: 2) == "user")
+    #expect(restore.restore(write: 2, changeCount: 2) == .restore("user"))
 }
 
 @Test func aCopyDuringThePasteIsNotOverwritten() {
     var restore = ClipboardRestore<String>()
     restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
-    #expect(restore.restore(write: 2, changeCount: 3) == nil)
+    #expect(restore.restore(write: 2, changeCount: 3) == .changed)
 }
 
 @Test func aSecondPasteDuringAPendingRestoreKeepsTheUserClipboard() {
@@ -20,8 +20,8 @@ import Testing
     let second = restore.contentsToSave(changeCount: 2) { "first transcript" }
     #expect(second == "user")
     restore.wrote(3, saved: second)
-    #expect(restore.restore(write: 2, changeCount: 3) == nil)
-    #expect(restore.restore(write: 3, changeCount: 3) == "user")
+    #expect(restore.restore(write: 2, changeCount: 3) == .superseded)
+    #expect(restore.restore(write: 3, changeCount: 3) == .restore("user"))
 }
 
 @Test func aCopyBetweenTwoPastesIsWhatTheSecondRestores() {
@@ -30,8 +30,32 @@ import Testing
     let second = restore.contentsToSave(changeCount: 3) { "copied meanwhile" }
     #expect(second == "copied meanwhile")
     restore.wrote(4, saved: second)
-    #expect(restore.restore(write: 2, changeCount: 4) == nil)
-    #expect(restore.restore(write: 4, changeCount: 4) == "copied meanwhile")
+    #expect(restore.restore(write: 2, changeCount: 4) == .superseded)
+    #expect(restore.restore(write: 4, changeCount: 4) == .restore("copied meanwhile"))
+}
+
+@Test func aKeptPasteLeavesNothingToRestoreOrFlush() {
+    var restore = ClipboardRestore<String>()
+    restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
+    restore.kept(3, contents: "kept transcript")
+    #expect(!restore.hasPending)
+    #expect(restore.restore(write: 2, changeCount: 3) == .superseded)
+    #expect(restore.flush(changeCount: 3) == nil)
+}
+
+@Test func aPasteOverAKeptTranscriptRestoresItRatherThanClearingItAsConcealed() {
+    var restore = ClipboardRestore<SavedClipboard<String>>()
+    restore.kept(2, contents: .items(["kept transcript"]))
+    let saved = restore.contentsToSave(changeCount: 2) { .concealed }
+    #expect(saved == .items(["kept transcript"]))
+    restore.wrote(3, saved: saved)
+    #expect(restore.restore(write: 3, changeCount: 3) == .restore(.items(["kept transcript"])))
+}
+
+@Test func aKeptTranscriptReplacedByTheUserIsSavedAsTheUsersContents() {
+    var restore = ClipboardRestore<String>()
+    restore.kept(2, contents: "kept transcript")
+    #expect(restore.contentsToSave(changeCount: 3) { "user copy" } == "user copy")
 }
 
 @Test func aFinishedRestoreDoesNotCarryOver() {
@@ -45,7 +69,7 @@ import Testing
     var restore = ClipboardRestore<String>()
     restore.wrote(2, saved: restore.contentsToSave(changeCount: 1) { "user" })
     #expect(restore.flush(changeCount: 2) == "user")
-    #expect(restore.restore(write: 2, changeCount: 2) == nil)
+    #expect(restore.restore(write: 2, changeCount: 2) == .superseded)
 }
 
 @Test func aSelectionReadSavesBeforeTheCopyAndRestoresRightAfterIt() {
@@ -53,7 +77,7 @@ import Testing
     let saved = restore.contentsToSave(changeCount: 5) { "user" }
     restore.wrote(6, saved: saved)
     #expect(restore.hasPending)
-    #expect(restore.restore(write: 6, changeCount: 6) == "user")
+    #expect(restore.restore(write: 6, changeCount: 6) == .restore("user"))
     #expect(!restore.hasPending)
 }
 
@@ -63,8 +87,8 @@ import Testing
     let saved = restore.contentsToSave(changeCount: 2) { "transcript" }
     #expect(saved == "user")
     restore.wrote(3, saved: saved)
-    #expect(restore.restore(write: 3, changeCount: 3) == "user")
-    #expect(restore.restore(write: 2, changeCount: 3) == nil)
+    #expect(restore.restore(write: 3, changeCount: 3) == .restore("user"))
+    #expect(restore.restore(write: 2, changeCount: 3) == .superseded)
 }
 
 @Test func plainContentsAreSavedForTheRestore() {
@@ -93,7 +117,7 @@ import Testing
     let second = restore.contentsToSave(changeCount: 2) { .items(["first transcript"]) }
     #expect(second == .concealed)
     restore.wrote(3, saved: second)
-    #expect(restore.restore(write: 3, changeCount: 3) == .concealed)
+    #expect(restore.restore(write: 3, changeCount: 3) == .restore(.concealed))
 }
 
 @Test func flushBacksOffWhenTheClipboardChangedOrNothingIsPending() {

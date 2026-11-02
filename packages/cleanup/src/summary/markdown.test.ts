@@ -89,3 +89,20 @@ test("English headings over Polish text, and empty sections left out", () => {
     "Przechodzimy na Przelewy24.\n\n### Next Steps\n\n**Unassigned**\n- Zadzwonić do Kasi.\n",
   );
 });
+
+test("bullets read as sentences, and a word cased on purpose keeps its case", () => {
+  const markdown = renderSummaryMarkdown(
+    {
+      title: null,
+      overview: "",
+      decisions: ["iOS ships first", "the launch moves to Tuesday", "Ask “why now?”"],
+      nextSteps: [{ owner: "s1", task: "zadzwonić do Kasi (biuro)" }],
+    },
+    speakers,
+  );
+
+  expect(markdown).toContain(
+    "- iOS ships first.\n- The launch moves to Tuesday.\n- Ask “why now?”\n",
+  );
+  expect(markdown).toContain("- Zadzwonić do Kasi (biuro).\n");
+});

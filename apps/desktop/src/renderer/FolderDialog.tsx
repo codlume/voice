@@ -8,7 +8,7 @@ import { Button } from "./Button.tsx";
 import { DialogFrame } from "./ConfirmDialog.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as record } from "./RecordList.tsx";
-import { Segmented, styles as settings } from "./Settings.tsx";
+import { Segmented, styles as settings } from "./settingsParts.tsx";
 import { useAction } from "./useAction.ts";
 
 type Kind = FolderDraft["kind"];

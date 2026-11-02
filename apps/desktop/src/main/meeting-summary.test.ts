@@ -2,7 +2,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
-import type { MeetingSummary, SummaryProvider, SummaryResult } from "@voice/cleanup/summary";
+import type {
+  MeetingSummary,
+  SummaryProgress,
+  SummaryProvider,
+  SummaryResult,
+} from "@voice/cleanup/summary";
 import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
@@ -47,7 +52,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 0,
     endMs: 4000,
     text: "Can you ship the hotfix today?",
-    final: true,
   },
   {
     kind: "segment",
@@ -56,7 +60,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 5000,
     endMs: 9000,
     text: "Yes, I will.",
-    final: true,
   },
   { kind: "marker", marker: "dictated", atMs: 9500 },
   {
@@ -67,7 +70,6 @@ const transcript: TranscriptEntry[] = [
     startMs: 10_000,
     endMs: 12_000,
     text: "  ",
-    final: true,
   },
 ];
 
@@ -83,7 +85,6 @@ const summary: MeetingSummary = {
 
 const previous: Summary = {
   markdown: "Old summary.",
-  generatedAt: START,
   coversUntilMs: 10 * MIN,
 };
 
@@ -93,11 +94,13 @@ function meeting(overrides: Partial<Meeting> = {}): Meeting {
     title: null,
     createdAt: START,
     spans: [{ startedAt: START, endedAt: START + 30 * MIN }],
-    status: { kind: "summarizing" },
+    status: { kind: "summarizing", progress: null },
     folderIds: [],
     notes: "ship today",
     summary: { kind: "none" },
     speakers: [{ id: "s1" as SpeakerId, label: "Speaker 1", name: null }],
+    finalPassFailed: null,
+    transcriptRevision: 0,
     ...overrides,
   };
 }
@@ -168,9 +171,9 @@ describe("summarizeMeeting", () => {
     expect(await summarizer.summarizeMeeting(ID, { signal: signal() })).toEqual({ ok: true });
 
     const written = await saved();
-    expect(written.title).toEqual({ text: "Hotfix Release Plan", source: "generated" });
+    expect(written.title).toEqual("Hotfix Release Plan");
     expect(written.folderIds).toEqual([folder.id]);
-    expect(written.status).toEqual({ kind: "summarizing" });
+    expect(written.status).toEqual({ kind: "summarizing", progress: null });
     expect(written.summary).toEqual({
       kind: "ready",
       summary: {
@@ -190,7 +193,6 @@ describe("summarizeMeeting", () => {
           "- Tell support.",
           "",
         ].join("\n"),
-        generatedAt: START + 40 * MIN,
         coversUntilMs: 30 * MIN,
       },
     });
@@ -221,7 +223,7 @@ describe("summarizeMeeting", () => {
         summarize: async (): Promise<SummaryResult> => {
           await store.update(ID, (latest) => ({
             ...latest,
-            title: { text: "Ops sync", source: "user" },
+            title: "Ops sync",
           }));
           return { ok: true, summary };
         },
@@ -230,13 +232,13 @@ describe("summarizeMeeting", () => {
 
     await summarizer.summarizeMeeting(ID, { signal: signal() });
 
-    expect((await saved()).title).toEqual({ text: "Ops sync", source: "user" });
+    expect((await saved()).title).toEqual("Ops sync");
   });
 
   test("asks for a title only when the title is blank, with the notes and transcript", async () => {
     let seen: Parameters<SummaryProvider["summarize"]>[0] | undefined;
     const { summarizer } = await harness({
-      stored: meeting({ title: { text: "Ops sync", source: "user" } }),
+      stored: meeting({ title: "Ops sync" }),
       provider: {
         summarize: async (request) => {
           seen = request;
@@ -355,7 +357,7 @@ describe("summarizeMeeting", () => {
 
   test("runs the Gemma provider step by step through the transform model, with progress", async () => {
     const steps: GenerateRequest[] = [];
-    const progress: number[] = [];
+    const progress: SummaryProgress[] = [];
     const long = Array.from(
       { length: 20 },
       () => "we ship the hotfix today and write the notes",
@@ -386,19 +388,21 @@ describe("summarizeMeeting", () => {
         startMs: 20_000,
         endMs: 60_000,
         text: long,
-        final: true,
       },
     ]);
 
     await summarizer.summarizeMeeting(ID, {
       signal: signal(),
-      onProgress: ({ done, total }) => progress.push(done / total),
+      onProgress: (step) => progress.push(step),
     });
 
     expect(steps.map(({ budgetMs }) => budgetMs)).toEqual([STEP_BUDGET_MS, STEP_BUDGET_MS]);
-    expect(progress).toEqual([0.5, 1]);
+    expect(progress).toEqual([
+      { step: 1, total: 2 },
+      { step: 2, total: 2 },
+    ]);
     const written = await saved();
-    expect(written.title).toEqual({ text: "Hotfix Plan For Today", source: "generated" });
+    expect(written.title).toEqual("Hotfix Plan For Today");
     expect(written.summary).toMatchObject({
       kind: "ready",
       summary: { markdown: expect.stringMatching(/^The hotfix ships today\.\n/) },
@@ -414,13 +418,13 @@ describe("generateTitle", () => {
       ok: true,
       title: "Hotfix Release Plan",
     });
-    expect((await saved()).title).toEqual({ text: "Hotfix Release Plan", source: "generated" });
+    expect((await saved()).title).toEqual("Hotfix Release Plan");
   });
 
   test("leaves a titled meeting alone without asking the model", async () => {
     const { summarizer, calls } = await harness({
       provider: {},
-      stored: meeting({ title: { text: "Ops sync", source: "user" } }),
+      stored: meeting({ title: "Ops sync" }),
     });
 
     expect(await summarizer.generateTitle(ID, { signal: signal() })).toEqual({
@@ -445,8 +449,8 @@ describe("generateTitle", () => {
 
 test("summaryInput names the mic You, speakers by their name, an unknown voice Others, and drops blank segments", () => {
   const speakers = [
-    { id: "s1" as SpeakerId, label: "Speaker 1", name: { text: "Ana", source: "user" as const } },
-    { id: "s2" as SpeakerId, label: "Speaker 2", name: { text: "Ana", source: "user" as const } },
+    { id: "s1" as SpeakerId, label: "Speaker 1", name: "Ana" },
+    { id: "s2" as SpeakerId, label: "Speaker 2", name: "Ana" },
   ];
   const { lines, speakers: read } = summaryInput(
     [
@@ -459,7 +463,6 @@ test("summaryInput names the mic You, speakers by their name, an unknown voice O
         startMs: 13_000,
         endMs: 14_000,
         text: "Bye.",
-        final: true,
       },
       {
         kind: "segment",
@@ -469,7 +472,6 @@ test("summaryInput names the mic You, speakers by their name, an unknown voice O
         startMs: 15_000,
         endMs: 16_000,
         text: "Bye all.",
-        final: true,
       },
     ],
     speakers,

@@ -36,7 +36,8 @@ export const SESSION_MEASUREMENTS = [
 // Helper log lines that carry no parameters. Any other helper line stays on this machine.
 export const HELPER_LOGS = [
   "could not monitor microphone changes",
-  "clipboard changed during paste; not restoring previous contents",
+  "clipboard superseded by a later paste; not restoring previous contents",
+  "clipboard changed by someone else during paste; not restoring previous contents",
   "clipboard changed during copy; not restoring previous contents",
   "asr.remove ignored while the speech model downloads",
   "asr.remove ignored while the speech model loads",
