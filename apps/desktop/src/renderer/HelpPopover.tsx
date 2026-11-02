@@ -330,12 +330,24 @@ export function HelpPopover({
     return () => target.removeAttribute("data-help-active");
   }, [target, button]);
 
+  // Focus follows each move between the list and a step. A page switch leaves focus on the page,
+  // including when the popover reopens because the new page drew its info button late.
+  const wanted = state.kind !== "closed";
   const moved = state.kind === "step" ? state.index : state.kind;
+  const focusedPage = useRef(page);
+  const switchedPage = useRef(false);
   useEffect(() => {
-    if (open) focusFirst.current?.focus({ preventScroll: true });
-    // moved is not read here: focus follows each move between the list and a step.
+    if (focusedPage.current !== page) {
+      focusedPage.current = page;
+      switchedPage.current = true;
+      return;
+    }
+    switchedPage.current = false;
+    if (wanted) focusFirst.current?.focus({ preventScroll: true });
+    // moved is not read here; it is the change focus follows.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
-  }, [open, moved]);
+  }, [wanted, moved, page]);
+  const initialFocus = () => (switchedPage.current ? false : focusFirst.current);
 
   // A point beside the info button, or beside the control when the button's side would cover it.
   const anchor = useMemo(
@@ -394,7 +406,7 @@ export function HelpPopover({
             data-app-modal=""
             aria-labelledby={`${popupId}-heading`}
             aria-describedby={`${popupId}-text`}
-            initialFocus={focusFirst}
+            initialFocus={initialFocus}
             finalFocus={() => {
               const next = tryTarget.current ?? button;
               tryTarget.current = null;
