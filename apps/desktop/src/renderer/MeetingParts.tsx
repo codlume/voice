@@ -5,6 +5,7 @@ import { memo, useMemo, type ReactNode } from "react";
 
 import type { MeetingControls } from "../shared/api.ts";
 import type { Meeting, MeetingPrompt } from "../shared/meetings.ts";
+import type { HelpAnchor } from "./help.ts";
 import { Button } from "./Button.tsx";
 import { clockTicks, statusClock, statusView, type RecordingCommand } from "./meetingStatus.ts";
 import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
@@ -85,6 +86,7 @@ export function MeetingTabs<T extends string>({
   look,
   end,
   style,
+  help,
   children,
 }: {
   tabs: readonly TabOption<T>[];
@@ -93,6 +95,7 @@ export function MeetingTabs<T extends string>({
   look: Look;
   end?: ReactNode;
   style?: stylex.StyleXStyles;
+  help?: HelpAnchor;
   children: ReactNode;
 }) {
   const notepad = look === "notepad";
@@ -105,7 +108,7 @@ export function MeetingTabs<T extends string>({
       }}
       {...stylex.props(style)}
     >
-      <div {...stylex.props(styles.bar, notepad && styles.barNotepad)}>
+      <div data-help={help} {...stylex.props(styles.bar, notepad && styles.barNotepad)}>
         <Tabs.List {...stylex.props(styles.list, notepad && styles.listNotepad)}>
           {tabs.map((tab) => (
             <Tabs.Tab

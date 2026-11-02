@@ -6,6 +6,7 @@ import {
   BoxIcon,
   ChartColumnIcon,
   HouseIcon,
+  InfoIcon,
   KeyboardIcon,
   MonitorIcon,
   PanelLeftIcon,
@@ -28,6 +29,7 @@ import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
 import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.tsx";
+import { HelpPanel } from "./HelpPanel.tsx";
 import { DataPrivacySettings } from "./DataPrivacySettings.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
@@ -183,6 +185,8 @@ const navGap = 2;
 const navDividerHeight = 1;
 const railWidth = navItemSize + 2 * sidebarPadding;
 const settingsMargin = 16;
+const helpWidth = 320;
+const helpPanelId = "hub-help";
 
 const brandIconVisibleSize = 24;
 const macIconGridMargin = 100 / 1024;
@@ -212,6 +216,9 @@ const styles = stylex.create({
     paddingRight: 12,
     WebkitAppRegion: "drag",
   },
+  shellWithHelp: { gridTemplateColumns: `auto 1fr ${helpWidth}px` },
+  titlebarEnd: { display: "flex", alignItems: "center", gap: space.sm },
+  titlebarPressed: { backgroundColor: color.sidebarRowSelected, color: color.foreground },
   pageAnimation: (ms: number) => ({ "--page-animation": `${ms}ms` }),
   titlebarGeometry: (zoomLevel: number) => ({
     height: TITLEBAR_HEIGHT,
@@ -711,6 +718,16 @@ export function HubShell({
     setShownAccountKind(accountKind);
     if (accountKind === "error") openSettings("account");
   }
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+  const helpHeadingRef = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    if (helpOpen) helpHeadingRef.current?.focus({ preventScroll: true });
+  }, [helpOpen]);
+  const closeHelp = () => {
+    setHelpOpen(false);
+    helpButtonRef.current?.focus();
+  };
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(sidebarCollapsedKey) === "true",
   );
@@ -757,8 +774,15 @@ export function HubShell({
     sidebar: sidebarSlot,
   };
   const AppPageView = appPageViews[appPage];
+  const pageLabel = appPages.find(({ id }) => id === appPage)?.label ?? "";
   return (
-    <div {...stylex.props(styles.shell, styles.pageAnimation(snapshot.settings.pageAnimationMs))}>
+    <div
+      {...stylex.props(
+        styles.shell,
+        helpOpen && styles.shellWithHelp,
+        styles.pageAnimation(snapshot.settings.pageAnimationMs),
+      )}
+    >
       <div {...stylex.props(styles.titlebar, styles.titlebarGeometry(snapshot.settings.zoomLevel))}>
         <button
           type="button"
@@ -771,7 +795,24 @@ export function HubShell({
         >
           <PanelLeftIcon size={navIconSize} />
         </button>
-        <TitlebarAccount account={snapshot.account} onOpenAccount={() => openSettings("account")} />
+        <div {...stylex.props(styles.titlebarEnd)}>
+          <button
+            ref={helpButtonRef}
+            type="button"
+            aria-label={`${pageLabel} help`}
+            title={`${pageLabel} help`}
+            aria-expanded={helpOpen}
+            aria-controls={helpPanelId}
+            onClick={() => (helpOpen ? closeHelp() : setHelpOpen(true))}
+            {...stylex.props(titlebar.button, helpOpen && styles.titlebarPressed)}
+          >
+            <InfoIcon size={navIconSize} />
+          </button>
+          <TitlebarAccount
+            account={snapshot.account}
+            onOpenAccount={() => openSettings("account")}
+          />
+        </div>
       </div>
       <SidebarTooltip collapsed={collapsed}>
         <aside
@@ -836,6 +877,15 @@ export function HubShell({
           <AppPageView {...view} />
         </div>
       </main>
+      {helpOpen && (
+        <HelpPanel
+          id={helpPanelId}
+          page={appPage}
+          label={pageLabel}
+          headingRef={helpHeadingRef}
+          onClose={closeHelp}
+        />
+      )}
       <SettingsModal
         state={settings}
         view={view}

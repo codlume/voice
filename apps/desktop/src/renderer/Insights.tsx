@@ -17,6 +17,7 @@ import {
   type Level,
   type UsageView,
 } from "./insightsView.ts";
+import type { HelpAnchor } from "./help.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { appNames, CATEGORY_LABELS } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -223,14 +224,16 @@ function Info({ label, children }: { label: string; children: string }) {
 function Stat({
   label,
   info,
+  help,
   children,
 }: {
   label: string;
   info?: string | undefined;
+  help: HelpAnchor;
   children: ReactNode;
 }) {
   return (
-    <Card style={styles.stat}>
+    <Card style={styles.stat} help={help}>
       <h2 {...stylex.props(styles.label)}>
         {label}
         {info && <Info label={label}>{info}</Info>}
@@ -330,6 +333,7 @@ function WhereYouDictate({ where }: { where: UsageView }) {
   return (
     <Stat
       label="Where you dictate"
+      help="insights.where"
       info="Shares are by words, from dictations where Voice knew the app. Each dictation counts under the category it had when you dictated, so a website like Gmail can count as Email while its browser shows under Top apps. Websites are not kept."
     >
       {where.empty ? (
@@ -409,6 +413,7 @@ export const Insights = memo(function Insights({
           <div {...stylex.props(styles.stats)}>
             <Stat
               label="Pace"
+              help="insights.pace"
               info={
                 view.pace
                   ? `Your pace over your last ${count(view.pace.sessions, "dictation", "dictations")}, not counting the quiet before and after you speak. The average typist does ${Math.round(TYPING_WPM)} WPM.`
@@ -430,11 +435,11 @@ export const Insights = memo(function Insights({
                 <p {...stylex.props(styles.detail)}>Dictate to see how fast you speak.</p>
               )}
             </Stat>
-            <Stat label="Words">
+            <Stat label="Words" help="insights.words">
               <p {...stylex.props(styles.value)}>{view.totalWords.toLocaleString()}</p>
               <p {...stylex.props(styles.detail)}>words dictated</p>
             </Stat>
-            <Stat label="Fixes made by Voice">
+            <Stat label="Fixes made by Voice" help="insights.fixes">
               <p {...stylex.props(styles.value)}>{view.fixes.total.toLocaleString()}</p>
               {view.fixes.total === 0 ? (
                 <p {...stylex.props(styles.detail)}>None yet</p>
@@ -468,7 +473,7 @@ export const Insights = memo(function Insights({
               )}
             </Stat>
           </div>
-          <Stat label="Streak">
+          <Stat label="Streak" help="insights.streak">
             <div {...stylex.props(styles.streaks)}>
               <p {...stylex.props(styles.value)}>
                 {view.streak.current}{" "}

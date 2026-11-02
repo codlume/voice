@@ -296,6 +296,7 @@ const hubScenes: Record<string, HubScene> = {
   "history-saved": historySaved,
   "history-long": { ...historySaved, history: longHistory() },
   "history-save-failed": { ...historySaved, saveFailed: true },
+  insights: ready,
   "insights-usage-empty": {
     ...ready,
     insights: { ...sampleInsights(), categories: EMPTY_INSIGHTS.categories, apps: {} },
@@ -898,7 +899,13 @@ if (pill) {
   root.render(<Notepad />);
 } else if (hub) {
   window.voice = fakeVoice(hubScenes[hub] ?? base, false);
-  root.render(<HubPreview initialPage={hub.startsWith("meetings") ? "meetings" : "home"} />);
+  root.render(
+    <HubPreview
+      initialPage={
+        hub.startsWith("meetings") ? "meetings" : hub.startsWith("insights") ? "insights" : "home"
+      }
+    />,
+  );
 } else {
   window.voice = fakeVoice(ready, true);
   root.render(<Gallery />);
