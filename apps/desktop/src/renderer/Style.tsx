@@ -13,6 +13,7 @@ import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import type { Assignment } from "../shared/style.ts";
 import { AppIcon } from "./AppIcon.tsx";
+import { HelpTitle } from "./HelpPopover.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { AddToCategory, AssignmentChip } from "./StyleAssignments.tsx";
 import { bannerApps, CATEGORY_LABELS, chips } from "./styleView.ts";
@@ -198,7 +199,7 @@ export function Style({ settings }: { settings: SettingsValue }) {
   return (
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
-        <h1 {...stylex.props(pageStyles.headline)}>Style</h1>
+        <HelpTitle page="style">Style</HelpTitle>
         <p {...stylex.props(styles.subtitle)}>Choose how your dictation reads.</p>
       </header>
 

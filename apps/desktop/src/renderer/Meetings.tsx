@@ -38,6 +38,8 @@ import {
   summaryNotice,
 } from "./meetingsView.ts";
 import { commandRefusal, statusView, type RecordingCommand } from "./meetingStatus.ts";
+import { helpAnchor } from "./help.ts";
+import { HelpTitle } from "./HelpPopover.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcutLabel } from "./shortcutCapture.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
@@ -227,7 +229,7 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
   ]);
   if (!shown) {
     return (
-      <div {...stylex.props(styles.search)}>
+      <div {...helpAnchor("meetings.search")} {...stylex.props(styles.search)}>
         <Button
           variant="icon"
           aria-label="Search meetings"
@@ -240,7 +242,7 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
     );
   }
   return (
-    <div {...stylex.props(styles.search)}>
+    <div {...helpAnchor("meetings.search")} {...stylex.props(styles.search)}>
       <SearchIcon size={14} aria-hidden="true" {...stylex.props(styles.searchIcon)} />
       <input
         ref={input}
@@ -306,7 +308,11 @@ function OverviewPanel({ meeting }: { meeting: Meeting }) {
   const shown = shownSummary(meeting);
   const text = shown && overview(shown.markdown);
   return (
-    <aside aria-label="Meeting overview" {...stylex.props(styles.aside)}>
+    <aside
+      aria-label="Meeting overview"
+      {...helpAnchor("meetings.overview")}
+      {...stylex.props(styles.aside)}
+    >
       <h2 {...stylex.props(styles.asideTitle)}>{titleText(meeting)}</h2>
       <p {...stylex.props(styles.asideWhen)}>{meetingWhen(meeting)}</p>
       <hr {...stylex.props(styles.asideRule)} />
@@ -459,7 +465,12 @@ function MeetingsPage({
   }
 
   const startButton = (variant: "primary" | "secondary") => (
-    <Button variant={variant} disabled={start.pending || live !== null} onClick={startMeeting}>
+    <Button
+      variant={variant}
+      disabled={start.pending || live !== null}
+      onClick={startMeeting}
+      {...(variant === "primary" && helpAnchor("meetings.start"))}
+    >
       <CircleDotIcon size={15} aria-hidden="true" />
       Start meeting
     </Button>
@@ -498,11 +509,14 @@ function MeetingsPage({
       <div {...stylex.props(styles.layout, !selected && styles.layoutAlone)}>
         <div {...stylex.props(styles.main, !selected && styles.mainAlone)}>
           <div {...stylex.props(styles.header)}>
-            <h1 {...stylex.props(pageStyles.headline, styles.headline)}>Meetings</h1>
+            <HelpTitle page="meetings" style={styles.headline}>
+              Meetings
+            </HelpTitle>
             <Button
               variant="icon"
               aria-label="Meeting settings"
               title="Meeting settings"
+              {...helpAnchor("meetings.settings")}
               onClick={() => settings.setOpen(true)}
             >
               <SettingsIcon size={17} />
@@ -535,6 +549,7 @@ function MeetingsPage({
             value={tab}
             onChange={setTab}
             look="page"
+            help="meetings.tabs"
             end={
               tab === "notes" && meetings.length > 0 && <Search query={query} onChange={setQuery} />
             }

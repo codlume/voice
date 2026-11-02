@@ -34,6 +34,7 @@ const local = stylex.create({
 });
 
 const copy: Copy = {
+  page: "snippets",
   title: "Snippets",
   subtitle: "Say a short phrase and Voice types the saved text, anywhere you dictate.",
   hint: "Snippets type exactly what you saved. Cleanup never changes them.",

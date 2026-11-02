@@ -332,7 +332,7 @@ describe("Past notes", () => {
   test("Start meeting starts one, and a refused start says why", async () => {
     const main = fakeMain([]);
     await render();
-    await click(document.querySelector("h1")!.parentElement!.querySelector("button:last-child")!);
+    await click(document.querySelector<HTMLElement>('[data-help="meetings.start"]')!);
     expect(main.startMeeting).toHaveBeenCalledOnce();
     await waitForText("Recording ·");
     main.startMeeting.mockResolvedValueOnce({
@@ -340,7 +340,7 @@ describe("Past notes", () => {
       message: "Recording did not start.",
     });
     await click(byText("Stop"));
-    await click(document.querySelector("h1")!.parentElement!.querySelector("button:last-child")!);
+    await click(document.querySelector<HTMLElement>('[data-help="meetings.start"]')!);
     await waitForText("Recording did not start.");
   });
 });
