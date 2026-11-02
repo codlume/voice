@@ -4,8 +4,17 @@ import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
 
-/// A tone of `amplitude` for each non-silent span, so a fake decoder can tell the sources apart.
-private func writeTone(to url: URL, amplitude: Float, segments: [(seconds: Double, silent: Bool)]) throws {
+private typealias Tone = (hz: Float, amplitude: Float)
+/// The user's voice: louder than the other side's, so a fake decoder can tell the sources apart,
+/// and at another pitch, as two voices are.
+private let mine: Tone = (660, 0.3)
+private let theirs: Tone = (440, 0.1)
+/// The other side as the laptop's mic hears it through the speakers.
+private let theirEcho: Tone = (440, 0.025)
+
+/// Each span's tone, or silence for nil. A tone fades in and out over 10 ms, as a voice does,
+/// rather than with a click.
+private func writeTone(to url: URL, segments: [(seconds: Double, tone: Tone?)]) throws {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
     let frames = AVAudioFrameCount(segments.reduce(0) { $0 + $1.seconds } * 16_000)
     let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
@@ -13,16 +22,16 @@ private func writeTone(to url: URL, amplitude: Float, segments: [(seconds: Doubl
     let channel = try #require(buffer.floatChannelData?[0])
     var offset = 0
     for segment in segments {
-        for i in offset..<offset + Int(segment.seconds * 16_000) {
-            channel[i] = segment.silent ? 0 : amplitude * sin(Float(i) * 2 * .pi * 440 / 16_000)
+        let count = Int(segment.seconds * 16_000)
+        for i in 0..<count {
+            let fade = min(1, Float(min(i, count - i)) / 160)
+            channel[offset + i] = segment.tone.map { fade * $0.amplitude * sin(Float(offset + i) * 2 * .pi * $0.hz / 16_000) } ?? 0
         }
         offset += Int(segment.seconds * 16_000)
     }
     try AVAudioFile(forWriting: url, settings: format.settings).write(from: buffer)
 }
 
-private let micAmplitude: Float = 0.3
-private let systemAmplitude: Float = 0.1
 
 @MainActor
 private final class Harness {
@@ -33,24 +42,23 @@ private final class Harness {
     var dictating = false
     var capturingDictation = false
     var decodes = 0
-    var echo = false
     var meetings: Meetings!
 
-    init(system: Bool = true, speed: Double = 16) throws {
+    /// `micHearsTheSpeakers`: the user is quiet while the other side talks, and the mic hears them.
+    init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false) throws {
         output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         devices = AudioInputDevices(output: output)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let mic = root.appendingPathComponent("mic.wav")
-        try writeTone(to: mic, amplitude: micAmplitude, segments: [(2.5, false), (1, true), (2.5, false), (1, true)])
+        try writeTone(to: mic, segments: [(2.5, mine), (1, nil), (2.5, micHearsTheSpeakers ? theirEcho : mine), (1, nil)])
         let systemPath = root.appendingPathComponent("system.wav")
-        try writeTone(to: systemPath, amplitude: systemAmplitude, segments: [(3.5, true), (2.5, false), (1, true)])
+        try writeTone(to: systemPath, segments: [(3.5, nil), (2.5, theirs), (1, nil)])
         meetings = Meetings(
             output: output, devices: devices,
-            source: .fixture(mic: mic.path, system: system ? systemPath.path : "", speed: speed, output: ""),
+            source: .fixture(mic: mic.path, system: system ? systemPath.path : "", speed: speed),
             decode: { [unowned self] samples, _ in
                 decodes += 1
                 let peak = samples.map(abs).max() ?? 0
-                if echo { return spokenWords("we ship on friday", in: samples) }
                 return spokenWords(peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)", in: samples)
             },
             finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false }),
@@ -67,7 +75,7 @@ private final class Harness {
         lines.snapshot().filter { $0["type"] as? String == type }
     }
 
-    /// Segments in meeting order as source@start-end; the echo filter may publish them out of order.
+    /// Segments in meeting order as source@start-end.
     func segments() -> [String] {
         events("meeting.segment").map { segment in
             let ms = { (key: String) in Int(segment[key] as? Double ?? -1) }
@@ -158,16 +166,14 @@ struct MeetingsTests {
         #expect(h.events("meeting.segment").map { $0["source"] as? String } == ["mic", "mic"])
     }
 
-    @Test func dropsMicSegmentsThatEchoWhatSystemAudioSaid() async throws {
-        let h = try Harness()
-        h.echo = true
+    @Test func theOtherSideHeardThroughTheSpeakersNeverReachesTheSpeechModelAsTheUser() async throws {
+        let h = try Harness(micHearsTheSpeakers: true)
         defer { h.meetings.shutdown(); h.devices.shutdown() }
         h.start()
         try await h.waitForFixtures(count: 2)
         h.meetings.stop(id: "m1")
         try await h.waitForDrained()
-        #expect(h.segments() == ["mic@0-2500", "system@3500-6000"],
-                "the mic heard the system's words as it played them, so only system audio keeps them; the same words earlier are the user's")
+        #expect(h.segments() == ["mic@0-2500", "system@3500-6000"])
     }
 
     @Test func dictationSilencesTheMeetingMicAndHoldsMeetingDecodes() async throws {
@@ -239,6 +245,6 @@ struct MeetingsTests {
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST": "1"]) == .disabled)
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST_MEETING_MIC": "/m.wav"]) == .live)
         #expect(MeetingAudioSource.resolve(environment: ["VOICE_HELPER_TEST": "1", "VOICE_HELPER_TEST_MEETING_MIC": "/m.wav",
-                                                         "VOICE_HELPER_TEST_MEETING_SPEED": "8"]) == .fixture(mic: "/m.wav", system: "", speed: 8, output: ""))
+                                                         "VOICE_HELPER_TEST_MEETING_SPEED": "8"]) == .fixture(mic: "/m.wav", system: "", speed: 8))
     }
 }

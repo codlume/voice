@@ -30,7 +30,6 @@ final class MeetingCapture {
     private let startedAt = DispatchTime.now()
     /// Where this leg's audio starts in the files.
     private(set) var startFrames = 0
-    private var route: MeetingOutput?
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
          isCapturingDictation: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
@@ -53,9 +52,7 @@ final class MeetingCapture {
         switch source {
         case .disabled:
             throw CaptureError(reason: .device, message: "meeting capture disabled in test mode; set a meeting fixture")
-        case .fixture(let micPath, let systemPath, let speed, let outputPath):
-            let said = (try? String(contentsOfFile: outputPath, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-            note(said == MeetingOutput.headphones.rawValue ? .headphones : .speakers)
+        case .fixture(let micPath, let systemPath, let speed):
             mic = try open(micURL)
             fixtures.append(try fixture(micPath, speed: speed) { [weak self] in self?.receiveMic($0) })
             var systemState = MeetingSourceState.unavailable
@@ -70,7 +67,6 @@ final class MeetingCapture {
             guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
                 throw CaptureError(reason: .permission, message: "Allow microphone access for Voice to record meetings.")
             }
-            note(OutputRoute.current)
             mic = try open(micURL)
             try openMic()
             let system = startSystem()
@@ -220,7 +216,6 @@ final class MeetingCapture {
         timer.schedule(deadline: .now() + 2, repeating: 2, leeway: .milliseconds(200))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            note(OutputRoute.current)
             var msSinceSystemAudio: Double?
             if #available(macOS 14.4, *), system { msSinceSystemAudio = (systemSource as? SystemAudioSource)?.msSinceAudio }
             switch MeetingWatch.check(
@@ -240,19 +235,6 @@ final class MeetingCapture {
     // The files' frame for now, by the clock: a source that stalled has fewer frames than this.
     private var elapsedFrames: Int {
         startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
-    }
-
-    // Echo can only come from speakers, so the transcription needs to know where the other side
-    // played at every moment of the meeting.
-    private func note(_ current: MeetingOutput) {
-        guard current != route else { return }
-        let frame = route == nil ? startFrames : elapsedFrames
-        route = current
-        do {
-            try OutputTimeline.append(current, atFrame: frame, dir: dir)
-        } catch {
-            output.log(.error, "meeting output route not saved: \(error.localizedDescription)")
-        }
     }
 
     private func lose(_ loss: AudioLoss) {

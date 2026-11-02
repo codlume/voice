@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 
 /// Meeting audio on disk: 16 kHz mono Int16 little-endian, no header, append-only, so a crash
@@ -25,11 +26,10 @@ public enum PcmFile {
         defer { try? handle.close() }
         try handle.seek(toOffset: UInt64(offset * bytesPerFrame))
         let data = try handle.read(upToCount: count * bytesPerFrame) ?? Data()
-        return data.withUnsafeBytes { raw in
-            (0..<raw.count / bytesPerFrame).map { index in
-                Float(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * bytesPerFrame, as: Int16.self))) / 32768
-            }
-        }
+        // Every Mac is little-endian, as the file is.
+        var frames = [Int16](repeating: 0, count: data.count / bytesPerFrame)
+        _ = frames.withUnsafeMutableBytes { data.copyBytes(to: $0) }
+        return vDSP.multiply(1 / 32768, vDSP.integerToFloatingPoint(frames, floatingPointType: Float.self))
     }
 }
 

@@ -531,7 +531,6 @@ const commands = {
       const fakeMicrophonePath = join(userData, "capture.wav");
       const meetingMicPath = join(userData, "meeting-mic.wav");
       const meetingSystemPath = join(userData, "meeting-system.wav");
-      const meetingOutputPath = join(userData, "meeting-output.txt");
       const logPath = join(userData, "main.log");
       const { child, ports: announced } = launchVoice(userData, {
         inspect: true,
@@ -539,7 +538,6 @@ const commands = {
           VOICE_HELPER_TEST_AUDIO: fakeMicrophonePath,
           VOICE_HELPER_TEST_MEETING_MIC: meetingMicPath,
           VOICE_HELPER_TEST_MEETING_SYSTEM: meetingSystemPath,
-          VOICE_HELPER_TEST_MEETING_OUTPUT: meetingOutputPath,
           VOICE_HELPER_TEST_MEETING_SPEED: String(MEETING_FIXTURE_SPEED),
         },
       });
@@ -559,7 +557,6 @@ const commands = {
         fakeMicrophonePath,
         meetingMicPath,
         meetingSystemPath,
-        meetingOutputPath,
         logPath,
       });
       save();
@@ -1177,11 +1174,8 @@ const commands = {
     const system =
       flags.find((flag) => flag.startsWith("--system="))?.slice("--system=".length) ??
       "meeting-system.wav";
-    const headphones = flags.includes("--output=headphones");
     const state = requireInstance();
     if (!state.meetingMicPath) fail("this instance was launched before meeting support; relaunch");
-    if (headphones && !state.meetingOutputPath)
-      fail("this instance was launched before --output support; relaunch");
     const fixtures = [[join(fixturesDir, mic), state.meetingMicPath]];
     if (withSystem) fixtures.push([join(fixturesDir, system), state.meetingSystemPath]);
     for (const [fixture] of fixtures) {
@@ -1198,10 +1192,6 @@ const commands = {
     const call = (expression) => hub.evaluate(expression);
     try {
       for (const [fixture, path] of fixtures) copyFileSync(fixture, path);
-      if (state.meetingOutputPath) {
-        if (headphones) writeFileSync(state.meetingOutputPath, "headphones");
-        else rmSync(state.meetingOutputPath, { force: true });
-      }
       const startedAt = performance.now();
       const started = await call("window.voice.startMeeting()");
       if (started.kind !== "ok") fail(`startMeeting: ${JSON.stringify(started)}`);
@@ -1274,7 +1264,6 @@ const commands = {
       const result = {
         mic,
         system: withSystem && system,
-        output: headphones ? "headphones" : "speakers",
         id: started.id,
         recording,
         liveEntriesBeforeStop: liveBeforeStop,
@@ -1283,7 +1272,6 @@ const commands = {
         stopToReadyMs: Math.round(performance.now() - stoppedAt),
         firstYouLineMs: liveSegments.find((entry) => entry.source === "mic")?.arrivedMs ?? null,
         youLatencyMs: youLatency,
-        echoDropped: newLog().filter((line) => line.includes("meeting echo dropped")).length,
         filesAfter: readdirSync(folder).toSorted(),
         speakers: detail.meeting.speakers.map((speaker) => `${speaker.id}: ${speaker.label}`),
         ...(turns && {
@@ -1306,7 +1294,6 @@ const commands = {
     } finally {
       rmSync(state.meetingMicPath, { force: true });
       rmSync(state.meetingSystemPath, { force: true });
-      if (state.meetingOutputPath) rmSync(state.meetingOutputPath, { force: true });
       hub.close();
     }
   },

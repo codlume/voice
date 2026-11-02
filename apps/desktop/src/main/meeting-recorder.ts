@@ -96,7 +96,7 @@ const WATCH_MS: Record<Watch, number> = {
 };
 
 const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
-/** Deleted with the audio; `audio.json` goes separately, last. */
+/** Deleted with the audio; `audio.json` goes separately, last. Older builds also wrote `output.ndjson` here. */
 const AUDIO_FILES = [...PCM_FILES, "output.ndjson"] as const;
 /** 16 kHz mono Int16. */
 const PCM_BYTES_PER_MS = 32;

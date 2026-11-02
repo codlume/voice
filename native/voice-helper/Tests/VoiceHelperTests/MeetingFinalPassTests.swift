@@ -5,18 +5,21 @@ import VoiceHelperCore
 
 private struct Unavailable: Error {}
 
-/// `mic.pcm` and `system.pcm` with a loud tone on the mic, then two quieter system turns.
-private func writeMeeting(in dir: URL) throws {
-    func tone(_ seconds: Double, _ amplitude: Float) -> [Float] {
-        (0..<Int(seconds * 16_000)).map { amplitude * sin(Float($0) * 2 * .pi * 440 / 16_000) }
+/// `mic.pcm` and `system.pcm` with a loud tone on the mic, then two quieter system turns, which
+/// the mic hears through the speakers when `micHearsTheSpeakers`.
+private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false) throws {
+    func tone(_ seconds: Double, _ amplitude: Float, hz: Float = 440) -> [Float] {
+        (0..<Int(seconds * 16_000)).map { amplitude * sin(Float($0) * 2 * .pi * hz / 16_000) }
     }
     func silence(_ seconds: Double) -> [Float] { [Float](repeating: 0, count: Int(seconds * 16_000)) }
+    let theirs = silence(3) + tone(2, 0.1) + silence(1) + tone(1.5, 0.1) + silence(0.5)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let mic = try PcmWriter(url: dir.appendingPathComponent("mic.pcm"))
-    try mic.append(tone(2, 0.3) + silence(6))
+    let echo = micHearsTheSpeakers ? theirs.map { $0 / 4 } : silence(8)
+    try mic.append(zip(tone(2, 0.3, hz: 660) + silence(6), echo).map(+))
     try mic.close()
     let system = try PcmWriter(url: dir.appendingPathComponent("system.pcm"))
-    try system.append(silence(3) + tone(2, 0.1) + silence(1) + tone(1.5, 0.1) + silence(0.5))
+    try system.append(theirs)
     try system.close()
 }
 
@@ -62,6 +65,16 @@ private func writeMeeting(in dir: URL) throws {
         #expect(segments.map { $0["text"] as? String } == ["Hello everyone", "Hi", "again"])
         #expect(segments.map { $0["speaker"] as? Int } == [nil, 0, 1])
         #expect(segments.map { Int($0["startMs"] as? Double ?? -1) } == [60_000, 63_000, 66_000])
+    }
+
+    @Test func theOtherSideHeardThroughTheSpeakersIsNotTranscribedAsTheUser() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeMeeting(in: dir, micHearsTheSpeakers: true)
+        await pass(diarize: { _ in nil }).run(id: "m1", dir: dir, baseMs: 0, language: .en)
+        let segments = try await finalized()
+        let mic = segments.filter { $0["source"] as? String == "mic" }
+        #expect(mic.map { Int($0["startMs"] as? Double ?? -1) } == [0])
+        #expect(mic.map { Int($0["endMs"] as? Double ?? -1) } == [2000], "the user's words end where their voice does, not at the echo's end")
     }
 
     @Test func withoutDiarizationTheSystemSideStaysOneVoice() async throws {
@@ -114,6 +127,29 @@ private func writeMeeting(in dir: URL) throws {
 
 @MainActor
 @Suite struct MeetingPartialTests {
+    @Test func theOtherSideHeardThroughTheSpeakersShowsNoPartialAsTheUser() async throws {
+        let lines = EmittedLines()
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let theirs = (0..<3 * 16_000).map { 0.1 * sin(Float($0) * 2 * .pi * 440 / 16_000) }
+        for (name, samples) in [("system.pcm", theirs), ("mic.pcm", theirs.map { $0 / 4 })] {
+            let writer = try PcmWriter(url: dir.appendingPathComponent(name))
+            try writer.append(samples)
+            try writer.close()
+        }
+        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words", in: samples) },
+                                       isDictating: { false }, idle: .milliseconds(5))
+        defer { job.cancel() }
+        job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
+        job.record()
+        let partial = try await lines.wait(for: "meeting.partial").first { $0["type"] as? String == "meeting.partial" }
+        #expect(partial?["source"] as? String == "system")
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(lines.snapshot().allSatisfy { $0["type"] as? String != "meeting.partial" || $0["source"] as? String == "system" })
+    }
+
     @Test func unfinishedSpeechShowsAsAPartialThatTheSegmentClears() async throws {
         let lines = EmittedLines()
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
@@ -126,7 +162,7 @@ private func writeMeeting(in dir: URL) throws {
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
                                        isDictating: { false }, idle: .milliseconds(5))
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
-        job.record(systemActive: false)
+        job.record()
         let partial = try await lines.wait(for: "meeting.partial").first { $0["type"] as? String == "meeting.partial" }
         #expect(partial?["source"] as? String == "mic")
         #expect(partial?["text"] as? String == "words 3")
