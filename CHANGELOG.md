@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.21.0 (2026-11-02)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+* feat(transforms): rewrite selected text or dictation with a local model by @hadrysm in https://github.com/codlume/voice/pull/315
+* perf(transforms): cut the transform model's cold load by @hadrysm in https://github.com/codlume/voice/pull/317
+* feat(settings): show transform shortcuts in Settings > Shortcuts by @hadrysm in https://github.com/codlume/voice/pull/318
+* feat(audio): lower audio by a chosen percentage while dictating by @hadrysm in https://github.com/codlume/voice/pull/319
+* feat(hub): glide the sidebar's active highlight between pages by @hadrysm in https://github.com/codlume/voice/pull/320
+* feat(home): show top apps under the stats card by @hadrysm in https://github.com/codlume/voice/pull/321
+* fix(apps): wait for the helper's app list instead of dropping it after 5 s by @hadrysm in https://github.com/codlume/voice/pull/322
+* fix(dictation): keep the transcript when the helper exits mid-cleanup or mid-insert by @hadrysm in https://github.com/codlume/voice/pull/338
+* fix(cleanup): keep camelCase, PascalCase, and brand casing under Very casual by @hadrysm in https://github.com/codlume/voice/pull/332
+* fix(api): send a failed Google sign-in to the landing page by @hadrysm in https://github.com/codlume/voice/pull/333
+* fix(web): send security headers on every page by @hadrysm in https://github.com/codlume/voice/pull/340
+* fix(updates): offer the newer release when a background re-download fails by @hadrysm in https://github.com/codlume/voice/pull/337
+* fix(helper): restore a late selection copy only when no press followed the deadline by @hadrysm in https://github.com/codlume/voice/pull/335
+* fix(settings): keep an unreadable file and unknown keys across a save by @hadrysm in https://github.com/codlume/voice/pull/336
+* fix(cleanup): learn the token rate per clean instead of keeping one slow measurement by @hadrysm in https://github.com/codlume/voice/pull/329
+* fix(transforms): unload the model once a run in flight settles by @hadrysm in https://github.com/codlume/voice/pull/334
+* fix(pill): say "Copied to clipboard" only when the session copied by @hadrysm in https://github.com/codlume/voice/pull/339
+* fix(hub): ignore page shortcuts while a dialog owns the keyboard by @hadrysm in https://github.com/codlume/voice/pull/330
+* fix(scripts): stop detached children when the terminal hangs up by @hadrysm in https://github.com/codlume/voice/pull/331
+* fix(verify): stop a cached transform model from blocking every scenario by @hadrysm in https://github.com/codlume/voice/pull/341
+* chore(deps): bump voidzero-dev/setup-vp from 1.21.1 to 1.21.2 in the github-actions group by @dependabot[bot] in https://github.com/codlume/voice/pull/323
+* perf(helper): paste directly into apps that ignore AX writes by @hadrysm in https://github.com/codlume/voice/pull/343
+* perf(helper): check AX inserts by length, not full text by @hadrysm in https://github.com/codlume/voice/pull/344
+* perf(desktop): keep the auto-apply transform model loaded by @hadrysm in https://github.com/codlume/voice/pull/345
+* fix(settings): set aside a file that was not JSON at launch before the first save by @hadrysm in https://github.com/codlume/voice/pull/347
+* fix(cleanup): reject cleanups that change numbers, negations or add words by @hadrysm in https://github.com/codlume/voice/pull/346
+* fix(release): launch the packaged app before publishing by @hadrysm in https://github.com/codlume/voice/pull/348
+* fix(release): ship only runtime externals and no source maps in app.asar by @hadrysm in https://github.com/codlume/voice/pull/349
+* fix(helper): compare the window title only after a press by @hadrysm in https://github.com/codlume/voice/pull/350
+* fix(helper): refuse the insert when the page URL changed by @hadrysm in https://github.com/codlume/voice/pull/352
+* fix(insights): show small usage shares instead of 0% by @hadrysm in https://github.com/codlume/voice/pull/353
+* fix(insights): show small usage shares with at most two decimals by @hadrysm in https://github.com/codlume/voice/pull/354
+* feat(desktop): open Settings as a modal over the current page by @hadrysm in https://github.com/codlume/voice/pull/355
+* perf: measure the dictation path and cut release, startup and size costs by @hadrysm in https://github.com/codlume/voice/pull/357
+* feat(meetings): add the meeting library and the Meetings page by @hadrysm in https://github.com/codlume/voice/pull/358
+* feat(meetings): record meetings and transcribe them live by @hadrysm in https://github.com/codlume/voice/pull/359
+* feat(meetings): add meeting entry points and tell speakers apart by @hadrysm in https://github.com/codlume/voice/pull/360
+* feat(meetings): summarize meetings on device by @hadrysm in https://github.com/codlume/voice/pull/361
+* fix(release): retry stapling longer and let a dispatch rebuild a stable tag by @hadrysm in https://github.com/codlume/voice/pull/370
+* fix(home): say the speech model is preparing during a long first load by @hadrysm in https://github.com/codlume/voice/pull/379
+* perf(history): memoize History rows, and pin the renderer's recovery paths with tests by @hadrysm in https://github.com/codlume/voice/pull/367
+* refactor(main): tidy the main process after an audit and fix a flaky helper test by @hadrysm in https://github.com/codlume/voice/pull/366
+* fix(api): stop a test from skipping itself, and tidy workspace tooling by @hadrysm in https://github.com/codlume/voice/pull/369
+* fix(helper): keep stdout writes off the hotkey tap thread by @hadrysm in https://github.com/codlume/voice/pull/368
+* fix(release): let back-to-back stable_tag rebuilds all queue by @hadrysm in https://github.com/codlume/voice/pull/381
+* fix(helper): keep meeting audio and transcripts, and revive the hotkey after Accessibility returns by @hadrysm in https://github.com/codlume/voice/pull/376
+* chore(scripts): typecheck scripts/*.mjs with checkJs by @hadrysm in https://github.com/codlume/voice/pull/377
+* fix(main): stop meeting double-starts, report clipboard copies truthfully, and reload crashed cleanup by @hadrysm in https://github.com/codlume/voice/pull/378
+* fix(deps): bump better-auth to 1.7.14 to pull a fixed zod by @hadrysm in https://github.com/codlume/voice/pull/371
+* chore(deps): declare yaml in desktop and pin it once in the catalog by @hadrysm in https://github.com/codlume/voice/pull/373
+* chore(lint): clear the desktop lint warnings and fail CI on any warning by @hadrysm in https://github.com/codlume/voice/pull/380
+* ci: ship Nightlies and deploys only from commits with green CI by @hadrysm in https://github.com/codlume/voice/pull/372
+* chore(deps): bump electron to 44.10.1, node-llama-cpp to 3.22.2, and safe dev dependencies by @hadrysm in https://github.com/codlume/voice/pull/382
+* ci: run JS and Swift checks in parallel and ship both channels through one job set by @hadrysm in https://github.com/codlume/voice/pull/375
+* fix(deps): bump wrangler and astro past undici and sharp advisories by @hadrysm in https://github.com/codlume/voice/pull/383
+* chore(deps): bump electron to 45.2.1 by @hadrysm in https://github.com/codlume/voice/pull/385
+* chore(deps): bump happy-dom to 21 for the desktop renderer tests by @hadrysm in https://github.com/codlume/voice/pull/384
+* fix(renderer): ask before deleting saved history, and fix Flow Bar and focus accessibility by @hadrysm in https://github.com/codlume/voice/pull/386
+* fix(verify): report a hold lost to other input as BLOCKED, not tooShort by @hadrysm in https://github.com/codlume/voice/pull/387
+* refactor(settings): split Settings.tsx into one file per page and break its import cycles by @hadrysm in https://github.com/codlume/voice/pull/389
+* chore(deps): bump vite-plus to 1.4 and clear its new lint findings by @hadrysm in https://github.com/codlume/voice/pull/388
+* chore(deps): bump voidzero-dev/setup-vp from 1.21.2 to 1.22.0 in the github-actions group across 1 directory by @dependabot[bot] in https://github.com/codlume/voice/pull/364
+* fix(helper): keep a copied transcript on the clipboard instead of logging a restore failure by @hadrysm in https://github.com/codlume/voice/pull/393
+* feat(hub): add help popovers to Meetings and Insights by @hadrysm in https://github.com/codlume/voice/pull/394
+
+
+**Full Changelog**: https://github.com/codlume/voice/compare/v0.20.2...v0.21.0
+
 ## 0.20.2 (2026-10-23)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
