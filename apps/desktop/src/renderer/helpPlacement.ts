@@ -1,5 +1,7 @@
 export type Box = { left: number; top: number; width: number; height: number };
 export type Point = { x: number; y: number };
+/** Where the popover goes, and whether that spot leaves the control's ring uncovered. */
+export type Placement = Point & { clear: boolean };
 
 const margin = 8;
 const gap = 8;
@@ -50,17 +52,26 @@ export function placeHelp({
   button: Box;
   target: Box | null;
   size: { width: number; height: number };
-}): Point {
+}): Placement {
   const fit = ({ x, y }: Point): Point => ({
     x: clamp(x, margin, view.width - margin - size.width),
     y: clamp(y, margin, view.height - margin - size.height),
   });
   const spots = [...beside(button, size), ...(target ? beside(grow(target, ringRoom), size) : [])];
   const placed = spots.map(fit);
-  if (!target) return placed[0]!;
+  if (!target) return { ...placed[0]!, clear: true };
   const keepClear = grow(target, ringRoom);
   const covers = (point: Point) => overlap({ left: point.x, top: point.y, ...size }, keepClear);
-  return placed.find((point) => covers(point) === 0) ?? minBy(placed, covers);
+  const free = placed.find((point) => covers(point) === 0);
+  return free ? { ...free, clear: true } : { ...minBy(placed, covers), clear: false };
+}
+
+/**
+ * How far to scroll the page so the popover fits above the control, for a control too tall to
+ * leave room anywhere around it. The control's top stays in view; its bottom may not.
+ */
+export function roomAbove({ target, size }: { target: Box; size: { height: number } }): number {
+  return target.top - (margin + size.height + gap + ringRoom);
 }
 
 function minBy<T>(items: readonly T[], score: (item: T) => number): T {

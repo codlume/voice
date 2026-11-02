@@ -4,6 +4,7 @@ import { ArrowLeftIcon, ArrowRightIcon, InfoIcon, XIcon } from "lucide-react";
 import {
   createContext,
   use,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useState,
@@ -14,7 +15,7 @@ import {
 } from "react";
 
 import { findAnchor, helpFor, type ViewHelp } from "./help.ts";
-import { placeHelp } from "./helpPlacement.ts";
+import { placeHelp, roomAbove } from "./helpPlacement.ts";
 import type { AppPage } from "./HubShell.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, withShortcut } from "./shortcuts.ts";
@@ -28,11 +29,13 @@ export type HelpState =
 
 export const helpClosed: HelpState = { kind: "closed" };
 
+/** Links each page's info button to the one popover the hub renders. */
+const helpHandle = Popover.createHandle();
+
 type HelpControl = {
   open: boolean;
-  toggle: () => void;
   /** The page's info button, which the popover sits beside and returns focus to. */
-  setButton: (element: HTMLButtonElement | null) => void;
+  placeButton: (element: HTMLButtonElement | null, page: AppPage) => void;
 };
 
 export const HelpContext = createContext<HelpControl | null>(null);
@@ -58,6 +61,7 @@ const styles = stylex.create({
   buttonOpen: { backgroundColor: color.accent, color: color.foreground },
   positioner: { zIndex: 10 },
   popup: {
+    position: "relative",
     display: "flex",
     flexDirection: "column",
     gap: space.sm,
@@ -96,6 +100,15 @@ const styles = stylex.create({
     cursor: "default",
   },
   muted: { margin: 0, color: color.mutedForeground },
+  srOnly: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    margin: 0,
+    overflow: "hidden",
+    clipPath: "inset(50%)",
+    whiteSpace: "nowrap",
+  },
   list: { display: "flex", flexDirection: "column", margin: 0, padding: 0, listStyle: "none" },
   item: {
     display: "flex",
@@ -158,6 +171,35 @@ const styles = stylex.create({
   },
 });
 
+const scrolls = (element: Element) => {
+  const { overflowX, overflowY } = getComputedStyle(element);
+  return overflowX !== "visible" || overflowY !== "visible";
+};
+
+const scroller = (element: Element) => {
+  for (let at = element.parentElement; at; at = at.parentElement) if (scrolls(at)) return at;
+  return null;
+};
+
+/** Whether a container would cut off the ring drawn outside the control. */
+function clipped(element: Element): boolean {
+  const ring = element.getBoundingClientRect();
+  const reach = 5;
+  for (let at = element.parentElement; at; at = at.parentElement) {
+    if (!scrolls(at)) continue;
+    const box = at.getBoundingClientRect();
+    if (
+      ring.left - reach < box.left ||
+      ring.top - reach < box.top ||
+      ring.right + reach > box.right ||
+      ring.bottom + reach > box.bottom
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** A page's title, with the info button when the page has help. */
 export function HelpTitle({
   page,
@@ -171,26 +213,25 @@ export function HelpTitle({
   const control = use(HelpContext);
   const help = helpFor(page);
   const expanded = control?.open ?? false;
-  const toggle = control?.toggle;
-  const setButton = control?.setButton;
+  const placeButton = control?.placeButton;
+  const ref = useCallback(
+    (element: HTMLButtonElement | null) => placeButton?.(element, page),
+    [placeButton, page],
+  );
   return (
     <div {...stylex.props(styles.row, style)}>
       <h1 {...stylex.props(pageStyles.headline)}>{children}</h1>
       {control && help && (
-        <button
-          ref={setButton}
-          type="button"
+        <Popover.Trigger
+          ref={ref}
+          handle={helpHandle}
           aria-label={`How ${help.name} works`}
-          aria-haspopup="dialog"
-          aria-expanded={expanded}
-          aria-controls={expanded ? popupId : undefined}
           aria-keyshortcuts="Meta+/"
           title={withShortcut(`How ${help.name} works`, shortcuts.help)}
-          onClick={toggle}
           {...stylex.props(styles.button, expanded && styles.buttonOpen)}
         >
           <InfoIcon size={16} aria-hidden="true" />
-        </button>
+        </Popover.Trigger>
       )}
     </div>
   );
@@ -233,8 +274,18 @@ export function HelpPopover({
     if (!target) return;
     target.setAttribute("data-help-active", "");
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const shown = document.getElementById(popupId);
+    if (shown && button) {
+      const size = { width: shown.offsetWidth, height: shown.offsetHeight };
+      const view = { width: document.documentElement.clientWidth, height: innerHeight };
+      const box = target.getBoundingClientRect();
+      if (!placeHelp({ view, button: button.getBoundingClientRect(), target: box, size }).clear) {
+        scroller(target)?.scrollBy({ top: roomAbove({ target: box, size }) });
+      }
+    }
+    if (clipped(target)) target.setAttribute("data-help-active", "inset");
     return () => target.removeAttribute("data-help-active");
-  }, [target]);
+  }, [target, button]);
 
   const moved = state.kind === "step" ? state.index : state.kind;
   useEffect(() => {
@@ -272,11 +323,17 @@ export function HelpPopover({
 
   return (
     <Popover.Root
+      handle={helpHandle}
       open={open}
       onOpenChange={(next, details) => {
         // Help stays up while the user works the page and moves between pages; it closes on purpose.
         if (details.reason === "outside-press" || details.reason === "focus-out") return;
-        if (!next) onChange(helpClosed);
+        // Escape belongs to whatever has focus; on the page it might clear a search instead.
+        const focused = document.activeElement;
+        const inHelp =
+          focused === button || document.getElementById(popupId)?.contains(focused) === true;
+        if (details.reason === "escape-key" && !inHelp) return;
+        onChange(next ? { kind: "list" } : helpClosed);
       }}
     >
       <Popover.Portal>
@@ -292,6 +349,7 @@ export function HelpPopover({
             id={popupId}
             data-app-modal=""
             aria-labelledby={`${popupId}-heading`}
+            aria-describedby={`${popupId}-text`}
             initialFocus={focusFirst}
             finalFocus={() => {
               const next = tryTarget.current ?? button;
@@ -307,6 +365,12 @@ export function HelpPopover({
             }}
             {...stylex.props(styles.popup)}
           >
+            {/* Focus stays on Next while the steps change, so the step is read out from here. */}
+            <p role="status" {...stylex.props(styles.srOnly)}>
+              {step &&
+                state.kind === "step" &&
+                `${step.title}, ${state.index + 1} of ${help.items.length}. ${step.body}`}
+            </p>
             {state.kind === "step" && step ? (
               <Step
                 help={help}
@@ -363,7 +427,9 @@ function List({
   return (
     <>
       <Head>How {help.name} works</Head>
-      <p {...stylex.props(styles.muted)}>{help.overview}</p>
+      <p id={`${popupId}-text`} {...stylex.props(styles.muted)}>
+        {help.overview}
+      </p>
       <ul {...stylex.props(styles.list)}>
         {help.items.map((item, index) => (
           <li key={item.anchor} {...stylex.props(styles.item)}>
@@ -372,6 +438,8 @@ function List({
               ref={index === focused ? focusRef : undefined}
               type="button"
               aria-label={`Show me ${item.title}`}
+              // VoiceOver reads the button help opens on, not the dialog's description.
+              aria-describedby={index === focused ? `${popupId}-text` : undefined}
               onClick={() => onShow(index)}
               {...stylex.props(styles.small)}
             >
@@ -406,7 +474,9 @@ function Step({
   return (
     <>
       <Head>{item.title}</Head>
-      <p {...stylex.props(styles.muted)}>{item.body}</p>
+      <p id={`${popupId}-text`} {...stylex.props(styles.muted)}>
+        {item.body}
+      </p>
       <div {...stylex.props(styles.footer)}>
         <button type="button" onClick={onList} {...stylex.props(styles.link)}>
           All tips

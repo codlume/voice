@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { placeHelp, type Box } from "./helpPlacement.ts";
+import { placeHelp, roomAbove, type Box } from "./helpPlacement.ts";
 
 const overlaps = (a: Box, b: Box) =>
   a.left < b.left + b.width &&
@@ -23,6 +23,7 @@ describe("placeHelp", () => {
     expect(placeHelp({ view: { width: 1280, height: 800 }, button, target: null, size })).toEqual({
       x: 300,
       y: 92,
+      clear: true,
     });
   });
 
@@ -30,6 +31,24 @@ describe("placeHelp", () => {
     const target: Box = { left: 280, top: 100, width: 600, height: 40 };
     const at = placeHelp({ view: { width: 1280, height: 800 }, button, target, size });
     expect(overlaps({ left: at.x, top: at.y, ...size }, target)).toBe(false);
+  });
+
+  it("makes room above a card too tall to leave space around it", () => {
+    const view = { width: 720, height: 480 };
+    const card: Box = { left: 245, top: 139, width: 418, height: 332 };
+    const small = { width: 288, height: 127 };
+    const offIcon: Box = { ...button, top: -500 };
+    expect(placeHelp({ view, button: offIcon, target: card, size: small }).clear).toBe(false);
+    const dy = roomAbove({ target: card, size: small });
+    const scrolled = { ...card, top: card.top - dy };
+    const at = placeHelp({
+      view,
+      button: { ...offIcon, top: offIcon.top - dy },
+      target: scrolled,
+      size: small,
+    });
+    expect(at.clear).toBe(true);
+    expect(scrolled.top).toBeGreaterThanOrEqual(0);
   });
 
   for (const view of [
@@ -59,6 +78,7 @@ describe("placeHelp", () => {
         for (let x = 8; x <= view.width - 8 - size.width && !free; x += 4)
           for (let y = 8; y <= view.height - 8 - size.height && !free; y += 4)
             free = !overlaps({ left: x, top: y, ...size }, clear);
+        expect(at.clear).toBe(free);
         if (!free) continue;
         checked++;
         expect(overlaps({ left: at.x, top: at.y, ...size }, clear), JSON.stringify(target)).toBe(

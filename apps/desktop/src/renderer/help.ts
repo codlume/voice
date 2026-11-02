@@ -103,5 +103,8 @@ export const helpFor = (page: AppPage): ViewHelp | null => viewHelp[page];
 /** Marks the control a help item points at. help.test.ts checks every item has one. */
 export const helpAnchor = (anchor: HelpAnchor) => ({ "data-help": anchor });
 
-export const findAnchor = (anchor: string) =>
-  document.querySelector<HTMLElement>(`[data-help="${anchor}"]`);
+/** The control for an anchor, if the page shows it; narrow windows hide some, like the overview. */
+export function findAnchor(anchor: string): HTMLElement | null {
+  const found = document.querySelector<HTMLElement>(`[data-help="${anchor}"]`);
+  return found && found.getClientRects().length > 0 ? found : null;
+}

@@ -19,7 +19,15 @@ import {
   XIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import iconUrl from "../../build/icon.svg";
 import type { Snapshot } from "../shared/api.ts";
@@ -681,7 +689,19 @@ export function HubShell({
     section: "general",
   });
   const [help, setHelp] = useState<HelpState>(helpClosed);
-  const [helpButton, setHelpButton] = useState<HTMLButtonElement | null>(null);
+  // The info button and the page it was on. A page still loading shows no button yet.
+  const [helpButtonOn, setHelpButtonOn] = useState<{
+    element: HTMLButtonElement | null;
+    page: AppPage;
+  } | null>(null);
+  const helpButton = helpButtonOn?.element ?? null;
+  const placeHelpButton = useCallback(
+    (element: HTMLButtonElement | null, page: AppPage) =>
+      setHelpButtonOn((current) =>
+        element ? { element, page } : current && { element: null, page: current.page },
+      ),
+    [],
+  );
   const openSettings = (section: SettingsPage) => {
     setSettings({ open: true, section });
     setHelp(helpClosed);
@@ -706,7 +726,7 @@ export function HubShell({
     if (help.kind !== "closed") setHelp(helpFor(appPage) ? { kind: "list" } : helpClosed);
   }
   // A page can drop its title, as Meetings does while a meeting is open; help goes with it.
-  if (help.kind !== "closed" && helpButton === null && shown.page === appPage) {
+  if (help.kind !== "closed" && helpButton === null && helpButtonOn?.page === appPage) {
     setHelp(helpClosed);
   }
   const toggleHelp = () =>
@@ -852,7 +872,10 @@ export function HubShell({
           )}
         >
           <HelpContext
-            value={{ open: help.kind !== "closed", toggle: toggleHelp, setButton: setHelpButton }}
+            value={{
+              open: help.kind !== "closed",
+              placeButton: placeHelpButton,
+            }}
           >
             <AppPageView {...view} />
           </HelpContext>
