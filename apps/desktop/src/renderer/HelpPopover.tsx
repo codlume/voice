@@ -10,6 +10,7 @@ import {
   useState,
   useMemo,
   useRef,
+  type FocusEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -201,6 +202,23 @@ function clipped(element: Element): boolean {
   return false;
 }
 
+/**
+ * While help is open, Base UI puts a focus guard just before the info button and treats any focus
+ * on it as Shift+Tab out of the popover, sending focus back to the sidebar. Tab from the page
+ * itself (focus on main after a page switch or a click) lands there too; send it to the button.
+ */
+function tabIntoButton(event: FocusEvent<HTMLDivElement>) {
+  const guard = event.target;
+  const button = guard.nextElementSibling;
+  if (!guard.hasAttribute("data-base-ui-focus-guard") || !(button instanceof HTMLElement)) return;
+  const from = event.relatedTarget;
+  const fromHelp =
+    from === button || (from instanceof Node && document.getElementById(popupId)?.contains(from));
+  if (fromHelp) return;
+  event.stopPropagation();
+  button.focus();
+}
+
 /** A page's title, with the info button when the page has help. */
 export function HelpTitle({
   page,
@@ -220,7 +238,7 @@ export function HelpTitle({
     [placeButton, page],
   );
   return (
-    <div {...stylex.props(styles.row, style)}>
+    <div onFocusCapture={tabIntoButton} {...stylex.props(styles.row, style)}>
       <h1 {...stylex.props(pageStyles.headline)}>{children}</h1>
       {control && help && (
         <Popover.Trigger
