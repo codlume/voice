@@ -209,7 +209,8 @@ const share = (words, heard) => words.filter((word) => heard.has(word)).length /
 
 // A user turn survives when the mic segments around it hold most of its words. A system turn of
 // four or more words is echo kept when mic segments that start while it plays repeat most of its
-// words beyond the user's own; a user repeating it after it ends is not echo.
+// words beyond the user's own; a user repeating it after it ends is not echo. Stray words are mic
+// words outside every user turn.
 function scoreMeeting(turns, segments) {
   const wordsOf = (filter) =>
     segments
@@ -243,7 +244,14 @@ function scoreMeeting(turns, segments) {
       return words.length > 0 && share(words, heard) >= 0.6;
     })
     .map((turn) => turn.text);
-  return { userTurns: userTurns.length, userTurnsLost: lost, echoKept };
+  // Mic words no user turn accounts for: echo the speech model heard as other words.
+  const strayWords = wordsOf(
+    (entry) =>
+      !userTurns.some(
+        (turn) => entry.startMs <= turn.endMs + 300 && entry.endMs >= turn.startMs - 300,
+      ),
+  ).length;
+  return { userTurns: userTurns.length, userTurnsLost: lost, echoKept, strayWords };
 }
 
 async function pollAsync(check, timeoutMs, label) {
@@ -1179,7 +1187,7 @@ const commands = {
     for (const [fixture] of fixtures) {
       if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
     }
-    const turnsPath = join(fixturesDir, mic.replace(/-mic(-speakers)?\.wav$/, "-turns.json"));
+    const turnsPath = join(fixturesDir, mic.replace(/-mic(-laptop)?\.wav$/, "-turns.json"));
     const turns = existsSync(turnsPath) ? JSON.parse(readFileSync(turnsPath, "utf8")) : null;
     const hub = await connect("hub");
     const logOffset = statSync(state.logPath).size;

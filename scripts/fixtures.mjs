@@ -54,8 +54,8 @@ const fixtures = [
 
 // Synthetic meetings: the user on the mic, the others on system audio. A turn starts `gap`
 // seconds after the last one ends, or `overlap` seconds after the previous turn started, for
-// crosstalk. An `echo` variant mixes the other side into the mic, quieter and a beat late, the way
-// a laptop microphone hears its own speakers. `<prefix>-turns.json` holds who said what when, so
+// crosstalk. An `echo` variant mixes the other side into the mic the way a laptop microphone hears
+// its own speakers (see `laptop`). `<prefix>-turns.json` holds who said what when, so
 // a run can be scored: every user turn must survive, as itself and once. Numbers are written the
 // way the speech model writes them, so the score compares like with like.
 /**
@@ -72,7 +72,7 @@ const meetings = [
   {
     prefix: "meeting",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-mic-speakers.wav",
+    echo: "meeting-mic-laptop.wav",
     turns: [
       ["you", "Morning everyone. Let's go through the launch plan for the Kowalski account."],
       ["other", "Sounds good. The beta build is ready, and we fixed forty two bugs last week."],
@@ -116,7 +116,7 @@ const meetings = [
     // speakers the echo of the other side must still go.
     prefix: "meeting-repeat-back",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-repeat-back-mic-speakers.wav",
+    echo: "meeting-repeat-back-mic-laptop.wav",
     turns: [
       ["other", "Can we move the launch to March 12th?"],
       ["you", "March 12th works for me.", { gap: 0.5 }],
@@ -134,7 +134,7 @@ const meetings = [
     // The user talks over the other side, whose words the speakers also play into the mic.
     prefix: "meeting-crosstalk",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-crosstalk-mic-speakers.wav",
+    echo: "meeting-crosstalk-mic-laptop.wav",
     turns: [
       ["you", "Let's go through the renewal before the call ends."],
       [
@@ -144,6 +144,32 @@ const meetings = [
       ["you", "Sorry, who owns legal review?", { overlap: 3 }],
       ["other", "Victor owns it. He already has the draft."],
       ["you", "Thanks. I will send him the latest numbers today.", { gap: 0.6 }],
+    ],
+  },
+  {
+    // A Polish call on laptop speakers: the user answers, talks over the other side twice and
+    // repeats a phrase back while it still plays.
+    prefix: "meeting-pl-doubletalk",
+    speakers: { you: ["mic", "Zosia"], other: ["system", "Zosia"] },
+    echo: "meeting-pl-doubletalk-mic-laptop.wav",
+    turns: [
+      ["other", "Dobra, to lecimy. Pierwsze pytanie dotyczy wdrożenia nowej wersji aplikacji."],
+      ["other", "Czy zespół testowy skończył już sprawdzać aplikację mobilną?", { gap: 0.6 }],
+      ["you", "Tak, skończyli wczoraj wieczorem i nie znaleźli żadnych poważnych błędów."],
+      [
+        "other",
+        "Świetnie, to super. Szybko poszło. W takim razie wypuszczamy nową wersję w czwartek po południu.",
+      ],
+      ["you", "Czekaj, w czwartek mam spotkanie z klientem.", { overlap: 2.5 }],
+      ["other", "Dobrze, to przesuńmy wydanie na piątek rano, czyli o dziewiątej czasu polskiego."],
+      ["you", "Piątek rano mi pasuje. Wyślę zaproszenie do całego zespołu."],
+      [
+        "other",
+        "Jeszcze jedno. Marketing prosi o krótką notatkę dla klientów przed wydaniem, najlepiej do środy.",
+      ],
+      ["you", "Zapisuję, notatka dla klientów do środy.", { overlap: 3.5 }],
+      ["other", "Dzięki, to wszystko z mojej strony. Do usłyszenia w piątek."],
+      ["you", "Dzięki, do usłyszenia.", { gap: 0.5 }],
     ],
   },
   {
@@ -172,6 +198,53 @@ const meetings = [
   },
 ];
 const gapSeconds = 1.2;
+
+// What a MacBook Pro microphone hears from its own speakers at 60% volume, measured with a
+// played Polish meeting: the speech comes back 18.5 dB down, tilted toward 2.5-5 kHz, with a
+// strong direct path, a room tail and distortion 16.5 dB below the echo that no linear filter
+// predicts. The user's voice sits 6 dB above the echo and 30 dB above the room's noise, at the
+// levels the microphone recorded.
+const laptop = { userDb: -11.7, clip: 3, delayMs: 40, echoDb: -23.5, noise: 0.0076 };
+
+// A 300 ms impulse response: the direct path, a few early reflections, and a decaying tail
+// about 18 dB below the direct path. Seeded, so every run generates the same fixture.
+function roomResponse() {
+  const rate = 16000;
+  const taps = new Float32Array(rate * 0.3);
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32 - 0.5;
+  };
+  taps[0] = 1;
+  for (const [ms, gain] of [
+    [2.1, 0.3],
+    [3.4, -0.22],
+    [5.8, 0.17],
+    [7.9, -0.12],
+  ]) {
+    taps[Math.round((ms * rate) / 1000)] += gain;
+  }
+  for (let i = Math.round(0.005 * rate); i < taps.length; i++) {
+    taps[i] += 0.035 * random() * Math.exp(-i / rate / 0.058);
+  }
+  const data = Buffer.alloc(taps.length * 4);
+  taps.forEach((tap, i) => data.writeFloatLE(tap, i * 4));
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(3, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 4, 28);
+  header.writeUInt16LE(4, 32);
+  header.writeUInt16LE(32, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
 /** @param {Meeting} meeting */
 const meetingFixtures = ({ prefix, echo }) => [
   `${prefix}-mic.wav`,
@@ -299,6 +372,8 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       ]);
     }
     if (!echo) return;
+    const room = join(work, "room.wav");
+    writeFileSync(room, roomResponse());
     run("ffmpeg", [
       "-y",
       "-loglevel",
@@ -307,8 +382,16 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       join(fixturesDir, `${prefix}-mic.wav`),
       "-i",
       join(fixturesDir, `${prefix}-system.wav`),
+      "-i",
+      room,
       "-filter_complex",
-      "[1]volume=0.3,adelay=40[echo];[0][echo]amix=inputs=2:normalize=0:duration=first",
+      [
+        `[0]volume=${laptop.userDb}dB[user]`,
+        `[1]highpass=f=250,equalizer=f=3500:t=q:w=1:g=6,asoftclip=type=tanh:param=${laptop.clip},adelay=${laptop.delayMs}[played]`,
+        `[played][2]afir=irnorm=-1:gtype=-1,volume=${laptop.echoDb}dB[echo]`,
+        `anoisesrc=color=pink:amplitude=${laptop.noise}:seed=7:sample_rate=16000:duration=${total}[noise]`,
+        "[user][echo][noise]amix=inputs=3:normalize=0:duration=first",
+      ].join(";"),
       "-c:a",
       "pcm_s16le",
       join(fixturesDir, echo),
