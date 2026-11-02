@@ -8,14 +8,19 @@ private let rate = 16_000
 /// series on a gliding pitch, in syllables, with a timbre fixed by `seed`.
 private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2) -> [Float] {
     var phase: Float = 0
-    return (0..<Int(seconds * Double(rate))).map { n in
+    let twoPi = 2 * Float.pi
+    let stop = end ?? seconds
+    return (0..<Int(seconds * Double(rate))).map { (n: Int) -> Float in
         let t = Float(n) / Float(rate)
-        let f0 = pitch * (1 + 0.12 * sin(2 * .pi * 0.7 * t + seed))
-        phase += 2 * .pi * f0 / Float(rate)
-        guard Double(t) >= start, Double(t) < (end ?? seconds) else { return 0 }
-        let syllable = max(0, sin(2 * .pi * 3.3 * t + seed))
-        let tone = (1...14).reduce(Float(0)) { sum, k in
-            sum + sin(Float(k) * phase) * (1 + 0.6 * sin(Float(k) * seed)) / Float(k)
+        let glide: Float = 1 + 0.12 * sin(twoPi * 0.7 * t + seed)
+        phase += twoPi * pitch * glide / Float(rate)
+        guard Double(t) >= start, Double(t) < stop else { return 0 }
+        let syllable: Float = max(0, sin(twoPi * 3.3 * t + seed))
+        var tone: Float = 0
+        for k in 1...14 {
+            let harmonic = Float(k)
+            let timbre: Float = 1 + 0.6 * sin(harmonic * seed)
+            tone += sin(harmonic * phase) * timbre / harmonic
         }
         return level * syllable * tone / 2
     }

@@ -216,17 +216,19 @@ function roomResponse() {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 2 ** 32 - 0.5;
   };
-  taps[0] = 1;
-  for (const [ms, gain] of [
+  const tail = Math.round(0.005 * rate);
+  for (let i = tail; i < taps.length; i++) taps[i] = 0.035 * random() * Math.exp(-i / rate / 0.058);
+  /** @type {[ms: number, gain: number][]} */
+  const reflections = [
+    [0, 1],
     [2.1, 0.3],
     [3.4, -0.22],
     [5.8, 0.17],
     [7.9, -0.12],
-  ]) {
-    taps[Math.round((ms * rate) / 1000)] += gain;
-  }
-  for (let i = Math.round(0.005 * rate); i < taps.length; i++) {
-    taps[i] += 0.035 * random() * Math.exp(-i / rate / 0.058);
+  ];
+  for (const [ms, gain] of reflections) {
+    const i = Math.round((ms * rate) / 1000);
+    taps[i] = (taps[i] ?? 0) + gain;
   }
   const data = Buffer.alloc(taps.length * 4);
   taps.forEach((tap, i) => data.writeFloatLE(tap, i * 4));
