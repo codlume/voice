@@ -30,6 +30,7 @@ const switchId = "dictionary-replace";
 const problemId = "dictionary-problem";
 
 const copy: Copy = {
+  page: "dictionary",
   title: "Dictionary",
   subtitle: "Teach Voice how to write names and terms, or swap a phrase for other text.",
   hint:

@@ -15,6 +15,8 @@ import {
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
+import { PageTitle } from "./HelpSheet.tsx";
+import type { AppPage } from "./HubShell.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./settingsParts.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
@@ -70,6 +72,7 @@ type Problem<F extends string> = { field: F; message: string };
 type Modal<T> = { kind: Mode | "delete" | "deleted"; record: T; open: boolean; key: string };
 
 export type Copy = {
+  page: AppPage;
   title: string;
   subtitle: string;
   hint: string;
@@ -173,7 +176,7 @@ export function RecordList<T extends { id: string }, F extends string>({
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
         <div {...stylex.props(styles.headerText)}>
-          <h1 {...stylex.props(pageStyles.headline)}>{copy.title}</h1>
+          <PageTitle page={copy.page}>{copy.title}</PageTitle>
           <p {...stylex.props(styles.subtitle)}>{copy.subtitle}</p>
         </div>
         <Button ref={addRef} onClick={() => show("add", blank())}>

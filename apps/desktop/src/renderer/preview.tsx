@@ -29,6 +29,7 @@ import type { MeetingPrompt, PillMeeting } from "../shared/meetings.ts";
 import type { ModelId } from "../shared/models.ts";
 import "./style.css";
 import { HubShell, type AppPage } from "./HubShell.tsx";
+import { helpTopics } from "./help/topics.ts";
 import { Notepad } from "./MeetingNotepad.tsx";
 import { fakeMeetingsMain } from "./testing/meetingsFake.ts";
 import { sampleMeetings, type MeetingFixtures } from "./testing/meetingsFixtures.ts";
@@ -898,7 +899,11 @@ if (pill) {
   root.render(<Notepad />);
 } else if (hub) {
   window.voice = fakeVoice(hubScenes[hub] ?? base, false);
-  root.render(<HubPreview initialPage={hub.startsWith("meetings") ? "meetings" : "home"} />);
+  const page = params.get("page");
+  const initialPage = Object.keys(helpTopics).find((id): id is AppPage => id === page);
+  root.render(
+    <HubPreview initialPage={initialPage ?? (hub.startsWith("meetings") ? "meetings" : "home")} />,
+  );
 } else {
   window.voice = fakeVoice(ready, true);
   root.render(<Gallery />);

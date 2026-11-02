@@ -17,7 +17,7 @@ import {
   type Level,
   type UsageView,
 } from "./insightsView.ts";
-import { pageStyles } from "./pageStyles.ts";
+import { PageTitle } from "./HelpSheet.tsx";
 import { appNames, CATEGORY_LABELS } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
@@ -398,7 +398,7 @@ export const Insights = memo(function Insights({
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(pageStyles.headline)}>Insights</h1>
+        <PageTitle page="insights">Insights</PageTitle>
         <p {...stylex.props(styles.lede)}>
           Counted on this Mac from your dictations. Voice keeps the numbers and the apps, never your
           words.

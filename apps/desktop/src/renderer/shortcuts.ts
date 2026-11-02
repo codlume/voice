@@ -20,6 +20,7 @@ export const shortcuts = {
   toggleSidebar: shortcut("b"),
   openSettings: shortcut(","),
   searchHistory: shortcut("f"),
+  openHelp: shortcut("/"),
 };
 
 export const jumpShortcuts = Array.from({ length: 9 }, (_, index) => shortcut(String(index + 1)));

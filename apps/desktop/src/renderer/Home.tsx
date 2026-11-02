@@ -12,6 +12,7 @@ import { History } from "./History.tsx";
 import { YourStats } from "./HomeStats.tsx";
 import { dictatesWithFn, hotkeyKeycap, hotkeyLabel } from "./hotkeys.ts";
 import { Keycap } from "./Keycap.tsx";
+import { PageTitle } from "./HelpSheet.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { GlobeHint } from "./settingsParts.tsx";
 import { Switch } from "./Switch.tsx";
@@ -311,7 +312,7 @@ export function Home({
   return (
     <div {...stylex.props(styles.page)}>
       <header>
-        <h1 {...stylex.props(pageStyles.headline)}>{greeting}</h1>
+        <PageTitle page="home">{greeting}</PageTitle>
         <p {...stylex.props(styles.lede)}>
           Hold <Keycap>{hotkeyKeycap(snapshot.settings.hotkey)}</Keycap>, speak, and let go
           {snapshot.settings.toggleHotkey && (

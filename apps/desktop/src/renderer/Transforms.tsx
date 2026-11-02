@@ -14,6 +14,7 @@ import { Card } from "./Card.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { dictationKeys } from "./hotkeys.ts";
 import { Keys } from "./Keycap.tsx";
+import { PageTitle } from "./HelpSheet.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { RecordEditor, type Copy } from "./RecordList.tsx";
 import { Select } from "./Select.tsx";
@@ -173,7 +174,7 @@ export function Transforms({
   return (
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.header)}>
-        <h1 {...stylex.props(pageStyles.headline)}>Transforms</h1>
+        <PageTitle page="transforms">Transforms</PageTitle>
         <p {...stylex.props(styles.subtitle)}>
           Select text in any app, press a shortcut, and Voice rewrites it in place.
         </p>

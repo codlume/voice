@@ -31,6 +31,7 @@ import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.
 import { DataPrivacySettings } from "./DataPrivacySettings.tsx";
 import { Dictionary } from "./Dictionary.tsx";
 import { GeneralSettings } from "./GeneralSettings.tsx";
+import { PageAnimationMs } from "./HelpSheet.tsx";
 import { Home } from "./Home.tsx";
 import { Insights } from "./Insights.tsx";
 import { Meetings } from "./Meetings.tsx";
@@ -833,7 +834,9 @@ export function HubShell({
             shown.rises && pageMotion.rise,
           )}
         >
-          <AppPageView {...view} />
+          <PageAnimationMs value={snapshot.settings.pageAnimationMs}>
+            <AppPageView {...view} />
+          </PageAnimationMs>
         </div>
       </main>
       <SettingsModal

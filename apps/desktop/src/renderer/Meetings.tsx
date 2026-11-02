@@ -38,6 +38,7 @@ import {
   summaryNotice,
 } from "./meetingsView.ts";
 import { commandRefusal, statusView, type RecordingCommand } from "./meetingStatus.ts";
+import { HelpButton } from "./HelpSheet.tsx";
 import { pageStyles } from "./pageStyles.ts";
 import { shortcutLabel } from "./shortcutCapture.ts";
 import { shortcuts, useShortcuts, withShortcut } from "./shortcuts.ts";
@@ -510,6 +511,7 @@ function MeetingsPage({
             >
               <SettingsIcon size={17} />
             </Button>
+            <HelpButton page="meetings" />
             {startButton("primary")}
           </div>
           {notice && (
