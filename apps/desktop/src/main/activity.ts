@@ -41,3 +41,22 @@ export function whenIdle(store: Store): (task: () => void) => void {
     else waiting.add(task);
   };
 }
+
+/**
+ * Runs a task once, when the speech model has loaded or failed to, or after `timeoutMs`. Work that
+ * holds main then lands after launch instead of the moment a key press can first start a session.
+ * The timeout covers a missing model, a first-time compile, and a helper that never answers.
+ */
+export function whenSpeechModelSettles(store: Store, timeoutMs: number, task: () => void) {
+  const settled = () => ["ready", "failed"].includes(store.state.models.asr.state);
+  if (settled()) return task();
+  const finish = () => {
+    clearTimeout(timer);
+    unsubscribe();
+    task();
+  };
+  const timer = setTimeout(finish, timeoutMs);
+  const unsubscribe = store.subscribe(() => {
+    if (settled()) finish();
+  });
+}
