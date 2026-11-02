@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS } from "../shared/api.ts";
 import type { TransformId } from "../shared/transforms.ts";
-import { activity, whenIdle } from "./activity.ts";
+import { activity, whenIdle, whenSpeechModelSettles } from "./activity.ts";
 import { idle, type Session } from "./session.ts";
 import { createStore, type AppState } from "./store.ts";
 import { noMeetingFocus } from "./meeting-focus.ts";
@@ -104,5 +104,78 @@ describe("whenIdle", () => {
     store.update((s) => ({ ...s, transform: transformDone }));
     await microtasks();
     expect(order).toEqual(["first", "second"]);
+  });
+});
+
+const setAsr = (store: ReturnType<typeof createStore>, asr: AppState["models"]["asr"]) =>
+  store.update((s) => ({ ...s, models: { ...s.models, asr } }));
+
+describe("whenSpeechModelSettles", () => {
+  const launching: AppState = {
+    ...busy,
+    transform: idleRun,
+    models: { ...busy.models, asr: { state: "missing" } },
+  };
+
+  test("waits through the launch placeholder and the load, then runs once the model is ready", () => {
+    vi.useFakeTimers();
+    try {
+      const store = createStore(launching);
+      const task = vi.fn();
+      whenSpeechModelSettles(store, 2000, task);
+      setAsr(store, { state: "missing" });
+      setAsr(store, { state: "loading" });
+      expect(task).not.toHaveBeenCalled();
+
+      setAsr(store, { state: "ready" });
+      expect(task).toHaveBeenCalledOnce();
+
+      setAsr(store, { state: "failed", message: "gone" });
+      vi.advanceTimersByTime(5000);
+      expect(task).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a failed load settles it too", () => {
+    const store = createStore({
+      ...launching,
+      models: { ...launching.models, asr: { state: "loading" } },
+    });
+    const task = vi.fn();
+    whenSpeechModelSettles(store, 2000, task);
+    setAsr(store, { state: "failed", message: "Speech model failed to load" });
+    expect(task).toHaveBeenCalledOnce();
+  });
+
+  test("a model that never settles runs the task at the timeout, and only then", () => {
+    vi.useFakeTimers();
+    try {
+      const store = createStore(launching);
+      const task = vi.fn();
+      whenSpeechModelSettles(store, 2000, task);
+      setAsr(store, { state: "loading", preparing: true });
+      vi.advanceTimersByTime(1999);
+      expect(task).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(task).toHaveBeenCalledOnce();
+
+      setAsr(store, { state: "ready" });
+      expect(task).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a model that is already ready runs the task at once", () => {
+    const store = createStore({
+      ...launching,
+      models: { ...launching.models, asr: { state: "ready" } },
+    });
+    const task = vi.fn();
+    whenSpeechModelSettles(store, 2000, task);
+    expect(task).toHaveBeenCalledOnce();
   });
 });

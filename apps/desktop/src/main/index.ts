@@ -47,13 +47,13 @@ import {
   createAccount,
   resolveApiUrl,
 } from "./account.ts";
-import { activity, whenIdle } from "./activity.ts";
+import { activity, whenIdle, whenSpeechModelSettles } from "./activity.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
 import { createDockSync } from "./dock.ts";
 import type * as SentryEntry from "./sentry.ts";
-import { createDictation, type Dictation } from "./dictation.ts";
+import { ASR_PREPARING_AFTER_MS, createDictation, type Dictation } from "./dictation.ts";
 import { findHelperCrash } from "./helper-crash.ts";
 import { startHelper, type Helper } from "./helper.ts";
 import { hotkeyConfigure } from "./hotkey-config.ts";
@@ -526,6 +526,7 @@ async function main() {
   installedApps = createInstalledApps({ send: helper.send });
 
   const runWhenIdle = whenIdle(store);
+  const restoreAccount = () => void account.restore();
   const updates = createUpdates({
     whenIdle: runWhenIdle,
     loadEngine:
@@ -635,9 +636,13 @@ async function main() {
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);
-    // Restore loads Better Auth and reads the Keychain, so it waits until the window has loaded.
+    // Restore loads Better Auth and reads the Keychain, which holds main for about 40 ms, so it
+    // waits until the window has loaded and the speech model has, or a load has run long enough
+    // to be a first-time compile. It never runs mid-session.
     // Not ready-to-show: a window covered by another app paints nothing, and restore would wait.
-    hub.webContents.once("did-finish-load", () => void account.restore());
+    hub.webContents.once("did-finish-load", () =>
+      whenSpeechModelSettles(store, ASR_PREPARING_AFTER_MS, () => runWhenIdle(restoreAccount)),
+    );
     registerHubCommands(hub.webContents.ipc, hubCommandDeps);
     loadPage(hub, "hub");
     if (!activate) hub.showInactive();
