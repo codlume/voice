@@ -41,6 +41,7 @@ type HelpControl = {
 export const HelpContext = createContext<HelpControl | null>(null);
 
 const popupId = "view-help";
+const buttonId = (page: AppPage) => `view-help-${page}`;
 
 const styles = stylex.create({
   row: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
@@ -224,6 +225,7 @@ export function HelpTitle({
       {control && help && (
         <Popover.Trigger
           ref={ref}
+          id={buttonId(page)}
           handle={helpHandle}
           aria-label={`How ${help.name} works`}
           aria-keyshortcuts="Meta+/"
@@ -251,15 +253,32 @@ export function HelpPopover({
 }) {
   const written = helpFor(page);
   const open = state.kind !== "closed" && written !== null && button !== null;
-  // Only items whose control is on the page now: Search, the list and the overview need meetings.
-  // Read after the page commits, so a page switch never reads the old page.
+  // Only items whose control is on the page now: Search, the list and the overview need meetings,
+  // and Insights draws its cards once its numbers load. Read after the page commits, so a page
+  // switch never reads the old page, and again whenever the page changes while help is open.
   const [onScreen, setOnScreen] = useState<readonly string[]>([]);
   useLayoutEffect(() => {
     if (!open) return;
-    const present = written.items.flatMap(({ anchor }) => (findAnchor(anchor) ? [anchor] : []));
-    // The controls live in the page's DOM, which this reads once the page has committed.
-    // eslint-disable-next-line react/set-state-in-effect
-    setOnScreen(present);
+    const scan = () => {
+      const present = written.items.flatMap(({ anchor }) => (findAnchor(anchor) ? [anchor] : []));
+      setOnScreen((shown) => (shown.join() === present.join() ? shown : present));
+    };
+    scan();
+    let frame = 0;
+    const changes = new MutationObserver(() => {
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        scan();
+      });
+    });
+    changes.observe(document.querySelector("main") ?? document.body, {
+      childList: true,
+      subtree: true,
+    });
+    return () => {
+      changes.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [open, written]);
   const help = written && {
     ...written,
@@ -325,6 +344,7 @@ export function HelpPopover({
     <Popover.Root
       handle={helpHandle}
       open={open}
+      triggerId={buttonId(page)}
       onOpenChange={(next, details) => {
         // Help stays up while the user works the page and moves between pages; it closes on purpose.
         if (details.reason === "outside-press" || details.reason === "focus-out") return;
