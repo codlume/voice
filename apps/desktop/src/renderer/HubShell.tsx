@@ -35,6 +35,7 @@ import type { OpenMeetingRequest } from "../shared/meetings.ts";
 import type { HistoryState } from "../shared/history.ts";
 import { TITLEBAR_HEIGHT, trafficLightsInset } from "../shared/titlebar.ts";
 import { AccountSettings } from "./Account.tsx";
+import { Badge } from "./Badge.tsx";
 import { DialogBackdrop, dialogStyles, transitionHidden } from "./ConfirmDialog.tsx";
 import { DataPrivacySettings } from "./DataPrivacySettings.tsx";
 import { Dictionary } from "./Dictionary.tsx";
@@ -71,7 +72,7 @@ import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 const appPageGroups = [
   [
     { id: "home", label: "Home", icon: HouseIcon },
-    { id: "meetings", label: "Meetings", icon: UsersIcon },
+    { id: "meetings", label: "Meetings", icon: UsersIcon, badge: "Beta" },
     { id: "insights", label: "Insights", icon: ChartColumnIcon },
     { id: "style", label: "Style", icon: PenLineIcon },
     { id: "transforms", label: "Transforms", icon: WandSparklesIcon },
@@ -321,6 +322,7 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   labelHidden: { opacity: 0 },
+  badge: { display: "flex", flexShrink: 0 },
   labelBesideHint: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
   shortcutHint: {
     flexShrink: 0,
@@ -477,6 +479,7 @@ function SidebarTooltip({ collapsed, children }: { collapsed: boolean; children:
 function NavItem({
   label,
   icon: Icon,
+  badge,
   shortcut,
   current,
   collapsed,
@@ -485,6 +488,7 @@ function NavItem({
 }: {
   label: string;
   icon: LucideIcon;
+  badge: string | undefined;
   shortcut: Shortcut | undefined;
   current: boolean;
   collapsed: boolean;
@@ -492,10 +496,14 @@ function NavItem({
   onClick: () => void;
 }) {
   const showHint = showShortcut && shortcut !== undefined;
+  // The row cannot fit the label, the badge and the hint, so the badge steps aside while Command is held.
+  const showBadge = badge !== undefined && !showHint;
   return (
     <Tooltip.Trigger
       payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
       type="button"
+      // One name, "Meetings, Beta", rather than the label and badge run together.
+      aria-label={badge === undefined ? undefined : `${label}, ${badge}`}
       aria-current={current ? "page" : undefined}
       onClick={onClick}
       {...stylex.props(styles.navItem, current && styles.navItemCurrent)}
@@ -510,6 +518,11 @@ function NavItem({
       >
         {label}
       </span>
+      {showBadge && (
+        <span {...stylex.props(styles.label, styles.badge, collapsed && styles.labelHidden)}>
+          <Badge>{badge}</Badge>
+        </span>
+      )}
       {showHint && (
         <kbd aria-hidden="true" {...stylex.props(styles.shortcutHint)}>
           {shortcut.hint}
@@ -526,7 +539,7 @@ function NavItems<Id extends string>({
   showShortcut,
   onSelect,
 }: {
-  groups: readonly (readonly { id: Id; label: string; icon: LucideIcon }[])[];
+  groups: readonly (readonly { id: Id; label: string; icon: LucideIcon; badge?: string }[])[];
   current: Id;
   collapsed: boolean;
   showShortcut: boolean;
@@ -536,11 +549,12 @@ function NavItems<Id extends string>({
   return groups.map((items, groupIndex) => (
     <Fragment key={items[0]?.id}>
       {groupIndex > 0 && <hr {...stylex.props(styles.navDivider)} />}
-      {items.map(({ id, label, icon }) => (
+      {items.map(({ id, label, icon, badge }) => (
         <NavItem
           key={id}
           label={label}
           icon={icon}
+          badge={badge}
           shortcut={jumpShortcuts[index++]}
           current={current === id}
           collapsed={collapsed}
