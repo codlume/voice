@@ -183,6 +183,12 @@ const scroller = (element: Element) => {
   return null;
 };
 
+const controls = "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])";
+
+/** The control itself, or the first one inside a highlighted area. */
+const firstControl = (element: HTMLElement) =>
+  element.matches(controls) ? element : element.querySelector<HTMLElement>(controls);
+
 /** Whether a container would cut off the ring drawn outside the control. */
 function clipped(element: Element): boolean {
   const ring = element.getBoundingClientRect();
@@ -416,10 +422,14 @@ export function HelpPopover({
                 focusRef={focusFirst}
                 onGo={go}
                 onList={() => onChange({ kind: "list", from: state.index })}
-                onTry={() => {
-                  tryTarget.current = target;
-                  onChange(helpClosed);
-                }}
+                onTry={
+                  target && firstControl(target)
+                    ? () => {
+                        tryTarget.current = firstControl(target);
+                        onChange(helpClosed);
+                      }
+                    : null
+                }
                 onDone={() => onChange(helpClosed)}
               />
             ) : (
@@ -504,7 +514,8 @@ function Step({
   focusRef: RefObject<HTMLButtonElement | null>;
   onGo: (index: number) => void;
   onList: () => void;
-  onTry: () => void;
+  /** Null when the highlighted part has nothing to use, like an Insights card. */
+  onTry: (() => void) | null;
   onDone: () => void;
 }) {
   const item = help.items[index]!;
@@ -522,9 +533,11 @@ function Step({
         <span {...stylex.props(styles.count)}>
           {index + 1} of {help.items.length}
         </span>
-        <button type="button" onClick={onTry} {...stylex.props(styles.link)}>
-          Try it
-        </button>
+        {onTry && (
+          <button type="button" onClick={onTry} {...stylex.props(styles.link)}>
+            Try it
+          </button>
+        )}
         {index > 0 && (
           <button
             type="button"
