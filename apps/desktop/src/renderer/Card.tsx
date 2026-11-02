@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { ReactNode } from "react";
 
+import { helpAnchor, type HelpAnchor } from "./help.ts";
 import { color, radius } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
@@ -13,6 +14,18 @@ const styles = stylex.create({
   },
 });
 
-export function Card({ style, children }: { style?: stylex.StyleXStyles; children: ReactNode }) {
-  return <div {...stylex.props(styles.card, style)}>{children}</div>;
+export function Card({
+  style,
+  help,
+  children,
+}: {
+  style?: stylex.StyleXStyles;
+  help?: HelpAnchor | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <div {...(help && helpAnchor(help))} {...stylex.props(styles.card, style)}>
+      {children}
+    </div>
+  );
 }

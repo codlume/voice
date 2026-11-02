@@ -19,6 +19,7 @@ import { color, font, radius, space } from "./tokens.stylex.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { useAction } from "./useAction.ts";
 import { hubApi } from "./voice.ts";
+import { helpAnchor } from "./help.ts";
 
 const reducedMotion = "@media (prefers-reduced-motion: reduce)";
 
@@ -328,7 +329,7 @@ export function MeetingList({
   onOpen: (id: MeetingId) => void;
 }) {
   return (
-    <div {...stylex.props(styles.days)}>
+    <div {...helpAnchor("meetings.list")} {...stylex.props(styles.days)}>
       {days.map((day) => (
         <section key={day.day} aria-label={day.label} {...stylex.props(styles.day)}>
           <h2 {...stylex.props(styles.dayLabel)}>{day.label}</h2>

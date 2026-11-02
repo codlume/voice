@@ -50,3 +50,15 @@
     transition-duration: 0s;
   }
 }
+
+/* The control a help step points at. An outline never moves layout, and it follows the control. */
+[data-help-active] {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  scroll-margin: 8px;
+}
+
+/* Flush against a scrolling edge, where an outside ring would be cut off. */
+[data-help-active="inset"] {
+  outline-offset: -2px;
+}
