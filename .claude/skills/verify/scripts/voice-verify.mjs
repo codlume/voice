@@ -848,7 +848,7 @@ const commands = {
         const content = modal
           ? [...modal.children].filter((part) => !part.contains(nav)).map((part) => part.innerText).join("\\n")
           : document.querySelector("main").innerText;
-        return "[" + (nav?.getAttribute("aria-label") ?? "?") + " nav" + (current ? " > " + current.textContent.trim() : "") + "]\\n" + content;
+        return "[" + (nav?.getAttribute("aria-label") ?? "?") + " nav" + (current ? " > " + (current.getAttribute("aria-label") ?? current.textContent.trim()) : "") + "]\\n" + content;
       })()`),
     );
     hub.close();
