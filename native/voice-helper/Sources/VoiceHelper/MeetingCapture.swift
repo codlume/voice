@@ -17,7 +17,6 @@ final class MeetingCapture {
     private var watch: DispatchSourceTimer?
     private var lastMicAudio = DispatchTime.now()
     private let microphone: Microphone?
-    private let dir: URL
     private let micURL: URL
     private let systemURL: URL
     private var mic: PcmWriter?
@@ -33,9 +32,8 @@ final class MeetingCapture {
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
          isCapturingDictation: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void) {
-        self.dir = dir
-        micURL = dir.appendingPathComponent("mic.pcm")
-        systemURL = dir.appendingPathComponent("system.pcm")
+        micURL = MeetingSource.mic.file(in: dir)
+        systemURL = MeetingSource.system.file(in: dir)
         self.microphone = microphone
         self.source = source
         self.output = output

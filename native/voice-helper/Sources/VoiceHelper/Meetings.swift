@@ -48,7 +48,7 @@ final class Meetings {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let states = try leg.start()
             legs[id] = leg
-            job.record()
+            job.record(states.system == .active ? [.mic, .system] : [.mic])
             output.emit(.meetingStarted(id: id, atMs: baseMs + PcmFile.milliseconds(leg.startFrames), mic: states.mic, system: states.system))
         } catch {
             leg.stop()
@@ -79,7 +79,7 @@ final class Meetings {
         guard finals[id] == nil else { return }
         let previous = lastFinal
         let pass = finalPass
-        let task = Task { [weak self] in
+        let task = Task(priority: .utility) { [weak self] in
             await previous?.value
             guard !Task.isCancelled else { return }
             await pass.run(id: id, dir: URL(fileURLWithPath: dir), baseMs: baseMs, language: language)
@@ -124,7 +124,8 @@ final class MeetingTranscription {
     private var baseMs = 0.0
     private var language = DictationLanguage.auto
     private var cursor: [MeetingSource: Int] = [.mic: 0, .system: 0]
-    private var recording = false
+    // The sources the current leg records, none once it stopped.
+    private var recording: Set<MeetingSource> = []
     private var loop: Task<Void, Never>?
     // Where each source's last partial check ended, and the sources showing a partial.
     private var partialEnd: [MeetingSource: Int] = [:]
@@ -153,14 +154,14 @@ final class MeetingTranscription {
         }
     }
 
-    func record() {
-        recording = true
+    func record(_ sources: Set<MeetingSource>) {
+        recording = sources
         run()
     }
 
     /// No more audio is coming for now: transcribe the rest, then report `meeting.drained`.
     func drain() {
-        recording = false
+        recording = []
         run()
     }
 
@@ -171,7 +172,7 @@ final class MeetingTranscription {
 
     private func run() {
         guard loop == nil else { return }
-        loop = Task { [weak self] in
+        loop = Task(priority: .utility) { [weak self] in
             await self?.work()
             self?.loop = nil
         }
@@ -183,26 +184,29 @@ final class MeetingTranscription {
                 try? await Task.sleep(for: idle)
                 continue
             }
-            guard let window = await nextWindow() else {
-                if recording {
-                    if let partial = await nextPartial() {
-                        await showPartial(partial)
-                    } else {
-                        try? await Task.sleep(for: idle)
-                    }
-                    continue
-                }
-                for source in showing { clearPartial(source) }
-                output.emit(.meetingDrained(id: id, failure: nil))
-                return
-            }
             do {
+                guard let window = try await nextWindow() else {
+                    if !recording.isEmpty {
+                        if let partial = await nextPartial(), !isDictating() {
+                            await showPartial(partial)
+                        } else {
+                            try? await Task.sleep(for: idle)
+                        }
+                        continue
+                    }
+                    for source in showing { clearPartial(source) }
+                    output.emit(.meetingDrained(id: id, failure: nil))
+                    return
+                }
+                // The echo gate suspends the read, so a dictation may have started since the check above.
+                try Task.checkCancellation()
+                if isDictating() { continue }
                 try await transcribe(window)
             } catch is CancellationError {
                 return
             } catch {
                 let message = (error as? TranscribeError)?.message ?? "\(error)"
-                guard recording else {
+                guard !recording.isEmpty else {
                     output.emit(.meetingDrained(id: id, failure: message))
                     return
                 }
@@ -219,17 +223,19 @@ final class MeetingTranscription {
     }
 
     // The source further behind goes first, so the two transcripts advance together.
-    private func nextWindow() async -> Window? {
+    private func nextWindow() async throws -> Window? {
         let sources = [MeetingSource.mic, .system].sorted { (cursor[$0] ?? 0) < (cursor[$1] ?? 0) }
         for source in sources {
-            let url = file(source)
             let offset = cursor[source] ?? 0
-            let available = PcmFile.frames(at: url) - offset
-            guard available > 0, let samples = try? PcmFile.read(at: url, offset: offset, count: MeetingChunker.windowSamples)
+            let available = end(of: source) - offset
+            guard available > 0,
+                  let raw = try? PcmFile.read(at: source.file(in: dir), offset: offset, count: min(available, MeetingChunker.windowSamples))
             else { continue }
-            let final = !recording && available <= samples.count
-            if let cut = MeetingChunker.cut(samples, final: final) {
-                return Window(source: source, offset: offset, samples: await heard(source, at: offset, Array(samples.prefix(cut))))
+            let final = recording.isEmpty && available <= raw.count
+            if let cut = MeetingChunker.cut(raw, final: final) {
+                let samples = Array(raw.prefix(cut))
+                guard MeetingChunker.speech(in: samples) != nil else { return Window(source: source, offset: offset, samples: samples) }
+                return Window(source: source, offset: offset, samples: try await source.heard(in: dir, offset: offset, count: cut))
             }
         }
         return nil
@@ -253,28 +259,31 @@ final class MeetingTranscription {
     }
 
     /// Audio after a source's cursor that no window takes yet because no pause has come, once at
-    /// least `partialSamples` of it are new since the last partial.
+    /// least `partialSamples` of it are new since the last partial. Where the echo gate fails, the
+    /// partial is skipped rather than shown ungated.
     private func nextPartial() async -> Window? {
         for source in [MeetingSource.mic, .system] {
-            let url = file(source)
             let offset = cursor[source] ?? 0
-            let end = PcmFile.frames(at: url)
+            let end = end(of: source)
             guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples,
-                  let raw = try? PcmFile.read(at: url, offset: offset, count: MeetingChunker.windowSamples)
+                  let raw = try? PcmFile.read(at: source.file(in: dir), offset: offset, count: min(end - offset, MeetingChunker.windowSamples))
             else { continue }
             partialEnd[source] = offset + raw.count
-            let samples = await heard(source, at: offset, raw)
-            if MeetingChunker.speech(in: samples) != nil { return Window(source: source, offset: offset, samples: samples) }
+            guard MeetingChunker.speech(in: raw) != nil,
+                  let samples = try? await source.heard(in: dir, offset: offset, count: raw.count),
+                  MeetingChunker.speech(in: samples) != nil
+            else { continue }
+            return Window(source: source, offset: offset, samples: samples)
         }
         return nil
     }
 
-    /// What the speech model hears of `samples`, read from `source` at `offset`: on the mic, the
-    /// echo of the other side gated out.
-    private func heard(_ source: MeetingSource, at offset: Int, _ samples: [Float]) async -> [Float] {
-        guard source == .mic else { return samples }
-        let (mic, system) = (file(.mic), file(.system))
-        return (try? await offMain { try EchoGate.read(mic: mic, system: system, offset: offset, count: samples.count) }) ?? samples
+    /// Where `source` can be heard up to now. While a leg records system audio, the mic waits for
+    /// the system file, which trails it by up to a pump's worth: the gate needs what played.
+    private func end(of source: MeetingSource) -> Int {
+        let frames = PcmFile.frames(at: source.file(in: dir))
+        guard source == .mic, recording.contains(.system) else { return frames }
+        return min(frames, PcmFile.frames(at: MeetingSource.system.file(in: dir)))
     }
 
     private static let partialSamples = PcmFile.sampleRate
@@ -298,10 +307,6 @@ final class MeetingTranscription {
 
     private static func text(_ words: [TimedWord]) -> String {
         words.map(\.text).joined(separator: " ")
-    }
-
-    private func file(_ source: MeetingSource) -> URL {
-        dir.appendingPathComponent("\(source.rawValue).pcm")
     }
 }
 
@@ -332,15 +337,13 @@ final class MeetingFinalPass {
     }
 
     func run(id: String, dir: URL, baseMs: Double, language: DictationLanguage) async {
-        let systemURL = dir.appendingPathComponent("\(MeetingSource.system.rawValue).pcm")
         do {
-            let mic = try await words(in: dir.appendingPathComponent("\(MeetingSource.mic.rawValue).pcm"), echoOf: systemURL,
-                                      baseMs: baseMs, language: language)
-            let system = try await words(in: systemURL, baseMs: baseMs, language: language)
+            let mic = try await words(of: .mic, in: dir, baseMs: baseMs, language: language)
+            let system = try await words(of: .system, in: dir, baseMs: baseMs, language: language)
             var turns: [SpeakerTurn]?
             if !system.isEmpty {
                 try await dictationDone()
-                turns = try await diarize(systemURL)?.map {
+                turns = try await diarize(MeetingSource.system.file(in: dir))?.map {
                     SpeakerTurn(speaker: $0.speaker, startMs: baseMs + $0.startMs, endMs: baseMs + $0.endMs)
                 }
             }
@@ -356,8 +359,8 @@ final class MeetingFinalPass {
         }
     }
 
-    /// `echoOf` gates what that file played out of each window before the model hears it.
-    private func words(in url: URL, echoOf system: URL? = nil, baseMs: Double, language: DictationLanguage) async throws -> [TimedWord] {
+    private func words(of source: MeetingSource, in dir: URL, baseMs: Double, language: DictationLanguage) async throws -> [TimedWord] {
+        let url = source.file(in: dir)
         let total = PcmFile.frames(at: url)
         var offset = 0
         var words: [TimedWord] = []
@@ -365,18 +368,19 @@ final class MeetingFinalPass {
             try await dictationDone()
             let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
             guard !samples.isEmpty else { break }
-            var window = Array(samples.prefix(MeetingChunker.finalCut(samples)))
-            if let system {
-                let count = window.count
-                window = try await offMain { try EchoGate.read(mic: url, system: system, offset: offset, count: count) }
-            }
-            if let speech = MeetingChunker.speech(in: window) {
-                let startMs = baseMs + PcmFile.milliseconds(offset + speech.lowerBound)
-                words += try await decode(Array(window[speech]), language).map {
-                    TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
+            let count = MeetingChunker.finalCut(samples)
+            if MeetingChunker.speech(in: Array(samples.prefix(count))) != nil {
+                let window = try await source.heard(in: dir, offset: offset, count: count)
+                // The echo gate suspends the read, so a dictation may have started since the check above.
+                try await dictationDone()
+                if let speech = MeetingChunker.speech(in: window) {
+                    let startMs = baseMs + PcmFile.milliseconds(offset + speech.lowerBound)
+                    words += try await decode(Array(window[speech]), language).map {
+                        TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
+                    }
                 }
             }
-            offset += window.count
+            offset += count
         }
         return words
     }
@@ -387,10 +391,4 @@ final class MeetingFinalPass {
         }
         try Task.checkCancellation()
     }
-}
-
-/// The echo gate takes milliseconds per second of audio, so it runs off the main actor, which
-/// starts dictations and takes their audio.
-private func offMain<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-    try await Task.detached(priority: .userInitiated) { try work() }.value
 }

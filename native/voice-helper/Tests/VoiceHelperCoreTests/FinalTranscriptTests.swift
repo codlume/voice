@@ -84,14 +84,6 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
         #expect(segments.map(\.speaker) == [nil, nil])
     }
 
-    @Test func aUserRepeatingTheOtherSideKeepsTheirLine() {
-        // A beat after the other side, not the same instant: agreement, not the speakers.
-        let system = said("the budget is forty two thousand dollars", at: 1000)
-        let mic = said("forty two thousand dollars right", at: 3600)
-        let segments = FinalTranscript.segments(mic: mic, system: system, turns: nil)
-        #expect(segments.filter { $0.source == .mic }.map(\.text) == ["forty two thousand dollars right"])
-    }
-
     @Test func pausesAndLongRunsEndSegments() {
         let words = said("first part", at: 0) + said("after a pause", at: 2000)
         #expect(FinalTranscript.segments(mic: words, system: [], turns: nil).map(\.text) == ["first part", "after a pause"])

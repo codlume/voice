@@ -137,3 +137,34 @@ private func silence(seconds: Double) -> [Float] {
         #expect(check(micMs: nil) == nil)
     }
 }
+
+@MainActor
+@Suite struct MeetingSourceHeardTests {
+    @Test func theModelHearsSystemAudioAsRecordedAndTheMicWithoutTheEcho() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-heard-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let theirs = silence(seconds: 1) + tone(seconds: 2, amplitude: 0.1)
+        for (source, samples) in [(MeetingSource.system, theirs), (.mic, theirs.map { $0 / 4 })] {
+            let writer = try PcmWriter(url: source.file(in: dir))
+            try writer.append(samples)
+            try writer.close()
+        }
+        let system = try await MeetingSource.system.heard(in: dir, offset: 8000, count: 32_000)
+        #expect(system == (try PcmFile.read(at: MeetingSource.system.file(in: dir), offset: 8000, count: 32_000)))
+        let mic = try await MeetingSource.mic.heard(in: dir, offset: 8000, count: 32_000)
+        #expect(mic.count == 32_000)
+        #expect(MeetingChunker.speech(in: mic) == nil, "the echo is gated out")
+    }
+
+    @Test func aMicWithNoSystemAudioIsHeardAsRecorded() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-heard-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let writer = try PcmWriter(url: MeetingSource.mic.file(in: dir))
+        try writer.append(tone(seconds: 1))
+        try writer.close()
+        let mic = try await MeetingSource.mic.heard(in: dir, offset: 0, count: 16_000)
+        #expect(mic == (try PcmFile.read(at: MeetingSource.mic.file(in: dir), offset: 0, count: 16_000)))
+    }
+}
