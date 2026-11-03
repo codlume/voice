@@ -16,6 +16,7 @@ public enum EchoGate {
     /// How much later the mic may hear what system audio recorded. The built-in mic and
     /// speakers capture -50 to +300 ms apart; Bluetooth or USB speakers play a few hundred ms late.
     static let lagRange = -PcmFile.frames(milliseconds: 100)...PcmFile.frames(milliseconds: 600)
+    static let correlationBlock = 1 << 15
     static let frameSize = 512
     static let hop = frameSize / 2
     static let bins = frameSize / 2 + 1
@@ -31,6 +32,7 @@ public enum EchoGate {
     static let reverbDecay: Float = 0.5
     /// System power in a bin below about -67 dBFS plays nothing worth learning from.
     static let audiblePower: Float = 1e-7 * Float(frameSize)
+    private static let correlationFFT = RealFFT(size: 2 * correlationBlock)
 
     /// Mic samples `offset..<offset + count` (fewer at the end of the file), gated against the
     /// same stretch of system audio. No system file leaves them as recorded.
@@ -106,20 +108,19 @@ public enum EchoGate {
     /// Samples by which the mic trails system audio: the peak of their phase-only
     /// cross-correlation within `lagRange`, summed over two-second blocks.
     static func lag(mic: [Float], system: [Float]) -> Int {
-        let block = 1 << 15
-        let fft = RealFFT(size: 2 * block)
+        let block = correlationBlock
         var crossRe = [Float](repeating: 0, count: block + 1)
         var crossIm = crossRe
         for start in stride(from: 0, to: mic.count, by: block) {
             let end = min(start + block, mic.count)
             let zeros = [Float](repeating: 0, count: 2 * block - (end - start))
-            let m = fft.forward(Array(mic[start..<end]) + zeros)
-            let s = fft.forward(Array(system[start..<end]) + zeros)
+            let m = correlationFFT.forward(Array(mic[start..<end]) + zeros)
+            let s = correlationFFT.forward(Array(system[start..<end]) + zeros)
             crossRe = vDSP.add(crossRe, vDSP.add(vDSP.multiply(m.re, s.re), vDSP.multiply(m.im, s.im)))
             crossIm = vDSP.add(crossIm, vDSP.subtract(vDSP.multiply(m.im, s.re), vDSP.multiply(m.re, s.im)))
         }
         let magnitude = vDSP.add(1e-12, vForce.sqrt(vDSP.add(vDSP.square(crossRe), vDSP.square(crossIm))))
-        let correlation = fft.inverse(re: vDSP.divide(crossRe, magnitude), im: vDSP.divide(crossIm, magnitude))
+        let correlation = correlationFFT.inverse(re: vDSP.divide(crossRe, magnitude), im: vDSP.divide(crossIm, magnitude))
         // Negative lags wrap around to the end.
         let candidates = vDSP.absolute(Array(correlation.suffix(-lagRange.lowerBound) + correlation.prefix(lagRange.upperBound + 1)))
         return Int(vDSP.indexOfMaximum(candidates).0) + lagRange.lowerBound
@@ -135,11 +136,11 @@ public enum EchoGate {
     /// one, so masking and resynthesis leave an untouched cell exactly as it was.
     private struct Spectrogram {
         static let window = (0..<frameSize).map { sin(Float.pi * Float($0) / Float(frameSize)) }
+        private static let fft = RealFFT(size: frameSize)
         let count: Int
         let frames: Int
         let re: [Float]
         let im: [Float]
-        private let fft = RealFFT(size: frameSize)
 
         init(_ samples: [Float]) {
             count = samples.count
@@ -147,7 +148,7 @@ public enum EchoGate {
             var re = [Float](repeating: 0, count: frames * bins)
             var im = re
             for t in 0..<frames {
-                let spectrum = fft.forward(vDSP.multiply(Self.window, samples[t * hop..<t * hop + frameSize]))
+                let spectrum = Self.fft.forward(vDSP.multiply(Self.window, samples[t * hop..<t * hop + frameSize]))
                 re.replaceSubrange(t * bins..<(t + 1) * bins, with: spectrum.re)
                 im.replaceSubrange(t * bins..<(t + 1) * bins, with: spectrum.im)
             }
@@ -163,7 +164,7 @@ public enum EchoGate {
             var out = [Float](repeating: 0, count: count)
             for t in 0..<frames {
                 let cells = t * bins..<(t + 1) * bins
-                let frame = fft.inverse(re: vDSP.multiply(re[cells], mask[cells]), im: vDSP.multiply(im[cells], mask[cells]))
+                let frame = Self.fft.inverse(re: vDSP.multiply(re[cells], mask[cells]), im: vDSP.multiply(im[cells], mask[cells]))
                 let span = t * hop..<t * hop + frameSize
                 out.replaceSubrange(span, with: vDSP.add(out[span], vDSP.multiply(Self.window, frame)))
             }
@@ -173,8 +174,9 @@ public enum EchoGate {
 }
 
 /// A real FFT of `size` samples with numpy's scaling: `size / 2 + 1` bins, the inverse undoing
-/// the forward exactly.
-private struct RealFFT {
+/// the forward exactly. Safe to share: the setup is read-only once built, and a transform writes
+/// only into its caller's buffers.
+private struct RealFFT: @unchecked Sendable {
     let size: Int
     private let fft: vDSP.FFT<DSPSplitComplex>
 
