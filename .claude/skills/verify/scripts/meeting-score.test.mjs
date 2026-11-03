@@ -5,6 +5,7 @@ import { scoreMeeting } from "./meeting-score.mjs";
 
 const turn = (source, startMs, endMs, text) => ({ source, startMs, endMs, text });
 const mic = (startMs, endMs, text) => ({ source: "mic", startMs, endMs, text });
+const system = (startMs, endMs, text) => ({ source: "system", startMs, endMs, text });
 
 // meeting-pl-doubletalk-turns.json, as scripts/fixtures.mjs generates it.
 const turns = [
@@ -103,7 +104,60 @@ test("the run before the fix scores all six echoed system turns, merged lines in
   assert.deepEqual(score.userTurnsLost, [turns[4]?.text, turns[8]?.text]);
   assert.deepEqual(score.userWords, { kept: 24, total: 35 });
   assert.deepEqual(score.doubleTalkWords, { kept: 3, total: 13 });
-  assert.ok(score.strayWords >= score.echoWords && score.echoWords > 50, JSON.stringify(score));
+  assert.equal(score.echoWords, 55);
+  assert.equal(score.strayWords, 67);
+});
+
+test("a word heard seconds before the user says it is stray, not the user's", () => {
+  const routeAsSpeakers = [
+    mic(11140, 16100, "Tak, skończyli wczoraj wieczorem i nie znaleźli żadnych poważnych błędów."),
+    mic(20900, 24420, "czasie jak mam uszczękanie z wylicznym. popołudniu."),
+    mic(27460, 27860, "piątek"),
+    mic(31700, 36020, "5 rano mi pasuje. Wyślę zaproszenie do całego zespołu."),
+    mic(41860, 43620, "notatkę dla jakiejś doświadczeń."),
+    mic(49780, 51460, "Dzięki, do usłyszenia."),
+  ];
+  const score = scoreMeeting(turns, routeAsSpeakers);
+  assert.deepEqual(score.userWords, { kept: 23, total: 35 });
+  assert.deepEqual(score.doubleTalkWords, { kept: 2, total: 13 });
+  assert.deepEqual(score.echoKept, systemTexts(7));
+  assert.equal(score.echoWords, 2);
+  assert.equal(score.strayWords, 11);
+});
+
+test("words the user and the other side both said go to the user", () => {
+  const tie = afterFix.with(3, mic(40420, 43860, "Zapisuje, notatka dla klienta do środy."));
+  const score = scoreMeeting(turns, tie);
+  assert.deepEqual(score.echoKept, []);
+  assert.equal(score.echoWords, 0);
+  assert.deepEqual(score.userWords, { kept: 32, total: 35 });
+});
+
+test("system lines are not scored", () => {
+  const systemLines = [
+    system(
+      500,
+      8100,
+      "Dobra, to lecimy. Pierwsze pytanie dotyczy wdrożenia nowej wersji aplikacji. Czy zespół testowy skończył już",
+    ),
+    system(8100, 10180, "sprawdzać aplikację mobilną?"),
+    system(
+      17380,
+      24340,
+      "Świetnie, to super, szybko poszło. W takim razie wypuszczamy nową wersję w czwartek po południu.",
+    ),
+    system(25140, 30820, "Dobrze, to przesuńmy wydanie na 5 rano, czyli o 9 czasu polskiego."),
+    system(
+      36900,
+      43780,
+      "Jeszcze jedno, marketing prosi o krótko notatkę dla klientów przed wydaniem, najlepiej do środy.",
+    ),
+    system(44740, 49060, "Dzięki to wszystko z mojej strony. Do usłyszenia w piątek."),
+  ];
+  assert.deepEqual(
+    scoreMeeting(turns, [...afterFix, ...systemLines]),
+    scoreMeeting(turns, afterFix),
+  );
 });
 
 test("echo that runs on in the user's own line counts as echo and stray", () => {

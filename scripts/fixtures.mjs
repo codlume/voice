@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -201,6 +202,15 @@ const meetings = [
 ];
 const gapSeconds = 1.2;
 
+// The pl-doubletalk call up to `cutMs`, then the whole call again: a longer meeting whose late
+// turns are said over the other side. The final pass once lost the user's turn at 49.5 s here.
+const longMeeting = {
+  prefix: "meeting-pl-long",
+  from: "meeting-pl-doubletalk",
+  cutMs: 29_600,
+  echo: "meeting-pl-long-mic-laptop.wav",
+};
+
 // What a MacBook Pro microphone hears from its own speakers at 60% volume, measured with a
 // played Polish meeting: the speech comes back 18.5 dB down, tilted toward 2.5-5 kHz, with a
 // strong direct path, a room tail and distortion 16.5 dB below the echo that no linear filter
@@ -236,7 +246,7 @@ function roomResponse() {
   }
   return Buffer.from(taps.buffer);
 }
-/** @param {Meeting} meeting */
+/** @param {{ prefix: string, echo?: string }} meeting */
 const meetingFixtures = ({ prefix, echo }) => [
   `${prefix}-mic.wav`,
   `${prefix}-system.wav`,
@@ -398,20 +408,64 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
   }
 }
 
+function generateLongMeeting({ prefix, from, cutMs }) {
+  for (const suffix of ["mic", "mic-laptop", "system"]) {
+    const source = join(fixturesDir, `${from}-${suffix}.wav`);
+    run("ffmpeg", [
+      "-y",
+      "-loglevel",
+      "error",
+      "-i",
+      source,
+      "-i",
+      source,
+      "-filter_complex",
+      `[0]atrim=end_sample=${cutMs * 16}[head];[head][1]concat=n=2:v=0:a=1`,
+      "-c:a",
+      "pcm_s16le",
+      join(fixturesDir, `${prefix}-${suffix}.wav`),
+    ]);
+  }
+  /** @type {{ startMs: number, endMs: number }[]} */
+  const turns = JSON.parse(readFileSync(join(fixturesDir, `${from}-turns.json`), "utf8"));
+  const again = turns.map((turn) => ({
+    ...turn,
+    startMs: turn.startMs + cutMs,
+    endMs: turn.endMs + cutMs,
+  }));
+  writeFileSync(
+    join(fixturesDir, `${prefix}-turns.json`),
+    `${JSON.stringify([...turns.filter((turn) => turn.endMs <= cutMs), ...again], null, 2)}\n`,
+  );
+}
+
 export function ensureFixtures() {
   mkdirSync(fixturesDir, { recursive: true });
+  // Fixtures already on disk may come from an older version of this script, such as one with
+  // another `laptop`, so a change to the script regenerates all of them.
+  const stamp = join(fixturesDir, ".generator");
+  const generator = createHash("sha256")
+    .update(readFileSync(fileURLToPath(import.meta.url)))
+    .digest("hex");
+  const current = existsSync(stamp) && readFileSync(stamp, "utf8") === generator;
+  const missing = (name) => !current || !existsSync(join(fixturesDir, name));
   for (const fixture of fixtures) {
-    const target = join(fixturesDir, fixture.name);
-    if (existsSync(target)) continue;
+    if (!missing(fixture.name)) continue;
     generate(fixture);
-    console.log(`generated ${target}`);
+    console.log(`generated ${join(fixturesDir, fixture.name)}`);
   }
   for (const meeting of meetings) {
     const names = meetingFixtures(meeting);
-    if (names.every((name) => existsSync(join(fixturesDir, name)))) continue;
+    if (!names.some(missing)) continue;
     generateMeeting(meeting);
     console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
   }
+  const names = meetingFixtures(longMeeting);
+  if (names.some(missing)) {
+    generateLongMeeting(longMeeting);
+    console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
+  }
+  writeFileSync(stamp, generator);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) ensureFixtures();
