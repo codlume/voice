@@ -96,7 +96,7 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
     return urls
 }
 
-@Suite struct EchoGateTests {
+@Suite(.serialized) struct EchoGateTests {
     @Test(arguments: [-100.0, 0, 120, 300, 550])
     func theOtherSideHeardThroughTheSpeakersIsMuted(lagMs: Double) {
         let system = voice(8, pitch: 120, seed: 1)
