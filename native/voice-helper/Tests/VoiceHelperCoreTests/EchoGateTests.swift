@@ -135,6 +135,28 @@ private func decibels(_ a: Float, over b: Float) -> Float {
         #expect(EchoGate.gate(mic: mic, system: [Float](repeating: 0, count: mic.count)) == mic)
     }
 
+    @Test func theEchoStaysMutedWhenItsLagMovesMidCall() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-gate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let micURL = dir.appendingPathComponent("mic.pcm")
+        let systemURL = dir.appendingPathComponent("system.pcm")
+        let system = voice(40, pitch: 120, seed: 1)
+        let moveAt = 15 * rate
+        let echo = zip(throughTheSpeakers(system, lagMs: 80), throughTheSpeakers(system, lagMs: 300)).enumerated()
+            .map { $0.offset < moveAt ? $0.element.0 : $0.element.1 }
+        for (url, samples) in [(micURL, add(echo, roomNoise(40))), (systemURL, system)] {
+            let writer = try PcmWriter(url: url)
+            try writer.append(samples)
+            try writer.close()
+        }
+        let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
+        let before = 1.0...13.0
+        let after = Double(moveAt + EchoGate.blockSamples) / Double(rate)...39.0
+        #expect(decibels(energy(seconds(gated, before)), over: energy(seconds(echo, before))) < -20)
+        #expect(decibels(energy(seconds(gated, after)), over: energy(seconds(echo, after))) < -20, "a block after the move, the gate has the new lag")
+    }
+
     @Test func readsAWindowGatedWithTheAudioBeforeItAndAsRecordedWithoutASystemFile() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-gate-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

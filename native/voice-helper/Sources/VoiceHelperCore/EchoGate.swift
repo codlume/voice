@@ -11,8 +11,11 @@ import Foundation
 /// takes almost nothing. Where only the other side played, the model gets silence rather than
 /// residue to make words of.
 public enum EchoGate {
-    /// Audio before a window that the gate reads to learn the echo path.
+    /// Audio before a block that the gate reads to learn the echo path.
     public static let contextSamples = 8 * PcmFile.sampleRate
+    /// A long stretch is gated one live window at a time, each with its own lag: a Bluetooth
+    /// reconnect or clock drift moves the lag mid-call.
+    static let blockSamples = MeetingChunker.windowSamples
     /// How much later the mic may hear what system audio recorded. The built-in mic and
     /// speakers capture -50 to +300 ms apart; Bluetooth or USB speakers play a few hundred ms late.
     static let lagRange = -PcmFile.frames(milliseconds: 100)...PcmFile.frames(milliseconds: 600)
@@ -37,10 +40,18 @@ public enum EchoGate {
     /// Mic samples `offset..<offset + count` (fewer at the end of the file), gated against the
     /// same stretch of system audio. No system file leaves them as recorded.
     public static func read(mic: URL, system: URL, offset: Int, count: Int) throws -> [Float] {
-        let start = max(0, offset - contextSamples)
-        let heard = try PcmFile.read(at: mic, offset: start, count: offset - start + count)
-        let played = (try? PcmFile.read(at: system, offset: start, count: heard.count)) ?? []
-        return Array(gate(mic: heard, system: played).dropFirst(offset - start))
+        var out: [Float] = []
+        while out.count < count {
+            let at = offset + out.count
+            let start = max(0, at - contextSamples)
+            let wanted = min(blockSamples, count - out.count)
+            let heard = try PcmFile.read(at: mic, offset: start, count: at - start + wanted)
+            let played = (try? PcmFile.read(at: system, offset: start, count: heard.count)) ?? []
+            let block = gate(mic: heard, system: played).dropFirst(at - start)
+            out += block
+            if block.count < wanted { break }
+        }
+        return out
     }
 
     /// `mic` with what `system`, the same stretch of the meeting, explains muted.
