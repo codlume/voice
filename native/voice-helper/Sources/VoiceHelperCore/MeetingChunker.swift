@@ -57,11 +57,9 @@ public enum MeetingChunker {
     /// The span in `window` that holds speech, as a sample range, or nil when it is all quiet and
     /// needs no decode.
     public static func speech(in window: [Float]) -> Range<Int>? {
-        let levels = frameLevels(window)
-        guard let first = levels.firstIndex(where: { $0 >= quietRms }),
-              let last = levels.lastIndex(where: { $0 >= quietRms })
-        else { return nil }
-        return first * frameSamples..<min(window.count, (last + 1) * frameSamples)
+        let runs = speechRuns(in: window)
+        guard let first = runs.first, let last = runs.last else { return nil }
+        return first.lowerBound..<last.upperBound
     }
 
     /// The runs of speech in `window`, split where quiet lasts a long pause. The speech model

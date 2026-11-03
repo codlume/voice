@@ -233,8 +233,6 @@ final class MeetingTranscription {
             else { continue }
             let final = recording.isEmpty && available <= raw.count
             if let cut = MeetingChunker.cut(raw, final: final) {
-                let samples = Array(raw.prefix(cut))
-                guard MeetingChunker.speech(in: samples) != nil else { return Window(source: source, offset: offset, samples: samples) }
                 return Window(source: source, offset: offset, samples: try await source.heard(in: dir, offset: offset, count: cut))
             }
         }
@@ -244,9 +242,7 @@ final class MeetingTranscription {
     private func transcribe(_ window: Window) async throws {
         if let speech = MeetingChunker.speech(in: window.samples) {
             let startMs = meetingMs(window.offset)
-            let words = try await decode(window.samples, language).map {
-                TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
-            }
+            let words = try await decode(window.samples, language).map { $0.shifted(by: startMs) }
             try Task.checkCancellation()
             if !words.isEmpty {
                 // The segment goes out before its partial clears, so the line never blinks out.
@@ -265,12 +261,10 @@ final class MeetingTranscription {
         for source in [MeetingSource.mic, .system] {
             let offset = cursor[source] ?? 0
             let end = end(of: source)
-            guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples,
-                  let raw = try? PcmFile.read(at: source.file(in: dir), offset: offset, count: min(end - offset, MeetingChunker.windowSamples))
-            else { continue }
-            partialEnd[source] = offset + raw.count
-            guard MeetingChunker.speech(in: raw) != nil,
-                  let samples = try? await source.heard(in: dir, offset: offset, count: raw.count),
+            guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples else { continue }
+            let count = min(end - offset, MeetingChunker.windowSamples)
+            partialEnd[source] = offset + count
+            guard let samples = try? await source.heard(in: dir, offset: offset, count: count),
                   MeetingChunker.speech(in: samples) != nil
             else { continue }
             return Window(source: source, offset: offset, samples: samples)
@@ -369,16 +363,12 @@ final class MeetingFinalPass {
             let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
             guard !samples.isEmpty else { break }
             let count = MeetingChunker.finalCut(samples)
-            if MeetingChunker.speech(in: Array(samples.prefix(count))) != nil {
-                let window = try await source.heard(in: dir, offset: offset, count: count)
-                for run in MeetingChunker.speechRuns(in: window) {
-                    // The gate and each decode suspend, so a dictation may have started since the last check.
-                    try await dictationDone()
-                    let startMs = baseMs + PcmFile.milliseconds(offset + run.lowerBound)
-                    words += try await decode(Array(window[run]), language).map {
-                        TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
-                    }
-                }
+            let window = try await source.heard(in: dir, offset: offset, count: count)
+            for run in MeetingChunker.speechRuns(in: window) {
+                // The gate and each decode suspend, so a dictation may have started since the last check.
+                try await dictationDone()
+                let startMs = baseMs + PcmFile.milliseconds(offset + run.lowerBound)
+                words += try await decode(Array(window[run]), language).map { $0.shifted(by: startMs) }
             }
             offset += count
         }

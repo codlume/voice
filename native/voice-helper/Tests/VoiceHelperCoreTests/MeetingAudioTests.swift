@@ -112,6 +112,8 @@ private func silence(seconds: Double) -> [Float] {
         #expect(MeetingChunker.speech(in: silence(seconds: 3)) == nil)
         let speech = MeetingChunker.speech(in: silence(seconds: 1) + tone(seconds: 2) + silence(seconds: 1))
         #expect(speech == 16_000..<48_000)
+        let twoRuns = silence(seconds: 1) + tone(seconds: 1) + silence(seconds: 3) + tone(seconds: 1) + silence(seconds: 1)
+        #expect(MeetingChunker.speech(in: twoRuns) == 16_000..<96_000, "the span reaches across a long pause to the last speech")
     }
 
     @Test func splitsSpeechIntoRunsAtLongPausesAndKeepsShortOnesInside() {
@@ -119,6 +121,7 @@ private func silence(seconds: Double) -> [Float] {
         let window = tone(seconds: 2) + silence(seconds: 3) + tone(seconds: 1) + silence(seconds: 0.9) + tone(seconds: 1) + silence(seconds: 4)
         #expect(MeetingChunker.speechRuns(in: window) == [0..<32_000, 80_000..<Int(7.9 * 16_000)],
                 "the three seconds of silence never reach the model, the pause under a second stays inside its run")
+        #expect(MeetingChunker.speechRuns(in: tone(seconds: 1) + silence(seconds: 1) + tone(seconds: 1)).count == 2, "a pause of a second splits")
     }
 }
 

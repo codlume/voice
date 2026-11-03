@@ -11,6 +11,10 @@ public struct TimedWord: Equatable, Sendable {
         self.startMs = startMs
         self.endMs = endMs
     }
+
+    public func shifted(by ms: Double) -> TimedWord {
+        TimedWord(text: text, startMs: startMs + ms, endMs: endMs + ms)
+    }
 }
 
 /// A stretch of system audio the diarizer gave to one voice, in meeting ms. `speaker` is the

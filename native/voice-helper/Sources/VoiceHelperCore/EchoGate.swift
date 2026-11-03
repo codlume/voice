@@ -28,8 +28,8 @@ public enum EchoGate {
     static let quantile: Float = 0.3
     /// The predicted echo is this many times what the quantile says, which covers its spread
     /// from frame to frame and the speakers' distortion, which no level predicts. On the meeting
-    /// fixtures, 4 leaks echo once it comes back as loud as it played, and 12 takes the user's
-    /// double-talk with it.
+    /// fixtures through the real model, 4 leaks echo once it comes back as loud as it played, and
+    /// 12 takes the user's double-talk with it; the unit tests pass at both.
     static let overSubtraction: Float = 6
     /// The room keeps a sound ringing after it stops: 3 dB less every 16 ms hop.
     static let reverbDecay: Float = 0.5
@@ -38,18 +38,21 @@ public enum EchoGate {
     private static let correlationFFT = RealFFT(size: 2 * correlationBlock)
 
     /// Mic samples `offset..<offset + count` (fewer at the end of the file), gated against the
-    /// same stretch of system audio. No system file leaves them as recorded.
+    /// same stretch of system audio. No system file leaves them as recorded, and so does a block
+    /// with no speech in it, which most of a meeting is.
     public static func read(mic: URL, system: URL, offset: Int, count: Int) throws -> [Float] {
+        let end = min(offset + count, PcmFile.frames(at: mic))
+        let hasSystem = FileManager.default.fileExists(atPath: system.path)
         var out: [Float] = []
-        while out.count < count {
-            let at = offset + out.count
+        for at in stride(from: offset, to: end, by: blockSamples) {
             let start = max(0, at - contextSamples)
-            let wanted = min(blockSamples, count - out.count)
-            let heard = try PcmFile.read(at: mic, offset: start, count: at - start + wanted)
-            let played = (try? PcmFile.read(at: system, offset: start, count: heard.count)) ?? []
-            let block = gate(mic: heard, system: played).dropFirst(at - start)
-            out += block
-            if block.count < wanted { break }
+            let heard = try PcmFile.read(at: mic, offset: start, count: min(at + blockSamples, end) - start)
+            let block = Array(heard.dropFirst(at - start))
+            guard hasSystem, MeetingChunker.speech(in: block) != nil else {
+                out += block
+                continue
+            }
+            out += gate(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count)).dropFirst(at - start)
         }
         return out
     }

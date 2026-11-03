@@ -69,6 +69,22 @@ private func decibels(_ a: Float, over b: Float) -> Float {
     10 * log10(a / b)
 }
 
+private func meetingDir() throws -> URL {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-gate-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}
+
+private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: URL, system: URL) {
+    let urls = (mic: dir.appendingPathComponent("mic.pcm"), system: dir.appendingPathComponent("system.pcm"))
+    for (url, samples) in [(urls.mic, mic), (urls.system, system)] {
+        let writer = try PcmWriter(url: url)
+        try writer.append(samples)
+        try writer.close()
+    }
+    return urls
+}
+
 @Suite struct EchoGateTests {
     @Test(arguments: [-100.0, 0, 120, 300, 550])
     func theOtherSideHeardThroughTheSpeakersIsMuted(lagMs: Double) {
@@ -136,20 +152,13 @@ private func decibels(_ a: Float, over b: Float) -> Float {
     }
 
     @Test func theEchoStaysMutedWhenItsLagMovesMidCall() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-gate-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = try meetingDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let micURL = dir.appendingPathComponent("mic.pcm")
-        let systemURL = dir.appendingPathComponent("system.pcm")
         let system = voice(40, pitch: 120, seed: 1)
         let moveAt = 15 * rate
         let echo = zip(throughTheSpeakers(system, lagMs: 80), throughTheSpeakers(system, lagMs: 300)).enumerated()
             .map { $0.offset < moveAt ? $0.element.0 : $0.element.1 }
-        for (url, samples) in [(micURL, add(echo, roomNoise(40))), (systemURL, system)] {
-            let writer = try PcmWriter(url: url)
-            try writer.append(samples)
-            try writer.close()
-        }
+        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(40)), system: system, in: dir)
         let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
         let before = 1.0...13.0
         let after = Double(moveAt + EchoGate.blockSamples) / Double(rate)...39.0
@@ -158,18 +167,11 @@ private func decibels(_ a: Float, over b: Float) -> Float {
     }
 
     @Test func readsAWindowGatedWithTheAudioBeforeItAndAsRecordedWithoutASystemFile() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-gate-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = try meetingDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let micURL = dir.appendingPathComponent("mic.pcm")
-        let systemURL = dir.appendingPathComponent("system.pcm")
         let system = voice(12, pitch: 120, seed: 1)
         let echo = throughTheSpeakers(system, lagMs: 120)
-        for (url, samples) in [(micURL, add(echo, roomNoise(12))), (systemURL, system)] {
-            let writer = try PcmWriter(url: url)
-            try writer.append(samples)
-            try writer.close()
-        }
+        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(12)), system: system, in: dir)
         let window = 10 * rate..<11 * rate
         let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: window.lowerBound, count: window.count)
         #expect(gated.count == window.count)
@@ -178,5 +180,39 @@ private func decibels(_ a: Float, over b: Float) -> Float {
         let missing = dir.appendingPathComponent("none.pcm")
         #expect(try EchoGate.read(mic: micURL, system: missing, offset: window.lowerBound, count: window.count)
             == PcmFile.read(at: micURL, offset: window.lowerBound, count: window.count))
+    }
+
+    @Test func aBlockWithNoSpeechIsLeftAsRecordedWhileTheNextOneIsGated() throws {
+        let dir = try meetingDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let system = voice(28, pitch: 120, seed: 1)
+        let echo = [Float](repeating: 0, count: EchoGate.blockSamples) + throughTheSpeakers(system, lagMs: 120).dropFirst(EchoGate.blockSamples)
+        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(28)), system: system, in: dir)
+        let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
+        #expect(gated[..<EchoGate.blockSamples] == (try PcmFile.read(at: micURL, offset: 0, count: EchoGate.blockSamples))[...],
+                "the gate never runs on a quiet block")
+        let second = Double(EchoGate.blockSamples) / Double(rate) + 1...27.0
+        #expect(decibels(energy(seconds(gated, second)), over: energy(seconds(echo, second))) < -20)
+    }
+
+    @Test func readingPastTheEndOfTheMicFileReturnsWhatIsThere() throws {
+        let dir = try meetingDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let system = voice(3, pitch: 120, seed: 1)
+        let (micURL, systemURL) = try record(mic: throughTheSpeakers(system, lagMs: 120), system: system, in: dir)
+        #expect(try EchoGate.read(mic: micURL, system: systemURL, offset: 2 * rate, count: 2 * rate).count == rate)
+        #expect(try EchoGate.read(mic: micURL, system: systemURL, offset: 5 * rate, count: rate).isEmpty)
+        #expect(try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: 40 * rate).count == 3 * rate)
+        #expect(try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: 0).isEmpty)
+    }
+
+    @Test func aSystemFileThatCannotBeReadIsAnErrorNotAnUngatedMic() throws {
+        let dir = try meetingDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let system = voice(3, pitch: 120, seed: 1)
+        let (micURL, systemURL) = try record(mic: throughTheSpeakers(system, lagMs: 120), system: system, in: dir)
+        _ = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: 3 * rate)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: systemURL.path)
+        #expect(throws: (any Error).self) { try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: 3 * rate) }
     }
 }
