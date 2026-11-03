@@ -36,6 +36,7 @@ import {
 import { clickExpression, visible } from "./click-expression.mjs";
 import { parseDictateFlags } from "./dictate-flags.mjs";
 import { keyEvents } from "./key-events.mjs";
+import { scoreMeeting } from "./meeting-score.mjs";
 import {
   expectedLanding,
   freshLast,
@@ -203,56 +204,6 @@ async function waitOn(page, expression, timeoutMs) {
 
 // Meeting fixtures play this many times faster than real time.
 const MEETING_FIXTURE_SPEED = 8;
-
-const meetingWords = (text) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-const share = (words, heard) => words.filter((word) => heard.has(word)).length / words.length;
-
-// A user turn survives when the mic segments around it hold most of its words. A system turn of
-// four or more words is echo kept when mic segments that start while it plays repeat most of its
-// words beyond the user's own; a user repeating it after it ends is not echo. Stray words are mic
-// words outside every user turn.
-function scoreMeeting(turns, segments) {
-  const wordsOf = (filter) =>
-    segments
-      .filter((entry) => entry.source === "mic" && filter(entry))
-      .flatMap((entry) => meetingWords(entry.text));
-  const userTurns = turns.filter((turn) => turn.source === "mic");
-  const lost = userTurns
-    .filter((turn) => {
-      const heard = new Set(
-        wordsOf(
-          (entry) => entry.startMs <= turn.endMs + 1500 && entry.endMs >= turn.startMs - 1500,
-        ),
-      );
-      return share(meetingWords(turn.text), heard) < 0.6;
-    })
-    .map((turn) => turn.text);
-  const echoKept = turns
-    .filter((turn) => turn.source === "system" && meetingWords(turn.text).length >= 4)
-    .filter((turn) => {
-      const own = new Set(
-        userTurns
-          .filter((user) => user.startMs <= turn.endMs && user.endMs >= turn.startMs)
-          .flatMap((user) => meetingWords(user.text)),
-      );
-      const heard = new Set(
-        wordsOf(
-          (entry) => entry.startMs >= turn.startMs - 1000 && entry.startMs <= turn.endMs - 500,
-        ),
-      );
-      const words = meetingWords(turn.text).filter((word) => !own.has(word));
-      return words.length > 0 && share(words, heard) >= 0.6;
-    })
-    .map((turn) => turn.text);
-  // Mic words no user turn accounts for: echo the speech model heard as other words.
-  const strayWords = wordsOf(
-    (entry) =>
-      !userTurns.some(
-        (turn) => entry.startMs <= turn.endMs + 300 && entry.endMs >= turn.startMs - 300,
-      ),
-  ).length;
-  return { userTurns: userTurns.length, userTurnsLost: lost, echoKept, strayWords };
-}
 
 async function pollAsync(check, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs;
@@ -1170,6 +1121,8 @@ const commands = {
     const [mic = "meeting-mic.wav", ...flags] = args.filter(
       (arg) => !arg.startsWith("--scenario-owner="),
     );
+    const unknown = flags.find((flag) => flag !== "--no-system" && !flag.startsWith("--system="));
+    if (unknown) fail(`unknown meeting flag ${unknown}; use --system=<file> or --no-system`);
     const withSystem = !flags.includes("--no-system");
     const system =
       flags.find((flag) => flag.startsWith("--system="))?.slice("--system=".length) ??
@@ -1181,7 +1134,7 @@ const commands = {
     for (const [fixture] of fixtures) {
       if (!existsSync(fixture)) fail(`missing fixture ${fixture}; run node scripts/fixtures.mjs`);
     }
-    const turnsPath = join(fixturesDir, mic.replace(/-mic(-laptop)?\.wav$/, "-turns.json"));
+    const turnsPath = join(fixturesDir, mic.replace(/-mic(-[\w-]+)?\.wav$/, "-turns.json"));
     const turns = existsSync(turnsPath) ? JSON.parse(readFileSync(turnsPath, "utf8")) : null;
     const hub = await connect("hub");
     const logOffset = statSync(state.logPath).size;

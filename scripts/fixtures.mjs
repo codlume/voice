@@ -56,8 +56,9 @@ const fixtures = [
 // seconds after the last one ends, or `overlap` seconds after the previous turn started, for
 // crosstalk. An `echo` variant mixes the other side into the mic the way a laptop microphone hears
 // its own speakers (see `laptop`). `<prefix>-turns.json` holds who said what when, so
-// a run can be scored: every user turn must survive, as itself and once. Numbers are written the
-// way the speech model writes them, so the score compares like with like.
+// a run can be scored: every user turn must survive, as itself and once. The score compares words
+// literally, so a number the speech model spells out ("forty-two thousand dollars" for "$42,000")
+// counts as lost words.
 /**
  * @typedef {{ gap?: number, overlap?: number }} TurnTiming
  * @typedef {{
@@ -148,7 +149,8 @@ const meetings = [
   },
   {
     // A Polish call on laptop speakers: the user answers, talks over the other side twice and
-    // repeats a phrase back while it still plays.
+    // repeats a phrase back while it still plays. Zosia is the only Polish `say` voice, so both
+    // sides share it, which also makes the echo hardest to tell from the user.
     prefix: "meeting-pl-doubletalk",
     speakers: { you: ["mic", "Zosia"], other: ["system", "Zosia"] },
     echo: "meeting-pl-doubletalk-mic-laptop.wav",
@@ -203,11 +205,13 @@ const gapSeconds = 1.2;
 // played Polish meeting: the speech comes back 18.5 dB down, tilted toward 2.5-5 kHz, with a
 // strong direct path, a room tail and distortion 16.5 dB below the echo that no linear filter
 // predicts. The user's voice sits 6 dB above the echo and 30 dB above the room's noise, at the
-// levels the microphone recorded.
-const laptop = { userDb: -11.7, clip: 3, delayMs: 40, echoDb: -23.5, noise: 0.0076 };
+// levels the microphone recorded. `echoDb` is the trim that lands the echo 18.5 dB down after the
+// soft clip adds about 7.7 dB and the EQ boost and reflections add more.
+const laptop = { userDb: -11.7, clip: 3, delayMs: 40, echoDb: -23.5, noiseAmplitude: 0.0076 };
 
-// A 300 ms impulse response: the direct path, a few early reflections, and a decaying tail
-// about 18 dB below the direct path. Seeded, so every run generates the same fixture.
+// A 300 ms impulse response as raw 32-bit floats: the direct path, a few early reflections, and a
+// decaying tail about 18 dB below the direct path. Seeded, so every run on the same macOS and
+// ffmpeg generates the same fixture.
 function roomResponse() {
   const rate = 16000;
   const taps = new Float32Array(rate * 0.3);
@@ -230,22 +234,7 @@ function roomResponse() {
     const i = Math.round((ms * rate) / 1000);
     taps[i] = (taps[i] ?? 0) + gain;
   }
-  const data = Buffer.alloc(taps.length * 4);
-  taps.forEach((tap, i) => data.writeFloatLE(tap, i * 4));
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + data.length, 4);
-  header.write("WAVEfmt ", 8);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(3, 20);
-  header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(rate, 24);
-  header.writeUInt32LE(rate * 4, 28);
-  header.writeUInt16LE(4, 32);
-  header.writeUInt16LE(32, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(data.length, 40);
-  return Buffer.concat([header, data]);
+  return Buffer.from(taps.buffer);
 }
 /** @param {Meeting} meeting */
 const meetingFixtures = ({ prefix, echo }) => [
@@ -374,7 +363,7 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       ]);
     }
     if (!echo) return;
-    const room = join(work, "room.wav");
+    const room = join(work, "room.f32");
     writeFileSync(room, roomResponse());
     run("ffmpeg", [
       "-y",
@@ -384,6 +373,12 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       join(fixturesDir, `${prefix}-mic.wav`),
       "-i",
       join(fixturesDir, `${prefix}-system.wav`),
+      "-f",
+      "f32le",
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
       "-i",
       room,
       "-filter_complex",
@@ -391,7 +386,7 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
         `[0]volume=${laptop.userDb}dB[user]`,
         `[1]highpass=f=250,equalizer=f=3500:t=q:w=1:g=6,asoftclip=type=tanh:param=${laptop.clip},adelay=${laptop.delayMs}[played]`,
         `[played][2]afir=irnorm=-1:gtype=-1,volume=${laptop.echoDb}dB[echo]`,
-        `anoisesrc=color=pink:amplitude=${laptop.noise}:seed=7:sample_rate=16000:duration=${total}[noise]`,
+        `anoisesrc=color=pink:amplitude=${laptop.noiseAmplitude}:seed=7:sample_rate=16000[noise]`,
         "[user][echo][noise]amix=inputs=3:normalize=0:duration=first",
       ].join(";"),
       "-c:a",
