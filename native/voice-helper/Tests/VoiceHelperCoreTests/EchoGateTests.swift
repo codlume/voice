@@ -1,3 +1,4 @@
+import Accelerate
 import Foundation
 import Testing
 @testable import VoiceHelperCore
@@ -6,24 +7,29 @@ private let rate = 16_000
 
 /// A voice-like signal from `start` to `end` seconds of a `seconds`-long track: a harmonic
 /// series on a gliding pitch, in syllables or held steady, with a timbre fixed by `seed`.
+/// Built with Accelerate because a debug build of the per-sample loop slowed CI's test run.
 private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true) -> [Float] {
-    var phase: Float = 0
+    let count = Int(seconds * Double(rate))
     let twoPi = 2 * Float.pi
-    let stop = end ?? seconds
-    return (0..<Int(seconds * Double(rate))).map { (n: Int) -> Float in
-        let t = Float(n) / Float(rate)
-        let glide: Float = 1 + 0.12 * sin(twoPi * 0.7 * t + seed)
-        phase += twoPi * pitch * glide / Float(rate)
-        guard Double(t) >= start, Double(t) < stop else { return 0 }
-        let syllable: Float = syllables ? max(0, sin(twoPi * 3.3 * t + seed)) : 0.7
-        var tone: Float = 0
-        for k in 1...14 {
-            let harmonic = Float(k)
-            let timbre: Float = 1 + 0.6 * sin(harmonic * seed)
-            tone += sin(harmonic * phase) * timbre / harmonic
-        }
-        return level * syllable * tone / 2
+    let t = vDSP.multiply(1 / Float(rate), vDSP.ramp(withInitialValue: Float(0), increment: 1, count: count))
+    let glide = vDSP.add(1, vDSP.multiply(0.12, vForce.sin(vDSP.add(seed, vDSP.multiply(twoPi * 0.7, t)))))
+    var phase = vDSP.multiply(twoPi * pitch / Float(rate), glide)
+    for n in phase.indices.dropFirst() { phase[n] += phase[n - 1] }
+    var tone = [Float](repeating: 0, count: count)
+    for k in 1...14 {
+        let harmonic = Float(k)
+        let timbre: Float = 1 + 0.6 * sin(harmonic * seed)
+        tone = vDSP.add(tone, vDSP.multiply(timbre / harmonic, vForce.sin(vDSP.multiply(harmonic, phase))))
     }
+    let syllable = syllables
+        ? vDSP.threshold(vForce.sin(vDSP.add(seed, vDSP.multiply(twoPi * 3.3, t))), to: 0, with: .zeroFill)
+        : [Float](repeating: 0.7, count: count)
+    var out = vDSP.multiply(level / 2, vDSP.multiply(syllable, tone))
+    let first = min(count, max(0, Int((start * Double(rate)).rounded(.up))))
+    let last = min(count, max(first, Int(((end ?? seconds) * Double(rate)).rounded(.up))))
+    out.replaceSubrange(0..<first, with: repeatElement(0, count: first))
+    out.replaceSubrange(last..<count, with: repeatElement(0, count: count - last))
+    return out
 }
 
 /// What the mic hears of `played`: `lagMs` later, the direct path at `gain` (18 dB down on a
@@ -31,12 +37,17 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
 private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 0.12) -> [Float] {
     let lag = Int(lagMs * Double(rate) / 1000)
     let taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
-    return played.indices.map { n in
-        taps.reduce(0) { sum, tap in
-            let i = n - lag - tap.delay
-            return i >= 0 && i < played.count ? sum + gain * tap.gain * played[i] : sum
-        }
+    var out = [Float](repeating: 0, count: played.count)
+    for tap in taps {
+        let shift = lag + tap.delay
+        let from = max(0, shift)
+        let source = max(0, -shift)
+        let length = min(played.count - from, played.count - source)
+        guard length > 0 else { continue }
+        let echoed = vDSP.multiply(gain * tap.gain, played[source..<source + length])
+        out.replaceSubrange(from..<from + length, with: vDSP.add(out[from..<from + length], echoed))
     }
+    return out
 }
 
 /// The room's hiss, about -60 dBFS.

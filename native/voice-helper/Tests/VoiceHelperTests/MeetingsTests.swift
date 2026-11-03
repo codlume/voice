@@ -213,6 +213,25 @@ struct MeetingsTests {
         #expect(Set(h.segments()) == ["mic@0-2500", "mic@3500-6000", "system@3500-6000"])
     }
 
+    @Test func aGateThatCannotReadTheSystemAudioNeverHandsTheModelTheUngatedMic() async throws {
+        let h = try Harness(micHearsTheSpeakers: true)
+        defer { h.meetings.shutdown(); h.devices.shutdown() }
+        h.start()
+        try await h.waitForFixtures(count: 2)
+        h.meetings.cancel(id: "m1")
+        let system = h.dir.appendingPathComponent("system.pcm")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: system.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: system.path) }
+
+        let fresh = try Harness()
+        defer { fresh.meetings.shutdown(); fresh.devices.shutdown() }
+        fresh.meetings.transcribe(id: "m1", dir: h.dir.path, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
+        try await fresh.waitForDrained()
+        #expect(fresh.events("meeting.drained").first?["failure"] as? String != nil)
+        #expect(fresh.events("meeting.segment").filter { $0["source"] as? String == "mic" }.isEmpty,
+                "the mic waits for the gate; it never reaches the model with the other side's echo in it")
+    }
+
     @Test func recoveryTranscribesOnlyWhatTheTranscriptDoesNotReachWithoutRecording() async throws {
         let h = try Harness()
         defer { h.meetings.shutdown(); h.devices.shutdown() }
