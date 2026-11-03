@@ -42,10 +42,11 @@ private func soundWords(in samples: [Float]) -> [TimedWord] {
     return words
 }
 
-/// `mic.pcm` and `system.pcm` with a loud tone on the mic, then two quieter system turns, which
-/// the mic hears through the speakers when `micHearsTheSpeakers`.
-private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false) throws {
-    let theirs = silence(3) + tone(2, 0.1) + silence(1) + tone(1.5, 0.1) + silence(0.5)
+/// `mic.pcm` and `system.pcm` with a loud tone on the mic, then two quieter system turns
+/// `systemPause` seconds apart (under a second, one decode covers both), which the mic hears
+/// through the speakers when `micHearsTheSpeakers`.
+private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, systemPause: Double = 0.9) throws {
+    let theirs = silence(3) + tone(2, 0.1) + silence(systemPause) + tone(1.5, 0.1) + silence(0.5)
     let echo = micHearsTheSpeakers ? theirs.map { $0 / 4 } : silence(8)
     try write(zip(tone(2, 0.3, hz: 660) + silence(6), echo).map(+), .mic, in: dir)
     try write(theirs, .system, in: dir)
@@ -159,6 +160,16 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false) throws
         let failed = try await lines.wait(for: "meeting.finalizeFailed")
         #expect(failed.last?["reason"] as? String == "speakerModels")
         #expect(lines.snapshot().allSatisfy { $0["type"] as? String != "meeting.finalized" })
+    }
+
+    @Test func eachRunOfSpeechIsDecodedOnItsOwnAndTheSilenceBetweenNeverReachesTheModel() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeMeeting(in: dir, systemPause: 3)
+        var decoded: [Int] = []
+        await pass(diarize: { _ in nil }, decoded: { decoded.append($0) }).run(id: "m1", dir: dir, baseMs: 0, language: .en)
+        _ = try await finalized()
+        #expect(decoded == [2 * 16_000, 2 * 16_000, Int(1.5 * 16_000)],
+                "the user's tone, then each system turn on its own, without the three seconds between them")
     }
 
     @Test func dictationHoldsEveryDecodeAndTheDiarizer() async throws {
