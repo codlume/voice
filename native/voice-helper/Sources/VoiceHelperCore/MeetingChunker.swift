@@ -64,6 +64,28 @@ public enum MeetingChunker {
         return first * frameSamples..<min(window.count, (last + 1) * frameSamples)
     }
 
+    /// The runs of speech in `window`, split where quiet lasts a long pause. The speech model
+    /// decodes a window that holds seconds of digital silence degenerately, dropping the words
+    /// beside it, and the mic holds such silence wherever the echo gate muted the other side or
+    /// a dictation ran. Decoded one at a time, the runs never show the model that silence.
+    public static func speechRuns(in window: [Float]) -> [Range<Int>] {
+        let levels = frameLevels(window)
+        var runs: [Range<Int>] = []
+        var start: Int?
+        var lastLoud = 0
+        for (frame, level) in levels.enumerated() {
+            if level >= quietRms {
+                if start == nil { start = frame }
+                lastLoud = frame
+            } else if let begun = start, frame - lastLoud >= longPauseFrames {
+                runs.append(begun..<lastLoud + 1)
+                start = nil
+            }
+        }
+        if let begun = start { runs.append(begun..<lastLoud + 1) }
+        return runs.map { $0.lowerBound * frameSamples..<min(window.count, $0.upperBound * frameSamples) }
+    }
+
     private static func frameLevels(_ samples: [Float]) -> [Float] {
         stride(from: 0, to: samples.count, by: frameSamples).map { start in
             let frame = samples[start..<min(start + frameSamples, samples.count)]

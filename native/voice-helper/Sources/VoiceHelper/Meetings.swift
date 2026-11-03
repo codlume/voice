@@ -371,11 +371,11 @@ final class MeetingFinalPass {
             let count = MeetingChunker.finalCut(samples)
             if MeetingChunker.speech(in: Array(samples.prefix(count))) != nil {
                 let window = try await source.heard(in: dir, offset: offset, count: count)
-                // The echo gate suspends the read, so a dictation may have started since the check above.
-                try await dictationDone()
-                if let speech = MeetingChunker.speech(in: window) {
-                    let startMs = baseMs + PcmFile.milliseconds(offset + speech.lowerBound)
-                    words += try await decode(Array(window[speech]), language).map {
+                for run in MeetingChunker.speechRuns(in: window) {
+                    // The gate and each decode suspend, so a dictation may have started since the last check.
+                    try await dictationDone()
+                    let startMs = baseMs + PcmFile.milliseconds(offset + run.lowerBound)
+                    words += try await decode(Array(window[run]), language).map {
                         TimedWord(text: $0.text, startMs: startMs + $0.startMs, endMs: startMs + $0.endMs)
                     }
                 }
