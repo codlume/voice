@@ -79,7 +79,7 @@ final class Meetings {
         guard finals[id] == nil else { return }
         let previous = lastFinal
         let pass = finalPass
-        let task = Task(priority: .utility) { [weak self] in
+        let task = Task(priority: .medium) { [weak self] in
             await previous?.value
             guard !Task.isCancelled else { return }
             await pass.run(id: id, dir: URL(fileURLWithPath: dir), baseMs: baseMs, language: language)
@@ -172,7 +172,7 @@ final class MeetingTranscription {
 
     private func run() {
         guard loop == nil else { return }
-        loop = Task(priority: .utility) { [weak self] in
+        loop = Task(priority: .medium) { [weak self] in
             await self?.work()
             self?.loop = nil
         }
