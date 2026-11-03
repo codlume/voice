@@ -165,14 +165,14 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
     @Test func theEchoStaysMutedWhenItsLagMovesMidCall() throws {
         let dir = try meetingDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let system = voice(40, pitch: 120, seed: 1)
-        let moveAt = 15 * rate
+        let system = voice(28, pitch: 120, seed: 1)
+        let moveAt = EchoGate.blockSamples
         let echo = zip(throughTheSpeakers(system, lagMs: 80), throughTheSpeakers(system, lagMs: 300)).enumerated()
             .map { $0.offset < moveAt ? $0.element.0 : $0.element.1 }
-        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(40)), system: system, in: dir)
+        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(28)), system: system, in: dir)
         let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
         let before = 1.0...13.0
-        let after = Double(moveAt + EchoGate.blockSamples) / Double(rate)...39.0
+        let after = Double(moveAt) / Double(rate) + 1...27.0
         #expect(decibels(energy(seconds(gated, before)), over: energy(seconds(echo, before))) < -20)
         #expect(decibels(energy(seconds(gated, after)), over: energy(seconds(echo, after))) < -20, "a block after the move, the gate has the new lag")
     }
