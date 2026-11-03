@@ -108,8 +108,12 @@ public enum EchoGate {
     /// modelled tail overstates an echo that decays faster, and a low quantile is drawn to those
     /// cells, more the louder the echo.
     static func echoLevel(heard: [Float], audible: [Float]) -> Float {
-        let ratios = vDSP.divide(heard, audible).filter(\.isFinite).sorted()
-        return ratios.isEmpty ? 0 : ratios[Int(Float(ratios.count - 1) * quantile)]
+        // Only the cells where something audible played have a ratio; vDSP keeps a debug build
+        // off a generic sort of the whole matrix, which the verify harness runs.
+        var ratios = vDSP.compress(vDSP.divide(heard, audible), gatingVector: audible, nonZeroGatingCount: nil)
+        guard !ratios.isEmpty else { return 0 }
+        vDSP.sort(&ratios, sortOrder: .ascending)
+        return ratios[Int(Float(ratios.count - 1) * quantile)]
     }
 
     /// The power a frame at `rms` sums to over its one-sided spectrum.
