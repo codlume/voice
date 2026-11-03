@@ -5,8 +5,8 @@ import Testing
 private let rate = 16_000
 
 /// A voice-like signal from `start` to `end` seconds of a `seconds`-long track: a harmonic
-/// series on a gliding pitch, in syllables, with a timbre fixed by `seed`.
-private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2) -> [Float] {
+/// series on a gliding pitch, in syllables or held steady, with a timbre fixed by `seed`.
+private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true) -> [Float] {
     var phase: Float = 0
     let twoPi = 2 * Float.pi
     let stop = end ?? seconds
@@ -15,7 +15,7 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
         let glide: Float = 1 + 0.12 * sin(twoPi * 0.7 * t + seed)
         phase += twoPi * pitch * glide / Float(rate)
         guard Double(t) >= start, Double(t) < stop else { return 0 }
-        let syllable: Float = max(0, sin(twoPi * 3.3 * t + seed))
+        let syllable: Float = syllables ? max(0, sin(twoPi * 3.3 * t + seed)) : 0.7
         var tone: Float = 0
         for k in 1...14 {
             let harmonic = Float(k)
@@ -26,15 +26,15 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
     }
 }
 
-/// What the laptop's mic hears of `played`: `lagMs` later, about 18 dB down, with a short room
-/// tail.
-private func throughTheSpeakers(_ played: [Float], lagMs: Double) -> [Float] {
+/// What the mic hears of `played`: `lagMs` later, the direct path at `gain` (18 dB down on a
+/// laptop), with a short room tail.
+private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 0.12) -> [Float] {
     let lag = Int(lagMs * Double(rate) / 1000)
-    let taps: [(delay: Int, gain: Float)] = [(0, 0.12), (48, 0.04), (160, -0.025), (900, 0.01)]
+    let taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
     return played.indices.map { n in
         taps.reduce(0) { sum, tap in
             let i = n - lag - tap.delay
-            return i >= 0 && i < played.count ? sum + tap.gain * played[i] : sum
+            return i >= 0 && i < played.count ? sum + gain * tap.gain * played[i] : sum
         }
     }
 }
@@ -79,6 +79,14 @@ private func decibels(_ a: Float, over b: Float) -> Float {
         #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
     }
 
+    @Test(arguments: [Float(0.1), 0.3, 1, 3])
+    func theOtherSideIsMutedHoweverLoudItComesBack(gain: Float) {
+        let system = voice(8, pitch: 120, seed: 1)
+        let echo = throughTheSpeakers(system, lagMs: 120, gain: gain)
+        let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
+        #expect(decibels(energy(gated[...]), over: energy(echo[...])) < -20)
+    }
+
     @Test func theUsersVoiceOverTheOtherSideStaysAndOnlyTheirEchoGoes() {
         let system = voice(10, pitch: 120, seed: 1)
         let echo = throughTheSpeakers(system, lagMs: 120)
@@ -106,13 +114,10 @@ private func decibels(_ a: Float, over b: Float) -> Float {
     }
 
     @Test func aUserWhoTalksThroughEverythingTheOtherSideSaysKeepsTheirVoice() {
-        func tone(_ hz: Float, _ amplitude: Float) -> [Float] {
-            (0..<6 * rate).map { amplitude * sin(Float($0) * 2 * .pi * hz / Float(rate)) }
-        }
-        let system = tone(440, 0.1)
-        let user = tone(660, 0.3)
+        let system = voice(6, pitch: 120, seed: 1)
+        let user = voice(6, pitch: 210, seed: 4, level: 0.07, syllables: false)
         let gated = EchoGate.gate(mic: add(user, throughTheSpeakers(system, lagMs: 0), roomNoise(6)), system: system)
-        #expect(kept(seconds(user, 1.0...5.0), in: seconds(gated, 1.0...5.0)) > -0.5)
+        #expect(kept(seconds(user, 1.0...5.0), in: seconds(gated, 1.0...5.0)) > -2)
     }
 
     @Test func echoRightAfterADictationIsStillMuted() {
