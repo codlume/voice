@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,10 +55,11 @@ const fixtures = [
 
 // Synthetic meetings: the user on the mic, the others on system audio. A turn starts `gap`
 // seconds after the last one ends, or `overlap` seconds after the previous turn started, for
-// crosstalk. An `echo` variant mixes the other side into the mic, quieter and a beat late, the way
-// a laptop microphone hears its own speakers. `<prefix>-turns.json` holds who said what when, so
-// a run can be scored: every user turn must survive, as itself and once. Numbers are written the
-// way the speech model writes them, so the score compares like with like.
+// crosstalk. An `echo` variant mixes the other side into the mic the way a laptop microphone hears
+// its own speakers (see `laptop`). `<prefix>-turns.json` holds who said what when, so
+// a run can be scored: every user turn must survive, as itself and once. The score compares words
+// literally, so a number the speech model spells out ("forty-two thousand dollars" for "$42,000")
+// counts as lost words.
 /**
  * @typedef {{ gap?: number, overlap?: number }} TurnTiming
  * @typedef {{
@@ -72,7 +74,7 @@ const meetings = [
   {
     prefix: "meeting",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-mic-speakers.wav",
+    echo: "meeting-mic-laptop.wav",
     turns: [
       ["you", "Morning everyone. Let's go through the launch plan for the Kowalski account."],
       ["other", "Sounds good. The beta build is ready, and we fixed forty two bugs last week."],
@@ -116,7 +118,7 @@ const meetings = [
     // speakers the echo of the other side must still go.
     prefix: "meeting-repeat-back",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-repeat-back-mic-speakers.wav",
+    echo: "meeting-repeat-back-mic-laptop.wav",
     turns: [
       ["other", "Can we move the launch to March 12th?"],
       ["you", "March 12th works for me.", { gap: 0.5 }],
@@ -134,7 +136,7 @@ const meetings = [
     // The user talks over the other side, whose words the speakers also play into the mic.
     prefix: "meeting-crosstalk",
     speakers: { you: ["mic", "Daniel"], other: ["system", "Samantha"] },
-    echo: "meeting-crosstalk-mic-speakers.wav",
+    echo: "meeting-crosstalk-mic-laptop.wav",
     turns: [
       ["you", "Let's go through the renewal before the call ends."],
       [
@@ -144,6 +146,33 @@ const meetings = [
       ["you", "Sorry, who owns legal review?", { overlap: 3 }],
       ["other", "Victor owns it. He already has the draft."],
       ["you", "Thanks. I will send him the latest numbers today.", { gap: 0.6 }],
+    ],
+  },
+  {
+    // A Polish call on laptop speakers: the user answers, talks over the other side twice and
+    // repeats a phrase back while it still plays. Zosia is the only Polish `say` voice, so both
+    // sides share it, which also makes the echo hardest to tell from the user.
+    prefix: "meeting-pl-doubletalk",
+    speakers: { you: ["mic", "Zosia"], other: ["system", "Zosia"] },
+    echo: "meeting-pl-doubletalk-mic-laptop.wav",
+    turns: [
+      ["other", "Dobra, to lecimy. Pierwsze pytanie dotyczy wdrożenia nowej wersji aplikacji."],
+      ["other", "Czy zespół testowy skończył już sprawdzać aplikację mobilną?", { gap: 0.6 }],
+      ["you", "Tak, skończyli wczoraj wieczorem i nie znaleźli żadnych poważnych błędów."],
+      [
+        "other",
+        "Świetnie, to super. Szybko poszło. W takim razie wypuszczamy nową wersję w czwartek po południu.",
+      ],
+      ["you", "Czekaj, w czwartek mam spotkanie z klientem.", { overlap: 2.5 }],
+      ["other", "Dobrze, to przesuńmy wydanie na piątek rano, czyli o dziewiątej czasu polskiego."],
+      ["you", "Piątek rano mi pasuje. Wyślę zaproszenie do całego zespołu."],
+      [
+        "other",
+        "Jeszcze jedno. Marketing prosi o krótką notatkę dla klientów przed wydaniem, najlepiej do środy.",
+      ],
+      ["you", "Zapisuję, notatka dla klientów do środy.", { overlap: 3.5 }],
+      ["other", "Dzięki, to wszystko z mojej strony. Do usłyszenia w piątek."],
+      ["you", "Dzięki, do usłyszenia.", { gap: 0.5 }],
     ],
   },
   {
@@ -172,7 +201,52 @@ const meetings = [
   },
 ];
 const gapSeconds = 1.2;
-/** @param {Meeting} meeting */
+
+// The pl-doubletalk call up to `cutMs`, then the whole call again: a longer meeting whose late
+// turns are said over the other side. The final pass once lost the user's turn at 49.5 s here.
+const longMeeting = {
+  prefix: "meeting-pl-long",
+  from: "meeting-pl-doubletalk",
+  cutMs: 29_600,
+  echo: "meeting-pl-long-mic-laptop.wav",
+};
+
+// What a MacBook Pro microphone hears from its own speakers at 60% volume, measured with a
+// played Polish meeting: the speech comes back 18.5 dB down, tilted toward 2.5-5 kHz, with a
+// strong direct path, a room tail and distortion 16.5 dB below the echo that no linear filter
+// predicts. The user's voice sits 6 dB above the echo and 30 dB above the room's noise, at the
+// levels the microphone recorded. `echoDb` is the trim that lands the echo 18.5 dB down after the
+// soft clip adds about 7.7 dB and the EQ boost and reflections add more.
+const laptop = { userDb: -11.7, clip: 3, delayMs: 40, echoDb: -23.5, noiseAmplitude: 0.0076 };
+
+// A 300 ms impulse response as raw 32-bit floats: the direct path, a few early reflections, and a
+// decaying tail about 18 dB below the direct path. Seeded, so every run on the same macOS and
+// ffmpeg generates the same fixture.
+function roomResponse() {
+  const rate = 16000;
+  const taps = new Float32Array(rate * 0.3);
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32 - 0.5;
+  };
+  const tail = Math.round(0.005 * rate);
+  for (let i = tail; i < taps.length; i++) taps[i] = 0.035 * random() * Math.exp(-i / rate / 0.058);
+  /** @type {[ms: number, gain: number][]} */
+  const reflections = [
+    [0, 1],
+    [2.1, 0.3],
+    [3.4, -0.22],
+    [5.8, 0.17],
+    [7.9, -0.12],
+  ];
+  for (const [ms, gain] of reflections) {
+    const i = Math.round((ms * rate) / 1000);
+    taps[i] = (taps[i] ?? 0) + gain;
+  }
+  return Buffer.from(taps.buffer);
+}
+/** @param {{ prefix: string, echo?: string }} meeting */
 const meetingFixtures = ({ prefix, echo }) => [
   `${prefix}-mic.wav`,
   `${prefix}-system.wav`,
@@ -299,6 +373,8 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       ]);
     }
     if (!echo) return;
+    const room = join(work, "room.f32");
+    writeFileSync(room, roomResponse());
     run("ffmpeg", [
       "-y",
       "-loglevel",
@@ -307,8 +383,22 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
       join(fixturesDir, `${prefix}-mic.wav`),
       "-i",
       join(fixturesDir, `${prefix}-system.wav`),
+      "-f",
+      "f32le",
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-i",
+      room,
       "-filter_complex",
-      "[1]volume=0.3,adelay=40[echo];[0][echo]amix=inputs=2:normalize=0:duration=first",
+      [
+        `[0]volume=${laptop.userDb}dB[user]`,
+        `[1]highpass=f=250,equalizer=f=3500:t=q:w=1:g=6,asoftclip=type=tanh:param=${laptop.clip},adelay=${laptop.delayMs}[played]`,
+        `[played][2]afir=irnorm=-1:gtype=-1,volume=${laptop.echoDb}dB[echo]`,
+        `anoisesrc=color=pink:amplitude=${laptop.noiseAmplitude}:seed=7:sample_rate=16000[noise]`,
+        "[user][echo][noise]amix=inputs=3:normalize=0:duration=first",
+      ].join(";"),
       "-c:a",
       "pcm_s16le",
       join(fixturesDir, echo),
@@ -318,20 +408,64 @@ function generateMeeting({ prefix, speakers, echo, turns }) {
   }
 }
 
+function generateLongMeeting({ prefix, from, cutMs }) {
+  for (const suffix of ["mic", "mic-laptop", "system"]) {
+    const source = join(fixturesDir, `${from}-${suffix}.wav`);
+    run("ffmpeg", [
+      "-y",
+      "-loglevel",
+      "error",
+      "-i",
+      source,
+      "-i",
+      source,
+      "-filter_complex",
+      `[0]atrim=end_sample=${cutMs * 16}[head];[head][1]concat=n=2:v=0:a=1`,
+      "-c:a",
+      "pcm_s16le",
+      join(fixturesDir, `${prefix}-${suffix}.wav`),
+    ]);
+  }
+  /** @type {{ startMs: number, endMs: number }[]} */
+  const turns = JSON.parse(readFileSync(join(fixturesDir, `${from}-turns.json`), "utf8"));
+  const again = turns.map((turn) => ({
+    ...turn,
+    startMs: turn.startMs + cutMs,
+    endMs: turn.endMs + cutMs,
+  }));
+  writeFileSync(
+    join(fixturesDir, `${prefix}-turns.json`),
+    `${JSON.stringify([...turns.filter((turn) => turn.endMs <= cutMs), ...again], null, 2)}\n`,
+  );
+}
+
 export function ensureFixtures() {
   mkdirSync(fixturesDir, { recursive: true });
+  // Fixtures already on disk may come from an older version of this script, such as one with
+  // another `laptop`, so a change to the script regenerates all of them.
+  const stamp = join(fixturesDir, ".generator");
+  const generator = createHash("sha256")
+    .update(readFileSync(fileURLToPath(import.meta.url)))
+    .digest("hex");
+  const current = existsSync(stamp) && readFileSync(stamp, "utf8") === generator;
+  const missing = (name) => !current || !existsSync(join(fixturesDir, name));
   for (const fixture of fixtures) {
-    const target = join(fixturesDir, fixture.name);
-    if (existsSync(target)) continue;
+    if (!missing(fixture.name)) continue;
     generate(fixture);
-    console.log(`generated ${target}`);
+    console.log(`generated ${join(fixturesDir, fixture.name)}`);
   }
   for (const meeting of meetings) {
     const names = meetingFixtures(meeting);
-    if (names.every((name) => existsSync(join(fixturesDir, name)))) continue;
+    if (!names.some(missing)) continue;
     generateMeeting(meeting);
     console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
   }
+  const names = meetingFixtures(longMeeting);
+  if (names.some(missing)) {
+    generateLongMeeting(longMeeting);
+    console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
+  }
+  writeFileSync(stamp, generator);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) ensureFixtures();

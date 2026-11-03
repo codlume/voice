@@ -11,6 +11,10 @@ public struct TimedWord: Equatable, Sendable {
         self.startMs = startMs
         self.endMs = endMs
     }
+
+    public func shifted(by ms: Double) -> TimedWord {
+        TimedWord(text: text, startMs: startMs + ms, endMs: endMs + ms)
+    }
 }
 
 /// A stretch of system audio the diarizer gave to one voice, in meeting ms. `speaker` is the
@@ -46,8 +50,7 @@ public struct FinalSegment: Equatable, Sendable {
 }
 
 /// Builds the final transcript from both streams' timed words and the system stream's speaker
-/// turns: words become segments at pauses, long runs and speaker changes, and the mic words
-/// `EchoPolicy` finds echo the other side are dropped, as during the meeting.
+/// turns: words become segments at pauses, long runs and speaker changes.
 public enum FinalTranscript {
     /// A pause this long between two words starts a new segment.
     static let pauseMs = 800.0
@@ -94,57 +97,48 @@ public enum FinalTranscript {
     }
 
     /// `turns` is nil when there was no diarization, which leaves every system speaker nil.
-    public static func segments(mic: [TimedWord], system: [TimedWord], turns: [SpeakerTurn]?, output: OutputTimeline) -> [FinalSegment] {
-        let systemRuns = group(system, voices: turns.map { turns in assign(system, to: turns).map(Voice.speaker) })
-        let echoes = EchoPolicy.echoes(mic: mic, system: system, output: output)
-        let micRuns = group(mic, voices: echoes.map { $0 ? .echo : .user }).filter { $0.voice != .echo }
+    public static func segments(mic: [TimedWord], system: [TimedWord], turns: [SpeakerTurn]?) -> [FinalSegment] {
+        let systemRuns = group(system, speakers: turns.map { assign(system, to: $0) })
         var numbers: [String: Int] = [:]
         let named = systemRuns.map { run in
             var number: Int?
-            if case .speaker(let speaker?) = run.voice {
+            if let speaker = run.speaker {
                 number = numbers[speaker] ?? numbers.count
                 numbers[speaker] = number
             }
             return FinalSegment(source: .system, startMs: run.startMs, endMs: run.endMs, text: run.text, speaker: number)
         }
-        let mine = micRuns.map { FinalSegment(source: .mic, startMs: $0.startMs, endMs: $0.endMs, text: $0.text, speaker: nil) }
+        let mine = group(mic, speakers: nil).map { FinalSegment(source: .mic, startMs: $0.startMs, endMs: $0.endMs, text: $0.text, speaker: nil) }
         return (named + mine).sorted { $0.startMs < $1.startMs }
-    }
-
-    /// Who said a word: on the mic the user or the other side's echo; on system audio a
-    /// diarizer cluster, nil where none covers it.
-    private enum Voice: Equatable {
-        case user
-        case echo
-        case speaker(String?)
     }
 
     private struct Run {
         let startMs: Double
         let endMs: Double
         let text: String
-        let voice: Voice
+        /// The diarizer cluster on system audio, nil where none covers it and on the mic.
+        let speaker: String?
     }
 
-    private static func group(_ words: [TimedWord], voices: [Voice]?) -> [Run] {
+    private static func group(_ words: [TimedWord], speakers: [String?]?) -> [Run] {
         var runs: [Run] = []
         var current: [TimedWord] = []
-        var voice = Voice.speaker(nil)
+        var speaker: String?
         func close() {
             guard let first = current.first, let last = current.last else { return }
-            runs.append(Run(startMs: first.startMs, endMs: last.endMs, text: current.map(\.text).joined(separator: " "), voice: voice))
+            runs.append(Run(startMs: first.startMs, endMs: last.endMs, text: current.map(\.text).joined(separator: " "), speaker: speaker))
             current = []
         }
         for (index, word) in words.enumerated() {
-            let next = voices?[index] ?? .speaker(nil)
+            let next = speakers?[index] ?? nil
             if let first = current.first, let last = current.last {
                 let length = last.endMs - first.startMs
                 let sentenceEnd = last.text.last.map { ".?!".contains($0) } ?? false
-                if word.startMs - last.endMs >= pauseMs || next != voice || length >= 2 * longMs || (length >= longMs && sentenceEnd) {
+                if word.startMs - last.endMs >= pauseMs || next != speaker || length >= 2 * longMs || (length >= longMs && sentenceEnd) {
                     close()
                 }
             }
-            voice = next
+            speaker = next
             current.append(word)
         }
         close()
