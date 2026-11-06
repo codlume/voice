@@ -138,6 +138,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         for (const [index, chunk] of chunks.entries()) {
           withdraw.throwIfAborted();
           const tokens = countTokens(chunk.text);
+          // Only one grapheme the chunker cannot split exceeds the budget, and the model drops it.
+          if (tokens > CHUNK_TOKENS) continue;
           const predictedMs = msPerToken === undefined ? 0 : msPerToken * tokens;
           if (deadline.signal.aborted || predictedMs > deadlineAt - Date.now()) break;
           const startedAt = Date.now();

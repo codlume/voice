@@ -250,6 +250,28 @@ describe("assertPlausibleCleanup", () => {
     },
   );
 
+  test.each(["🙂", "🙂🚀", "👩\u200D👩\u200D👩"])(
+    "rejects an empty output for %j, which holds only emoji",
+    (input) => {
+      expect(() => assertPlausibleCleanup(input, "", false)).toThrow("empty");
+      expect(() => assertPlausibleCleanup(input, input, false)).not.toThrow();
+    },
+  );
+
+  test.each([".", ",", "...", "?!", "—"])(
+    "accepts an empty output for bare punctuation %j",
+    (input) => {
+      expect(() => assertPlausibleCleanup(input, "", false)).not.toThrow();
+    },
+  );
+
+  test.each(["um uh", "a the", "you know", "i mean", "kind of", "sort of"])(
+    "accepts an empty output for filler %j",
+    (input) => {
+      expect(() => assertPlausibleCleanup(input, "", false)).not.toThrow();
+    },
+  );
+
   test("rejects output over 3x the input length", () => {
     const input = "call ada";
     expect(() => assertPlausibleCleanup(input, "Call Ada.".repeat(3), false)).toThrow("3x");

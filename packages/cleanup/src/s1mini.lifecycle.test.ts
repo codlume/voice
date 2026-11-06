@@ -188,6 +188,18 @@ test("the largest chunk keeps its whole output allowance inside a 2048-token con
   expect(native.contextSize).toBe(2048);
 });
 
+test("a single grapheme over the chunk budget stays verbatim and never reaches the model", async () => {
+  const grapheme = `a${"\u0301".repeat(CHUNK_TOKENS)}`;
+  const raw = `hello there. ${grapheme} goodbye now.`;
+  native.reply = (chunk) => ({ response: chunk.includes("\u0301") ? "" : chunk });
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+
+  const result = await s1.clean(raw, style);
+
+  expect(result).toEqual({ text: raw, chunks: 3, cleaned: 2, ...timed });
+  expect(generations()).toHaveLength(2);
+});
+
 test("long input is cleaned in sentence chunks and rejoined", async () => {
   const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
   const sentence = "we should ship the beta on october twelfth and the stable release after that.";

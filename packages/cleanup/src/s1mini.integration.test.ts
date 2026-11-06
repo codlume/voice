@@ -116,6 +116,29 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     await llama.dispose();
   }, 60_000);
 
+  test.each([
+    ["inside the input cap", 1_200],
+    ["past the 2048 input cap", 1_750],
+    ["past the 4096 input cap", 2_300],
+  ])(
+    "a combining-mark grapheme %s stays verbatim",
+    async (_, marks) => {
+      const grapheme = `a${"\u0301\u0327\u0334\u0308".repeat(marks / 4)}`;
+
+      const result = await s1.clean(`Hello there. ${grapheme} goodbye now.`, formal);
+
+      expect(result.text).toContain(grapheme);
+      expect(result.text).toMatch(/^Hello there\./);
+      expect(result.text).toMatch(/goodbye now\.$/i);
+      expect(result.cleaned).toBeLessThan(result.chunks);
+    },
+    60_000,
+  );
+
+  test("an emoji alone stays verbatim", async () => {
+    expect(await timed("emoji", "🙂", formal)).toMatchObject({ text: "🙂", cleaned: 0 });
+  });
+
   test("a full chunk whose output runs to the token cap comes back verbatim", async () => {
     const raw = "the ".repeat(390).trim();
 
