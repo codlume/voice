@@ -3,8 +3,9 @@ import { EventEmitter } from "node:events";
 import type { UpdateCheckResult, UpdateInfo } from "electron-updater";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import type { RestartRequest, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
+import type { Meeting, MeetingId, MeetingStatus } from "../shared/meetings.ts";
 import {
   createUpdates,
   parseReleaseConfig,
@@ -160,6 +161,23 @@ const history = (
   saveFailed = false,
 ): HistoryState => ({ entries: latest ? [latest] : [], retention, saveFailed });
 
+const meeting = (status: MeetingStatus): Meeting => ({
+  id: "00000000-0000-4000-8000-000000000001" as MeetingId,
+  title: null,
+  createdAt: 0,
+  spans: [],
+  status,
+  folderIds: [],
+  notes: "",
+  summary: { kind: "none" },
+  speakers: [],
+  finalPassFailed: null,
+  transcriptRevision: 0,
+});
+
+const refusal = (request: RestartRequest, state: HistoryState) =>
+  restartRefusal(request, state, []);
+
 describe("restart requests", () => {
   test("accept a known choice with the newest transcript the user saw, and nothing else", () => {
     expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", latest: "s1" })).toEqual({
@@ -182,39 +200,55 @@ describe("restart requests", () => {
     }
   });
 
+  test("refuse a restart while a meeting records, starts or is paused", () => {
+    const request = { choice: "restart", latest: null } as const;
+    for (const status of [
+      { kind: "recording", since: 0 },
+      { kind: "starting", from: "new" },
+      { kind: "paused" },
+    ] as const) {
+      expect(restartRefusal(request, history(null, "memory"), [meeting(status)])).toBe(
+        "Stop the meeting, then restart.",
+      );
+    }
+    for (const status of [{ kind: "ready" }, { kind: "summarizing", progress: null }] as const) {
+      expect(restartRefusal(request, history(null, "memory"), [meeting(status)])).toBeNull();
+    }
+  });
+
   test("refuse a request made before a newer transcript arrived", () => {
+    expect(refusal({ choice: "restart", latest: null }, history(entry("inserted"), "memory"))).toBe(
+      "A new transcript arrived. Check it, then restart.",
+    );
     expect(
-      restartRefusal({ choice: "restart", latest: null }, history(entry("inserted"), "memory")),
-    ).toBe("A new transcript arrived. Check it, then restart.");
-    expect(
-      restartRefusal(
+      refusal(
         { choice: "copyTranscriptAndRestart", latest: "s0" },
         history(entry("inserted"), "month"),
       ),
     ).toBe("A new transcript arrived. Check it, then restart.");
-    expect(restartRefusal({ choice: "restart", latest: null }, history(null, "memory"))).toBeNull();
+    expect(refusal({ choice: "restart", latest: null }, history(null, "memory"))).toBeNull();
   });
 
   test("refuse a plain restart only when the newest transcript would be lost", () => {
     for (const status of ["pending", "notInserted"] as const) {
+      expect(refusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory"))).toBe(
+        "Your last transcript is not saved anywhere. Copy it, then restart.",
+      );
       expect(
-        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory")),
+        refusal({ choice: "restart", latest: "s1" }, history(entry(status), "month", true)),
       ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
       expect(
-        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month", true)),
-      ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
-      expect(
-        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month")),
+        refusal({ choice: "restart", latest: "s1" }, history(entry(status), "month")),
       ).toBeNull();
       expect(
-        restartRefusal(
+        refusal(
           { choice: "copyTranscriptAndRestart", latest: "s1" },
           history(entry(status), "memory"),
         ),
       ).toBeNull();
     }
     expect(
-      restartRefusal({ choice: "restart", latest: "s1" }, history(entry("inserted"), "memory")),
+      refusal({ choice: "restart", latest: "s1" }, history(entry("inserted"), "memory")),
     ).toBeNull();
   });
 });
