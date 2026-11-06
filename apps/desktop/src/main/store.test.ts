@@ -47,6 +47,7 @@ describe("toSnapshot", () => {
       "microphones",
       "models",
       "permissions",
+      "restartNotice",
       "session",
       "settings",
       "speakerModel",

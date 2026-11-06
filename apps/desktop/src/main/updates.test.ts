@@ -3,10 +3,11 @@ import { EventEmitter } from "node:events";
 import type { UpdateCheckResult, UpdateInfo } from "electron-updater";
 import { afterEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { RestartRequest, UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
+import type { UpdateStatus, UpdatesSnapshot } from "../shared/api.ts";
 import type { HistoryEntry, HistoryState, HistoryStatus } from "../shared/history.ts";
 import type { Meeting, MeetingId, MeetingStatus } from "../shared/meetings.ts";
 import {
+  acceptRestart,
   createUpdates,
   parseReleaseConfig,
   parseRestartRequest,
@@ -175,9 +176,6 @@ const meeting = (status: MeetingStatus): Meeting => ({
   transcriptRevision: 0,
 });
 
-const refusal = (request: RestartRequest, state: HistoryState) =>
-  restartRefusal(request, state, []);
-
 describe("restart requests", () => {
   test("accept a known choice with the newest transcript the user saw, and nothing else", () => {
     expect(parseRestartRequest({ choice: "copyTranscriptAndRestart", latest: "s1" })).toEqual({
@@ -200,56 +198,152 @@ describe("restart requests", () => {
     }
   });
 
-  test("refuse a restart while a meeting records, starts or is paused", () => {
-    const request = { choice: "restart", latest: null } as const;
-    for (const status of [
-      { kind: "recording", since: 0 },
-      { kind: "starting", from: "new" },
-      { kind: "paused" },
-    ] as const) {
-      expect(restartRefusal(request, history(null, "memory"), [meeting(status)])).toBe(
-        "Stop the meeting, then restart.",
-      );
-    }
-    for (const status of [{ kind: "ready" }, { kind: "summarizing", progress: null }] as const) {
-      expect(restartRefusal(request, history(null, "memory"), [meeting(status)])).toBeNull();
-    }
-  });
-
   test("refuse a request made before a newer transcript arrived", () => {
-    expect(refusal({ choice: "restart", latest: null }, history(entry("inserted"), "memory"))).toBe(
-      "A new transcript arrived. Check it, then restart.",
-    );
     expect(
-      refusal(
+      restartRefusal({ choice: "restart", latest: null }, history(entry("inserted"), "memory")),
+    ).toBe("A new transcript arrived. Check it, then restart.");
+    expect(
+      restartRefusal(
         { choice: "copyTranscriptAndRestart", latest: "s0" },
         history(entry("inserted"), "month"),
       ),
     ).toBe("A new transcript arrived. Check it, then restart.");
-    expect(refusal({ choice: "restart", latest: null }, history(null, "memory"))).toBeNull();
+    expect(restartRefusal({ choice: "restart", latest: null }, history(null, "memory"))).toBeNull();
   });
 
   test("refuse a plain restart only when the newest transcript would be lost", () => {
     for (const status of ["pending", "notInserted"] as const) {
-      expect(refusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory"))).toBe(
-        "Your last transcript is not saved anywhere. Copy it, then restart.",
-      );
       expect(
-        refusal({ choice: "restart", latest: "s1" }, history(entry(status), "month", true)),
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "memory")),
       ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
       expect(
-        refusal({ choice: "restart", latest: "s1" }, history(entry(status), "month")),
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month", true)),
+      ).toBe("Your last transcript is not saved anywhere. Copy it, then restart.");
+      expect(
+        restartRefusal({ choice: "restart", latest: "s1" }, history(entry(status), "month")),
       ).toBeNull();
       expect(
-        refusal(
+        restartRefusal(
           { choice: "copyTranscriptAndRestart", latest: "s1" },
           history(entry(status), "memory"),
         ),
       ).toBeNull();
     }
     expect(
-      refusal({ choice: "restart", latest: "s1" }, history(entry("inserted"), "memory")),
+      restartRefusal({ choice: "restart", latest: "s1" }, history(entry("inserted"), "memory")),
     ).toBeNull();
+  });
+});
+
+function accepting(meetings: readonly Meeting[] = []) {
+  const copying = Promise.withResolvers<void>();
+  const steps: string[] = [];
+  const deps = {
+    meetings: vi.fn(() => meetings),
+    history: vi.fn(() => history(entry("pending"), "memory")),
+    assertRestartable: vi.fn(),
+    copy: vi.fn(() => {
+      steps.push("copy");
+      return copying.promise;
+    }),
+    blockedByMeeting: vi.fn(),
+    restart: vi.fn(async () => {
+      steps.push("restart");
+    }),
+  };
+  return { deps, copying, steps };
+}
+
+describe("accepting a restart", () => {
+  const copyRequest = { choice: "copyTranscriptAndRestart", latest: "s1" } as const;
+  const liveMeeting = meeting({ kind: "recording", since: 0 });
+
+  test("a live meeting blocks the restart, tells the user, and copies nothing", async () => {
+    for (const status of [
+      { kind: "recording", since: 0 },
+      { kind: "starting", from: "new" },
+      { kind: "paused" },
+    ] as const) {
+      const live = meeting(status);
+      const { deps } = accepting([live]);
+      await acceptRestart(copyRequest, deps);
+      expect(deps.blockedByMeeting).toHaveBeenCalledWith(live.id);
+      expect(deps.copy).not.toHaveBeenCalled();
+      expect(deps.restart).not.toHaveBeenCalled();
+    }
+  });
+
+  test("a finished meeting does not block a restart", async () => {
+    const { deps, copying } = accepting([meeting({ kind: "ready" })]);
+    copying.resolve();
+    await acceptRestart(copyRequest, deps);
+    expect(deps.blockedByMeeting).not.toHaveBeenCalled();
+    expect(deps.restart).toHaveBeenCalledOnce();
+  });
+
+  test("a plain restart copies nothing", async () => {
+    const { deps } = accepting();
+    await acceptRestart(
+      { choice: "restart", latest: "s1" },
+      {
+        ...deps,
+        history: () => history(entry("inserted"), "memory"),
+      },
+    );
+    expect(deps.copy).not.toHaveBeenCalled();
+    expect(deps.restart).toHaveBeenCalledOnce();
+  });
+
+  test("a meeting that starts during the copy blocks the restart", async () => {
+    const { deps, copying } = accepting();
+    const accepted = acceptRestart(copyRequest, deps);
+    deps.meetings.mockReturnValue([liveMeeting]);
+    copying.resolve();
+    await accepted;
+    expect(deps.blockedByMeeting).toHaveBeenCalledWith(liveMeeting.id);
+    expect(deps.restart).not.toHaveBeenCalled();
+  });
+
+  test("a meeting that starts after the last check finds the restart already under way", async () => {
+    const { deps, copying, steps } = accepting();
+    const accepted = acceptRestart(copyRequest, deps);
+    copying.resolve();
+    const nextTurn = new Promise<void>((resolve) => {
+      setImmediate(() => {
+        steps.push("next turn");
+        resolve();
+      });
+    });
+    await Promise.all([accepted, nextTurn]);
+    expect(steps).toEqual(["copy", "restart", "next turn"]);
+    expect(deps.blockedByMeeting).not.toHaveBeenCalled();
+  });
+
+  test("a transcript that arrives during the copy refuses the restart", async () => {
+    const { deps, copying } = accepting();
+    const accepted = acceptRestart(copyRequest, deps);
+    deps.history.mockReturnValue(history({ ...entry("pending"), id: "s2" }, "memory"));
+    copying.resolve();
+    await expect(accepted).rejects.toThrow("A new transcript arrived");
+    expect(deps.restart).not.toHaveBeenCalled();
+  });
+
+  test("a restart that could not go ahead copies nothing", async () => {
+    const { deps } = accepting();
+    deps.assertRestartable.mockImplementation(() => {
+      throw new Error("Finish dictation before restarting Voice.");
+    });
+    await expect(acceptRestart(copyRequest, deps)).rejects.toThrow("Finish dictation");
+    expect(deps.copy).not.toHaveBeenCalled();
+    expect(deps.restart).not.toHaveBeenCalled();
+  });
+
+  test("a copy that fails stops the restart", async () => {
+    const { deps, copying } = accepting();
+    const accepted = acceptRestart(copyRequest, deps);
+    copying.reject(new Error("clipboard is busy"));
+    await expect(accepted).rejects.toThrow("clipboard is busy");
+    expect(deps.restart).not.toHaveBeenCalled();
   });
 });
 
@@ -738,34 +832,6 @@ describe("updates", () => {
     canRestart.mockReturnValue(false);
     await expect(updates.restart()).rejects.toThrow("Finish dictation");
     expect(prepareRestart).not.toHaveBeenCalled();
-    expect(engine.quitAndInstall).not.toHaveBeenCalled();
-    expect(status().kind).toBe("ready");
-  });
-
-  test("runs the pre-install step only once a restart is allowed", async () => {
-    const { updates, engine, canRestart } = setup();
-    await updates.check();
-    await updates.download();
-    const beforeInstall = vi.fn(async () => {});
-    canRestart.mockReturnValue(false);
-    await expect(updates.restart(beforeInstall)).rejects.toThrow("Finish dictation");
-    expect(beforeInstall).not.toHaveBeenCalled();
-    canRestart.mockReturnValue(true);
-    await updates.restart(beforeInstall);
-    expect(beforeInstall).toHaveBeenCalledOnce();
-    expect(engine.quitAndInstall).toHaveBeenCalledOnce();
-  });
-
-  test("a pre-install copy that fails stops the restart before anything quits", async () => {
-    const { updates, engine, status } = setup();
-    await updates.check();
-    await updates.download();
-    const copy = Promise.withResolvers<void>();
-    const restarting = updates.restart(() => copy.promise);
-    await Promise.resolve();
-    expect(engine.quitAndInstall).not.toHaveBeenCalled();
-    copy.reject(new Error("clipboard is busy"));
-    await expect(restarting).rejects.toThrow("clipboard is busy");
     expect(engine.quitAndInstall).not.toHaveBeenCalled();
     expect(status().kind).toBe("ready");
   });

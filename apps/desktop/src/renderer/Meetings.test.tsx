@@ -122,6 +122,7 @@ const setUp: Snapshot = {
   settings: DEFAULT_SETTINGS,
   account: { kind: "signedOut" },
   meetingNotices: [],
+  restartNotice: null,
 };
 
 type Spied<T> = {

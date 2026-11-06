@@ -11,6 +11,7 @@ import {
   noticePrompt,
   promptFor,
   raise,
+  restartNotice,
   toPillMeeting,
   type MeetingFocus,
 } from "./meeting-focus.ts";
@@ -319,5 +320,36 @@ describe("toPillMeeting", () => {
     const before = toPillMeeting(follow(noMeetingFocus, [live]));
     const after = toPillMeeting(follow(noMeetingFocus, [{ ...live, notes: "Ask about pricing" }]));
     expect(after).toEqual(before);
+  });
+});
+
+describe("a restart blocked by a meeting", () => {
+  const blocked = { kind: "restartBlocked" } as const;
+  const text =
+    "A meeting is in progress, so Voice did not restart. Stop the meeting, then restart to install the update.";
+  const raised = () => follow(raise(noMeetingFocus, id(1), blocked, 0), [recording(1)]);
+
+  test("is its own notice, kept off the meeting lists", () => {
+    const focus = raised();
+    expect(restartNotice(focus)).toMatchObject({ id: id(1), text, dismissable: true, actions: [] });
+    expect(meetingBanners(focus)).toEqual([]);
+  });
+
+  test("stays while the meeting is live and reaches the notepad", () => {
+    const paused = follow(raised(), [meeting(1, { kind: "paused" })]);
+    expect(restartNotice(paused)?.text).toBe(text);
+    expect(promptFor(meeting(1, { kind: "paused" }), paused)).toEqual({ kind: "notice", text });
+  });
+
+  test("goes when the meeting stops being live, or the meeting is gone", () => {
+    expect(restartNotice(follow(raised(), [meeting(1, { kind: "finishing" })]))).toBeNull();
+    expect(restartNotice(follow(raised(), []))).toBeNull();
+  });
+
+  test("goes when dismissed, and a new refusal raises it again", () => {
+    const focus = raised();
+    const dismissed = dismissBanner(focus, restartNotice(focus)?.key ?? null);
+    expect(restartNotice(dismissed)).toBeNull();
+    expect(restartNotice(raise(dismissed, id(1), blocked, 0))?.text).toBe(text);
   });
 });
