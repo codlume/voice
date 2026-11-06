@@ -9,6 +9,7 @@ import {
   type UpdatesSnapshot,
 } from "../shared/api.ts";
 import { atRiskOnQuit, type HistoryState } from "../shared/history.ts";
+import { liveMeeting, type Meeting } from "../shared/meetings.ts";
 import { notesSinceInstalled } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
@@ -42,11 +43,17 @@ export function parseRestartRequest(value: unknown): RestartRequest | null {
 }
 
 /**
- * Why a restart has to wait, or null. The request was made against the newest entry the user saw,
- * so a newer one means they chose on stale facts, and a plain restart must not lose the only copy
- * of a transcript.
+ * Why a restart has to wait, or null. A launch never resumes capture, so a restart ends a live
+ * meeting's recording for good. The request was made against the newest entry the user saw, so a
+ * newer one means they chose on stale facts, and a plain restart must not lose the only copy of a
+ * transcript.
  */
-export function restartRefusal(request: RestartRequest, history: HistoryState): string | null {
+export function restartRefusal(
+  request: RestartRequest,
+  history: HistoryState,
+  meetings: readonly Meeting[],
+): string | null {
+  if (liveMeeting(meetings)) return "Stop the meeting, then restart.";
   if (request.latest !== (history.entries[0]?.id ?? null))
     return "A new transcript arrived. Check it, then restart.";
   if (request.choice === "restart" && atRiskOnQuit(history))

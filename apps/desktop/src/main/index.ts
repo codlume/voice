@@ -760,7 +760,7 @@ async function main() {
       await settingsQueue.settled();
       await history.settled();
       const state = history.state();
-      const refusal = restartRefusal(request, state);
+      const refusal = restartRefusal(request, state, meetingsApp.store.state().meetings);
       if (refusal) throw new Error(refusal);
       const [latest] = state.entries;
       await updates.restart(
