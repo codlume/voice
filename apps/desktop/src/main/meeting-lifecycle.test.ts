@@ -588,19 +588,22 @@ describe("meeting lifecycle", () => {
       ],
       [{ kind: "ready" }, { kind: "ready" }],
     ];
-    for (const [status, after] of cases) {
-      const { meeting, effects } = step(
-        meetingAt(status),
-        { type: "recover", lastAudioAt },
-        T0 + 90 * MIN,
-        config,
-      );
-      expect(meeting?.status ?? null, status.kind).toEqual(after);
-      expect(kinds(effects), status.kind).not.toContain("startCapture");
+    for (const hasAudio of [false, true]) {
+      for (const [status, after] of cases) {
+        const { meeting, effects } = step(
+          meetingAt(status),
+          { type: "recover", lastAudioAt, hasAudio },
+          T0 + 90 * MIN,
+          config,
+        );
+        const expected = hasAudio && status.kind === "starting" ? draining : after;
+        expect(meeting?.status ?? null, `${status.kind} hasAudio ${hasAudio}`).toEqual(expected);
+        expect(kinds(effects), status.kind).not.toContain("startCapture");
+      }
     }
     const crashed = step(
       meetingAt({ kind: "recording", since: T0 + 30 * MIN }),
-      { type: "recover", lastAudioAt },
+      { type: "recover", lastAudioAt, hasAudio: true },
       T0 + 90 * MIN,
       config,
     );
@@ -611,11 +614,44 @@ describe("meeting lifecycle", () => {
     expect(crashed.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
   });
 
+  test("a start whose meeting.json never caught up is kept with its audio, as a recorded leg", () => {
+    const lastAudioAt = T0 + 45 * MIN;
+    const fresh = meetingAt({ kind: "starting", from: "new" }, { spans: [] });
+    const kept = step(
+      fresh,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(kept.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+    expect(kept.meeting?.spans).toEqual([{ startedAt: T0, endedAt: lastAudioAt }]);
+    expect(kept.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
+
+    const silent = step(
+      fresh,
+      { type: "recover", lastAudioAt, hasAudio: false },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(silent).toEqual({ meeting: null, effects: [{ type: "delete" }] });
+
+    const resumed = meetingAt({ kind: "starting", from: "ready" });
+    const leg = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(leg.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+    expect(leg.meeting?.spans).toEqual(resumed.spans);
+    expect(leg.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
+  });
+
   test("only an explicit start creates a meeting", () => {
     const events: MeetingEvent[] = [
       { type: "resume" },
       { type: "captureStarted", leg: 0 },
-      { type: "recover", lastAudioAt: T0 },
+      { type: "recover", lastAudioAt: T0, hasAudio: true },
       { type: "stop" },
       { type: "delete" },
     ];

@@ -6,6 +6,7 @@ const native = vi.hoisted(() => ({
   prompts: [] as string[],
   events: [] as string[],
   pending: new Map<string, (text: string) => void>(),
+  ignoresAbort: false,
 }));
 
 vi.mock("node-llama-cpp", () => {
@@ -54,6 +55,7 @@ vi.mock("node-llama-cpp", () => {
             native.events.push(`done ${user}`);
             resolve({ responseText: text, stopReason: "eogToken" });
           });
+          if (native.ignoresAbort) return;
           signal.addEventListener(
             "abort",
             () => {
@@ -114,6 +116,7 @@ beforeEach(() => {
   native.prompts = [];
   native.events = [];
   native.pending.clear();
+  native.ignoresAbort = false;
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 });
 
@@ -168,6 +171,23 @@ test("a step aborted once it runs stops the model and rejects with the reason", 
   const b = engine.generate(step("meeting B"));
   finish(await running("meeting B"), "B was about hiring.");
   await expect(b).resolves.toEqual({ ok: true, text: "B was about hiring.", truncated: false });
+});
+
+test("a running step whose model ignores the abort stays unsettled until the model stops", async () => {
+  native.ignoresAbort = true;
+  const engine = createTransformEngine({ modelPath: "/models/transform.gguf" });
+  const abortA = new AbortController();
+  const a = engine.generate(step("meeting A", abortA.signal));
+  const prompt = await running("meeting A");
+  abortA.abort(reason);
+
+  expect(await settledNow(a)).toBe("still queued");
+  expect(native.pending.has(prompt)).toBe(true);
+  expect(vi.getTimerCount()).toBe(1);
+
+  finish(prompt, "A was about pricing.");
+  await expect(a).rejects.toBe(reason);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test("a step already aborted before the call rejects without reaching the model", async () => {
