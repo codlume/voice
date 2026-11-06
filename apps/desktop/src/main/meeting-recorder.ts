@@ -692,11 +692,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.drained": {
           const id = event.id as MeetingId;
           if (!store.get(id)) return;
+          const leg = legStart.get(id);
           const drained = async () => {
             const saved = await (linesSaved.get(id) ?? true);
             if (event.failure === null && saved) {
               const meeting = store.get(id);
-              if (meeting && !isCapturing(meeting)) heardWhole.add(id);
+              if (meeting && !isCapturing(meeting) && legStart.get(id) === leg) heardWhole.add(id);
               return dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
             }
             heardWhole.delete(id);
