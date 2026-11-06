@@ -25,7 +25,11 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
     }, "Could not save your thoughts.");
   });
   useEffect(() => {
-    if (draft === null || unsaved.current !== draft) return;
+    if (draft === null) {
+      unsaved.current = null;
+      return;
+    }
+    if (unsaved.current !== draft) return;
     const timer = setTimeout(flush, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [draft]);
