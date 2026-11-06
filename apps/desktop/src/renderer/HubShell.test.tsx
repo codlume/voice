@@ -51,6 +51,8 @@ const snapshot = (restartNotice: MeetingBanner | null): Snapshot => ({
   restartNotice,
 });
 
+const source = (name: string) => readFileSync(NodePath.join(import.meta.dirname, name), "utf8");
+
 let root: Root | null = null;
 
 beforeEach(() => {
@@ -110,10 +112,11 @@ describe("the restart notice in the Voice window", () => {
     expect(card?.previousElementSibling).toBe(main);
   });
 
-  test("does not float, because a floating bar hides what scrolls under it", () => {
-    const source = readFileSync(NodePath.join(import.meta.dirname, "RestartNotice.tsx"), "utf8");
-    expect(source).not.toMatch(/position:\s*"(fixed|absolute|sticky)"/);
-    expect(source).toMatch(/gridRow: "3"/);
+  test("does not float, and the shell keeps the row it sits in", () => {
+    const noticeSource = source("RestartNotice.tsx");
+    expect(noticeSource).not.toMatch(/position:\s*"(fixed|absolute|sticky)"/);
+    expect(noticeSource).toMatch(/gridRow: "3"/);
+    expect(source("HubShell.tsx")).toMatch(/gridTemplateRows: "auto 1fr auto"/);
   });
 
   test("stays on every page and with the sidebar collapsed", async () => {
