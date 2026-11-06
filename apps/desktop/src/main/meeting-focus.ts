@@ -1,6 +1,7 @@
 import {
   closedMs,
   isCapturing,
+  isLive,
   noticeText,
   type Meeting,
   type MeetingBanner,
@@ -78,6 +79,7 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
     case "resumeFailed":
     case "captureLost":
     case "systemAudioMissing":
+    case "restartBlocked":
     case "maxLengthReached":
     case "atMaxLength": {
       const text = noticeText(notice);
@@ -94,6 +96,8 @@ function stillApplies(raised: Raised, meeting: Meeting): boolean {
     case "maxLengthSoon":
     case "systemAudioMissing":
       return meeting.status.kind === "recording";
+    case "restartBlocked":
+      return isLive(meeting);
     default:
       return !isCapturing(meeting);
   }
@@ -108,6 +112,8 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   switch (banner.kind) {
     case "systemAudioMissing":
       return meeting.status.kind === "recording";
+    case "restartBlocked":
+      return isLive(meeting);
     case "finalPassFailed":
       return meeting.finalPassFailed !== null;
     case "summaryFailed":
@@ -177,8 +183,15 @@ export function dismissBanner(focus: MeetingFocus, key: number | null): MeetingF
   return { ...focus, raised, banners };
 }
 
+const asBanner = ({ kind: _kind, ...banner }: Banner): MeetingBanner => banner;
+
 export const meetingBanners = (focus: MeetingFocus): MeetingBanner[] =>
-  focus.banners.map(({ kind: _kind, ...banner }) => banner);
+  focus.banners.filter(({ kind }) => kind !== "restartBlocked").map(asBanner);
+
+export function restartNotice(focus: MeetingFocus): MeetingBanner | null {
+  const banner = focus.banners.find(({ kind }) => kind === "restartBlocked");
+  return banner ? asBanner(banner) : null;
+}
 
 /** "Started by mistake?" holds the meeting, so it comes before anything a notice raised. */
 export function promptFor(meeting: Meeting, focus: MeetingFocus): MeetingPrompt | null {

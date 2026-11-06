@@ -64,6 +64,7 @@ import { SystemSettings } from "./SystemSettings.tsx";
 import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
+import { RestartNotice } from "./RestartNotice.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { hubApi } from "./voice.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -895,6 +896,7 @@ export function HubShell({
           </HelpContext>
         </div>
       </main>
+      <RestartNotice notice={snapshot.restartNotice} />
       <HelpPopover page={appPage} state={help} onChange={setHelp} button={helpButton} />
       <SettingsModal
         state={settings}
