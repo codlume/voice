@@ -16,6 +16,7 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
   const [draft, setDraft] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const unsaved = useRef<string | null>(null);
+  const inFlight = useRef(0);
   const action = useAction();
   const flush = useEffectEvent(() => {
     const notes = unsaved.current;
@@ -24,12 +25,15 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
       return;
     }
     setSent(notes);
+    inFlight.current += 1;
     void action.run(async () => {
       try {
         await save(notes);
       } catch (error) {
         setSent((current) => (current === notes ? null : current));
         throw error;
+      } finally {
+        inFlight.current -= 1;
       }
       if (unsaved.current === notes) unsaved.current = null;
     }, "Could not save your thoughts.");
@@ -37,7 +41,7 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
   const held = useEffectEvent(() => meeting.notes);
   useEffect(() => {
     if (draft === null) {
-      if (unsaved.current === held()) unsaved.current = null;
+      if (inFlight.current === 0 && unsaved.current === held()) unsaved.current = null;
       return;
     }
     if (unsaved.current !== draft) return;
