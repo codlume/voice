@@ -173,13 +173,28 @@ export function createTransformEngine({
     }
   }
 
-  function withBudget<R, T extends { budgetMs: number }>(
+  function withBudget<R, T extends { budgetMs: number; signal: AbortSignal }>(
     request: T,
     run: (request: T, deadline: AbortSignal) => Promise<R>,
   ): Promise<R> {
+    const { signal } = request;
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), request.budgetMs);
-    return serialize(() => run(request, deadline.signal)).finally(() => clearTimeout(timer));
+    let started = false;
+    const turn = serialize(() => {
+      started = true;
+      return run(request, deadline.signal);
+    });
+    const withdrawn = new Promise<never>((_, reject) => {
+      if (signal.aborted) return reject(signal.reason);
+      const abort = () => {
+        if (!started) reject(signal.reason);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      const settled = () => signal.removeEventListener("abort", abort);
+      void turn.then(settled, settled);
+    });
+    return Promise.race([turn, withdrawn]).finally(() => clearTimeout(timer));
   }
 
   // Preempting here, where the model lives, keeps a yield from ever looking like a cancel to the
