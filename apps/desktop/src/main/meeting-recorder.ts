@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import type { Microphone } from "../shared/api.ts";
 import type { DictationLanguage } from "../shared/dictation-language.ts";
 import {
+  isCapturing,
   isLive,
   meetingToggle,
   recordedMs,
@@ -693,9 +694,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           const drained = async () => {
             const saved = await (linesSaved.get(id) ?? true);
             if (event.failure === null && saved) {
-              heardWhole.add(id);
+              const meeting = store.get(id);
+              if (meeting && !isCapturing(meeting)) heardWhole.add(id);
               return dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
             }
+            heardWhole.delete(id);
             const why = event.failure ?? "lines were not saved";
             log(`meetings: ${id} live transcript stalled (${why})`);
             return dispatch(id, { type: "stalled", watch: "drain" });
