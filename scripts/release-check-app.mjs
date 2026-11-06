@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,17 @@ export const REQUIRED_FUSES = {
 };
 export const HELPER_ENTITLEMENTS = ["com.apple.security.device.audio-input"];
 export const RUNTIME_EXTERNALS = ["electron-updater", "node-llama-cpp"];
+// Chromium switches no fuse covers. A packaged Voice must refuse each one (src/main/launch-guard.ts)
+// before it opens a debug port or runs the named launcher as a child of Voice.
+export const HOSTILE_LAUNCH_ARGUMENTS = [
+  "--remote-debugging-port=0",
+  "--remote-debugging-pipe",
+  "--gpu-launcher=/usr/bin/true",
+  "--renderer-cmd-prefix=/usr/bin/true",
+  "--utility-cmd-prefix=/usr/bin/true",
+  "--browser-subprocess-path=/usr/bin/true",
+  "-remote-debugging-port=0",
+];
 
 export function appBuilderRequire() {
   const desktop = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
@@ -24,9 +36,19 @@ export function appBuilderRequire() {
   return createRequire(builderRequire.resolve("app-builder-lib/package.json"));
 }
 
-export function packagedAppProblems({ fuses, helperEntitlements, signatures }) {
+export function packagedAppProblems({ fuses, helperEntitlements, signatures, launches }) {
   const { app, helper } = signatures;
   return [
+    ...launches.flatMap(({ argument, status, signal, output }) => [
+      ...(signal !== null
+        ? [`Voice.app launched with ${argument} ended by ${signal} instead of exiting 1`]
+        : status === 1
+          ? []
+          : [`Voice.app launched with ${argument} exited ${status}, expected 1`]),
+      ...(/DevTools listening/.test(output)
+        ? [`Voice.app launched with ${argument} opened a DevTools server`]
+        : []),
+    ]),
     ...(app.team ? [] : ["Voice.app has no team identifier"]),
     ...(helper.team === app.team
       ? []
@@ -139,11 +161,28 @@ function readHelperEntitlements(app) {
   return Object.keys(plist).filter((key) => plist[key] === true);
 }
 
+export function hostileLaunches(app, { timeoutMs = 15_000 } = {}) {
+  return HOSTILE_LAUNCH_ARGUMENTS.map((argument) => {
+    const userDataDir = mkdtempSync(join(realpathSync(tmpdir()), "voice-release-launch-"));
+    try {
+      const { status, signal, stdout, stderr } = spawnSync(
+        join(app, "Contents", "MacOS", "Voice"),
+        [`--user-data-dir=${userDataDir}`, argument],
+        { encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL" },
+      );
+      return { argument, status, signal, output: `${stdout ?? ""}${stderr ?? ""}` };
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+}
+
 export async function checkPackagedApp(app) {
   const observed = {
     fuses: await readFuses(app),
     helperEntitlements: readHelperEntitlements(app),
     signatures: { app: readSignature(app), helper: readSignature(helperPath(app)) },
+    launches: hostileLaunches(app),
   };
   const problems = [...packagedAppProblems(observed), ...readAsarProblems(app)];
   if (problems.length > 0) {

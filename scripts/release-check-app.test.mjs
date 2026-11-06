@@ -4,10 +4,18 @@ import { test } from "node:test";
 import {
   asarProblems,
   HELPER_ENTITLEMENTS,
+  HOSTILE_LAUNCH_ARGUMENTS,
   packagedAppProblems,
   REQUIRED_FUSES,
   RUNTIME_EXTERNALS,
 } from "./release-check-app.mjs";
+
+const refusedLaunch = (argument) => ({
+  argument,
+  status: 1,
+  signal: null,
+  output: "[voice] refusing launch arguments " + argument + "\n",
+});
 
 const compliant = {
   fuses: {
@@ -20,6 +28,7 @@ const compliant = {
     app: { team: "TEAM123456", runtime: true },
     helper: { team: "TEAM123456", runtime: true },
   },
+  launches: HOSTILE_LAUNCH_ARGUMENTS.map(refusedLaunch),
 };
 
 test("a packaged app with the required fuses and helper entitlements passes", () => {
@@ -74,6 +83,51 @@ test("an app without a Developer ID team is a problem", () => {
     packagedAppProblems({ ...compliant, signatures: { app: unsigned, helper: unsigned } }),
     ["Voice.app has no team identifier", "voice-helper lacks the hardened runtime"],
   );
+});
+
+test("the hostile launch list covers every Chromium switch the audit used", () => {
+  for (const argument of [
+    "--remote-debugging-port=0",
+    "--remote-debugging-pipe",
+    "--gpu-launcher=/usr/bin/true",
+    "--renderer-cmd-prefix=/usr/bin/true",
+    "--utility-cmd-prefix=/usr/bin/true",
+    "--browser-subprocess-path=/usr/bin/true",
+    "-remote-debugging-port=0",
+  ]) {
+    assert.ok(HOSTILE_LAUNCH_ARGUMENTS.includes(argument), `${argument} is launched`);
+  }
+});
+
+test("a hostile launch that exited 0 is a problem", () => {
+  const launches = compliant.launches.map((launch) =>
+    launch.argument === "--gpu-launcher=/usr/bin/true" ? { ...launch, status: 0 } : launch,
+  );
+  assert.deepEqual(packagedAppProblems({ ...compliant, launches }), [
+    "Voice.app launched with --gpu-launcher=/usr/bin/true exited 0, expected 1",
+  ]);
+});
+
+test("a hostile launch that ran until the check killed it is a problem", () => {
+  const launches = compliant.launches.map((launch) =>
+    launch.argument === "--remote-debugging-pipe"
+      ? { ...launch, status: null, signal: "SIGKILL" }
+      : launch,
+  );
+  assert.deepEqual(packagedAppProblems({ ...compliant, launches }), [
+    "Voice.app launched with --remote-debugging-pipe ended by SIGKILL instead of exiting 1",
+  ]);
+});
+
+test("a hostile launch that opened a DevTools server is a problem even if it then exited 1", () => {
+  const launches = compliant.launches.map((launch) =>
+    launch.argument === "-remote-debugging-port=0"
+      ? { ...launch, output: "DevTools listening on ws://127.0.0.1:52187/devtools/browser/x\n" }
+      : launch,
+  );
+  assert.deepEqual(packagedAppProblems({ ...compliant, launches }), [
+    "Voice.app launched with -remote-debugging-port=0 opened a DevTools server",
+  ]);
 });
 
 function leanAsar() {
