@@ -656,6 +656,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
             return;
           }
           legStart.set(id, event.atMs);
+          heardWhole.delete(id);
           const leg = meeting.spans.length;
           background(event.type, dispatch(id, { type: "captureStarted", leg }));
           const reason = systemAudioMissing(event.system);
