@@ -63,7 +63,7 @@ function checkShape(model, seenIds) {
   if (!/^[A-Za-z0-9_.-]+$/.test(model.folderName ?? "") || model.folderName === "..")
     fail(`${model.id}: bad folderName`);
   const paths = model.files.map((f) => f.path);
-  const sorted = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const sorted = paths.toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (JSON.stringify(paths) !== JSON.stringify(sorted)) fail(`${model.id}: paths not sorted`);
   if (new Set(paths).size !== paths.length) fail(`${model.id}: duplicate paths`);
   for (const f of model.files) {
