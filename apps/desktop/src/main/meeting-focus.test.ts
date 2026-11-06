@@ -335,10 +335,17 @@ describe("a restart blocked by a meeting", () => {
     expect(meetingBanners(focus)).toEqual([]);
   });
 
-  test("stays while the meeting is live and reaches the notepad", () => {
+  test("stays while the meeting is live", () => {
     const paused = follow(raised(), [meeting(1, { kind: "paused" })]);
     expect(restartNotice(paused)?.text).toBe(text);
-    expect(promptFor(meeting(1, { kind: "paused" }), paused)).toEqual({ kind: "notice", text });
+  });
+
+  test("leaves a question the meeting is waiting on in place", () => {
+    const asking = raise(noMeetingFocus, id(1), { kind: "silence" }, 0);
+    const refused = raise(asking, id(1), blocked, 0);
+    expect(promptFor(recording(1), refused)).toEqual({ kind: "silence" });
+    const dismissed = dismissBanner(refused, restartNotice(refused)?.key ?? null);
+    expect(promptFor(recording(1), dismissed)).toEqual({ kind: "silence" });
   });
 
   test("goes when the meeting stops being live, or the meeting is gone", () => {
