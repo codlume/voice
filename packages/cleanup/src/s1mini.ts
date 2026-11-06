@@ -4,7 +4,7 @@ import { assertPlausibleCleanup, MAX_OUTPUT_RATIO } from "./plausibility.ts";
 import { buildS1MiniPrompt, s1Control, type S1Control } from "./prompt.ts";
 import { type CleanupStyle, finishOutputs } from "./style.ts";
 
-const CONTEXT_SIZE = 4096;
+const CONTEXT_SIZE = 2048;
 // Longer chunks make S1-mini skip or loop over lines, so the guard rejects them and the user gets raw text.
 export const CHUNK_TOKENS = 400;
 const OUTPUT_TOKEN_SLACK = 32;
@@ -138,6 +138,8 @@ export function createS1Mini({ modelPath }: { modelPath: string }): S1Mini {
         for (const [index, chunk] of chunks.entries()) {
           withdraw.throwIfAborted();
           const tokens = countTokens(chunk.text);
+          // Only one grapheme the chunker cannot split exceeds the budget, and the model drops it.
+          if (tokens > CHUNK_TOKENS) continue;
           const predictedMs = msPerToken === undefined ? 0 : msPerToken * tokens;
           if (deadline.signal.aborted || predictedMs > deadlineAt - Date.now()) break;
           const startedAt = Date.now();

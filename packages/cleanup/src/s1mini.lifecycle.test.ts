@@ -15,13 +15,19 @@ const native = vi.hoisted(() => ({
   maxActive: 0,
   events: [] as string[],
   controls: [] as string[],
+  contextSize: 0,
+  requests: [] as { promptTokens: number; maxTokens: number }[],
+  tokenize: (text: string): string[] => [...text],
   reply: (raw: string): Reply => ({ response: ` ${raw.toUpperCase()} ` }),
 }));
 
 vi.mock("node-llama-cpp", () => {
   const model = {
-    tokenize: (text: string) => [...text],
-    createContext: async () => ({ getSequence: () => ({}) }),
+    tokenize: (text: string) => native.tokenize(text),
+    createContext: async ({ contextSize }: { contextSize: number }) => {
+      native.contextSize = contextSize;
+      return { getSequence: () => ({}) };
+    },
     dispose: async () => void native.events.push("model.dispose"),
   };
   return {
@@ -37,7 +43,11 @@ vi.mock("node-llama-cpp", () => {
       };
     },
     LlamaCompletion: class {
-      async generateCompletionWithMeta(tokens: string[], { signal }: { signal?: AbortSignal }) {
+      async generateCompletionWithMeta(
+        tokens: string[],
+        { signal, maxTokens }: { signal?: AbortSignal; maxTokens: number },
+      ) {
+        native.requests.push({ promptTokens: tokens.length, maxTokens });
         const prompt = tokens.join("");
         const raw = /\]\n([\s\S]*)<\|im_end\|>\n<\|im_start\|>assistant/.exec(prompt)![1]!;
         native.controls.push(/\[Styling.*\]/.exec(prompt)![0]);
@@ -93,7 +103,10 @@ beforeEach(() => {
     maxActive: 0,
     events: [],
     controls: [],
+    contextSize: 0,
+    requests: [],
   });
+  native.tokenize = (text) => [...text];
   native.delayMs = () => 0;
   native.reply = (raw) => ({ response: ` ${raw.toUpperCase()} ` });
 });
@@ -159,6 +172,32 @@ test("output cut off at the token limit stays verbatim", async () => {
     cleaned: 0,
     ...timed,
   });
+});
+
+test("the largest chunk keeps its whole output allowance inside a 2048-token context", async () => {
+  native.tokenize = (text) => text.match(/\S+\s*|\s+/gu) ?? [];
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+  const raw = Array.from({ length: CHUNK_TOKENS }, (_, i) => `word${i}`).join(" ");
+
+  const result = await s1.clean(raw, style);
+
+  expect(result).toEqual(whole(raw.toUpperCase()));
+  const [request] = native.requests;
+  expect(request?.maxTokens).toBe(3 * CHUNK_TOKENS + 32);
+  expect(request!.promptTokens + request!.maxTokens).toBeLessThanOrEqual(native.contextSize);
+  expect(native.contextSize).toBe(2048);
+});
+
+test("a single grapheme over the chunk budget stays verbatim and never reaches the model", async () => {
+  const grapheme = `a${"\u0301".repeat(CHUNK_TOKENS)}`;
+  const raw = `hello there. ${grapheme} goodbye now.`;
+  native.reply = (chunk) => ({ response: chunk.includes("\u0301") ? "" : chunk });
+  const s1 = createS1Mini({ modelPath: "/models/s1.gguf" });
+
+  const result = await s1.clean(raw, style);
+
+  expect(result).toEqual({ text: raw, chunks: 3, cleaned: 2, ...timed });
+  expect(generations()).toHaveLength(2);
 });
 
 test("long input is cleaned in sentence chunks and rejoined", async () => {

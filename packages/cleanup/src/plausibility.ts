@@ -379,6 +379,8 @@ export function assertPlausibleCleanup(input: string, output: string, truncated:
   if (/<\/?think>|<\|im_(start|end)\|>/.test(output))
     throw new Error("Cleanup output contains chat template markup");
   const said = spokenWords(input);
+  if (!output && /\p{Extended_Pictographic}/u.test(input) && !/[\p{L}\p{N}]/u.test(input))
+    throw new Error("Cleanup output is empty for emoji-only input");
   const cleaned = spokenWords(output);
   const opener = CHAT_OPENERS.find((phrase) => ` ${cleaned.join(" ")} `.startsWith(` ${phrase} `));
   if (opener && !` ${said.join(" ")} `.includes(` ${opener} `))
