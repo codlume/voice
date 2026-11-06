@@ -79,12 +79,13 @@ public struct ModelCache: Sendable {
         try inspect(hashing: true, trusting: readStamp()).report
     }
 
-    /// Audits, and with `download` fetches only the files found missing or invalid and audits
-    /// again. Once the cache is clean, on either path, writes the marker and stamp. `onDownload`
-    /// runs once with those files, just before the first fetch, so a caller that started as a
-    /// load can report a download. Throws
-    /// with the user message when the cache cannot be used; a failed fetch leaves every prior
-    /// byte as it was. Returns the first audit, so a caller can log how much was hashed.
+    /// Audits, and with `download` fetches only the files found missing or invalid, then audits
+    /// again, hashing every fetched file from disk. Once the cache is clean, on either path,
+    /// writes the marker and stamp. `onDownload` runs once with those files, just before the first
+    /// fetch, so a caller that started as a load can report a download. Throws with the user
+    /// message when the cache cannot be used. A failed fetch leaves that file as it was, and files
+    /// already installed by the same repair stay. Returns the first audit, so a caller can log how
+    /// much was hashed.
     @discardableResult
     public func prepare(download: Bool, fetcher: ModelFetcher, onDownload: (@Sendable ([ModelFile]) -> Void)? = nil) async throws -> Report {
         defer { removeTemporaryDirectory() }
@@ -106,9 +107,11 @@ public struct ModelCache: Sendable {
                 } catch {
                     throw self.error(.downloadFailed(error.localizedDescription))
                 }
-                verified[file.path] = try install(staged, at: file.path)
+                try install(staged, at: file.path)
             }
-            (report, _) = try inspect(hashing: true, trusting: Stamp(revision: release.revision, files: verified))
+            // A fetched file has no record yet, so this reads it from disk: the stream hash says
+            // what arrived, not what is stored. Files the first audit passed keep their records.
+            (report, verified) = try inspect(hashing: true, trusting: Stamp(revision: release.revision, files: verified))
             if let path = report.blocked.first { throw error(.blocked(path: path)) }
             guard report.isComplete else { throw error(.damaged(count: report.missing.count + report.invalid.count)) }
         }
@@ -351,7 +354,7 @@ public struct ModelCache: Sendable {
         try? FileManager.default.removeItem(at: temporaryDirectory)
     }
 
-    private func install(_ staged: URL, at path: String) throws -> Stamp.Record {
+    private func install(_ staged: URL, at path: String) throws {
         let components = ModelPath.components(of: path) ?? []
         let target = folder.appendingPathComponent(path, isDirectory: false)
         do {
@@ -374,10 +377,6 @@ public struct ModelCache: Sendable {
             unlink(staged.path)
             throw self.error(.writeFailed(relative(path)))
         }
-        guard case .present(let status) = Self.lstat(target.path), status.isRegular else {
-            throw error(.writeFailed(relative(path)))
-        }
-        return status.record
     }
 
     private static func rename(_ source: URL, to target: URL) throws {

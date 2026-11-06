@@ -74,9 +74,10 @@ public struct ModelFetcher: Sendable {
         return URL(string: "\(host)/\(repository)/resolve/\(revision)/\(encoded.joined(separator: "/"))")
     }
 
-    /// Downloads `file` to `destination`, which must not exist. On return the bytes there have
-    /// the manifest's size and hash and are synced to disk. On any failure nothing is left at
-    /// `destination`.
+    /// Downloads `file` to `destination`, which must not exist. On return the bytes received had
+    /// the manifest's size and hash and the file is synced. That checks the stream, not the stored
+    /// copy, so a caller must read the file back before trusting it. On any failure nothing is
+    /// left at `destination`.
     public func fetch(_ file: ModelFile, of release: ModelRelease, to destination: URL) async throws {
         guard let url = Self.url(repository: release.repository, revision: release.revision, path: file.path) else {
             throw ModelCacheError(kind: .invalidManifest(file.path), model: release.displayName)

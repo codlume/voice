@@ -21,6 +21,22 @@ private func flipByte(_ url: URL, at offset: Int = 0) throws {
     try data.write(to: url)
 }
 
+/// A one-byte edit in place that keeps size, inode and mtime, so only reading the bytes shows it.
+private func editKeepingStat(_ url: URL) {
+    var before = stat()
+    precondition(lstat(url.path, &before) == 0)
+    let fd = open(url.path, O_RDWR)
+    precondition(fd >= 0)
+    var byte: UInt8 = 0
+    pread(fd, &byte, 1, 1000)
+    byte ^= 0xff
+    pwrite(fd, &byte, 1, 1000)
+    fsync(fd)
+    close(fd)
+    var times = [before.st_atimespec, before.st_mtimespec]
+    precondition(utimensat(AT_FDCWD, url.path, &times, AT_SYMLINK_NOFOLLOW) == 0)
+}
+
 private func expectKind(_ kind: ModelCacheError.Kind, _ body: () async throws -> Void, _ comment: Comment? = nil) async {
     do {
         try await body()
@@ -334,6 +350,29 @@ struct ModelCacheTests {
             #expect(error.kind == .blocked(path: "model/\(ModelCache.temporaryDirectoryName)"))
         }
         #expect(FileManager.default.fileExists(atPath: precious.path), "the link target is never emptied")
+    }
+
+    @Test func aSameSizeEditToAFetchedLargeFileDuringARepairGetsNoStampAndRetryFixesIt() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let large = patternedData(big, seed: 7)
+        let small = patternedData(4_096, seed: 8)
+        let fixture = SyntheticRelease(files: [("a.bin", large), ("z.bin", small)])
+        StubHub.script(fixture.url(for: "a.bin"), [.ok(large)])
+        StubHub.script(fixture.url(for: "z.bin"), [.status(500), .ok(small)])
+        let target = fixture.folder(in: dir).appendingPathComponent("a.bin")
+        let cache = fixture.cache(in: dir)
+        // a.bin is installed first. The backoff before z.bin's retry is the edit's window.
+        let fetcher = ModelFetcher(configuration: StubHub.configuration()) { _ in editKeepingStat(target) }
+        await expectKind(.damaged(count: 1)) { try await cache.prepare(download: true, fetcher: fetcher) }
+        let stamp = fixture.folder(in: dir).appendingPathComponent(ModelCache.stampName)
+        #expect(!FileManager.default.fileExists(atPath: stamp.path), "a stream hash alone must not earn a stamp")
+        #expect(try cache.audit().invalid == ["a.bin"])
+
+        try await cache.prepare(download: true, fetcher: RecordedSleeps().fetcher())
+        #expect(try Data(contentsOf: target) == large)
+        #expect(FileManager.default.fileExists(atPath: stamp.path))
+        #expect(try cache.audit().hashedFiles == 1, "the stamp from the read-back vouches for the large file")
     }
 
     @Test func hostilePathsWriteNothingAndFetchNothing() async throws {
