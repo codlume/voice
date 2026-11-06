@@ -22,6 +22,7 @@ interface Lockable {
     listener: (event: { preventDefault(): void; url: string }) => void,
   ): unknown;
   setWindowOpenHandler(handler: () => { action: "deny" }): void;
+  setWebRTCIPHandlingPolicy(policy: "disable_non_proxied_udp"): void;
 }
 
 // Vite's full reload in development re-requests the window's own URL, the one navigation that
@@ -31,6 +32,9 @@ export function lockNavigation(contents: Lockable) {
     if (event.url !== contents.getURL()) event.preventDefault();
   });
   contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // The CSP does not cover WebRTC, and the renderer never uses it: capture runs in the helper.
+  // Without this a script in the page can still reach a STUN or TURN host over UDP.
+  contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
 }
 
 interface PermissionSession {

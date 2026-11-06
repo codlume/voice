@@ -22,6 +22,23 @@ describe("release note items", () => {
     ]);
   });
 
+  test("keeps the text of release-please's issue and commit links", () => {
+    expect(
+      releaseNoteItems(
+        "* **scope:** text ([#397](https://github.com/codlume/voice/issues/397)) ([0d4171c](https://github.com/codlume/voice/commit/0d4171c))",
+      ),
+    ).toEqual(["scope: text (#397) (0d4171c)"]);
+  });
+
+  test("renders a line of unclosed links from the feed in linear time", () => {
+    for (const line of ["[".repeat(200_000), "[a](".repeat(50_000)]) {
+      const started = performance.now();
+      const [item] = releaseNoteItems(`* ${line}`);
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(item).toHaveLength(240);
+    }
+  });
+
   test("caps long items and long lists", () => {
     const [item] = releaseNoteItems(`* ${"word ".repeat(100)}`);
     expect(item).toHaveLength(240);

@@ -2,6 +2,7 @@ import { parse } from "yaml";
 
 export const FEED_URL =
   "https://downloads.voice.codlume.com/channels/stable/mac-arm64/latest-mac.yml";
+const FEED_ORIGIN = new URL(FEED_URL).origin;
 export const RELEASES_URL = "https://github.com/codlume/voice/releases/latest";
 
 type Release = { version: string; dmgUrl: string; size: number };
@@ -25,7 +26,7 @@ export function parseFeed(source: string): Release | null {
   if (
     !isRecord(dmg) ||
     typeof dmg.url !== "string" ||
-    !dmg.url.startsWith("https://") ||
+    URL.parse(dmg.url)?.origin !== FEED_ORIGIN ||
     typeof dmg.size !== "number" ||
     !Number.isSafeInteger(dmg.size) ||
     dmg.size <= 0

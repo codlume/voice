@@ -65,6 +65,7 @@ import { createMeetingsApp, type MeetingsApp } from "./meetings-app.ts";
 import { createInsights } from "./insights.ts";
 import { createInstalledApps, type InstalledApps } from "./installed-apps.ts";
 import type { Commands } from "./ipc.ts";
+import { packagedHelperEnv, refusedLaunchArguments } from "./launch-guard.ts";
 import { denyPermissions, lockNavigation, pageUrl, type Page } from "./lockdown.ts";
 import { createApplicationMenu } from "./menu.ts";
 import { createMicrophoneTest, type MicrophoneTest } from "./microphone-test.ts";
@@ -131,10 +132,7 @@ function helperBinary(): string {
 }
 
 function helperEnv(): NodeJS.ProcessEnv {
-  if (development) return process.env;
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith("VOICE_")),
-  );
+  return development ? process.env : packagedHelperEnv(process.env);
 }
 
 // A development build would register the bare Electron binary to open at login.
@@ -1005,8 +1003,14 @@ async function main() {
   }
 }
 
-// Called last because main runs synchronously until whenReady and reads module constants.
-if (app.requestSingleInstanceLock()) {
+// Called last because main runs synchronously until whenReady and reads module constants. The
+// argument check comes before the lock so a refused launch never reaches a running Voice as a
+// second instance, and before Chromium has spawned a child or opened a debug port.
+const refused = development ? [] : refusedLaunchArguments(process.argv.slice(1));
+if (refused.length > 0) {
+  process.stderr.write(`[voice] refusing launch arguments ${refused.join(" ")}\n`);
+  app.exit(1);
+} else if (app.requestSingleInstanceLock()) {
   void main();
 } else {
   app.exit(0);

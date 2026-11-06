@@ -296,10 +296,12 @@ export function createVoiceAuthClient({
   // The start must stay an external open: the API refuses one whose Sec-Fetch-Site is not `none`,
   // which a navigation or fetch from a page would carry.
   const opened: URL[] = [];
+  const apiOrigin = new URL(apiUrl).origin;
   const openExternal = shell.openExternal.bind(shell);
   shell.openExternal = (url, options) => {
-    if (!url.startsWith(apiUrl)) return openExternal(url, options);
-    opened.push(new URL(url));
+    const parsed = URL.parse(url);
+    if (parsed?.origin !== apiOrigin) return openExternal(url, options);
+    opened.push(parsed);
     if (!signInUrlFile) return openExternal(url, options);
     writeFileSync(signInUrlFile, url);
     return Promise.resolve();
