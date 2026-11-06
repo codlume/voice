@@ -5,6 +5,7 @@ import type { ReleaseNotes } from "../shared/api.ts";
 const MAX_RELEASES = 6;
 const MAX_ITEMS = 30;
 const MAX_ITEM_LENGTH = 240;
+const MARKDOWN_LINK = /\[([^[\]]*)\]\([^()]*\)/g;
 
 // electron-updater's UpdateInfo fits this. releaseHistory is ours, so the library leaves it untyped.
 type Feed = { version: string; releaseNotes?: unknown; releaseHistory?: unknown };
@@ -56,7 +57,7 @@ export function releaseNoteItems(value: unknown): string[] {
 
 function plainText(markdown: string): string {
   const text = markdown
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(MARKDOWN_LINK, "$1")
     .replace(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)\S*/g, "#$1")
     .replace(/\*\*|__|`/g, "")
     .replace(/\s+/g, " ")
