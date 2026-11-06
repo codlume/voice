@@ -222,14 +222,16 @@ export function step(
 
   if (event.type === "recover") {
     switch (status.kind) {
-      case "starting":
-        if (status.from === "new") {
-          if (!event.hasAudio) return gone([]);
-          return draining(closeLeg(meeting, meeting.createdAt, event.lastAudioAt, status));
+      case "starting": {
+        if (status.from === "paused") return draining(meeting);
+        if (!event.hasAudio) {
+          return status.from === "new"
+            ? gone([])
+            : { meeting: withStatus(meeting, { kind: "ready" }), effects: [] };
         }
-        return status.from === "ready" && !event.hasAudio
-          ? { meeting: withStatus(meeting, { kind: "ready" }), effects: [] }
-          : draining(meeting);
+        const since = status.from === "new" ? meeting.createdAt : event.lastAudioAt;
+        return draining(closeLeg(meeting, since, event.lastAudioAt, status));
+      }
       case "recording":
         return draining(closeLeg(meeting, status.since, event.lastAudioAt, status));
       case "paused":

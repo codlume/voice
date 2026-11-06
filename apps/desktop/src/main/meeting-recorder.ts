@@ -151,7 +151,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const silence = new Map<MeetingId, NodeJS.Timeout>();
   // Where the open leg's audio starts, from the helper's `meeting.started`.
   const legStart = new Map<MeetingId, number>();
-  const incompleteLive = new Set<MeetingId>();
+  // Whether every live line so far reached the transcript, once the saves under way have ended.
+  const linesSaved = new Map<MeetingId, Promise<boolean>>();
+  // Meetings this run saw the live transcript finish, every line saved. Being left out of this set
+  // is the safe state: an empty final pass deletes the audio only for a meeting in it.
+  const heardWhole = new Set<MeetingId>();
   // False while speech recognition loads, as after a launch, when it cannot report yet.
   let recognizing = false;
   let queue: Promise<unknown> = Promise.resolve();
@@ -240,6 +244,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     switch (effect.type) {
       case "startCapture": {
         if (meeting === null) return;
+        heardWhole.delete(id);
         const { language, microphone } = deps.capture();
         const length = await audioLength(id);
         const baseMs = await audioBase(meeting);
@@ -296,7 +301,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         const live = await store.transcript(id);
         if (
           effect.segments.length === 0 &&
-          (incompleteLive.has(id) ||
+          (!heardWhole.has(id) ||
+            meeting.finalPassFailed !== null ||
             live.some((entry) => entry.kind === "segment" && entry.startMs >= fromMs))
         ) {
           log(`meetings: ${id} final pass found no words where the live transcript was not sure`);
@@ -306,12 +312,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         await store.replaceTranscript(id, (current, transcript) =>
           applyFinalPass(current, transcript, effect.segments, fromMs),
         );
-        incompleteLive.delete(id);
         background("final pass", dispatch(id, { type: "finalized" }));
         return;
       }
       case "deleteAudio":
         await deleteAudio(id);
+        forgetLive(id);
         return;
       case "watch":
         arm(id, effect.watch);
@@ -350,7 +356,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         clearSilence(id);
         unwatch(id);
         legStart.delete(id);
-        incompleteLive.delete(id);
+        forgetLive(id);
         deps.send({ type: "meeting.cancel", id });
         await store.remove(id);
         return;
@@ -358,6 +364,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         deps.onNotice(id, effect.notice);
         return;
     }
+  }
+
+  function forgetLive(id: MeetingId) {
+    linesSaved.delete(id);
+    heardWhole.delete(id);
   }
 
   function summarize(id: MeetingId) {
@@ -394,12 +405,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       event.source === "mic"
         ? { ...base, source: "mic" }
         : { ...base, source: "system", speakerId: null };
-    try {
-      await save(id, [entry]);
-    } catch (error) {
-      incompleteLive.add(id);
-      throw error;
-    }
+    await save(id, [entry]);
     if (watchdogs.get(id)?.watch === "drain") progress(id);
     if (silence.has(id)) heard(id);
   }
@@ -667,21 +673,33 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           background(event.type, dispatch(id, { ...failed, message: FAILED_START }));
           return;
         }
-        case "meeting.segment":
-          background("saving a segment", segment(event));
+        case "meeting.segment": {
+          const id = event.id as MeetingId;
+          const saved = segment(event);
+          background("saving a segment", saved);
+          const before = linesSaved.get(id) ?? true;
+          linesSaved.set(
+            id,
+            saved.then(
+              async () => await before,
+              () => false,
+            ),
+          );
           return;
+        }
         case "meeting.drained": {
           const id = event.id as MeetingId;
           if (!store.get(id)) return;
-          if (event.failure !== null) incompleteLive.add(id);
-          if (incompleteLive.has(id)) {
+          const drained = async () => {
+            const saved = await (linesSaved.get(id) ?? true);
+            if (event.failure === null && saved) {
+              heardWhole.add(id);
+              return dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
+            }
             const why = event.failure ?? "lines were not saved";
             log(`meetings: ${id} live transcript stalled (${why})`);
-            background("drain", dispatch(id, { type: "stalled", watch: "drain" }));
-            return;
-          }
-          const drained = async () =>
-            dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
+            return dispatch(id, { type: "stalled", watch: "drain" });
+          };
           background("drain", drained());
           return;
         }
