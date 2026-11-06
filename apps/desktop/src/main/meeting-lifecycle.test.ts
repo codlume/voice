@@ -614,6 +614,37 @@ describe("meeting lifecycle", () => {
     expect(crashed.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
   });
 
+  test("a leg resumed from paused and recovered counts from when its audio was written", () => {
+    const resumed = meetingAt(
+      { kind: "starting", from: "paused" },
+      { spans: [{ startedAt: T0, endedAt: T0 + MIN }] },
+    );
+    const lastAudioAt = T0 + 29 * 24 * 60 * MIN;
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      lastAudioAt,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(lastAudioAt);
+    expect(next.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+  });
+
+  test("a recovered leg never moves the meeting's end back", () => {
+    const end = T0 + MIN;
+    const resumed = meetingAt(
+      { kind: "starting", from: "ready" },
+      { spans: [{ startedAt: T0, endedAt: end }] },
+    );
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt: T0, hasAudio: true },
+      T0 + 2 * MIN,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(end);
+  });
+
   test("a resumed leg recovered from its audio counts from when that audio was written", () => {
     const resumed = meetingAt(
       { kind: "starting", from: "ready" },
