@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
 import { chunkTranscript } from "./chunk.ts";
+import { MAX_OUTPUT_RATIO } from "./plausibility.ts";
+import { buildS1MiniPrompt, type S1Control } from "./prompt.ts";
 import type { CleanupStyle } from "./style.ts";
 import { CHUNK_TOKENS, createS1Mini, type S1Mini } from "./s1mini.ts";
 
 const modelPath = process.env.VOICE_S1_MODEL ?? "";
 const formal: CleanupStyle = { style: "formal", layout: "general" };
+const control: S1Control = { styling: "semi-formal", context: "general" };
 
 describe.skipIf(!modelPath)("S1-mini on the real model", () => {
   let s1: S1Mini;
@@ -84,5 +87,42 @@ describe.skipIf(!modelPath)("S1-mini on the real model", () => {
     expect(result.text).toMatch(/^Maria will review the pricing page by Monday/i);
     expect(result.text).toMatch(/Kenji/i);
     expect(result.text).toMatch(/Ada on Monday\.$/i);
+  }, 60_000);
+
+  test("full chunks of token-dense speech fit 2048 tokens with their whole output allowance", async () => {
+    const speech = {
+      unpunctuated: "the migration plan and the quarterly budget review ".repeat(120),
+      polish: "żółć gęślą jaźń spotkanie zespół sprawozdanie wdrożenie ".repeat(120),
+      cyrillic: "встреча завтра отчёт команда бюджет релиз пользователь ".repeat(120),
+      chinese: "今天的会议讨论预算和发布计划明天继续".repeat(60),
+      emoji: "🙂🚀🔥🎉💡".repeat(160),
+      digits: "48213/7719 90211/3301 15877/6420 ".repeat(120),
+    };
+    const { getLlama } = await import("node-llama-cpp");
+    const llama = await getLlama();
+    const vocab = await llama.loadModel({ modelPath, vocabOnly: true });
+    const countTokens = (text: string) => vocab.tokenize(text).length;
+
+    for (const [name, raw] of Object.entries(speech)) {
+      const chunks = chunkTranscript(raw, CHUNK_TOKENS, countTokens);
+      const sizes = chunks.map((chunk) => countTokens(chunk.text));
+      expect(Math.max(...sizes), name).toBeGreaterThan(0.9 * CHUNK_TOKENS);
+      expect(Math.max(...sizes), name).toBeLessThanOrEqual(CHUNK_TOKENS);
+      for (const [index, chunk] of chunks.entries()) {
+        const prompt = vocab.tokenize(buildS1MiniPrompt(chunk.text, control), true).length;
+        expect(prompt + MAX_OUTPUT_RATIO * sizes[index]! + 32, name).toBeLessThanOrEqual(2048);
+      }
+    }
+    await llama.dispose();
+  }, 60_000);
+
+  test("a full chunk whose output runs to the token cap comes back verbatim", async () => {
+    const raw = "the ".repeat(390).trim();
+
+    const [generation] = await s1.generate(raw, control);
+    const result = await timed("token cap", raw, formal);
+
+    expect(generation?.truncated).toBe(true);
+    expect(result).toMatchObject({ text: raw, chunks: 1, cleaned: 0 });
   }, 60_000);
 });
