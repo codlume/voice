@@ -76,6 +76,7 @@ const base: Snapshot = {
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
   meetingNotices: [],
+  restartNotice: null,
 };
 
 const ready: Snapshot = {

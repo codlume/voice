@@ -58,6 +58,7 @@ const fresh: Snapshot = {
   microphoneTest: { kind: "off" },
   account: { kind: "signedOut" },
   meetingNotices: [],
+  restartNotice: null,
 };
 
 const allReady: Snapshot = {

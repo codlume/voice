@@ -287,6 +287,7 @@ export type Snapshot = {
   settings: Settings;
   account: AccountState;
   meetingNotices: readonly MeetingBanner[];
+  restartNotice: MeetingBanner | null;
 };
 
 export type PillSnapshot = Pick<Snapshot, "session"> &

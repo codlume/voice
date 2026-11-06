@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
@@ -15,6 +15,7 @@ import type {
   TranscriptEntry,
 } from "../shared/meetings.ts";
 import { Notepad } from "./MeetingNotepad.tsx";
+import { useThoughts } from "./useThoughts.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -109,13 +110,14 @@ async function openThoughts() {
   await act(async () => button("My thoughts")?.click());
 }
 
-function type(text: string) {
-  const area = thoughts();
+function key(area: HTMLTextAreaElement, text: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
-  act(() => {
-    setter.call(area, text);
-    area.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  setter.call(area, text);
+  area.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function type(text: string) {
+  act(() => key(thoughts(), text));
 }
 
 beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
@@ -302,5 +304,190 @@ describe("My thoughts in the notepad", () => {
     push({ meeting: { ...meeting, notes: "Old and new" }, prompt: null });
     push({ meeting: { ...meeting, notes: "Edited elsewhere" }, prompt: null });
     expect(thoughts().value).toBe("Edited elsewhere");
+  });
+
+  test("an edit undone before the delay is never saved over newer thoughts from the Voice window", async () => {
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    await render();
+    await openThoughts();
+    type("Old and more");
+    type("Old");
+    push({ meeting: { ...meeting, notes: "Newer from the hub" }, prompt: null });
+    expect(thoughts().value).toBe("Newer from the hub");
+
+    act(() => window.dispatchEvent(new Event("beforeunload")));
+    await act(async () => root?.unmount());
+    root = null;
+
+    expect(api.updateMeetingNotes).not.toHaveBeenCalled();
+  });
+
+  test("typing again after an undo still saves after the delay", async () => {
+    const { api } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    await render();
+    await openThoughts();
+    type("Old and more");
+    type("Old");
+    type("Old, then new");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(1);
+    expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Old, then new");
+  });
+
+  test("an undo typed while a save is in flight stays and is saved after it", async () => {
+    const original = "The whole plan we agreed";
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: original }, prompt: null });
+    let land!: () => void;
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    await render();
+    await openThoughts();
+    type("X");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "X");
+
+    type(original);
+    await act(async () => land());
+    push({ meeting: { ...meeting, notes: "X" }, prompt: null });
+    expect(thoughts().value).toBe(original);
+
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, original);
+  });
+
+  test("an undo whose own save fails while an earlier save lands can still be saved", async () => {
+    const original = "The whole plan we agreed";
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: original }, prompt: null });
+    let landFirst!: () => void;
+    let failSecond!: (error: Error) => void;
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          landFirst = resolve;
+        }),
+    );
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failSecond = reject;
+        }),
+    );
+    await render();
+    await openThoughts();
+    type("X");
+    await act(async () => vi.advanceTimersByTime(600));
+    type(original);
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
+
+    await act(async () => landFirst());
+    push({ meeting: { ...meeting, notes: "X" }, prompt: null });
+    await act(async () => failSecond(new Error("disk full")));
+    await act(async () => button("Try again")?.click());
+    await act(async () => vi.advanceTimersByTime(5000));
+
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(3);
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, original);
+  });
+
+  test("Try again after undoing a failed edit clears the error without saving", async () => {
+    const { api } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    api.updateMeetingNotes.mockRejectedValueOnce(new Error("disk full"));
+    await render();
+    await openThoughts();
+    type("Old and more");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(document.querySelector("[role=alert]")?.textContent).toBe("disk full");
+
+    type("Old");
+    await act(async () => button("Try again")?.click());
+    expect(document.querySelector("[role=alert]")).toBeNull();
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(1);
+  });
+
+  test("an echo that arrives before the save replies settles the text, and leaving saves nothing", async () => {
+    const { api, push } = fakeNotepad({ meeting, prompt: null });
+    let land!: () => void;
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    await render();
+    await openThoughts();
+    type("Ask about pricing");
+    await act(async () => vi.advanceTimersByTime(600));
+    push({ meeting: { ...meeting, notes: "Ask about pricing" }, prompt: null });
+    await act(async () => land());
+    push({ meeting: { ...meeting, notes: "Edited elsewhere" }, prompt: null });
+    expect(thoughts().value).toBe("Edited elsewhere");
+
+    act(() => window.dispatchEvent(new Event("beforeunload")));
+    await act(async () => root?.unmount());
+    root = null;
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(1);
+  });
+
+  test("an older save failing while a newer one is in flight does not drop an undo", async () => {
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    const outcomes: { resolve: () => void; reject: (error: Error) => void }[] = [];
+    api.updateMeetingNotes.mockImplementation(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          outcomes.push({ resolve, reject });
+        }),
+    );
+    await render();
+    await openThoughts();
+    type("Old and X");
+    await act(async () => vi.advanceTimersByTime(600));
+    type("Old and Y");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
+
+    await act(async () => outcomes[0]?.reject(new Error("disk full")));
+    type("Old");
+    await act(async () => outcomes[1]?.resolve());
+    push({ meeting: { ...meeting, notes: "Old and Y" }, prompt: null });
+    expect(thoughts().value).toBe("Old");
+
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Old");
+  });
+
+  test("saves a keystroke that lands while main's echo of the last save is applied", async () => {
+    const save = vi.fn(async (_notes: string) => {});
+    let echo!: (notes: string) => void;
+    let onCommit: (() => void) | null = null;
+    function Host() {
+      const [notes, setNotes] = useState("");
+      const text = useThoughts({ ...meeting, notes }, save);
+      useLayoutEffect(() => {
+        echo = setNotes;
+      }, []);
+      useLayoutEffect(() => onCommit?.());
+      return <textarea value={text.text} onChange={(event) => text.change(event.target.value)} />;
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<Host />));
+    type("ab");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(save).toHaveBeenCalledWith("ab");
+
+    onCommit = () => {
+      onCommit = null;
+      key(thoughts(), "abc");
+    };
+    await act(async () => echo("ab"));
+    expect(thoughts().value).toBe("abc");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(save).toHaveBeenLastCalledWith("abc");
   });
 });

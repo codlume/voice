@@ -267,6 +267,8 @@ export type MeetingNotice =
   | { kind: "resumeFailed"; message: string }
   /** `loss` is null when capture failed some other way, such as the helper stopping. */
   | { kind: "captureLost"; loss: AudioLoss | null }
+  | { kind: "systemAudioMissing"; reason: AudioLoss["reason"] }
+  | { kind: "restartBlocked" }
   | { kind: "maxLengthSoon"; inMs: number }
   | { kind: "maxLengthReached" }
   | { kind: "atMaxLength" }
@@ -335,6 +337,12 @@ export function noticeText(notice: MeetingNotice): string | null {
       return notice.message;
     case "captureLost":
       return lostText(notice.loss);
+    case "systemAudioMissing":
+      return notice.reason === "permission"
+        ? "Voice is not allowed to record system audio, so this meeting records only your microphone."
+        : "System audio could not be recorded, so this meeting records only your microphone.";
+    case "restartBlocked":
+      return "A meeting is in progress, so Voice did not restart. Stop the meeting, then restart to install the update.";
     case "maxLengthReached":
       return "Recording stopped at the maximum length.";
     case "silenceStopped":

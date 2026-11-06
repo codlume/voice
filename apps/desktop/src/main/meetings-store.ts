@@ -50,8 +50,17 @@ export type MeetingsStore = {
    * Changes the meeting, or makes it from null, against the latest copy after every write queued
    * before it, so a change never overwrites one it did not see. Returning the same meeting or null
    * writes nothing; a meeting deleted this run is not brought back.
+   *
+   * A meeting that already exists keeps the change when its write fails: memory and the hub move
+   * on, the failure is logged, and disk catches up with the meeting's next successful write. A
+   * failed write rejects, changing nothing, for a new meeting and for a change that `mustPersist`,
+   * which is any change the caller acts on in a way disk must know about, such as recording or
+   * deleting audio.
    */
-  upsert(id: MeetingId, change: (meeting: Meeting | null) => Meeting | null): Promise<void>;
+  upsert(
+    id: MeetingId,
+    change: (meeting: Meeting | null) => { meeting: Meeting | null; mustPersist: boolean },
+  ): Promise<void>;
   /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
   /** Resolves with the meeting's `transcriptRevision` after the lines, or null when none landed. */
@@ -326,9 +335,14 @@ export function createMeetingsStore(options: {
       serial(async () => {
         if (tombstones.has(id)) return;
         const meeting = meetings.get(id) ?? null;
-        const next = change(meeting);
+        const { meeting: next, mustPersist } = change(meeting);
         if (next === null || next === meeting) return;
-        await writeMeeting(next);
+        try {
+          await writeMeeting(next);
+        } catch (error) {
+          if (meeting === null || mustPersist) throw error;
+          log(`meetings: ${id} could not be written, kept in memory (${String(error)})`);
+        }
         meetings.set(id, next);
         publish([next]);
       }),

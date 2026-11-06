@@ -1,9 +1,14 @@
 import { toPillSnapshot, type PillSnapshot, type PillState, type Snapshot } from "../shared/api.ts";
-import { meetingBanners, toPillMeeting, type MeetingFocus } from "./meeting-focus.ts";
+import {
+  meetingBanners,
+  restartNotice,
+  toPillMeeting,
+  type MeetingFocus,
+} from "./meeting-focus.ts";
 import { dictating, toPillState, type Session } from "./session.ts";
 import { toPillState as toTransformPillState, type TransformRun } from "./transform-run.ts";
 
-export type AppState = Omit<Snapshot, "session" | "meetingNotices"> & {
+export type AppState = Omit<Snapshot, "session" | "meetingNotices" | "restartNotice"> & {
   session: Session;
   transform: TransformRun;
   meeting: MeetingFocus;
@@ -35,6 +40,7 @@ export function toSnapshot(state: AppState): Snapshot {
     settings: state.settings,
     account: state.account,
     meetingNotices: meetingBanners(state.meeting),
+    restartNotice: restartNotice(state.meeting),
   };
 }
 

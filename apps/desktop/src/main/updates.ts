@@ -8,7 +8,8 @@ import {
   type UpdateStatus,
   type UpdatesSnapshot,
 } from "../shared/api.ts";
-import { atRiskOnQuit, type HistoryState } from "../shared/history.ts";
+import { atRiskOnQuit, type HistoryEntry, type HistoryState } from "../shared/history.ts";
+import { liveMeeting, type Meeting, type MeetingId } from "../shared/meetings.ts";
 import { notesSinceInstalled } from "./release-notes.ts";
 
 export type ReleaseConfig = { channel: UpdateChannel; updateUrl: string };
@@ -26,6 +27,37 @@ export function parseReleaseConfig(value: unknown): ReleaseConfig | null {
   } catch {
     return null;
   }
+}
+
+export async function acceptRestart(
+  request: RestartRequest,
+  deps: {
+    meetings: () => readonly Meeting[];
+    history: () => HistoryState;
+    assertRestartable: () => void;
+    copy: (entry: HistoryEntry) => Promise<void>;
+    blockedByMeeting: (id: MeetingId) => void;
+    restart: () => Promise<void>;
+  },
+) {
+  const checkAllowed = () => {
+    const live = liveMeeting(deps.meetings());
+    if (live) deps.blockedByMeeting(live.id);
+    else {
+      const refusal = restartRefusal(request, deps.history());
+      if (refusal) throw new Error(refusal);
+    }
+    return live === null;
+  };
+  if (!checkAllowed()) return;
+  const [latest] = deps.history().entries;
+  if (request.choice === "copyTranscriptAndRestart" && latest) {
+    deps.assertRestartable();
+    await deps.copy(latest);
+    // Nothing may yield between this check and `restart`, or a meeting started then goes unseen.
+    if (!checkAllowed()) return;
+  }
+  await deps.restart();
 }
 
 export function parseRestartRequest(value: unknown): RestartRequest | null {
@@ -135,6 +167,12 @@ export function createUpdates({
   let startupTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   const installing = () => snapshot.status.kind === "installing";
+  function assertRestartable() {
+    if (!engine || disposed || snapshot.status.kind !== "ready")
+      throw new Error("No update is ready to install.");
+    if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
+    return { installer: engine, version: snapshot.status.version };
+  }
   const stillApplies = (expectedGeneration: number) => generation === expectedGeneration;
 
   // Publishing the status object that already stands would reopen a card the user dismissed.
@@ -301,13 +339,9 @@ export function createUpdates({
       await running;
       if (expectedGeneration === generation) await check();
     },
-    async restart(beforeInstall?: () => Promise<void>) {
-      if (!engine || disposed || snapshot.status.kind !== "ready")
-        throw new Error("No update is ready to install.");
-      if (!canRestart()) throw new Error("Finish dictation before restarting Voice.");
-      const { version } = snapshot.status;
-      // The copy must land before the quit, or the transcript it carries is lost with the app.
-      if (beforeInstall) await beforeInstall();
+    assertRestartable,
+    async restart() {
+      const { installer, version } = assertRestartable();
       generation += 1;
       publish({ kind: "installing", version });
       try {
@@ -315,7 +349,7 @@ export function createUpdates({
         // A check may still be in flight from the hourly poll. Let it settle so that nothing of
         // ours touches the engine during the install and a later error can only be Squirrel's.
         await running;
-        engine.quitAndInstall();
+        installer.quitAndInstall();
       } catch (error) {
         if (installing()) {
           publish({

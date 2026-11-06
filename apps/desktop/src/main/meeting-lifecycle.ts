@@ -36,6 +36,7 @@ export type MeetingEvent =
   | { type: "captureStarted"; leg: number }
   | { type: "captureFailed"; leg: number; message: string }
   | { type: "captureLost"; leg: number; loss: AudioLoss }
+  | { type: "systemAudioMissing"; leg: number; reason: AudioLoss["reason"] }
   | { type: "pause" }
   | { type: "stop" }
   | { type: "timer"; leg: number; timer: Timer }
@@ -62,7 +63,7 @@ export type MeetingEvent =
   | { type: "summarized" }
   | { type: "summaryFailed" }
   /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
-  | { type: "recover"; lastAudioAt: number };
+  | { type: "recover"; lastAudioAt: number; hasAudio: boolean };
 
 /**
  * The driver only executes these. It writes `meeting.json` whenever the step returns a different
@@ -221,11 +222,16 @@ export function step(
 
   if (event.type === "recover") {
     switch (status.kind) {
-      case "starting":
-        if (status.from === "new") return gone([]);
-        return status.from === "ready"
-          ? { meeting: withStatus(meeting, { kind: "ready" }), effects: [] }
-          : draining(meeting);
+      case "starting": {
+        if (!event.hasAudio && status.from !== "paused") {
+          return status.from === "new"
+            ? gone([])
+            : { meeting: withStatus(meeting, { kind: "ready" }), effects: [] };
+        }
+        const end = Math.max(event.lastAudioAt, meeting.spans.at(-1)?.endedAt ?? meeting.createdAt);
+        const since = status.from === "new" ? meeting.createdAt : end;
+        return draining(closeLeg(meeting, since, end, status));
+      }
       case "recording":
         return draining(closeLeg(meeting, status.since, event.lastAudioAt, status));
       case "paused":
@@ -336,6 +342,11 @@ export function step(
               notify({ kind: "silence" }),
               { type: "schedule", leg, timer: "silenceStop", inMs: SILENCE_STOP_MS },
             ],
+          };
+        case "systemAudioMissing":
+          return {
+            meeting,
+            effects: [notify({ kind: "systemAudioMissing", reason: event.reason })],
           };
         case "discard":
           return gone([]);

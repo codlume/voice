@@ -1,6 +1,7 @@
 import {
   closedMs,
   isCapturing,
+  isLive,
   noticeText,
   type Meeting,
   type MeetingBanner,
@@ -19,9 +20,16 @@ import {
  */
 export type MeetingFocus = {
   current: CurrentMeeting | null;
-  raised: { id: MeetingId; prompt: MeetingPrompt; key: number | null } | null;
+  raised: Raised | null;
   banners: readonly Banner[];
   nextKey: number;
+};
+
+type Raised = {
+  id: MeetingId;
+  prompt: MeetingPrompt;
+  key: number | null;
+  noticeKind: MeetingNotice["kind"];
 };
 
 type Banner = MeetingBanner & { kind: MeetingNotice["kind"] };
@@ -70,6 +78,7 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
       return { kind: "summaryReady" };
     case "resumeFailed":
     case "captureLost":
+    case "systemAudioMissing":
     case "maxLengthReached":
     case "atMaxLength": {
       const text = noticeText(notice);
@@ -80,12 +89,15 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
   }
 }
 
-// Silence and the length warning are about a capture that is running; any other status ends them.
-function stillApplies(prompt: MeetingPrompt, meeting: Meeting): boolean {
-  if (prompt.kind === "silence" || prompt.kind === "maxLengthSoon") {
-    return meeting.status.kind === "recording";
+function stillApplies(raised: Raised, meeting: Meeting): boolean {
+  switch (raised.noticeKind) {
+    case "silence":
+    case "maxLengthSoon":
+    case "systemAudioMissing":
+      return meeting.status.kind === "recording";
+    default:
+      return !isCapturing(meeting);
   }
-  return !isCapturing(meeting);
 }
 
 // A failed start has no meeting; it is moot once one records. A failed summary goes once it is
@@ -95,6 +107,10 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   const meeting = meetings.find(({ id }) => id === banner.id);
   if (!meeting) return false;
   switch (banner.kind) {
+    case "systemAudioMissing":
+      return meeting.status.kind === "recording";
+    case "restartBlocked":
+      return isLive(meeting);
     case "finalPassFailed":
       return meeting.finalPassFailed !== null;
     case "summaryFailed":
@@ -111,7 +127,7 @@ export function follow(focus: MeetingFocus, meetings: readonly Meeting[]): Meeti
   const current = currentMeeting(meetings);
   const { raised } = focus;
   const meeting = raised && meetings.find(({ id }) => id === raised.id);
-  const kept = raised && meeting && stillApplies(raised.prompt, meeting) ? raised : null;
+  const kept = raised && meeting && stillApplies(raised, meeting) ? raised : null;
   const banners = focus.banners.filter((banner) => stillShown(banner, meetings));
   if (current === focus.current && kept === raised && banners.length === focus.banners.length) {
     return focus;
@@ -127,7 +143,8 @@ export function raise(
 ): MeetingFocus {
   const prompt = noticePrompt(notice, now);
   const text = noticeText(notice);
-  if (text === null) return prompt ? { ...focus, raised: { id, prompt, key: null } } : focus;
+  const raised = (key: number | null) => prompt && { id, prompt, key, noticeKind: notice.kind };
+  if (text === null) return prompt ? { ...focus, raised: raised(null) } : focus;
   const key = focus.nextKey;
   const others = focus.banners.filter((banner) => banner.id !== id || banner.kind !== notice.kind);
   const banner: Banner = {
@@ -140,7 +157,7 @@ export function raise(
   };
   return {
     ...focus,
-    raised: prompt ? { id, prompt, key } : focus.raised,
+    raised: raised(key) ?? focus.raised,
     banners: [banner, ...others],
     nextKey: key + 1,
   };
@@ -163,8 +180,15 @@ export function dismissBanner(focus: MeetingFocus, key: number | null): MeetingF
   return { ...focus, raised, banners };
 }
 
+const asBanner = ({ kind: _kind, ...banner }: Banner): MeetingBanner => banner;
+
 export const meetingBanners = (focus: MeetingFocus): MeetingBanner[] =>
-  focus.banners.map(({ kind: _kind, ...banner }) => banner);
+  focus.banners.filter(({ kind }) => kind !== "restartBlocked").map(asBanner);
+
+export function restartNotice(focus: MeetingFocus): MeetingBanner | null {
+  const banner = focus.banners.find(({ kind }) => kind === "restartBlocked");
+  return banner ? asBanner(banner) : null;
+}
 
 /** "Started by mistake?" holds the meeting, so it comes before anything a notice raised. */
 export function promptFor(meeting: Meeting, focus: MeetingFocus): MeetingPrompt | null {

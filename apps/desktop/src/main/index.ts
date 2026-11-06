@@ -79,7 +79,7 @@ import { createTrayIcon } from "./tray-icon.ts";
 import { createTransformModel } from "./transform-model.ts";
 import { createTransforms, followTransformSettings, type Transforms } from "./transforms.ts";
 import { idleRun } from "./transform-run.ts";
-import { createUpdates, parseReleaseConfig, restartRefusal } from "./updates.ts";
+import { acceptRestart, createUpdates, parseReleaseConfig } from "./updates.ts";
 
 const PILL_WIDTH = 320;
 const PILL_HEIGHT = 48;
@@ -759,15 +759,14 @@ async function main() {
       // An accepted channel change must reach the updater before it installs.
       await settingsQueue.settled();
       await history.settled();
-      const state = history.state();
-      const refusal = restartRefusal(request, state);
-      if (refusal) throw new Error(refusal);
-      const [latest] = state.entries;
-      await updates.restart(
-        request.choice === "copyTranscriptAndRestart" && latest
-          ? () => clipboard.writeText(copyText(latest))
-          : undefined,
-      );
+      await acceptRestart(request, {
+        meetings: () => meetingsApp.store.state().meetings,
+        history: () => history.state(),
+        assertRestartable: () => void updates.assertRestartable(),
+        copy: (entry) => clipboard.writeText(copyText(entry)),
+        blockedByMeeting: meetingsApp.raiseRestartBlocked,
+        restart: () => updates.restart(),
+      });
     } finally {
       restartRequested = false;
     }

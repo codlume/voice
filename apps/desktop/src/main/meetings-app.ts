@@ -59,6 +59,7 @@ export type MeetingsApp = {
   openNotepad(): void;
   /** Follows a change of `AppState.meeting`: brings up the notepad when a meeting asks for it. */
   focusChanged(state: AppState, previous: AppState): void;
+  raiseRestartBlocked(id: MeetingId): void;
   /** Stops summaries without writing anything, before the model they run on is disposed. */
   dispose(): void;
   settled(): Promise<void>;
@@ -96,6 +97,7 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       language: store.state.settings.dictationLanguage,
       microphone: store.state.settings.microphone,
     }),
+    systemAudioSupported: () => store.state.permissions.systemAudio !== "unavailable",
     onTranscript: (change) => {
       toHub(Channel.meetingTranscript, change);
       if (notepad.meetingId() === change.id) notepad.send(Channel.meetingTranscript, change);
@@ -237,6 +239,10 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
       } else {
         syncNotepad();
       }
+    },
+    raiseRestartBlocked(id) {
+      const notice = { kind: "restartBlocked" } as const;
+      store.update((s) => ({ ...s, meeting: raise(s.meeting, id, notice, Date.now()) }));
     },
     dispose: recorder.dispose,
     settled: () => recorder.settled().then(meetings.settled),

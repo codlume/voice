@@ -549,6 +549,26 @@ describe("meeting lifecycle", () => {
     }
   });
 
+  test("missing system audio is told while recording and changes nothing anywhere else", () => {
+    const missing = { type: "systemAudioMissing", reason: "permission" } as const;
+    const live = play([
+      [{ type: "start", id: ID }, 0],
+      [{ type: "captureStarted", leg: 0 }, 0],
+      [{ ...missing, leg: 0 }, 0],
+    ]);
+    expect(live.meeting?.status).toEqual({ kind: "recording", since: T0 });
+    expect(live.effects.at(-1)).toEqual({
+      type: "notify",
+      notice: { kind: "systemAudioMissing", reason: "permission" },
+    });
+    for (const status of statuses) {
+      if (status.kind === "recording") continue;
+      const meeting = meetingAt(status);
+      const next = step(meeting, { ...missing, leg: 1 }, T0 + 30 * MIN, config);
+      expect(next, status.kind).toEqual({ meeting, effects: [] });
+    }
+  });
+
   test("recovery finalizes whatever a crash left and never starts capture", () => {
     const lastAudioAt = T0 + 45 * MIN;
     const draining = { kind: "transcribing", step: "draining" } as const;
@@ -568,19 +588,22 @@ describe("meeting lifecycle", () => {
       ],
       [{ kind: "ready" }, { kind: "ready" }],
     ];
-    for (const [status, after] of cases) {
-      const { meeting, effects } = step(
-        meetingAt(status),
-        { type: "recover", lastAudioAt },
-        T0 + 90 * MIN,
-        config,
-      );
-      expect(meeting?.status ?? null, status.kind).toEqual(after);
-      expect(kinds(effects), status.kind).not.toContain("startCapture");
+    for (const hasAudio of [false, true]) {
+      for (const [status, after] of cases) {
+        const { meeting, effects } = step(
+          meetingAt(status),
+          { type: "recover", lastAudioAt, hasAudio },
+          T0 + 90 * MIN,
+          config,
+        );
+        const expected = hasAudio && status.kind === "starting" ? draining : after;
+        expect(meeting?.status ?? null, `${status.kind} hasAudio ${hasAudio}`).toEqual(expected);
+        expect(kinds(effects), status.kind).not.toContain("startCapture");
+      }
     }
     const crashed = step(
       meetingAt({ kind: "recording", since: T0 + 30 * MIN }),
-      { type: "recover", lastAudioAt },
+      { type: "recover", lastAudioAt, hasAudio: true },
       T0 + 90 * MIN,
       config,
     );
@@ -591,11 +614,94 @@ describe("meeting lifecycle", () => {
     expect(crashed.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
   });
 
+  test("a leg resumed from paused and recovered counts from when its audio was written", () => {
+    const resumed = meetingAt(
+      { kind: "starting", from: "paused" },
+      { spans: [{ startedAt: T0, endedAt: T0 + MIN }] },
+    );
+    const lastAudioAt = T0 + 29 * 24 * 60 * MIN;
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      lastAudioAt,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(lastAudioAt);
+    expect(next.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+  });
+
+  test("a recovered leg never moves the meeting's end back", () => {
+    const end = T0 + MIN;
+    const resumed = meetingAt(
+      { kind: "starting", from: "ready" },
+      { spans: [{ startedAt: T0, endedAt: end }] },
+    );
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt: T0, hasAudio: true },
+      T0 + 2 * MIN,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)).toEqual({ startedAt: end, endedAt: end });
+  });
+
+  test("a resumed leg recovered from its audio counts from when that audio was written", () => {
+    const resumed = meetingAt(
+      { kind: "starting", from: "ready" },
+      { spans: [{ startedAt: T0, endedAt: T0 + MIN }] },
+    );
+    const lastAudioAt = T0 + 23 * 60 * MIN;
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      lastAudioAt,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(lastAudioAt);
+    expect(next.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+  });
+
+  test("a start whose meeting.json never caught up is kept with its audio, as a recorded leg", () => {
+    const lastAudioAt = T0 + 45 * MIN;
+    const fresh = meetingAt({ kind: "starting", from: "new" }, { spans: [] });
+    const kept = step(
+      fresh,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(kept.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+    expect(kept.meeting?.spans).toEqual([{ startedAt: T0, endedAt: lastAudioAt }]);
+    expect(kept.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
+
+    const silent = step(
+      fresh,
+      { type: "recover", lastAudioAt, hasAudio: false },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(silent).toEqual({ meeting: null, effects: [{ type: "delete" }] });
+
+    const resumed = meetingAt({ kind: "starting", from: "ready" });
+    const leg = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      T0 + 90 * MIN,
+      config,
+    );
+    expect(leg.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+    expect(leg.meeting?.spans).toEqual([
+      ...resumed.spans,
+      { startedAt: lastAudioAt, endedAt: lastAudioAt },
+    ]);
+    expect(leg.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
+  });
+
   test("only an explicit start creates a meeting", () => {
     const events: MeetingEvent[] = [
       { type: "resume" },
       { type: "captureStarted", leg: 0 },
-      { type: "recover", lastAudioAt: T0 },
+      { type: "recover", lastAudioAt: T0, hasAudio: true },
       { type: "stop" },
       { type: "delete" },
     ];

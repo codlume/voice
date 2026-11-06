@@ -64,6 +64,7 @@ import { SystemSettings } from "./SystemSettings.tsx";
 import { Transforms } from "./Transforms.tsx";
 import { titlebar } from "./titlebar.ts";
 import { TitlebarAccount } from "./TitlebarAccount.tsx";
+import { RestartNotice } from "./RestartNotice.tsx";
 import { SidebarUpdates } from "./Updates.tsx";
 import { hubApi } from "./voice.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
@@ -205,7 +206,8 @@ const easing = "cubic-bezier(0.2, 0, 0, 1)";
 const styles = stylex.create({
   shell: {
     display: "grid",
-    gridTemplateRows: "auto 1fr",
+    // The last row is empty until the restart notice takes it, so `main` shrinks to make room.
+    gridTemplateRows: "auto 1fr auto",
     gridTemplateColumns: "auto 1fr",
     height: "100vh",
     backgroundColor: color.sidebar,
@@ -229,6 +231,7 @@ const styles = stylex.create({
     paddingLeft: trafficLightsInset(zoomLevel),
   }),
   sidebar: {
+    gridRow: "2 / -1",
     width: sidebarWidth,
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -376,6 +379,8 @@ const styles = stylex.create({
     transitionProperty: "opacity, width, height",
   },
   main: {
+    gridColumn: "2",
+    gridRow: "2",
     minWidth: 0,
     overflow: "auto",
     marginRight: 8,
@@ -895,6 +900,7 @@ export function HubShell({
           </HelpContext>
         </div>
       </main>
+      <RestartNotice notice={snapshot.restartNotice} />
       <HelpPopover page={appPage} state={help} onChange={setHelp} button={helpButton} />
       <SettingsModal
         state={settings}

@@ -11,6 +11,7 @@ import {
   noticePrompt,
   promptFor,
   raise,
+  restartNotice,
   toPillMeeting,
   type MeetingFocus,
 } from "./meeting-focus.ts";
@@ -132,6 +133,41 @@ describe("prompts", () => {
     const resumed = follow(focus, [{ ...done, status: { kind: "recording", since: 0 } }]);
     expect(meetingBanners(resumed)).toEqual([]);
     expect(resumed.raised).toBeNull();
+  });
+
+  test("missing system audio stays on the recording meeting and goes when the leg ends", () => {
+    const live = recording(1);
+    const missing = { kind: "systemAudioMissing", reason: "device" } as const;
+    const text =
+      "System audio could not be recorded, so this meeting records only your microphone.";
+    const focus = raise(follow(noMeetingFocus, [live]), live.id, missing, 0);
+    expect(promptFor(live, focus)).toEqual({ kind: "notice", text });
+    expect(meetingBanners(focus)).toEqual([
+      { key: 1, id: live.id, text, actions: [], dismissable: true },
+    ]);
+
+    const noted = { ...live, notes: "Ask about pricing" };
+    const still = follow(focus, [noted]);
+    expect(promptFor(noted, still)).toEqual({ kind: "notice", text });
+    expect(texts(still)).toEqual([text]);
+    expect(promptFor(noted, dismiss(still))).toBeNull();
+    expect(texts(dismiss(still))).toEqual([]);
+
+    for (const status of [{ kind: "paused" }, { kind: "finishing" }] as const) {
+      const ended = follow(focus, [meeting(1, status)]);
+      expect(ended.raised, status.kind).toBeNull();
+      expect(texts(ended), status.kind).toEqual([]);
+    }
+
+    const denied = raise(
+      follow(noMeetingFocus, [live]),
+      live.id,
+      { ...missing, reason: "permission" },
+      0,
+    );
+    expect(texts(denied)).toEqual([
+      "Voice is not allowed to record system audio, so this meeting records only your microphone.",
+    ]);
   });
 
   test("a short recording asks Started by mistake, over anything a notice raised", () => {
@@ -284,5 +320,43 @@ describe("toPillMeeting", () => {
     const before = toPillMeeting(follow(noMeetingFocus, [live]));
     const after = toPillMeeting(follow(noMeetingFocus, [{ ...live, notes: "Ask about pricing" }]));
     expect(after).toEqual(before);
+  });
+});
+
+describe("a restart blocked by a meeting", () => {
+  const blocked = { kind: "restartBlocked" } as const;
+  const text =
+    "A meeting is in progress, so Voice did not restart. Stop the meeting, then restart to install the update.";
+  const raised = () => follow(raise(noMeetingFocus, id(1), blocked, 0), [recording(1)]);
+
+  test("is its own notice, kept off the meeting lists", () => {
+    const focus = raised();
+    expect(restartNotice(focus)).toMatchObject({ id: id(1), text, dismissable: true, actions: [] });
+    expect(meetingBanners(focus)).toEqual([]);
+  });
+
+  test("stays while the meeting is live", () => {
+    const paused = follow(raised(), [meeting(1, { kind: "paused" })]);
+    expect(restartNotice(paused)?.text).toBe(text);
+  });
+
+  test("leaves a question the meeting is waiting on in place", () => {
+    const asking = raise(noMeetingFocus, id(1), { kind: "silence" }, 0);
+    const refused = raise(asking, id(1), blocked, 0);
+    expect(promptFor(recording(1), refused)).toEqual({ kind: "silence" });
+    const dismissed = dismissBanner(refused, restartNotice(refused)?.key ?? null);
+    expect(promptFor(recording(1), dismissed)).toEqual({ kind: "silence" });
+  });
+
+  test("goes when the meeting stops being live, or the meeting is gone", () => {
+    expect(restartNotice(follow(raised(), [meeting(1, { kind: "finishing" })]))).toBeNull();
+    expect(restartNotice(follow(raised(), []))).toBeNull();
+  });
+
+  test("goes when dismissed, and a new refusal raises it again", () => {
+    const focus = raised();
+    const dismissed = dismissBanner(focus, restartNotice(focus)?.key ?? null);
+    expect(restartNotice(dismissed)).toBeNull();
+    expect(restartNotice(raise(dismissed, id(1), blocked, 0))?.text).toBe(text);
   });
 });

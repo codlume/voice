@@ -14,18 +14,37 @@ const SAVE_DELAY_MS = 600;
  */
 export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<void>) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
   const unsaved = useRef<string | null>(null);
+  const inFlight = useRef(0);
   const action = useAction();
   const flush = useEffectEvent(() => {
     const notes = unsaved.current;
-    if (notes === null) return;
+    if (notes === null) {
+      action.clearError();
+      return;
+    }
+    setSent(notes);
+    inFlight.current += 1;
     void action.run(async () => {
-      await save(notes);
+      try {
+        await save(notes);
+      } catch (error) {
+        setSent((current) => (current === notes ? null : current));
+        throw error;
+      } finally {
+        inFlight.current -= 1;
+      }
       if (unsaved.current === notes) unsaved.current = null;
     }, "Could not save your thoughts.");
   });
+  const held = useEffectEvent(() => meeting.notes);
   useEffect(() => {
-    if (draft === null || unsaved.current !== draft) return;
+    if (draft === null) {
+      if (inFlight.current === 0 && unsaved.current === held()) unsaved.current = null;
+      return;
+    }
+    if (unsaved.current !== draft) return;
     const timer = setTimeout(flush, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [draft]);
@@ -40,7 +59,8 @@ export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<v
       leave();
     };
   }, []);
-  if (draft !== null && draft === meeting.notes) setDraft(null);
+  if (sent !== null && sent === meeting.notes) setSent(null);
+  if (draft !== null && draft === meeting.notes && sent === null) setDraft(null);
   return {
     text: draft ?? meeting.notes,
     change(text: string) {
