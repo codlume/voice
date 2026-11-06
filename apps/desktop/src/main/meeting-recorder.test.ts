@@ -1316,6 +1316,30 @@ describe("meeting recorder", () => {
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
   });
 
+  test("a capture that opens after a cancelled resume is not covered by the drain before it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    const id = await h.start();
+    await h.recorder.pause(id);
+    await h.settle();
+    await h.recorder.resume(id);
+    await h.settle();
+    await h.recorder.pause(id);
+    await h.drained(id);
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
+    await h.settle();
+    await h.audio(id, 60 * 60_000);
+    await h.recorder.stop(id);
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_IDLE_MS + 1000);
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+    await h.finalized(id, []);
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
   test("a failed drain takes back the clean one before it", async () => {
     const h = harness();
     const id = await h.start();

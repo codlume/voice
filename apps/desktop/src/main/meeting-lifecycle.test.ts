@@ -642,7 +642,7 @@ describe("meeting lifecycle", () => {
       T0 + 2 * MIN,
       config,
     );
-    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(end);
+    expect(next.meeting?.spans.at(-1)).toEqual({ startedAt: end, endedAt: end });
   });
 
   test("a resumed leg recovered from its audio counts from when that audio was written", () => {
