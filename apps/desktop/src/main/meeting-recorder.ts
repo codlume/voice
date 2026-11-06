@@ -8,6 +8,7 @@ import {
   isLive,
   meetingToggle,
   recordedMs,
+  type AudioLoss,
   type Marker,
   type MarkerKind,
   type Meeting,
@@ -70,6 +71,7 @@ export type MeetingRecorderDeps = {
   dir: string;
   send: (command: HelperCommand) => boolean;
   capture: () => { language: DictationLanguage; microphone: Microphone | null };
+  systemAudioSupported: () => boolean;
   onTranscript: (change: MeetingTranscriptChange) => void;
   /** Unconfirmed live text, passed straight on and never saved. */
   onPartial?: (partial: MeetingPartial) => void;
@@ -201,7 +203,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     await store.upsert(id, (latest) => {
       before = latest;
       stepped = step(latest, event, now(), config());
-      return stepped.meeting;
+      const mustPersist = stepped.effects.some((effect) => effect.type === "deleteAudio");
+      return { meeting: stepped.meeting, mustPersist };
     });
     const { meeting, effects } = stepped;
     if (meeting?.status !== before?.status) statusChanged(id, before, meeting);
@@ -401,6 +404,14 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   async function save(id: MeetingId, entries: readonly TranscriptEntry[]) {
     const revision = await store.append(id, entries);
     if (revision !== null) deps.onTranscript({ id, entries, revision });
+  }
+
+  function systemAudioMissing(
+    system: Extract<HelperEvent, { type: "meeting.started" }>["system"],
+  ): AudioLoss["reason"] | null {
+    if (system === "denied") return "permission";
+    if (system === "unavailable" && deps.systemAudioSupported()) return "device";
+    return null;
   }
 
   // A dictation mid-meeting: the helper records silence for it, and the transcript says why.
@@ -628,10 +639,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
             return;
           }
           legStart.set(id, event.atMs);
-          background(
-            event.type,
-            dispatch(id, { type: "captureStarted", leg: meeting.spans.length }),
-          );
+          const leg = meeting.spans.length;
+          background(event.type, dispatch(id, { type: "captureStarted", leg }));
+          const reason = systemAudioMissing(event.system);
+          if (reason !== null) {
+            background(event.type, dispatch(id, { type: "systemAudioMissing", leg, reason }));
+          }
           return;
         }
         case "meeting.failed": {
@@ -650,8 +663,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.drained": {
           const id = event.id as MeetingId;
           if (!store.get(id)) return;
-          if (event.failure !== null)
+          if (event.failure !== null) {
             log(`meetings: ${id} live transcript stalled (${event.failure})`);
+            background("drain", dispatch(id, { type: "stalled", watch: "drain" }));
+            return;
+          }
           const drained = async () =>
             dispatch(id, { type: "drained", words: words(await store.transcript(id)) });
           background("drain", drained());

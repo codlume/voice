@@ -36,6 +36,7 @@ export type MeetingEvent =
   | { type: "captureStarted"; leg: number }
   | { type: "captureFailed"; leg: number; message: string }
   | { type: "captureLost"; leg: number; loss: AudioLoss }
+  | { type: "systemAudioMissing"; leg: number; reason: AudioLoss["reason"] }
   | { type: "pause" }
   | { type: "stop" }
   | { type: "timer"; leg: number; timer: Timer }
@@ -336,6 +337,11 @@ export function step(
               notify({ kind: "silence" }),
               { type: "schedule", leg, timer: "silenceStop", inMs: SILENCE_STOP_MS },
             ],
+          };
+        case "systemAudioMissing":
+          return {
+            meeting,
+            effects: [notify({ kind: "systemAudioMissing", reason: event.reason })],
           };
         case "discard":
           return gone([]);
