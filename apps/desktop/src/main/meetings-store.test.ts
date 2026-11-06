@@ -37,7 +37,8 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const seed = (store: MeetingsStore, saved: Meeting) => store.upsert(saved.id, () => saved);
+const seed = (store: MeetingsStore, saved: Meeting) =>
+  store.upsert(saved.id, () => ({ meeting: saved, mustPersist: false }));
 
 function meeting(id: MeetingId, overrides: Partial<Meeting> = {}): Meeting {
   return {
@@ -216,9 +217,15 @@ describe("meetings store", () => {
     await Promise.all([
       store.setInFolder(A, folder.id, true),
       store.update(A, (m) => ({ ...m, notes: "ship it" })),
-      store.upsert(A, (m) => m && { ...m, status: { kind: "paused" } }),
+      store.upsert(A, (m) => ({
+        meeting: m && { ...m, status: { kind: "paused" } },
+        mustPersist: false,
+      })),
       store.update(A, (m) => ({ ...m, title: "Roadmap" })),
-      store.upsert(A, (m) => m && { ...m, speakers: [{ id: s1, label: "Speaker 1", name: null }] }),
+      store.upsert(A, (m) => ({
+        meeting: m && { ...m, speakers: [{ id: s1, label: "Speaker 1", name: null }] },
+        mustPersist: false,
+      })),
       store.update(A, (m) => renameSpeaker(m, s1, "Ania")),
     ]);
     const expected = {
@@ -306,7 +313,10 @@ describe("meetings store", () => {
     await first.store.updateSettings({ retention: "day" });
 
     const later = await relaunch({ now: START + 30 * DAY });
-    await later.store.upsert(A, (found) => found && { ...found, status: { kind: "ready" } });
+    await later.store.upsert(A, (found) => ({
+      meeting: found && { ...found, status: { kind: "ready" } },
+      mustPersist: false,
+    }));
     await later.store.expire();
     expect(later.store.get(A)?.status.kind).toBe("ready");
 
@@ -504,6 +514,51 @@ describe("meetings store", () => {
       expect(later.store.state().settings.retention).toBe("forever");
     } finally {
       await chmod(meetingDir(A), 0o700);
+    }
+  });
+
+  test("a write that fails keeps an existing meeting moving in memory, and disk catches up later", async () => {
+    const { store, loaded, logs, hub } = harness();
+    await loaded;
+    await seed(store, meeting(A, { status: { kind: "recording", since: START } }));
+    const file = NodePath.join(meetingDir(A), "meeting.json");
+    const onDisk = async () =>
+      (JSON.parse(await readFile(file, "utf8")) as { meeting: Meeting }).meeting;
+    const paused = meeting(A, { status: { kind: "paused" } });
+    await chmod(meetingDir(A), 0o500);
+    try {
+      await store.upsert(A, () => ({ meeting: paused, mustPersist: false }));
+      expect(store.get(A)).toEqual(paused);
+      expect(hub()?.meetings).toEqual([paused]);
+      expect(logs).toContainEqual(expect.stringContaining(`meetings: ${A} could not be written`));
+      expect((await onDisk()).status).toEqual({ kind: "recording", since: START });
+
+      const released = meeting(A, { status: { kind: "ready" } });
+      await expect(
+        store.upsert(A, () => ({ meeting: released, mustPersist: true })),
+      ).rejects.toThrow();
+      expect(store.get(A)).toEqual(paused);
+    } finally {
+      await chmod(meetingDir(A), 0o700);
+    }
+    await store.update(A, (saved) => ({ ...saved, notes: "Budget" }));
+    expect(await onDisk()).toEqual({ ...paused, notes: "Budget" });
+    const second = await relaunch();
+    expect(second.store.get(A)).toEqual({ ...paused, notes: "Budget" });
+  });
+
+  test("a new meeting whose first write fails does not exist", async () => {
+    const { store, loaded, hub } = harness();
+    await loaded;
+    await chmod(dir, 0o500);
+    try {
+      await expect(
+        store.upsert(B, () => ({ meeting: meeting(B), mustPersist: false })),
+      ).rejects.toThrow();
+      expect(store.get(B)).toBeNull();
+      expect(hub()?.meetings).toEqual([]);
+    } finally {
+      await chmod(dir, 0o700);
     }
   });
 

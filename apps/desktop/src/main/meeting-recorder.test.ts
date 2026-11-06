@@ -1,11 +1,17 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as NodePath from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-import type { MeetingId, MeetingNotice, SpeakerId, TranscriptEntry } from "../shared/meetings.ts";
+import type {
+  Meeting,
+  MeetingId,
+  MeetingNotice,
+  SpeakerId,
+  TranscriptEntry,
+} from "../shared/meetings.ts";
 import { maxLengthWarningMs, SILENCE_PROMPT_MS, SILENCE_STOP_MS } from "./meeting-lifecycle.ts";
 import type { FinalSegment } from "./meeting-final-pass.ts";
 import {
@@ -31,12 +37,23 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+async function readOnly(folder: string, work: () => Promise<void>) {
+  await chmod(folder, 0o500);
+  try {
+    await work();
+  } finally {
+    await chmod(folder, 0o700);
+  }
+}
+
 function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
   let clock = START;
   const store = createMeetingsStore({ dir, log: () => {}, onChange: () => {}, now: () => clock });
   const sent: HelperCommand[] = [];
   const pushed: TranscriptEntry[] = [];
+  const noticed: MeetingNotice[] = [];
   const notices: MeetingNotice["kind"][] = [];
+  const logs: string[] = [];
   let helperRunning = true;
   const recorder = createMeetingRecorder({
     store,
@@ -47,13 +64,17 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
       return true;
     },
     capture: () => ({ language: "en", microphone: null }),
+    systemAudioSupported: () => true,
     onTranscript: ({ entries }) => pushed.push(...entries),
-    onNotice: (_id, notice) => notices.push(notice.kind),
+    onNotice: (_id, notice) => {
+      noticed.push(notice);
+      notices.push(notice.kind);
+    },
     summarizer: {
       summarizeMeeting: async () => ({ ok: true }),
       generateTitle: async () => ({ ok: true, title: null }),
     },
-    log: () => {},
+    log: (line) => logs.push(line),
     now: () => clock,
     ...overrides,
   });
@@ -62,7 +83,9 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     recorder,
     sent,
     pushed,
+    noticed,
     notices,
+    logs,
     advance(ms: number) {
       clock += ms;
     },
@@ -81,6 +104,10 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     },
     sentTypes: () => sent.map(({ type }) => type),
     folder: (id: MeetingId) => NodePath.join(dir, id),
+    async onDisk(id: MeetingId): Promise<Meeting> {
+      const text = await readFile(NodePath.join(dir, id, "meeting.json"), "utf8");
+      return (JSON.parse(text) as { meeting: Meeting }).meeting;
+    },
     /** Grows both audio files to `ms` of 16 kHz mono Int16, as the helper writes them. */
     async audio(id: MeetingId, ms = 100) {
       await writeFile(NodePath.join(dir, id, "mic.pcm"), Buffer.alloc(ms * 32));
@@ -450,15 +477,64 @@ describe("meeting recorder", () => {
     expect(h.store.get(id)?.status.kind).toBe("ready");
   });
 
-  test("a live transcript that could not catch up still gets the final pass", async () => {
+  test("a live transcript that failed never asks Started by mistake: the final pass decides", async () => {
     const h = harness();
     const id = await h.start();
-    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.segment(id, "mic", 0, "Oops");
+    h.advance(60 * 60_000);
     await h.recorder.stop(id);
     await h.drained(id, "speech model is not downloaded");
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.finalize", id });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+    expect(h.logs).toContainEqual(expect.stringContaining("live transcript stalled"));
     await h.finalized(id);
     expect(h.store.get(id)?.status.kind).toBe("ready");
+
+    const short = await h.start();
+    await h.segment(short, "mic", 0, "Oops");
+    await h.recorder.stop(short);
+    await h.drained(short);
+    expect(h.store.get(short)?.status).toEqual({ kind: "confirmingShort" });
+  });
+
+  test.each([
+    ["denied", true, [{ kind: "systemAudioMissing", reason: "permission" }]],
+    ["denied", false, [{ kind: "systemAudioMissing", reason: "permission" }]],
+    ["unavailable", true, [{ kind: "systemAudioMissing", reason: "device" }]],
+    ["unavailable", false, []],
+    ["active", true, []],
+  ] as const)(
+    "system audio %s with support %s tells the user only when the leg lost it",
+    async (system, supported, expected) => {
+      const h = harness({ systemAudioSupported: () => supported });
+      const result = await h.recorder.start();
+      if (result.kind !== "ok") throw new Error("start refused");
+      h.emit({ type: "meeting.started", id: result.id, atMs: 0, mic: "active", system });
+      await h.settle();
+      expect(h.store.get(result.id)?.status.kind).toBe("recording");
+      expect(h.noticed).toEqual(expected);
+    },
+  );
+
+  test("a resume whose system audio is missing says so again, once per leg", async () => {
+    const h = harness();
+    const result = await h.recorder.start();
+    if (result.kind !== "ok") throw new Error("start refused");
+    const { id } = result;
+    h.emit({ type: "meeting.started", id, atMs: 0, mic: "active", system: "denied" });
+    await h.settle();
+    await h.audio(id);
+    await h.recorder.pause(id);
+    await h.settle();
+    await h.recorder.resume(id);
+    await h.settle();
+    h.emit({ type: "meeting.started", id, atMs: 100, mic: "active", system: "denied" });
+    await h.settle();
+    expect(h.noticed).toEqual([
+      { kind: "systemAudioMissing", reason: "permission" },
+      { kind: "systemAudioMissing", reason: "permission" },
+    ]);
   });
 
   test("a very short recording asks first: discard deletes it, keep finishes it", async () => {
@@ -786,6 +862,112 @@ describe("meeting recorder", () => {
     expect(h.notices).toEqual(["startFailed"]);
     h.store.transcript = transcript;
     expect((await h.recorder.start()).kind).toBe("ok");
+  });
+
+  test("a capture that fails while meeting.json cannot be written still pauses the meeting and tells the user", async () => {
+    const h = harness();
+    const id = await h.start();
+    await readOnly(h.folder(id), async () => {
+      h.emit({ type: "meeting.failed", id, message: "the device went away" });
+      await h.settle();
+      expect(h.store.get(id)?.status).toEqual({ kind: "paused" });
+      expect(h.notices).toEqual(["captureLost"]);
+      expect((await h.onDisk(id)).status).toEqual({ kind: "recording", since: START });
+    });
+    await h.recorder.stop(id);
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "finishing" });
+    expect((await h.onDisk(id)).status).toEqual({ kind: "finishing" });
+  });
+
+  test("Stop while meeting.json cannot be written still stops the capture", async () => {
+    const h = harness();
+    const id = await h.start();
+    await readOnly(h.folder(id), async () => {
+      expect(await h.recorder.stop(id)).toEqual({ kind: "ok", id });
+      await h.settle();
+      expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
+      expect(h.store.get(id)?.status).toEqual({ kind: "finishing" });
+    });
+  });
+
+  test("the max length still stops a meeting whose meeting.json cannot be written", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    await h.store.updateSettings({ maxLength: "30m", silencePrompt: false });
+    const id = await h.start();
+    await readOnly(h.folder(id), async () => {
+      h.advance(30 * 60_000);
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      await h.settle();
+      expect(h.notices).toEqual(["maxLengthSoon", "maxLengthReached"]);
+      expect(h.sent.at(-1)).toEqual({ type: "meeting.stop", id });
+      expect(h.store.get(id)?.status).toEqual({ kind: "finishing" });
+    });
+  });
+
+  test("a final pass whose meeting.json cannot be written keeps the audio, and the watchdog ends it as failed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    const mic = NodePath.join(h.folder(id), "mic.pcm");
+    const replace = h.store.replaceTranscript;
+    h.store.replaceTranscript = async (...args) => {
+      const replaced = await replace(...args);
+      await chmod(h.folder(id), 0o500);
+      return replaced;
+    };
+    try {
+      await h.finalized(id);
+      expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+      expect((await h.onDisk(id)).status).toEqual({ kind: "transcribing", step: "finalizing" });
+      expect(existsSync(mic)).toBe(true);
+      expect(h.logs).not.toContainEqual(expect.stringContaining("deleteAudio"));
+    } finally {
+      await chmod(h.folder(id), 0o700);
+    }
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    await h.settle();
+    const failed = { status: { kind: "ready" }, finalPassFailed: "other" };
+    expect(h.store.get(id)).toMatchObject(failed);
+    expect(await h.onDisk(id)).toMatchObject(failed);
+    expect(h.notices).toEqual(["finalPassFailed"]);
+    expect(existsSync(mic)).toBe(true);
+  });
+
+  test("Delete audio while meeting.json cannot be written is refused and keeps the audio", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    h.emit({ type: "meeting.finalizeFailed", id, reason: "transcript", message: "model missing" });
+    await h.settle();
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    const mic = NodePath.join(h.folder(id), "mic.pcm");
+    await readOnly(h.folder(id), async () => {
+      await expect(h.recorder.deleteAudio(id)).rejects.toThrow();
+      await h.settle();
+      expect(h.store.get(id)?.finalPassFailed).toBe("other");
+      expect((await h.onDisk(id)).finalPassFailed).toBe("other");
+      expect(existsSync(mic)).toBe(true);
+    });
+  });
+
+  test("a new meeting whose folder cannot be made is refused and asks the helper for nothing", async () => {
+    const h = harness();
+    await h.store.loaded();
+    await readOnly(dir, async () => {
+      await expect(h.recorder.start()).rejects.toThrow(/EACCES/);
+      await h.settle();
+      expect(h.sent).toEqual([]);
+      expect(h.store.state().meetings).toEqual([]);
+      expect(h.notices).toEqual([]);
+    });
   });
 
   test("a final pass does not time out while speech recognition is still loading", async () => {

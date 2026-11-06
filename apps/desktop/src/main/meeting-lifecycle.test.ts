@@ -549,6 +549,26 @@ describe("meeting lifecycle", () => {
     }
   });
 
+  test("missing system audio is told while recording and changes nothing anywhere else", () => {
+    const missing = { type: "systemAudioMissing", reason: "permission" } as const;
+    const live = play([
+      [{ type: "start", id: ID }, 0],
+      [{ type: "captureStarted", leg: 0 }, 0],
+      [{ ...missing, leg: 0 }, 0],
+    ]);
+    expect(live.meeting?.status).toEqual({ kind: "recording", since: T0 });
+    expect(live.effects.at(-1)).toEqual({
+      type: "notify",
+      notice: { kind: "systemAudioMissing", reason: "permission" },
+    });
+    for (const status of statuses) {
+      if (status.kind === "recording") continue;
+      const meeting = meetingAt(status);
+      const next = step(meeting, { ...missing, leg: 1 }, T0 + 30 * MIN, config);
+      expect(next, status.kind).toEqual({ meeting, effects: [] });
+    }
+  });
+
   test("recovery finalizes whatever a crash left and never starts capture", () => {
     const lastAudioAt = T0 + 45 * MIN;
     const draining = { kind: "transcribing", step: "draining" } as const;

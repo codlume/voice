@@ -303,4 +303,32 @@ describe("My thoughts in the notepad", () => {
     push({ meeting: { ...meeting, notes: "Edited elsewhere" }, prompt: null });
     expect(thoughts().value).toBe("Edited elsewhere");
   });
+
+  test("an edit undone before the delay is never saved over newer thoughts from the Voice window", async () => {
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    await render();
+    await openThoughts();
+    type("Old and more");
+    type("Old");
+    push({ meeting: { ...meeting, notes: "Newer from the hub" }, prompt: null });
+    expect(thoughts().value).toBe("Newer from the hub");
+
+    act(() => window.dispatchEvent(new Event("beforeunload")));
+    await act(async () => root?.unmount());
+    root = null;
+
+    expect(api.updateMeetingNotes).not.toHaveBeenCalled();
+  });
+
+  test("typing again after an undo still saves after the delay", async () => {
+    const { api } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
+    await render();
+    await openThoughts();
+    type("Old and more");
+    type("Old");
+    type("Old, then new");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(1);
+    expect(api.updateMeetingNotes).toHaveBeenCalledWith(id, "Old, then new");
+  });
 });

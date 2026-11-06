@@ -134,6 +134,41 @@ describe("prompts", () => {
     expect(resumed.raised).toBeNull();
   });
 
+  test("missing system audio stays on the recording meeting and goes when the leg ends", () => {
+    const live = recording(1);
+    const missing = { kind: "systemAudioMissing", reason: "device" } as const;
+    const text =
+      "System audio could not be recorded, so this meeting records only your microphone.";
+    const focus = raise(follow(noMeetingFocus, [live]), live.id, missing, 0);
+    expect(promptFor(live, focus)).toEqual({ kind: "notice", text });
+    expect(meetingBanners(focus)).toEqual([
+      { key: 1, id: live.id, text, actions: [], dismissable: true },
+    ]);
+
+    const noted = { ...live, notes: "Ask about pricing" };
+    const still = follow(focus, [noted]);
+    expect(promptFor(noted, still)).toEqual({ kind: "notice", text });
+    expect(texts(still)).toEqual([text]);
+    expect(promptFor(noted, dismiss(still))).toBeNull();
+    expect(texts(dismiss(still))).toEqual([]);
+
+    for (const status of [{ kind: "paused" }, { kind: "finishing" }] as const) {
+      const ended = follow(focus, [meeting(1, status)]);
+      expect(ended.raised, status.kind).toBeNull();
+      expect(texts(ended), status.kind).toEqual([]);
+    }
+
+    const denied = raise(
+      follow(noMeetingFocus, [live]),
+      live.id,
+      { ...missing, reason: "permission" },
+      0,
+    );
+    expect(texts(denied)).toEqual([
+      "Voice is not allowed to record system audio, so this meeting records only your microphone.",
+    ]);
+  });
+
   test("a short recording asks Started by mistake, over anything a notice raised", () => {
     const short = meeting(1, { kind: "confirmingShort" });
     const focus = raise(follow(noMeetingFocus, [short]), short.id, { kind: "maxLengthReached" }, 0);
