@@ -24,7 +24,7 @@ const electron = vi.hoisted(() => {
       encryptString: (text: string) => Buffer.from(`enc:${text}`),
       decryptString: (bytes: Buffer) => bytes.toString().replace(/^enc:/, ""),
     },
-    shell: { openExternal: async () => {} },
+    shell: { openExternal: async (_url: string, _options?: object) => {} },
     webContents: { getFocusedWebContents: () => null },
   };
   return { state, api };
