@@ -151,6 +151,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const silence = new Map<MeetingId, NodeJS.Timeout>();
   // Where the open leg's audio starts, from the helper's `meeting.started`.
   const legStart = new Map<MeetingId, number>();
+  const incompleteLive = new Set<MeetingId>();
   // False while speech recognition loads, as after a launch, when it cannot report yet.
   let recognizing = false;
   let queue: Promise<unknown> = Promise.resolve();
@@ -203,7 +204,9 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     await store.upsert(id, (latest) => {
       before = latest;
       stepped = step(latest, event, now(), config());
-      const mustPersist = stepped.effects.some((effect) => effect.type === "deleteAudio");
+      const mustPersist = stepped.effects.some(
+        ({ type }) => type === "deleteAudio" || type === "startCapture",
+      );
       return { meeting: stepped.meeting, mustPersist };
     });
     const { meeting, effects } = stepped;
@@ -291,18 +294,19 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         if (meeting === null) return;
         const fromMs = await audioBase(meeting);
         const live = await store.transcript(id);
-        // An empty pass over audio the live transcript found words in failed, whatever it says.
         if (
           effect.segments.length === 0 &&
-          live.some((entry) => entry.kind === "segment" && entry.startMs >= fromMs)
+          (incompleteLive.has(id) ||
+            live.some((entry) => entry.kind === "segment" && entry.startMs >= fromMs))
         ) {
-          log(`meetings: ${id} final pass found no words the live transcript heard`);
+          log(`meetings: ${id} final pass found no words where the live transcript was not sure`);
           background("final pass", dispatch(id, { type: "finalizeFailed", reason: "other" }));
           return;
         }
         await store.replaceTranscript(id, (current, transcript) =>
           applyFinalPass(current, transcript, effect.segments, fromMs),
         );
+        incompleteLive.delete(id);
         background("final pass", dispatch(id, { type: "finalized" }));
         return;
       }
@@ -346,6 +350,7 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         clearSilence(id);
         unwatch(id);
         legStart.delete(id);
+        incompleteLive.delete(id);
         deps.send({ type: "meeting.cancel", id });
         await store.remove(id);
         return;
@@ -389,7 +394,12 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       event.source === "mic"
         ? { ...base, source: "mic" }
         : { ...base, source: "system", speakerId: null };
-    await save(id, [entry]);
+    try {
+      await save(id, [entry]);
+    } catch (error) {
+      incompleteLive.add(id);
+      throw error;
+    }
     if (watchdogs.get(id)?.watch === "drain") progress(id);
     if (silence.has(id)) heard(id);
   }
@@ -663,8 +673,10 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.drained": {
           const id = event.id as MeetingId;
           if (!store.get(id)) return;
-          if (event.failure !== null) {
-            log(`meetings: ${id} live transcript stalled (${event.failure})`);
+          if (event.failure !== null) incompleteLive.add(id);
+          if (incompleteLive.has(id)) {
+            const why = event.failure ?? "lines were not saved";
+            log(`meetings: ${id} live transcript stalled (${why})`);
             background("drain", dispatch(id, { type: "stalled", watch: "drain" }));
             return;
           }
@@ -711,7 +723,8 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       oneAtATime(async () => {
         await store.loaded();
         for (const { meeting, lastWriteAt } of await store.unfinished()) {
-          await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt });
+          const hasAudio = ((await audioLength(meeting.id)) ?? 0) > 0;
+          await dispatch(meeting.id, { type: "recover", lastAudioAt: lastWriteAt, hasAudio });
         }
       }),
     async settled() {

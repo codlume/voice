@@ -53,7 +53,9 @@ export type MeetingsStore = {
    *
    * A meeting that already exists keeps the change when its write fails: memory and the hub move
    * on, the failure is logged, and disk catches up with the meeting's next successful write. A
-   * failed write rejects for a new meeting and for a change that `mustPersist`.
+   * failed write rejects, changing nothing, for a new meeting and for a change that `mustPersist`,
+   * which is any change the caller acts on in a way disk must know about, such as recording or
+   * deleting audio.
    */
   upsert(
     id: MeetingId,

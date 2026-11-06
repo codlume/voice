@@ -63,7 +63,7 @@ export type MeetingEvent =
   | { type: "summarized" }
   | { type: "summaryFailed" }
   /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
-  | { type: "recover"; lastAudioAt: number };
+  | { type: "recover"; lastAudioAt: number; hasAudio: boolean };
 
 /**
  * The driver only executes these. It writes `meeting.json` whenever the step returns a different
@@ -223,8 +223,11 @@ export function step(
   if (event.type === "recover") {
     switch (status.kind) {
       case "starting":
-        if (status.from === "new") return gone([]);
-        return status.from === "ready"
+        if (status.from === "new") {
+          if (!event.hasAudio) return gone([]);
+          return draining(closeLeg(meeting, meeting.createdAt, event.lastAudioAt, status));
+        }
+        return status.from === "ready" && !event.hasAudio
           ? { meeting: withStatus(meeting, { kind: "ready" }), effects: [] }
           : draining(meeting);
       case "recording":
