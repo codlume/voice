@@ -41,6 +41,18 @@ describe("parseFeed", () => {
     expect(parseFeed(feed(zip, dmg(dmgUrl.replace("https:", "http:"))))).toBeNull();
   });
 
+  it.each([
+    ["another host", "https://evil.example/Voice-0.2.0-arm64.dmg"],
+    [
+      "userinfo in front of another host",
+      "https://downloads.voice.codlume.com@evil.example/Voice-0.2.0-arm64.dmg",
+    ],
+    ["another port", dmgUrl.replace("codlume.com/", "codlume.com:8443/")],
+    ["an unparseable URL", "https://downloads voice.codlume.com/Voice-0.2.0-arm64.dmg"],
+  ])("rejects a DMG on %s", (_name, url) => {
+    expect(parseFeed(feed(zip, dmg(url)))).toBeNull();
+  });
+
   it("rejects a non-integer size", () => {
     expect(parseFeed(feed(dmg(dmgUrl, "180.5")))).toBeNull();
   });
