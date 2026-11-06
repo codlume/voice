@@ -25,10 +25,12 @@ function lockedWindow() {
   const page = { url: "" };
   let onNavigate: ((event: { preventDefault(): void; url: string }) => void) | undefined;
   let onOpen: (() => { action: string }) | undefined;
+  let webRTCIPHandlingPolicy = "default";
   lockNavigation({
     getURL: () => page.url,
     on: (_event, listener) => (onNavigate = listener),
     setWindowOpenHandler: (handler) => (onOpen = handler),
+    setWebRTCIPHandlingPolicy: (policy) => (webRTCIPHandlingPolicy = policy),
   });
   page.url = "file:///Voice/hub.html";
   return {
@@ -38,10 +40,15 @@ function lockedWindow() {
       return prevented ? "blocked" : "allowed";
     },
     open: () => onOpen?.().action ?? "allow",
+    webRTCIPHandlingPolicy: () => webRTCIPHandlingPolicy,
   };
 }
 
 describe("lockNavigation", () => {
+  test("keeps WebRTC off plain UDP, since the renderer never uses it", () => {
+    expect(lockedWindow().webRTCIPHandlingPolicy()).toBe("disable_non_proxied_udp");
+  });
+
   test("blocks a window from navigating to another page", () => {
     expect(lockedWindow().navigate("https://example.com/")).toBe("blocked");
     expect(lockedWindow().navigate("file:///Voice/pill.html")).toBe("blocked");
