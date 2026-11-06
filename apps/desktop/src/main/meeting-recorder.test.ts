@@ -1074,7 +1074,7 @@ describe("meeting recorder", () => {
     expect(h.sent.at(-1)).toMatchObject({ type: "meeting.finalize", id });
     await h.finalized(id);
     expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
-    expect(h.store.get(id)?.spans).toHaveLength(1);
+    expect(h.store.get(id)?.spans).toHaveLength(2);
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
     expect(h.sentTypes()).not.toContain("meeting.start");
   });
@@ -1150,6 +1150,127 @@ describe("meeting recorder", () => {
     expect(h.notices).toContain("finalPassFailed");
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
     expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
+  });
+
+  test("an empty final pass after a drain the watchdog gave up on keeps the audio", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    const id = await h.start();
+    await h.audio(id, 60 * 60_000);
+    h.advance(60 * 60_000);
+    await h.recorder.stop(id);
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_IDLE_MS + 1000);
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+    await h.finalized(id, []);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: "other" });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
+  test("Try again after a relaunch keeps the audio when the final pass is empty again", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.audio(id, 60 * 60_000);
+    first.advance(60 * 60_000);
+    await first.recorder.stop(id);
+    await first.drained(id, "speech model is not downloaded");
+    await first.finalized(id, []);
+    expect(first.store.get(id)?.finalPassFailed).toBe("other");
+    await first.store.settled();
+
+    const h = harness();
+    await h.store.loaded();
+    await h.recorder.recover();
+    await h.settle();
+    expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
+    await h.settle();
+    await h.finalized(id, []);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: "other" });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
+  test("a relaunch after a resume that never started keeps kept audio through an empty pass", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.audio(id, 60 * 60_000);
+    first.advance(60 * 60_000);
+    await first.recorder.stop(id);
+    await first.drained(id, "speech model is not downloaded");
+    await first.finalized(id, []);
+    await first.recorder.resume(id);
+    await first.settle();
+    await first.store.settled();
+
+    const h = harness();
+    await h.store.loaded();
+    await h.recorder.recover();
+    await h.settle();
+    await h.drained(id);
+    await h.finalized(id, []);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: "other" });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
+  test("a last line that fails to save just before the drain never asks Started by mistake", async () => {
+    const h = harness();
+    const id = await h.start();
+    await writeFile(NodePath.join(h.folder(id), "transcript.ndjson"), "", { mode: 0o400 });
+    try {
+      await h.recorder.stop(id);
+      await h.settle();
+      h.emit({
+        type: "meeting.segment",
+        id,
+        source: "mic",
+        startMs: 0,
+        endMs: 2000,
+        text: TEN_WORDS,
+      });
+      h.emit({ type: "meeting.drained", id, failure: null });
+      await h.settle();
+      expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+      expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+    } finally {
+      await chmod(NodePath.join(h.folder(id), "transcript.ndjson"), 0o600);
+    }
+  });
+
+  test("a last line saved just before the drain counts toward the word count", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.recorder.stop(id);
+    await h.settle();
+    h.emit({
+      type: "meeting.segment",
+      id,
+      source: "mic",
+      startMs: 0,
+      endMs: 2000,
+      text: TEN_WORDS,
+    });
+    h.emit({ type: "meeting.drained", id, failure: null });
+    await h.settle();
+    expect(h.store.get(id)?.status).toEqual({ kind: "transcribing", step: "finalizing" });
+  });
+
+  test("a resume after a whole live transcript needs a new one before an empty pass is believed", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.recorder.pause(id);
+    await h.drained(id);
+    await h.recorder.resume(id);
+    await h.settle();
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
+    await h.settle();
+    await h.recorder.stop(id);
+    await h.settle();
+    h.emit({ type: "meeting.drained", id, failure: "speech model is not downloaded" });
+    await h.settle();
+    await h.finalized(id, []);
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
   });
 
   test("an empty final pass over a silent meeting the live transcript heard whole finishes it and deletes the audio", async () => {

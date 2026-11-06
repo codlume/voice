@@ -359,6 +359,41 @@ describe("My thoughts in the notepad", () => {
     expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, original);
   });
 
+  test("an undo whose own save fails while an earlier save lands can still be saved", async () => {
+    const original = "The whole plan we agreed";
+    const { api, push } = fakeNotepad({ meeting: { ...meeting, notes: original }, prompt: null });
+    let landFirst!: () => void;
+    let failSecond!: (error: Error) => void;
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          landFirst = resolve;
+        }),
+    );
+    api.updateMeetingNotes.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failSecond = reject;
+        }),
+    );
+    await render();
+    await openThoughts();
+    type("X");
+    await act(async () => vi.advanceTimersByTime(600));
+    type(original);
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
+
+    await act(async () => landFirst());
+    push({ meeting: { ...meeting, notes: "X" }, prompt: null });
+    await act(async () => failSecond(new Error("disk full")));
+    await act(async () => button("Try again")?.click());
+    await act(async () => vi.advanceTimersByTime(5000));
+
+    expect(api.updateMeetingNotes).toHaveBeenCalledTimes(3);
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, original);
+  });
+
   test("Try again after undoing a failed edit clears the error without saving", async () => {
     const { api } = fakeNotepad({ meeting: { ...meeting, notes: "Old" }, prompt: null });
     api.updateMeetingNotes.mockRejectedValueOnce(new Error("disk full"));

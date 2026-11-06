@@ -614,6 +614,22 @@ describe("meeting lifecycle", () => {
     expect(crashed.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
   });
 
+  test("a resumed leg recovered from its audio counts from when that audio was written", () => {
+    const resumed = meetingAt(
+      { kind: "starting", from: "ready" },
+      { spans: [{ startedAt: T0, endedAt: T0 + MIN }] },
+    );
+    const lastAudioAt = T0 + 23 * 60 * MIN;
+    const next = step(
+      resumed,
+      { type: "recover", lastAudioAt, hasAudio: true },
+      lastAudioAt,
+      config,
+    );
+    expect(next.meeting?.spans.at(-1)?.endedAt).toBe(lastAudioAt);
+    expect(next.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
+  });
+
   test("a start whose meeting.json never caught up is kept with its audio, as a recorded leg", () => {
     const lastAudioAt = T0 + 45 * MIN;
     const fresh = meetingAt({ kind: "starting", from: "new" }, { spans: [] });
@@ -643,7 +659,10 @@ describe("meeting lifecycle", () => {
       config,
     );
     expect(leg.meeting?.status).toEqual({ kind: "transcribing", step: "draining" });
-    expect(leg.meeting?.spans).toEqual(resumed.spans);
+    expect(leg.meeting?.spans).toEqual([
+      ...resumed.spans,
+      { startedAt: lastAudioAt, endedAt: lastAudioAt },
+    ]);
     expect(leg.effects).toEqual([{ type: "drain" }, { type: "watch", watch: "drain" }]);
   });
 
