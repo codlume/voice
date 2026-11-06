@@ -1340,6 +1340,30 @@ describe("meeting recorder", () => {
     expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
   });
 
+  test("a drain that shares a tick with the next capture opening does not cover that capture", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const h = harness();
+    h.emit({ type: "asr.status", state: "ready", message: null });
+    const id = await h.start();
+    await h.recorder.pause(id);
+    await h.settle();
+    await h.recorder.resume(id);
+    await h.settle();
+    await h.recorder.pause(id);
+    await h.settle();
+    h.emit({ type: "meeting.drained", id, failure: null });
+    h.emit({ type: "meeting.started", id, atMs: 2000, mic: "active", system: "active" });
+    await h.settle();
+    await h.audio(id, 60 * 60_000);
+    await h.recorder.stop(id);
+    await h.settle();
+    await vi.advanceTimersByTimeAsync(TRANSCRIBE_IDLE_MS + 1000);
+    await h.settle();
+    await h.finalized(id, []);
+    expect(h.store.get(id)?.finalPassFailed).toBe("other");
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+  });
+
   test("a failed drain takes back the clean one before it", async () => {
     const h = harness();
     const id = await h.start();
