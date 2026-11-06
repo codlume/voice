@@ -79,7 +79,6 @@ export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt 
     case "resumeFailed":
     case "captureLost":
     case "systemAudioMissing":
-    case "restartBlocked":
     case "maxLengthReached":
     case "atMaxLength": {
       const text = noticeText(notice);
@@ -96,8 +95,6 @@ function stillApplies(raised: Raised, meeting: Meeting): boolean {
     case "maxLengthSoon":
     case "systemAudioMissing":
       return meeting.status.kind === "recording";
-    case "restartBlocked":
-      return isLive(meeting);
     default:
       return !isCapturing(meeting);
   }

@@ -9,7 +9,6 @@ import { hubApi } from "./voice.ts";
 const styles = stylex.create({
   notice: {
     position: "fixed",
-    zIndex: 1,
     left: "50%",
     bottom: space.lg,
     transform: "translateX(-50%)",
