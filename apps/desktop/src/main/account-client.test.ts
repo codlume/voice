@@ -18,7 +18,7 @@ import {
   snapshotAccount,
   signInCode,
 } from "./account-client.test-harness.ts";
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import * as NodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
@@ -945,5 +945,61 @@ describe("deletion through the real auth client", () => {
     await h.account.signIn();
     expect(h.state).toEqual({ kind: "signingIn", purpose: "signIn", phase: "browser" });
     h.account.dispose();
+  });
+});
+
+const lookalike = `${API.nightly}.evil.example/api/auth/electron/start?state=evil`;
+const opens = () => vi.spyOn(electron.api.shell, "openExternal");
+const originAndState = (url: string) => [
+  new URL(url).origin,
+  new URL(url).searchParams.get("state"),
+];
+
+const openLookalikeDuringSignIn = async (url: string) => {
+  if (new URL(url).origin === API.nightly) await electron.api.shell.openExternal(lookalike);
+};
+
+describe("the sign-in browser open", () => {
+  test("records the sign-in from the API origin only, and opens a lookalike host like any link", async () => {
+    const opened = opens();
+    const auth = client("nightly");
+    opened.mockImplementation(openLookalikeDuringSignIn);
+    const { state } = await auth.openBrowser();
+    expect(state).not.toBe("evil");
+    expect(opened.mock.calls.map(([url]) => originAndState(url))).toEqual([
+      [API.nightly, state],
+      ["https://api-nightly.example.com.evil.example", "evil"],
+    ]);
+  });
+
+  test("in test mode, writes the sign-in URL to the file only for the API origin", async () => {
+    const opened = opens();
+    const signInUrlFile = NodePath.join(electron.state.userData, "sign-in-url");
+    const auth = createVoiceAuthClient({
+      apiUrl: API.nightly,
+      installedChannel: "nightly",
+      log,
+      signInUrlFile,
+    });
+    await electron.api.shell.openExternal(lookalike);
+    await electron.api.shell.openExternal("not a url");
+    expect(existsSync(signInUrlFile)).toBe(false);
+    expect(opened.mock.calls.map(([url]) => url)).toEqual([lookalike, "not a url"]);
+    const { state } = await auth.openBrowser();
+    expect(originAndState(readFileSync(signInUrlFile, "utf8"))).toEqual([API.nightly, state]);
+    expect(opened).toHaveBeenCalledTimes(2);
+  });
+
+  test("a development API on localhost still starts the sign-in", async () => {
+    const opened = opens();
+    const auth = createVoiceAuthClient({
+      apiUrl: "http://localhost:8787",
+      installedChannel: "nightly",
+      log,
+    });
+    const { state } = await auth.openBrowser();
+    expect(opened.mock.calls.map(([url]) => originAndState(url))).toEqual([
+      ["http://localhost:8787", state],
+    ]);
   });
 });
