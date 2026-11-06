@@ -8,14 +8,13 @@ import { hubApi } from "./voice.ts";
 
 const styles = stylex.create({
   notice: {
-    position: "fixed",
-    left: "50%",
-    bottom: space.lg,
-    transform: "translateX(-50%)",
+    gridColumn: "2",
+    gridRow: "3",
     display: "flex",
     alignItems: "center",
     gap: space.md,
-    width: `min(800px, calc(100vw - 2 * ${space.xl}))`,
+    marginRight: 8,
+    marginBottom: 8,
     paddingBlock: 10,
     paddingInline: space.md,
   },
