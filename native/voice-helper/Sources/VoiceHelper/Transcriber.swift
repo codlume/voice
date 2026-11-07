@@ -58,6 +58,7 @@ final class Transcriber: Transcribing {
     }
 
     private let directory: URL
+    private let cache: ModelCache
     private let output: Output
     private var load: AsrLoad = .missing
     private var lastDecodeFinishedAt: DispatchTime?
@@ -79,7 +80,10 @@ final class Transcriber: Transcribing {
     }
 
     init(modelsDir: URL, output: Output) {
-        directory = modelsDir.appendingPathComponent("parakeet-tdt-0.6b-v3")
+        // FluidAudio must never list, purge or fetch: bytes reach a load only through `cache`.
+        ModelHub.offlineMode = true
+        cache = ModelCache(release: ModelManifest.parakeetV3, modelsDirectory: modelsDir)
+        directory = cache.folder
         self.output = output
     }
 
@@ -97,17 +101,28 @@ final class Transcriber: Transcribing {
         case .missing, .failed:
             break
         }
-        let needsDownload = !AsrModels.modelsExist(at: directory, version: .v3)
+        let presence: ModelCache.Report
+        do {
+            presence = try cache.presence()
+        } catch {
+            return fail(error)
+        }
+        let needsDownload = !presence.missing.isEmpty
         if needsDownload && !download {
             load = .missing
             output.emit(.asrStatus(state: .missing, message: nil))
             return
         }
         let directory = directory
+        let cache = cache
+        let fetcher = ModelFetcher(configuration: ModelHub.session.configuration)
+        let loadBecameDownload: @Sendable ([ModelFile]) -> Void = { [weak self] files in Task { @MainActor in self?.downloadStarted(files) } }
+        let output = output
         let task = Task.detached(priority: .userInitiated) { () throws -> PreparedAsr in
-            let models = needsDownload
-                ? try await AsrModels.downloadAndLoad(to: directory, version: .v3)
-                : try await AsrModels.load(from: directory, version: .v3)
+            let started = DispatchTime.now()
+            let audit = try await cache.prepare(download: download, fetcher: fetcher, onDownload: loadBecameDownload)
+            output.log(.info, "speech model checked: first pass hashed \(audit.hashedFiles) files, \(audit.hashedBytes) bytes, done in \(Int(started.millisecondsToNow())) ms")
+            let models = try await AsrModels.load(from: directory, version: .v3)
             let manager = AsrManager()
             try await manager.loadModels(models)
             // The first transcription in a process pays a one-off 30-40 ms; take it here.
@@ -124,11 +139,26 @@ final class Transcriber: Transcribing {
                 lastDecodeFinishedAt = .now()
                 output.emit(.asrStatus(state: .ready, message: nil))
             } catch {
-                let message = "\(error)"
-                load = .failed(message)
-                output.emit(.asrStatus(state: .failed, message: message))
+                fail(error)
             }
         }
+    }
+
+    private func downloadStarted(_ files: [ModelFile]) {
+        output.log(.info, "speech model download: \(files.count) of \(ModelManifest.parakeetV3.files.count) files, \(files.reduce(0) { $0 + $1.size }) bytes")
+        guard case .loading(let task) = load else { return }
+        load = .downloading(task)
+        output.emit(.asrStatus(state: .downloading, message: nil))
+    }
+
+    private func fail(_ error: Error) {
+        let message = Self.loadFailure(error)
+        load = .failed(message)
+        output.emit(.asrStatus(state: .failed, message: message))
+    }
+
+    nonisolated private static func loadFailure(_ error: Error) -> String {
+        (error as? ModelCacheError)?.errorDescription ?? "\(error)"
     }
 
     func remove() {
@@ -221,7 +251,7 @@ final class Transcriber: Transcribing {
             do {
                 manager = try await task.value.manager
             } catch {
-                throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(error)")
+                throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(Self.loadFailure(error))")
             }
         case .missing:
             throw TranscribeError(reason: .asrUnavailable, message: "speech model is not loaded")
@@ -276,7 +306,7 @@ final class Transcriber: Transcribing {
             return try await pending.value
         } catch {
             if meetingManager == pending { meetingManager = nil }
-            throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(error)")
+            throw TranscribeError(reason: .asrUnavailable, message: "speech model failed to load: \(Self.loadFailure(error))")
         }
     }
 
