@@ -157,10 +157,12 @@ export type InsertFailure =
 
 type Inserted = { kind: "inserted"; method: Exclude<InsertMethod, "none"> };
 type NotInserted = { kind: "notInserted"; reason: InsertFailure };
+/** Who decided a dictation was not inserted: the helper's refusal, the insert watchdog, or a helper exit. */
+export type NotInsertedSource = "helper" | "timeout" | "helperExited";
 
 export type Outcome =
   | Inserted
-  | (NotInserted & { copied: boolean })
+  | (NotInserted & { copied: boolean; source: NotInsertedSource })
   | { kind: "empty" }
   | { kind: "tooShort" }
   | { kind: "failed"; message: string };

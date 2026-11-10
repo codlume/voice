@@ -4,6 +4,7 @@ import type {
   InsertFailure,
   InsertMethod,
   ModelStatus,
+  NotInsertedSource,
   Outcome,
   PillState,
 } from "../shared/api.ts";
@@ -61,7 +62,7 @@ export type Session =
       copyToClipboard: boolean;
     }
   // Insertion failed and the transcript is going to the clipboard; done waits for the write.
-  | { phase: "copying"; id: string; reason: InsertFailure }
+  | { phase: "copying"; id: string; reason: InsertFailure; source: NotInsertedSource }
   | { phase: "done"; id: string; outcome: Outcome };
 
 type Cleaning = Extract<Session, { phase: "cleaning" }>;
@@ -239,7 +240,9 @@ function uncleaned(state: Cleaning): Inserting {
 
 function produced(
   state: Inserting,
-  outcome: Extract<Outcome, { kind: "inserted" }> | { kind: "notInserted"; reason: InsertFailure },
+  outcome:
+    | Extract<Outcome, { kind: "inserted" }>
+    | { kind: "notInserted"; reason: InsertFailure; source: NotInsertedSource },
   ...effects: Effect[]
 ): Step {
   const { id, raw, insertedCleanup, dictionaryFixes, destination, copyToClipboard } = state;
@@ -256,7 +259,7 @@ function produced(
   kept.push({ type: "copy", id, output: state.output });
   if (outcome.kind === "inserted") return finish(id, outcome, ...effects, ...kept);
   return {
-    state: { phase: "copying", id, reason: outcome.reason },
+    state: { phase: "copying", id, reason: outcome.reason, source: outcome.source },
     effects: [...effects, ...kept],
   };
 }
@@ -398,18 +401,23 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "insertResult": {
       if (state.phase !== "inserting") return same;
       if (event.method === "none") {
-        return produced(state, { kind: "notInserted", reason: event.reason ?? "failed" });
+        return produced(state, {
+          kind: "notInserted",
+          reason: event.reason ?? "failed",
+          source: "helper",
+        });
       }
       return produced(state, { kind: "inserted", method: event.method });
     }
     case "copied": {
       if (state.phase !== "copying") return same;
-      return finish(state.id, { kind: "notInserted", reason: state.reason, copied: event.ok });
+      const { reason, source } = state;
+      return finish(state.id, { kind: "notInserted", reason, source, copied: event.ok });
     }
     case "helperExited": {
       if (state.phase === "idle" || state.phase === "done" || state.phase === "copying")
         return same;
-      const lost = { kind: "notInserted", reason: "failed" } as const;
+      const lost = { kind: "notInserted", reason: "failed", source: "helperExited" } as const;
       if (state.phase === "cleaning") {
         return produced(uncleaned(state), lost, { type: "cancelCleanup", id: state.id });
       }
@@ -434,11 +442,12 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
         );
       }
       if (state.phase === "inserting") {
-        return produced(state, { kind: "notInserted", reason: "failed" });
+        return produced(state, { kind: "notInserted", reason: "failed", source: "timeout" });
       }
       // A write that never settles must not hold the session; the user is not told it copied.
       if (state.phase === "copying") {
-        return finish(state.id, { kind: "notInserted", reason: state.reason, copied: false });
+        const { reason, source } = state;
+        return finish(state.id, { kind: "notInserted", reason, source, copied: false });
       }
       return same;
     }

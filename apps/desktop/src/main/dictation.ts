@@ -162,6 +162,14 @@ function sessionTimings(s: Started, outcome: Outcome["kind"], finishedAt: number
   };
 }
 
+// How the session's text did or did not reach the target, for the local session line.
+function insertDecision(outcome: Outcome) {
+  if (outcome.kind === "inserted") return { method: outcome.method };
+  if (outcome.kind !== "notInserted") return {};
+  const { reason, source, copied } = outcome;
+  return { reason, source, copied: String(copied) };
+}
+
 export function createDictation(options: DictationOptions): Dictation {
   const { store, send, cleanup, log } = options;
   const now = options.now ?? Date.now;
@@ -441,6 +449,7 @@ export function createDictation(options: DictationOptions): Dictation {
     };
     log(
       timingLine("session", id, outcome.kind, {
+        ...insertDecision(outcome),
         ...capture?.timings,
         insertRoute: capture?.insertRoute,
         asrState: capture?.asrState,
@@ -536,7 +545,20 @@ export function createDictation(options: DictationOptions): Dictation {
       case "transcript.failed":
         dispatch({ type: "transcriptFailed", id: event.id, message: event.message });
         return;
-      case "insert.result":
+      case "insert.result": {
+        // A result for a session the watchdog or a helper exit already settled changes nothing,
+        // but it shows whether the text landed after the fallback.
+        const session = store.state.session;
+        const current = session.phase !== "idle" && session.id === event.id;
+        if (started?.id === event.id && !(current && session.phase === "inserting")) {
+          const result =
+            event.method === "none"
+              ? `reason=${event.reason}`
+              : `route=${event.route ?? "unknown"}`;
+          log(
+            `insert.result ${event.id.slice(0, 8)} late phase=${current ? session.phase : "ended"} method=${event.method} ${result}`,
+          );
+        }
         switch (event.method) {
           case "accessibility":
             track(event.id, { insertRoute: event.route ?? undefined });
@@ -557,6 +579,7 @@ export function createDictation(options: DictationOptions): Dictation {
           reason: event.method === "none" ? event.reason : null,
         });
         return;
+      }
       case "microphones.changed":
         store.update((s) => ({
           ...s,

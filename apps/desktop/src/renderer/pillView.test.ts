@@ -18,6 +18,7 @@ const kept = (reason: InsertFailure, copied: boolean): Outcome => ({
   kind: "notInserted",
   reason,
   copied,
+  source: "helper",
 });
 
 describe("pillView", () => {
@@ -40,7 +41,9 @@ describe("pillView", () => {
       kind: "inserted",
       method: "paste",
     });
-    expect(done({ kind: "notInserted", reason: "failed", copied: true }).kind).not.toBe("inserted");
+    expect(
+      done({ kind: "notInserted", reason: "failed", copied: true, source: "helper" }).kind,
+    ).not.toBe("inserted");
   });
 
   test.each<[Outcome, string]>([
