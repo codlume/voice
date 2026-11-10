@@ -63,13 +63,14 @@ final class Insertion {
         let readHost = host == .pending && isBrowser(bundleId)
         if !readHost { target.settleHost() }
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: 1, log: log)
+            snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: 1, origin: nil, log: log)
         }
         return target
     }
 
     private func snapshotFocus(
-        of target: InsertTarget, id: String, pid: pid_t, readHost: Bool, attempt: Int, log: ((String) -> Void)?
+        of target: InsertTarget, id: String, pid: pid_t, readHost: Bool, attempt: Int,
+        origin: TargetFocus<FocusElement>?, log: ((String) -> Void)?
     ) {
         let inputUnchanged = { focusInputStamp() == target.pressStamp }
         guard inputUnchanged() else {
@@ -81,16 +82,18 @@ final class Insertion {
         // An app that did not answer would spend its timeout again and still give no baseline.
         let second = first == .noAnswer ? first : readTargetFocus(pid: pid)
         let unchanged = inputUnchanged()
-        let agreed: TargetFocus<FocusElement>?
-        if unchanged, case .focused(let focus) = first, first == second { agreed = focus } else { agreed = nil }
+        let origin = origin ?? first.focus
+        let reads = unchanged && first == second ? first.focus : nil
+        let moved = reads.map { now in origin.map { !$0.isSameTarget(as: now, pageURL: { pageURL(below: $0.value) }) } ?? false } ?? false
+        let agreed = moved ? nil : reads
         DispatchQueue.main.async { [self] in
             var focus = CapturedFocus<FocusElement>.pending
             focus.resolve(
                 first: first, second: second, inputUnchanged: unchanged && inputUnchanged(),
-                frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
+                frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, movedSinceFirstRead: moved)
             if case .unavailable(let loss) = focus, loss.isTransient, attempt < focusSnapshotAttempts {
                 DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + focusSnapshotRetryDelay) { [self] in
-                    snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: attempt + 1, log: log)
+                    snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: attempt + 1, origin: origin, log: log)
                 }
                 return
             }
@@ -286,9 +289,10 @@ final class Insertion {
 let axMessagingTimeout: Float = 0.3
 
 /// A transient miss gets two more snapshots while the user is still speaking. The spacing is an
-/// estimate of how long Chromium takes to build its tree, not a measurement. A hung app spends
-/// one AX timeout per attempt, so the baseline still settles within 3 x 0.3 s + 2 x 0.2 s =
-/// 1.3 s, inside the selection reader's `focusDeadline`.
+/// estimate of how long Chromium takes to build its tree, not a measurement. An app that never
+/// answers settles the baseline in about 3 x 0.3 s + 2 x 0.2 s. One that answers each call just
+/// inside its timeout can take seconds, so the selection reader still relies on its own
+/// `focusDeadline`, and an insert that arrives first refuses with the baseline pending.
 private let focusSnapshotAttempts = 3
 private let focusSnapshotRetryDelay: TimeInterval = 0.2
 

@@ -135,9 +135,31 @@ private extension CapturedFocus where Element == String {
         for loss in [FocusLoss.noAnswer, .readsDisagree] {
             #expect(loss.isTransient)
         }
-        for loss in [FocusLoss.noApp, .untrusted, .inputMoved, .notFrontmost, .nothingFocused] {
+        for loss in [FocusLoss.noApp, .untrusted, .inputMoved, .notFrontmost, .nothingFocused, .focusMoved] {
             #expect(!loss.isTransient)
         }
+    }
+
+    @Test func retryRefusesAFieldTheFirstReadDidNotSee() {
+        let other = TargetFocus(anchor: .element("composer-b"), window: "window-a", title: "Conversation A")
+        #expect(!composer.isSameTarget(as: other, pageURL: { _ in nil }))
+        var baseline = CapturedFocus<String>.pending
+        baseline.resolve(first: .focused(other), second: .focused(other), inputUnchanged: true, frontmost: true, movedSinceFirstRead: true)
+        #expect(baseline == .unavailable(.focusMoved))
+        #expect(baseline.validate(.focused(other), comparingTitle: false) == .unverifiable)
+    }
+
+    @Test func retryKeepsTheFirstReadsTargetAcrossAnAccessibilitySwitch() {
+        let url = "https://mail.example/#inbox"
+        let element = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (4)")
+        let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
+        #expect(app.isSameTarget(as: element, pageURL: { _ in
+            Issue.record("the page URL was read")
+            return nil
+        }))
+        let page = TargetFocus<String>(anchor: .windowOnly(pageURL: url), window: "window-a", title: "Inbox (3)")
+        #expect(page.isSameTarget(as: element, pageURL: { _ in url }))
+        #expect(!page.isSameTarget(as: element, pageURL: { _ in "https://mail.example/#sent" }))
     }
 
     @Test func stableBaselineWithNoInterveningInputAllowsInsertion() {

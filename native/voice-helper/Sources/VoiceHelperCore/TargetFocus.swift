@@ -45,6 +45,11 @@ public struct TargetFocus<Element: Equatable>: Equatable {
         case (.element, .windowOnly): return .anchorKind
         }
     }
+
+    /// Whether a later snapshot still describes this target, whatever its title now says.
+    public func isSameTarget(as later: Self, pageURL: (Element) -> String?) -> Bool {
+        change(to: later, comparingTitle: false, pageURL: pageURL) == nil
+    }
 }
 
 extension FocusAnchor: Sendable where Element: Sendable {}
@@ -54,15 +59,21 @@ public enum FocusReread<Element: Equatable>: Equatable {
     case focused(TargetFocus<Element>)
     case nothingFocused
     case noAnswer
+
+    public var focus: TargetFocus<Element>? {
+        if case .focused(let focus) = self { return focus }
+        return nil
+    }
 }
 
 /// Why a session has no focus baseline.
 public enum FocusLoss: String, Equatable, Sendable {
-    case noApp, untrusted, inputMoved, notFrontmost, noAnswer, nothingFocused, readsDisagree
+    case noApp, untrusted, inputMoved, notFrontmost, noAnswer, nothingFocused, readsDisagree, focusMoved
 
     /// A busy app, or two reads on either side of Chromium switching its accessibility tree on,
     /// can pass without the user doing anything, so the snapshot is worth taking again. The
-    /// others describe the user or the app, and another read would say the same.
+    /// others describe the user or the app, and another read would say the same. `focusMoved`
+    /// ends a retry whose snapshot no longer shows the first read's target.
     public var isTransient: Bool { self == .noAnswer || self == .readsDisagree }
 }
 
@@ -81,14 +92,19 @@ public enum CapturedFocus<Element: Equatable>: Equatable {
     case unavailable(FocusLoss)
     case captured(TargetFocus<Element>)
 
+    /// `movedSinceFirstRead` says the agreeing reads describe another target than the session's
+    /// first read. Focus can move with no press (a swipe back, a page focusing another field), and
+    /// a retry must not adopt that target as the user's.
     public mutating func resolve(
-        first: FocusReread<Element>, second: FocusReread<Element>, inputUnchanged: Bool, frontmost: Bool
+        first: FocusReread<Element>, second: FocusReread<Element>, inputUnchanged: Bool, frontmost: Bool,
+        movedSinceFirstRead: Bool = false
     ) {
         guard inputUnchanged else { return self = .unavailable(.inputMoved) }
         guard frontmost else { return self = .unavailable(.notFrontmost) }
         switch (first, second) {
         case (.noAnswer, _), (_, .noAnswer): self = .unavailable(.noAnswer)
-        case (.focused(let focus), .focused(let again)) where focus == again: self = .captured(focus)
+        case (.focused(let focus), .focused(let again)) where focus == again:
+            self = movedSinceFirstRead ? .unavailable(.focusMoved) : .captured(focus)
         case (.nothingFocused, .nothingFocused): self = .unavailable(.nothingFocused)
         default: self = .unavailable(.readsDisagree)
         }
