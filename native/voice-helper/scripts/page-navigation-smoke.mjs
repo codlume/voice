@@ -43,7 +43,9 @@ try {
     const baselineCaptured = () =>
       helper
         .eventsSince(from)
-        .some((event) => event.type === "log" && event.message === "target focus captured");
+        .some(
+          (event) => event.type === "log" && /^target focus \S+: captured /.test(event.message),
+        );
     const capture = await dictateFixture(helper, "short.wav", id, "en", {
       onStarted: async () => {
         assert(await settle(baselineCaptured, true), "the focus baseline was not captured");
@@ -67,7 +69,9 @@ try {
     const refusedByFocus = helper
       .eventsSince(from)
       .some(
-        (event) => event.type === "log" && event.message === "insert refused: target focus changed",
+        (event) =>
+          event.type === "log" &&
+          event.message.startsWith(`insert ${id}: refused focusChanged (focus `),
       );
     assert(refusedByFocus, "the refusal did not come from the focus comparison");
     const landed = await target.read();

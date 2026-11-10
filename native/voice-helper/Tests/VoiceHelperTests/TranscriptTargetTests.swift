@@ -53,7 +53,7 @@ struct TranscriptTargetTests {
     @MainActor func reportsTheHostTheSessionStartedWith(seed: HostRead, host: String?) async throws {
         let harness = try SilentCapture()
         defer { harness.close() }
-        let target = harness.insertion.recordTarget(pid: nil, bundleId: "com.google.Chrome", host: seed, log: nil)
+        let target = harness.insertion.recordTarget(id: "s1", pid: nil, bundleId: "com.google.Chrome", host: seed, log: nil)
 
         harness.start(target)
         let reported = try #require(try await harness.transcript()["target"] as? [String: Any])

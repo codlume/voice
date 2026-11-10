@@ -85,7 +85,7 @@ final class Helper {
             let override = testTarget
             testTarget = nil
             let target = insertion.recordTarget(
-                pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
+                id: id, pid: app?.processIdentifier, bundleId: override?.bundleId ?? app?.bundleIdentifier,
                 host: override.map { .read($0.host) } ?? (detectHost ? .pending : .read(nil)),
                 log: testMode ? { [output] in output.log(.info, $0) } : nil)
             if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, hotkeyUptimeMs: hotkeyUptimeMs,

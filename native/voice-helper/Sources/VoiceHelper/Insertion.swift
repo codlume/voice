@@ -53,45 +53,84 @@ final class Insertion {
         self.pasteboard = pasteboard
     }
 
-    func recordTarget(pid: pid_t?, bundleId: String?, host: HostRead, log: ((String) -> Void)?) -> InsertTarget {
+    func recordTarget(id: String, pid: pid_t?, bundleId: String?, host: HostRead, log: ((String) -> Void)?) -> InsertTarget {
         let target = InsertTarget(pid: pid, bundleId: bundleId, host: host)
         guard let pid, AXIsProcessTrusted() else {
-            target.focus = .unavailable
             target.settleHost()
+            settle(target, id: id, as: .unavailable(pid == nil ? .noApp : .untrusted), attempt: 0)
             return target
         }
         let readHost = host == .pending && isBrowser(bundleId)
         if !readHost { target.settleHost() }
-        let inputUnchanged = { focusInputStamp() == target.pressStamp }
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard inputUnchanged() else {
-                target.settleHost()
-                DispatchQueue.main.async { target.focus = .unavailable }
-                return
-            }
-            let first = readTargetFocus(pid: pid)
-            let second = readTargetFocus(pid: pid)
-            let unchanged = inputUnchanged()
-            DispatchQueue.main.async {
-                target.focus.resolve(first: first, second: second, inputUnchanged: unchanged
-                    && inputUnchanged()
-                    && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
-                log?(target.focus == .unavailable ? "target focus unavailable" : "target focus captured")
-            }
-            guard readHost else { return }
-            guard unchanged, case .focused(let focus) = first, first == second else { return target.settleHost() }
-            readPageHost(of: target, from: focus, inputUnchanged: inputUnchanged, log: log)
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: 1, log: log)
         }
         return target
+    }
+
+    private func snapshotFocus(
+        of target: InsertTarget, id: String, pid: pid_t, readHost: Bool, attempt: Int, log: ((String) -> Void)?
+    ) {
+        let inputUnchanged = { focusInputStamp() == target.pressStamp }
+        guard inputUnchanged() else {
+            target.settleHost()
+            DispatchQueue.main.async { [self] in settle(target, id: id, as: .unavailable(.inputMoved), attempt: attempt) }
+            return
+        }
+        let first = readTargetFocus(pid: pid)
+        // An app that did not answer would spend its timeout again and still give no baseline.
+        let second = first == .noAnswer ? first : readTargetFocus(pid: pid)
+        let unchanged = inputUnchanged()
+        let agreed: TargetFocus<FocusElement>?
+        if unchanged, case .focused(let focus) = first, first == second { agreed = focus } else { agreed = nil }
+        DispatchQueue.main.async { [self] in
+            var focus = CapturedFocus<FocusElement>.pending
+            focus.resolve(
+                first: first, second: second, inputUnchanged: unchanged && inputUnchanged(),
+                frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
+            if case .unavailable(let loss) = focus, loss.isTransient, attempt < focusSnapshotAttempts {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + focusSnapshotRetryDelay) { [self] in
+                    snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: attempt + 1, log: log)
+                }
+                return
+            }
+            if agreed == nil { target.settleHost() }
+            settle(target, id: id, as: focus, attempt: attempt)
+        }
+        guard readHost, let agreed else { return }
+        readPageHost(of: target, from: agreed, inputUnchanged: inputUnchanged, log: log)
+    }
+
+    private func settle(_ target: InsertTarget, id: String, as focus: CapturedFocus<FocusElement>, attempt: Int) {
+        target.focus = focus
+        let outcome: String
+        switch focus {
+        case .captured(let captured): outcome = captured.anchor.element == nil ? "captured windowOnly" : "captured element"
+        case .unavailable(let loss): outcome = "unavailable \(loss.rawValue)"
+        case .pending: return
+        }
+        output.log(.info, "target focus \(id): \(outcome), attempt \(attempt)")
+    }
+
+    /// Every insert ends here, so each result has one log line naming its branch. The line holds
+    /// the session id and enum names, never the transcript, a title, a URL, or the clipboard.
+    private func finish(_ id: String, _ outcome: InsertOutcome, why: String? = nil) {
+        output.emit(.insertResult(id: id, outcome: outcome))
+        let branch: String
+        switch outcome {
+        case .accessibility(let route): branch = "accessibility \(route.rawValue)"
+        case .paste(let route, _): branch = "paste \(route.rawValue)"
+        case .refused(let reason): branch = "refused \(reason.rawValue)"
+        }
+        output.log(.info, "insert \(id): \(branch)" + (why.map { " (\($0))" } ?? ""))
     }
 
     func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?) {
         dispatchPrecondition(condition: .onQueue(.main))
         let focused: AXUIElement?
-        switch check(id: id, target: target) {
-        case .refused(let reason):
-            output.emit(.insertResult(id: id, outcome: .refused(reason)))
-            return
+        switch check(target: target) {
+        case .refused(let reason, let why):
+            return finish(id, .refused(reason), why: why)
         case .ready(let element):
             focused = element
         }
@@ -110,9 +149,9 @@ final class Insertion {
         }
         switch outcome {
         case .inserted:
-            output.emit(.insertResult(id: id, outcome: .accessibility(.direct)))
+            finish(id, .accessibility(.direct))
         case .notEditable:
-            output.emit(.insertResult(id: id, outcome: .refused(.noFocusedField)))
+            finish(id, .refused(.noFocusedField), why: "element takes no text")
         case .paste(let route):
             paste(id: id, text: text, html: html, route: route, keepOnClipboard: keepOnClipboard)
         case .unchanged(let focused, let before):
@@ -120,7 +159,7 @@ final class Insertion {
             // Chromium's silent no-op before the paste fallback risks a second copy.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                 if AXWriteVerdict(before: before, after: textState(of: focused)) == .inserted {
-                    output.emit(.insertResult(id: id, outcome: .accessibility(.late)))
+                    finish(id, .accessibility(.late))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
                     paste(id: id, text: text, html: html, route: .unchanged, keepOnClipboard: keepOnClipboard)
@@ -131,35 +170,37 @@ final class Insertion {
 
     private enum TargetCheck {
         case ready(focused: AXUIElement?)
-        case refused(InsertFailure)
+        case refused(InsertFailure, why: String)
     }
 
-    private func check(id: String, target destination: InsertTarget?) -> TargetCheck {
-        guard let destination else {
-            output.log(.error, "insert \(id) refused: no finished capture or read with that id")
-            return .refused(.failed)
-        }
+    private func check(target destination: InsertTarget?) -> TargetCheck {
+        guard let destination else { return .refused(.failed, why: "no finished capture or read with that id") }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.pid else {
-            return .refused(.focusChanged)
+            return .refused(.focusChanged, why: "not frontmost")
         }
-        guard !IsSecureEventInputEnabled() else { return .refused(.secureInput) }
+        guard !IsSecureEventInputEnabled() else { return .refused(.secureInput, why: "secure input") }
         // Without accessibility neither the AX write nor the Cmd+V keystroke can reach the app.
-        guard let pid = destination.pid, AXIsProcessTrusted(), case .captured(let captured) = destination.focus
-        else {
-            return .refused(.failed)
+        guard let pid = destination.pid, AXIsProcessTrusted() else {
+            return .refused(.failed, why: destination.pid == nil ? "no app" : "untrusted")
         }
-        switch destination.focus.validate(readTargetFocus(pid: pid), comparingTitle: destination.comparesTitle) {
+        let captured: TargetFocus<FocusElement>
+        switch destination.focus {
+        case .captured(let focus): captured = focus
+        case .pending: return .refused(.failed, why: "baseline pending")
+        case .unavailable(let loss): return .refused(.failed, why: "baseline \(loss.rawValue)")
+        }
+        let validation = destination.focus.validate(
+            readTargetFocus(pid: pid), comparingTitle: destination.comparesTitle, pageURL: { pageURL(below: $0.value) })
+        switch validation {
         case .unchanged:
             if let origin = destination.origin, selectionMoved(origin, element: captured.anchor.element?.value) {
-                output.log(.info, "insert refused: selection changed since the read")
-                return .refused(.selectionChanged)
+                return .refused(.selectionChanged, why: "selection moved")
             }
             return .ready(focused: captured.anchor.element?.value)
-        case .changed:
-            output.log(.info, "insert refused: target focus changed")
-            return .refused(.focusChanged)
+        case .changed(let change):
+            return .refused(.focusChanged, why: "focus \(change.rawValue)")
         case .unverifiable:
-            return .refused(.failed)
+            return .refused(.failed, why: "reread noAnswer")
         }
     }
 
@@ -234,7 +275,7 @@ final class Insertion {
         // result reports the keystroke, not the insertion. The restore only protects the user's
         // clipboard. A slow target (Electron under load, a remote desktop) can read the
         // pasteboard well after the keystroke, so the restore waits a full second.
-        output.emit(.insertResult(id: id, outcome: .paste(route, clipboardSaveMs: clipboardSaveMs)))
+        finish(id, .paste(route, clipboardSaveMs: clipboardSaveMs))
         guard !keepOnClipboard else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
             pasteboard.restore(write: write)
@@ -243,6 +284,13 @@ final class Insertion {
 }
 
 let axMessagingTimeout: Float = 0.3
+
+/// A transient miss gets two more snapshots while the user is still speaking. The spacing is an
+/// estimate of how long Chromium takes to build its tree, not a measurement. A hung app spends
+/// one AX timeout per attempt, so the baseline still settles within 3 x 0.3 s + 2 x 0.2 s =
+/// 1.3 s, inside the selection reader's `focusDeadline`.
+private let focusSnapshotAttempts = 3
+private let focusSnapshotRetryDelay: TimeInterval = 0.2
 
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
 /// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
