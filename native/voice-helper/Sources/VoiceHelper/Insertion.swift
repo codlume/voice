@@ -266,11 +266,12 @@ final class Insertion {
 
 let axMessagingTimeout: Float = 0.3
 
-/// A transient miss gets two more snapshots while the user is still speaking. The spacing is an
-/// estimate of how long Chromium takes to build its tree, not a measurement. An app that never
-/// answers settles the baseline in about 3 x 0.3 s + 2 x 0.2 s. One that answers each call just
-/// inside its timeout can take seconds, so the selection reader still relies on its own
-/// `focusDeadline`, and an insert that arrives first refuses with the baseline pending.
+/// A transient miss gets two more snapshots while the user is still speaking, if the session's
+/// first read named a target. The spacing is an estimate of how long Chromium takes to build its
+/// tree, not a measurement. An app that never answers gets no retry and settles the baseline
+/// after one timeout. One that answers each call just inside its timeout can take seconds, so
+/// the selection reader still relies on its own `focusDeadline`, and an insert that arrives
+/// first refuses with the baseline pending.
 private let focusSnapshotRetryDelay: TimeInterval = 0.2
 
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
