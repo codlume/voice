@@ -182,14 +182,17 @@ final class Insertion {
         case .pending: return .refused(.failed, why: "baseline pending")
         case .unavailable(let loss): return .refused(.failed, why: "baseline \(loss.rawValue)")
         }
+        let current = readTargetFocus(pid: pid)
         let validation = destination.focus.validate(
-            readTargetFocus(pid: pid), comparingTitle: destination.comparesTitle, pageURL: { pageURL(below: $0.value) })
+            current, comparingTitle: destination.comparesTitle, pageURL: { pageURL(below: $0.value) })
         switch validation {
         case .unchanged:
             if let origin = destination.origin, selectionMoved(origin, element: captured.anchor.element?.value) {
                 return .refused(.selectionChanged, why: "selection moved")
             }
-            return .ready(focused: captured.anchor.element?.value)
+            // A window-only baseline names no element. Once the reread does, that element says
+            // whether the focus takes text, so a focused button is refused instead of pasted at.
+            return .ready(focused: captured.anchor.element?.value ?? current.focus?.anchor.element?.value)
         case .changed(let change):
             return .refused(.focusChanged, why: "focus \(change.rawValue)")
         case .unverifiable:
