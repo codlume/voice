@@ -110,6 +110,14 @@ private final class ScriptedApp {
         #expect(app.pauses == 0)
     }
 
+    @Test func twoAgreeingWindowOnlyReadsWithNoURLAreCaptured() {
+        let window = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Channel")
+        let app = ScriptedApp([.focused(window), .focused(window)])
+        let snapshot = app.takeSnapshot()
+        #expect(snapshot.focus == .captured(window))
+        #expect(snapshot.attempt == 1)
+    }
+
     @Test func aWindowOnlyFirstReadWithNoURLIsNotRetried() {
         let window = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Page B")
         let app = ScriptedApp([.focused(window), .noAnswer, .focused(window), .focused(window)])
