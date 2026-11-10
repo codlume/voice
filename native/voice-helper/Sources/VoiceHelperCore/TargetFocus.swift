@@ -69,12 +69,13 @@ public enum FocusReread<Element: Equatable>: Equatable {
 
 /// Why a session has no focus baseline.
 public enum FocusLoss: String, Equatable, Sendable {
-    case noApp, untrusted, inputMoved, notFrontmost, noAnswer, nothingFocused, readsDisagree, focusMoved
+    case noApp, untrusted, inputMoved, notFrontmost, noAnswer, nothingFocused, readsDisagree, focusMoved, cancelled
 
     /// A busy app, or two reads on either side of Chromium switching its accessibility tree on,
     /// can pass without the user doing anything, so the snapshot is worth taking again. The
     /// others describe the user or the app, and another read would say the same. `focusMoved`
-    /// ends a retry whose snapshot no longer shows the first read's target.
+    /// ends a retry whose snapshot no longer shows the first read's target, and `cancelled` one
+    /// whose session was abandoned first.
     public var isTransient: Bool { self == .noAnswer || self == .readsDisagree }
 }
 

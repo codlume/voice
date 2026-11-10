@@ -17,6 +17,7 @@ final class InsertTarget {
     var focus = CapturedFocus<FocusElement>.pending
     var origin: SelectionOrigin?
     let host: OSAllocatedUnfairLock<HostRead>
+    private let cancelled = OSAllocatedUnfairLock(initialState: false)
 
     init(pid: pid_t?, bundleId: String?, host: HostRead = .pending) {
         self.pid = pid
@@ -28,8 +29,16 @@ final class InsertTarget {
         origin == nil && focusInputStamp() != pressStamp
     }
 
+    var isCancelled: Bool { cancelled.withLock { $0 } }
+
     func settleHost() {
         host.withLock { $0.settle() }
+    }
+
+    /// Ends the reads still running for a target that no insert will use.
+    func cancel() {
+        cancelled.withLock { $0 = true }
+        settleHost()
     }
 
     func takeTranscriptTarget() -> TranscriptTarget? {
@@ -68,6 +77,7 @@ final class Insertion {
             // `frontmostApplication` is not documented as thread-safe. Main never waits on the
             // snapshot's thread, so the hop cannot deadlock.
             frontmost: { DispatchQueue.main.sync { NSWorkspace.shared.frontmostApplication?.processIdentifier == pid } },
+            cancelled: { target.isCancelled },
             pageURL: { pageURL(below: $0.value) },
             pause: { Thread.sleep(forTimeInterval: focusSnapshotRetryDelay) })
         DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -108,6 +118,8 @@ final class Insertion {
 
     func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?) {
         dispatchPrecondition(condition: .onQueue(.main))
+        // An insert spends its target, so a baseline still retrying has no one left to read for.
+        defer { target?.cancel() }
         let focused: AXUIElement?
         switch check(target: target) {
         case .refused(let reason, let why):

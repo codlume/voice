@@ -241,24 +241,24 @@ final class Capture {
     }
 
     func cancel(id: String) {
-        if lastTarget.take(id: id) != nil { return }
+        if let finished = lastTarget.take(id: id) { return finished.cancel() }
         switch state {
         case .starting(let session) where session.id == id:
             _ = session.input.drain(closing: true)
-            session.target.settleHost()
+            session.target.cancel()
             stopSource()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .recording(let recording) where recording.session.id == id:
             _ = recording.session.input.drain(closing: true)
-            recording.session.target.settleHost()
+            recording.session.target.cancel()
             stopSource()
             recording.stream?.cancel()
             recording.pauseDecode?.cancel()
             state = .idle
             output.emit(.captureCancelled(id: id))
         case .transcribing(let recording) where recording.session.id == id:
-            recording.session.target.settleHost()
+            recording.session.target.cancel()
             recording.stream?.cancel()
             recording.pauseDecode?.cancel()
             recording.transcription?.cancel()
@@ -277,13 +277,13 @@ final class Capture {
         switch state {
         case .recording(let recording), .transcribing(let recording):
             _ = recording.session.input.drain(closing: true)
-            recording.session.target.settleHost()
+            recording.session.target.cancel()
             recording.stream?.cancel()
             recording.pauseDecode?.cancel()
             recording.transcription?.cancel()
         case .starting(let session):
             _ = session.input.drain(closing: true)
-            session.target.settleHost()
+            session.target.cancel()
         case .idle, .testing:
             break
         }
@@ -506,6 +506,7 @@ final class Capture {
 
     private func fail(_ session: CaptureSession, reason: CaptureFailure, message: String) {
         _ = session.input.drain(closing: true)
+        session.target.cancel()
         disposeMic()
         stopSource()
         state = .idle
@@ -517,6 +518,8 @@ final class Capture {
         guard case .transcribing(let current) = state, current.session.input === session.input else { return }
         if case .transcript(let transcript) = event, !transcript.text.isEmpty {
             lastTarget.put(id: session.id, session.target)
+        } else {
+            session.target.cancel()
         }
         output.emit(event)
         state = .idle

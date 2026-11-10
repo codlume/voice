@@ -141,7 +141,7 @@ private extension CapturedFocus where Element == String {
         for loss in [FocusLoss.noAnswer, .readsDisagree] {
             #expect(loss.isTransient)
         }
-        for loss in [FocusLoss.noApp, .untrusted, .inputMoved, .notFrontmost, .nothingFocused, .focusMoved] {
+        for loss in [FocusLoss.noApp, .untrusted, .inputMoved, .notFrontmost, .nothingFocused, .focusMoved, .cancelled] {
             #expect(!loss.isTransient)
         }
     }

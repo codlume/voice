@@ -11,6 +11,7 @@ private final class ScriptedApp {
     private(set) var reads = 0
     private(set) var pauses = 0
     var pressed = false
+    var cancelled = false
     var duringPause: (ScriptedApp) -> Void = { _ in }
 
     init(_ answers: [FocusReread<String>], pageURL: String? = nil) {
@@ -30,6 +31,7 @@ private final class ScriptedApp {
             },
             inputUnchanged: { !self.pressed },
             frontmost: { true },
+            cancelled: { self.cancelled },
             pageURL: { _ in self.pageURL },
             pause: {
                 self.pauses += 1
@@ -119,5 +121,20 @@ private final class ScriptedApp {
         #expect(snapshot.focus == .unavailable(.inputMoved))
         #expect(snapshot.attempt == 2)
         #expect(app.reads == 2)
+    }
+
+    @Test func aSessionCancelledWhileWaitingToRetryStopsReading() {
+        let app = ScriptedApp([.focused(composer), .noAnswer, .focused(composer), .focused(composer)])
+        app.duringPause = { $0.cancelled = true }
+        let snapshot = app.takeSnapshot()
+        #expect(snapshot.focus == .unavailable(.cancelled))
+        #expect(app.reads == 2)
+    }
+
+    @Test func aSessionCancelledBeforeTheFirstReadReadsNothing() {
+        let app = ScriptedApp([.focused(composer), .focused(composer)])
+        app.cancelled = true
+        #expect(app.takeSnapshot().focus == .unavailable(.cancelled))
+        #expect(app.reads == 0)
     }
 }

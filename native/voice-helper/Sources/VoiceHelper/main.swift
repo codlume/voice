@@ -90,7 +90,7 @@ final class Helper {
                 log: testMode ? { [output] in output.log(.info, $0) } : nil)
             if !capture.start(id: id, language: language, target: target, receivedAt: receivedAt, hotkeyUptimeMs: hotkeyUptimeMs,
                               outputVolumeScale: outputVolumeScale, microphone: microphone) {
-                target.settleHost()
+                target.cancel()
             }
         case .captureStop(let id, let hotkeyUptimeMs):
             capture.stop(id: id, receivedAt: receivedAt, hotkeyUptimeMs: hotkeyUptimeMs)

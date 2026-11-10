@@ -10,16 +10,18 @@ public struct FocusSnapshot<Element: Equatable> {
     private let read: () -> FocusReread<Element>
     private let inputUnchanged: () -> Bool
     private let frontmost: () -> Bool
+    private let cancelled: () -> Bool
     private let pageURL: (Element) -> String?
     private let pause: () -> Void
 
     public init(
         read: @escaping () -> FocusReread<Element>, inputUnchanged: @escaping () -> Bool, frontmost: @escaping () -> Bool,
-        pageURL: @escaping (Element) -> String?, pause: @escaping () -> Void
+        cancelled: @escaping () -> Bool, pageURL: @escaping (Element) -> String?, pause: @escaping () -> Void
     ) {
         self.read = read
         self.inputUnchanged = inputUnchanged
         self.frontmost = frontmost
+        self.cancelled = cancelled
         self.pageURL = pageURL
         self.pause = pause
     }
@@ -28,6 +30,7 @@ public struct FocusSnapshot<Element: Equatable> {
         var origin: TargetFocus<Element>?
         var attempt = 1
         while true {
+            guard !cancelled() else { return (.unavailable(.cancelled), attempt) }
             guard inputUnchanged() else { return (.unavailable(.inputMoved), attempt) }
             let first = read()
             // An app that did not answer would spend its timeout again and still give no baseline.
