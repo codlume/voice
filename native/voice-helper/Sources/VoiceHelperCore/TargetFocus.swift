@@ -30,9 +30,10 @@ public struct TargetFocus<Element: Equatable>: Equatable {
     /// What separates `now` from this target, or nil when it is still the same one. Chromium
     /// starts answering with an element once an assistive client switches its web accessibility
     /// on, which can happen mid-session. A window-only target never named an element, so there
-    /// the page URL it saw still decides. A target that saw no URL (Electron hides it until the
-    /// switch) has only its window to go on. `pageURL` is asked only when a URL decides, because
-    /// the search costs the insert up to 100 ms on main.
+    /// the page URL it saw still decides. A target that saw no URL refuses the element. A lookup
+    /// that gave up reads the same as an app with no URL (Electron), and nothing else ties the
+    /// element to the page the session began on. `pageURL` is asked only when a URL decides,
+    /// because the search costs the insert up to 100 ms on main.
     func change(to now: Self, comparingTitle: Bool, pageURL: (Element) -> String?) -> FocusChange? {
         guard window == now.window else { return .window }
         if comparingTitle, title != now.title { return .title }
@@ -40,7 +41,7 @@ public struct TargetFocus<Element: Equatable>: Equatable {
         case (.element(let then), .element(let current)): return then == current ? nil : .element
         case (.windowOnly(let then), .windowOnly(let current)): return then == current ? nil : .pageURL
         case (.windowOnly(let then), .element):
-            guard let then else { return nil }
+            guard let then else { return .anchorKind }
             return then == pageURL(now.window) ? nil : .pageURL
         case (.element, .windowOnly): return .anchorKind
         }
