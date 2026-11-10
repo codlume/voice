@@ -88,7 +88,7 @@ describe("sessionSpan", () => {
     ],
     ...(["focusChanged", "noFocusedField", "secureInput", "failed"] as const).map(
       (reason): [Outcome, Record<string, string>] => [
-        { kind: "notInserted", reason, copied: false },
+        { kind: "notInserted", reason, copied: false, source: "helper" },
         {
           outcome: "notInserted",
           "insert.reason": reason,

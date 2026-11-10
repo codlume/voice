@@ -55,7 +55,7 @@ final class SelectionReader {
             return .failed(.noFocusedField)
         }
         guard try await keysReleased() else { return .failed(.keysHeld) }
-        let target = insertion.recordTarget(pid: app.processIdentifier, bundleId: app.bundleIdentifier, host: .read(nil), log: nil)
+        let target = insertion.recordTarget(id: id, pid: app.processIdentifier, bundleId: app.bundleIdentifier, host: .read(nil), log: nil)
         guard let focus = try await settledFocus(of: target) else { return .failed(.failed) }
         let element = focus.anchor.element?.value
         let answer = await Task.detached(priority: .userInitiated) { readAXSelection(element) }.value
@@ -114,6 +114,8 @@ final class SelectionReader {
     }
 
     private func settledFocus(of target: InsertTarget) async throws -> TargetFocus<FocusElement>? {
+        // A read that gives up or is ended with the baseline still pending never uses the target.
+        defer { if case .pending = target.focus { target.cancel() } }
         let startedAt = DispatchTime.now()
         while true {
             switch target.focus {

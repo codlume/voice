@@ -43,7 +43,9 @@ try {
     const baselineCaptured = () =>
       helper
         .eventsSince(from)
-        .some((event) => event.type === "log" && event.message === "target focus captured");
+        .some(
+          (event) => event.type === "log" && /^target focus \S+: captured /.test(event.message),
+        );
     const capture = await dictateFixture(helper, "short.wav", id, "en", {
       onStarted: async () => {
         assert(await settle(baselineCaptured, true), "the focus baseline was not captured");
@@ -55,7 +57,7 @@ try {
       },
     });
     assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
-    helper.send({ type: "insert", id, text, html: null });
+    helper.send({ type: "insert", id, text, html: null, keepOnClipboard: false });
     const result = await helper.waitFor(
       (event) => event.type === "insert.result" && event.id === id,
       { label: "insert.result" },
@@ -64,12 +66,15 @@ try {
       result.method === "none" && result.reason === "focusChanged",
       `insert.result method ${result.method} reason ${result.reason ?? ""}`,
     );
-    const refusedByFocus = helper
-      .eventsSince(from)
-      .some(
-        (event) => event.type === "log" && event.message === "insert refused: target focus changed",
-      );
-    assert(refusedByFocus, "the refusal did not come from the focus comparison");
+    // The helper logs the branch right after it emits insert.result.
+    const branch = await helper.waitFor(
+      (event) => event.type === "log" && event.message.startsWith(`insert ${id}: `),
+      { timeoutMs: 2_000, label: "insert branch log line" },
+    );
+    assert(
+      branch.message.startsWith(`insert ${id}: refused focusChanged (focus `),
+      `the refusal did not come from the focus comparison: ${branch.message}`,
+    );
     const landed = await target.read();
     assert(
       landed === "",

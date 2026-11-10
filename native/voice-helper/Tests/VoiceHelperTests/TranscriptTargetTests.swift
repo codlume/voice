@@ -53,7 +53,7 @@ struct TranscriptTargetTests {
     @MainActor func reportsTheHostTheSessionStartedWith(seed: HostRead, host: String?) async throws {
         let harness = try SilentCapture()
         defer { harness.close() }
-        let target = harness.insertion.recordTarget(pid: nil, bundleId: "com.google.Chrome", host: seed, log: nil)
+        let target = harness.insertion.recordTarget(id: "s1", pid: nil, bundleId: "com.google.Chrome", host: seed, log: nil)
 
         harness.start(target)
         let reported = try #require(try await harness.transcript()["target"] as? [String: Any])
@@ -64,7 +64,7 @@ struct TranscriptTargetTests {
     }
 
     @Test(arguments: [nil, "capture.started"])
-    @MainActor func cancellingASessionEndsItsHostRead(after event: String?) async throws {
+    @MainActor func cancellingASessionEndsItsHostReadAndFocusRetries(after event: String?) async throws {
         let harness = try SilentCapture()
         defer { harness.close() }
         let target = InsertTarget(pid: nil, bundleId: "com.google.Chrome")
@@ -74,9 +74,10 @@ struct TranscriptTargetTests {
         harness.capture.cancel(id: "s1")
 
         #expect(target.host.withLock { $0 } == .read(nil))
+        #expect(target.isCancelled)
     }
 
-    @Test @MainActor func shuttingDownEndsTheSessionsHostRead() async throws {
+    @Test @MainActor func shuttingDownEndsTheSessionsHostReadAndFocusRetries() async throws {
         let harness = try SilentCapture()
         defer { harness.close() }
         let target = InsertTarget(pid: nil, bundleId: "com.google.Chrome")
@@ -86,5 +87,6 @@ struct TranscriptTargetTests {
         harness.capture.shutdown()
 
         #expect(target.host.withLock { $0 } == .read(nil))
+        #expect(target.isCancelled)
     }
 }

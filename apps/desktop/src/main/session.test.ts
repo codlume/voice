@@ -1043,7 +1043,7 @@ describe("insertion", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false, source: "helper" },
     });
     expect(all).toContainEqual(remembered("hello world", "hello world"));
     expect(effects).toEqual([
@@ -1120,7 +1120,7 @@ describe("copy to clipboard", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false, source: "helper" },
     });
   });
 
@@ -1131,7 +1131,7 @@ describe("copy to clipboard", () => {
 
   test("waits for the clipboard write before it settles", () => {
     const { state } = run([...toTranscribing, copying("hello world", null), notInserted]);
-    expect(state).toEqual({ phase: "copying", id: ID, reason: "focusChanged" });
+    expect(state).toEqual({ phase: "copying", id: ID, reason: "focusChanged", source: "helper" });
   });
 
   test.each([true, false])("the outcome records whether the write landed (%s)", (ok) => {
@@ -1144,7 +1144,7 @@ describe("copy to clipboard", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged", copied: ok },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: ok, source: "helper" },
     });
   });
 
@@ -1159,7 +1159,7 @@ describe("copy to clipboard", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "focusChanged", copied: false },
+      outcome: { kind: "notInserted", reason: "focusChanged", copied: false, source: "helper" },
     });
   });
 
@@ -1269,7 +1269,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed", copied: false },
+      outcome: { kind: "notInserted", reason: "failed", copied: false, source: "helperExited" },
     });
     expect(effects).toEqual([
       { type: "cancelCleanup", id: ID },
@@ -1283,7 +1283,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed", copied: false },
+      outcome: { kind: "notInserted", reason: "failed", copied: false, source: "helperExited" },
     });
     expect(effects).toEqual([
       dictated("hello world"),
@@ -1374,7 +1374,7 @@ describe("idle and stale events", () => {
     expect(state).toEqual({
       phase: "done",
       id: ID,
-      outcome: { kind: "notInserted", reason: "failed", copied: false },
+      outcome: { kind: "notInserted", reason: "failed", copied: false, source: "timeout" },
     });
     expect(all).toContainEqual(remembered("hello world", "hello world"));
   });

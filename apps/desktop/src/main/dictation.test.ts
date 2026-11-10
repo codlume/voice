@@ -604,7 +604,7 @@ describe("createDictation", () => {
     expect(h.levels).toEqual([0.4]);
     const timing = h.logs.find((line) => line.startsWith("session "));
     expect(timing).toMatch(
-      /outcome=inserted startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=\d+ releaseToInsertMs=\d+/,
+      /outcome=inserted method=\w+ startMs=40 audioMs=800 asrMs=120 cleanupMs=\d+ cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=\d+ releaseToInsertMs=\d+/,
     );
     expect(timing).not.toContain("hello");
   });
@@ -709,8 +709,9 @@ describe("createDictation", () => {
       },
     ]);
     expect(h.logs).toContain(
-      `session ${id.slice(0, 8)} outcome=inserted startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged asrState=cold`,
+      `session ${id.slice(0, 8)} outcome=inserted method=paste startMs=40 pressRelayMs=6 audioMs=800 releaseRelayMs=4 asrMs=120 cleanupMs=0 cleanupQueueMs=2 cleanupGenerateMs=5 insertMs=30 clipboardSaveMs=3 releaseToInsertMs=30 insertRoute=unchanged asrState=cold`,
     );
+    expect(h.logs.filter((line) => line.startsWith("insert.result "))).toEqual([]);
     const json = JSON.stringify(h.reports);
     expect(json).not.toContain("Anna");
     expect(json).not.toContain(id.slice(0, 8));
@@ -1815,6 +1816,11 @@ describe("createDictation", () => {
         outcome: { kind: "notInserted", copied: true },
       });
       expect(h.copies).toEqual([{ text: "keep me", html: null }]);
+      expect(h.logs.find((line) => line.startsWith("session "))).toMatch(
+        new RegExp(
+          `^session ${id.slice(0, 8)} outcome=notInserted reason=noFocusedField source=helper copied=true `,
+        ),
+      );
     });
 
     test("says not copied when the clipboard write fails, and keeps the transcript", async () => {
@@ -1940,9 +1946,31 @@ describe("createDictation", () => {
     expect(h.store.state.session).toEqual({
       phase: "done",
       id,
-      outcome: { kind: "notInserted", reason: "failed", copied: false },
+      outcome: { kind: "notInserted", reason: "failed", copied: false, source: "timeout" },
     });
     expect(h.latest()).toMatchObject({ raw: "stuck", text: "stuck", status: "notInserted" });
+    const short = id.slice(0, 8);
+    expect(h.logs.find((line) => line.startsWith("session "))).toMatch(
+      new RegExp(
+        `^session ${short} outcome=notInserted reason=failed source=timeout copied=false `,
+      ),
+    );
+
+    h.dictation.onHelperEvent({
+      type: "insert.result",
+      id,
+      method: "paste",
+      route: "unchanged",
+      clipboardSaveMs: 3,
+    });
+    expect(h.store.state.session).toMatchObject({
+      phase: "done",
+      outcome: { kind: "notInserted" },
+    });
+    expect(h.logs.at(-1)).toBe(
+      `insert.result ${short} late phase=done method=paste route=unchanged`,
+    );
+    expect(h.logs.join("\n")).not.toContain("stuck");
   });
 
   test("a transcription past the watchdog keeps waiting, says so, and still inserts when it lands", () => {

@@ -57,7 +57,9 @@ try {
     const baselineCaptured = () =>
       helper
         .eventsSince(from)
-        .some((event) => event.type === "log" && event.message === "target focus captured");
+        .some(
+          (event) => event.type === "log" && /^target focus \S+: captured /.test(event.message),
+        );
     const capture = await dictateFixture(helper, "short.wav", id, "en", {
       onStarted: async () => {
         assert(await settle(baselineCaptured, true), "the focus baseline was not captured");
@@ -67,7 +69,7 @@ try {
       },
     });
     assert(capture.transcript.text.trim() !== "", "capture returned an empty transcript");
-    helper.send({ type: "insert", id, text: expected, html: null });
+    helper.send({ type: "insert", id, text: expected, html: null, keepOnClipboard: false });
     const result = await helper.waitFor(
       (event) => event.type === "insert.result" && event.id === id,
       { label: "insert.result" },

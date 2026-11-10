@@ -101,8 +101,13 @@ const pillScenes: Record<string, PillState> = {
   pasted: done({ kind: "inserted", method: "paste" }),
   empty: done({ kind: "empty" }),
   tooShort: done({ kind: "tooShort" }),
-  focusChanged: done({ kind: "notInserted", reason: "focusChanged", copied: false }),
-  secureInput: done({ kind: "notInserted", reason: "secureInput", copied: true }),
+  focusChanged: done({
+    kind: "notInserted",
+    reason: "focusChanged",
+    copied: false,
+    source: "helper",
+  }),
+  secureInput: done({ kind: "notInserted", reason: "secureInput", copied: true, source: "helper" }),
   noModel: done({ kind: "failed", message: "Set up the speech model in Voice first" }),
   longFailure: done({
     kind: "failed",
@@ -280,7 +285,7 @@ const hubScenes: Record<string, HubScene> = {
   },
   "ready-not-inserted": {
     ...ready,
-    session: done({ kind: "notInserted", reason: "focusChanged", copied: false }),
+    session: done({ kind: "notInserted", reason: "focusChanged", copied: false, source: "helper" }),
     history: sampleHistory("notInserted"),
     updates: { ...ready.updates, status: { kind: "ready", version: "1.5.0", notes: releaseNotes } },
   },
@@ -398,7 +403,7 @@ const cycle: [PillState, number][] = [
   [{ kind: "idle" }, 1500],
   [{ kind: "listening" }, 1800],
   [{ kind: "processing", overdue: false }, 700],
-  [done({ kind: "notInserted", reason: "focusChanged", copied: false }), 2500],
+  [done({ kind: "notInserted", reason: "focusChanged", copied: false, source: "helper" }), 2500],
 ];
 
 function sampleHistory(newestStatus: HistoryStatus = "inserted"): HistoryEntry[] {

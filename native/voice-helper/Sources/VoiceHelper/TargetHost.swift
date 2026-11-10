@@ -55,8 +55,8 @@ private func host(of url: String?, _ location: String) -> (host: String?, outcom
 private let windowSearchMaxDepth = 3
 private let windowSearchMaxNodes = 64
 /// The insert waits on this read on main, so a stalled app gives up here instead of at the AX
-/// timeout of every node. Giving up reads as no URL, so an app that never has one (Electron) is
-/// never refused for it.
+/// timeout of every node. Giving up reads as no URL, like an app that never has one (Electron).
+/// Two such reads still match. A field that appears after one is refused.
 private let windowSearchBudget: TimeInterval = 0.1
 
 /// Chromium reports no focused element until an assistive client switches its web accessibility
