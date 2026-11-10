@@ -61,47 +61,25 @@ final class Insertion {
             return target
         }
         let readHost = host == .pending && isBrowser(bundleId)
-        if !readHost { target.settleHost() }
+        let inputUnchanged = { focusInputStamp() == target.pressStamp }
+        let snapshot = FocusSnapshot<FocusElement>(
+            read: { readTargetFocus(pid: pid) },
+            inputUnchanged: inputUnchanged,
+            // `frontmostApplication` is not documented as thread-safe. Main never waits on the
+            // snapshot's thread, so the hop cannot deadlock.
+            frontmost: { DispatchQueue.main.sync { NSWorkspace.shared.frontmostApplication?.processIdentifier == pid } },
+            pageURL: { pageURL(below: $0.value) },
+            pause: { Thread.sleep(forTimeInterval: focusSnapshotRetryDelay) })
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: 1, origin: nil, log: log)
+            let (focus, attempt) = snapshot.take()
+            DispatchQueue.main.async { [self] in settle(target, id: id, as: focus, attempt: attempt) }
+            if readHost, case .captured(let captured) = focus {
+                readPageHost(of: target, from: captured, inputUnchanged: inputUnchanged, log: log)
+            } else {
+                target.settleHost()
+            }
         }
         return target
-    }
-
-    private func snapshotFocus(
-        of target: InsertTarget, id: String, pid: pid_t, readHost: Bool, attempt: Int,
-        origin: TargetFocus<FocusElement>?, log: ((String) -> Void)?
-    ) {
-        let inputUnchanged = { focusInputStamp() == target.pressStamp }
-        guard inputUnchanged() else {
-            target.settleHost()
-            DispatchQueue.main.async { [self] in settle(target, id: id, as: .unavailable(.inputMoved), attempt: attempt) }
-            return
-        }
-        let first = readTargetFocus(pid: pid)
-        // An app that did not answer would spend its timeout again and still give no baseline.
-        let second = first == .noAnswer ? first : readTargetFocus(pid: pid)
-        let unchanged = inputUnchanged()
-        let origin = origin ?? first.focus
-        let reads = unchanged && first == second ? first.focus : nil
-        let moved = reads.map { now in origin.map { !$0.isSameTarget(as: now, pageURL: { pageURL(below: $0.value) }) } ?? false } ?? false
-        let agreed = moved ? nil : reads
-        DispatchQueue.main.async { [self] in
-            var focus = CapturedFocus<FocusElement>.pending
-            focus.resolve(
-                first: first, second: second, inputUnchanged: unchanged && inputUnchanged(),
-                frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, movedSinceFirstRead: moved)
-            if case .unavailable(let loss) = focus, loss.isTransient, attempt < focusSnapshotAttempts {
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + focusSnapshotRetryDelay) { [self] in
-                    snapshotFocus(of: target, id: id, pid: pid, readHost: readHost, attempt: attempt + 1, origin: origin, log: log)
-                }
-                return
-            }
-            if agreed == nil { target.settleHost() }
-            settle(target, id: id, as: focus, attempt: attempt)
-        }
-        guard readHost, let agreed else { return }
-        readPageHost(of: target, from: agreed, inputUnchanged: inputUnchanged, log: log)
     }
 
     private func settle(_ target: InsertTarget, id: String, as focus: CapturedFocus<FocusElement>, attempt: Int) {
@@ -293,7 +271,6 @@ let axMessagingTimeout: Float = 0.3
 /// answers settles the baseline in about 3 x 0.3 s + 2 x 0.2 s. One that answers each call just
 /// inside its timeout can take seconds, so the selection reader still relies on its own
 /// `focusDeadline`, and an insert that arrives first refuses with the baseline pending.
-private let focusSnapshotAttempts = 3
 private let focusSnapshotRetryDelay: TimeInterval = 0.2
 
 /// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
