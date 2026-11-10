@@ -13,6 +13,7 @@ private final class ScriptedApp {
     var pressed = false
     var cancelled = false
     var duringPause: (ScriptedApp) -> Void = { _ in }
+    var duringFrontmost: (ScriptedApp) -> Void = { _ in }
 
     init(_ answers: [FocusReread<String>], pageURL: String? = nil) {
         self.answers = answers
@@ -30,7 +31,10 @@ private final class ScriptedApp {
                 return self.answers.removeFirst()
             },
             inputUnchanged: { !self.pressed },
-            frontmost: { true },
+            frontmost: {
+                self.duringFrontmost(self)
+                return true
+            },
             cancelled: { self.cancelled },
             pageURL: { _ in self.pageURL },
             pause: {
@@ -81,10 +85,11 @@ private final class ScriptedApp {
     @Test func aFieldThatAppearsWhereNoURLWasSeenGivesNoBaseline() {
         let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
         let field = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (3)")
-        let scripted = ScriptedApp([.focused(app), .focused(field), .focused(field), .focused(field)])
+        let scripted = ScriptedApp([.focused(app), .focused(field)])
         let snapshot = scripted.takeSnapshot()
-        #expect(snapshot.focus == .unavailable(.focusMoved))
-        #expect(snapshot.attempt == 2)
+        #expect(snapshot.focus == .unavailable(.readsDisagree))
+        #expect(snapshot.attempt == 1)
+        #expect(scripted.pauses == 0)
     }
 
     @Test func aFirstReadThatTimesOutIsNotRetried() {
@@ -103,6 +108,22 @@ private final class ScriptedApp {
         #expect(snapshot.attempt == 1)
         #expect(app.reads == 2)
         #expect(app.pauses == 0)
+    }
+
+    @Test func aWindowOnlyFirstReadWithNoURLIsNotRetried() {
+        let window = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Page B")
+        let app = ScriptedApp([.focused(window), .noAnswer, .focused(window), .focused(window)])
+        let snapshot = app.takeSnapshot()
+        #expect(snapshot.focus == .unavailable(.noAnswer))
+        #expect(snapshot.attempt == 1)
+        #expect(app.reads == 2)
+        #expect(app.pauses == 0)
+    }
+
+    @Test func aPressWhileWaitingForTheFrontmostAppGivesNoBaseline() {
+        let app = ScriptedApp([.focused(composer), .focused(composer)])
+        app.duringFrontmost = { $0.pressed = true }
+        #expect(app.takeSnapshot().focus == .unavailable(.inputMoved))
     }
 
     @Test func aTargetThatKeepsTimingOutGivesUpAfterThreeAttempts() {

@@ -35,7 +35,9 @@ public struct FocusSnapshot<Element: Equatable> {
             let first = read()
             // An app that did not answer would spend its timeout again and still give no baseline.
             let second = first == .noAnswer ? first : read()
-            if attempt == 1 { origin = first.focus }
+            // A window-only read with no URL names no page, so a later one in that window could
+            // be another page whose lookup also gave up.
+            if attempt == 1, let focus = first.focus, focus.anchor != .windowOnly(pageURL: nil) { origin = focus }
             var moved = false
             if first == second, let origin, let now = first.focus {
                 moved = !origin.isSameTarget(as: now, pageURL: pageURL)
