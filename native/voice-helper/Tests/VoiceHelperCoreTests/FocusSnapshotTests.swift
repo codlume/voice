@@ -76,6 +76,33 @@ private final class ScriptedApp {
         #expect(app.reads == 4)
     }
 
+    @Test func aFieldThatAppearsWhereNoURLWasSeenGivesNoBaseline() {
+        let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
+        let field = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (3)")
+        let scripted = ScriptedApp([.focused(app), .focused(field), .focused(field), .focused(field)])
+        let snapshot = scripted.takeSnapshot()
+        #expect(snapshot.focus == .unavailable(.focusMoved))
+        #expect(snapshot.attempt == 2)
+    }
+
+    @Test func aFirstReadThatTimesOutIsNotRetried() {
+        let app = ScriptedApp([.noAnswer, .focused(otherComposer), .focused(otherComposer)])
+        let snapshot = app.takeSnapshot()
+        #expect(snapshot.focus == .unavailable(.noAnswer))
+        #expect(snapshot.attempt == 1)
+        #expect(app.reads == 1)
+        #expect(app.pauses == 0)
+    }
+
+    @Test func aFieldFocusedAfterAnEmptyFirstReadIsNotRetried() {
+        let app = ScriptedApp([.nothingFocused, .focused(otherComposer), .focused(otherComposer), .focused(otherComposer)])
+        let snapshot = app.takeSnapshot()
+        #expect(snapshot.focus == .unavailable(.readsDisagree))
+        #expect(snapshot.attempt == 1)
+        #expect(app.reads == 2)
+        #expect(app.pauses == 0)
+    }
+
     @Test func aTargetThatKeepsTimingOutGivesUpAfterThreeAttempts() {
         let app = ScriptedApp(Array(repeating: [.focused(composer), .noAnswer], count: 4).flatMap { $0 })
         let snapshot = app.takeSnapshot()

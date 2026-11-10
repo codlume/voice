@@ -73,9 +73,15 @@ private extension CapturedFocus where Element == String {
         let pages = ["window-a": "https://mail.example/#inbox"]
         let page = TargetFocus<String>(anchor: .windowOnly(pageURL: pages["window-a"]), window: "window-a", title: "Inbox (3)")
         #expect(CapturedFocus.captured(page).validate(.focused(now), comparingTitle: false, pageURL: { pages[$0] }) == .unchanged)
-        // Electron shows no page URL until the switch, and one appearing after it is not a navigation.
+    }
+
+    /// A page URL lookup that gave up reads the same as an app with no URL, and a swipe back can
+    /// then put the previous page's field in the same window with no press.
+    @Test func aWindowOnlyTargetWithNoURLRefusesAFieldThatAppears() {
         let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
-        #expect(CapturedFocus.captured(app).validate(.focused(now), comparingTitle: false) == .unchanged)
+        let field = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (3)")
+        #expect(CapturedFocus.captured(app).validate(.focused(field), comparingTitle: false) == .changed(.anchorKind))
+        #expect(CapturedFocus.captured(app).validate(.focused(app), comparingTitle: false) == .unchanged)
     }
 
     @Test func accessibilitySwitchingOnStillRefusesAnotherPageWindowOrTitle() {
@@ -153,7 +159,7 @@ private extension CapturedFocus where Element == String {
         let url = "https://mail.example/#inbox"
         let element = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (4)")
         let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
-        #expect(app.isSameTarget(as: element, pageURL: { _ in
+        #expect(!app.isSameTarget(as: element, pageURL: { _ in
             Issue.record("the page URL was read")
             return nil
         }))
