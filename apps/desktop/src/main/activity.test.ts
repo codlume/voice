@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 
 import { DEFAULT_SETTINGS } from "../shared/api.ts";
 import type { TransformId } from "../shared/transforms.ts";
-import { activity, whenIdle, whenSpeechModelSettles } from "./activity.ts";
+import { activity, whenIdle, whenSpeechModelSettles, whenTranscriptArrives } from "./activity.ts";
 import { idle, type Session } from "./session.ts";
 import { createStore, type AppState } from "./store.ts";
 import { noMeetingFocus } from "./meeting-focus.ts";
@@ -177,5 +177,32 @@ describe("whenSpeechModelSettles", () => {
     const task = vi.fn();
     whenSpeechModelSettles(store, 2000, task);
     expect(task).toHaveBeenCalledOnce();
+  });
+});
+
+async function settled(promise: Promise<void>) {
+  let done = false;
+  void promise.then(() => (done = true));
+  await microtasks();
+  return done;
+}
+
+describe("whenTranscriptArrives", () => {
+  const transcribing: Session = { phase: "transcribing", id: "s1", overdue: false };
+
+  test("does not wait when the helper owes no transcript", async () => {
+    for (const session of [idle, recording, dictationDone]) {
+      const store = createStore({ ...busy, session });
+      expect(await settled(whenTranscriptArrives(store))).toBe(true);
+    }
+  });
+
+  test("waits for a session that is transcribing to move on", async () => {
+    const store = createStore({ ...busy, session: transcribing });
+    const arrived = whenTranscriptArrives(store);
+    store.update((s) => ({ ...s, session: { ...transcribing, overdue: true } }));
+    expect(await settled(arrived)).toBe(false);
+    store.update((s) => ({ ...s, session: dictationDone }));
+    expect(await settled(arrived)).toBe(true);
   });
 });

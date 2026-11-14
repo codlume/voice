@@ -47,7 +47,7 @@ import {
   createAccount,
   resolveApiUrl,
 } from "./account.ts";
-import { activity, whenIdle, whenSpeechModelSettles } from "./activity.ts";
+import { activity, whenIdle, whenSpeechModelSettles, whenTranscriptArrives } from "./activity.ts";
 import { createCleanup, followSettings } from "./cleanup.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 import { startDiagnostics } from "./diagnostics.ts";
@@ -410,7 +410,11 @@ async function main() {
     stateDir: userData,
     env: helperEnv(),
     onEvent: (event) => {
-      if (lifecycle !== "running") return;
+      if (lifecycle !== "running") {
+        // A quit keeps the helper up for the transcript it still owes, and only dictation hears it.
+        if (store.state.session.phase === "transcribing") dictation.onHelperEvent(event);
+        return;
+      }
       dictation.onHelperEvent(event);
       transforms.onHelperEvent(event);
       microphoneTest.onHelperEvent(event);
@@ -432,6 +436,9 @@ async function main() {
         microphoneTest.helperExited();
         installedApps.helperExited();
         meetingsApp.helperExited();
+      } else if (lifecycle === "stopping") {
+        // A quit that waits for a transcript has to hear that none is coming.
+        dictation.dispatch({ type: "helperExited" });
       }
     },
     configure: () => {
@@ -914,17 +921,19 @@ async function main() {
     const timeout = new Promise<"timeout">((resolve) => {
       timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS, "timeout");
     });
+    // Only what the transcript needs waits for it, so the other saves keep their whole bound.
+    const transcript = Promise.race([whenTranscriptArrives(store), timeout]);
     transforms.dispose();
     // An aborted summary writes nothing, so the next launch writes it instead of a failure.
     meetingsApp.dispose();
     const stopped = Promise.allSettled([
       settingsQueue.settled(),
       insights.settled(),
-      history.settled(),
       meetingsApp.settled(),
-      helper.stop(),
-      cleanup.dispose(),
       transformModel.dispose(),
+      transcript.then(() => history.settled()),
+      transcript.then(() => helper.stop()),
+      transcript.then(() => cleanup.dispose()),
     ]);
     const result = await Promise.race([stopped, timeout]);
     clearTimeout(timer);

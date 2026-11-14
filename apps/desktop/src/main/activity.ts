@@ -60,3 +60,20 @@ export function whenSpeechModelSettles(store: Store, timeoutMs: number, task: ()
     if (settled()) finish();
   });
 }
+
+/**
+ * Resolves once the helper owes main no transcript: at once unless a session is transcribing.
+ * Quit waits on this before it stops the helper, because history can keep only a transcript that
+ * has reached main.
+ */
+export function whenTranscriptArrives(store: Store): Promise<void> {
+  const owed = () => store.state.session.phase === "transcribing";
+  if (!owed()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = store.subscribe(() => {
+      if (owed()) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+}
