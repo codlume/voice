@@ -192,11 +192,11 @@ const styles = stylex.create({
 
 const SEARCH_DELAY_MS = 150;
 
-type SearchAnswer = { query: string; hits: readonly MeetingSearchHit[] | "failed" };
+type SearchAnswer = readonly MeetingSearchHit[] | "failed";
 
 /**
- * Main's answer to a search, asked once typing pauses. The last answer stays up, with the query it
- * answers, while the next one loads; a cleared search starts afresh.
+ * Main's answer to a search, asked once typing pauses. The last answer stays up while the next one
+ * loads; a cleared search starts afresh.
  */
 function useSearch(query: string): SearchAnswer | null {
   const trimmed = query.trim();
@@ -205,8 +205,8 @@ function useSearch(query: string): SearchAnswer | null {
   useEffect(() => {
     if (trimmed === "") return;
     let current = true;
-    const answered = (hits: SearchAnswer["hits"]) => {
-      if (current) setAnswer({ query: trimmed, hits });
+    const answered = (next: SearchAnswer) => {
+      if (current) setAnswer(next);
     };
     const timer = setTimeout(() => {
       void hubApi()
@@ -422,7 +422,7 @@ function MeetingsPage({
   const [notice, setNotice] = useState("");
   const start = useAction();
   const search = useSearch(query);
-  const hits = search && search.hits !== "failed" ? search.hits : null;
+  const hits = search === "failed" ? null : search;
   const results = useMemo(() => hits && searchResults(meetings, hits), [meetings, hits]);
   const days = useMemo(
     () => meetingDays(results ? results.map(({ meeting }) => meeting) : meetings, today),
@@ -517,13 +517,13 @@ function MeetingsPage({
           <div {...stylex.props(styles.emptyAction)}>{startButton("secondary")}</div>
         </div>
       </Card>
-    ) : search?.hits === "failed" ? (
+    ) : search === "failed" ? (
       <Card>
         <p {...stylex.props(styles.noMatches)}>Could not search your meetings.</p>
       </Card>
-    ) : search && results?.length === 0 ? (
+    ) : results?.length === 0 ? (
       <Card>
-        <p {...stylex.props(styles.noMatches)}>No meetings match “{search.query}”.</p>
+        <p {...stylex.props(styles.noMatches)}>No meetings match “{query.trim()}”.</p>
       </Card>
     ) : (
       <MeetingList

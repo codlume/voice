@@ -345,6 +345,29 @@ describe("Past notes", () => {
     await vi.waitFor(() => expect(text()).not.toContain("Planowanie sprintu"));
   });
 
+  test("typing over a search that matched nothing names the new search", async () => {
+    const main = fakeMain(sample());
+    await render();
+    const search = await openSearch();
+    await type(search, "zzzz");
+    await waitForText("No meetings match “zzzz”.");
+    let answer!: () => void;
+    const searchMeetings = main.searchMeetings.getMockImplementation()!;
+    main.searchMeetings.mockImplementationOnce(async (query) => {
+      await new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      return searchMeetings(query);
+    });
+    await type(search, "sync");
+    await vi.waitFor(() => expect(main.searchMeetings).toHaveBeenLastCalledWith("sync"));
+    expect(text()).toContain("No meetings match “sync”.");
+    expect(text()).not.toContain("zzzz");
+    await act(async () => answer());
+    await vi.waitFor(() => expect(text()).not.toContain("No meetings match"));
+    expect(text()).toContain("Weekly product sync");
+  });
+
   test("a search main cannot answer says so", async () => {
     const main = fakeMain(sample());
     main.searchMeetings.mockRejectedValueOnce(new Error("io"));
