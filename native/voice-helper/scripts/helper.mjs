@@ -109,12 +109,14 @@ export class Helper {
       "--state-dir",
       stateDir(),
     ];
-    this.child = spawn(/** @type {string} */ (command), args, {
-      env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
-      // Typed as piped so `child.stderr` exists for a caller that asked for "pipe"; it is null
-      // under the default "inherit".
-      stdio: /** @type {["pipe", "pipe", "pipe"]} */ (["pipe", "pipe", stderr]),
-    });
+    const options = { env: { ...process.env, VOICE_HELPER_TEST: "1", ...env } };
+    this.child =
+      stderr === "pipe"
+        ? spawn(/** @type {string} */ (command), args, { ...options, stdio: "pipe" })
+        : spawn(/** @type {string} */ (command), args, {
+            ...options,
+            stdio: ["pipe", "pipe", "inherit"],
+          });
     this.exited = new Promise((resolve) =>
       this.child.on("exit", (code, signal) => resolve({ code, signal })),
     );

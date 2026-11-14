@@ -6,6 +6,7 @@ export const USAGE =
   "usage: node native/voice-helper/scripts/bench.mjs --candidate <voice-helper> [--baseline <voice-helper>] [--runs N] [--only a,b] [--out file.json] [--fnpost <fnpost>] [--verbose]";
 export const METRICS = [
   "load-warm",
+  "launch",
   "load-cold",
   "finalization",
   "hotkey",

@@ -3,9 +3,9 @@
 //   node native/voice-helper/scripts/bench.mjs --baseline <voice-helper> --candidate <voice-helper>
 //     [--runs N] [--only a,b] [--out file.json] [--fnpost <fnpost>] [--verbose]
 // Sides alternate (baseline, candidate, baseline, ...) inside every metric, so load on the machine
-// lands on both. The JSON report goes to stdout and a short table to stderr. Every measurement
-// names the clock and the event pair it came from. Work that failed is counted in `errors` and
-// never becomes a sample.
+// lands on both, and the side that goes first changes every run. The JSON report goes to stdout
+// and a short table to stderr. Every measurement names the clock and the event pair it came from.
+// Work that failed is counted in `errors` and never becomes a sample.
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -63,6 +63,8 @@ const FIXTURES = [
   { name: "pauses", words: ["Friday", "onboarding"] },
   { name: "boundary", words: ["Maria", "billing", "2026"] },
   { name: "url", words: ["github"] },
+  // The decode its pause started is stale at release, so this one always pays a full decode.
+  { name: "pause-then-speech", words: ["Friday", "Thanks"] },
   { name: "long", words: ["migration", "15", "42,000", "2019", "tomorrow", "think"] },
 ];
 const EXCLUSIVE_WAIT_MS = 5 * 60_000;
@@ -165,6 +167,12 @@ async function withEverySide(sides, options, body) {
     for (const close of open.toReversed()) await close();
   }
 }
+
+/**
+ * The order the sides take one run in. With a fixed order the second side decoded a short fixture
+ * about 35 ms faster than the first, whichever binary it was.
+ */
+const taking = (sides, run) => (run % 2 === 0 ? sides : sides.toReversed());
 
 function* eachRun(metric, runs) {
   for (let run = 0; run < runs; run += 1) {
@@ -330,7 +338,7 @@ async function loadWarm({ sides, runs }) {
   const rec = recorder(sides, runs);
   const hashedBytes = bySide(sides, () => Array(runs).fill(null));
   for (const run of eachRun("load-warm", runs)) {
-    for (const side of sides) {
+    for (const side of taking(sides, run)) {
       await rec.attempt(side, run, {}, async () => {
         const load = await warmly(() => timedLoad(side));
         hashedBytes[side.name][run] = load.hashedBytes;
@@ -348,10 +356,69 @@ async function loadWarm({ sides, runs }) {
   };
 }
 
+// What main sends when a helper comes up (`configure` in apps/desktop/src/main/index.ts), in its
+// order. `hotkey.configure` is left out: a configured tap would report keys other sessions post.
+const LAUNCH_COMMANDS = [
+  { type: "microphone.configure", microphone: null },
+  { type: "permissions.check" },
+  { type: "asr.prepare", download: false },
+];
+const isPermissions = (event) => event.type === "permissions";
+
+async function launch({ sides, runs }) {
+  const rec = recorder(sides, runs);
+  for (const run of eachRun("launch", runs)) {
+    for (const side of taking(sides, run)) {
+      await rec.attempt(side, run, {}, async () => {
+        const timings = await warmly(() =>
+          withSide(side, {}, async (helper, spawnedAt) => {
+            const sentAt = performance.now();
+            for (const message of LAUNCH_COMMANDS) helper.send(message);
+            const status = await helper.waitFor(
+              (event) => event.type === "asr.status" && event.state !== "loading",
+              { timeoutMs: 60_000, label: "asr.status ready" },
+            );
+            assert(status.state === "ready", `asr.status is ${status.state}`);
+            assert(
+              await until(() => helper.events.some(isPermissions), 5_000),
+              "the helper never answered permissions.check",
+            );
+            return {
+              loadingMs: arrival(helper, asrStatus("loading")) - sentAt,
+              asrReadyMs: arrival(helper, asrStatus("ready")) - sentAt,
+              permissionsMs: arrival(helper, isPermissions) - sentAt,
+              spawnToAsrReadyMs: arrival(helper, asrStatus("ready")) - spawnedAt,
+            };
+          }),
+        );
+        rec.record(side, run, timings);
+      });
+    }
+  }
+  const sent = `${DRIVER_CLOCK}: ${LAUNCH_COMMANDS.map(({ type }) => `\`${type}\``).join(", ")} sent together on \`ready\``;
+  return {
+    conditions:
+      "A fresh process per sample, sent what main sends at launch. Integrity stamp and CoreML cache warm, as in load-warm. Test mode, so `microphone.configure` builds no audio engine.",
+    measurements: rec.measurements({
+      loadingMs: {
+        unit: "ms",
+        source: `${sent} -> \`asr.status loading\`. The rest of Helper.init plus whatever the main thread does for the commands ahead of \`asr.prepare\`.`,
+      },
+      asrReadyMs: { unit: "ms", source: `${sent} -> \`asr.status ready\`.` },
+      permissionsMs: { unit: "ms", source: `${sent} -> \`permissions\`.` },
+      spawnToAsrReadyMs: {
+        unit: "ms",
+        source: `${DRIVER_CLOCK}: spawn() called -> \`asr.status ready\`.`,
+      },
+    }),
+    errors: rec.errors,
+  };
+}
+
 async function loadCold({ sides, runs }) {
   const rec = recorder(sides, runs);
   for (const run of eachRun("load-cold", runs)) {
-    for (const side of sides) {
+    for (const side of taking(sides, run)) {
       const home = mkdtempSync(join(tmpdir(), "voice-bench-home-"));
       const removeHome = guard(() => rmSync(home, { recursive: true, force: true }));
       try {
@@ -433,15 +500,14 @@ function assertAnchors(name, session) {
 
 async function finalization({ sides, runs }) {
   const rec = recorder(sides, runs);
-  const texts = Object.fromEntries(FIXTURES.map(({ name }) => [name, bySide(sides, () => [])]));
-  const paths = Object.fromEntries(FIXTURES.map(({ name }) => [name, bySide(sides, () => [])]));
+  const perRun = () => bySide(sides, () => Array(runs).fill(null));
+  const texts = Object.fromEntries(FIXTURES.map(({ name }) => [name, perRun()]));
+  const paths = Object.fromEntries(FIXTURES.map(({ name }) => [name, perRun()]));
   await withEverySide(sides, {}, async (helpers) => {
     for (const run of eachRun("finalization", runs)) {
       for (const fixtureCase of FIXTURES) {
         const { name } = fixtureCase;
-        for (const side of sides) {
-          texts[name][side.name][run] = null;
-          paths[name][side.name][run] = null;
+        for (const side of taking(sides, run)) {
           await rec.attempt(side, run, { fixture: name }, async () => {
             const id = `bench-${side.name}-${name}-${run}`;
             const session = await fixtureSession(helpers.get(side), fixtureCase, id);
@@ -568,7 +634,7 @@ async function hotkey({ sides, runs, fnpost }) {
 
   await requirePermission(sides[0], "accessibility", {}, "so the helper has no hotkey tap");
   for (const run of eachRun("hotkey", runs)) {
-    for (const side of sides) {
+    for (const side of taking(sides, run)) {
       await waitForExclusiveDesktop("hotkey");
       await rec.attempt(side, run, {}, () =>
         withSide(side, {}, async (helper) => {
@@ -639,7 +705,7 @@ async function micStart({ sides, runs }) {
     "and this script never requests it. Run it from an app that holds the grant, as start-latency.mjs describes.",
   );
   for (const run of eachRun("mic-start", runs)) {
-    for (const side of sides) {
+    for (const side of taking(sides, run)) {
       await rec.attempt(side, run, {}, () =>
         withSide(side, { env }, async (helper) => {
           helper.send({ type: "microphone.configure", microphone: null });
@@ -758,7 +824,7 @@ async function paste({ sides, runs }) {
       }
       await withEverySide(sides, { env }, async (helpers) => {
         for (const run of eachRun(`paste (${method})`, runs)) {
-          for (const side of sides) {
+          for (const side of taking(sides, run)) {
             await waitForExclusiveDesktop("paste");
             await rec.attempt(side, run, { method }, async () => {
               rec.record(side, run, await insert(helpers.get(side), side, run, method));
@@ -821,7 +887,7 @@ async function idleSample(pid) {
 async function footprint({ sides, runs }) {
   const rec = recorder(sides, runs);
   for (const run of eachRun("footprint", runs)) {
-    for (const side of sides) {
+    for (const side of taking(sides, run)) {
       await rec.attempt(side, run, {}, async () => {
         const usage = await warmly(async () => {
           const { helper, close } = openHelper(side, {
@@ -829,7 +895,7 @@ async function footprint({ sides, runs }) {
             stderr: "pipe",
           });
           let stderr = "";
-          helper.child.stderr.on("data", (chunk) => (stderr += chunk));
+          helper.child.stderr?.on("data", (chunk) => (stderr += chunk));
           let stopOrphan;
           let idle;
           try {
@@ -902,6 +968,7 @@ async function footprint({ sides, runs }) {
 
 const RUNNERS = {
   "load-warm": loadWarm,
+  launch,
   "load-cold": loadCold,
   finalization,
   hotkey,
@@ -946,7 +1013,6 @@ function environment(sides, fnpost) {
       ),
       ...(fnpost ? { fnpost: { path: fnpost, sha256: sha256(fnpost) } } : {}),
     },
-    // Every helper runs with CFFIXED_USER_HOME and HOME set to this directory.
     helperHome: BENCH_HOME,
     modelsDir: models,
     asrModelFolder:
