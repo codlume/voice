@@ -7,6 +7,10 @@ public enum SavedClipboard<Item> {
     /// timer, but only while the clipboard still holds its own write, so a restore would
     /// republish the password past that clear.
     case concealed
+    /// The helper's own transcript, left on the clipboard because the user asked for that. It
+    /// carries the concealed marker so clipboard managers skip it, and read back off the
+    /// clipboard it would look like a password. Whoever puts it back must tell the tracker.
+    case keptTranscript([Item])
 
     public init(types: [String], items: () -> [Item]) {
         self = types.contains(concealedPasteboardType) ? .concealed : .items(items())
@@ -49,8 +53,9 @@ public struct ClipboardRestore<Contents> {
         pending = (write, saved)
     }
 
-    /// A paste that leaves its text on the clipboard. Nothing is left to restore, and a later
-    /// save while the clipboard still holds `write` saves `contents`.
+    /// A paste that leaves its text on the clipboard, or a restore that put that text back.
+    /// Nothing is left to restore, and a later save while the clipboard still holds `write`
+    /// saves `contents`.
     public mutating func kept(_ write: Int, contents: Contents) {
         pending = nil
         kept = (write, contents)

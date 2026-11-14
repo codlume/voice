@@ -118,6 +118,27 @@ private func verdict(_ origin: SelectionOrigin, ax: AXSelectionAnswer, stamp: [U
     #expect(!wait.lateRestoreNeeded(changeCount: 7, deadlineStamp: atDeadline, stamp: atDeadline))
 }
 
+@Test func theHelpersOwnClipboardWriteDuringTheWaitIsNotTheTargetsAnswer() {
+    var wait = CopyWait(startChangeCount: 7)
+    wait.absorb(ownChange: 8)
+    #expect(wait.step(changeCount: 8, elapsed: 0.1) == .wait)
+    #expect(wait.step(changeCount: 9, elapsed: 0.2) == .changed)
+    let atDeadline = PressStamp(counts: [10, 2, 0, 0])
+    #expect(!wait.lateRestoreNeeded(changeCount: 8, deadlineStamp: atDeadline, stamp: atDeadline))
+    #expect(wait.lateRestoreNeeded(changeCount: 9, deadlineStamp: atDeadline, stamp: atDeadline))
+}
+
+@Test func aCopyNobodyWaitsOnIsRestoredWhenItsAnswerIsOnTheClipboard() {
+    let wait = CopyWait(startChangeCount: 5)
+    let atDeadline = PressStamp(counts: [10, 2, 0, 0])
+    let pressed = PressStamp(counts: [11, 2, 0, 0])
+    #expect(!wait.restoreNeeded(changeCount: 5, deadlineStamp: nil, stamp: atDeadline))
+    #expect(wait.restoreNeeded(changeCount: 6, deadlineStamp: nil, stamp: pressed))
+    #expect(wait.restoreNeeded(changeCount: 6, deadlineStamp: atDeadline, stamp: atDeadline))
+    #expect(!wait.restoreNeeded(changeCount: 6, deadlineStamp: atDeadline, stamp: pressed))
+    #expect(!wait.restoreNeeded(changeCount: 5, deadlineStamp: atDeadline, stamp: atDeadline))
+}
+
 @Test func shelfHandsItsEntryOutOnceAndOnlyToItsRun() {
     var shelf = SelectionShelf<String>()
     shelf.put(id: "a", "first")
