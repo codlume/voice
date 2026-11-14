@@ -476,6 +476,7 @@ async function main() {
     hub: () => hub,
     showMeeting: (id, options) => showMeeting(id, options),
     refreshTray: () => refreshTray(store.state),
+    assertNotRestarting,
     notepadWindow: {
       webPreferences: webPreferencesFor("notepad"),
       load: (window) => loadPage(window, "notepad"),
@@ -637,7 +638,11 @@ async function main() {
     hub.on("restore", syncPermissionPolling);
     hub.on("focus", syncPermissionPolling);
     hub.on("blur", syncPermissionPolling);
-    hub.on("closed", syncPermissionPolling);
+    // A page that closes with its window never says that Set up Meetings stopped showing.
+    hub.on("closed", () => {
+      meetingSetupShown = false;
+      syncPermissionPolling();
+    });
     hub.on("hide", microphoneTest.stop);
     hub.on("minimize", microphoneTest.stop);
     hub.on("closed", microphoneTest.stop);

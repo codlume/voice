@@ -367,7 +367,10 @@ function registerMeetingCommands(hubCommands: Commands<HubApi>, deps: HubCommand
     deps.assertNotRestarting();
     return recorder.start();
   });
-  hubCommands.handle(Channel.toggleMeeting, () => recorder.toggle());
+  hubCommands.handle(Channel.toggleMeeting, () => {
+    deps.assertNotRestarting();
+    return recorder.toggle();
+  });
   hubCommands.handle(Channel.generateMeetingSummary, withMeeting(recorder.generateSummary));
   hubCommands.handle(Channel.openNotepad, () => deps.openNotepad());
   hubCommands.handle(Channel.dismissMeetingNotice, (_event, key: unknown) => {
