@@ -119,6 +119,41 @@ describe("History", () => {
     expect(status()).toBe("");
   });
 
+  test("a delete that fails after a later copy succeeded still says so", async () => {
+    const slowDelete = Promise.withResolvers<void>();
+    api.deleteHistoryEntry.mockReturnValueOnce(slowDelete.promise);
+    await render(<History history={history} today={today} />);
+    await click(button(/^Delete dictation .*dentist/));
+    await click(button(/^Copy dictation .*Meet Anna/));
+    await act(async () =>
+      slowDelete.reject(
+        new Error(
+          "Error invoking remote method 'voice:deleteHistoryEntry': Error: Could not delete this transcript from the saved history. Try again.",
+        ),
+      ),
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not delete this transcript from the saved history. Try again.",
+    );
+    expect(status()).toBe("Copied");
+  });
+
+  test("a search does not hide the next dictation after the list empties", async () => {
+    await render(<History history={history} today={today} />);
+    const search = host.querySelector<HTMLInputElement>('input[type="search"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        search,
+        "dentist",
+      );
+      search?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(host.textContent).not.toContain("Meet Anna");
+    await render(<History history={{ ...history, entries: [] }} today={today} />);
+    await render(<History history={{ ...history, entries: [cleaned] }} today={today} />);
+    expect(host.textContent).toContain("Meet Anna on Thursday.");
+  });
+
   test("a snapshot that leaves the history alone does not re-render its rows", async () => {
     const page = (snapshotId: number) => (
       <div data-snapshot={snapshotId}>

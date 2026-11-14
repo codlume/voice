@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
-import { memo, useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import {
   titleText,
@@ -173,6 +173,8 @@ export function FolderMenu({
 }) {
   const action = useAction();
   const [creating, setCreating] = useState(false);
+  // The folder this dialog made, so retrying a failed move does not make a second one.
+  const made = useRef<Folder | null>(null);
   const itemClass = ({ highlighted }: Menu.Item.State) =>
     stylex.props(menuStyles.item, highlighted && menuStyles.highlighted).className;
   const toggle = (folder: Folder, inFolder: boolean) =>
@@ -219,7 +221,13 @@ export function FolderMenu({
                 );
               })}
               <Menu.Separator {...stylex.props(menuStyles.separator)} />
-              <Menu.Item onClick={() => setCreating(true)} className={itemClass}>
+              <Menu.Item
+                onClick={() => {
+                  made.current = null;
+                  setCreating(true);
+                }}
+                className={itemClass}
+              >
                 <span {...stylex.props(menuStyles.check)} />
                 New folder…
               </Menu.Item>
@@ -233,8 +241,8 @@ export function FolderMenu({
           open={creating}
           onOpenChange={setCreating}
           save={async (draft) => {
-            const folder = await hubApi().createFolder(draft);
-            await hubApi().setMeetingInFolder(meeting.id, folder.id, true);
+            made.current ??= await hubApi().createFolder(draft);
+            await hubApi().setMeetingInFolder(meeting.id, made.current.id, true);
           }}
         />
       )}

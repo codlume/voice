@@ -83,8 +83,21 @@ export function CommitSlider({
   valueText: (value: number) => string;
   disabled?: boolean;
 }) {
-  const [slider, setSlider] = useState({ value: saved, saved });
-  if (saved !== slider.saved) setSlider({ value: saved, saved });
+  // `pending` is the newest commit main has not answered. Until it lands, the snapshot of an older
+  // save would move the thumb back, and the next key press would step from there.
+  const [slider, setSlider] = useState<{ value: number; saved: number; pending: number | null }>({
+    value: saved,
+    saved,
+    pending: null,
+  });
+  if (saved !== slider.saved) {
+    const waiting = slider.pending !== null && saved !== slider.pending;
+    setSlider({
+      value: waiting ? slider.value : saved,
+      saved,
+      pending: waiting ? slider.pending : null,
+    });
+  }
   const { value } = slider;
   return (
     <div {...stylex.props(sliderStyles.root)}>
@@ -95,9 +108,14 @@ export function CommitSlider({
         value={value}
         onValueChange={(next) => setSlider((current) => ({ ...current, value: next }))}
         onValueCommitted={(committed) => {
+          setSlider((current) => ({ ...current, pending: committed }));
           void onCommit(committed).then((ok) => {
             // The updater reads the newest saved value, which another save may have changed since.
-            if (!ok) setSlider((current) => ({ ...current, value: current.saved }));
+            setSlider((current) =>
+              current.pending === committed
+                ? { ...current, value: ok ? current.value : current.saved, pending: null }
+                : current,
+            );
           });
         }}
         min={min}

@@ -10,6 +10,7 @@ import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { HiddenEmail } from "./HiddenEmail.tsx";
 import { GoogleIcon } from "./Icons.tsx";
 import { pageStyles } from "./pageStyles.ts";
+import { useHoldNavigation } from "./navigationHold.ts";
 import { styles as settings } from "./settingsParts.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
 import { useAction } from "./useAction.ts";
@@ -228,6 +229,7 @@ function SignedInRow({ account }: { account: Extract<AccountState, { kind: "sign
   const name = { firstName: shown.firstName.trim(), lastName: shown.lastName.trim() };
   const changed = name.firstName !== account.firstName || name.lastName !== account.lastName;
   const canSave = !pending && deletion === undefined && changed && name.firstName !== "";
+  useHoldNavigation(changed);
   const edit = (patch: Partial<AccountName>) => {
     setDraft({ firstName: shown.firstName, lastName: shown.lastName, ...patch });
     clearError();

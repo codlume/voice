@@ -111,7 +111,8 @@ export function ShortcutPicker({
           aria-labelledby={labelId}
           aria-describedby={hintId}
           aria-invalid={invalid || undefined}
-          onFocus={start}
+          // Not on focus: the window regaining focus refocuses the picker, and the next key press
+          // would replace the shortcut. Space and Enter click the button, so keyboards still record.
           onClick={start}
           onBlur={() => setRecording(null)}
           onKeyDown={onKeyDown}

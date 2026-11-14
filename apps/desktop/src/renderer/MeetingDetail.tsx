@@ -131,8 +131,9 @@ const tabs = [
 ] as const satisfies readonly { value: DetailTab; label: string }[];
 
 /**
- * A field that saves on Enter or on leaving it and goes back to `saved` on Escape. While it has
- * focus the draft stays, so a name main writes meanwhile does not replace what the user types.
+ * A field that saves on Enter or on leaving it and goes back to `saved` on Escape. The draft stays
+ * while it has focus, so a name main writes meanwhile does not replace what the user types, and
+ * until its save succeeds, so a failed one can be saved again.
  */
 function DraftInput({
   saved,
@@ -141,7 +142,8 @@ function DraftInput({
   ...input
 }: {
   saved: string;
-  save: (text: string) => void;
+  /** Resolves false when the save failed. */
+  save: (text: string) => Promise<boolean>;
   style: stylex.StyleXStyles;
 } & Pick<InputHTMLAttributes<HTMLInputElement>, "aria-label" | "placeholder">) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -152,12 +154,17 @@ function DraftInput({
       {...input}
       value={draft ?? saved}
       spellCheck={false}
-      onFocus={() => setDraft(saved)}
+      onFocus={() => setDraft((current) => current ?? saved)}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
-        if (!reverting.current && draft !== null && draft.trim() !== saved) save(draft);
+        const text = draft;
+        if (reverting.current || text === null || text.trim() === saved) setDraft(null);
+        else {
+          void save(text).then((ok) => {
+            if (ok) setDraft((current) => (current === text ? null : current));
+          });
+        }
         reverting.current = false;
-        setDraft(null);
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") reverting.current = true;
@@ -178,7 +185,7 @@ function TitleField({ meeting }: { meeting: Meeting }) {
           placeholder="Untitled meeting"
           saved={meeting.title ?? ""}
           save={(title) =>
-            void action.run(
+            action.run(
               () => hubApi().renameMeeting(meeting.id, title),
               "Could not rename this meeting.",
             )
@@ -330,7 +337,7 @@ function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: S
         placeholder={speaker.label}
         saved={speaker.name ?? ""}
         save={(name) =>
-          void action.run(
+          action.run(
             () => hubApi().renameMeetingSpeaker(meetingId, speaker.id, name),
             "Could not rename this speaker.",
           )
@@ -347,8 +354,18 @@ function SpeakerField({ meetingId, speaker }: { meetingId: MeetingId; speaker: S
 }
 
 function Transcript({ meeting }: { meeting: Meeting }) {
-  const rows = useTranscriptRows(hubApi(), meeting);
-  if (!rows) return null;
+  const transcript = useTranscriptRows(hubApi(), meeting);
+  if (transcript.kind === "failed") {
+    return (
+      <Banner
+        text="Could not load the transcript."
+        error
+        action={{ label: "Try again", onClick: transcript.retry, disabled: false }}
+      />
+    );
+  }
+  if (transcript.kind === "reading") return null;
+  const rows = transcript.value;
   if (rows.length === 0) {
     return (
       <Card style={styles.summaryCard}>

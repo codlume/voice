@@ -388,7 +388,7 @@ export const Insights = memo(function Insights({
 }) {
   const insights = useInsights();
   const today = useToday();
-  const installed = useInstalledApps();
+  const installed = useInstalledApps().apps;
   const [fit, weeks] = useWeeksThatFit();
   const view = useMemo(
     () => insights && insightsView(insights, today, weeks ?? 1),

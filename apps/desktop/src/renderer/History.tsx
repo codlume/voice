@@ -242,7 +242,10 @@ export const History = memo(function History({
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<Copied | null>(null);
   const [rowLimit, setRowLimit] = useState(ROWS_PER_PAGE);
-  const action = useAction();
+  const copyAction = useAction();
+  const deleteAction = useAction();
+  // The search box goes with the last entry, so its query must too, or it hides the next dictation.
+  if (entries.length === 0 && query !== "") setQuery("");
   const { days, hidden } = useMemo(
     () => historyPage(entries, { query, limit: rowLimit, today }),
     [entries, query, today, rowLimit],
@@ -255,12 +258,15 @@ export const History = memo(function History({
   }, [copied]);
 
   const copy = (id: string, version: TranscriptVersion) =>
-    void action.run(async () => {
+    void copyAction.run(async () => {
       await hubApi().copyHistoryEntry(id, version);
       setCopied({ id, version });
     }, "Could not copy the transcript.");
   const remove = (id: string) =>
-    void action.run(() => hubApi().deleteHistoryEntry(id), "Could not delete the transcript.");
+    void deleteAction.run(
+      () => hubApi().deleteHistoryEntry(id),
+      "Could not delete the transcript.",
+    );
 
   return (
     <section aria-labelledby="history" {...stylex.props(styles.section)}>
@@ -322,9 +328,14 @@ export const History = memo(function History({
       <p role="status" {...stylex.props(a11y.visuallyHidden)}>
         {copied && copiedLabels[copied.version]}
       </p>
-      {action.error && (
+      {deleteAction.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
-          {action.error}
+          {deleteAction.error}
+        </p>
+      )}
+      {copyAction.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {copyAction.error}
         </p>
       )}
     </section>

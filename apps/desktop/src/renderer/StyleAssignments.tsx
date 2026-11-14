@@ -3,7 +3,6 @@ import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, PlusIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 
-import type { InstalledApp } from "../shared/api.ts";
 import type { Category } from "../shared/app-categories.ts";
 import type { Assignment } from "../shared/style.ts";
 import { AppIcon } from "./AppIcon.tsx";
@@ -19,6 +18,7 @@ import {
 } from "./styleView.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import type { useAction } from "./useAction.ts";
+import type { InstalledApps } from "./useInstalledApps.ts";
 import { hubApi } from "./voice.ts";
 
 const IME_COMPOSITION_KEY_CODE = 229;
@@ -182,7 +182,7 @@ type Action = ReturnType<typeof useAction>;
 type PickerProps = {
   category: Category;
   assignments: readonly Assignment[];
-  installed: readonly InstalledApp[];
+  installed: InstalledApps;
   action: Action;
 };
 
@@ -249,7 +249,7 @@ function Picker({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [site, setSite] = useState("");
-  const rows = pickerRows(category, installed, assignments, query);
+  const rows = pickerRows(category, installed.apps, assignments, query);
   const activeIndex = Math.min(active, rows.length - 1);
   const optionId = (index: number) => `${id}-option-${index}`;
   const website = siteInput(site, category, assignments);
@@ -345,7 +345,11 @@ function Picker({
           </div>
           {rows.length === 0 && (
             <p {...stylex.props(styles.empty)}>
-              {query.trim() === "" ? "No apps found" : `No apps match “${query.trim()}”`}
+              {installed.failed
+                ? "Could not list your apps"
+                : query.trim() === ""
+                  ? "No apps found"
+                  : `No apps match “${query.trim()}”`}
             </p>
           )}
         </div>

@@ -146,8 +146,12 @@ export function runSetupCommand(command: SetupCommand): Promise<void> {
   }
 }
 
+export const setupFailure = (label: string, title: string) =>
+  `Could not ${label.toLowerCase()} ${title}.`;
+
 function SetupRow({ row }: { row: ChecklistRow }) {
   const { status, actions } = row;
+  const setupAction = useAction();
   return (
     <li {...stylex.props(styles.row)}>
       <span
@@ -163,6 +167,11 @@ function SetupRow({ row }: { row: ChecklistRow }) {
       <div {...stylex.props(styles.rowText)}>
         <p {...stylex.props(styles.rowTitle)}>{row.title}</p>
         <p {...stylex.props(styles.rowSubtitle)}>{row.subtitle}</p>
+        {setupAction.error && (
+          <p role="alert" {...stylex.props(pageStyles.error)}>
+            {setupAction.error}
+          </p>
+        )}
       </div>
       <div
         {...stylex.props(
@@ -184,7 +193,12 @@ function SetupRow({ row }: { row: ChecklistRow }) {
         <Button
           key={action.label}
           aria-label={`${action.label} ${row.title}`}
-          onClick={() => void runSetupCommand(action.command)}
+          onClick={() =>
+            void setupAction.run(
+              () => runSetupCommand(action.command),
+              setupFailure(action.label, row.title),
+            )
+          }
         >
           {action.label}
         </Button>

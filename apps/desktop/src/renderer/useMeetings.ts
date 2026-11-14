@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { MeetingControls } from "../shared/api.ts";
 import {
@@ -13,21 +13,55 @@ import {
 import { mergeTranscript } from "./meetingsView.ts";
 import { hubApi } from "./voice.ts";
 
-/** Null until the first list arrives. */
-export function useMeetings(): MeetingsState | null {
-  const [state, setState] = useState<MeetingsState | null>(null);
-  useEffect(() => {
-    // As in useHistory: changes and the answer arrive in order, so the answer never replaces a
-    // list a change built.
-    const unsubscribe = hubApi().onMeetings((change) =>
-      setState((current) => applyMeetingsChange(current, change)),
+/** A read from main that can fail and be asked for again. */
+export type Read<T> =
+  | { kind: "reading" }
+  | { kind: "failed"; retry: () => void }
+  | { kind: "read"; value: T };
+
+type HeldMeetings = MeetingsState | "reading" | "failed";
+
+// As in useHistory: changes and the answer arrive in order, so the answer never replaces a list a
+// change built.
+function askForMeetings(setState: Dispatch<SetStateAction<HeldMeetings>>) {
+  void hubApi()
+    .getMeetings()
+    .then(
+      (first) => setState((current) => (typeof current === "string" ? first : current)),
+      () => setState((current) => (current === "reading" ? "failed" : current)),
     );
-    void hubApi()
-      .getMeetings()
-      .then((first) => setState((current) => current ?? first));
+}
+
+/** The meetings, from main's answer and then its changes. */
+export function useMeetingsRead(): Read<MeetingsState> {
+  const [state, setState] = useState<HeldMeetings>("reading");
+  useEffect(() => {
+    const unsubscribe = hubApi().onMeetings((change) =>
+      setState(
+        (current) =>
+          applyMeetingsChange(typeof current === "string" ? null : current, change) ?? current,
+      ),
+    );
+    askForMeetings(setState);
     return unsubscribe;
   }, []);
-  return state;
+  if (state === "reading") return { kind: "reading" };
+  if (state === "failed") {
+    return {
+      kind: "failed",
+      retry: () => {
+        setState("reading");
+        askForMeetings(setState);
+      },
+    };
+  }
+  return { kind: "read", value: state };
+}
+
+/** Null until the first list arrives. */
+export function useMeetings(): MeetingsState | null {
+  const meetings = useMeetingsRead();
+  return meetings.kind === "read" ? meetings.value : null;
 }
 
 /**
@@ -35,27 +69,25 @@ export function useMeetings(): MeetingsState | null {
  * the transcript revision they bring the file to; a meeting whose revision is ahead of the lines
  * held was rewritten, so the file is read again, and never for edits like notes or names. A line
  * pushed while a read is out is kept and merged in, since main may have read the file before
- * writing it. Until a read lands the last one stays; undefined before the first read of this
- * meeting, null once the meeting is gone.
+ * writing it. Until a read lands the last one stays; null once the meeting is gone.
  */
 export function useMeetingTranscript(
   api: Pick<MeetingControls, "getMeeting" | "onMeetingTranscript">,
-  meeting: Meeting | null,
-): readonly TranscriptEntry[] | null | undefined {
+  meeting: Meeting,
+): Read<readonly TranscriptEntry[] | null> {
   const [lines, setLines] = useState<{
     id: MeetingId;
     read: readonly TranscriptEntry[] | null;
     live: readonly TranscriptEntry[];
     revision: number;
   } | null>(null);
-  const id = meeting?.id ?? null;
-  const revision = meeting?.transcriptRevision ?? 0;
+  const { id, transcriptRevision: revision } = meeting;
   const [readFor, setReadFor] = useState({ id, revision });
+  const [failedRead, setFailedRead] = useState<typeof readFor | null>(null);
   if (lines?.id === id && revision > lines.revision && readFor.revision < revision) {
     setReadFor({ id, revision });
   }
   useEffect(() => {
-    if (!id) return;
     let current = true;
     // Lines pushed after this read was asked for; the lines pushed before it belong to the last one.
     let pending: MeetingTranscriptChange[] | null = [];
@@ -73,32 +105,36 @@ export function useMeetingTranscript(
         );
       }
     });
-    void api.getMeeting(id).then((detail) => {
-      if (!current || !pending) return;
-      const pushed = pending;
-      pending = null;
-      setLines({
-        id,
-        read: detail?.transcript ?? null,
-        live: pushed.flatMap((change) => change.entries),
-        revision: Math.max(
-          detail?.meeting.transcriptRevision ?? 0,
-          ...pushed.map((change) => change.revision),
-        ),
-      });
-    });
+    void api.getMeeting(id).then(
+      (detail) => {
+        if (!current || !pending) return;
+        const pushed = pending;
+        pending = null;
+        setLines({
+          id,
+          read: detail?.transcript ?? null,
+          live: pushed.flatMap((change) => change.entries),
+          revision: Math.max(
+            detail?.meeting.transcriptRevision ?? 0,
+            ...pushed.map((change) => change.revision),
+          ),
+        });
+      },
+      () => {
+        if (current) setFailedRead(readFor);
+      },
+    );
     return () => {
       current = false;
       unsubscribe();
     };
-    // readFor is not read here: a new one is the signal that the file was rewritten.
-    // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [api, id, readFor]);
-  return useMemo(() => {
-    if (!id) return null;
-    if (lines?.id !== id) return undefined;
-    return lines.read && mergeTranscript(lines.read, lines.live);
-  }, [id, lines]);
+  const failed = failedRead === readFor;
+  return useMemo((): Read<readonly TranscriptEntry[] | null> => {
+    if (failed) return { kind: "failed", retry: () => setReadFor((was) => ({ ...was })) };
+    if (lines?.id !== id) return { kind: "reading" };
+    return { kind: "read", value: lines.read && mergeTranscript(lines.read, lines.live) };
+  }, [failed, id, lines]);
 }
 
 /** Each source's unconfirmed text while the meeting records; never saved, gone once it stops. */

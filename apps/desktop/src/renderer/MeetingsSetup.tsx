@@ -4,8 +4,10 @@ import { CheckIcon } from "lucide-react";
 import { useId } from "react";
 
 import { settled, type ChecklistRow } from "./checklist.ts";
-import { runSetupCommand } from "./Home.tsx";
+import { runSetupCommand, setupFailure } from "./Home.tsx";
+import { pageStyles } from "./pageStyles.ts";
 import { color, radius, space } from "./tokens.stylex.ts";
+import { useAction } from "./useAction.ts";
 
 const styles = stylex.create({
   card: {
@@ -81,6 +83,7 @@ export function MeetingsSetup({
 }) {
   const id = useId();
   const done = rows.filter(settled).length;
+  const setupAction = useAction();
   return (
     <section aria-labelledby={id} {...stylex.props(styles.card)}>
       <h2 id={id} {...stylex.props(styles.title)}>
@@ -114,7 +117,12 @@ export function MeetingsSetup({
                   key={action.label}
                   type="button"
                   aria-label={`${action.label} ${row.title}`}
-                  onClick={() => void runSetupCommand(action.command)}
+                  onClick={() =>
+                    void setupAction.run(
+                      () => runSetupCommand(action.command),
+                      setupFailure(action.label, row.title),
+                    )
+                  }
                   {...stylex.props(styles.action)}
                 >
                   {action.label}
@@ -124,6 +132,11 @@ export function MeetingsSetup({
           );
         })}
       </ul>
+      {setupAction.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {setupAction.error}
+        </p>
+      )}
       <p {...stylex.props(styles.consent)}>{consent}</p>
     </section>
   );
