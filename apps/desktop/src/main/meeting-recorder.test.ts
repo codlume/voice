@@ -105,6 +105,15 @@ function harness(overrides: Partial<MeetingRecorderDeps> = {}) {
     emit(event: HelperEvent) {
       recorder.onHelperEvent(event);
     },
+    /** The helper goes down and its replacement reports ready. */
+    async restartHelper() {
+      helperRunning = false;
+      recorder.helperExited();
+      await h.settle();
+      helperRunning = true;
+      recorder.onHelperEvent({ type: "ready", version: 18 });
+      await h.settle();
+    },
     async settle() {
       for (let round = 0; round < 5; round += 1) {
         await recorder.settled();
@@ -613,6 +622,69 @@ describe("meeting recorder", () => {
     h.emit({ type: "ready", version: 18 });
     await h.settle();
     expect(h.sentTypes()).toEqual(["meeting.transcribe", "meeting.finalize", "meeting.finalize"]);
+  });
+
+  test("a final pass sent again after one helper exit still finishes the meeting", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    await h.drained(id);
+    await h.restartHelper();
+    expect(h.sentTypes().filter((type) => type === "meeting.finalize")).toHaveLength(2);
+
+    await h.finalized(id);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(h.notices).not.toContain("finalPassFailed");
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
+  test("a final pass that takes the helper down twice is given up, keeping the live transcript and the audio", async () => {
+    const first = harness();
+    const id = await first.start();
+    await first.segment(id, "mic", 0, TEN_WORDS);
+    await first.recorder.stop(id);
+    await first.drained(id);
+    for (let crash = 0; crash < 5; crash += 1) await first.restartHelper();
+
+    expect(first.sentTypes().filter((type) => type === "meeting.finalize")).toHaveLength(2);
+    const failed = { status: { kind: "ready" }, finalPassFailed: "other" };
+    expect(first.store.get(id)).toMatchObject(failed);
+    expect(await first.onDisk(id)).toMatchObject(failed);
+    expect(first.notices.filter((kind) => kind === "finalPassFailed")).toHaveLength(1);
+    expect(existsSync(NodePath.join(first.folder(id), "mic.pcm"))).toBe(true);
+    expect(await first.store.transcript(id)).toMatchObject([{ kind: "segment", text: TEN_WORDS }]);
+    await first.store.settled();
+
+    // The next launch leaves the pass to the user's retry, which can finish it.
+    const h = harness();
+    await h.recorder.recover();
+    h.emit({ type: "ready", version: 18 });
+    await h.settle();
+    expect(h.sent).toEqual([]);
+    expect(await h.recorder.retryFinalPass(id)).toEqual({ kind: "ok", id });
+    await h.finalized(id);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: null });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(false);
+  });
+
+  test("a drain that takes the helper down twice moves on to the final pass, which is given up the same way", async () => {
+    const h = harness();
+    const id = await h.start();
+    await h.segment(id, "mic", 0, TEN_WORDS);
+    await h.recorder.stop(id);
+    for (let crash = 0; crash < 6; crash += 1) await h.restartHelper();
+
+    expect(h.sentTypes()).toEqual([
+      "meeting.start",
+      "meeting.stop",
+      "meeting.transcribe",
+      "meeting.finalize",
+      "meeting.finalize",
+    ]);
+    expect(h.store.get(id)).toMatchObject({ status: { kind: "ready" }, finalPassFailed: "other" });
+    expect(existsSync(NodePath.join(h.folder(id), "mic.pcm"))).toBe(true);
+    expect(await h.store.transcript(id)).toMatchObject([{ kind: "segment", text: TEN_WORDS }]);
   });
 
   test("the toggle starts a meeting, waits while it starts, then stops it", async () => {

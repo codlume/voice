@@ -23,14 +23,16 @@ export type SummaryProgress = { step: number; total: number };
  * Where the meeting is in its lifecycle. `starting` remembers what a failed capture start returns
  * to: a new meeting has nothing to keep. `finishing` catches the live transcript up after Stop;
  * `transcribing` does the same after a crash (`draining`), then runs the final pass.
+ * `helperExits` is how often the helper went down during that drain or pass, which the lifecycle
+ * limits; a launch starts the count again.
  */
 export type MeetingStatus =
   | { kind: "starting"; from: "new" | "paused" | "ready" }
   | { kind: "recording"; since: number }
   | { kind: "paused" }
-  | { kind: "finishing" }
+  | { kind: "finishing"; helperExits?: number }
   | { kind: "confirmingShort" }
-  | { kind: "transcribing"; step: "draining" | "finalizing" }
+  | { kind: "transcribing"; step: "draining" | "finalizing"; helperExits?: number }
   | { kind: "summarizing"; progress: SummaryProgress | null }
   | { kind: "ready" };
 

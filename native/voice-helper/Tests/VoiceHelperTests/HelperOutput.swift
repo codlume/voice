@@ -46,14 +46,16 @@ final class EmittedLines: @unchecked Sendable {
 
     func wait(for type: String, timeout: Duration = .seconds(5)) async throws -> [[String: Any]] {
         let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
+        // Look before checking the clock. Parallel tests can hold this task past its deadline, and
+        // an event that arrived meanwhile must still count.
+        while true {
             // Electron drops a line it cannot parse, events included.
             if let line = firstUnparseable() { throw ProtocolError("unparseable helper line: \(line)") }
             let current = snapshot()
             if current.contains(where: { $0["type"] as? String == type }) { return current }
+            guard ContinuousClock.now < deadline else { throw ProtocolError("no \(type) event within \(timeout)") }
             try await Task.sleep(for: .milliseconds(20))
         }
-        throw ProtocolError("no \(type) event within \(timeout)")
     }
 }
 

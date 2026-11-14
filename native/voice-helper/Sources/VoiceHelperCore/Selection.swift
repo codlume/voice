@@ -86,10 +86,16 @@ public struct CopyWait: Equatable, Sendable {
 
     public enum Step: Equatable, Sendable { case wait, changed, timedOut }
 
-    public let startChangeCount: Int
+    public private(set) var startChangeCount: Int
 
     public init(startChangeCount: Int) {
         self.startChangeCount = startChangeCount
+    }
+
+    /// A clipboard write the helper made itself while the answer is still out, such as an
+    /// earlier paste's restore. Only a change after it can be the target's answer.
+    public mutating func absorb(ownChange changeCount: Int) {
+        startChangeCount = changeCount
     }
 
     public func step(changeCount: Int, elapsed: TimeInterval) -> Step {
@@ -104,6 +110,14 @@ public struct CopyWait: Equatable, Sendable {
     /// keystroke was posted before `deadlineStamp` was taken.
     public func lateRestoreNeeded(changeCount: Int, deadlineStamp: PressStamp, stamp: PressStamp) -> Bool {
         changeCount == startChangeCount + 1 && stamp == deadlineStamp
+    }
+
+    /// Whether the clipboard holds this copy's answer, for a copy nobody waits on any more
+    /// because the helper is exiting or a newer copy replaces it. Before the deadline
+    /// (`deadlineStamp` nil) any change is the answer, as it is for `step`.
+    public func restoreNeeded(changeCount: Int, deadlineStamp: PressStamp?, stamp: PressStamp) -> Bool {
+        guard let deadlineStamp else { return changeCount != startChangeCount }
+        return lateRestoreNeeded(changeCount: changeCount, deadlineStamp: deadlineStamp, stamp: stamp)
     }
 }
 

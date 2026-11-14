@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { readFile, rename } from "node:fs/promises";
 import * as NodePath from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { WRITING_STYLES, type WritingStyle } from "@voice/cleanup/style";
 import * as Option from "effect/Option";
@@ -181,9 +182,11 @@ type SettingsFile = {
   settings: Settings;
   /**
    * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
-   * A file that is not JSON, or that launch could not use, is set aside first so its bytes outlive
-   * the defaults that replace it. A file that cannot be read fails the save rather than being
-   * overwritten.
+   * A setting that did not change keeps its value on disk, so one this build could not read, like
+   * a newer build's hotkey or a dictionary word past this build's limit, outlives a save of
+   * another. A file that is not JSON, or that launch could not use, is set aside first so its
+   * bytes outlive the defaults that replace it. A file that cannot be read fails the save rather
+   * than being overwritten.
    */
   save(next: Settings): Promise<void>;
 };
@@ -201,8 +204,10 @@ export function openSettings(
   } catch (error) {
     launchIgnoredFile = (error as NodeJS.ErrnoException).code !== "ENOENT";
   }
+  const settings = parseSettings(raw, defaultChannel);
+  let saved: Record<string, unknown> = settings;
   return {
-    settings: parseSettings(raw, defaultChannel),
+    settings,
     async save(next) {
       const { muteWhileDictating: _migrated, ...onDisk } = await recordOnDisk(
         file,
@@ -210,10 +215,29 @@ export function openSettings(
         log,
       );
       launchIgnoredFile = false;
+      const wanted: Record<string, unknown> = next;
+      const merged: Record<string, unknown> = { ...onDisk, ...next };
+      const kept = new Set(
+        Object.keys(next).filter(
+          (key) => key in onDisk && isDeepStrictEqual(wanted[key], saved[key]),
+        ),
+      );
+      for (const key of kept) merged[key] = onDisk[key];
+      // A value kept from disk must read as it did before the save. One setting can depend on
+      // another, as the toggle key does on the hold key, so a kept value that would now read
+      // differently is written after all.
+      while (kept.size > 0) {
+        const reread: Record<string, unknown> = parseSettings(merged, defaultChannel);
+        const stale = [...kept].filter((key) => !isDeepStrictEqual(wanted[key], reread[key]));
+        if (stale.length === 0) break;
+        for (const key of stale) {
+          merged[key] = wanted[key];
+          kept.delete(key);
+        }
+      }
       // Dictionary words and snippet expansions are the user's own text, kept like history.
-      await writeFileAtomic(file, `${JSON.stringify({ ...onDisk, ...next }, null, 2)}\n`, {
-        mode: 0o600,
-      });
+      await writeFileAtomic(file, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+      saved = next;
     },
   };
 }

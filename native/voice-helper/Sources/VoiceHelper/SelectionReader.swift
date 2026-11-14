@@ -75,15 +75,22 @@ final class SelectionReader {
     @MainActor
     private func copySelection(id: String, into target: InsertTarget) async throws -> SelectionResult {
         let postedAt = DispatchTime.now()
-        let outcome = await pasteboard.copyFromFocusedApp()
+        // The reads before this can take seconds, and Cmd+C goes to whichever app is in front
+        // by now. Another app's selection must not be read as this target's.
+        let outcome = await pasteboard.copyFromFocusedApp(unless: {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier != target.pid || IsSecureEventInputEnabled()
+        })
         let ms = Int(elapsed(since: postedAt) * 1000)
         switch outcome {
+        case .notPosted: log?("selection copy not posted: the target is no longer in front")
         case .nothing: log?("selection copy unanswered after \(ms) ms")
         case .lineOfEmptySelection: log?("selection copy answered after \(ms) ms with the caret's line; nothing selected")
         case .text, .concealed: log?("selection copy answered after \(ms) ms")
         }
         try Task.checkCancellation()
         switch outcome {
+        case .notPosted:
+            return .failed(.failed)
         case .nothing, .lineOfEmptySelection:
             return .failed(.noSelection)
         case .concealed:
@@ -96,7 +103,8 @@ final class SelectionReader {
         }
     }
 
-    private func keysReleased() async throws -> Bool {
+    @MainActor
+    func keysReleased() async throws -> Bool {
         let startedAt = DispatchTime.now()
         while true {
             let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
@@ -113,7 +121,8 @@ final class SelectionReader {
         }
     }
 
-    private func settledFocus(of target: InsertTarget) async throws -> TargetFocus<FocusElement>? {
+    @MainActor
+    func settledFocus(of target: InsertTarget) async throws -> TargetFocus<FocusElement>? {
         // A read that gives up or is ended with the baseline still pending never uses the target.
         defer { if case .pending = target.focus { target.cancel() } }
         let startedAt = DispatchTime.now()

@@ -7,6 +7,8 @@ type Action = "down" | "up" | "cancel" | "exit" | "stall";
 type Config = {
   transcript?: string;
   startMs?: number;
+  // How long the transcript takes after capture stops. Default 40 ms.
+  transcriptMs?: number;
   script?: { at: number; action: Action }[];
   control?: string;
   version?: number;
@@ -112,7 +114,7 @@ function handle(command: Record<string, unknown>) {
           speechMs: audioMs,
           target: captured,
         });
-      }, 40);
+      }, config.transcriptMs ?? 40);
       return;
     }
     case "capture.cancel":

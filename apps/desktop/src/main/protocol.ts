@@ -111,6 +111,7 @@ const pasteRoute = Schema.Literals([
   "unchanged",
   "noElement",
   "writeFailed",
+  "notKeyFocus",
   "forced",
 ]);
 export type InsertRoute = typeof accessibilityRoute.Type | typeof pasteRoute.Type;

@@ -43,6 +43,8 @@ type MeetingsAppDeps = {
   /** Brings the Voice window up on a meeting's summary; `activate: false` leaves focus where it is. */
   showMeeting: (id: MeetingId, options: { activate: boolean }) => void;
   refreshTray: () => void;
+  /** Throws while a restart is under way, when the helper is about to stop. */
+  assertNotRestarting: () => void;
   notepadWindow: { webPreferences: WebPreferences; load: (window: BrowserWindow) => void };
   log: Log;
 };
@@ -178,6 +180,12 @@ export function createMeetingsApp(deps: MeetingsAppDeps): MeetingsApp {
   }
 
   function toggle(from: "shortcut" | "tray") {
+    try {
+      deps.assertNotRestarting();
+    } catch (error) {
+      log(`meetings: ${from} toggle refused (${String(error)})`);
+      return;
+    }
     recorder.toggle().then(
       (result) => {
         if (result.kind === "refused") log(`meetings: ${from} toggle refused (${result.message})`);

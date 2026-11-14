@@ -149,6 +149,28 @@ describe("parseHelperEvent", () => {
     for (const event of events) expect(parseHelperEvent(line(event))).toEqual(event);
   });
 
+  test("keeps every paste route the helper reports", () => {
+    const routes = [
+      "html",
+      "pasteOnlyApp",
+      "unchanged",
+      "noElement",
+      "writeFailed",
+      "notKeyFocus",
+      "forced",
+      "someFutureRoute",
+    ];
+    const parsed = routes.map((route) =>
+      parseHelperEvent(
+        line({ type: "insert.result", id: "a", method: "paste", route, clipboardSaveMs: null }),
+      ),
+    );
+    expect(parsed).toMatchObject([
+      ...routes.slice(0, -1).map((route) => ({ method: "paste", route })),
+      { method: "paste", route: null },
+    ]);
+  });
+
   test("drops unknown fields and fills optional ones", () => {
     expect(
       parseHelperEvent(line({ type: "insert.result", id: "a", method: "paste", extra: 1 })),

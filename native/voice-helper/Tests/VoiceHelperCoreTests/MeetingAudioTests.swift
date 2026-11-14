@@ -148,6 +148,27 @@ private func silence(seconds: Double) -> [Float] {
     }
 }
 
+@Suite struct TapRestartsTests {
+    @Test func aTapThatRecordsBetweenItsRestartsNeverEndsTheLeg() {
+        // Headphones that change their profile once a minute, each time followed by audio.
+        var restarts = TapRestarts()
+        #expect((1...6).map { restarts.allows(restartAtMs: Double($0) * 60_000) } == [true, true, true, true, true, true])
+    }
+
+    @Test func aTapThatKeepsStallingEndsTheLegOnItsFourthRestartInARow() {
+        // A stall is noticed and the tap recreated about every five seconds.
+        var restarts = TapRestarts()
+        #expect((1...4).map { restarts.allows(restartAtMs: Double($0) * 5000) } == [true, true, true, false])
+    }
+
+    @Test func aTapThatSettledGetsItsRestartsBack() {
+        var restarts = TapRestarts()
+        #expect([0, 5000, 10_000].map { restarts.allows(restartAtMs: $0) } == [true, true, true])
+        let later = 10_000 + TapRestarts.settledMs
+        #expect([later, later + 5000, later + 10_000, later + 15_000].map { restarts.allows(restartAtMs: $0) } == [true, true, true, false])
+    }
+}
+
 @MainActor
 @Suite struct MeetingSourceHeardTests {
     @Test func theModelHearsSystemAudioAsRecordedAndTheMicWithoutTheEcho() async throws {

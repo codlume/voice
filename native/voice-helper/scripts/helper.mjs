@@ -85,14 +85,38 @@ export function refuseIfVoiceIsRunning() {
 
 export class Helper {
   events = [];
+  // `performance.now()` when the line behind `events[i]` was parsed.
+  receivedAt = [];
   #cursor = 0;
   #waiters = [];
+  #trace;
 
-  constructor({ env = {}, binary = helperBinary() } = {}) {
-    this.child = spawn(binary, ["--models-dir", modelsDir(), "--state-dir", stateDir()], {
-      env: { ...process.env, VOICE_HELPER_TEST: "1", ...env },
-      stdio: ["pipe", "pipe", "inherit"],
-    });
+  // `launcher` runs the helper under another command, such as `/usr/bin/time -l`. `trace: false`
+  // keeps the wire log off stderr, where a benchmark prints its own table.
+  constructor({
+    env = {},
+    binary = helperBinary(),
+    launcher = [],
+    trace = true,
+    stderr = "inherit",
+  } = {}) {
+    this.#trace = trace;
+    const [command, ...args] = [
+      ...launcher,
+      binary,
+      "--models-dir",
+      modelsDir(),
+      "--state-dir",
+      stateDir(),
+    ];
+    const options = { env: { ...process.env, VOICE_HELPER_TEST: "1", ...env } };
+    this.child =
+      stderr === "pipe"
+        ? spawn(/** @type {string} */ (command), args, { ...options, stdio: "pipe" })
+        : spawn(/** @type {string} */ (command), args, {
+            ...options,
+            stdio: ["pipe", "pipe", "inherit"],
+          });
     this.exited = new Promise((resolve) =>
       this.child.on("exit", (code, signal) => resolve({ code, signal })),
     );
@@ -103,14 +127,15 @@ export class Helper {
       } catch {
         throw new Error(`helper wrote a non-JSON line: ${line}`);
       }
-      if (!event.type.endsWith(".level")) console.error(`<< ${line}`);
+      if (this.#trace && !event.type.endsWith(".level")) console.error(`<< ${line}`);
       this.events.push(event);
+      this.receivedAt.push(performance.now());
       for (const waiter of this.#waiters.splice(0)) waiter();
     });
   }
 
   send(command) {
-    console.error(`>> ${JSON.stringify(command)}`);
+    if (this.#trace) console.error(`>> ${JSON.stringify(command)}`);
     this.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
