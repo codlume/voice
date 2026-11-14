@@ -6,12 +6,16 @@ public struct KeyEvent: Equatable, Sendable {
     /// Raw `CGEventFlags` bits, including the device-side left/right modifier bits.
     public var flags: UInt64
     public var isRepeat: Bool
+    /// A running count of pointer button presses and releases, read when the event arrived. Only
+    /// a change between two events means anything. Zero where the tap does not sample it.
+    public var pointerPresses: UInt32
 
-    public init(kind: Kind, keycode: Int64, flags: UInt64, isRepeat: Bool = false) {
+    public init(kind: Kind, keycode: Int64, flags: UInt64, isRepeat: Bool = false, pointerPresses: UInt32 = 0) {
         self.kind = kind
         self.keycode = keycode
         self.flags = flags
         self.isRepeat = isRepeat
+        self.pointerPresses = pointerPresses
     }
 }
 
@@ -87,6 +91,10 @@ public struct Hotkeys: Sendable {
     private var shortcuts: [TransformShortcut]
     private var meeting: KeyCombo?
     private var swallowed: Set<Int64> = []
+    private var togglePointerPresses: UInt32 = 0
+    /// Not in `swallowed`: the backstop poll empties that set while the hold key is still down,
+    /// which is where a cancel usually leaves it.
+    private var escapeConsumed = false
 
     public init(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut] = [], meeting: KeyCombo? = nil,
                 initialFlags: UInt64) {
@@ -121,10 +129,21 @@ public struct Hotkeys: Sendable {
     /// event belongs to one of them, and a keyDown chord speaks only for the hold key.
     public mutating func handle(_ event: KeyEvent, activity: HelperActivity) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
-            guard activity != .idle else { return .none }
+            guard activity != .idle else {
+                // The cancel ends the activity before the key repeats or comes up, so the rest
+                // of that press is known only by this flag. A new press is the app's again.
+                if event.isRepeat, escapeConsumed { return HotkeyDecision(emit: .nothing, consume: true) }
+                escapeConsumed = false
+                return .none
+            }
             hold.cancel()
             toggle?.cancel()
+            escapeConsumed = true
             return HotkeyDecision(emit: .hotkey(.cancel), consume: true)
+        }
+        if event.kind == .keyUp, event.keycode == escapeKeycode, escapeConsumed {
+            escapeConsumed = false
+            return HotkeyDecision(emit: .nothing, consume: true)
         }
         if event.kind == .keyUp, swallowed.remove(event.keycode) != nil {
             return HotkeyDecision(emit: .nothing, consume: true)
@@ -143,7 +162,13 @@ public struct Hotkeys: Sendable {
         if event.kind == .keyDown, event.isRepeat, swallowed.contains(event.keycode) {
             return HotkeyDecision(emit: .nothing, consume: true)
         }
-        let tapped = toggle?.handle(event) == .up
+        // A tap is clean only if nothing else happened while the toggle key was down. Another
+        // modifier or a pointer button makes the press a shortcut (Right Command + click), and
+        // neither reaches the tap as a keyDown.
+        if event.kind == .flagsChanged, event.keycode != toggle?.key.keycode { toggle?.cancel() }
+        let toggled = toggle?.handle(event)
+        if toggled == .down { togglePointerPresses = event.pointerPresses }
+        let tapped = toggled == .up && event.pointerPresses == togglePointerPresses
         let action = hold.handle(event) ?? (tapped ? .toggle : nil)
         return HotkeyDecision(emit: action.map(HotkeyDecision.Emit.hotkey) ?? .nothing, consume: false)
     }

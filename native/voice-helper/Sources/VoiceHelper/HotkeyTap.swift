@@ -152,11 +152,14 @@ final class HotkeyTap {
         case .keyUp: kind = .keyUp
         default: return false
         }
+        let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         let keyEvent = KeyEvent(
             kind: kind,
-            keycode: event.getIntegerValueField(.keyboardEventKeycode),
+            keycode: keycode,
             flags: event.flags.rawValue,
-            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+            // Only a toggle key's tap is judged by it, at that key's own press and release.
+            pointerPresses: kind == .flagsChanged && keycode == toggleKey?.keycode ? pointerPresses() : 0
         )
         let decision = hotkeys.handle(keyEvent, activity: activity())
         switch decision.emit {
@@ -205,6 +208,21 @@ final class HotkeyTap {
 
 private func currentFlags() -> UInt64 {
     CGEventSource.flagsState(.combinedSessionState).rawValue
+}
+
+/// Pointer buttons never reach the tap, so their use is read from the session's event counters.
+/// A read costs under 4 ns, measured, so it is no call out of the process and may run in the tap
+/// callback. Releases count as well as presses: a drag begun before the key went down and
+/// dropped while it was held is not a tap either. Motion and scrolling are left out, because a
+/// page still coasting would swallow a deliberate tap.
+private func pointerPresses() -> UInt32 {
+    let session = CGEventSourceStateID.combinedSessionState
+    return CGEventSource.counterForEventType(session, eventType: .leftMouseDown)
+        &+ CGEventSource.counterForEventType(session, eventType: .leftMouseUp)
+        &+ CGEventSource.counterForEventType(session, eventType: .rightMouseDown)
+        &+ CGEventSource.counterForEventType(session, eventType: .rightMouseUp)
+        &+ CGEventSource.counterForEventType(session, eventType: .otherMouseDown)
+        &+ CGEventSource.counterForEventType(session, eventType: .otherMouseUp)
 }
 
 private func hotkeyTapCallback(
