@@ -4,6 +4,8 @@ import VoiceHelperCore
 enum CopyOutcome: Equatable {
     case text(String)
     case concealed
+    /// The keystroke was not posted, because it would not have reached the app that was read.
+    case notPosted
     /// Monaco answered with the caret's line because nothing was selected.
     case lineOfEmptySelection
     case nothing
@@ -97,9 +99,11 @@ final class Pasteboard {
     }
 
     @MainActor
-    func copyFromFocusedApp() async -> CopyOutcome {
+    func copyFromFocusedApp(unless targetMoved: () -> Bool = { false }) async -> CopyOutcome {
         // An exiting helper would leave before it could take the answer off the clipboard.
         guard !exiting else { return .nothing }
+        // Asked here, with nothing awaited before the keystroke, so the answer cannot go stale.
+        guard !targetMoved() else { return .notPosted }
         resolveCopy()
         let pending = PendingCopy(wait: CopyWait(startChangeCount: pasteboard.changeCount), saved: save())
         copy = pending

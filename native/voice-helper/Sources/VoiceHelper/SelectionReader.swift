@@ -75,15 +75,22 @@ final class SelectionReader {
     @MainActor
     private func copySelection(id: String, into target: InsertTarget) async throws -> SelectionResult {
         let postedAt = DispatchTime.now()
-        let outcome = await pasteboard.copyFromFocusedApp()
+        // The reads before this can take seconds, and Cmd+C goes to whichever app is in front
+        // by now. Another app's selection must not be read as this target's.
+        let outcome = await pasteboard.copyFromFocusedApp(unless: {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier != target.pid || IsSecureEventInputEnabled()
+        })
         let ms = Int(elapsed(since: postedAt) * 1000)
         switch outcome {
+        case .notPosted: log?("selection copy not posted: the target is no longer in front")
         case .nothing: log?("selection copy unanswered after \(ms) ms")
         case .lineOfEmptySelection: log?("selection copy answered after \(ms) ms with the caret's line; nothing selected")
         case .text, .concealed: log?("selection copy answered after \(ms) ms")
         }
         try Task.checkCancellation()
         switch outcome {
+        case .notPosted:
+            return .failed(.failed)
         case .nothing, .lineOfEmptySelection:
             return .failed(.noSelection)
         case .concealed:

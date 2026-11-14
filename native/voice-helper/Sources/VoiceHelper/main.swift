@@ -148,6 +148,7 @@ final class Helper {
     func shutdown(then done: @escaping () -> Void) {
         guard !shuttingDown else { return }
         shuttingDown = true
+        hotkeyTap.remove()
         devices.shutdown()
         meetings.shutdown()
         capture.shutdown()

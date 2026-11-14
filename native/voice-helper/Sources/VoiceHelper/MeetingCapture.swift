@@ -2,7 +2,6 @@ import AVFoundation
 import Foundation
 import VoiceHelperCore
 
-/// A live leg's microphone, as `MicSource` is one.
 protocol MeetingMic: AnyObject {
     func start(sink: @escaping ([Float]) -> Void) throws(CaptureError)
     func finish()
@@ -11,14 +10,12 @@ protocol MeetingMic: AnyObject {
 
 extension MicSource: MeetingMic {}
 
-/// A live leg's system audio, as `SystemAudioSource` is one.
 protocol MeetingTap: AnyObject {
     func start(sink: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError)
     func stop()
     var msSinceAudio: Double { get }
 }
 
-/// One of a leg's two files, as `PcmWriter` is one.
 protocol MeetingAudioWriter: AnyObject {
     var frames: Int { get }
     func append(_ samples: [Float]) throws
@@ -279,7 +276,6 @@ final class MeetingCapture {
     }
 
     private func watchTick(micAllowed: Bool, systemAllowed: Bool, system: Bool) {
-        // An answer can come back after the leg stopped.
         guard !stopped else { return }
         switch MeetingWatch.check(
             micAllowed: micAllowed,

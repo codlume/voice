@@ -92,8 +92,6 @@ public struct Hotkeys: Sendable {
     private var meeting: KeyCombo?
     private var swallowed: Set<Int64> = []
     private var togglePointerPresses: UInt32 = 0
-    /// Not in `swallowed`: the backstop poll empties that set while the hold key is still down,
-    /// which is where a cancel usually leaves it.
     private var escapeConsumed = false
 
     public init(key: HotkeyKey, toggleKey: HotkeyKey?, transforms: [TransformShortcut] = [], meeting: KeyCombo? = nil,
@@ -130,8 +128,6 @@ public struct Hotkeys: Sendable {
     public mutating func handle(_ event: KeyEvent, activity: HelperActivity) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
             guard activity != .idle else {
-                // The cancel ends the activity before the key repeats or comes up, so the rest
-                // of that press is known only by this flag. A new press is the app's again.
                 if event.isRepeat, escapeConsumed { return HotkeyDecision(emit: .nothing, consume: true) }
                 escapeConsumed = false
                 return .none

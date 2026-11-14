@@ -135,6 +135,23 @@ private final class ScratchClipboard {
         #expect(posted == false)
     }
 
+    @Test func aCopyIsNotPostedOnceTheTargetIsNoLongerInFront() async {
+        let clipboard = ScratchClipboard()
+        defer { clipboard.close() }
+        clipboard.holds("user")
+        var posted = false
+        // An app in front that is not the target answers the keystroke with its own selection.
+        clipboard.onCopyPosted = {
+            posted = true
+            clipboard.holds("another app's selection")
+        }
+
+        let outcome = await clipboard.pasteboard.copyFromFocusedApp(unless: { true })
+        #expect(outcome == .notPosted)
+        #expect(posted == false)
+        #expect(clipboard.text == "user")
+    }
+
     @Test func aPasteRestoreThatFiresDuringACopyWaitIsNotReadAsTheSelection() async {
         let clipboard = ScratchClipboard()
         defer { clipboard.close() }

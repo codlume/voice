@@ -71,6 +71,18 @@ final class HotkeyTap {
         perform { self.installOnTapThread() }
     }
 
+    /// For a helper that is exiting. It can stay up to a second for the clipboard to settle, and
+    /// a tap left installed would keep consuming shortcut keys that nothing acts on any more.
+    func remove() {
+        perform {
+            self.retry?.invalidate()
+            self.retry = nil
+            self.backstop?.invalidate()
+            self.backstop = nil
+            self.removeTap()
+        }
+    }
+
     private func perform(_ block: @escaping () -> Void) {
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, block)
         CFRunLoopWakeUp(runLoop)
