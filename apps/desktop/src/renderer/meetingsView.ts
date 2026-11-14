@@ -77,7 +77,7 @@ export function durationLabel(ms: number): string {
   return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
 }
 
-export type SummaryNotice = {
+type SummaryNotice = {
   text: string;
   error: boolean;
   /** What the notice offers to do about it. */
@@ -186,7 +186,7 @@ export function overview(markdown: string): string | null {
 }
 
 /** `at` is the run's offset in the source text, which keys it when rendered. */
-export type Run = { text: string; bold: boolean; name: boolean; at: number };
+type Run = { text: string; bold: boolean; name: boolean; at: number };
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -324,7 +324,7 @@ const hitLabels: Record<MeetingSearchField, string | null> = {
   transcript: "Transcript",
 };
 
-export type SearchResult = { meeting: Meeting; where: string | null; snippet: MeetingSnippet };
+type SearchResult = { meeting: Meeting; where: string | null; snippet: MeetingSnippet };
 
 /** Hits in main's order, paired with their meetings; a hit for a meeting just deleted drops out. */
 export function searchResults(

@@ -11,7 +11,7 @@ export const GEMMA_4_E2B: ModelSource = {
   legal: [{ name: "LICENSE", from: "bundled", text: APACHE_2_0_LICENSE }],
 };
 
-export type TransformModelSpec = {
+type TransformModelSpec = {
   readonly source: ModelSource;
   readonly contextSize: number;
   readonly maxWords: number;

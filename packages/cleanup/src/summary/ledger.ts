@@ -19,8 +19,8 @@ export type Part = {
   overview?: string;
 };
 
-export type Decision = { ref: string; part: number; text: string };
-export type Task = { ref: string; part: number; owner: string; text: string };
+type Decision = { ref: string; part: number; text: string };
+type Task = { ref: string; part: number; owner: string; text: string };
 
 export type Ledger = {
   topics: readonly string[];

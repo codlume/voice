@@ -14,7 +14,7 @@ export type PromptCommand = RecordingCommand | "keep" | "discard" | "dismiss" | 
  * How every surface names a status and which recording controls it offers. `recording` is the
  * only tone that says audio is being captured.
  */
-export type StatusView = {
+type StatusView = {
   tone: "recording" | "paused" | "busy" | "done";
   label: string;
   /** In order. */
@@ -62,8 +62,8 @@ export const promptTitles = {
   summaryReady: "Your summary is ready",
 } as const;
 
-export type PromptAction = { label: string; command: PromptCommand; primary: boolean };
-export type PromptView = { title: string | null; body: string; actions: readonly PromptAction[] };
+type PromptAction = { label: string; command: PromptCommand; primary: boolean };
+type PromptView = { title: string | null; body: string; actions: readonly PromptAction[] };
 
 export function promptView(prompt: MeetingPrompt, now: number): PromptView {
   switch (prompt.kind) {

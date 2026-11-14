@@ -90,7 +90,7 @@ export type NotepadDeps = {
  */
 export type NotepadOpening = "inactive" | "focused";
 
-export type Notepad = {
+type Notepad = {
   /** Shows the notepad for `id`, making the window if it is closed. */
   open(id: MeetingId, opening: NotepadOpening): void;
   /** The meeting the open notepad shows; null while it is closed. */

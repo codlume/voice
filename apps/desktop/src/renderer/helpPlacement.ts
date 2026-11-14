@@ -1,7 +1,7 @@
 export type Box = { left: number; top: number; width: number; height: number };
-export type Point = { x: number; y: number };
+type Point = { x: number; y: number };
 /** Where the popover goes, and whether that spot leaves the control's ring uncovered. */
-export type Placement = Point & { clear: boolean };
+type Placement = Point & { clear: boolean };
 
 const margin = 8;
 const gap = 8;

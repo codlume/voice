@@ -1,6 +1,6 @@
-export const OUTPUT_MARGIN_TOKENS = 256;
+const OUTPUT_MARGIN_TOKENS = 256;
 
-export type Budget = { ok: true; maxTokens: number } | { ok: false; maxWords: number };
+type Budget = { ok: true; maxTokens: number } | { ok: false; maxWords: number };
 
 export function budget(
   { words, textTokens, promptTokens }: { words: number; textTokens: number; promptTokens: number },

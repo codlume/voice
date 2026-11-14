@@ -2,7 +2,7 @@ import type { AppIcons, InstalledApp } from "../shared/api.ts";
 import type { BundleId } from "../shared/app-categories.ts";
 import { hubApi } from "./voice.ts";
 
-export type IconLoader = {
+type IconLoader = {
   /** The icon in memory, fresh or stale. */
   get(bundleId: BundleId): string | null;
   /** Fetches the icon unless a fresh one is in memory. Requests made in the same tick travel as one fetch. Resolves null when it could not be rendered and forgets the id, so a later call asks again. */

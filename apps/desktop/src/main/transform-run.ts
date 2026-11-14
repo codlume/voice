@@ -57,7 +57,7 @@ export type TransformEffect =
   | { type: "endRun"; id: string }
   | { type: "scheduleIdle"; id: string; ms: number };
 
-export type Step = { state: TransformRun; effects: TransformEffect[] };
+type Step = { state: TransformRun; effects: TransformEffect[] };
 
 export const READ_TIMEOUT_MS = 5500;
 export const GENERATE_GRACE_MS = 2000;

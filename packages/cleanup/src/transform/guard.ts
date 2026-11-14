@@ -1,6 +1,6 @@
 import { wordSurvival } from "../plausibility.ts";
 
-export type Verdict =
+type Verdict =
   | { ok: true; text: string }
   | { ok: false; reason: "truncated" | "empty" | "endsEarly" | "lostOpening" };
 

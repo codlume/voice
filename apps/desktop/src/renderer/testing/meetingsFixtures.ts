@@ -17,9 +17,9 @@ export type MeetingFixtures = {
   transcripts: Readonly<Record<string, readonly TranscriptEntry[]>>;
 };
 
-export const MINUTE = 60_000;
+const MINUTE = 60_000;
 
-export function dayAt(daysAgo: number, hour: number, minute: number): number {
+function dayAt(daysAgo: number, hour: number, minute: number): number {
   const date = new Date();
   date.setDate(date.getDate() - daysAgo);
   date.setHours(hour, minute, 0, 0);
@@ -28,11 +28,7 @@ export function dayAt(daysAgo: number, hour: number, minute: number): number {
 
 let segmentCount = 0;
 // Fixture speakers are keyed by their name, so a fixture line can name who says it.
-export const said = (
-  atMinute: number,
-  text: string,
-  speaker: string | null | "you" = "you",
-): Segment => {
+const said = (atMinute: number, text: string, speaker: string | null | "you" = "you"): Segment => {
   const startMs = Math.round(atMinute * MINUTE);
   const voice =
     speaker === "you"
@@ -48,7 +44,7 @@ export const said = (
   };
 };
 /** A named speaker for every voice the transcript gives a name, in the order they first spoke. */
-export function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker[] {
+function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker[] {
   const names = transcript.flatMap((entry) =>
     entry.kind === "segment" && entry.source === "system" && entry.speakerId
       ? [entry.speakerId]
@@ -61,18 +57,18 @@ export function speakersIn(transcript: readonly TranscriptEntry[] = []): Speaker
   }));
 }
 
-export const marked = (atMinute: number, marker: MarkerKind): TranscriptEntry => ({
+const marked = (atMinute: number, marker: MarkerKind): TranscriptEntry => ({
   kind: "marker",
   marker,
   atMs: Math.round(atMinute * MINUTE),
 });
 
-export const fixtureId = (n: number) =>
+const fixtureId = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}` as MeetingId;
 const productFolder = "00000000-0000-4000-9000-000000000001" as FolderId;
 const standupFolder = "00000000-0000-4000-9000-000000000002" as FolderId;
 
-export function fixtureMeeting(
+function fixtureMeeting(
   n: number,
   title: string | null,
   startedAt: number,
@@ -95,7 +91,7 @@ export function fixtureMeeting(
   };
 }
 
-export const summaryOf = (markdown: string, coversMinutes: number) => ({
+const summaryOf = (markdown: string, coversMinutes: number) => ({
   markdown,
   coversUntilMs: coversMinutes * MINUTE,
 });

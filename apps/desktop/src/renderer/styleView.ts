@@ -20,9 +20,9 @@ export const CATEGORY_LABELS: Record<Category, string> = {
 
 export const VOICE_BUNDLE_ID = parseBundleId("com.voice.app");
 
-export type BannerApp = { bundleId: BundleId; name: string };
+type BannerApp = { bundleId: BundleId; name: string };
 
-export type Banner = { shown: BannerApp[]; overflow: string[] };
+type Banner = { shown: BannerApp[]; overflow: string[] };
 
 export type Chip = { key: string; assignment: Assignment; bundleId: BundleId | null; name: string };
 
