@@ -4,20 +4,30 @@ import Foundation
 import VoiceHelperCore
 
 final class Permissions {
+    /// The three grants as macOS reports them now, given whether this process has asked for Accessibility.
+    typealias Read = @Sendable (_ accessibilityRequested: Bool) -> HelperEvent
+
     private let output: Output
+    private let read: Read
     private let onAccessibilityGranted: () -> Void
     // There is no API that distinguishes "never asked" from "denied", so a
     // request issued by this process is the only signal we have.
     private var accessibilityRequested = false
     private var poll: DispatchSourceTimer?
+    // The grants are read over XPC, about 25 ms for the first read in a process. At launch main
+    // sends `asr.prepare` right behind the check, so on the main thread that read delayed the
+    // model load. One serial queue keeps the answers in the order the checks were made.
+    private let reads = DispatchQueue(label: "voice.permissions", qos: .userInitiated)
 
-    init(output: Output, onAccessibilityGranted: @escaping () -> Void) {
+    init(output: Output, read: @escaping Read = Permissions.readSystem(accessibilityRequested:), onAccessibilityGranted: @escaping () -> Void) {
         self.output = output
+        self.read = read
         self.onAccessibilityGranted = onAccessibilityGranted
     }
 
     func check() {
-        output.emit(.permissions(microphone: microphone, accessibility: accessibility, systemAudio: SystemAudioAccess.state))
+        let accessibilityRequested = accessibilityRequested
+        reads.async { [output, read] in output.emit(read(accessibilityRequested)) }
     }
 
     func request(_ kind: PermissionKind) {
@@ -37,18 +47,16 @@ final class Permissions {
         }
     }
 
-    private var microphone: PermissionState {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: return .granted
-        case .denied, .restricted: return .denied
-        case .notDetermined: return .notDetermined
-        @unknown default: return .denied
-        }
-    }
-
-    private var accessibility: PermissionState {
-        if AXIsProcessTrusted() { return .granted }
-        return accessibilityRequested ? .denied : .notDetermined
+    @Sendable static func readSystem(accessibilityRequested: Bool) -> HelperEvent {
+        let microphone: PermissionState =
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized: .granted
+            case .denied, .restricted: .denied
+            case .notDetermined: .notDetermined
+            @unknown default: .denied
+            }
+        let accessibility: PermissionState = AXIsProcessTrusted() ? .granted : accessibilityRequested ? .denied : .notDetermined
+        return .permissions(microphone: microphone, accessibility: accessibility, systemAudio: SystemAudioAccess.state)
     }
 
     private func pollUntilAccessibilityGranted() {
