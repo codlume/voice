@@ -120,6 +120,8 @@ final class Insertion {
         dispatchPrecondition(condition: .onQueue(.main))
         // An insert spends its target, so a baseline still retrying has no one left to read for.
         defer { target?.cancel() }
+        // Taken before the checks, so a press while they run still refuses the paste keystroke.
+        let checked = focusInputStamp()
         let focused: AXUIElement?
         switch check(target: target) {
         case .refused(let reason, let why):
@@ -141,12 +143,14 @@ final class Insertion {
             outcome = insertViaAccessibility(focused: focused, text: text)
         }
         switch outcome {
-        case .inserted:
-            finish(id, .accessibility(.direct))
+        case .inserted(let route):
+            finish(id, .accessibility(route))
         case .notEditable:
             finish(id, .refused(.noFocusedField), why: "element takes no text")
+        case .unknown:
+            finish(id, .refused(.failed), why: "write timed out")
         case .paste(let route):
-            paste(id: id, text: text, html: html, route: route, keepOnClipboard: keepOnClipboard)
+            paste(id: id, text: text, html: html, route: route, keepOnClipboard: keepOnClipboard, pid: target?.pid, checked: checked)
         case .unchanged(let focused, let before):
             // Some apps apply the write after returning. One re-read separates a slow app from
             // Chromium's silent no-op before the paste fallback risks a second copy.
@@ -155,7 +159,9 @@ final class Insertion {
                     finish(id, .accessibility(.late))
                 } else {
                     if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
-                    paste(id: id, text: text, html: html, route: .unchanged, keepOnClipboard: keepOnClipboard)
+                    paste(
+                        id: id, text: text, html: html, route: .unchanged, keepOnClipboard: keepOnClipboard, pid: target?.pid,
+                        checked: checked)
                 }
             }
         }
@@ -205,7 +211,8 @@ final class Insertion {
     }
 
     private enum AccessibilityOutcome {
-        case inserted, notEditable
+        case inserted(AccessibilityRoute)
+        case notEditable, unknown
         case paste(PasteRoute)
         case unchanged(AXUIElement, before: AXTextState)
     }
@@ -224,13 +231,14 @@ final class Insertion {
     private func insertViaAccessibility(focused: AXUIElement?, text: String) -> AccessibilityOutcome {
         guard let focused else { return .paste(.noElement) }
         let before = textState(of: focused)
-        guard AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString) == .success
-        else {
-            return .paste(.writeFailed)
-        }
-        switch AXWriteVerdict(before: before, after: textState(of: focused)) {
-        case .inserted: return .inserted
-        case .unchanged: return .unchanged(focused, before: before)
+        let sent = DispatchTime.now()
+        let error = AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute as CFString, text as CFString)
+        let answer = AXWriteAnswer(error, waited: elapsed(since: sent), timeout: TimeInterval(axMessagingTimeout))
+        switch AXWritePlan(answer: answer, before: before, after: { textState(of: focused) }) {
+        case .inserted(let route): return .inserted(route)
+        case .paste(let route): return .paste(route)
+        case .reread: return .unchanged(focused, before: before)
+        case .unknown: return .unknown
         }
     }
 
@@ -261,19 +269,38 @@ final class Insertion {
         return text.utf16.count
     }
 
-    private func paste(id: String, text: String, html: String?, route: PasteRoute, keepOnClipboard: Bool) {
-        let saving = DispatchTime.now()
-        let saved = keepOnClipboard ? nil : pasteboard.save()
-        let clipboardSaveMs = saving.millisecondsToNow()
-        let write = pasteboard.write(text: text, html: html, saved: saved)
-        postCommand(typing: "v", fallback: PasteKey.ansiV)
+    private func paste(
+        id: String, text: String, html: String?, route: PasteRoute, keepOnClipboard: Bool, pid: pid_t?, checked: PressStamp
+    ) {
+        var clipboardSaveMs = 0.0
+        let attempt = pasteKeystroke(
+            save: { [pasteboard] in
+                let saving = DispatchTime.now()
+                defer { clipboardSaveMs = saving.millisecondsToNow() }
+                return keepOnClipboard ? nil : pasteboard.save()
+            },
+            refusal: {
+                KeystrokeDestination(
+                    presses: focusInputStamp(), frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                    secureInput: IsSecureEventInputEnabled()
+                ).refusal(target: pid, checked: checked)
+            },
+            write: { [pasteboard] in pasteboard.write(text: text, html: html, saved: $0) },
+            post: { postCommand(typing: "v", fallback: PasteKey.ansiV) })
+        let write: Int
+        switch attempt {
+        case .refused(let refusal):
+            return finish(id, .refused(refusal.failure), why: "\(refusal.rawValue) before paste")
+        case .posted(let posted):
+            write = posted
+        }
         // The target handles Cmd+V asynchronously and nothing here can observe it land, so the
         // result reports the keystroke, not the insertion. The restore only protects the user's
         // clipboard. A slow target (Electron under load, a remote desktop) can read the
         // pasteboard well after the keystroke, so the restore waits a full second.
         finish(id, .paste(route, clipboardSaveMs: clipboardSaveMs))
         guard !keepOnClipboard else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [pasteboard] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Pasteboard.pasteRestoreDelay) { [pasteboard] in
             pasteboard.restore(write: write)
         }
     }
