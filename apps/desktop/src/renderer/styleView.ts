@@ -99,7 +99,6 @@ const searchRank = (name: string, query: string): number | null => {
 };
 
 export function pickerRows(
-  category: Category,
   installed: readonly InstalledApp[],
   assignments: readonly Assignment[],
   query: string,

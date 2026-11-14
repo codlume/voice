@@ -524,7 +524,6 @@ export function createGemmaSummaryProvider({
   }
 
   return {
-    id: "gemma-local",
     async summarize(request) {
       const result = await settle(request, (prepared) => summarize(request, prepared));
       return result.ok ? { ok: true, summary: result.value } : result;

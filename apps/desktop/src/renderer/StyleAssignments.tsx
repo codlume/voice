@@ -249,7 +249,7 @@ function Picker({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [site, setSite] = useState("");
-  const rows = pickerRows(category, installed.apps, assignments, query);
+  const rows = pickerRows(installed.apps, assignments, query);
   const activeIndex = Math.min(active, rows.length - 1);
   const optionId = (index: number) => `${id}-option-${index}`;
   const website = siteInput(site, category, assignments);

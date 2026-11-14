@@ -137,7 +137,6 @@ async function harness({
     },
     ...(provider && {
       provider: {
-        id: "fake",
         summarize: async () => {
           calls.push("summarize");
           return { ok: true, summary };

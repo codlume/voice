@@ -133,11 +133,11 @@ describe("pickerRows", () => {
     app("com.apple.Notes", "Notes"),
     app("us.zoom.xos", "zoom.us"),
   ];
-  const names = (category: Category, query: string, assignments = assigned()) =>
-    pickerRows(category, apps, assignments, query).map(({ name }) => name);
+  const names = (query: string, assignments = assigned()) =>
+    pickerRows(apps, assignments, query).map(({ name }) => name);
 
   test("offers every installed app but browsers and Voice, by name, with catalog names", () => {
-    expect(names("personal", "")).toEqual([
+    expect(names("")).toEqual([
       "Mail",
       "Messages",
       "Notes",
@@ -159,7 +159,7 @@ describe("pickerRows", () => {
     ["safari", []],
     ["voice", []],
   ])("searching %j finds %j", (query, expected) => {
-    expect(names("personal", query)).toEqual(expected);
+    expect(names(query)).toEqual(expected);
   });
 
   test.each<[string, Category, ReturnType<typeof assigned>, string | null, boolean]>([
@@ -186,7 +186,7 @@ describe("pickerRows", () => {
       false,
     ],
   ])("Slack as %s: hint %j, here %j", (_, category, assignments, hint, here) => {
-    const [slack] = pickerRows(category, apps, assignments, "slack");
+    const [slack] = pickerRows(apps, assignments, "slack");
     expect(slack && { hint: rowHint(slack, category), here: slack.current === category }).toEqual({
       hint,
       here,
@@ -195,7 +195,7 @@ describe("pickerRows", () => {
 
   test("an app with no assignment and no built-in category has no hint on any tab", () => {
     for (const category of ["personal", "other"] as const) {
-      const [textEdit] = pickerRows(category, apps, assigned(), "textedit");
+      const [textEdit] = pickerRows(apps, assigned(), "textedit");
       expect(textEdit && { hint: rowHint(textEdit, category), current: textEdit.current }).toEqual({
         hint: null,
         current: null,

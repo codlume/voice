@@ -14,7 +14,6 @@ import {
   retitle,
   searchMeeting,
   spokenText,
-  speakerToken,
   type Folder,
   type FolderId,
   type Meeting,
@@ -24,6 +23,7 @@ import {
   type SpeakerId,
   type TranscriptEntry,
 } from "./meetings.ts";
+import { speakerToken } from "@voice/cleanup/summary";
 
 const A = "11111111-1111-4111-8111-111111111111" as MeetingId;
 const B = "22222222-2222-4222-8222-222222222222" as MeetingId;
