@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import { once } from "node:events";
+import { readFileSync } from "node:fs";
+import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import {
@@ -7,6 +12,7 @@ import {
   Page,
   prepareUserData,
   releaseUserData,
+  repoDir,
   signalGroup,
   snapshotStream,
   stopChildren,
@@ -24,7 +30,7 @@ const { values: args } = parseArgs({
   },
 });
 const trials = Number(args.trials);
-const MODES = ["ready", "loading", "cleaning"];
+const MODES = ["ready", "loading", "cleaning", "transcribing"];
 const modes = args.mode ? [args.mode] : MODES;
 for (const mode of modes) {
   if (!MODES.includes(mode)) throw new Error(`unknown mode ${mode}`);
@@ -38,10 +44,24 @@ const LONG_DICTATION = Array.from(
     `so um item ${i + 1} is that we should probably move the ${["sync", "review", "launch", "retro"][i % 4]} to ${["monday", "tuesday", "thursday", "friday"][i % 4]} and uh let the team know before noon`,
 ).join(" ");
 
+// The scripted helper owes its transcript for longer than the quit takes to arrive, and a quit
+// must still leave that transcript in a history kept on disk.
+const owedTranscript = (trial) => `the quit has to keep transcript ${trial}`;
+const FAKE_HELPER = join(repoDir, "apps/desktop/src/main/testing/fake-helper.ts");
+const helperControl = join(tmpdir(), `voice-quit-smoke-${process.pid}.sock`);
+const scriptedHelper = (trial) => ({
+  VOICE_HELPER_PATH: FAKE_HELPER,
+  VOICE_FAKE_HELPER: JSON.stringify({
+    control: helperControl,
+    transcript: owedTranscript(trial),
+    transcriptMs: 800,
+  }),
+});
+
 const note = (message) => console.error(`[quit-smoke] ${message}`);
 
-function launch(userData) {
-  const { child, ports } = launchVoice(userData, { inspect: true });
+function launch(userData, env) {
+  const { child, ports } = launchVoice(userData, { inspect: true, env });
   const output = [];
   child.stdout.on("data", (chunk) => output.push(String(chunk)));
   child.stderr.on("data", (chunk) => output.push(String(chunk)));
@@ -63,8 +83,37 @@ const startCleaning = (inspectPort) =>
       { budgetMs: 60_000, signal: new AbortController().signal }).catch(() => undefined); 'cleaning'`,
   );
 
+// Holds the scripted key, releases it, and returns while the helper still owes the transcript.
+async function startTranscribing(hub, snapshots) {
+  await hub.evaluate('window.voice.setHistoryRetention("forever")');
+  const helper = connect(helperControl);
+  await once(helper, "connect");
+  helper.write("down\n");
+  await snapshots.waitFor((s) => s.session.kind === "listening", {
+    timeoutMs: 5000,
+    label: "the session to start listening",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  helper.write("up\n");
+  await snapshots.waitFor((s) => s.session.kind === "processing", {
+    timeoutMs: 5000,
+    label: "the session to start transcribing",
+  });
+  helper.destroy();
+}
+
+function keptTranscript(userData, trial) {
+  try {
+    const { entries } = JSON.parse(readFileSync(join(userData, "history.json"), "utf8"));
+    return entries.some((entry) => entry.raw === owedTranscript(trial));
+  } catch {
+    return false;
+  }
+}
+
 async function runTrial(mode, trial, userData) {
-  const app = launch(userData);
+  const transcribing = mode === "transcribing";
+  const app = launch(userData, transcribing ? scriptedHelper(trial) : {});
   let hub;
   let stateAtQuit;
   let quitAt;
@@ -72,7 +121,7 @@ async function runTrial(mode, trial, userData) {
     const { DevTools: port, Debugger: inspectPort } = await app.ports;
     hub = await Page.connect(port, "hub.html");
     const snapshots = await snapshotStream(hub);
-    const wanted = mode === "cleaning" ? "ready" : mode;
+    const wanted = mode === "cleaning" || transcribing ? "ready" : mode;
     const snapshot = await snapshots.waitFor(
       (s) => [wanted, "ready", "failed"].includes(s.models.cleanup.state),
       { timeoutMs: MODEL_TIMEOUT_MS, label: `cleanup model ${wanted}` },
@@ -81,6 +130,7 @@ async function runTrial(mode, trial, userData) {
     if (stateAtQuit !== wanted) {
       throw new Error(`cleanup model reached ${stateAtQuit} before the trial could quit`);
     }
+    if (transcribing) await startTranscribing(hub, snapshots);
     hub.close();
     hub = undefined;
     if (mode === "cleaning") {
@@ -127,7 +177,14 @@ async function runTrial(mode, trial, userData) {
     crashed,
     shutdownOverran,
   };
-  result.ok = !timedOut && !crashed && !shutdownOverran && exit.signal === null && exit.code === 0;
+  if (transcribing) result.keptTranscript = keptTranscript(userData, trial);
+  result.ok =
+    !timedOut &&
+    !crashed &&
+    !shutdownOverran &&
+    exit.signal === null &&
+    exit.code === 0 &&
+    result.keptTranscript !== false;
   if (!result.ok) result.outputTail = tail(app.text());
   return result;
 }

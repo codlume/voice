@@ -252,6 +252,29 @@ describe("meetings store", () => {
     expect(hub()?.meetings).toEqual([]);
   });
 
+  test("a meeting whose delete failed stays listed and keeps taking edits", async () => {
+    const { store, loaded } = harness();
+    await loaded;
+    await seed(store, meeting(A));
+    const locked = NodePath.join(meetingDir(A), "audio");
+    await mkdir(locked);
+    await writeFile(NodePath.join(locked, "mic.pcm"), "audio");
+    await chmod(locked, 0o500);
+    try {
+      await expect(store.remove(A)).rejects.toThrow();
+    } finally {
+      await chmod(locked, 0o700);
+    }
+    expect(store.get(A)).not.toBeNull();
+
+    await store.upsert(A, (saved) => ({
+      meeting: saved && { ...saved, notes: "typed after the failed delete" },
+      mustPersist: false,
+    }));
+    expect(store.get(A)?.notes).toBe("typed after the failed delete");
+    expect(await store.append(A, [segment("s1", "still recording")])).not.toBeNull();
+  });
+
   test("the recovery scan returns meetings a crash left mid-lifecycle, with their newest write", async () => {
     const first = harness();
     await first.loaded;
