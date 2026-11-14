@@ -987,6 +987,81 @@ describe("Folders", () => {
     expect(main.setMeetingInFolder).toHaveBeenLastCalledWith(id(1), made.id, true);
   });
 
+  test("a row's folder button opens its menu by keyboard and by pointer", async () => {
+    const product: Folder = {
+      id: "00000000-0000-4000-8000-00000000f001" as FolderId,
+      name: "Product",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [product]);
+    await render();
+    const label = "[aria-label='Add “Weekly product sync” to a folder']";
+    const folderButton = () => document.querySelector<HTMLButtonElement>(label)!;
+    expect(folderButton().getAttribute("aria-haspopup")).toBe("menu");
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => folderButton().focus());
+    expect(document.activeElement).toBe(folderButton());
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+    // Enter or Space on a focused button is a click with no pointer.
+    await act(async () => folderButton().click());
+    await waitForText("New folder…");
+    expect(folderButton().getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await vi.waitFor(() => expect(document.querySelector("[role=menu]")).toBeNull());
+    expect(document.activeElement).toBe(folderButton());
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+
+    const other = "[aria-label='Add “Planowanie sprintu” to a folder']";
+    await act(async () => {
+      document
+        .querySelector(other)!
+        .dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    });
+    await click(document.querySelector(other)!);
+    await waitForText("Product");
+    expect(document.querySelector(other)!.getAttribute("aria-expanded")).toBe("true");
+    await click(byText("Product", "[role=menuitemcheckbox]"));
+    expect(main.setMeetingInFolder).toHaveBeenCalledWith(id(2), product.id, true);
+  });
+
+  test("a row's folder menu follows folder changes made after the list loaded", async () => {
+    const product: Folder = {
+      id: "00000000-0000-4000-8000-00000000f001" as FolderId,
+      name: "Product",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [product]);
+    await render();
+    const label = "[aria-label='Add “Morning standup” to a folder']";
+    const menuItems = async () => {
+      await click(document.querySelector(label)!);
+      await waitForText("New folder…");
+      const items = [...document.querySelectorAll("[role=menuitemcheckbox]")].map(
+        (item) => item.textContent,
+      );
+      await act(async () => {
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      });
+      await vi.waitFor(() => expect(document.querySelector("[role=menu]")).toBeNull());
+      return items;
+    };
+    expect(await menuItems()).toEqual(["Product"]);
+    await act(async () => main.publish({ ...sample()[0]!, title: "Renamed sync" }));
+    await waitForText("Renamed sync");
+    expect(await menuItems()).toEqual(["Product"]);
+    await act(async () => main.updateFolder(product.id, { name: "Roadmap", kind: "manual" }));
+    expect(await menuItems()).toEqual(["Roadmap"]);
+  });
+
   test("an automatic folder needs a word to look for", async () => {
     const main = fakeMain([]);
     await render();

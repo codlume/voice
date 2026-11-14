@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { actionErrorMessage } from "./actionError.ts";
 
@@ -11,7 +11,8 @@ export function useAction() {
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  async function run(action: () => Promise<void>, fallback: string): Promise<boolean> {
+  // Stable, so a memoized row can take a callback built on it.
+  const run = useCallback(async (action: () => Promise<void>, fallback: string) => {
     const id = ++latest.current;
     setError("");
     setPending(true);
@@ -24,7 +25,7 @@ export function useAction() {
     } finally {
       if (id === latest.current) setPending(false);
     }
-  }
+  }, []);
 
   return { pending, error, run, clearError: () => setError("") };
 }

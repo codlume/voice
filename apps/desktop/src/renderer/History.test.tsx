@@ -71,6 +71,8 @@ const button = (name: RegExp) => {
 };
 const click = (element: Element) =>
   act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+const row = (text: string) =>
+  [...host.querySelectorAll("li")].find((li) => li.textContent?.includes(text));
 const status = () => host.querySelector('[role="status"]')?.textContent;
 
 describe("History", () => {
@@ -91,8 +93,7 @@ describe("History", () => {
 
   test("clicking a row copies its text", async () => {
     await render(<History history={history} today={today} />);
-    const row = [...host.querySelectorAll("li")].find((li) => li.textContent?.includes("dentist"));
-    await click(row!);
+    await click(row("dentist")!);
     expect(api.copyHistoryEntry).toHaveBeenCalledWith("missed", "text");
   });
 
@@ -152,6 +153,37 @@ describe("History", () => {
     await render(<History history={{ ...history, entries: [] }} today={today} />);
     await render(<History history={{ ...history, entries: [cleaned] }} today={today} />);
     expect(host.textContent).toContain("Meet Anna on Thursday.");
+  });
+
+  test("a new dictation renders its own row, and the rows keep their own entries", async () => {
+    await render(<History history={history} today={today} />);
+    await click(button(/^Copy dictation .*Meet Anna/));
+    expect(row("Meet Anna")?.textContent).toContain("Copied");
+    expect(row("dentist")?.textContent).not.toContain("Copied");
+
+    const edited = { ...cleaned, text: "Meet Anna on Friday." };
+    const added: HistoryEntry = {
+      id: "added",
+      at: now - 30_000,
+      raw: "Book the train.",
+      text: "Book the train.",
+      status: "inserted",
+    };
+    vi.mocked(timeLabel).mockClear();
+    await render(
+      <History history={{ ...history, entries: [added, edited, missed] }} today={today} />,
+    );
+    // The new row and the edited one; the dentist row is the same entry as before.
+    expect(timeLabel).toHaveBeenCalledTimes(2);
+    expect(row("Meet Anna on Friday.")?.textContent).toContain("Copied");
+    expect(row("Book the train.")?.textContent).not.toContain("Copied");
+
+    await click(button(/^Copy dictation .*train/));
+    expect(api.copyHistoryEntry).toHaveBeenLastCalledWith("added", "text");
+    expect(row("Book the train.")?.textContent).toContain("Copied");
+    expect(row("Meet Anna on Friday.")?.textContent).not.toContain("Copied");
+    await click(button(/^Delete dictation .*dentist/));
+    expect(api.deleteHistoryEntry).toHaveBeenCalledWith("missed");
   });
 
   test("a snapshot that leaves the history alone does not re-render its rows", async () => {

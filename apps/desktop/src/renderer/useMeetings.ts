@@ -6,6 +6,7 @@ import {
   type Meeting,
   type MeetingId,
   type MeetingSource,
+  type MeetingsChange,
   type MeetingsState,
   type MeetingTranscriptChange,
   type TranscriptEntry,
@@ -13,7 +14,6 @@ import {
 import { mergeTranscript } from "./meetingsView.ts";
 import { hubApi } from "./voice.ts";
 
-/** A read from main that can fail and be asked for again. */
 export type Read<T> =
   | { kind: "reading" }
   | { kind: "failed"; retry: () => void }
@@ -32,15 +32,28 @@ function askForMeetings(setState: Dispatch<SetStateAction<HeldMeetings>>) {
     );
 }
 
-/** The meetings, from main's answer and then its changes. */
+// Main sends the folders and settings whole with every change. Keeping the held ones while they
+// read the same lets the memoized rows skip a change to one meeting.
+const unlessEqual = <T>(held: T, next: T) =>
+  JSON.stringify(held) === JSON.stringify(next) ? held : next;
+
+function applyChange(current: HeldMeetings, change: MeetingsChange): HeldMeetings {
+  const held = typeof current === "string" ? null : current;
+  const next = applyMeetingsChange(held, change);
+  if (next === null) return current;
+  if (held === null) return next;
+  return {
+    meetings: next.meetings,
+    folders: unlessEqual(held.folders, next.folders),
+    settings: unlessEqual(held.settings, next.settings),
+  };
+}
+
 export function useMeetingsRead(): Read<MeetingsState> {
   const [state, setState] = useState<HeldMeetings>("reading");
   useEffect(() => {
     const unsubscribe = hubApi().onMeetings((change) =>
-      setState(
-        (current) =>
-          applyMeetingsChange(typeof current === "string" ? null : current, change) ?? current,
-      ),
+      setState((current) => applyChange(current, change)),
     );
     askForMeetings(setState);
     return unsubscribe;
@@ -58,7 +71,6 @@ export function useMeetingsRead(): Read<MeetingsState> {
   return { kind: "read", value: state };
 }
 
-/** Null until the first list arrives. */
 export function useMeetings(): MeetingsState | null {
   const meetings = useMeetingsRead();
   return meetings.kind === "read" ? meetings.value : null;
