@@ -133,7 +133,8 @@ public enum KeystrokeRefusal: String, Equatable, Sendable {
 }
 
 /// Where a Cmd+V posted now would go. The system delivers it to whichever app is frontmost at
-/// that moment, not to the target the insert checked.
+/// that moment, or to a panel holding key focus over that app, not to the target the insert
+/// checked.
 public struct KeystrokeDestination: Equatable, Sendable {
     public let presses: PressStamp
     public let frontmostPid: Int32?
