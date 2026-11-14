@@ -13,7 +13,7 @@ import {
   stopChildrenOnSignal,
 } from "./voice-app.mjs";
 
-const settleMs = 10_000;
+export const settleMs = 10_000;
 const sampleMs = 20_000;
 const intervalMs = 1000;
 
@@ -88,12 +88,11 @@ async function waitForModels(port) {
 }
 
 // ps %cpu is a decaying average over up to a minute, so it would still carry model loading.
-// CPU% here is the growth in cumulative CPU time across the window.
-async function sample(rootPid) {
+// CPU here is the growth in cumulative CPU time between the first and last sample of a process.
+// Samples the tree now, every everyMs, and once more when the returned function is called.
+export function watchTree(rootPid, everyMs = intervalMs) {
   const seen = new Map();
-  const startedAt = performance.now();
-  for (let tick = 0; tick <= sampleMs / intervalMs; tick += 1) {
-    await sleep(startedAt + tick * intervalMs - performance.now());
+  const record = () => {
     const at = performance.now();
     for (const row of tree(rootPid)) {
       const entry = seen.get(row.pid) ?? {
@@ -105,17 +104,32 @@ async function sample(rootPid) {
       entry.last = { at, cpuS: row.cpuS };
       seen.set(row.pid, entry);
     }
-  }
-  return [...seen].map(([pid, entry]) => {
-    const wallS = (entry.last.at - entry.first.at) / 1000;
-    return {
-      pid,
-      process: entry.label,
-      samples: entry.rss.length,
-      rssMb: entry.rss.reduce((a, b) => a + b, 0) / entry.rss.length / 1024,
-      cpuPercent: wallS > 0 ? ((entry.last.cpuS - entry.first.cpuS) / wallS) * 100 : 0,
-    };
-  });
+  };
+  record();
+  const timer = setInterval(record, everyMs);
+  return () => {
+    clearInterval(timer);
+    record();
+    return [...seen].map(([pid, entry]) => {
+      const wallS = (entry.last.at - entry.first.at) / 1000;
+      const cpuS = entry.last.cpuS - entry.first.cpuS;
+      return {
+        pid,
+        process: entry.label,
+        samples: entry.rss.length,
+        rssMb: entry.rss.reduce((a, b) => a + b, 0) / entry.rss.length / 1024,
+        rssPeakMb: Math.max(...entry.rss) / 1024,
+        cpuS,
+        cpuPercent: wallS > 0 ? (cpuS / wallS) * 100 : 0,
+      };
+    });
+  };
+}
+
+export async function sample(rootPid, durationMs = sampleMs) {
+  const stop = watchTree(rootPid);
+  await sleep(durationMs);
+  return stop();
 }
 
 function print(rows) {
@@ -159,5 +173,7 @@ async function main() {
   }
 }
 
-stopChildrenOnSignal();
-await main();
+if (import.meta.main) {
+  stopChildrenOnSignal();
+  await main();
+}
