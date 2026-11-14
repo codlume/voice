@@ -254,7 +254,13 @@ export function createMeetingsStore(options: {
 
   async function removeNow(id: MeetingId) {
     tombstones.add(id);
-    await rm(meetingDir(id), { recursive: true, force: true });
+    try {
+      await rm(meetingDir(id), { recursive: true, force: true });
+    } catch (error) {
+      // The meeting is still listed, so it has to keep taking edits and transcript lines.
+      tombstones.delete(id);
+      throw error;
+    }
     if (meetings.delete(id)) publish([], [id]);
   }
 
@@ -269,7 +275,6 @@ export function createMeetingsStore(options: {
           await removeNow(id);
           deleted += 1;
         } catch (error) {
-          tombstones.delete(id);
           log(`meetings: could not delete ${id} past retention (${String(error)})`);
         }
       }

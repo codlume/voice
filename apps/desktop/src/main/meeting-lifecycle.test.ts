@@ -23,9 +23,12 @@ const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 31, 9, 0);
 const config: LifecycleConfig = DEFAULT_MEETINGS_SETTINGS;
 
-/** Folds `[event, ms after T0]` pairs from no meeting, keeping every effect. */
-function play(events: [MeetingEvent, number][], options: { config?: LifecycleConfig } = {}) {
-  let meeting: Meeting | null = null;
+/** Folds `[event, ms after T0]` pairs from no meeting, or from `from`, keeping every effect. */
+function play(
+  events: [MeetingEvent, number][],
+  options: { config?: LifecycleConfig; from?: Meeting } = {},
+) {
+  let meeting: Meeting | null = options.from ?? null;
   const effects: MeetingEffect[] = [];
   for (const [event, at] of events) {
     const next = step(meeting, event, T0 + at, options.config ?? config);
@@ -39,6 +42,12 @@ const recording = (minutes: number): [MeetingEvent, number][] => [
   [{ type: "start", id: ID }, 0],
   [{ type: "captureStarted", leg: 0 }, 0],
   [{ type: "stop" }, minutes * MIN],
+];
+
+/** The helper goes down and its replacement comes up. */
+const helperRestart: [MeetingEvent, number][] = [
+  [{ type: "helperExited" }, 31 * MIN],
+  [{ type: "helperReady" }, 31 * MIN],
 ];
 
 const kinds = (effects: MeetingEffect[]) => effects.map((effect) => effect.type);
@@ -433,6 +442,70 @@ describe("meeting lifecycle", () => {
     for (const [status, effects] of cases) {
       const next = step(meetingAt(status), { type: "helperReady" }, T0 + 30 * MIN, config);
       expect(kinds(next.effects), status.kind).toEqual(effects);
+    }
+  });
+
+  test("one helper exit during a drain or final pass waits for the helper, and the work sent again can finish", () => {
+    const cases: [MeetingStatus, MeetingEffect["type"]][] = [
+      [{ kind: "finishing" }, "drain"],
+      [{ kind: "transcribing", step: "draining" }, "drain"],
+      [{ kind: "transcribing", step: "finalizing" }, "finalize"],
+    ];
+    for (const [status, work] of cases) {
+      const exited = step(meetingAt(status), { type: "helperExited" }, T0 + 30 * MIN, config);
+      expect(exited.meeting?.status, status.kind).toMatchObject(status);
+      expect(exited.effects, status.kind).toEqual([]);
+      const back = step(exited.meeting, { type: "helperReady" }, T0 + 31 * MIN, config);
+      expect(kinds(back.effects), status.kind).toEqual([work, "watch"]);
+    }
+
+    const { meeting, effects } = play([...helperRestart, [{ type: "finalized" }, 32 * MIN]], {
+      from: meetingAt({ kind: "transcribing", step: "finalizing" }),
+    });
+    expect(meeting?.status.kind).toBe("summarizing");
+    expect(meeting?.finalPassFailed).toBeNull();
+    expect(kinds(effects)).toContain("deleteAudio");
+    expect(notices(effects)).toEqual([]);
+  });
+
+  test("a second helper exit in the same final pass ends it, keeping the live transcript and the audio", () => {
+    const { meeting, effects } = play([...helperRestart, ...helperRestart, ...helperRestart], {
+      from: meetingAt({ kind: "transcribing", step: "finalizing" }),
+    });
+    expect(kinds(effects).filter((kind) => kind === "finalize")).toHaveLength(1);
+    expect(notices(effects)).toEqual(["finalPassFailed"]);
+    expect(kinds(effects)).not.toContain("deleteAudio");
+    expect(meeting?.status.kind).toBe("summarizing");
+    expect(meeting?.finalPassFailed).toBe("other");
+
+    // The user's retry is a new pass, with a restart of its own to spare.
+    const retried = play(
+      [[{ type: "retryFinalPass" }, 40 * MIN], ...helperRestart, [{ type: "finalized" }, 41 * MIN]],
+      { from: { ...meeting!, status: { kind: "ready" } } },
+    );
+    expect(kinds(retried.effects).filter((kind) => kind === "finalize")).toHaveLength(2);
+    expect(retried.meeting?.finalPassFailed).toBeNull();
+    expect(kinds(retried.effects)).toContain("deleteAudio");
+  });
+
+  test("a second helper exit in the same drain moves on to the final pass, as a stalled drain does", () => {
+    for (const status of [
+      { kind: "finishing" },
+      { kind: "transcribing", step: "draining" },
+    ] satisfies MeetingStatus[]) {
+      const { meeting, effects } = play([...helperRestart, [{ type: "helperExited" }, 31 * MIN]], {
+        from: meetingAt(status),
+      });
+      expect(kinds(effects), status.kind).toEqual(["drain", "watch", "finalize", "watch"]);
+      expect(meeting?.status, status.kind).toEqual({ kind: "transcribing", step: "finalizing" });
+
+      // The final pass is a new step: the drain's exits do not count against it.
+      const pass = play([[{ type: "helperReady" }, 32 * MIN], ...helperRestart], {
+        from: meeting!,
+      });
+      expect(kinds(pass.effects), status.kind).toEqual(["finalize", "watch", "finalize", "watch"]);
+      expect(pass.meeting?.status.kind, status.kind).toBe("transcribing");
+      expect(pass.meeting?.finalPassFailed, status.kind).toBeNull();
     }
   });
 

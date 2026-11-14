@@ -101,6 +101,12 @@ export const SILENCE_PROMPT_MS = 10 * 60_000;
 export const SILENCE_STOP_MS = 30_000;
 /** Below this the user is asked "Started by mistake?" before anything else runs. */
 const SHORT_RECORDING_WORDS = 10;
+/**
+ * A helper exit during a drain or final pass may have nothing to do with the meeting, so the work
+ * is sent again once. A second exit in the same step is taken for the work's doing: each further
+ * try would take dictation down with the helper, so the step ends as a stalled one does.
+ */
+export const HELPER_EXIT_LIMIT = 2;
 
 const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
 const mark = (marker: MarkerKind): MeetingEffect => ({ type: "mark", marker });
@@ -133,6 +139,17 @@ const finalizing = (meeting: Meeting): Step => ({
   effects: [{ type: "finalize" }, watch("finalPass")],
 });
 
+/** Counts a helper exit against the drain or pass under way; at the limit the step is `lost`. */
+function helperExited(
+  meeting: Meeting,
+  status: Extract<MeetingStatus, { kind: "finishing" | "transcribing" }>,
+  lost: Step,
+): Step {
+  const helperExits = (status.helperExits ?? 0) + 1;
+  if (helperExits >= HELPER_EXIT_LIMIT) return lost;
+  return { meeting: withStatus(meeting, { ...status, helperExits }), effects: [] };
+}
+
 const summarizing = (meeting: Meeting): Step => ({
   meeting: withStatus(meeting, { kind: "summarizing", progress: null }),
   effects: [{ type: "summarize" }],
@@ -148,6 +165,12 @@ function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
   const title: MeetingEffect[] = meeting.title === null ? [{ type: "generateTitle" }] : [];
   return { meeting: withStatus(meeting, { kind: "ready" }), effects: [...effects, ...title] };
 }
+
+// The live transcript stands in, and the audio stays for a retry.
+const finalPassFailed = (meeting: Meeting, reason: FinalPassFailure): Step =>
+  afterTranscript({ ...meeting, finalPassFailed: reason }, [
+    notify({ kind: "finalPassFailed", reason }),
+  ]);
 
 function resume(meeting: Meeting, from: "paused" | "ready", config: LifecycleConfig): Step {
   if (recordedMs(meeting, 0) >= maxLengthMs[config.maxLength]) {
@@ -377,6 +400,8 @@ export function step(
         // Without a word count the meeting is kept rather than asked about.
         case "stalled":
           return event.watch === "drain" ? finalizing(meeting) : same;
+        case "helperExited":
+          return helperExited(meeting, status, finalizing(meeting));
         case "helperReady":
           return { meeting, effects: [{ type: "drain" }, watch("drain")] };
         case "discard":
@@ -400,6 +425,8 @@ export function step(
             return finalizing(meeting);
           case "stalled":
             return event.watch === "drain" ? finalizing(meeting) : same;
+          case "helperExited":
+            return helperExited(meeting, status, finalizing(meeting));
           case "helperReady":
             return { meeting, effects: [{ type: "drain" }, watch("drain")] };
           default:
@@ -412,14 +439,11 @@ export function step(
         case "finalized":
           return afterTranscript({ ...meeting, finalPassFailed: null }, [{ type: "deleteAudio" }]);
         case "stalled":
-          if (event.watch !== "finalPass") return same;
-          return afterTranscript({ ...meeting, finalPassFailed: "other" }, [
-            notify({ kind: "finalPassFailed", reason: "other" }),
-          ]);
+          return event.watch === "finalPass" ? finalPassFailed(meeting, "other") : same;
         case "finalizeFailed":
-          return afterTranscript({ ...meeting, finalPassFailed: event.reason }, [
-            notify({ kind: "finalPassFailed", reason: event.reason }),
-          ]);
+          return finalPassFailed(meeting, event.reason);
+        case "helperExited":
+          return helperExited(meeting, status, finalPassFailed(meeting, "other"));
         case "helperReady":
           return { meeting, effects: [{ type: "finalize" }, watch("finalPass")] };
         default:
