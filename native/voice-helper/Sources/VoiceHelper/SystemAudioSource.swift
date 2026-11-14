@@ -9,7 +9,7 @@ import VoiceHelperCore
 /// aggregate device that holds only the tap. With no output device in the aggregate, switching
 /// headphones and speakers mid-meeting cannot take the tap's clock away.
 @available(macOS 14.4, *)
-final class SystemAudioSource {
+final class SystemAudioSource: MeetingTap {
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
     private var ioProc: AudioDeviceIOProcID?

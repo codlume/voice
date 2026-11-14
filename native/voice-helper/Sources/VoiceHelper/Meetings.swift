@@ -145,6 +145,7 @@ final class MeetingTranscription {
     func update(dir: URL, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) {
         if baseMs != self.baseMs || dir.path != self.dir.path {
             cursor = [.mic: 0, .system: 0]
+            partialEnd = [:]
         }
         self.dir = dir
         self.baseMs = baseMs
