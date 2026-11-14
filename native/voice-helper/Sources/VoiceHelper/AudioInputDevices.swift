@@ -56,7 +56,7 @@ final class AudioInputDevices {
 
     private func refresh() {
         do {
-            let next = try Self.readDevices()
+            let next = try Self.readDevices { [output] in output.log(.error, "audio device left out of the microphone list: \($0)") }
             var address = Self.address(kAudioHardwarePropertyDefaultInputDevice)
             var defaultID = AudioDeviceID(kAudioObjectUnknown)
             var size = UInt32(MemoryLayout.size(ofValue: defaultID))
@@ -73,19 +73,34 @@ final class AudioInputDevices {
         }
     }
 
-    static func readDevices() throws -> [Device] {
+    static func readDevices(onUnreadable: (Error) -> Void = { _ in }) throws -> [Device] {
         var address = address(kAudioHardwarePropertyDevices)
         var size: UInt32 = 0
         let system = AudioObjectID(kAudioObjectSystemObject)
         try check(AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size))
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         try check(AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids))
-        return try ids.compactMap { id -> Device? in
+        return devices(ids: ids, onUnreadable: onUnreadable) { id in
             guard try inputChannels(id) > 0 else { return nil }
             let uid = try string(id, selector: kAudioDevicePropertyDeviceUID)
             let name = try string(id, selector: kAudioObjectPropertyName)
             guard !uid.isEmpty, !name.isEmpty else { return nil }
             return Device(id: id, microphone: Microphone(uid: uid, name: name))
+        }
+    }
+
+    /// A device that cannot be read is left out and the rest of the list stands. One removed
+    /// after its id was listed fails every read, and so does a broken driver; neither is a
+    /// reason to refuse the microphones that work.
+    static func devices(ids: [AudioDeviceID], onUnreadable: (Error) -> Void = { _ in },
+                        describe: (AudioDeviceID) throws -> Device?) -> [Device] {
+        ids.compactMap { id in
+            do {
+                return try describe(id)
+            } catch {
+                onUnreadable(error)
+                return nil
+            }
         }.sorted {
             let order = $0.microphone.name.localizedStandardCompare($1.microphone.name)
             return order == .orderedSame ? $0.microphone.uid < $1.microphone.uid : order == .orderedAscending

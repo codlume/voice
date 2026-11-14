@@ -19,6 +19,7 @@ final class Helper {
     private let meetings: Meetings
     private let diarizer: SpeakerDiarizer
     private var testTarget: TranscriptTarget?
+    private var shuttingDown = false
 
     @MainActor
     init(output: Output, modelsDir: URL, stateDir: URL, environment: [String: String]) {
@@ -65,6 +66,8 @@ final class Helper {
 
     @MainActor
     func handle(line: String, receivedAt: DispatchTime) {
+        // After SIGTERM stdin is still open while the clipboard settles, and nothing may start then.
+        guard !shuttingDown else { return }
         switch HelperCommand.decode(line: line) {
         case .failure(let error):
             output.log(.error, "bad command: \(error.description)")
@@ -139,12 +142,17 @@ final class Helper {
         }
     }
 
+    /// Stops capture at once, then runs `done` when the clipboard is the user's again. That can
+    /// be up to a second later, so that a paste just posted is not restored under a slow target.
     @MainActor
-    func shutdown() {
+    func shutdown(then done: @escaping () -> Void) {
+        guard !shuttingDown else { return }
+        shuttingDown = true
+        hotkeyTap.remove()
         devices.shutdown()
         meetings.shutdown()
         capture.shutdown()
-        pasteboard.flush()
+        pasteboard.settle(then: done)
     }
 }
 
@@ -183,8 +191,7 @@ let reader = Thread {
         }
     }
     DispatchQueue.main.async {
-        MainActor.assumeIsolated { helper.shutdown() }
-        exit(0)
+        MainActor.assumeIsolated { helper.shutdown { exit(0) } }
     }
 }
 reader.name = "stdin"
@@ -194,8 +201,7 @@ reader.start()
 signal(SIGTERM, SIG_IGN)
 let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 sigterm.setEventHandler {
-    MainActor.assumeIsolated { helper.shutdown() }
-    exit(0)
+    MainActor.assumeIsolated { helper.shutdown { exit(0) } }
 }
 sigterm.resume()
 

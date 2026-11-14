@@ -62,7 +62,7 @@ private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask
     var hotkey = Hotkeys(key: .fn, toggleKey: nil, initialFlags: 0)
     _ = hotkey.handle(fnDown(), activity: .idle)
     #expect(hotkey.handle(escapeDown, activity: .capturing) == escapeCancel)
-    #expect(hotkey.handle(escapeUp, activity: .capturing) == .none)
+    #expect(hotkey.handle(escapeUp, activity: .capturing) == consumed)
     #expect(hotkey.handle(fnUp, activity: .idle) == .none)
 }
 
@@ -190,7 +190,7 @@ private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask
     _ = hotkey.handle(rightOptionDown, activity: .idle)
     _ = hotkey.handle(rightOptionUp, activity: .capturing)
     #expect(hotkey.handle(escapeDown, activity: .capturing) == escapeCancel)
-    #expect(hotkey.handle(escapeUp, activity: .capturing) == .none)
+    #expect(hotkey.handle(escapeUp, activity: .capturing) == consumed)
 }
 
 @Test func escapeWhileAKeyIsHeldButIdlePassesThroughWithoutCancelling() {
@@ -222,6 +222,70 @@ private let shiftDown = KeyEvent(kind: .flagsChanged, keycode: 56, flags: fnMask
     #expect(hotkey.handle(rightOptionUp, activity: .idle) == .none)
     #expect(hotkey.handle(rightOptionDown, activity: .idle) == .none)
     #expect(hotkey.handle(rightOptionUp, activity: .idle) == emits(.toggle))
+}
+
+private func rightOptionDown(pointerPresses: UInt32) -> KeyEvent {
+    KeyEvent(kind: .flagsChanged, keycode: 61, flags: rightOptionBits, pointerPresses: pointerPresses)
+}
+private func rightOptionUp(pointerPresses: UInt32) -> KeyEvent {
+    KeyEvent(kind: .flagsChanged, keycode: 61, flags: 0, pointerPresses: pointerPresses)
+}
+
+@Test func toggleKeyHeldThroughAClickIsNotATap() {
+    var hotkey = Hotkeys(key: .fn, toggleKey: .rightOption, initialFlags: 0)
+    #expect(hotkey.handle(rightOptionDown(pointerPresses: 10), activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionUp(pointerPresses: 11), activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionDown(pointerPresses: 11), activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionUp(pointerPresses: 11), activity: .idle) == emits(.toggle))
+}
+
+@Test func toggleKeyHeldThroughAClickDoesNotEndAToggledSession() {
+    var hotkey = Hotkeys(key: .fn, toggleKey: .rightOption, initialFlags: 0)
+    _ = hotkey.handle(rightOptionDown(pointerPresses: 10), activity: .idle)
+    #expect(hotkey.handle(rightOptionUp(pointerPresses: 10), activity: .idle) == emits(.toggle))
+    #expect(hotkey.handle(rightOptionDown(pointerPresses: 14), activity: .capturing) == .none)
+    #expect(hotkey.handle(rightOptionUp(pointerPresses: 15), activity: .capturing) == .none)
+}
+
+@Test func toggleKeyHeldWithAnotherModifierIsNotATap() {
+    let shiftBesideRightOption = KeyEvent(kind: .flagsChanged, keycode: 56, flags: rightOptionBits | 0x2_0000)
+    let shiftUpBesideRightOption = KeyEvent(kind: .flagsChanged, keycode: 56, flags: rightOptionBits)
+    var hotkey = Hotkeys(key: .fn, toggleKey: .rightOption, initialFlags: 0)
+    #expect(hotkey.handle(rightOptionDown, activity: .idle) == .none)
+    #expect(hotkey.handle(shiftBesideRightOption, activity: .idle) == .none)
+    #expect(hotkey.handle(shiftUpBesideRightOption, activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionUp, activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionDown, activity: .idle) == .none)
+    #expect(hotkey.handle(rightOptionUp, activity: .idle) == emits(.toggle))
+}
+
+@Test func holdKeyHeldThroughAClickStillEndsOnRelease() {
+    var hotkey = Hotkeys(key: .rightOption, toggleKey: .fn, initialFlags: 0)
+    #expect(hotkey.handle(rightOptionDown(pointerPresses: 10), activity: .idle) == emits(.down))
+    #expect(hotkey.handle(rightOptionUp(pointerPresses: 11), activity: .capturing) == emits(.up))
+}
+
+@Test func escapeHeldPastTheCancelStaysConsumedUntilItsRelease() {
+    let escapeRepeat = KeyEvent(kind: .keyDown, keycode: 53, flags: 0, isRepeat: true)
+    var hotkey = Hotkeys(key: .fn, toggleKey: nil, initialFlags: 0)
+    _ = hotkey.handle(fnDown(), activity: .idle)
+    #expect(hotkey.handle(escapeDown, activity: .capturing) == escapeCancel)
+    // Capture is already idle again when the first repeat arrives.
+    #expect(hotkey.handle(escapeRepeat, activity: .idle) == consumed)
+    // The backstop poll runs while fn is still down.
+    #expect(hotkey.reconcile(flags: fnMask) == nil)
+    #expect(hotkey.handle(escapeRepeat, activity: .idle) == consumed)
+    #expect(hotkey.handle(escapeUp, activity: .idle) == consumed)
+    #expect(hotkey.handle(escapeDown, activity: .idle) == .none)
+    #expect(hotkey.handle(escapeRepeat, activity: .idle) == .none)
+    #expect(hotkey.handle(escapeUp, activity: .idle) == .none)
+}
+
+@Test func aNewEscapePressIsTheAppsEvenWhenTheLastReleaseWasLost() {
+    var hotkey = Hotkeys(key: .fn, toggleKey: nil, initialFlags: 0)
+    #expect(hotkey.handle(escapeDown, activity: .capturing) == escapeCancel)
+    #expect(hotkey.handle(escapeDown, activity: .idle) == .none)
+    #expect(hotkey.handle(escapeUp, activity: .idle) == .none)
 }
 
 // Transform shortcuts. Keycode 18 is the "1" position; 123 is Left Arrow, which sets the fn and

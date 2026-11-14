@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url";
 const repoDir = fileURLToPath(new URL("..", import.meta.url));
 export const fixturesDir = join(repoDir, "test-fixtures/audio");
 
+// Without a voice `say` uses the system one, which follows the Mac's language: on a Polish Mac
+// the English fixtures came out as Polish phonemes and no transcript matched its anchors.
+const englishVoice = "Samantha";
+
 const fixtures = [
   {
     name: "short.wav",
@@ -279,7 +283,7 @@ function generate(fixture) {
   }
   const aiff = join(tmpdir(), `voice-fixture-${process.pid}-${fixture.name}.aiff`);
   try {
-    run("say", [...(fixture.voice ? ["-v", fixture.voice] : []), "-o", aiff, fixture.speech]);
+    run("say", ["-v", fixture.voice ?? englishVoice, "-o", aiff, fixture.speech]);
     const pad = fixture.trailingSilenceSeconds
       ? ["-af", `apad=pad_dur=${fixture.trailingSilenceSeconds}`]
       : [];

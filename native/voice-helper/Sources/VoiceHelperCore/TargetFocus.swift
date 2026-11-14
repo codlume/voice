@@ -124,3 +124,55 @@ public enum CapturedFocus<Element: Equatable>: Equatable {
         }
     }
 }
+
+/// Why a paste keystroke posted now could miss the target the insert checked.
+public enum KeystrokeRefusal: String, Equatable, Sendable {
+    case inputMoved, notFrontmost, secureInput
+
+    public var failure: InsertFailure { self == .secureInput ? .secureInput : .focusChanged }
+}
+
+/// Where a Cmd+V posted now would go. The system delivers it to whichever app is frontmost at
+/// that moment, or to a panel holding key focus over that app, not to the target the insert
+/// checked.
+public struct KeystrokeDestination: Equatable, Sendable {
+    public let presses: PressStamp
+    public let frontmostPid: Int32?
+    public let secureInput: Bool
+
+    public init(presses: PressStamp, frontmostPid: Int32?, secureInput: Bool) {
+        self.presses = presses
+        self.frontmostPid = frontmostPid
+        self.secureInput = secureInput
+    }
+
+    /// `checked` is the press stamp from before the insert's target check. A press since then
+    /// can have switched apps, and nothing read from the target shows that: an app answers for
+    /// its own focused element whether or not it is in front.
+    public func refusal(target pid: Int32?, checked: PressStamp) -> KeystrokeRefusal? {
+        if secureInput { return .secureInput }
+        if presses != checked { return .inputMoved }
+        guard let pid, frontmostPid == pid else { return .notFrontmost }
+        return nil
+    }
+}
+
+public enum PasteAttempt<Write> {
+    case posted(Write)
+    case refused(KeystrokeRefusal)
+}
+
+extension PasteAttempt: Equatable where Write: Equatable {}
+
+/// The order of a paste. Saving the user's clipboard can block for as long as its owner takes
+/// to provide the data, so `refusal` is asked after the save, and a target that moved gets no
+/// keystroke and no clipboard write.
+public func pasteKeystroke<Saved, Write>(
+    save: () -> Saved, refusal: () -> KeystrokeRefusal?, write: (Saved) -> Write, post: () -> Void
+) -> PasteAttempt<Write> {
+    let saved = save()
+    if let refusal = refusal() { return .refused(refusal) }
+    let write = write(saved)
+    post()
+    return .posted(write)
+}

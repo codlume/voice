@@ -244,6 +244,34 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         #expect(events.firstIndex(of: "meeting.segment").map { $0 < events.lastIndex(of: "meeting.partial")! } == true)
         #expect(lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "mic" })
     }
+
+    /// Main deletes a meeting's audio after its final pass and sends no cancel, so a later leg
+    /// starts the files over under a new base and reaches the job the first leg used.
+    @Test func aLegOnNewFilesAfterTheAudioWasDeletedShowsItsUnfinishedSpeech() async throws {
+        let lines = EmittedLines()
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
+                                       isDictating: { false }, idle: .milliseconds(5))
+        defer { job.cancel() }
+        let partials = { lines.snapshot().filter { $0["type"] as? String == "meeting.partial" }.compactMap { $0["text"] as? String } }
+
+        try write(tone(10, 0.3), .mic, in: dir)
+        job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
+        job.record([.mic])
+        try await until { partials().contains("words 10") }
+        try write(silence(1), .mic, in: dir)
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+
+        try FileManager.default.removeItem(at: MeetingSource.mic.file(in: dir))
+        try write(tone(3, 0.3), .mic, in: dir)
+        job.update(dir: dir, baseMs: 60_000, fromMs: MeetingCursor(mic: 60_000, system: 60_000), language: .en)
+        job.record([.mic])
+        try? await until { partials().contains("words 3") }
+        #expect(partials().last == "words 3", "the new leg's speech shows while it is still being said")
+    }
 }
 
 @MainActor
