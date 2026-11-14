@@ -8,7 +8,7 @@ import { useId, useRef, useState } from "react";
 
 import { finishText, type WritingStyle } from "@voice/cleanup/style";
 
-import type { InstalledApp, Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
+import type { Settings as SettingsValue, SettingsPatch } from "../shared/api.ts";
 import { CATEGORIES, type Category } from "../shared/app-categories.ts";
 import { supportsCleanup, wantsCleanup } from "../shared/dictation-language.ts";
 import type { Assignment } from "../shared/style.ts";
@@ -20,7 +20,7 @@ import { Switch } from "./Switch.tsx";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 import { useAction } from "./useAction.ts";
-import { useInstalledApps } from "./useInstalledApps.ts";
+import { useInstalledApps, type InstalledApps } from "./useInstalledApps.ts";
 import { hubApi } from "./voice.ts";
 
 const SEMI_FORMAL_EXAMPLES: Record<Category, string> = {
@@ -288,7 +288,7 @@ function AppliesIn({
   onRemove,
 }: {
   category: Category;
-  installed: readonly InstalledApp[];
+  installed: InstalledApps;
   assignments: readonly Assignment[];
   action: ReturnType<typeof useAction>;
   pickerOpen: boolean;
@@ -296,7 +296,7 @@ function AppliesIn({
   onRemove: (assignment: Assignment) => void;
 }) {
   const addRef = useRef<HTMLButtonElement>(null);
-  const { shown, overflow } = bannerApps(category, installed, assignments);
+  const { shown, overflow } = bannerApps(category, installed.apps, assignments);
   const hidden = overflow.join(", ");
   return (
     <div {...stylex.props(styles.banner)}>

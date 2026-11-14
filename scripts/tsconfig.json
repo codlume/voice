@@ -8,5 +8,5 @@
     // bad calls, not for annotating every script.
     "noImplicitAny": false
   },
-  "include": ["*.mjs"]
+  "include": ["*.mjs", "renderer-bench/main.mjs"]
 }

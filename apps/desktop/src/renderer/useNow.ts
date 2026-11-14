@@ -4,15 +4,17 @@ import { useEffect, useState } from "react";
 const readClock = () => Date.now();
 
 /**
- * The current time, ticking each second only while `active`, so an idle page stays idle. A stale
- * first value is harmless: `recordedMs` counts a leg that started after it as zero until the tick.
+ * The current time, ticking each second only while `active`, so an idle page stays idle. The clock
+ * is read again in the render where ticking starts: a meeting clock or countdown would otherwise
+ * paint the time from when it last stopped.
  */
 export function useNow(active: boolean): number {
-  const [now, setNow] = useState(readClock);
+  const [clock, setClock] = useState(() => ({ now: readClock(), active }));
+  if (clock.active !== active) setClock({ now: readClock(), active });
   useEffect(() => {
     if (!active) return;
-    const timer = setInterval(() => setNow(readClock()), 1000);
+    const timer = setInterval(() => setClock({ now: readClock(), active }), 1000);
     return () => clearInterval(timer);
   }, [active]);
-  return now;
+  return clock.now;
 }

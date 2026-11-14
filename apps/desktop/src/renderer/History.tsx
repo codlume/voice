@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, CopyIcon, FileTextIcon, SearchIcon, Trash2Icon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import type { TranscriptVersion } from "../shared/api.ts";
 import type { HistoryEntry, HistoryRetention, HistoryState } from "../shared/history.ts";
@@ -127,7 +127,9 @@ const copiedLabels: Record<TranscriptVersion, string> = {
   raw: "Copied raw transcript",
 };
 
-function Row({
+// Memoized with callbacks that take the entry's id, so Show more, a search key or a new dictation
+// renders the rows that changed rather than every row shown.
+const Row = memo(function Row({
   entry,
   copied,
   onCopy,
@@ -135,8 +137,8 @@ function Row({
 }: {
   entry: HistoryEntry;
   copied: TranscriptVersion | null;
-  onCopy: (version: TranscriptVersion) => void;
-  onDelete: () => void;
+  onCopy: (id: string, version: TranscriptVersion) => void;
+  onDelete: (id: string) => void;
 }) {
   const time = timeLabel(entry.at);
   const named = `from ${time}: ${excerpt(entry.text)}`;
@@ -145,7 +147,7 @@ function Row({
       event.target instanceof Element && event.target.closest("button") !== null;
     const keepSelection = Boolean(window.getSelection()?.toString());
     if (clickedButton || keepSelection) return;
-    onCopy("text");
+    onCopy(entry.id, "text");
   };
   return (
     <li onClick={copyRow} {...stylex.props(stylex.defaultMarker(), styles.row)}>
@@ -169,7 +171,7 @@ function Row({
           variant="icon"
           aria-label={`Copy dictation ${named}`}
           title="Copy"
-          onClick={() => onCopy("text")}
+          onClick={() => onCopy(entry.id, "text")}
         >
           <CopyIcon size={15} />
         </Button>
@@ -178,7 +180,7 @@ function Row({
             variant="icon"
             aria-label={`Copy raw transcript ${named}`}
             title="Copy raw transcript"
-            onClick={() => onCopy("raw")}
+            onClick={() => onCopy(entry.id, "raw")}
           >
             <FileTextIcon size={15} />
           </Button>
@@ -187,14 +189,14 @@ function Row({
           variant="icon"
           aria-label={`Delete dictation ${named}`}
           title="Delete"
-          onClick={onDelete}
+          onClick={() => onDelete(entry.id)}
         >
           <Trash2Icon size={15} />
         </Button>
       </div>
     </li>
   );
-}
+});
 
 function Search({ query, onChange }: { query: string; onChange: (query: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
@@ -242,7 +244,10 @@ export const History = memo(function History({
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<Copied | null>(null);
   const [rowLimit, setRowLimit] = useState(ROWS_PER_PAGE);
-  const action = useAction();
+  const copyAction = useAction();
+  const deleteAction = useAction();
+  // The search box goes with the last entry, so its query must too, or it hides the next dictation.
+  if (entries.length === 0 && query !== "") setQuery("");
   const { days, hidden } = useMemo(
     () => historyPage(entries, { query, limit: rowLimit, today }),
     [entries, query, today, rowLimit],
@@ -254,13 +259,21 @@ export const History = memo(function History({
     return () => clearTimeout(timer);
   }, [copied]);
 
-  const copy = (id: string, version: TranscriptVersion) =>
-    void action.run(async () => {
-      await hubApi().copyHistoryEntry(id, version);
-      setCopied({ id, version });
-    }, "Could not copy the transcript.");
-  const remove = (id: string) =>
-    void action.run(() => hubApi().deleteHistoryEntry(id), "Could not delete the transcript.");
+  const { run: runCopy } = copyAction;
+  const { run: runDelete } = deleteAction;
+  const copy = useCallback(
+    (id: string, version: TranscriptVersion) =>
+      void runCopy(async () => {
+        await hubApi().copyHistoryEntry(id, version);
+        setCopied({ id, version });
+      }, "Could not copy the transcript."),
+    [runCopy],
+  );
+  const remove = useCallback(
+    (id: string) =>
+      void runDelete(() => hubApi().deleteHistoryEntry(id), "Could not delete the transcript."),
+    [runDelete],
+  );
 
   return (
     <section aria-labelledby="history" {...stylex.props(styles.section)}>
@@ -299,8 +312,8 @@ export const History = memo(function History({
                       key={entry.id}
                       entry={entry}
                       copied={copied?.id === entry.id ? copied.version : null}
-                      onCopy={(version) => copy(entry.id, version)}
-                      onDelete={() => remove(entry.id)}
+                      onCopy={copy}
+                      onDelete={remove}
                     />
                   ))}
                 </ul>
@@ -322,9 +335,14 @@ export const History = memo(function History({
       <p role="status" {...stylex.props(a11y.visuallyHidden)}>
         {copied && copiedLabels[copied.version]}
       </p>
-      {action.error && (
+      {deleteAction.error && (
         <p role="alert" {...stylex.props(pageStyles.error)}>
-          {action.error}
+          {deleteAction.error}
+        </p>
+      )}
+      {copyAction.error && (
+        <p role="alert" {...stylex.props(pageStyles.error)}>
+          {copyAction.error}
         </p>
       )}
     </section>

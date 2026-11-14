@@ -221,6 +221,17 @@ describe("the notepad", () => {
     expect(lines()).toEqual(["Speaker 100:00Ship it Friday"]);
   });
 
+  test("a transcript that cannot be read says so and can be read again", async () => {
+    const { api } = fakeNotepad({ meeting, prompt: null }, [said("a", "Morning all", "mic")]);
+    const getMeeting = api.getMeeting;
+    api.getMeeting = () => Promise.reject(new Error("io"));
+    await render();
+    expect(document.body.textContent).toContain("Could not load the transcript.");
+    api.getMeeting = getMeeting;
+    await act(async () => button("Try again")?.click());
+    expect(lines()).toEqual(["You00:00Morning all"]);
+  });
+
   test("offers Pause and Stop while recording, and says so", async () => {
     const { api } = fakeNotepad({ meeting, prompt: null });
     await render();
@@ -283,6 +294,31 @@ describe("My thoughts in the notepad", () => {
     expect(api.updateMeetingNotes).toHaveBeenCalledTimes(2);
     expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Ask about pricing");
     expect(document.querySelector("[role=alert]")).toBeNull();
+  });
+
+  test("a failed save keeps the text across the tabs, with the error, until Try again saves it", async () => {
+    const { api, push } = fakeNotepad({ meeting, prompt: null });
+    api.updateMeetingNotes.mockRejectedValue(new Error("disk full"));
+    await render();
+    await openThoughts();
+    type("Ask about pricing");
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(document.querySelector("[role=alert]")?.textContent).toBe("disk full");
+
+    await act(async () => button("Transcript")?.click());
+    await openThoughts();
+    expect(thoughts().value).toBe("Ask about pricing");
+    expect(document.querySelector("[role=alert]")?.textContent).toBe("disk full");
+
+    api.updateMeetingNotes.mockResolvedValue(undefined);
+    await act(async () => button("Try again")?.click());
+    expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Ask about pricing");
+    expect(document.querySelector("[role=alert]")).toBeNull();
+    push({ meeting: { ...meeting, notes: "Ask about pricing" }, prompt: null });
+    push({ meeting: { ...meeting, notes: "Edited in the hub" }, prompt: null });
+    await act(async () => button("Transcript")?.click());
+    await openThoughts();
+    expect(thoughts().value).toBe("Edited in the hub");
   });
 
   test("shows thoughts written in the Voice window", async () => {
@@ -458,6 +494,8 @@ describe("My thoughts in the notepad", () => {
 
     await act(async () => vi.advanceTimersByTime(600));
     expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Old");
+    // Unsaved thoughts outlive the editor, so they would carry over into the next test.
+    await act(async () => outcomes[2]?.resolve());
   });
 
   test("saves a keystroke that lands while main's echo of the last save is applied", async () => {

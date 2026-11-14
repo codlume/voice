@@ -47,6 +47,7 @@ import { HelpContext, helpClosed, HelpPopover, type HelpState } from "./HelpPopo
 import { Meetings } from "./Meetings.tsx";
 import { ModelsSettings } from "./ModelsSettings.tsx";
 import { pageMotion } from "./pageMotion.ts";
+import { NavigationHold } from "./navigationHold.ts";
 import {
   jumpShortcuts,
   shortcuts,
@@ -109,7 +110,7 @@ type PageView = {
   openSettingsPage: (id: SettingsPage) => void;
   /** The Meetings page's own settings dialog, which Settings can open too. */
   meetingSettings: { open: boolean; setOpen: (open: boolean) => void };
-  /** The meeting main last asked to show; a new object each time it asks. */
+  /** The meeting main asked to show, until the user leaves Meetings; a new object each time. */
   openMeeting: OpenMeetingRequest | null;
   /** Where a page can put a card under the nav; null while the sidebar is collapsed. */
   sidebar: HTMLElement | null;
@@ -727,15 +728,19 @@ export function HubShell({
   };
   const [meetingSettingsOpen, setMeetingSettingsOpen] = useState(false);
   const [openMeeting, setOpenMeeting] = useState<OpenMeetingRequest | null>(null);
-  useEffect(
-    () =>
-      hubApi().onOpenMeeting((request) => {
-        setAppPage("meetings");
-        setSettings((current) => ({ ...current, open: false }));
-        setOpenMeeting({ ...request });
-      }),
-    [],
-  );
+  const [askedMeeting, setAskedMeeting] = useState<OpenMeetingRequest | null>(null);
+  useEffect(() => hubApi().onOpenMeeting((request) => setAskedMeeting({ ...request })), []);
+  const [holds, setHolds] = useState(0);
+  const holdNavigation = useCallback(() => {
+    setHolds((count) => count + 1);
+    return () => setHolds((count) => count - 1);
+  }, []);
+  if (askedMeeting !== null && holds === 0) {
+    setAskedMeeting(null);
+    setAppPage("meetings");
+    setSettings((current) => ({ ...current, open: false }));
+    setOpenMeeting(askedMeeting);
+  }
   const [sidebarSlot, setSidebarSlot] = useState<HTMLDivElement | null>(null);
   const closeSettings = () => setSettings((current) => ({ ...current, open: false }));
   const [shown, setShown] = useState({ page: appPage, rises: false });
@@ -743,6 +748,9 @@ export function HubShell({
     setShown({ page: appPage, rises: true });
     // Open help follows the user to the next page, and closes on a page that has none.
     if (help.kind !== "closed") setHelp(helpFor(appPage) ? { kind: "list" } : helpClosed);
+    // Main's request opens its meeting once. Clearing it only on the way out leaves an open
+    // MeetingDetail alone when the user clicks Meetings again.
+    if (appPage !== "meetings") setOpenMeeting(null);
   }
   // A page can drop its title, as Meetings does while a meeting is open; help goes with it.
   if (help.kind !== "closed" && helpButton === null && helpButtonOn?.page === appPage) {
@@ -834,7 +842,13 @@ export function HubShell({
         <aside
           id={sidebarId}
           onClick={(event) => {
-            if (!(event.target instanceof Element) || event.target.closest("button")) return;
+            // React bubbles clicks from the update dialog and popover, which portal out of the aside.
+            if (
+              !(event.target instanceof Element) ||
+              !event.currentTarget.contains(event.target) ||
+              event.target.closest("button")
+            )
+              return;
             toggleSidebar();
           }}
           {...stylex.props(styles.sidebar, collapsed && styles.sidebarCollapsed)}
@@ -896,19 +910,23 @@ export function HubShell({
               placeButton: placeHelpButton,
             }}
           >
-            <AppPageView {...view} />
+            <NavigationHold value={holdNavigation}>
+              <AppPageView {...view} />
+            </NavigationHold>
           </HelpContext>
         </div>
       </main>
       <RestartNotice notice={snapshot.restartNotice} />
       <HelpPopover page={appPage} state={help} onChange={setHelp} button={helpButton} />
-      <SettingsModal
-        state={settings}
-        view={view}
-        commandHeld={commandHeld}
-        onClose={closeSettings}
-        onClosed={focusMain}
-      />
+      <NavigationHold value={holdNavigation}>
+        <SettingsModal
+          state={settings}
+          view={view}
+          commandHeld={commandHeld}
+          onClose={closeSettings}
+          onClosed={focusMain}
+        />
+      </NavigationHold>
     </div>
   );
 }

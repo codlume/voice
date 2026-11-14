@@ -3,19 +3,23 @@ import { useEffect, useState } from "react";
 import type { InstalledApp } from "../shared/api.ts";
 import { listInstalledApps } from "./appIcons.ts";
 
-export function useInstalledApps(): readonly InstalledApp[] {
-  const [apps, setApps] = useState<readonly InstalledApp[]>([]);
+export type InstalledApps = { apps: readonly InstalledApp[]; failed: boolean };
+
+export function useInstalledApps(): InstalledApps {
+  const [installed, setInstalled] = useState<InstalledApps>({ apps: [], failed: false });
   useEffect(() => {
     let mounted = true;
     listInstalledApps().then(
-      (next) => {
-        if (mounted) setApps(next);
+      (apps) => {
+        if (mounted) setInstalled({ apps, failed: false });
       },
-      () => {},
+      () => {
+        if (mounted) setInstalled({ apps: [], failed: true });
+      },
     );
     return () => {
       mounted = false;
     };
   }, []);
-  return apps;
+  return installed;
 }

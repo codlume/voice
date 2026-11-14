@@ -10,7 +10,7 @@ import { clockTicks, statusClock, statusView, type RecordingCommand } from "./me
 import { partialRows, transcriptRows, type TranscriptRow } from "./meetingsView.ts";
 import type { HelpAnchor } from "./help.ts";
 import { color, space } from "./tokens.stylex.ts";
-import { useMeetingPartials, useMeetingTranscript } from "./useMeetings.ts";
+import { useMeetingPartials, useMeetingTranscript, type Read } from "./useMeetings.ts";
 import { useNow } from "./useNow.ts";
 
 // The Voice window's meeting pages and the notepad draw a meeting with these parts. `look` sizes
@@ -132,25 +132,27 @@ export function MeetingTabs<T extends string>({
 }
 
 /**
- * The meeting's transcript as it is followed, with each source's unconfirmed text after it.
- * Undefined until the first read lands.
+ * The meeting's transcript as it is followed, with each source's unconfirmed text after it. A
+ * meeting main no longer has stays `reading`; its page closes once main reports it gone.
  */
 export function useTranscriptRows(
   api: Pick<MeetingControls, "getMeeting" | "onMeetingTranscript" | "onMeetingPartial">,
   meeting: Meeting,
-): readonly TranscriptRow[] | undefined {
+): Read<readonly TranscriptRow[]> {
   const transcript = useMeetingTranscript(api, meeting);
   const partials = useMeetingPartials(api, meeting.id, meeting.status.kind === "recording");
   const { speakers } = meeting;
   // Partials change several times a second; the saved lines only when one is added.
   const saved = useMemo(
-    () => transcript && transcriptRows(transcript, speakers),
+    () =>
+      transcript.kind === "read" && transcript.value && transcriptRows(transcript.value, speakers),
     [transcript, speakers],
   );
-  return useMemo(
-    () => (saved ? [...saved, ...partialRows(partials)] : undefined),
-    [saved, partials],
-  );
+  return useMemo((): Read<readonly TranscriptRow[]> => {
+    if (transcript.kind === "failed") return transcript;
+    if (!saved) return { kind: "reading" };
+    return { kind: "read", value: [...saved, ...partialRows(partials)] };
+  }, [transcript, saved, partials]);
 }
 
 type SpeechProps = Omit<Extract<TranscriptRow, { kind: "speech" }>, "kind" | "id"> & {

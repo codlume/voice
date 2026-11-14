@@ -175,7 +175,7 @@ export function YourStats({
   onOpenInsights: () => void;
 }) {
   const insights = useInsights();
-  const installed = useInstalledApps();
+  const installed = useInstalledApps().apps;
   const view = useMemo(() => insights && insightsView(insights, today, 1), [insights, today]);
   const where = useMemo(
     () => insights && usage(insights, appNames(assignments, installed)),

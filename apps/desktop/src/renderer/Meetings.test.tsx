@@ -241,6 +241,9 @@ async function press(field: HTMLInputElement, key: string) {
   });
 }
 
+const alertText = () => document.querySelector("[role=alert]")?.textContent;
+const thoughts = () => document.querySelector<HTMLTextAreaElement>("textarea")!;
+
 const overviewTitle = () =>
   document.querySelector("aside[aria-label='Meeting overview'] h2")?.textContent;
 
@@ -307,6 +310,70 @@ describe("Past notes", () => {
     expect(document.querySelectorAll("li").length).toBe(1);
     await type(search, "zzz");
     await waitForText("No meetings match “zzz”.");
+  });
+
+  test("meetings that cannot be read say so and can be read again", async () => {
+    const main = fakeMain(sample());
+    main.getMeetings.mockRejectedValueOnce(new Error("io"));
+    await render();
+    await waitForText("Could not load your meetings.");
+    await click(byText("Try again"));
+    await waitForText("Weekly product sync");
+    expect(text()).not.toContain("Could not load your meetings.");
+  });
+
+  test("a new search does not say nothing matches before main answers", async () => {
+    const main = fakeMain(sample());
+    await render();
+    const search = await openSearch();
+    await type(search, "zzzz");
+    await waitForText("No meetings match “zzzz”.");
+    await press(search, "Escape");
+    let answer!: () => void;
+    const searchMeetings = main.searchMeetings.getMockImplementation()!;
+    main.searchMeetings.mockImplementationOnce(async (query) => {
+      await new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      return searchMeetings(query);
+    });
+    await type(await openSearch(), "sync");
+    await vi.waitFor(() => expect(main.searchMeetings).toHaveBeenLastCalledWith("sync"));
+    expect(text()).not.toContain("No meetings match");
+    expect(text()).toContain("Planowanie sprintu");
+    await act(async () => answer());
+    await vi.waitFor(() => expect(text()).not.toContain("Planowanie sprintu"));
+  });
+
+  test("typing over a search that matched nothing names the new search", async () => {
+    const main = fakeMain(sample());
+    await render();
+    const search = await openSearch();
+    await type(search, "zzzz");
+    await waitForText("No meetings match “zzzz”.");
+    let answer!: () => void;
+    const searchMeetings = main.searchMeetings.getMockImplementation()!;
+    main.searchMeetings.mockImplementationOnce(async (query) => {
+      await new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      return searchMeetings(query);
+    });
+    await type(search, "sync");
+    await vi.waitFor(() => expect(main.searchMeetings).toHaveBeenLastCalledWith("sync"));
+    expect(text()).toContain("No meetings match “sync”.");
+    expect(text()).not.toContain("zzzz");
+    await act(async () => answer());
+    await vi.waitFor(() => expect(text()).not.toContain("No meetings match"));
+    expect(text()).toContain("Weekly product sync");
+  });
+
+  test("a search main cannot answer says so", async () => {
+    const main = fakeMain(sample());
+    main.searchMeetings.mockRejectedValueOnce(new Error("io"));
+    await render();
+    await type(await openSearch(), "export bug");
+    await waitForText("Could not search your meetings.");
   });
 
   test("the panel follows the search results", async () => {
@@ -558,6 +625,36 @@ describe("a meeting", () => {
     expect(main.renameMeeting).toHaveBeenCalledWith(id(1), "Q4 pricing");
   });
 
+  test("a failed rename keeps the typed title, which Enter saves again without the old title showing", async () => {
+    const main = await openSync();
+    const title = document.querySelector<HTMLInputElement>("input[aria-label='Meeting title']")!;
+    main.renameMeeting.mockRejectedValueOnce(new Error("io"));
+    await act(async () => title.focus());
+    await type(title, "Roadmap review");
+    await press(title, "Enter");
+    await vi.waitFor(() => expect(alertText()).toBe("io"));
+    expect(title.value).toBe("Roadmap review");
+
+    let land!: () => void;
+    main.renameMeeting.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    await act(async () => title.focus());
+    await press(title, "Enter");
+    expect(main.renameMeeting).toHaveBeenLastCalledWith(id(1), "Roadmap review");
+    expect(title.value).toBe("Roadmap review");
+    const [synced] = sample();
+    await act(async () => {
+      main.publish({ ...synced!, title: "Roadmap review" });
+      land();
+    });
+    expect(title.value).toBe("Roadmap review");
+    expect(alertText()).toBeUndefined();
+  });
+
   test("while it records, saved lines append and unconfirmed text shows in gray until replaced", async () => {
     const recording = meeting(4, "Live sync", hoursAgo(0), {
       spans: [],
@@ -631,6 +728,16 @@ describe("a meeting", () => {
     await waitForText("Pushed during the read.");
   });
 
+  test("a transcript that cannot be read says so and can be read again", async () => {
+    const main = await openSync();
+    main.getMeeting.mockRejectedValueOnce(new Error("io"));
+    await click(byText("Transcript"));
+    await waitForText("Could not load the transcript.");
+    await click(byText("Try again"));
+    await waitForText("The export bug is fixed");
+    expect(text()).not.toContain("Could not load the transcript.");
+  });
+
   test("only a rewrite of the transcript reads it again, not an edit, a status or a pushed line", async () => {
     const main = await openSync();
     await click(byText("Transcript"));
@@ -671,6 +778,67 @@ describe("a meeting", () => {
     await type(area, "Ask Tom about drivers today");
     await click(byText("All meetings"));
     expect(main.updateMeetingNotes).toHaveBeenLastCalledWith(id(1), "Ask Tom about drivers today");
+  });
+
+  test("a failed save keeps the thoughts across tabs and leaving the meeting, until one lands", async () => {
+    const main = await openSync();
+    const reopenThoughts = async () => {
+      await click(byText("All meetings"));
+      await click(byText("Weekly product sync"));
+      await click(byText("My thoughts"));
+    };
+    main.updateMeetingNotes.mockRejectedValue(new Error("disk full"));
+    await click(byText("My thoughts"));
+    await type(thoughts(), "Ask about pricing");
+    await waitForText("disk fullTry again");
+
+    await click(byText("Transcript"));
+    await click(byText("My thoughts"));
+    expect(thoughts().value).toBe("Ask about pricing");
+    await waitForText("disk fullTry again");
+
+    await reopenThoughts();
+    expect(thoughts().value).toBe("Ask about pricing");
+    await waitForText("disk fullTry again");
+
+    main.updateMeetingNotes.mockReset();
+    await click(byText("Try again"));
+    expect(main.updateMeetingNotes).toHaveBeenCalledWith(id(1), "Ask about pricing");
+    await vi.waitFor(() => expect(text()).not.toContain("Try again"));
+
+    // Saved, the held text no longer stands in for main's copy.
+    const [synced] = sample();
+    await act(async () => main.publish({ ...synced!, notes: "Edited in the notepad" }));
+    expect(thoughts().value).toBe("Edited in the notepad");
+    await reopenThoughts();
+    expect(thoughts().value).toBe("Edited in the notepad");
+    expect(main.updateMeetingNotes).toHaveBeenCalledOnce();
+  });
+
+  test("failed thoughts the user only looks at again are not sent over newer notes", async () => {
+    const main = await openSync();
+    main.updateMeetingNotes.mockRejectedValue(new Error("disk full"));
+    await click(byText("My thoughts"));
+    await type(thoughts(), "Ask about pricing");
+    await waitForText("disk fullTry again");
+    await click(byText("All meetings"));
+    await vi.waitFor(() => expect(main.updateMeetingNotes).toHaveBeenCalledTimes(2));
+
+    main.updateMeetingNotes.mockReset();
+    const [synced] = sample();
+    await act(async () => main.publish({ ...synced!, notes: "Written in the notepad" }));
+    await click(byText("Weekly product sync"));
+    await click(byText("My thoughts"));
+    expect(thoughts().value).toBe("Ask about pricing");
+    await waitForText("disk fullTry again");
+    await click(byText("All meetings"));
+    expect(main.updateMeetingNotes).not.toHaveBeenCalled();
+
+    await click(byText("Weekly product sync"));
+    await click(byText("My thoughts"));
+    await click(byText("Try again"));
+    expect(main.updateMeetingNotes).toHaveBeenCalledExactlyOnceWith(id(1), "Ask about pricing");
+    await vi.waitFor(() => expect(text()).not.toContain("Try again"));
   });
 
   test("a live meeting's page offers the same controls and words as the notepad", async () => {
@@ -822,6 +990,99 @@ describe("Folders", () => {
     expect([...fields].map((field) => field.value)).toEqual(["Beta"]);
     await click(byText("Save"));
     expect(main.updateFolder).toHaveBeenCalledWith(beta.id, { name: "Beta", kind: "manual" });
+  });
+
+  test("a retry after a failed move adds the meeting to the folder it already made", async () => {
+    const main = fakeMain(sample());
+    await render();
+    main.setMeetingInFolder.mockRejectedValueOnce(new Error("io"));
+    await click(document.querySelector("[aria-label='Add “Weekly product sync” to a folder']")!);
+    await waitForText("New folder…");
+    await click(byText("New folder…", "[role=menuitem]"));
+    await waitForText("Create folder");
+    await type(document.querySelector<HTMLInputElement>("[role=dialog] input")!, "Pricing");
+    await click(byText("Create folder"));
+    await waitForText("io");
+    await click(byText("Create folder"));
+    await vi.waitFor(() => expect(document.querySelector("[role=dialog]")).toBeNull());
+    expect(main.createFolder).toHaveBeenCalledOnce();
+    const made = await main.createFolder.mock.results[0]!.value;
+    expect(main.setMeetingInFolder).toHaveBeenLastCalledWith(id(1), made.id, true);
+  });
+
+  test("a row's folder button opens its menu by keyboard and by pointer", async () => {
+    const product: Folder = {
+      id: "00000000-0000-4000-8000-00000000f001" as FolderId,
+      name: "Product",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [product]);
+    await render();
+    const label = "[aria-label='Add “Weekly product sync” to a folder']";
+    const folderButton = () => document.querySelector<HTMLButtonElement>(label)!;
+    expect(folderButton().getAttribute("aria-haspopup")).toBe("menu");
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => folderButton().focus());
+    expect(document.activeElement).toBe(folderButton());
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+    // Enter or Space on a focused button is a click with no pointer.
+    await act(async () => folderButton().click());
+    await waitForText("New folder…");
+    expect(folderButton().getAttribute("aria-expanded")).toBe("true");
+    await act(async () => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await vi.waitFor(() => expect(document.querySelector("[role=menu]")).toBeNull());
+    expect(document.activeElement).toBe(folderButton());
+    expect(folderButton().getAttribute("aria-expanded")).toBe("false");
+
+    const other = "[aria-label='Add “Planowanie sprintu” to a folder']";
+    await act(async () => {
+      document
+        .querySelector(other)!
+        .dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    });
+    await click(document.querySelector(other)!);
+    await waitForText("Product");
+    expect(document.querySelector(other)!.getAttribute("aria-expanded")).toBe("true");
+    await click(byText("Product", "[role=menuitemcheckbox]"));
+    expect(main.setMeetingInFolder).toHaveBeenCalledWith(id(2), product.id, true);
+  });
+
+  test("a row's folder menu follows folder changes made after the list loaded", async () => {
+    const product: Folder = {
+      id: "00000000-0000-4000-8000-00000000f001" as FolderId,
+      name: "Product",
+      createdAt: 0,
+      kind: "manual",
+    };
+    const main = fakeMain(sample(), [product]);
+    await render();
+    const label = "[aria-label='Add “Morning standup” to a folder']";
+    const menuItems = async () => {
+      await click(document.querySelector(label)!);
+      await waitForText("New folder…");
+      const items = [...document.querySelectorAll("[role=menuitemcheckbox]")].map(
+        (item) => item.textContent,
+      );
+      await act(async () => {
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      });
+      await vi.waitFor(() => expect(document.querySelector("[role=menu]")).toBeNull());
+      return items;
+    };
+    expect(await menuItems()).toEqual(["Product"]);
+    await act(async () => main.publish({ ...sample()[0]!, title: "Renamed sync" }));
+    await waitForText("Renamed sync");
+    expect(await menuItems()).toEqual(["Product"]);
+    await act(async () => main.updateFolder(product.id, { name: "Roadmap", kind: "manual" }));
+    expect(await menuItems()).toEqual(["Roadmap"]);
   });
 
   test("an automatic folder needs a word to look for", async () => {

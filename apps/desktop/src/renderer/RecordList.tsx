@@ -15,6 +15,7 @@ import {
 import { Button } from "./Button.tsx";
 import { Card } from "./Card.tsx";
 import { ConfirmDialog, DialogFrame } from "./ConfirmDialog.tsx";
+import { useHoldNavigation } from "./navigationHold.ts";
 import { pageStyles } from "./pageStyles.ts";
 import { styles as settings } from "./settingsParts.tsx";
 import { color, radius, space } from "./tokens.stylex.ts";
@@ -304,6 +305,7 @@ export function RecordEditor<T extends { id: string }, F extends string>({
   const [draft, setDraft] = useState(initial);
   const [failedSaves, setFailedSaves] = useState(0);
   const { pending, error, run, clearError } = useAction();
+  useHoldNavigation(open);
   const text = copy.editor[mode];
   const record = normalize(draft);
   const current = problem(

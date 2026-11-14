@@ -17,6 +17,7 @@ import {
   useTranscriptRows,
 } from "./MeetingParts.tsx";
 import { ThoughtsEditor } from "./MeetingThoughts.tsx";
+import type { Read } from "./useMeetings.ts";
 import { CONSENT_REMINDER, type TranscriptRow } from "./meetingsView.ts";
 import { commandRefusal, promptView, statusView, type PromptCommand } from "./meetingStatus.ts";
 import { pageStyles } from "./pageStyles.ts";
@@ -124,13 +125,26 @@ function useNotepadState(): NotepadState | null | undefined {
   return state;
 }
 
-function Transcript({ rows }: { rows: readonly TranscriptRow[] | undefined }) {
+function Transcript({ transcript }: { transcript: Read<readonly TranscriptRow[]> }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
+  const rows = transcript.kind === "read" ? transcript.value : null;
   useLayoutEffect(() => {
     const element = scroller.current;
     if (element && rows && following.current) element.scrollTop = element.scrollHeight;
   }, [rows]);
+  if (transcript.kind === "failed") {
+    return (
+      <div {...stylex.props(styles.empty)}>
+        <p {...stylex.props(styles.emptyLine)}>Could not load the transcript.</p>
+        <div {...stylex.props(styles.consent)}>
+          <Button variant="secondary" onClick={transcript.retry}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (!rows) return null;
   return (
     <div
@@ -209,7 +223,7 @@ async function send(command: PromptCommand, id: MeetingId): Promise<MeetingComma
 
 function MeetingNotepad({ meeting, prompt }: NotepadState) {
   // Held here, not in the tab, so lines keep arriving while My thoughts is open.
-  const rows = useTranscriptRows(notepadApi(), meeting);
+  const transcript = useTranscriptRows(notepadApi(), meeting);
   const status = statusView(meeting.status);
   const [tab, setTab] = useState<NotepadTab>("transcript");
   const action = useAction();
@@ -247,7 +261,7 @@ function MeetingNotepad({ meeting, prompt }: NotepadState) {
       )}
       <MeetingTabs tabs={tabs} value={tab} onChange={setTab} look="notepad" style={styles.tabs}>
         <Tabs.Panel value="transcript" {...stylex.props(styles.panel)}>
-          <Transcript rows={rows} />
+          <Transcript transcript={transcript} />
         </Tabs.Panel>
         <Tabs.Panel value="thoughts" {...stylex.props(styles.panel)}>
           <ThoughtsEditor

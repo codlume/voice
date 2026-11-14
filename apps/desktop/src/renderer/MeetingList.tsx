@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
 import { CheckIcon, FileTextIcon, FolderPlusIcon } from "lucide-react";
-import { memo, useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import {
   titleText,
@@ -173,6 +173,15 @@ export function FolderMenu({
 }) {
   const action = useAction();
   const [creating, setCreating] = useState(false);
+  // The folder this dialog made, so retrying a failed move does not make a second one.
+  const made = useRef<Folder | null>(null);
+  // Every meeting row has this menu, and Base UI's is costly to mount, so a plain button stands in
+  // until the pointer or focus reaches it, before any press. The real trigger takes the focus over.
+  const [menu, setMenu] = useState<{ open: boolean; focus: boolean } | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (menu?.focus) trigger.current?.focus();
+  }, [menu]);
   const itemClass = ({ highlighted }: Menu.Item.State) =>
     stylex.props(menuStyles.item, highlighted && menuStyles.highlighted).className;
   const toggle = (folder: Folder, inFolder: boolean) =>
@@ -182,59 +191,82 @@ export function FolderMenu({
     );
   return (
     <>
-      <Menu.Root>
-        <Menu.Trigger
+      {menu === null ? (
+        <button
+          type="button"
           aria-label={label}
           title={label}
-          className={({ open }) => stylex.props(style(open)).className}
+          aria-haspopup="menu"
+          aria-expanded={false}
+          className={stylex.props(style(false)).className}
+          onPointerEnter={() => setMenu({ open: false, focus: false })}
+          onFocus={() => setMenu({ open: false, focus: true })}
+          onClick={() => setMenu({ open: true, focus: false })}
         >
           {children}
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Positioner
-            side="bottom"
-            align="end"
-            sideOffset={4}
-            collisionPadding={8}
-            {...stylex.props(menuStyles.positioner)}
+        </button>
+      ) : (
+        <Menu.Root defaultOpen={menu.open}>
+          <Menu.Trigger
+            ref={trigger}
+            aria-label={label}
+            title={label}
+            className={({ open }) => stylex.props(style(open)).className}
           >
-            <Menu.Popup {...stylex.props(menuStyles.popup)}>
-              {folders.length === 0 && <p {...stylex.props(menuStyles.empty)}>No folders yet</p>}
-              {folders.map((folder) => {
-                const inFolder = meeting.folderIds.includes(folder.id);
-                return (
-                  <Menu.CheckboxItem
-                    key={folder.id}
-                    checked={inFolder}
-                    onCheckedChange={(checked) => toggle(folder, checked)}
-                    className={itemClass}
-                  >
-                    <span {...stylex.props(menuStyles.check)}>
-                      <Menu.CheckboxItemIndicator>
-                        <CheckIcon size={14} />
-                      </Menu.CheckboxItemIndicator>
-                    </span>
-                    <span {...stylex.props(menuStyles.label)}>{folder.name}</span>
-                  </Menu.CheckboxItem>
-                );
-              })}
-              <Menu.Separator {...stylex.props(menuStyles.separator)} />
-              <Menu.Item onClick={() => setCreating(true)} className={itemClass}>
-                <span {...stylex.props(menuStyles.check)} />
-                New folder…
-              </Menu.Item>
-            </Menu.Popup>
-          </Menu.Positioner>
-        </Menu.Portal>
-      </Menu.Root>
+            {children}
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner
+              side="bottom"
+              align="end"
+              sideOffset={4}
+              collisionPadding={8}
+              {...stylex.props(menuStyles.positioner)}
+            >
+              <Menu.Popup {...stylex.props(menuStyles.popup)}>
+                {folders.length === 0 && <p {...stylex.props(menuStyles.empty)}>No folders yet</p>}
+                {folders.map((folder) => {
+                  const inFolder = meeting.folderIds.includes(folder.id);
+                  return (
+                    <Menu.CheckboxItem
+                      key={folder.id}
+                      checked={inFolder}
+                      onCheckedChange={(checked) => toggle(folder, checked)}
+                      className={itemClass}
+                    >
+                      <span {...stylex.props(menuStyles.check)}>
+                        <Menu.CheckboxItemIndicator>
+                          <CheckIcon size={14} />
+                        </Menu.CheckboxItemIndicator>
+                      </span>
+                      <span {...stylex.props(menuStyles.label)}>{folder.name}</span>
+                    </Menu.CheckboxItem>
+                  );
+                })}
+                <Menu.Separator {...stylex.props(menuStyles.separator)} />
+                <Menu.Item
+                  onClick={() => {
+                    made.current = null;
+                    setCreating(true);
+                  }}
+                  className={itemClass}
+                >
+                  <span {...stylex.props(menuStyles.check)} />
+                  New folder…
+                </Menu.Item>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      )}
       {creating && (
         <FolderDialog
           folder={null}
           open={creating}
           onOpenChange={setCreating}
           save={async (draft) => {
-            const folder = await hubApi().createFolder(draft);
-            await hubApi().setMeetingInFolder(meeting.id, folder.id, true);
+            made.current ??= await hubApi().createFolder(draft);
+            await hubApi().setMeetingInFolder(meeting.id, made.current.id, true);
           }}
         />
       )}
