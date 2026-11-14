@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreML
 import FluidAudio
 import Foundation
 import VoiceHelperCore
@@ -122,7 +123,7 @@ final class Transcriber: Transcribing {
             let started = DispatchTime.now()
             let audit = try await cache.prepare(download: download, fetcher: fetcher, onDownload: loadBecameDownload)
             output.log(.info, "speech model checked: first pass hashed \(audit.hashedFiles) files, \(audit.hashedBytes) bytes, done in \(Int(started.millisecondsToNow())) ms")
-            let models = try await AsrModels.load(from: directory, version: .v3)
+            let models = try await Self.loadModels(from: directory)
             let manager = AsrManager()
             try await manager.loadModels(models)
             // The first transcription in a process pays a one-off 30-40 ms; take it here.
@@ -142,6 +143,37 @@ final class Transcriber: Transcribing {
                 fail(error)
             }
         }
+    }
+
+    /// What `AsrModels.load(from:version: .v3)` returns, with the encoder loading beside the other
+    /// three components instead of after the first of them. The encoder is about three quarters
+    /// of a warm load, so the rest and the vocabulary are done before it is. Each component still
+    /// goes through FluidAudio's loader with the compute units `AsrModels.load` gives it, so the
+    /// models are the same ones.
+    nonisolated static func loadModels(from directory: URL) async throws -> AsrModels {
+        @Sendable func component(_ name: String, on units: MLComputeUnits) async throws -> MLModel {
+            let loaded = try await ModelHub.loadModels(
+                .parakeetV3, modelNames: [name], directory: directory.deletingLastPathComponent(), computeUnits: units,
+                variant: ParakeetEncoderPrecision.int8.rawValue)
+            guard let model = loaded[name] else { throw AsrModelsError.loadingFailed("Failed to load \(name)") }
+            return model
+        }
+        let configuration = AsrModels.defaultConfiguration()
+        async let encoder = component(ParakeetEncoderPrecision.int8.encoderFileName, on: configuration.computeUnits)
+        let preprocessor = try await component(ModelNames.ASR.preprocessorFile, on: .cpuOnly)
+        let decoder = try await component(ModelNames.ASR.decoderFile, on: configuration.computeUnits)
+        let joint = try await component(ModelNames.ASR.jointV3File, on: configuration.computeUnits)
+        let vocabulary = try Self.vocabulary(at: directory.appendingPathComponent(ModelNames.ASR.vocabularyFile))
+        return AsrModels(
+            encoder: try await encoder, preprocessor: preprocessor, decoder: decoder, joint: joint,
+            configuration: configuration, vocabulary: vocabulary, version: .v3)
+    }
+
+    nonisolated private static func vocabulary(at url: URL) throws -> [Int: String] {
+        guard let tokens = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: String] else {
+            throw AsrModelsError.loadingFailed("Vocabulary file has unexpected format")
+        }
+        return Dictionary(tokens.compactMap { id, token in Int(id).map { ($0, token) } }, uniquingKeysWith: { _, last in last })
     }
 
     private func downloadStarted(_ files: [ModelFile]) {
