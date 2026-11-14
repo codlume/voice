@@ -192,9 +192,9 @@ final class Capture {
     }
 
     /// The hop through main: hotkey event out, its command back. Nil without a hotkey, or for an
-    /// echo from after the command arrived, which no real press produces.
+    /// echo from before boot or after the command arrived, which no real press produces.
     private func relayMs(from hotkeyUptimeMs: Double?, to receivedAt: DispatchTime) -> Double? {
-        guard let hotkeyUptimeMs, hotkeyUptimeMs <= receivedAt.uptimeMs else { return nil }
+        guard let hotkeyUptimeMs, hotkeyUptimeMs >= 0, hotkeyUptimeMs <= receivedAt.uptimeMs else { return nil }
         return receivedAt.uptimeMs - hotkeyUptimeMs
     }
 
