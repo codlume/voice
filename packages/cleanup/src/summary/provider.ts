@@ -51,7 +51,6 @@ export type TitleResult = { ok: true; title: string } | { ok: false; failure: Su
  * rejects with its error, the same rule as the transform engine.
  */
 export type SummaryProvider = {
-  readonly id: string;
   summarize(request: SummaryRequest): Promise<SummaryResult>;
   generateTitle(request: TitleRequest): Promise<TitleResult>;
 };

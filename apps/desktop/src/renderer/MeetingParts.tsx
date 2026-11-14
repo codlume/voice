@@ -76,7 +76,7 @@ const styles = stylex.create({
   controls: { display: "flex", alignItems: "center", gap: 6 },
 });
 
-export type TabOption<T extends string> = { value: T; label: string };
+type TabOption<T extends string> = { value: T; label: string };
 
 /** Underlined tabs over their panels, with `end` at the right of the tab bar. */
 export function MeetingTabs<T extends string>({

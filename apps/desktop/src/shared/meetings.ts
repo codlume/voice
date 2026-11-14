@@ -442,7 +442,7 @@ export function speakerName(segment: Segment, speakers: readonly Speaker[]): str
   return speaker ? speakerDisplayName(speaker) : OTHERS;
 }
 
-export { SPEAKER_TOKEN, speakerToken } from "@voice/cleanup/summary";
+export { SPEAKER_TOKEN } from "@voice/cleanup/summary";
 
 /** The token ids a summary uses besides the meeting's speakers: the user, and voices not told apart. */
 export const YOU_ID = "you";

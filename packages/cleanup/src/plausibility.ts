@@ -343,7 +343,7 @@ function withoutFalseStarts(tokens: string[]): string[] {
   return kept;
 }
 
-export type WordSurvival = {
+type WordSurvival = {
   // The share of the input's content words the output still contains, counted with
   // multiplicity so a dictation that repeats itself cannot pass on its vocabulary alone.
   recall: number;

@@ -2,7 +2,7 @@ import type { Event, Exception, NodeOptions, StackFrame } from "@sentry/electron
 
 import type { SessionTimings } from "./dictation.ts";
 
-export type Envelope = Parameters<ReturnType<NonNullable<NodeOptions["transport"]>>["send"]>[0];
+type Envelope = Parameters<ReturnType<NonNullable<NodeOptions["transport"]>>["send"]>[0];
 type EnvelopeItem = Envelope[1][number];
 type EventItem = [{ type: "event" | "transaction" }, Event];
 

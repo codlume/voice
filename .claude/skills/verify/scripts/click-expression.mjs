@@ -1,6 +1,6 @@
 const show = (value) => JSON.stringify(value);
 
-export const ACCESSIBLE_NAME = `(el) => {
+const ACCESSIBLE_NAME = `(el) => {
   const ids = el.getAttribute("aria-labelledby");
   const text = el.getAttribute("aria-label")
     ?? (ids && ids.split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" "))

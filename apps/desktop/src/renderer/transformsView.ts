@@ -24,7 +24,7 @@ export const autoApplyChoice = (items: readonly Transform[], value: string): Tra
 export const asksBeforeTurningOn = (turningOn: boolean, model: ModelStatus) =>
   turningOn && model.state === "missing";
 
-export type ModelLine = { text: string; linksToModels: boolean };
+type ModelLine = { text: string; linksToModels: boolean };
 
 export function modelLine(enabled: boolean, model: ModelStatus): ModelLine {
   if (!enabled) {

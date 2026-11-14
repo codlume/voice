@@ -10,7 +10,7 @@ export type S1Control = {
 };
 
 // Calibration: shorter replies under the email context gained a greeting line or lost words.
-export const EMAIL_LAYOUT_MIN_WORDS = 10;
+const EMAIL_LAYOUT_MIN_WORDS = 10;
 
 // Every product style runs semi-formal and differs only by its finish: S1's casual strips
 // apostrophes ("we're" becomes "were") and semi-casual keeps fillers.

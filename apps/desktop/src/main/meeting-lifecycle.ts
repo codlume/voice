@@ -106,7 +106,7 @@ const SHORT_RECORDING_WORDS = 10;
  * is sent again once. A second exit in the same step is taken for the work's doing: each further
  * try would take dictation down with the helper, so the step ends as a stalled one does.
  */
-export const HELPER_EXIT_LIMIT = 2;
+const HELPER_EXIT_LIMIT = 2;
 
 const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
 const mark = (marker: MarkerKind): MeetingEffect => ({ type: "mark", marker });

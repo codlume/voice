@@ -161,7 +161,7 @@ function readHelperEntitlements(app) {
   return Object.keys(plist).filter((key) => plist[key] === true);
 }
 
-export function hostileLaunches(app, { timeoutMs = 15_000 } = {}) {
+function hostileLaunches(app, { timeoutMs = 15_000 } = {}) {
   return HOSTILE_LAUNCH_ARGUMENTS.map((argument) => {
     const userDataDir = mkdtempSync(join(realpathSync(tmpdir()), "voice-release-launch-"));
     try {

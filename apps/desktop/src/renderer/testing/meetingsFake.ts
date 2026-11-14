@@ -18,7 +18,7 @@ import {
 } from "../../shared/meetings.ts";
 import type { MeetingFixtures } from "./meetingsFixtures.ts";
 
-export type MeetingsApi = Pick<
+type MeetingsApi = Pick<
   HubApi,
   Extract<keyof HubApi, `${string}Meeting${string}` | `${string}Folder${string}`>
 >;
