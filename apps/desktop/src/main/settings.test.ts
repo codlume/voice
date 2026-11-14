@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/tes
 
 import { DEFAULT_SETTINGS, type Settings } from "../shared/api.ts";
 import { dictationLanguages } from "../shared/dictation-language.ts";
+import { PHRASE_MAX_LENGTH } from "../shared/dictionary.ts";
 import { parseAssignments, type CategoryStyles } from "../shared/style.ts";
 import {
   BUILT_IN_TRANSFORMS,
@@ -830,9 +831,9 @@ describe("load and save", () => {
     const file = NodePath.join(dir, "settings.json");
     await writeFile(file, JSON.stringify({ cleanup: { enabled: true, ...legacy } }));
     const store = openSettings(file);
-    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    await store.save(applyPatch(store.settings, { cleanup: { enabled: false } }));
     expect(JSON.parse(await readFile(file, "utf8")).cleanup).toEqual({
-      enabled: true,
+      enabled: false,
       styles: everywhere(style),
       assignments: [],
     });
@@ -1022,6 +1023,50 @@ describe("load and save", () => {
       theme: "dark",
       futureFeature,
     });
+  });
+
+  test("a save of one setting leaves a value this build could not read as it was on disk", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const tooLong = { id: "w1", phrase: "x".repeat(PHRASE_MAX_LENGTH + 1), replacement: null };
+    await writeFile(file, JSON.stringify({ hotkey: "aFutureKey", dictionary: [tooLong] }));
+    const store = openSettings(file);
+    expect(store.settings).toMatchObject({ hotkey: DEFAULT_SETTINGS.hotkey, dictionary: [] });
+
+    await store.save(applyPatch(store.settings, { theme: "dark" }));
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+      theme: "dark",
+      hotkey: "aFutureKey",
+      dictionary: [tooLong],
+    });
+
+    await store.save(applyPatch(store.settings, { theme: "dark", hotkey: "rightOption" }));
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+      hotkey: "rightOption",
+      dictionary: [tooLong],
+    });
+  });
+
+  test("a value kept on disk never changes what the next launch reads", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    await writeFile(file, JSON.stringify({ hotkey: "aFutureKey", toggleHotkey: "fn" }));
+    const store = openSettings(file);
+    expect(store.settings).toMatchObject({ hotkey: "fn", toggleHotkey: null });
+
+    const next = applyPatch(store.settings, { hotkey: "rightOption" });
+    await store.save(next);
+    expect(openSettings(file).settings).toEqual(next);
+    expect(openSettings(file).settings.toggleHotkey).toBeNull();
+  });
+
+  test("a save of another setting leaves a legacy cleanup shape for the save that changes it", async () => {
+    const file = NodePath.join(dir, "settings.json");
+    const legacy = { enabled: true, style: "casual" };
+    await writeFile(file, JSON.stringify({ cleanup: legacy }));
+    const store = openSettings(file);
+    const next = applyPatch(store.settings, { theme: "dark" });
+    await store.save(next);
+    expect(JSON.parse(await readFile(file, "utf8")).cleanup).toEqual(legacy);
+    expect(openSettings(file).settings).toEqual(next);
   });
 
   test("a save drops the mute switch it migrated, so an older build reads the new choice", async () => {
