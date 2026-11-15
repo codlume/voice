@@ -49,7 +49,7 @@ struct MicrophoneHardwareTests {
         let receivedAudio = XCTestExpectation(description: "audio arrives after the configuration notification")
         let observeAudio = OSAllocatedUnfairLock(initialState: false)
         try source.start { chunk in
-            guard !chunk.isEmpty else { return }
+            guard !chunk.samples.isEmpty else { return }
             let shouldFulfill = observeAudio.withLock { observing in
                 defer { observing = false }
                 return observing
@@ -128,8 +128,8 @@ struct MicrophoneHardwareTests {
         var finished = false
         var tail = 0
         try source.start { chunk in
-            if finished { tail += chunk.count }
-            if !chunk.isEmpty { firstChunk.fulfill() }
+            if finished { tail += chunk.samples.count }
+            if !chunk.samples.isEmpty { firstChunk.fulfill() }
         }
         #expect(await XCTWaiter.fulfillment(of: [firstChunk], timeout: 3) == .completed)
         try await Task.sleep(for: .milliseconds(50))

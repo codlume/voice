@@ -5,32 +5,48 @@ import os
 @testable import VoiceHelper
 
 private final class FakeMic: MeetingMic {
+    private var sink: ((AudioChunk) -> Void)?
     private(set) var running = false
 
-    func start(sink: @escaping ([Float]) -> Void) throws(CaptureError) { running = true }
+    func start(sink: @escaping (AudioChunk) -> Void) throws(CaptureError) {
+        self.sink = sink
+        running = true
+    }
+
+    func deliver(_ samples: [Float], at time: DispatchTime) {
+        sink?(AudioChunk(samples: samples, capturedAt: time))
+    }
+
     func finish() {}
     func dispose() { running = false }
 }
 
 private final class FakeTap: MeetingTap {
-    private var sink: (([Float]) -> Void)?
+    private var sink: ((AudioChunk) -> Void)?
+    private var heldFrom = DispatchTime.now()
     private(set) var formatChanged: () -> Void = {}
     private(set) var running = false
     let msSinceAudio = 0.0
 
-    func start(sink: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
+    func start(sink: @escaping (AudioChunk) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
         self.sink = sink
         formatChanged = onFormatChange
         running = true
     }
 
-    /// Hands over the audio it still holds, as `SystemAudioSource` does.
+    func deliver(_ samples: [Float], at time: DispatchTime) {
+        sink?(AudioChunk(samples: samples, capturedAt: time))
+        heldFrom = time + .nanoseconds(samples.count * 1_000_000_000 / PcmFile.sampleRate)
+    }
+
+    /// Hands over the audio it still holds, captured right after what it last delivered, as
+    /// `SystemAudioSource` does.
     func stop() {
         guard running else { return }
         running = false
         let deliver = sink
         sink = nil
-        deliver?([Float](repeating: 0.1, count: 1600))
+        deliver?(AudioChunk(samples: [Float](repeating: 0.1, count: 1600), capturedAt: heldFrom))
     }
 }
 

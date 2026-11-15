@@ -46,6 +46,16 @@ private func planarBuffer(_ fixture: NoiseEndingInToneBurst, _ range: Range<Int>
     return buffer
 }
 
+private extension MicPipeline {
+    func receive(_ list: UnsafePointer<AudioBufferList>, frames: Int) {
+        receive(list, frames: frames, hostTime: 0)
+    }
+}
+
+private extension Optional<AudioChunk> {
+    var count: Int { self?.samples.count ?? 0 }
+}
+
 private func feed(
     _ pipeline: MicPipeline, fixture: NoiseEndingInToneBurst, quanta: [Range<Int>], pullEvery: Int, onPull: () -> Void
 ) throws {
@@ -152,9 +162,9 @@ private func feed(
         pipeline.start()
         var output: [Float] = []
         try feed(pipeline, fixture: fixture, quanta: fixture.quanta(of: quantum), pullEvery: 3) {
-            output += pipeline.pull()
+            output += pipeline.pull()?.samples ?? []
         }
-        output += pipeline.finish()
+        output += pipeline.finish()?.samples ?? []
 
         #expect(abs(output.count - fixture.expectedOutput) <= 1, "got \(output.count), expected \(fixture.expectedOutput)")
         let burst = Int(burstSeconds * 16_000) - 2 * extrapolatedSamples

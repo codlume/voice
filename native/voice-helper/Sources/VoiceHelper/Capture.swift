@@ -147,7 +147,7 @@ final class Capture {
         let relayMs = relayMs(from: hotkeyUptimeMs, to: receivedAt)
         let session = CaptureSession(id: id, language: language, target: target,
                                      startedAt: relayMs.map { receivedAt - .nanoseconds(Int($0 * 1e6)) } ?? receivedAt, relayMs: relayMs)
-        let sink: ([Float]) -> Void = { [weak self] chunk in self?.ingest(chunk, for: session) }
+        let sink: (AudioChunk) -> Void = { [weak self] chunk in self?.ingest(chunk.samples, for: session) }
         do {
             switch source {
             case .disabled:
@@ -365,8 +365,8 @@ final class Capture {
 
     private func beginTest(id: String) {
         outputLowering.end()
-        let sink: ([Float]) -> Void = { [weak self] chunk in
-            let level = perceptualLevel(rms: rms(chunk))
+        let sink: (AudioChunk) -> Void = { [weak self] chunk in
+            let level = perceptualLevel(rms: rms(chunk.samples))
             DispatchQueue.main.async { self?.meter(level, for: id) }
         }
         do {
@@ -552,7 +552,7 @@ final class MicSource {
     private let engine: AVAudioEngine
     private let pipeline: MicPipeline
     private let sinkNode: AVAudioSinkNode
-    private var sink: (([Float]) -> Void)?
+    private var sink: ((AudioChunk) -> Void)?
     private var pump: DispatchSourceTimer?
     private var pumpSettled = false
     private var observer: NSObjectProtocol?
@@ -576,8 +576,8 @@ final class MicSource {
         try Self.checkRoute(audioUnit, expected: device.id)
         let pipeline = try MicPipeline(hardware: input.outputFormat(forBus: 0))
         self.pipeline = pipeline
-        sinkNode = AVAudioSinkNode { _, frames, list in
-            pipeline.receive(list, frames: Int(frames))
+        sinkNode = AVAudioSinkNode { timestamp, frames, list in
+            pipeline.receive(list, frames: Int(frames), hostTime: timestamp.pointee.hostTimeOrNow)
             return noErr
         }
         engine.attach(sinkNode)
@@ -619,7 +619,7 @@ final class MicSource {
         engine.prepare()
     }
 
-    func start(sink deliver: @escaping ([Float]) -> Void) throws(CaptureError) {
+    func start(sink deliver: @escaping (AudioChunk) -> Void) throws(CaptureError) {
         guard let audioUnit = engine.inputNode.audioUnit else {
             throw CaptureError(reason: .device, message: "The selected microphone is unavailable. Choose another in Settings.")
         }
@@ -645,7 +645,7 @@ final class MicSource {
         let tail = pipeline.finish()
         let deliver = sink
         sink = nil
-        if !tail.isEmpty { deliver?(tail) }
+        if let tail { deliver?(tail) }
     }
 
     func stop() {
@@ -680,8 +680,7 @@ final class MicSource {
     }
 
     private func tick() {
-        let chunk = pipeline.pull()
-        guard !chunk.isEmpty else { return }
+        guard let chunk = pipeline.pull() else { return }
         if !pumpSettled {
             pumpSettled = true
             pump?.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
@@ -691,15 +690,18 @@ final class MicSource {
 }
 
 /// Plays a test fixture in 100 ms ticks; `speed` above 1 delivers that many ticks' audio per tick.
+/// Each chunk is stamped in fixture time, its offset into the file after the start, not when the
+/// tick ran.
 final class FileSource {
     private let samples: [Float]
     private let framesPerTick: Int
-    private let sink: ([Float]) -> Void
+    private let sink: (AudioChunk) -> Void
     private let onEnd: () -> Void
     private var offset = 0
+    private var startedAt = DispatchTime.now()
     private var timer: DispatchSourceTimer?
 
-    init(path: String, speed: Double = 1, sink: @escaping ([Float]) -> Void, onEnd: @escaping () -> Void) throws {
+    init(path: String, speed: Double = 1, sink: @escaping (AudioChunk) -> Void, onEnd: @escaping () -> Void) throws {
         do {
             samples = try readAudioFile(at: path)
         } catch {
@@ -711,6 +713,7 @@ final class FileSource {
     }
 
     func start() {
+        startedAt = .now()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now(), repeating: 0.1)
         timer.setEventHandler { [weak self] in self?.tick() }
@@ -730,7 +733,8 @@ final class FileSource {
             return
         }
         let end = min(offset + framesPerTick, samples.count)
-        sink(Array(samples[offset..<end]))
+        let capturedAt = startedAt + .nanoseconds(Int(Double(offset) / asrSampleRate * 1e9))
+        sink(AudioChunk(samples: Array(samples[offset..<end]), capturedAt: capturedAt))
         offset = end
     }
 }

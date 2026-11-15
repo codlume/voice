@@ -3,7 +3,7 @@ import Foundation
 import VoiceHelperCore
 
 protocol MeetingMic: AnyObject {
-    func start(sink: @escaping ([Float]) -> Void) throws(CaptureError)
+    func start(sink: @escaping (AudioChunk) -> Void) throws(CaptureError)
     func finish()
     func dispose()
 }
@@ -11,7 +11,7 @@ protocol MeetingMic: AnyObject {
 extension MicSource: MeetingMic {}
 
 protocol MeetingTap: AnyObject {
-    func start(sink: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError)
+    func start(sink: @escaping (AudioChunk) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError)
     func stop()
     var msSinceAudio: Double { get }
 }
@@ -161,7 +161,7 @@ final class MeetingCapture {
         }
     }
 
-    private func fixture(_ path: String, speed: Double, sink: @escaping ([Float]) -> Void) throws(CaptureError) -> FileSource {
+    private func fixture(_ path: String, speed: Double, sink: @escaping (AudioChunk) -> Void) throws(CaptureError) -> FileSource {
         do {
             return try FileSource(path: path, speed: speed, sink: sink) { [output] in output.log(.info, "meeting fixture ended \(path)") }
         } catch let error as CaptureError {
@@ -300,14 +300,14 @@ final class MeetingCapture {
         onLost(loss)
     }
 
-    private func receiveMic(_ chunk: [Float]) {
+    private func receiveMic(_ chunk: AudioChunk) {
         lastMicAudio = .now()
         // Dictated words belong to wherever they were inserted, not to the meeting.
-        write(isCapturingDictation() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
+        write(isCapturingDictation() ? [Float](repeating: 0, count: chunk.samples.count) : chunk.samples, to: mic)
     }
 
-    private func receiveSystem(_ chunk: [Float]) {
-        write(chunk, to: system)
+    private func receiveSystem(_ chunk: AudioChunk) {
+        write(chunk.samples, to: system)
     }
 
     // Keyed on the writer, not `stopped`: `stop` flushes the sources' tails through here before

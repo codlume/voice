@@ -5,6 +5,19 @@ import os
 let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatFloat32, sampleRate: asrSampleRate, channels: 1, interleaved: false)
 
+/// Audio a source pulled: 16 kHz mono, and the host time its first sample was captured. The time
+/// comes from the IO callback, not from when main pulled it.
+struct AudioChunk {
+    let samples: [Float]
+    let capturedAt: DispatchTime
+}
+
+extension AudioTimeStamp {
+    /// IO-thread safe. A timestamp without a valid host time falls back to now, which is late by
+    /// one IO buffer.
+    var hostTimeOrNow: UInt64 { mFlags.contains(.hostTimeValid) ? mHostTime : mach_absolute_time() }
+}
+
 final class MicPipeline {
     let hardware: AVAudioFormat
     private let mono: AVAudioFormat
@@ -13,6 +26,9 @@ final class MicPipeline {
     private let capacity: Int
     private let pending: OSAllocatedUnfairLock<Pending>
     private var spare: [Float]
+    /// Host time of the frame after the last one drained, which stamps a converter tail that
+    /// follows no new frames.
+    private var drainedUntil: UInt64 = 0
     private(set) var droppedFrames = 0
 
     init(hardware: AVAudioFormat, pendingSeconds: Double = 10) throws(CaptureError) {
@@ -35,7 +51,8 @@ final class MicPipeline {
     }
 
     /// IO thread. No allocation (both buffers are reserved on main), no logging, no dispatch.
-    func receive(_ list: UnsafePointer<AudioBufferList>, frames: Int) {
+    /// `hostTime` is when the first of `frames` was captured.
+    func receive(_ list: UnsafePointer<AudioBufferList>, frames: Int, hostTime: UInt64) {
         guard frames > 0 else { return }
         pending.withLockUnchecked { pending in
             guard pending.accepting else { return }
@@ -50,6 +67,7 @@ final class MicPipeline {
                 return
             }
             let channel = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: frames)
+            if pending.frames.isEmpty { pending.firstHostTime = hostTime }
             pending.frames.append(contentsOf: channel)
         }
     }
@@ -59,11 +77,12 @@ final class MicPipeline {
         pending.withLockUnchecked { $0.accepting = true }
     }
 
-    func pull() -> [Float] {
+    /// nil when nothing new was captured.
+    func pull() -> AudioChunk? {
         drain { $0.isEmpty ? [] : convert($0, endOfStream: false) }
     }
 
-    func finish() -> [Float] {
+    func finish() -> AudioChunk? {
         let tail = drain(closingIntake: true) { convert($0, endOfStream: true) }
         converter.reset()
         return tail
@@ -78,20 +97,23 @@ final class MicPipeline {
     /// Swaps the two buffers so the IO thread keeps writing into pages it has touched before, and hands
     /// the frames that arrived to `body` before the buffer is emptied for reuse.
     @discardableResult
-    private func drain(closingIntake: Bool = false, _ body: ([Float]) -> [Float]) -> [Float] {
+    private func drain(closingIntake: Bool = false, _ body: ([Float]) -> [Float]) -> AudioChunk? {
         var frames: [Float] = []
         swap(&frames, &spare)
-        let dropped = pending.withLockUnchecked { pending in
+        let (dropped, firstHostTime) = pending.withLockUnchecked { pending in
             if closingIntake { pending.accepting = false }
             swap(&pending.frames, &frames)
             defer { pending.dropped = 0 }
-            return pending.dropped
+            return (pending.dropped, pending.firstHostTime)
         }
         droppedFrames += dropped
+        let first = frames.isEmpty ? drainedUntil : firstHostTime
+        drainedUntil = first + AudioConvertNanosToHostTime(UInt64(Double(frames.count) / hardware.sampleRate * 1e9))
         let converted = body(frames)
         frames.removeAll(keepingCapacity: true)
         swap(&frames, &spare)
-        return converted
+        guard !converted.isEmpty else { return nil }
+        return AudioChunk(samples: converted, capturedAt: DispatchTime(uptimeNanoseconds: AudioConvertHostTimeToNanos(first)))
     }
 
     private func convert(_ frames: [Float], endOfStream: Bool) -> [Float] {
@@ -118,6 +140,8 @@ final class MicPipeline {
 
     private struct Pending {
         var frames: [Float]
+        /// Host time of `frames[0]`.
+        var firstHostTime: UInt64 = 0
         var dropped = 0
         var accepting = false
     }
