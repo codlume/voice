@@ -71,7 +71,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
             return loud
                 ? [TimedWord(text: "Hello", startMs: 0, endMs: seconds / 2), TimedWord(text: "everyone", startMs: seconds / 2, endMs: seconds)]
                 : [TimedWord(text: "Hi", startMs: 0, endMs: 2000), TimedWord(text: "again", startMs: 3000, endMs: 4500)]
-        }, diarize: diarize, isDictating: dictating, idle: .milliseconds(5))
+        }, diarize: diarize, newDetector: { nil }, isDictating: dictating, idle: .milliseconds(5))
     }
 
     private func finalized() async throws -> [[String: Any]] {
@@ -100,7 +100,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         defer { try? FileManager.default.removeItem(at: dir) }
         try writeMeeting(in: dir, micHearsTheSpeakers: true)
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
-        await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil }, isDictating: { false })
+        await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false })
             .run(id: "m1", dir: dir, baseMs: 0, language: .en)
         let mic = try await finalized().filter { $0["source"] as? String == "mic" }
         #expect(mic.map { $0["text"] as? String } == ["loud"], "only the user's voice is transcribed as theirs")
@@ -119,7 +119,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
             decodes += 1
             if dictating { decodedWhileDictating += 1 }
             return soundWords(in: samples)
-        }, diarize: { _ in nil }, isDictating: {
+        }, diarize: { _ in nil }, newDetector: { nil }, isDictating: {
             looks += 1
             // The pass's first look finds no dictation, and one starts right after it.
             if looks == 1 { dictating = true; return false }
@@ -206,7 +206,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
             try writer.close()
         }
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words", in: samples) },
-                                       isDictating: { false }, idle: .milliseconds(5))
+                                       newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
         defer { job.cancel() }
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         job.record([.mic, .system])
@@ -226,7 +226,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         // Speech with no pause yet: no window can be cut, so only a partial can show it.
         try mic.append((0..<3 * 16_000).map { 0.3 * sin(Float($0) * 2 * .pi * 440 / 16_000) })
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
-                                       isDictating: { false }, idle: .milliseconds(5))
+                                       newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         job.record([.mic])
         let partial = try await lines.wait(for: "meeting.partial").first { $0["type"] as? String == "meeting.partial" }
@@ -253,7 +253,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in spokenWords("words \(samples.count / 16_000)", in: samples) },
-                                       isDictating: { false }, idle: .milliseconds(5))
+                                       newDetector: { nil }, isDictating: { false }, idle: .milliseconds(5))
         defer { job.cancel() }
         let partials = { lines.snapshot().filter { $0["type"] as? String == "meeting.partial" }.compactMap { $0["text"] as? String } }
 
@@ -284,7 +284,7 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in
             decoded()
             return spokenWords("words", in: samples)
-        }, isDictating: isDictating, idle: .milliseconds(5))
+        }, newDetector: { nil }, isDictating: isDictating, idle: .milliseconds(5))
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         return job
     }

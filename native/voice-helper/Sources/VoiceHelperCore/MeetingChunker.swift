@@ -56,7 +56,7 @@ public enum MeetingChunker {
 
     /// The span in `window` that holds speech, as a sample range, or nil when it is all quiet and
     /// needs no decode.
-    public static func speech(in window: [Float]) -> Range<Int>? {
+    static func speech(in window: [Float]) -> Range<Int>? {
         let runs = speechRuns(in: window)
         guard let first = runs.first, let last = runs.last else { return nil }
         return first.lowerBound..<last.upperBound
@@ -66,7 +66,7 @@ public enum MeetingChunker {
     /// decodes a window that holds seconds of digital silence degenerately, dropping the words
     /// beside it, and the mic holds such silence wherever the echo gate muted the other side or
     /// a dictation ran. Decoded one at a time, the runs never show the model that silence.
-    public static func speechRuns(in window: [Float]) -> [Range<Int>] {
+    static func speechRuns(in window: [Float]) -> [Range<Int>] {
         let levels = frameLevels(window)
         var runs: [Range<Int>] = []
         var start: Int?

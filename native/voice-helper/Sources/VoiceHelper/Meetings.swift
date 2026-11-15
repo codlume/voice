@@ -10,6 +10,7 @@ final class Meetings {
     private let devices: AudioInputDevices
     private let source: MeetingAudioSource
     private let decode: MeetingTranscription.Decode
+    private let newDetector: MeetingTranscription.NewDetector
     private let isDictating: () -> Bool
     private let isCapturingDictation: () -> Bool
     private let finalPass: MeetingFinalPass
@@ -20,11 +21,13 @@ final class Meetings {
     private var lastFinal: Task<Void, Never>?
 
     init(output: Output, devices: AudioInputDevices, source: MeetingAudioSource, decode: @escaping MeetingTranscription.Decode,
-         finalPass: MeetingFinalPass, isDictating: @escaping () -> Bool, isCapturingDictation: @escaping () -> Bool) {
+         newDetector: @escaping MeetingTranscription.NewDetector, finalPass: MeetingFinalPass, isDictating: @escaping () -> Bool,
+         isCapturingDictation: @escaping () -> Bool) {
         self.output = output
         self.devices = devices
         self.source = source
         self.decode = decode
+        self.newDetector = newDetector
         self.finalPass = finalPass
         self.isDictating = isDictating
         self.isCapturingDictation = isCapturingDictation
@@ -99,7 +102,7 @@ final class Meetings {
     }
 
     private func job(id: String, dir: URL, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) -> MeetingTranscription {
-        let job = jobs[id] ?? MeetingTranscription(id: id, output: output, decode: decode, isDictating: isDictating)
+        let job = jobs[id] ?? MeetingTranscription(id: id, output: output, decode: decode, newDetector: newDetector, isDictating: isDictating)
         jobs[id] = job
         job.update(dir: dir, baseMs: baseMs, fromMs: fromMs, language: language)
         return job
@@ -113,10 +116,13 @@ final class Meetings {
 final class MeetingTranscription {
     /// The words in `samples`, with times in ms into them.
     typealias Decode = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
+    /// A voice detector that has heard nothing yet, or nil when there is none to ask.
+    typealias NewDetector = () async -> (any VoiceDetector)?
 
     private let id: String
     private let output: Output
     private let decode: Decode
+    private let newDetector: NewDetector
     private let isDictating: () -> Bool
     private let idle: Duration
     private let retry: Duration
@@ -131,11 +137,12 @@ final class MeetingTranscription {
     private var partialEnd: [MeetingSource: Int] = [:]
     private var showing: Set<MeetingSource> = []
 
-    init(id: String, output: Output, decode: @escaping Decode, isDictating: @escaping () -> Bool,
+    init(id: String, output: Output, decode: @escaping Decode, newDetector: @escaping NewDetector, isDictating: @escaping () -> Bool,
          idle: Duration = .milliseconds(300), retry: Duration = .seconds(5)) {
         self.id = id
         self.output = output
         self.decode = decode
+        self.newDetector = newDetector
         self.isDictating = isDictating
         self.idle = idle
         self.retry = retry
@@ -220,7 +227,7 @@ final class MeetingTranscription {
     private struct Window {
         let source: MeetingSource
         let offset: Int
-        let samples: [Float]
+        let heard: HeardAudio
     }
 
     // The source further behind goes first, so the two transcripts advance together.
@@ -234,16 +241,16 @@ final class MeetingTranscription {
             else { continue }
             let final = recording.isEmpty && available <= raw.count
             if let cut = MeetingChunker.cut(raw, final: final) {
-                return Window(source: source, offset: offset, samples: try await source.heard(in: dir, offset: offset, count: cut))
+                return Window(source: source, offset: offset, heard: try await listen(to: source, offset: offset, count: cut))
             }
         }
         return nil
     }
 
     private func transcribe(_ window: Window) async throws {
-        if let speech = MeetingChunker.speech(in: window.samples) {
+        if let speech = window.heard.speech {
             let startMs = meetingMs(window.offset)
-            let words = try await decode(window.samples, language).map { $0.shifted(by: startMs) }
+            let words = try await decode(window.heard.samples, language).map { $0.shifted(by: startMs) }
             try Task.checkCancellation()
             if !words.isEmpty {
                 // The segment goes out before its partial clears, so the line never blinks out.
@@ -251,8 +258,12 @@ final class MeetingTranscription {
                                             endMs: meetingMs(window.offset + speech.upperBound), text: Self.text(words)))
             }
         }
-        cursor[window.source] = window.offset + window.samples.count
+        cursor[window.source] = window.offset + window.heard.samples.count
         clearPartial(window.source)
+    }
+
+    private func listen(to source: MeetingSource, offset: Int, count: Int) async throws -> HeardAudio {
+        try await source.listen(in: dir, offset: offset, count: count, detector: await newDetector())
     }
 
     /// Audio after a source's cursor that no window takes yet because no pause has come, once at
@@ -265,10 +276,8 @@ final class MeetingTranscription {
             guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples else { continue }
             let count = min(end - offset, MeetingChunker.windowSamples)
             partialEnd[source] = offset + count
-            guard let samples = try? await source.heard(in: dir, offset: offset, count: count),
-                  MeetingChunker.speech(in: samples) != nil
-            else { continue }
-            return Window(source: source, offset: offset, samples: samples)
+            guard let heard = try? await listen(to: source, offset: offset, count: count), heard.speech != nil else { continue }
+            return Window(source: source, offset: offset, heard: heard)
         }
         return nil
     }
@@ -285,7 +294,7 @@ final class MeetingTranscription {
 
     /// Text that may still change, for the live view only; it is never saved.
     private func showPartial(_ window: Window) async {
-        guard let words = try? await decode(window.samples, language), !Task.isCancelled, !words.isEmpty else { return }
+        guard let words = try? await decode(window.heard.samples, language), !Task.isCancelled, !words.isEmpty else { return }
         let text = Self.text(words)
         showing.insert(window.source)
         output.emit(.meetingPartial(id: id, source: window.source, text: text))
@@ -319,14 +328,16 @@ final class MeetingFinalPass {
     private let output: Output
     private let decode: DecodeWords
     private let diarize: Diarize
+    private let newDetector: MeetingTranscription.NewDetector
     private let isDictating: () -> Bool
     private let idle: Duration
 
-    init(output: Output, decode: @escaping DecodeWords, diarize: @escaping Diarize, isDictating: @escaping () -> Bool,
-         idle: Duration = .milliseconds(300)) {
+    init(output: Output, decode: @escaping DecodeWords, diarize: @escaping Diarize, newDetector: @escaping MeetingTranscription.NewDetector,
+         isDictating: @escaping () -> Bool, idle: Duration = .milliseconds(300)) {
         self.output = output
         self.decode = decode
         self.diarize = diarize
+        self.newDetector = newDetector
         self.isDictating = isDictating
         self.idle = idle
     }
@@ -364,12 +375,12 @@ final class MeetingFinalPass {
             let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
             guard !samples.isEmpty else { break }
             let count = MeetingChunker.finalCut(samples)
-            let window = try await source.heard(in: dir, offset: offset, count: count)
-            for run in MeetingChunker.speechRuns(in: window) {
+            let heard = try await source.listen(in: dir, offset: offset, count: count, detector: await newDetector())
+            for run in heard.runs {
                 // The gate and each decode suspend, so a dictation may have started since the last check.
                 try await dictationDone()
                 let startMs = baseMs + PcmFile.milliseconds(offset + run.lowerBound)
-                words += try await decode(Array(window[run]), language).map { $0.shifted(by: startMs) }
+                words += try await decode(Array(heard.samples[run]), language).map { $0.shifted(by: startMs) }
             }
             offset += count
         }

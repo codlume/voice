@@ -52,9 +52,10 @@ final class Helper {
         let diarizer = SpeakerDiarizer(modelsDir: modelsDir, output: output)
         self.diarizer = diarizer
         let finalPass = MeetingFinalPass(output: output, decode: { try await transcriber.decodeMeeting($0, language: $1) },
-                                         diarize: { try await diarizer.turns(in: $0) }, isDictating: { capture.isDictating })
+                                         diarize: { try await diarizer.turns(in: $0) }, newDetector: { nil },
+                                         isDictating: { capture.isDictating })
         meetings = Meetings(output: output, devices: devices, source: .resolve(environment: environment),
-                            decode: { try await transcriber.decodeMeeting($0, language: $1) },
+                            decode: { try await transcriber.decodeMeeting($0, language: $1) }, newDetector: { nil },
                             finalPass: finalPass, isDictating: { capture.isDictating },
                             isCapturingDictation: { capture.isCapturingDictation })
         diarizer.reportStatus()
