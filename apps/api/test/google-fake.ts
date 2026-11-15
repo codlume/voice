@@ -1,7 +1,3 @@
-// Google's token endpoint, faked at the outbound HTTP boundary. The authorization
-// code picks the user, so `ada-lovelace` signs in Ada Lovelace, ada-lovelace@example.com.
-// A slash adds a second Google identity with the same email: `ada-lovelace/work` is
-// another subject whose email is still ada-lovelace@example.com.
 export const googleTokenUrl = "https://oauth2.googleapis.com/token";
 
 const nameParts: Record<string, { given_name?: string; family_name?: string }> = {

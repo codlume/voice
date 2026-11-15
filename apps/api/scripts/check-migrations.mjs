@@ -3,9 +3,7 @@
 // rebuilding a table, dropping or renaming a column, dropping an index, view or
 // trigger, and foreign-key or legacy_alter_table pragmas. On D1, dropping a parent
 // table fires cascades and deletes child rows, and toggling foreign keys does not
-// prevent it. The check applies the migrations to an in-memory SQLite database and
-// judges each file by what SQLite reports and by the schema before and after, so
-// quoting and comments cannot hide a change. A file that needs one anyway starts with
+// prevent it. A file that needs one anyway starts with
 // `-- migration-check: approved <reason>`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
