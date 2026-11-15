@@ -107,6 +107,45 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         #expect(mic.map { Int($0["endMs"] as? Double ?? -1) } == [2000])
     }
 
+    /// The mic's lines as text@start, from a fake speech model that says "loud" for each sound.
+    private func micLines(newDetector: @escaping MeetingTranscription.NewDetector) async throws -> [String] {
+        let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
+        await MeetingFinalPass(output: output, decode: { samples, _ in soundWords(in: samples) }, diarize: { _ in nil },
+                               newDetector: newDetector, isDictating: { false })
+            .run(id: "m1", dir: dir, baseMs: 0, language: .en)
+        return try await finalized().filter { $0["source"] as? String == "mic" }
+            .map { "\($0["text"] as? String ?? "?")@\(Int($0["startMs"] as? Double ?? -1))" }
+    }
+
+    /// The user speaks for two seconds, and two seconds later something knocks.
+    private let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.7)
+
+    @Test func aSoundTheVoiceDetectorHearsNoVoiceInIsNotTranscribedAsTheUser() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        let mic = try await micLines(newDetector: { ScriptedDetector(voiced: [0..<32_000]) })
+        #expect(mic == ["loud@0"])
+    }
+
+    @Test func withoutAVoiceDetectorEverySoundOnTheMicIsStillTranscribed() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        let mic = try await micLines(newDetector: { nil })
+        #expect(mic == ["loud@0", "loud@4000"])
+    }
+
+    @Test func theVoiceDetectorHearsTheMicInOrderFromOneWindowToTheNext() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Two minutes with nothing after the user's words end the first window at 60.9 s, in
+        // the middle of the silence. The knock comes a second after the two minutes.
+        try write(tone(2, 0.3, hz: 660) + silence(119) + tone(0.3, 0.3, hz: 660) + silence(1), .mic, in: dir)
+        // That is 60.1 s into the second window. A detector that started over there would
+        // hear the knock where this one hears a voice.
+        let detector = ScriptedDetector(voiced: [0..<32_000, 961_600..<966_400])
+        let mic = try await micLines(newDetector: { detector })
+        #expect(mic == ["loud@0"])
+    }
+
     @Test func aDictationThatStartsWhileTheGateRunsHoldsTheDecode() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
         try writeMeeting(in: dir, micHearsTheSpeakers: true)
@@ -279,18 +318,122 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
     let lines = EmittedLines()
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-live-\(UUID().uuidString)")
 
-    private func job(isDictating: @escaping () -> Bool = { false }, decoded: @escaping () -> Void = {}) -> MeetingTranscription {
+    private func job(
+        newDetector: @escaping MeetingTranscription.NewDetector = { nil }, isDictating: @escaping () -> Bool = { false },
+        decoded: @escaping () throws -> Void = {}
+    ) -> MeetingTranscription {
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         let job = MeetingTranscription(id: "m1", output: output, decode: { samples, _ in
-            decoded()
+            try decoded()
             return spokenWords("words", in: samples)
-        }, newDetector: { nil }, isDictating: isDictating, idle: .milliseconds(5))
+        }, newDetector: newDetector, isDictating: isDictating, idle: .milliseconds(5), retry: .milliseconds(5))
         job.update(dir: dir, baseMs: 0, fromMs: MeetingCursor(mic: 0, system: 0), language: .en)
         return job
     }
 
     private func micEvents() -> [String] {
         lines.snapshot().filter { $0["source"] as? String == "mic" }.compactMap { $0["type"] as? String }
+    }
+
+    /// The mic's segments as start-end in ms.
+    private func micSegments() -> [String] {
+        lines.snapshot().filter { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "mic" }
+            .map { "\(Int($0["startMs"] as? Double ?? -1))-\(Int($0["endMs"] as? Double ?? -1))" }
+    }
+
+    /// The user speaks for two seconds, and two seconds later something knocks. The windows
+    /// end at 2.3 s and 3.7 s, so the knock is 0.3 s into the third.
+    private let voiceThenKnock = tone(2, 0.3, hz: 660) + silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.5)
+    /// A detector that started over at any window but the first would hear the knock where
+    /// this one hears the user.
+    private let hearsTheVoice = ScriptedDetector(voiced: [0..<32_000])
+
+    @Test func aSoundTheVoiceDetectorHearsNoVoiceInShowsAsNoSegment() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        let job = job(newDetector: { hearsTheVoice })
+        defer { job.cancel() }
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == ["0-2000"])
+    }
+
+    @Test func withoutAVoiceDetectorEverySoundOnTheMicStillShows() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        let job = job()
+        defer { job.cancel() }
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == ["0-2000", "4000-4300"])
+    }
+
+    @Test func aSoundTheVoiceDetectorHearsNoVoiceInShowsAsNoPartial() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // No pause follows the knock yet, so no window takes it and only a partial could show it.
+        try write(silence(0.3) + tone(0.3, 0.3, hz: 660) + silence(0.5), .mic, in: dir)
+        let hearsNoVoice = ScriptedDetector(voiced: [])
+        let job = job(newDetector: { hearsNoVoice })
+        defer { job.cancel() }
+        job.record([.mic])
+        try await until { hearsNoVoice.asked.withLock { $0 } > 0 || !micEvents().isEmpty }
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micEvents() == [])
+    }
+
+    @Test func aPartialLeavesTheVoiceDetectorWhereTheWindowStarts() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let mic = try PcmWriter(url: MeetingSource.mic.file(in: dir))
+        try mic.append(tone(3, 0.3, hz: 660))
+        let job = job(newDetector: { ScriptedDetector(voiced: [0..<48_000]) })
+        defer { job.cancel() }
+        job.record([.mic])
+        _ = try await lines.wait(for: "meeting.partial")
+        // The window takes the same three seconds the partial showed. A detector the partial
+        // had moved on would hear them as what comes after the user's words.
+        try mic.append(silence(2) + tone(0.3, 0.3, hz: 660) + silence(1.5))
+        try mic.close()
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == ["0-3000"])
+    }
+
+    @Test func aWindowDecodedAgainAfterAFailureIsHeardByTheSameVoiceDetector() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        var decodes = 0
+        let job = job(newDetector: { hearsTheVoice }, decoded: {
+            decodes += 1
+            if decodes == 1 { throw TranscribeError(reason: .unknown, message: "the speech model stumbled") }
+        })
+        defer { job.cancel() }
+        // While a leg records, a failed decode is tried again.
+        job.record([.mic])
+        try await until { !micSegments().isEmpty }
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == ["0-2000"])
+        #expect(decodes == 2)
+    }
+
+    /// Main deletes a meeting's audio after its final pass, so a later leg starts the files
+    /// over and reaches the job the first leg used.
+    @Test func aLegOnNewFilesIsHeardByANewVoiceDetector() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(voiceThenKnock, .mic, in: dir)
+        let job = job(newDetector: { hearsTheVoice })
+        defer { job.cancel() }
+        job.drain()
+        _ = try await lines.wait(for: "meeting.drained")
+
+        try FileManager.default.removeItem(at: MeetingSource.mic.file(in: dir))
+        try write(voiceThenKnock, .mic, in: dir)
+        job.update(dir: dir, baseMs: 60_000, fromMs: MeetingCursor(mic: 60_000, system: 60_000), language: .en)
+        job.drain()
+        try await until { lines.snapshot().filter { $0["type"] as? String == "meeting.drained" }.count == 2 }
+        #expect(micSegments() == ["0-2000", "60000-62000"])
     }
 
     /// The system tap writes its file every 100 ms, so the mic file is routinely ahead of it.
