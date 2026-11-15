@@ -7,8 +7,9 @@ private let rate = 16_000
 
 /// A voice-like signal from `start` to `end` seconds of a `seconds`-long track: a harmonic
 /// series on a gliding pitch, in syllables or held steady, with a timbre fixed by `seed`.
+/// 14 harmonics of a 120 Hz pitch stop under 2 kHz; 58 fill the band to 8 kHz.
 /// Built with Accelerate because a debug build of the per-sample loop slowed CI's test run.
-private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true) -> [Float] {
+private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true, harmonics: Int = 14) -> [Float] {
     let count = Int(seconds * Double(rate))
     let twoPi = 2 * Float.pi
     let t = vDSP.multiply(1 / Float(rate), vDSP.ramp(withInitialValue: Float(0), increment: 1, count: count))
@@ -16,7 +17,7 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
     var phase = vDSP.multiply(twoPi * pitch / Float(rate), glide)
     for n in phase.indices.dropFirst() { phase[n] += phase[n - 1] }
     var tone = [Float](repeating: 0, count: count)
-    for k in 1...14 {
+    for k in 1...harmonics {
         let harmonic = Float(k)
         let timbre: Float = 1 + 0.6 * sin(harmonic * seed)
         tone = vDSP.add(tone, vDSP.multiply(timbre / harmonic, vForce.sin(vDSP.multiply(harmonic, phase))))
@@ -34,9 +35,11 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
 
 /// What the mic hears of `played`: `lagMs` later, the direct path at `gain` (18 dB down on a
 /// laptop), with a short room tail.
-private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 0.12) -> [Float] {
+private func throughTheSpeakers(
+    _ played: [Float], lagMs: Double, gain: Float = 0.12,
+    taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
+) -> [Float] {
     let lag = Int(lagMs * Double(rate) / 1000)
-    let taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
     var out = [Float](repeating: 0, count: played.count)
     for tap in taps {
         let shift = lag + tap.delay
@@ -48,6 +51,31 @@ private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 
         out.replaceSubrange(from..<from + length, with: vDSP.add(out[from..<from + length], echoed))
     }
     return out
+}
+
+/// What a MacBook Air's microphone hears of `played` from its own speakers, built from one
+/// measured at half volume. The echo comes back 11 dB down: against that, level with it under
+/// 500 Hz, 2 dB over to 1 kHz, 3.7 dB under to 2 kHz, 8 dB under to 4 kHz and 2.5 dB over above.
+/// 69% of it is the direct sound, 12% follows within 4 ms, 14% within 16 ms and 4% later. The
+/// speakers' distortion, a soft clip here, sits 23 dB under it (21 dB measured).
+private func throughAMacBookAir(_ played: [Float], lagMs: Double) -> [Float] {
+    let bands: [(from: Float, to: Float, decibels: Float)] = [(50, 500, -0.3), (500, 1000, 2), (1000, 2000, -3.7), (2000, 4000, -8), (4000, 8000, 2.5)]
+    let reach = 127
+    let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: 2 * reach + 1, isHalfWindow: false)
+    // One windowed-sinc band-pass per band, each at its band's level.
+    let colour = (-reach...reach).map { n -> Float in
+        bands.reduce(0) { sum, band in
+            let (low, high) = (2 * band.from / Float(rate), 2 * band.to / Float(rate))
+            let pass = n == 0 ? high - low : (sin(.pi * high * Float(n)) - sin(.pi * low * Float(n))) / (.pi * Float(n))
+            return sum + pow(10, band.decibels / 20) * pass * window[n + reach]
+        }
+    }
+    let drive: Float = 1.2
+    let distorted = vDSP.divide(vForce.tanh(vDSP.multiply(drive, played)), drive)
+    let pad = [Float](repeating: 0, count: reach + 1)
+    let coloured = Array(vDSP.convolve(pad + distorted + pad, withKernel: colour).prefix(played.count))
+    let reflections: [(delay: Int, gain: Float)] = [(0, 1), (24, 0.3), (52, -0.29), (90, 0.27), (150, -0.26), (215, 0.25), (400, 0.18), (720, -0.17)]
+    return throughTheSpeakers(coloured, lagMs: lagMs, gain: pow(10, -10.8 / 20), taps: reflections)
 }
 
 /// The room's hiss, about -60 dBFS.
@@ -112,6 +140,15 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         let echo = throughTheSpeakers(system, lagMs: 120, gain: gain)
         let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
         #expect(decibels(energy(gated[...]), over: energy(echo[...])) < -20)
+    }
+
+    @Test func theOtherSideThroughAMacBookAirsOwnSpeakersLeavesNothingToTranscribe() {
+        // As loud as the meeting that was measured: system audio at -16 dBFS, its echo at -27.
+        let system = voice(8, pitch: 120, seed: 1, level: 0.5, harmonics: 58)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "nothing is loud enough to be decoded as the user's words")
+        #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
     }
 
     @Test func theUsersVoiceOverTheOtherSideStaysAndOnlyTheirEchoGoes() {
