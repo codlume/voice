@@ -53,13 +53,11 @@ function nameUpdate(body: unknown) {
   return { ...name, name: fullName(name) };
 }
 
-// Every setting that needs no Worker binding. The schema generator (auth.cli.ts) reads the same
-// object, so a plugin or table added here reaches both the runtime and the migration.
 export const authOptions = {
   basePath: "/api/auth",
   emailAndPassword: { enabled: false },
   account: { accountLinking: { enabled: false }, encryptOAuthTokens: true },
-  // A tray app runs for weeks, so the 7-day default is too short. freshAge gates account deletion.
+  // freshAge gates account deletion.
   session: { expiresIn: 60 * 60 * 24 * 60, freshAge: 60 * 10 },
   // The default reads NODE_ENV, which a Worker does not set, so it would stay off.
   rateLimit: { enabled: true, storage: "database" },
@@ -78,8 +76,7 @@ export const authOptions = {
   },
   plugins: [electron(), accountLookupIndex],
   // No client uses it, and Google's getUserInfo returns null without the ID token, so it could
-  // only fail. A meeting integration that needs a profile lookup should re-enable it with a
-  // getUserInfo that reads the access token.
+  // only fail.
   disabledPaths: ["/account-info"],
   databaseHooks: {
     account: { create: { before: dropIdToken }, update: { before: dropIdToken } },
@@ -105,7 +102,7 @@ export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void
         if (ctx.path === "/update-user") return { context: { body: nameUpdate(ctx.body) } };
         // @better-auth/electron starts a sign-in by fetching the Worker's own /sign-in/social. In
         // production that request re-enters through Cloudflare stamped with one Worker-side
-        // address, so every user's sign-in start shared a single rate-limit bucket. Starting it in
+        // address, so every user's sign-in start would share a single rate-limit bucket. Starting it in
         // process leaves the per-IP limit on this route as the only gate.
         if (ctx.path === "/electron/init-oauth-proxy") {
           const { provider, state, code_challenge } = ctx.query ?? {};
@@ -146,7 +143,6 @@ export function createAuth(env: Env, waitUntil: (task: Promise<unknown>) => void
         },
       },
     },
-    // Localhost is trusted only because the local BETTER_AUTH_URL is localhost.
     trustedOrigins: [new URL(env.BETTER_AUTH_URL).origin, "com.codlume.voice:/"],
   });
   return auth;

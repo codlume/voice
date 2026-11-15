@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
 
 // Better Auth redirects here after /callback/google, because init-oauth-proxy
-// drops callbackURL. The page hands the electron code to Voice and ends the
-// browser's own auth session, which the callback created and Voice never uses.
+// drops callbackURL.
 
-// The colors and fonts are the desktop app's tokens (apps/desktop/src/renderer/tokens.stylex.ts).
 const style = `
 :root {
   color-scheme: light dark;

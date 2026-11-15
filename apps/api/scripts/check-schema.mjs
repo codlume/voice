@@ -15,7 +15,6 @@ run("pnpm", [
   "src/auth-schema.ts",
   "--yes",
 ]);
-// The committed schema is formatted by the pre-commit hook, so format the regenerated one the same way.
 run("vp", ["fmt", "src/auth-schema.ts"]);
 run("pnpm", ["exec", "drizzle-kit", "generate"]);
 
