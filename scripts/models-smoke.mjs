@@ -149,7 +149,8 @@ try {
   await click(button("Settings"), "Settings opens again");
   await click(settingsNavButton("Models"), "Models page opens again");
 
-  for (const id of ["cleanup", "asr"])
+  // The voice detector went with the speech model, and comes back with it from the cache.
+  for (const id of ["cleanup", "asr", "voice"])
     symlinkSync(join(cache, modelFiles[id]), join(models, modelFiles[id]));
   for (const id of ["cleanup", "asr"]) {
     await click(button(`Install ${names[id]}`), `${id} Install clickable`);

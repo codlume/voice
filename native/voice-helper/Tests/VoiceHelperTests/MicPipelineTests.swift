@@ -46,6 +46,16 @@ private func planarBuffer(_ fixture: NoiseEndingInToneBurst, _ range: Range<Int>
     return buffer
 }
 
+private extension MicPipeline {
+    func receive(_ list: UnsafePointer<AudioBufferList>, frames: Int) {
+        receive(list, frames: frames, hostTime: 0)
+    }
+}
+
+private extension Optional<AudioChunk> {
+    var count: Int { self?.samples.count ?? 0 }
+}
+
 private func feed(
     _ pipeline: MicPipeline, fixture: NoiseEndingInToneBurst, quanta: [Range<Int>], pullEvery: Int, onPull: () -> Void
 ) throws {
@@ -152,9 +162,9 @@ private func feed(
         pipeline.start()
         var output: [Float] = []
         try feed(pipeline, fixture: fixture, quanta: fixture.quanta(of: quantum), pullEvery: 3) {
-            output += pipeline.pull()
+            output += pipeline.pull()?.samples ?? []
         }
-        output += pipeline.finish()
+        output += pipeline.finish()?.samples ?? []
 
         #expect(abs(output.count - fixture.expectedOutput) <= 1, "got \(output.count), expected \(fixture.expectedOutput)")
         let burst = Int(burstSeconds * 16_000) - 2 * extrapolatedSamples
@@ -197,6 +207,66 @@ private func feed(
         #expect(pipeline.droppedFrames == 4800, "the 0.1 s past capacity is counted as dropped")
         pipeline.discard()
         #expect(pipeline.droppedFrames == 0)
+    }
+
+    @Test func aChunkCarriesTheCaptureTimeOfItsFirstFrameBeforeAndAfterADrop() throws {
+        let fixture = NoiseEndingInToneBurst(rate: 48_000, seconds: 0.31)
+        let format = try fixture.format()
+        let pipeline = try MicPipeline(hardware: format, pendingSeconds: 0.2)
+        pipeline.start()
+        let quanta = fixture.quanta(of: 480)
+        func receive(_ index: Int) throws {
+            let buffer = try planarBuffer(fixture, quanta[index], format: format)
+            let capturedAtMs = 5000 + 10 * UInt64(index)
+            pipeline.receive(buffer.audioBufferList, frames: 480, hostTime: AudioConvertNanosToHostTime(capturedAtMs * 1_000_000))
+        }
+
+        for index in 0..<30 { try receive(index) }
+        let first = try #require(pipeline.pull())
+        #expect(abs(first.capturedAt.uptimeMs - 5000) < 0.001)
+        #expect(pipeline.droppedFrames == 4800, "the ten buffers past capacity")
+
+        // The resampler held back the end of the first chunk's audio, and the next chunk starts with it.
+        let heldMs = 200 - Double(first.samples.count) / 16
+        try receive(30)
+        let afterTheDrop = try #require(pipeline.pull())
+        #expect(abs(afterTheDrop.capturedAt.uptimeMs + heldMs - 5300) < 0.001, "the first buffer accepted, not the end of the last chunk")
+
+        let tail = try #require(pipeline.finish(), "the resampler held back the end of the last buffer")
+        let tailEndMs = tail.capturedAt.uptimeMs + Double(tail.samples.count) / 16
+        #expect(abs(tailEndMs - 5310) < 0.001, "nothing new was captured, so the tail ends where the last buffer does")
+    }
+
+    /// A meeting file places each chunk at its capture time, so a steady stream must come out
+    /// stamped where its samples follow on, however much the resampler holds back per pull.
+    @Test(arguments: [512, 1024])
+    func chunksOfASteadyStreamAreStampedWhereTheirSamplesFollowOn(ioFrames: Int) throws {
+        let fixture = NoiseEndingInToneBurst(rate: 48_000, seconds: 20)
+        let format = try fixture.format()
+        let pipeline = try MicPipeline(hardware: format)
+        pipeline.start()
+        let quanta = fixture.quanta(of: ioFrames)
+        // The main-thread pump pulls every 100 ms or so, so each pull takes a few IO buffers more or less.
+        let pulls = [9, 10, 11, 10, 12, 8, 10, 9, 11].map { $0 * 512 / ioFrames }
+        var chunks: [AudioChunk] = []
+        var next = 0
+        for (index, buffers) in zip(0..., repeatElement(pulls, count: 100).joined()) where next < quanta.count {
+            for range in quanta[next..<min(next + buffers, quanta.count)] {
+                let buffer = try planarBuffer(fixture, range, format: format)
+                let capturedAtMs = 5000 + Double(range.lowerBound) / 48
+                pipeline.receive(buffer.audioBufferList, frames: range.count,
+                                 hostTime: AudioConvertNanosToHostTime(UInt64(capturedAtMs * 1_000_000)))
+            }
+            next += buffers
+            if let chunk = pipeline.pull() { chunks.append(chunk) } else { #expect(index == 0) }
+        }
+        var sampleMs = chunks[0].capturedAt.uptimeMs
+        var worst = 0.0
+        for chunk in chunks {
+            worst = max(worst, abs(chunk.capturedAt.uptimeMs - sampleMs))
+            sampleMs += Double(chunk.samples.count) / 16
+        }
+        #expect(worst < 1, "a chunk stamped \(worst) ms away from where its samples follow on")
     }
 
     @Test func interleavedHardwareFormatIsRejected() throws {

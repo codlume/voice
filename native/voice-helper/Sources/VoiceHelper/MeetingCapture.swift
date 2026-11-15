@@ -3,7 +3,7 @@ import Foundation
 import VoiceHelperCore
 
 protocol MeetingMic: AnyObject {
-    func start(sink: @escaping ([Float]) -> Void) throws(CaptureError)
+    func start(sink: @escaping (AudioChunk) -> Void) throws(CaptureError)
     func finish()
     func dispose()
 }
@@ -11,7 +11,7 @@ protocol MeetingMic: AnyObject {
 extension MicSource: MeetingMic {}
 
 protocol MeetingTap: AnyObject {
-    func start(sink: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError)
+    func start(sink: @escaping (AudioChunk) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError)
     func stop()
     var msSinceAudio: Double { get }
 }
@@ -20,10 +20,27 @@ protocol MeetingAudioWriter: AnyObject {
     var frames: Int { get }
     func append(_ samples: [Float]) throws
     func pad(to target: Int) throws
+    func synchronize() throws
     func close() throws
 }
 
 extension PcmWriter: MeetingAudioWriter {}
+
+extension MeetingAudioWriter {
+    /// Lands `samples` so the first sits at `frame`, as `MeetingTimeline.place` says. The file
+    /// stays append-only.
+    func write(_ samples: [Float], at frame: Int) throws {
+        switch MeetingTimeline.place(target: frame, written: frames, count: samples.count) {
+        case .append:
+            try append(samples)
+        case .pad(let silence):
+            try pad(to: frames + silence)
+            try append(samples)
+        case .skip(let overlap):
+            try append(Array(samples.dropFirst(overlap)))
+        }
+    }
+}
 
 /// What a leg takes from the Mac: TCC's answers, the microphone, the system tap and the files.
 /// Tests pass fakes, so none of them opens a microphone or a process tap, or asks TCC.
@@ -52,8 +69,10 @@ struct MeetingHardware {
 }
 
 /// One recording leg of a meeting: the microphone into `mic.pcm` and system audio into
-/// `system.pcm`, appended as the audio arrives. Both files share one timeline: each source opened
-/// for a leg first pads its file to the longer of the two, and stopping pads both to the same end.
+/// `system.pcm`. Both files share one timeline, the leg's clock: every chunk is written at the
+/// frame its capture time maps to, counted from `startedAt` at `startFrames`. A source that
+/// starts late, reopens or drops audio leaves silence where it recorded nothing, and stopping
+/// pads both files to the same end.
 /// Independent of dictation's capture, so dictating mid-meeting keeps working; while it runs the
 /// meeting mic records silence instead of the dictated words.
 final class MeetingCapture {
@@ -76,9 +95,13 @@ final class MeetingCapture {
     private var systemRestarts = TapRestarts()
     private var fixtures: [FileSource] = []
     private var stopped = false
-    private let startedAt = DispatchTime.now()
+    let startedAt = DispatchTime.now()
     /// Where this leg's audio starts in the files.
     private(set) var startFrames = 0
+    /// A power loss costs at most this much of the meeting.
+    private static let flushFrames = 5 * PcmFile.sampleRate
+    /// How long the files were when both were last flushed to disk.
+    private var flushedFrames = 0
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
          isCapturingDictation: @escaping () -> Bool, onFailed: @escaping (String) -> Void, onLost: @escaping (AudioLoss) -> Void,
@@ -99,6 +122,7 @@ final class MeetingCapture {
     /// without the user's voice is not one. System audio that cannot record is reported instead.
     func start() throws(CaptureError) -> (mic: MeetingSourceState, system: MeetingSourceState) {
         startFrames = max(PcmFile.frames(at: micURL), PcmFile.frames(at: systemURL))
+        flushedFrames = startFrames
         switch source {
         case .disabled:
             throw CaptureError(reason: .device, message: "meeting capture disabled in test mode; set a meeting fixture")
@@ -111,7 +135,7 @@ final class MeetingCapture {
                 fixtures.append(try fixture(systemPath, speed: speed) { [weak self] in self?.receiveSystem($0) })
                 systemState = .active
             }
-            fixtures.forEach { $0.start() }
+            fixtures.forEach { $0.start(at: startedAt) }
             return (.active, systemState)
         case .live:
             guard hardware.micAllowed() else {
@@ -161,7 +185,7 @@ final class MeetingCapture {
         }
     }
 
-    private func fixture(_ path: String, speed: Double, sink: @escaping ([Float]) -> Void) throws(CaptureError) -> FileSource {
+    private func fixture(_ path: String, speed: Double, sink: @escaping (AudioChunk) -> Void) throws(CaptureError) -> FileSource {
         do {
             return try FileSource(path: path, speed: speed, sink: sink) { [output] in output.log(.info, "meeting fixture ended \(path)") }
         } catch let error as CaptureError {
@@ -196,7 +220,6 @@ final class MeetingCapture {
         guard !stopped else { return }
         do {
             try openMic()
-            try mic?.pad(to: system?.frames ?? elapsedFrames)
             output.log(.info, "meeting microphone reopened after a device change")
         } catch {
             guard attempt < 10 else {
@@ -248,7 +271,6 @@ final class MeetingCapture {
             return lose(AudioLoss(source: .system, reason: .device))
         }
         do {
-            try system?.pad(to: elapsedFrames)
             try openSystem(openTap)
             output.log(.info, "meeting system audio restarted: \(reason)")
         } catch {
@@ -288,11 +310,6 @@ final class MeetingCapture {
         }
     }
 
-    // The files' frame for now, by the clock: a source that stalled has fewer frames than this.
-    private var elapsedFrames: Int {
-        startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
-    }
-
     private func lose(_ loss: AudioLoss) {
         guard !stopped else { return }
         output.log(.error, "meeting \(loss.source.rawValue) lost (\(loss.reason.rawValue)); the leg ends")
@@ -300,25 +317,42 @@ final class MeetingCapture {
         onLost(loss)
     }
 
-    private func receiveMic(_ chunk: [Float]) {
+    private func receiveMic(_ chunk: AudioChunk) {
         lastMicAudio = .now()
         // Dictated words belong to wherever they were inserted, not to the meeting.
-        write(isCapturingDictation() ? [Float](repeating: 0, count: chunk.count) : chunk, to: mic)
+        let samples = isCapturingDictation() ? [Float](repeating: 0, count: chunk.samples.count) : chunk.samples
+        write(samples, capturedAt: chunk.capturedAt, to: mic)
     }
 
-    private func receiveSystem(_ chunk: [Float]) {
-        write(chunk, to: system)
+    private func receiveSystem(_ chunk: AudioChunk) {
+        write(chunk.samples, capturedAt: chunk.capturedAt, to: system)
     }
 
     // Keyed on the writer, not `stopped`: `stop` flushes the sources' tails through here before
     // it closes the files.
-    private func write(_ chunk: [Float], to writer: MeetingAudioWriter?) {
+    private func write(_ samples: [Float], capturedAt: DispatchTime, to writer: MeetingAudioWriter?) {
         guard let writer else { return }
         do {
-            try writer.append(chunk)
+            try writer.write(samples, at: frame(at: capturedAt))
+            try flushIfDue()
         } catch {
             fail("Could not save meeting audio: \(error.localizedDescription)")
         }
+    }
+
+    // Both files reach the disk at one moment: mic audio that a power loss leaves without the
+    // system audio that played under it cannot be gated. System audio goes first, so a flush
+    // cut short leaves none either.
+    private func flushIfDue() throws {
+        let written = max(mic?.frames ?? 0, system?.frames ?? 0)
+        guard written - flushedFrames >= Self.flushFrames else { return }
+        try system?.synchronize()
+        try mic?.synchronize()
+        flushedFrames = written
+    }
+
+    private func frame(at time: DispatchTime) -> Int {
+        startFrames + PcmFile.frames(milliseconds: milliseconds(from: startedAt, to: time))
     }
 
     private func fail(_ message: String) {

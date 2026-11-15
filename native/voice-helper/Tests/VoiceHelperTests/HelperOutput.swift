@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Testing
 import VoiceHelperCore
+import os
 
 final class EmittedLines: @unchecked Sendable {
     let pipe = Pipe()
@@ -99,5 +100,26 @@ func spokenWords(_ text: String, in samples: [Float]) -> [TimedWord] {
     return words.enumerated().map { index, word in
         let startMs = PcmFile.milliseconds(first) + Double(index) * wordMs
         return TimedWord(text: String(word), startMs: startMs, endMs: startMs + wordMs)
+    }
+}
+
+/// A voice detector that calls a chunk a voice when it overlaps `voiced`, sample ranges of the
+/// audio it has heard since it was new. Like the real one, it is right about a stretch of the
+/// mic only after hearing all of the mic before it, once.
+struct ScriptedDetector: VoiceDetector {
+    let voiced: [Range<Int>]
+    var heard = 0
+    /// How many times any detector made from this one was asked.
+    let asked = OSAllocatedUnfairLock(initialState: 0)
+
+    func hear(_ samples: [Float]) async -> (probabilities: [Float], next: any VoiceDetector)? {
+        asked.withLock { $0 += 1 }
+        let probabilities = stride(from: 0, to: samples.count, by: 4096).map { start -> Float in
+            let chunk = heard + start..<heard + min(start + 4096, samples.count)
+            return voiced.contains { $0.overlaps(chunk) } ? 1 : 0
+        }
+        var next = self
+        next.heard += samples.count
+        return (probabilities, next)
     }
 }

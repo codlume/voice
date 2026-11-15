@@ -5,49 +5,77 @@ import os
 @testable import VoiceHelper
 
 private final class FakeMic: MeetingMic {
+    private var sink: ((AudioChunk) -> Void)?
     private(set) var running = false
 
-    func start(sink: @escaping ([Float]) -> Void) throws(CaptureError) { running = true }
+    func start(sink: @escaping (AudioChunk) -> Void) throws(CaptureError) {
+        self.sink = sink
+        running = true
+    }
+
+    func deliver(_ samples: [Float], at time: DispatchTime) {
+        sink?(AudioChunk(samples: samples, capturedAt: time))
+    }
+
     func finish() {}
     func dispose() { running = false }
 }
 
 private final class FakeTap: MeetingTap {
-    private var sink: (([Float]) -> Void)?
+    private var sink: ((AudioChunk) -> Void)?
+    private var heldFrom = DispatchTime.now()
     private(set) var formatChanged: () -> Void = {}
     private(set) var running = false
     let msSinceAudio = 0.0
 
-    func start(sink: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
+    func start(sink: @escaping (AudioChunk) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
         self.sink = sink
         formatChanged = onFormatChange
         running = true
     }
 
-    /// Hands over the audio it still holds, as `SystemAudioSource` does.
+    func deliver(_ samples: [Float], at time: DispatchTime) {
+        sink?(AudioChunk(samples: samples, capturedAt: time))
+        heldFrom = time + .nanoseconds(samples.count * 1_000_000_000 / PcmFile.sampleRate)
+    }
+
     func stop() {
         guard running else { return }
         running = false
         let deliver = sink
         sink = nil
-        deliver?([Float](repeating: 0.1, count: 1600))
+        deliver?(AudioChunk(samples: [Float](repeating: 0.1, count: 1600), capturedAt: heldFrom))
     }
 }
 
 private final class FakeWriter: MeetingAudioWriter {
-    private(set) var frames = 0
+    private(set) var samples: [Float] = []
+    /// The frames a power loss would leave.
+    private(set) var flushedFrames = 0
     var diskIsFull = false
+
+    var frames: Int { samples.count }
+    var firstLoudFrame: Int? { samples.firstIndex { abs($0) > 0.25 } }
 
     func append(_ samples: [Float]) throws {
         if diskIsFull { throw CocoaError(.fileWriteOutOfSpace) }
-        frames += samples.count
+        self.samples += samples
     }
 
     func pad(to target: Int) throws {
         if target > frames { try append([Float](repeating: 0, count: target - frames)) }
     }
 
+    func synchronize() throws {
+        flushedFrames = frames
+    }
+
     func close() throws {}
+}
+
+private extension [Float] {
+    static var quiet: [Float] { [Float](repeating: 0, count: 1600) }
+    static var marked: [Float] { [Float](repeating: 0.5, count: 1600) }
 }
 
 /// A live leg on fakes: no microphone, no process tap, no TCC, no files.
@@ -58,6 +86,7 @@ private final class Leg {
     private(set) var writers: [String: FakeWriter] = [:]
     private(set) var failures: [String] = []
     private(set) var losses: [AudioLoss] = []
+    private var micChanged: (MeetingMic) -> Void = { _ in }
     private let lines = EmittedLines()
     private let devices: AudioInputDevices
     private(set) var capture: MeetingCapture!
@@ -67,7 +96,10 @@ private final class Leg {
         devices = AudioInputDevices(output: output)
         let hardware = MeetingHardware(
             micAllowed: micAllowed, systemAllowed: systemAllowed,
-            openMic: { [mic] _, _, _ in mic },
+            openMic: { [unowned self] _, _, onChange in
+                micChanged = onChange
+                return mic
+            },
             openTap: { [unowned self] in
                 let tap = FakeTap()
                 taps.append(tap)
@@ -86,6 +118,8 @@ private final class Leg {
     }
 
     var runningTaps: Int { taps.filter(\.running).count }
+
+    func changeMicDevice() { micChanged(mic) }
 
     func end() {
         capture.stop()
@@ -124,6 +158,119 @@ private final class Leg {
         #expect(leg.losses == [AudioLoss(source: .system, reason: .device)])
         #expect(leg.runningTaps == 0)
         #expect(!leg.mic.running)
+    }
+
+    @Test func audioCapturedAtOneMomentLandsAtOneFrameInBothFiles() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<20 {
+            let at = t0 + .milliseconds(100 * k)
+            leg.mic.deliver(k == 15 ? .marked : .quiet, at: at)
+            if k >= 10 { leg.taps[0].deliver(k == 15 ? .marked : .quiet, at: at) }
+        }
+        leg.end()
+
+        let mark = PcmFile.frames(milliseconds: 1500)
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == mark)
+        #expect(leg.writers["system.pcm"]?.firstLoudFrame == mark)
+    }
+
+    @Test func aRemoteVoiceAndItsEchoInTheMicStayAsFarApartAsTheyWereCaptured() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        let heardLate = PcmFile.frames(milliseconds: 40)
+        let echo = [Float](repeating: 0, count: heardLate) + [Float](repeating: 0.5, count: 1600 - heardLate)
+        for k in 0..<220 {
+            let at = t0 + .milliseconds(100 * k)
+            leg.mic.deliver(k == 210 ? echo : .quiet, at: at)
+            if k >= 200 { leg.taps[0].deliver(k == 210 ? .marked : .quiet, at: at) }
+        }
+        leg.end()
+
+        let theirs = try #require(leg.writers["system.pcm"]?.firstLoudFrame)
+        let echoed = try #require(leg.writers["mic.pcm"]?.firstLoudFrame)
+        #expect(echoed - theirs == heardLate, "the echo gate looks for the echo -100 to +600 ms after what played")
+    }
+
+    @Test func aPowerLossLeavesBothFilesEndingWithinAPumpOfEachOther() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        // The tap's pump comes round a little slower than the mic's, so its chunks are longer.
+        let pump = (mic: 1600, tap: 1700)
+        var next = (mic: 0, tap: 0)
+        var apart = 0
+        var unsaved = 0
+        while next.mic < 60 * PcmFile.sampleRate {
+            if next.mic <= next.tap {
+                leg.mic.deliver([Float](repeating: 0, count: pump.mic), at: t0 + .nanoseconds(next.mic * 62_500))
+                next.mic += pump.mic
+            } else {
+                leg.taps[0].deliver([Float](repeating: 0, count: pump.tap), at: t0 + .nanoseconds(next.tap * 62_500))
+                next.tap += pump.tap
+            }
+            let mic = try #require(leg.writers["mic.pcm"])
+            let system = try #require(leg.writers["system.pcm"])
+            apart = max(apart, abs(mic.flushedFrames - system.flushedFrames))
+            unsaved = max(unsaved, mic.frames - mic.flushedFrames)
+        }
+        leg.end()
+
+        #expect(apart <= pump.tap, "the echo gate has system audio for all the mic audio a power loss leaves, but one pump")
+        #expect(unsaved <= 5 * PcmFile.sampleRate + pump.tap, "and a power loss costs 5 s of the meeting at most")
+    }
+
+    @Test func aMicThatReopensAfterADeviceChangeLeavesSilenceForTheTimeItWasAway() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.mic.deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        leg.changeMicDevice()
+        leg.mic.deliver(.marked, at: t0 + .seconds(3))
+        leg.end()
+
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 3000))
+    }
+
+    @Test func aRestartedTapLeavesSilenceForTheTimeItRecordedNothing() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.taps[0].deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        leg.taps[0].formatChanged()
+        leg.taps[1].deliver(.marked, at: t0 + .seconds(3))
+        leg.end()
+
+        #expect(leg.writers["system.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 3000))
+    }
+
+    @Test func audioAfterADropLandsWhereItWasCaptured() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        leg.mic.deliver([Float](repeating: 0, count: 10 * PcmFile.sampleRate), at: t0)
+        leg.mic.deliver(.marked, at: t0 + .seconds(20))
+        leg.end()
+
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 20_000))
+    }
+
+    @Test func aChunkStampedLongBeforeTheFilesEndIsKeptWhole() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.mic.deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        leg.mic.deliver(.marked, at: t0 + .milliseconds(500))
+        leg.end()
+
+        let mic = try #require(leg.writers["mic.pcm"])
+        #expect(mic.firstLoudFrame == PcmFile.frames(milliseconds: 1000))
+        #expect(mic.samples.filter { $0 > 0.25 }.count == 1600)
     }
 
     @Test func theWatchAsksTCCOffMainAndARevokedMicrophoneStillEndsTheLeg() async throws {

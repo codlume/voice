@@ -16,7 +16,7 @@ final class SystemAudioSource: MeetingTap {
     private let description: CATapDescription
     private let pipeline: MicPipeline
     private var pump: DispatchSourceTimer?
-    private var sink: (([Float]) -> Void)?
+    private var sink: ((AudioChunk) -> Void)?
     private var processListener: AudioObjectPropertyListenerBlock?
     private var formatListener: AudioObjectPropertyListenerBlock?
     private let sampleRate: Double
@@ -52,8 +52,9 @@ final class SystemAudioSource: MeetingTap {
         }
         let pipeline = pipeline
         guard AudioHardwareCreateAggregateDevice(config as CFDictionary, &aggregate) == noErr,
-              AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, nil, { _, input, _, _, _ in
-                  pipeline.receive(input, frames: Int(input.pointee.mBuffers.mDataByteSize) / MemoryLayout<Float>.size)
+              AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, nil, { _, input, inputTime, _, _ in
+                  pipeline.receive(input, frames: Int(input.pointee.mBuffers.mDataByteSize) / MemoryLayout<Float>.size,
+                                   hostTime: inputTime.pointee.hostTimeOrNow)
               }) == noErr
         else {
             Self.destroy(tap: tap, aggregate: aggregate)
@@ -65,7 +66,7 @@ final class SystemAudioSource: MeetingTap {
     /// `onFormatChange` runs on main when the tap's sample rate changes, as when Bluetooth
     /// headphones switch to their headset mode; the converter is built for one rate, so the
     /// source has to be recreated.
-    func start(sink deliver: @escaping ([Float]) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
+    func start(sink deliver: @escaping (AudioChunk) -> Void, onFormatChange: @escaping () -> Void) throws(CaptureError) {
         pipeline.start()
         sink = deliver
         lastAudio = .now()
@@ -78,8 +79,7 @@ final class SystemAudioSource: MeetingTap {
         pump.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
         pump.setEventHandler { [weak self] in
             guard let self else { return }
-            let chunk = pipeline.pull()
-            guard !chunk.isEmpty else { return }
+            guard let chunk = pipeline.pull() else { return }
             lastAudio = .now()
             sink?(chunk)
         }
@@ -108,8 +108,7 @@ final class SystemAudioSource: MeetingTap {
             AudioDeviceDestroyIOProcID(aggregate, ioProc)
         }
         ioProc = nil
-        let tail = pipeline.finish()
-        if !tail.isEmpty { sink?(tail) }
+        if let tail = pipeline.finish() { sink?(tail) }
         sink = nil
         if let processListener {
             var address = propertyAddress(kAudioHardwarePropertyProcessObjectList)

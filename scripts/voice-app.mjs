@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   modelsDir,
   prepareAsr,
+  prepareVoiceDetector,
   prepareSpeakerModels,
   withHelper,
 } from "../native/voice-helper/scripts/helper.mjs";
@@ -261,7 +262,13 @@ export function signalGroup(pid, signal) {
   } catch {}
 }
 
-export const modelFiles = { asr: "parakeet-tdt-0.6b-v3", cleanup: S1_MINI_FILE };
+// `voice` is the voice detector's folder. A meeting without it transcribes every sound on the mic,
+// so a run that lacked it would pass for the wrong reason.
+export const modelFiles = {
+  asr: "parakeet-tdt-0.6b-v3",
+  voice: "silero-vad-coreml",
+  cleanup: S1_MINI_FILE,
+};
 // `speakers` is the offline diarizer's folder (FluidAudio's `Repo.diarizer.folderName`), absent below macOS 15.
 export const optionalModelFiles = {
   transform: GEMMA_4_E2B.file,
@@ -289,6 +296,7 @@ export async function prepareUserData(name) {
       downloadModel({ dir: cache, source: S1_MINI }),
       withHelper({ env: smokeEnvironment(userData) }, async (helper) => {
         await prepareAsr(helper, { download: true });
+        await prepareVoiceDetector(helper);
         await prepareSpeakerModels(helper);
       }),
     ]);

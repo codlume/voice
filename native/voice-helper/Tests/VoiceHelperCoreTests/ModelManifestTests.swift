@@ -4,11 +4,12 @@ import Testing
 
 struct ModelManifestTests {
     @Test func theShippedReleasesHaveTheAuditedShape() {
-        let expected: [String: (files: Int, bytes: Int64, folder: String)] = [
-            "parakeetV3": (21, 483_105_645, "parakeet-tdt-0.6b-v3"),
-            "diarizer": (21, 21_599_417, "speaker-diarization"),
+        let expected: [String: (files: Int, bytes: Int64, folder: String, bundles: Int)] = [
+            "parakeetV3": (21, 483_105_645, "parakeet-tdt-0.6b-v3", 4),
+            "diarizer": (21, 21_599_417, "speaker-diarization", 4),
+            "voiceDetector": (5, 1_063_425, "silero-vad-coreml", 1),
         ]
-        #expect(ModelManifest.all.map(\.id) == ["parakeetV3", "diarizer"])
+        #expect(ModelManifest.all.map(\.id) == ["parakeetV3", "diarizer", "voiceDetector"])
         for release in ModelManifest.all {
             let shape = expected[release.id]!
             #expect(release.invalidEntry == nil, Comment(rawValue: release.id))
@@ -26,7 +27,7 @@ struct ModelManifestTests {
                 #expect(ModelPath.isValid(file.path), Comment(rawValue: file.path))
             }
             let bundles = Dictionary(grouping: paths.filter { $0.contains("/") }) { $0.split(separator: "/").first! }
-            #expect(bundles.count == 4, Comment(rawValue: "\(release.id) bundles"))
+            #expect(bundles.count == shape.bundles, Comment(rawValue: "\(release.id) bundles"))
             for (bundle, members) in bundles {
                 #expect(bundle.hasSuffix(".mlmodelc"))
                 #expect(members.map { $0.dropFirst(bundle.count + 1) }.sorted() == ["analytics/coremldata.bin", "coremldata.bin", "metadata.json", "model.mil", "weights/weight.bin"], Comment(rawValue: "\(release.id)/\(bundle)"))

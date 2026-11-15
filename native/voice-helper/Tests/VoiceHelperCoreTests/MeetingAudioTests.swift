@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import VoiceHelperCore
 
@@ -169,6 +170,37 @@ private func silence(seconds: Double) -> [Float] {
     }
 }
 
+@Suite struct MeetingTimelineTests {
+    private let written = 16_000
+    private let slack = MeetingTimeline.slack
+
+    private func place(ahead: Int, count: Int = 1600) -> MeetingTimeline.Placement {
+        MeetingTimeline.place(target: written + ahead, written: written, count: count)
+    }
+
+    @Test func aChunkWithin20MsOfTheFilesEndFollowsIt() {
+        #expect(slack == 320)
+        #expect([-slack, -1, 0, 1, slack].map { place(ahead: $0) } == [.append, .append, .append, .append, .append])
+        #expect(MeetingTimeline.place(target: 0, written: 0, count: 1600) == .append)
+    }
+
+    @Test func aChunkCapturedAfterAGapGetsSilenceForTheGap() {
+        #expect(place(ahead: slack + 1) == .pad(silence: slack + 1))
+        #expect(MeetingTimeline.place(target: 320_000, written: 0, count: 1600) == .pad(silence: 320_000))
+    }
+
+    @Test func aChunkFromAFastClockLosesWhatTheFileAlreadyHolds() {
+        #expect(place(ahead: -(slack + 1)) == .skip(slack + 1))
+        #expect(place(ahead: -3200, count: 4800) == .skip(3200), "200 ms is the longest slip")
+        #expect(place(ahead: -3200, count: 1600) == .skip(1600), "never more than the chunk")
+    }
+
+    @Test func aChunkStampedMoreThan200MsBehindIsKeptWhole() {
+        #expect(place(ahead: -3201) == .append)
+        #expect(place(ahead: -160_000) == .append)
+    }
+}
+
 @MainActor
 @Suite struct MeetingSourceHeardTests {
     @Test func theModelHearsSystemAudioAsRecordedAndTheMicWithoutTheEcho() async throws {
@@ -197,5 +229,113 @@ private func silence(seconds: Double) -> [Float] {
         try writer.close()
         let mic = try await MeetingSource.mic.heard(in: dir, offset: 0, count: 16_000)
         #expect(mic == (try PcmFile.read(at: MeetingSource.mic.file(in: dir), offset: 0, count: 16_000)))
+    }
+}
+
+/// A voice detector that scores each chunk by where the chunk lies in the audio it has heard
+/// since it was new: the highest score of the stretches it overlaps, else 0. Like the real
+/// one, it is right about a stretch only after hearing everything before it, once.
+private struct ScriptedDetector: VoiceDetector {
+    var scores: [(samples: Range<Int>, probability: Float)] = []
+    var cannotTell = false
+    var heard = 0
+    var asked: (@Sendable () -> Void)?
+
+    func hear(_ samples: [Float]) async -> (probabilities: [Float], next: any VoiceDetector)? {
+        asked?()
+        if cannotTell { return nil }
+        let probabilities = stride(from: 0, to: samples.count, by: 4096).map { start in
+            let chunk = heard + start..<heard + min(start + 4096, samples.count)
+            return scores.filter { $0.samples.overlaps(chunk) }.map(\.probability).max() ?? 0
+        }
+        var next = self
+        next.heard += samples.count
+        return (probabilities, next)
+    }
+}
+
+@Suite struct MeetingListenTests {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-listen-\(UUID().uuidString)")
+
+    private func write(_ samples: [Float], _ source: MeetingSource = .mic) throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let writer = try PcmWriter(url: source.file(in: dir))
+        try writer.append(samples)
+        try writer.close()
+    }
+
+    /// A sound at 1 s and another at 5 s, half a second each.
+    private let twoSounds = silence(seconds: 1) + tone(seconds: 0.5) + silence(seconds: 3.5) + tone(seconds: 0.5) + silence(seconds: 1)
+    private let first = 16_000..<24_000
+    private let second = 80_000..<88_000
+
+    @Test func onlyTheMicSoundAChunkScoresNineTenthsOrMoreIsDecoded() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(twoSounds)
+        let detector = ScriptedDetector(scores: [(first, 0.9), (second, 0.899)])
+        let heard = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 104_000, detector: detector)
+        #expect(heard.runs == [first])
+        #expect(heard.speech == first)
+        #expect(heard.samples.count == 104_000, "the audio itself is whole")
+    }
+
+    /// The sound starts at 102 400 samples, where the detector's 25th chunk ends, and lasts
+    /// 8000: it lies in the 26th chunk and the 27th.
+    @Test(arguments: [(chunk: 24, kept: false), (chunk: 25, kept: true), (chunk: 26, kept: true), (chunk: 27, kept: false)])
+    func aSoundIsKeptWholeWhenAVoicedChunkOverlapsItAndDroppedWhenOneOnlyTouchesIt(chunk: Int, kept: Bool) async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(silence(seconds: 6.4) + tone(seconds: 0.5) + silence(seconds: 1))
+        let detector = ScriptedDetector(scores: [(chunk * 4096..<(chunk + 1) * 4096, 1)])
+        let heard = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 126_400, detector: detector)
+        #expect(heard.runs == (kept ? [102_400..<110_400] : []))
+    }
+
+    @Test func theDetectorItReturnsHasHeardTheStretchAndTheOneItWasGivenHasNot() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(twoSounds)
+        // Only the first sound is a voice. A detector that took the second stretch for the
+        // start of the mic would hear the second sound where the first one is.
+        let new = ScriptedDetector(scores: [(first, 1)])
+        let start = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 64_000, detector: new)
+        #expect(start.runs == [first])
+        let rest = try await MeetingSource.mic.listen(in: dir, offset: 64_000, count: 40_000, detector: start.detector)
+        #expect(rest.runs == [])
+        let again = try await MeetingSource.mic.listen(in: dir, offset: 64_000, count: 40_000, detector: start.detector)
+        #expect(again.runs == [], "hearing a stretch again from the same detector gives the same answer")
+        let startAgain = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 64_000, detector: new)
+        #expect(startAgain.runs == [first], "the detector it was given is as it was")
+    }
+
+    @Test func systemAudioIsNeverPutToTheDetector() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let asked = OSAllocatedUnfairLock(initialState: 0)
+        let deaf = ScriptedDetector(asked: { asked.withLock { $0 += 1 } })
+        try write(twoSounds, .system)
+        let system = try await MeetingSource.system.listen(in: dir, offset: 0, count: 104_000, detector: deaf)
+        #expect(system.runs == [first, second])
+        #expect(system.detector == nil)
+        #expect(asked.withLock { $0 } == 0)
+
+        try FileManager.default.removeItem(at: MeetingSource.system.file(in: dir))
+        try write(twoSounds, .mic)
+        let mic = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 104_000, detector: deaf)
+        #expect(mic.runs == [], "the same detector hears no voice in the same sound on the mic")
+        #expect(asked.withLock { $0 } == 1)
+    }
+
+    @Test func withoutADetectorEveryMicSoundIsDecoded() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(twoSounds)
+        let heard = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 104_000, detector: nil)
+        #expect(heard.runs == [first, second])
+        #expect(heard.detector == nil)
+    }
+
+    @Test func aDetectorThatCannotTellLosesNoSoundAndIsNotPassedOn() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write(twoSounds)
+        let heard = try await MeetingSource.mic.listen(in: dir, offset: 0, count: 104_000, detector: ScriptedDetector(cannotTell: true))
+        #expect(heard.runs == [first, second])
+        #expect(heard.detector == nil, "the next stretch starts a detector afresh")
     }
 }

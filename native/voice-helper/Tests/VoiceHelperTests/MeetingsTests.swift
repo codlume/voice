@@ -45,7 +45,8 @@ private final class Harness {
     var meetings: Meetings!
 
     /// `micHearsTheSpeakers`: the user is quiet while the other side talks, and the mic hears them.
-    init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false) throws {
+    init(system: Bool = true, speed: Double = 16, micHearsTheSpeakers: Bool = false,
+         newDetector: @escaping MeetingTranscription.NewDetector = { nil }) throws {
         output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         devices = AudioInputDevices(output: output)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -61,7 +62,8 @@ private final class Harness {
                 let peak = samples.map(abs).max() ?? 0
                 return spokenWords(peak > 0.2 ? "mine \(decodes)" : "theirs \(decodes)", in: samples)
             },
-            finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false }),
+            newDetector: newDetector,
+            finalPass: MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false }),
             isDictating: { [unowned self] in dictating }, isCapturingDictation: { [unowned self] in capturingDictation })
     }
 
@@ -176,6 +178,17 @@ struct MeetingsTests {
         #expect(h.segments() == ["mic@0-2500", "system@3500-6000"])
     }
 
+    @Test func whatTheVoiceDetectorHearsNoVoiceInNeverShowsAsTheUser() async throws {
+        // The detector hears a voice in the user's first turn and none in the second.
+        let h = try Harness(newDetector: { ScriptedDetector(voiced: [0..<40_000]) })
+        defer { h.meetings.shutdown(); h.devices.shutdown() }
+        h.start()
+        try await h.waitForFixtures(count: 2)
+        h.meetings.stop(id: "m1")
+        try await h.waitForDrained()
+        #expect(h.segments() == ["mic@0-2500", "system@3500-6000"])
+    }
+
     @Test func dictationSilencesTheMeetingMicAndHoldsMeetingDecodes() async throws {
         let h = try Harness()
         defer { h.meetings.shutdown(); h.devices.shutdown() }
@@ -255,8 +268,9 @@ struct MeetingsTests {
         let output = Output(fd: lines.pipe.fileHandleForWriting.fileDescriptor)
         let devices = AudioInputDevices(output: output)
         defer { devices.shutdown() }
-        let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, isDictating: { false })
-        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in [] }, finalPass: finalPass,
+        let finalPass = MeetingFinalPass(output: output, decode: { _, _ in [] }, diarize: { _ in nil }, newDetector: { nil }, isDictating: { false })
+        let meetings = Meetings(output: output, devices: devices, source: .disabled, decode: { _, _ in [] }, newDetector: { nil },
+                                finalPass: finalPass,
                                 isDictating: { false }, isCapturingDictation: { false })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voice-meetings-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -215,6 +215,95 @@ const longMeeting = {
   echo: "meeting-pl-long-mic-laptop.wav",
 };
 
+// A meeting where the user says nothing and the mic hears a footstep, a knock on the desk or
+// something dragged, every few seconds over a quiet room. The speech model answers such a sound
+// with a filler word ("Yeah.") when it decodes the sound on its own. The turns file is empty, so
+// every word on the mic is a stray one. The first sound comes after ten seconds: a voice detector
+// that has heard nothing yet takes a lone knock for a voice.
+const knocks = { prefix: "meeting-knocks", seconds: 60 };
+
+/** A 16 kHz mono 16-bit WAV of `samples`. */
+function wav(samples) {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + samples.length * 2, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(16000, 24);
+  header.writeUInt32LE(32000, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(samples.length * 2, 40);
+  const pcm = Int16Array.from(samples, (sample) =>
+    Math.max(-32768, Math.min(32767, Math.round(sample * 32768))),
+  );
+  return Buffer.concat([header, Buffer.from(pcm.buffer)]);
+}
+
+// Seeded, so every run generates the same samples.
+function generateKnocks({ prefix, seconds }) {
+  const rate = 16000;
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32 - 0.5;
+  };
+  const samples = new Float64Array(rate * seconds);
+  let roomTone = 0;
+  for (let i = 0; i < samples.length; i++) {
+    roomTone += 0.05 * (random() - roomTone);
+    samples[i] = 0.024 * roomTone;
+  }
+  const add = (at, length, sound) => {
+    const start = Math.round(at * rate);
+    for (let i = 0; i < length * rate && start + i < samples.length; i++)
+      samples[start + i] = (samples[start + i] ?? 0) + sound(i / rate);
+  };
+  // A low tone that dies in 80 ms, with a click where the foot lands.
+  const footstep = (at, level) => {
+    const hz = 70 + 80 * (random() + 0.5);
+    add(
+      at,
+      0.4,
+      (t) =>
+        level *
+        (Math.sin(2 * Math.PI * hz * t) * Math.exp(-t / 0.08) +
+          0.6 * random() * Math.exp(-t / 0.006)),
+    );
+  };
+  // Two or three raps, each a band of noise that dies in 25 ms.
+  const knock = (at, level, raps) => {
+    for (let rap = 0; rap < raps; rap++) {
+      let band = 0;
+      let previous = 0;
+      add(at + 0.16 * rap, 0.15, (t) => {
+        band += 0.25 * (random() - band);
+        const edge = band - previous;
+        previous = band;
+        return level * 6 * edge * Math.exp(-t / 0.025);
+      });
+    }
+  };
+  // A stretch of noise with soft edges.
+  const drag = (at, level) => {
+    const length = 0.15 + 0.2 * (random() + 0.5);
+    add(at, length, (t) => level * random() * Math.min(1, t / 0.01, (length - t) / 0.05));
+  };
+  let at = 10;
+  for (let sound = 0; at < seconds - 3; sound++) {
+    const level = 0.16 + 0.5 * (random() + 0.5);
+    if (sound % 3 === 0) footstep(at, level);
+    else if (sound % 3 === 1) knock(at, level, 2 + (sound % 2));
+    else drag(at, 0.6 * level);
+    at += 2.5 + 3 * (random() + 0.5);
+  }
+  writeFileSync(join(fixturesDir, `${prefix}-mic.wav`), wav(samples));
+  writeFileSync(join(fixturesDir, `${prefix}-turns.json`), "[]\n");
+}
+
 // What a MacBook Pro microphone hears from its own speakers at 60% volume, measured with a
 // played Polish meeting: the speech comes back 18.5 dB down, tilted toward 2.5-5 kHz, with a
 // strong direct path, a room tail and distortion 16.5 dB below the echo that no linear filter
@@ -468,6 +557,11 @@ export function ensureFixtures() {
   if (names.some(missing)) {
     generateLongMeeting(longMeeting);
     console.log(`generated ${names.join(", ")} in ${fixturesDir}`);
+  }
+  const knockNames = [`${knocks.prefix}-mic.wav`, `${knocks.prefix}-turns.json`];
+  if (knockNames.some(missing)) {
+    generateKnocks(knocks);
+    console.log(`generated ${knockNames.join(", ")} in ${fixturesDir}`);
   }
   writeFileSync(stamp, generator);
 }

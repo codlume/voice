@@ -28,6 +28,11 @@ struct ModelIntegrityTests {
         #expect(diarizer.repository == Repo.diarizer.rawValue)
         #expect(diarizer.revision == Repo.diarizer.revision, "the marker Voice writes must be the revision FluidAudio's loader checks")
         #expect(diarizer.marker == ".fluidaudio-revision")
+
+        let detector = ModelManifest.voiceDetector
+        #expect(detector.files.contains { $0.path == "\(ModelNames.VAD.sileroVadFile)/coremldata.bin" }, "the model Voice loads is the one this FluidAudio runs")
+        #expect(detector.repository == Repo.vad.rawValue)
+        #expect(VadManager.chunkSize == VoiceActivity.chunkSamples, "the rule and the model cut the audio into the same chunks")
     }
 
     @Test @MainActor func anEmptyModelsDirIsMissing() async throws {
@@ -92,6 +97,9 @@ struct ModelIntegrityTests {
         #expect(ModelHub.offlineMode)
         ModelHub.offlineMode = false
         _ = SpeakerDiarizer(modelsDir: dir, output: output)
+        #expect(ModelHub.offlineMode)
+        ModelHub.offlineMode = false
+        _ = VoiceDetection(modelsDir: dir, output: output)
         #expect(ModelHub.offlineMode)
     }
 

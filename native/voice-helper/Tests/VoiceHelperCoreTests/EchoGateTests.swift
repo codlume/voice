@@ -8,7 +8,7 @@ private let rate = 16_000
 /// A voice-like signal from `start` to `end` seconds of a `seconds`-long track: a harmonic
 /// series on a gliding pitch, in syllables or held steady, with a timbre fixed by `seed`.
 /// Built with Accelerate because a debug build of the per-sample loop slowed CI's test run.
-private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true) -> [Float] {
+private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true, harmonics: Int = 14) -> [Float] {
     let count = Int(seconds * Double(rate))
     let twoPi = 2 * Float.pi
     let t = vDSP.multiply(1 / Float(rate), vDSP.ramp(withInitialValue: Float(0), increment: 1, count: count))
@@ -16,7 +16,7 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
     var phase = vDSP.multiply(twoPi * pitch / Float(rate), glide)
     for n in phase.indices.dropFirst() { phase[n] += phase[n - 1] }
     var tone = [Float](repeating: 0, count: count)
-    for k in 1...14 {
+    for k in 1...harmonics {
         let harmonic = Float(k)
         let timbre: Float = 1 + 0.6 * sin(harmonic * seed)
         tone = vDSP.add(tone, vDSP.multiply(timbre / harmonic, vForce.sin(vDSP.multiply(harmonic, phase))))
@@ -34,9 +34,11 @@ private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = 
 
 /// What the mic hears of `played`: `lagMs` later, the direct path at `gain` (18 dB down on a
 /// laptop), with a short room tail.
-private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 0.12) -> [Float] {
+private func throughTheSpeakers(
+    _ played: [Float], lagMs: Double, gain: Float = 0.12,
+    taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
+) -> [Float] {
     let lag = Int(lagMs * Double(rate) / 1000)
-    let taps: [(delay: Int, gain: Float)] = [(0, 1), (48, 1 / 3), (160, -5 / 24), (900, 1 / 12)]
     var out = [Float](repeating: 0, count: played.count)
     for tap in taps {
         let shift = lag + tap.delay
@@ -46,6 +48,53 @@ private func throughTheSpeakers(_ played: [Float], lagMs: Double, gain: Float = 
         guard length > 0 else { continue }
         let echoed = vDSP.multiply(gain * tap.gain, played[source..<source + length])
         out.replaceSubrange(from..<from + length, with: vDSP.add(out[from..<from + length], echoed))
+    }
+    return out
+}
+
+/// What a MacBook Air's microphone hears of `played` from its own speakers, built from one
+/// measured at half volume. The echo comes back 11 dB down: against that, level with it under
+/// 500 Hz, 2 dB over to 1 kHz, 3.7 dB under to 2 kHz, 8 dB under to 4 kHz and 2.5 dB over above.
+/// 69% of it is the direct sound, 12% follows within 4 ms, 14% within 16 ms and 4% later. The
+/// speakers' distortion, a soft clip here, sits 23 dB under it (21 dB measured).
+private func throughAMacBookAir(_ played: [Float], lagMs: Double) -> [Float] {
+    let bands: [(from: Float, to: Float, decibels: Float)] = [(50, 500, -0.3), (500, 1000, 2), (1000, 2000, -3.7), (2000, 4000, -8), (4000, 8000, 2.5)]
+    let reach = 127
+    let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: 2 * reach + 1, isHalfWindow: false)
+    let colour = (-reach...reach).map { n -> Float in
+        bands.reduce(0) { sum, band in
+            let (low, high) = (2 * band.from / Float(rate), 2 * band.to / Float(rate))
+            let pass = n == 0 ? high - low : (sin(.pi * high * Float(n)) - sin(.pi * low * Float(n))) / (.pi * Float(n))
+            return sum + pow(10, band.decibels / 20) * pass * window[n + reach]
+        }
+    }
+    let drive: Float = 1.2
+    let distorted = vDSP.divide(vForce.tanh(vDSP.multiply(drive, played)), drive)
+    let pad = [Float](repeating: 0, count: reach + 1)
+    let coloured = Array(vDSP.convolve(pad + distorted + pad, withKernel: colour).prefix(played.count))
+    let reflections: [(delay: Int, gain: Float)] = [(0, 1), (24, 0.3), (52, -0.29), (90, 0.27), (150, -0.26), (215, 0.25), (400, 0.18), (720, -0.17)]
+    return throughTheSpeakers(coloured, lagMs: lagMs, gain: pow(10, -10.8 / 20), taps: reflections)
+}
+
+private func loudness(of signal: [Float], reach: Int = 160) -> [Float] {
+    let padded = [Float](repeating: 0, count: reach) + vDSP.square(signal) + [Float](repeating: 0, count: reach + 1)
+    let meanSquare = vDSP.convolve(padded, withKernel: [Float](repeating: 1 / Float(2 * reach + 1), count: 2 * reach + 1))
+    return vForce.sqrt(Array(meanSquare.prefix(signal.count)))
+}
+
+private func buzz(of echo: [Float], decibels: Float, hz: Float = 2500) -> [Float] {
+    let phase = vDSP.ramp(withInitialValue: Float(0), increment: 2 * .pi * hz / Float(rate), count: echo.count)
+    let sineRms = 1 / sqrt(Float(2))
+    return vDSP.multiply(pow(10, decibels / 20) / sineRms, vDSP.multiply(loudness(of: echo), vForce.sin(phase)))
+}
+
+/// A faint sound 15 ms before each syllable the mic hears of `played` at `lagMs`, 25 dB under its
+/// echo: on a MacBook Air the mic heard one ahead of most words the other side said.
+private func ticks(before played: [Float], lagMs: Double) -> [Float] {
+    var out = [Float](repeating: 0, count: played.count)
+    let lead = Int((lagMs - 15) * Double(rate) / 1000)
+    for at in 1..<played.count where played[at - 1] == 0 && played[at] != 0 && at + lead >= 0 && at + lead + 80 < out.count {
+        for i in 0..<80 { out[at + lead + i] = 0.006 * sin(Float(i) * 0.9) }
     }
     return out
 }
@@ -114,6 +163,40 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         #expect(decibels(energy(gated[...]), over: energy(echo[...])) < -20)
     }
 
+    @Test func theOtherSideThroughAMacBookAirsOwnSpeakersLeavesNothingToTranscribe() {
+        let system = voice(8, pitch: 120, seed: 1, level: 0.5, harmonics: 58)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "nothing is loud enough to be decoded as the user's words")
+        #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
+    }
+
+    @Test func speakersThatBuzzWhereNothingPlayedLeaveNothingToTranscribe() {
+        let system = voice(8, pitch: 110, seed: 1, level: 0.5)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let gated = EchoGate.gate(mic: add(echo, buzz(of: echo, decibels: -10.5), roomNoise(8)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "the buzz is the other side's, not the user's words")
+    }
+
+    @Test func aFaintSoundJustBeforeTheOtherSidesWordsLetsNoneOfTheirEchoThrough() {
+        let system = voice(8, pitch: 110, seed: 1, level: 0.5)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let faint = ticks(before: system, lagMs: 120)
+        #expect(MeetingChunker.speech(in: add(faint, roomNoise(8))) == nil, "the faint sounds alone are no speech")
+        #expect(MeetingChunker.speech(in: EchoGate.gate(mic: add(echo, buzz(of: echo, decibels: -15), roomNoise(8)), system: system)) == nil)
+        let mic = add(echo, buzz(of: echo, decibels: -15), faint, roomNoise(8))
+        let gated = EchoGate.gate(mic: mic, system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "a sound far quieter than the echo beside it is no voice to keep that echo for")
+    }
+
+    @Test(arguments: [-50.0, 120, 300, 550])
+    func aVoiceThatLeavesMostOfTheBandUnplayedLeavesNothingToTranscribe(lagMs: Double) {
+        // Fourteen harmonics of 110 Hz: nothing plays above 1.8 kHz, as on a narrowband call.
+        let system = voice(22, pitch: 110, seed: 1)
+        let gated = EchoGate.gate(mic: add(throughAMacBookAir(system, lagMs: lagMs), roomNoise(22)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "nothing is loud enough to be decoded as the user's words")
+    }
+
     @Test func theUsersVoiceOverTheOtherSideStaysAndOnlyTheirEchoGoes() {
         let system = voice(10, pitch: 120, seed: 1)
         let echo = throughTheSpeakers(system, lagMs: 120)
@@ -162,19 +245,28 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         #expect(EchoGate.gate(mic: mic, system: [Float](repeating: 0, count: mic.count)) == mic)
     }
 
-    @Test func theEchoStaysMutedWhenItsLagMovesMidCall() throws {
+    @Test(arguments: [(80.0, 300.0), (300.0, 80.0)])
+    func theEchoStaysMutedWhenItsLagMovesMidCall(from: Double, to: Double) throws {
         let dir = try meetingDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let system = voice(28, pitch: 120, seed: 1)
-        let moveAt = EchoGate.blockSamples
-        let echo = zip(throughTheSpeakers(system, lagMs: 80), throughTheSpeakers(system, lagMs: 300)).enumerated()
-            .map { $0.offset < moveAt ? $0.element.0 : $0.element.1 }
-        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(28)), system: system, in: dir)
-        let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
-        let before = 1.0...13.0
-        let after = Double(moveAt) / Double(rate) + 1...27.0
-        #expect(decibels(energy(seconds(gated, before)), over: energy(seconds(echo, before))) < -20)
-        #expect(decibels(energy(seconds(gated, after)), over: energy(seconds(echo, after))) < -20, "a block after the move, the gate has the new lag")
+        let system = voice(30, pitch: 120, seed: 1, level: 0.5, harmonics: 58)
+        // As when the sound moves to another output device, partway through a gate block.
+        let moveAt = 20 * rate + 5000
+        let echo = Array(throughAMacBookAir(system, lagMs: from).prefix(moveAt)) + throughAMacBookAir(system, lagMs: to).dropFirst(moveAt)
+        let mic = add(echo, roomNoise(30))
+
+        let whole = try record(mic: mic, system: system, in: dir)
+        let final = try EchoGate.read(mic: whole.mic, system: whole.system, offset: 0, count: mic.count)
+        #expect(MeetingChunker.speech(in: final) == nil, "the final pass hears nothing on either side of the move")
+
+        // A live window is gated when the files end with it: one the move falls in, and the next.
+        for start in [moveAt - 3 * rate / 2, moveAt + 3 * rate / 2] {
+            let end = start + 3 * rate
+            for url in [whole.mic, whole.system] { try FileManager.default.removeItem(at: url) }
+            let live = try record(mic: Array(mic.prefix(end)), system: Array(system.prefix(end)), in: dir)
+            let window = try EchoGate.read(mic: live.mic, system: live.system, offset: start, count: 3 * rate)
+            #expect(MeetingChunker.speech(in: window) == nil, "the live window \(Double(start - moveAt) / Double(rate)) s after the move")
+        }
     }
 
     @Test func readsAWindowGatedWithTheAudioBeforeItAndAsRecordedWithoutASystemFile() throws {
