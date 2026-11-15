@@ -691,7 +691,7 @@ final class MicSource {
 
 /// Plays a test fixture in 100 ms ticks; `speed` above 1 delivers that many ticks' audio per tick.
 /// Each chunk is stamped in fixture time, its offset into the file after the start, not when the
-/// tick ran.
+/// tick ran, so two fixtures started at one time stay aligned at any `speed`.
 final class FileSource {
     private let samples: [Float]
     private let framesPerTick: Int
@@ -712,8 +712,8 @@ final class FileSource {
         self.onEnd = onEnd
     }
 
-    func start() {
-        startedAt = .now()
+    func start(at time: DispatchTime = .now()) {
+        startedAt = time
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now(), repeating: 0.1)
         timer.setEventHandler { [weak self] in self?.tick() }

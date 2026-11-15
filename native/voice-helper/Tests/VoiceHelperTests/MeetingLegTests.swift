@@ -82,6 +82,7 @@ private final class Leg {
     private(set) var writers: [String: FakeWriter] = [:]
     private(set) var failures: [String] = []
     private(set) var losses: [AudioLoss] = []
+    private var micChanged: (MeetingMic) -> Void = { _ in }
     private let lines = EmittedLines()
     private let devices: AudioInputDevices
     private(set) var capture: MeetingCapture!
@@ -91,7 +92,10 @@ private final class Leg {
         devices = AudioInputDevices(output: output)
         let hardware = MeetingHardware(
             micAllowed: micAllowed, systemAllowed: systemAllowed,
-            openMic: { [mic] _, _, _ in mic },
+            openMic: { [unowned self] _, _, onChange in
+                micChanged = onChange
+                return mic
+            },
             openTap: { [unowned self] in
                 let tap = FakeTap()
                 taps.append(tap)
@@ -110,6 +114,8 @@ private final class Leg {
     }
 
     var runningTaps: Int { taps.filter(\.running).count }
+
+    func changeMicDevice() { micChanged(mic) }
 
     func end() {
         capture.stop()
@@ -186,6 +192,60 @@ private final class Leg {
         let theirs = try #require(leg.writers["system.pcm"]?.firstLoudFrame)
         let echoed = try #require(leg.writers["mic.pcm"]?.firstLoudFrame)
         #expect(echoed - theirs == heardLate, "the echo gate looks for the echo -100 to +600 ms after what played")
+    }
+
+    @Test func aMicThatReopensAfterADeviceChangeLeavesSilenceForTheTimeItWasAway() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.mic.deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        leg.changeMicDevice()
+        leg.mic.deliver(.marked, at: t0 + .seconds(3))
+        leg.end()
+
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 3000))
+    }
+
+    @Test func aRestartedTapLeavesSilenceForTheTimeItRecordedNothing() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.taps[0].deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        leg.taps[0].formatChanged()
+        leg.taps[1].deliver(.marked, at: t0 + .seconds(3))
+        leg.end()
+
+        #expect(leg.writers["system.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 3000))
+    }
+
+    @Test func audioAfterADropLandsWhereItWasCaptured() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        // Main stalls for 20 s. The mic's pipeline keeps the first 10 s of it and drops the rest,
+        // so the next chunk starts 10 s after the last one ended.
+        leg.mic.deliver([Float](repeating: 0, count: 10 * PcmFile.sampleRate), at: t0)
+        leg.mic.deliver(.marked, at: t0 + .seconds(20))
+        leg.end()
+
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == PcmFile.frames(milliseconds: 20_000))
+    }
+
+    @Test func aChunkStampedLongBeforeTheFilesEndIsKeptWhole() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        for k in 0..<10 { leg.mic.deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
+
+        // Half a second behind is no clock drift. The timestamp is wrong, and the audio is the user's.
+        leg.mic.deliver(.marked, at: t0 + .milliseconds(500))
+        leg.end()
+
+        let mic = try #require(leg.writers["mic.pcm"])
+        #expect(mic.firstLoudFrame == PcmFile.frames(milliseconds: 1000))
+        #expect(mic.samples.filter { $0 > 0.25 }.count == 1600)
     }
 
     @Test func theWatchAsksTCCOffMainAndARevokedMicrophoneStillEndsTheLeg() async throws {

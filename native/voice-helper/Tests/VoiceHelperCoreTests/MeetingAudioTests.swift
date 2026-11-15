@@ -169,6 +169,38 @@ private func silence(seconds: Double) -> [Float] {
     }
 }
 
+@Suite struct MeetingTimelineTests {
+    private let written = 16_000
+    private let slack = MeetingTimeline.slack
+
+    private func place(ahead: Int, count: Int = 1600) -> MeetingTimeline.Placement {
+        MeetingTimeline.place(target: written + ahead, written: written, count: count)
+    }
+
+    @Test func aChunkWithin20MsOfTheFilesEndFollowsIt() {
+        #expect(slack == 320)
+        #expect([-slack, -1, 0, 1, slack].map { place(ahead: $0) } == [.append, .append, .append, .append, .append])
+        #expect(MeetingTimeline.place(target: 0, written: 0, count: 1600) == .append)
+    }
+
+    @Test func aChunkCapturedAfterAGapGetsSilenceForTheGap() {
+        #expect(place(ahead: slack + 1) == .pad(silence: slack + 1))
+        // A tap that the consent prompt held for 20 s.
+        #expect(MeetingTimeline.place(target: 320_000, written: 0, count: 1600) == .pad(silence: 320_000))
+    }
+
+    @Test func aChunkFromAFastClockLosesWhatTheFileAlreadyHolds() {
+        #expect(place(ahead: -(slack + 1)) == .skip(slack + 1))
+        #expect(place(ahead: -3200, count: 4800) == .skip(3200), "200 ms is the longest slip")
+        #expect(place(ahead: -3200, count: 1600) == .skip(1600), "never more than the chunk")
+    }
+
+    @Test func aChunkStampedMoreThan200MsBehindIsKeptWhole() {
+        #expect(place(ahead: -3201) == .append)
+        #expect(place(ahead: -160_000) == .append)
+    }
+}
+
 @MainActor
 @Suite struct MeetingSourceHeardTests {
     @Test func theModelHearsSystemAudioAsRecordedAndTheMicWithoutTheEcho() async throws {

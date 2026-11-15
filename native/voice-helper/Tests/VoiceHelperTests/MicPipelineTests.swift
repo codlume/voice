@@ -209,6 +209,32 @@ private func feed(
         #expect(pipeline.droppedFrames == 0)
     }
 
+    @Test func aChunkCarriesTheCaptureTimeOfItsFirstFrameBeforeAndAfterADrop() throws {
+        let fixture = NoiseEndingInToneBurst(rate: 48_000, seconds: 0.31)
+        let format = try fixture.format()
+        let pipeline = try MicPipeline(hardware: format, pendingSeconds: 0.2)
+        pipeline.start()
+        // 10 ms buffers, the first captured 5 s after boot. The pipeline holds twenty.
+        let quanta = fixture.quanta(of: 480)
+        func receive(_ index: Int) throws {
+            let buffer = try planarBuffer(fixture, quanta[index], format: format)
+            let capturedAtMs = 5000 + 10 * UInt64(index)
+            pipeline.receive(buffer.audioBufferList, frames: 480, hostTime: AudioConvertNanosToHostTime(capturedAtMs * 1_000_000))
+        }
+
+        for index in 0..<30 { try receive(index) }
+        let first = try #require(pipeline.pull())
+        #expect(abs(first.capturedAt.uptimeMs - 5000) < 0.001)
+        #expect(pipeline.droppedFrames == 4800, "the ten buffers past capacity")
+
+        try receive(30)
+        let afterTheDrop = try #require(pipeline.pull())
+        #expect(abs(afterTheDrop.capturedAt.uptimeMs - 5300) < 0.001, "the first buffer accepted, not the end of the last chunk")
+
+        let tail = try #require(pipeline.finish(), "the resampler held back the end of the last buffer")
+        #expect(abs(tail.capturedAt.uptimeMs - 5310) < 0.001, "nothing new was captured, so the tail follows the last chunk")
+    }
+
     @Test func interleavedHardwareFormatIsRejected() throws {
         let interleaved = try #require(
             AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))

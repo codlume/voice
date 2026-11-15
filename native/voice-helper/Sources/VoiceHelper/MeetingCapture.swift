@@ -25,6 +25,22 @@ protocol MeetingAudioWriter: AnyObject {
 
 extension PcmWriter: MeetingAudioWriter {}
 
+extension MeetingAudioWriter {
+    /// Lands `samples` so the first sits at `frame`, as `MeetingTimeline.place` says. The file
+    /// stays append-only.
+    func write(_ samples: [Float], at frame: Int) throws {
+        switch MeetingTimeline.place(target: frame, written: frames, count: samples.count) {
+        case .append:
+            try append(samples)
+        case .pad(let silence):
+            try pad(to: frames + silence)
+            try append(samples)
+        case .skip(let overlap):
+            try append(Array(samples.dropFirst(overlap)))
+        }
+    }
+}
+
 /// What a leg takes from the Mac: TCC's answers, the microphone, the system tap and the files.
 /// Tests pass fakes, so none of them opens a microphone or a process tap, or asks TCC.
 struct MeetingHardware {
@@ -52,8 +68,10 @@ struct MeetingHardware {
 }
 
 /// One recording leg of a meeting: the microphone into `mic.pcm` and system audio into
-/// `system.pcm`, appended as the audio arrives. Both files share one timeline: each source opened
-/// for a leg first pads its file to the longer of the two, and stopping pads both to the same end.
+/// `system.pcm`. Both files share one timeline, the leg's clock: every chunk is written at the
+/// frame its capture time maps to, counted from `startedAt` at `startFrames`. A source that
+/// starts late, reopens or drops audio leaves silence where it recorded nothing, and stopping
+/// pads both files to the same end.
 /// Independent of dictation's capture, so dictating mid-meeting keeps working; while it runs the
 /// meeting mic records silence instead of the dictated words.
 final class MeetingCapture {
@@ -111,7 +129,7 @@ final class MeetingCapture {
                 fixtures.append(try fixture(systemPath, speed: speed) { [weak self] in self?.receiveSystem($0) })
                 systemState = .active
             }
-            fixtures.forEach { $0.start() }
+            fixtures.forEach { $0.start(at: startedAt) }
             return (.active, systemState)
         case .live:
             guard hardware.micAllowed() else {
@@ -196,7 +214,6 @@ final class MeetingCapture {
         guard !stopped else { return }
         do {
             try openMic()
-            try mic?.pad(to: system?.frames ?? elapsedFrames)
             output.log(.info, "meeting microphone reopened after a device change")
         } catch {
             guard attempt < 10 else {
@@ -248,7 +265,6 @@ final class MeetingCapture {
             return lose(AudioLoss(source: .system, reason: .device))
         }
         do {
-            try system?.pad(to: elapsedFrames)
             try openSystem(openTap)
             output.log(.info, "meeting system audio restarted: \(reason)")
         } catch {
@@ -288,11 +304,6 @@ final class MeetingCapture {
         }
     }
 
-    // The files' frame for now, by the clock: a source that stalled has fewer frames than this.
-    private var elapsedFrames: Int {
-        startFrames + Int(startedAt.millisecondsToNow() * Double(PcmFile.sampleRate) / 1000)
-    }
-
     private func lose(_ loss: AudioLoss) {
         guard !stopped else { return }
         output.log(.error, "meeting \(loss.source.rawValue) lost (\(loss.reason.rawValue)); the leg ends")
@@ -303,22 +314,27 @@ final class MeetingCapture {
     private func receiveMic(_ chunk: AudioChunk) {
         lastMicAudio = .now()
         // Dictated words belong to wherever they were inserted, not to the meeting.
-        write(isCapturingDictation() ? [Float](repeating: 0, count: chunk.samples.count) : chunk.samples, to: mic)
+        let samples = isCapturingDictation() ? [Float](repeating: 0, count: chunk.samples.count) : chunk.samples
+        write(samples, capturedAt: chunk.capturedAt, to: mic)
     }
 
     private func receiveSystem(_ chunk: AudioChunk) {
-        write(chunk.samples, to: system)
+        write(chunk.samples, capturedAt: chunk.capturedAt, to: system)
     }
 
     // Keyed on the writer, not `stopped`: `stop` flushes the sources' tails through here before
     // it closes the files.
-    private func write(_ chunk: [Float], to writer: MeetingAudioWriter?) {
+    private func write(_ samples: [Float], capturedAt: DispatchTime, to writer: MeetingAudioWriter?) {
         guard let writer else { return }
         do {
-            try writer.append(chunk)
+            try writer.write(samples, at: frame(at: capturedAt))
         } catch {
             fail("Could not save meeting audio: \(error.localizedDescription)")
         }
+    }
+
+    private func frame(at time: DispatchTime) -> Int {
+        startFrames + PcmFile.frames(milliseconds: milliseconds(from: startedAt, to: time))
     }
 
     private func fail(_ message: String) {
