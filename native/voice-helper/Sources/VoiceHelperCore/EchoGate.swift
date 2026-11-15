@@ -81,8 +81,7 @@ public enum EchoGate {
     /// What no path predicts of an echo, the speakers' distortion and the ringing past the
     /// filter's end, stays under an eighth of it. A MacBook Air at 60% put 9.6 to 11 dB of its
     /// own under a loud vowel, at 2 to 3 kHz where the played audio held 15 to 30 dB less, and a
-    /// sixteenth let those frames through as words. On the meeting fixtures through the real
-    /// model, an eighth costs 7 of the user's 6492 words over a sixteenth.
+    /// sixteenth let those frames through as words.
     static let distortion: Float = 1 / 8
     /// A frame that keeps four times what would silence it holds the user's voice, and so do
     /// the frames beside it: speech runs on where residue comes and goes. On a spoken Polish
@@ -240,16 +239,13 @@ public enum EchoGate {
         }
         let residue = (0..<frames).map { pathHolds ? distortion * level * vDSP.sum(ringing[$0 * bins..<($0 + 1) * bins]) : 0 }
         let silence = [Float](repeating: 0, count: bins)
+        let noiseFloor = 2 * roomNoise
+        func holdsAVoice(_ frame: Int, heardOver residueOf: Int) -> Bool {
+            kept[frame] >= max(voiceMargin * max(noiseFloor, residue[frame]), residue[residueOf])
+        }
         for t in 0..<frames where vDSP.maximum(ringing[t * bins..<(t + 1) * bins]) > audiblePower {
-            // A frame the other side played into goes silent when it keeps no more than twice the
-            // room's noise, or than the echo's residue: the speech model makes words of faint
-            // echo residue. Beside the user's voice the residue is let be, since a frame cut out
-            // of a word costs the word, but only beside a voice at least as loud as this frame's
-            // residue: a faint sound just before a loud word of the other side's is no voice.
-            let voiceNear = (max(0, t - voiceReach)...min(frames - 1, t + voiceReach)).contains {
-                kept[$0] >= max(voiceMargin * max(2 * roomNoise, residue[$0]), residue[t])
-            }
-            if kept[t] < max(2 * roomNoise, voiceNear ? 0 : residue[t]) {
+            let besideAVoice = (max(0, t - voiceReach)...min(frames - 1, t + voiceReach)).contains { holdsAVoice($0, heardOver: t) }
+            if kept[t] < (besideAVoice ? noiseFloor : max(noiseFloor, residue[t])) {
                 mask.replaceSubrange(t * bins..<(t + 1) * bins, with: silence)
             }
         }

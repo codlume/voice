@@ -76,17 +76,16 @@ private func throughAMacBookAir(_ played: [Float], lagMs: Double) -> [Float] {
     return throughTheSpeakers(coloured, lagMs: lagMs, gain: pow(10, -10.8 / 20), taps: reflections)
 }
 
-/// What louder speakers add of their own: a buzz at 2.5 kHz in step with what plays, `decibels`
-/// under the echo where it is loud. On a MacBook Air at 60% the echo of a loud vowel held energy
-/// at 2 to 3 kHz, where the played audio held 15 to 30 dB less, that came to 9.6 to 11 dB under
-/// the echo.
-private func buzz(of echo: [Float], decibels: Float) -> [Float] {
-    let reach = 160
-    let smoothed = vDSP.convolve([Float](repeating: 0, count: reach) + echo.map { $0 * $0 } + [Float](repeating: 0, count: reach + 1),
-                                 withKernel: [Float](repeating: 1 / Float(2 * reach + 1), count: 2 * reach + 1))
-    let envelope = vForce.sqrt(Array(smoothed.prefix(echo.count)))
-    let t = vDSP.ramp(withInitialValue: Float(0), increment: 2 * .pi * 2500 / Float(rate), count: echo.count)
-    return vDSP.multiply(sqrt(2) * pow(10, decibels / 20), vDSP.multiply(envelope, vForce.sin(t)))
+private func loudness(of signal: [Float], reach: Int = 160) -> [Float] {
+    let padded = [Float](repeating: 0, count: reach) + vDSP.square(signal) + [Float](repeating: 0, count: reach + 1)
+    let meanSquare = vDSP.convolve(padded, withKernel: [Float](repeating: 1 / Float(2 * reach + 1), count: 2 * reach + 1))
+    return vForce.sqrt(Array(meanSquare.prefix(signal.count)))
+}
+
+private func buzz(of echo: [Float], decibels: Float, hz: Float = 2500) -> [Float] {
+    let phase = vDSP.ramp(withInitialValue: Float(0), increment: 2 * .pi * hz / Float(rate), count: echo.count)
+    let sineRms = 1 / sqrt(Float(2))
+    return vDSP.multiply(pow(10, decibels / 20) / sineRms, vDSP.multiply(loudness(of: echo), vForce.sin(phase)))
 }
 
 /// A faint sound 15 ms before each syllable the mic hears of `played` at `lagMs`, 25 dB under its
