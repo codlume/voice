@@ -19,12 +19,9 @@ type Rule = { kind: "entry"; entry: DictionaryEntry } | { kind: "snippet"; snipp
 
 type Matcher = { rules: ReadonlyMap<string, Rule>; regex: RegExp | null };
 
-// A rule's match in the original text.
 type Found = { rule: Rule; start: number; end: number };
 
 const WORD = "[\\p{L}\\p{M}\\p{N}_]";
-// A match sits between non-word characters or text edges, whatever the phrase starts or ends with,
-// so "U.S." never matches inside "U.S.A.". "don" never matches the start of "don't".
 const BEFORE = `(?<!${WORD})`;
 const AFTER = `(?!${WORD})(?!['‘’´\`′]t(?!${WORD}))`;
 
@@ -36,23 +33,19 @@ const pattern = (key: string) =>
 
 function compile({ dictionary, snippets }: Rewrites): Matcher {
   const rules = new Map<string, Rule>();
-  // The pages refuse two phrases with one key; a loaded file may still hold such a pair, and the
-  // later one wins, a snippet over an entry.
   for (const entry of dictionary) rules.set(matchKey(entry.phrase), { kind: "entry", entry });
   for (const snippet of snippets) {
     if (snippet.enabled) rules.set(matchKey(snippet.trigger), { kind: "snippet", snippet });
   }
   if (rules.size === 0) return { rules, regex: null };
-  // Longest first, so the regex takes the longest phrase at any position. One boundary check
-  // around the whole alternation compiles in milliseconds; one per phrase took seconds at 1,000.
+  // Longest first, so the regex takes the longest phrase at any position.
   const alternation = [...rules.keys()]
     .toSorted((a, b) => b.length - a.length)
     .map(pattern)
     .join("|");
   const regex = new RegExp(`${BEFORE}(?:${alternation})${AFTER}`, "giu");
   // V8 compiles a regex on its first use and refuses a pattern past a few hundred kilobytes,
-  // around 7,000 ten-word phrases. A hand-edited list that large then rewrites nothing, rather
-  // than failing every dictation.
+  // around 7,000 ten-word phrases.
   try {
     regex.test("");
   } catch {
@@ -61,8 +54,6 @@ function compile({ dictionary, snippets }: Rewrites): Matcher {
   return { rules, regex };
 }
 
-// Settings hand every session the same two arrays until any setting changes, so one compiled
-// matcher serves all the dictations in between.
 let cached: { rewrites: Rewrites; matcher: Matcher } | null = null;
 
 function matcher(rewrites: Rewrites): Matcher {
@@ -76,8 +67,6 @@ function matcher(rewrites: Rewrites): Matcher {
   return cached.matcher;
 }
 
-// The text without accents, and for each of its UTF-16 offsets, plus its end, the matching offset
-// in the original. A dropped combining mark sits before the next offset, so a match keeps it.
 function foldAccents(text: string) {
   let folded = "";
   const source: number[] = [];
@@ -113,7 +102,6 @@ export function rewrite(text: string, rewrites: Rewrites): Rewritten {
       regex.lastIndex = match.index + (folded.codePointAt(match.index)! > 0xffff ? 2 : 1);
       continue;
     }
-    // `source` has an entry for every folded offset and for the end, so both lookups hit.
     const start = source[match.index]!;
     const end = source[match.index + match[0].length]!;
     found.push({ rule, start, end });
@@ -164,10 +152,7 @@ function keepSpaces(pieces: readonly string[]): string {
   let kept = "";
   let line: "start" | "after list" | "inside" = "start";
   for (const piece of pieces) {
-    // Dictated words after a snippet's list continue the sentence; a target rightly drops their
-    // separating space. A line of the snippet itself after its list keeps its leading space.
     if (line === "after list") line = "inside";
-    // Text never holds a raw "<", so every part that starts with one is a tag.
     for (const part of piece.split(/(<[^>]*>)/)) {
       if (part.startsWith("<")) {
         if (LINE_START.test(part)) line = "start";
@@ -186,8 +171,6 @@ function keepSpaces(pieces: readonly string[]): string {
   return kept;
 }
 
-// The snippet when the dictation is only its trigger, give or take the punctuation the speech
-// model puts around a phrase said on its own.
 function alone(text: string, found: readonly Found[]): Snippet | null {
   const [only] = found;
   if (only === undefined || found.length > 1 || only.rule.kind !== "snippet") return null;
@@ -202,7 +185,6 @@ function write(rule: Rule, matched: string): Output {
 
 function correct({ phrase, replacement }: DictionaryEntry, matched: string): string {
   if (replacement !== null) return replacement;
-  // A word saved all lowercase keeps the capital the speech model gave a sentence start.
   if (/\p{Lu}/u.test(phrase) || !/^\p{Lu}/u.test(matched)) return phrase;
   return phrase.replace(/^./u, (first) => first.toUpperCase());
 }

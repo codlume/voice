@@ -250,7 +250,6 @@ export function SetupChecklist({
   title: string;
   rows: readonly ChecklistRow[];
   counted?: boolean;
-  /** More rows inside the card, below the list. */
   children?: ReactNode;
   after?: ReactNode;
 }) {

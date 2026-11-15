@@ -40,7 +40,6 @@ const styles = stylex.create({
   failureText: { margin: 0, flexGrow: 1 },
 });
 
-/** "My thoughts", the same editor in the Voice window and the notepad. */
 export function ThoughtsEditor({
   meeting,
   save,

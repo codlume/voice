@@ -340,7 +340,6 @@ describe("createDictation", () => {
     expect(h.commands).toEqual([]);
     expect(h.store.state.session).toEqual(idle);
 
-    // Once the run has its outcome, dictation starts again.
     h.store.update((s) => ({
       ...s,
       transform: { phase: "done", id: "r1", outcome: { kind: "noSelection" } },
@@ -2363,7 +2362,6 @@ describe("auto-apply after dictation", () => {
       html: null,
       keepOnClipboard: false,
     });
-    // Copy result on the Transforms page must give the text that landed in the app.
     expect(h.lastTransforms).toEqual([
       { name: "Polish", before: "ask hadrys", after: "Polished: ask Hadryś" },
     ]);
@@ -2392,7 +2390,6 @@ describe("auto-apply after dictation", () => {
       });
       expect(h.latest()).toMatchObject({ raw: "keep hadrys", text: "keep Hadryś" });
       expect(h.lastTransforms).toEqual([]);
-      // The worker's own message never reaches the log, as on the on-demand path.
       expect(h.logs).toContain(`cleanup failed: ${logged}`);
       expect(h.logs.join("\n")).not.toContain("The transform model stopped");
       expect(h.entries).toEqual([

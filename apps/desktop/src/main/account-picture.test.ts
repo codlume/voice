@@ -1,4 +1,3 @@
-// Load the Electron mock before plugin storage.
 import {
   USER,
   PICTURED,

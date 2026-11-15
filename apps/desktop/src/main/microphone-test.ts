@@ -5,7 +5,6 @@ import { START_TIMEOUT_MS } from "./dictation.ts";
 import type { HelperCommand, HelperEvent } from "./protocol.ts";
 import type { Store } from "./store.ts";
 
-// A forgotten test must not keep the microphone open.
 export const MICROPHONE_TEST_MAX_MS = 30_000;
 
 export type MicrophoneTest = {
@@ -22,7 +21,6 @@ export function createMicrophoneTest(options: {
 }): MicrophoneTest {
   const { store, send, onLevel } = options;
   let id: string | null = null;
-  // One deadline per phase: the start timeout while starting, then the cap once audio flows.
   let deadline: NodeJS.Timeout | null = null;
   let episode = 0;
 
@@ -65,8 +63,6 @@ export function createMicrophoneTest(options: {
     switch (event.type) {
       case "microphone.test.started":
         if (event.id !== id) return;
-        // The helper re-emits started when it restarts the test on a device change. That is a
-        // new listening episode for the renderer, but the cap keeps counting from the first one.
         if (store.state.microphoneTest.kind === "starting") arm(MICROPHONE_TEST_MAX_MS, stop);
         show({ kind: "listening", episode: ++episode });
         return;

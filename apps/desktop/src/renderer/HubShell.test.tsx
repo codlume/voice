@@ -55,7 +55,6 @@ let root: Root | null = null;
 const fixtures = sampleMeetings();
 const readyMeeting = fixtures.state.meetings.find(({ status }) => status.kind === "ready")!;
 let showMeeting: ((request: OpenMeetingRequest) => void) | null = null;
-// What main sends when a summary is ready, or when the user picks View summary outside the hub.
 const mainShowsMeeting = (request: OpenMeetingRequest) =>
   act(async () => showMeeting?.({ ...request }));
 

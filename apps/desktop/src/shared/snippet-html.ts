@@ -1,6 +1,3 @@
-// The snippet HTML contract: what the editor writes, what loading accepts, and what a paste
-// composes, all from one tag list and one link rule.
-
 const TAGS = ["p", "br", "strong", "em", "ul", "ol", "li", "a"];
 
 export const escapeHtml = (text: string) =>
@@ -31,7 +28,6 @@ export function allowedHref(raw: string): string | null {
 
 const SNIPPET_TAG = new RegExp(`</?(?:${TAGS.join("|")})>|<a href="([^"<>]*)">`, "gi");
 
-// The editor escapes every < and > in text, so markup outside the allowed tags is not ours.
 export function isSnippetHtml(html: string): boolean {
   let links = true;
   const rest = html.replace(SNIPPET_TAG, (_tag, attribute?: string) => {

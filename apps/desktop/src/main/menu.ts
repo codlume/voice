@@ -7,7 +7,6 @@ export function applicationMenuTemplate(
   zoom: (step: ZoomStep) => void,
   { development }: { development: boolean },
 ): MenuItemConstructorOptions[] {
-  // Reload drops the page's state and DevTools opens the app's internals, so users never see them.
   const developer: MenuItemConstructorOptions[] = development
     ? [
         { role: "reload" },

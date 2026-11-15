@@ -32,7 +32,6 @@ function editor() {
   });
 }
 
-// The editor as the Snippets page runs it, with the transforms that keep it showing what is saved.
 function editing(): LexicalEditor {
   const edited = editor();
   edited.registerNodeTransform(LinkNode, $storedLink);

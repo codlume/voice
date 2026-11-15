@@ -1,11 +1,9 @@
 export type Box = { left: number; top: number; width: number; height: number };
 type Point = { x: number; y: number };
-/** Where the popover goes, and whether that spot leaves the control's ring uncovered. */
 type Placement = Point & { clear: boolean };
 
 const margin = 8;
 const gap = 8;
-/** Room kept around the control for its outline ring. */
 const ringRoom = 6;
 
 const right = (box: Box) => box.left + box.width;
@@ -26,7 +24,6 @@ const grow = (box: Box, by: number): Box => ({
   height: box.height + 2 * by,
 });
 
-/** The four spots beside `around`, start-aligned first, in the order the help prefers them. */
 function beside(around: Box, size: { width: number; height: number }): Point[] {
   return [
     { x: around.left, y: bottom(around) + gap },

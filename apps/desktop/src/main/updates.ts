@@ -54,7 +54,6 @@ export async function acceptRestart(
   if (request.choice === "copyTranscriptAndRestart" && latest) {
     deps.assertRestartable();
     await deps.copy(latest);
-    // Nothing may yield between this check and `restart`, or a meeting started then goes unseen.
     if (!checkAllowed()) return;
   }
   await deps.restart();
@@ -73,11 +72,6 @@ export function parseRestartRequest(value: unknown): RestartRequest | null {
   return { choice: value.choice, latest };
 }
 
-/**
- * Why a restart has to wait, or null. The request was made against the newest entry the user saw,
- * so a newer one means they chose on stale facts, and a plain restart must not lose the only copy
- * of a transcript.
- */
 export function restartRefusal(request: RestartRequest, history: HistoryState): string | null {
   if (request.latest !== (history.entries[0]?.id ?? null))
     return "A new transcript arrived. Check it, then restart.";
@@ -100,7 +94,6 @@ const DOWNLOAD_FAILED: UpdateStatus = {
   message: "The update could not be downloaded. Check your connection and try again.",
 };
 
-/** Returns `status` itself when the outcome changes nothing, so publish() can skip it. */
 function reconcile(status: UpdateStatus, outcome: CheckOutcome): UpdateStatus {
   const standing = pendingUpdate(status);
   switch (outcome.kind) {
@@ -159,8 +152,6 @@ export function createUpdates({
     loadEngine && release && initial.status.kind !== "disabled" ? { loadEngine, release } : null;
   let snapshot = initial;
   let engine: Engine | undefined;
-  // Bumped whenever the world moves on (channel switch, restart, dispose) so that whatever an
-  // in-flight check or download reports afterwards is discarded.
   let generation = 0;
   let running: Promise<void> | null = null;
   let disposed = false;
@@ -175,7 +166,6 @@ export function createUpdates({
   }
   const stillApplies = (expectedGeneration: number) => generation === expectedGeneration;
 
-  // Publishing the status object that already stands would reopen a card the user dismissed.
   function publish(status: UpdateStatus, channel = snapshot.channel) {
     if (disposed || (status === snapshot.status && channel === snapshot.channel)) return;
     snapshot = { ...snapshot, channel, status };
@@ -291,8 +281,6 @@ export function createUpdates({
 
   async function download(): Promise<void> {
     if (snapshot.status.kind !== "available") return;
-    // A background check re-reads the feed without changing the status, so the Download button
-    // stays live while it runs. The click must wait for it rather than be coalesced into it.
     await running;
     const update = snapshot.status;
     if (update.kind !== "available") return;
@@ -304,10 +292,7 @@ export function createUpdates({
     });
   }
 
-  // The first check loads electron-updater, which blocks main for tens of milliseconds, and a key
-  // press on its way to capture would wait behind it. A check the user asks for runs at once: it
-  // came from the hub or the tray, so no session is under way, and a Checking status must mean it.
-  // One function for every poll, so the polls that come due during one long run fold into one check.
+  // The first check loads electron-updater, which blocks main for tens of milliseconds.
   const backgroundCheck = () => void check();
   const scheduledCheck = () => whenIdle(backgroundCheck);
 
@@ -346,8 +331,6 @@ export function createUpdates({
       publish({ kind: "installing", version });
       try {
         await prepareRestart();
-        // A check may still be in flight from the hourly poll. Let it settle so that nothing of
-        // ours touches the engine during the install and a later error can only be Squirrel's.
         await running;
         installer.quitAndInstall();
       } catch (error) {

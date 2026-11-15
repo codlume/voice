@@ -47,8 +47,6 @@ type Options = {
 const SELECTED = "SENTINEL-SELECTION so um the launch moved to friday";
 const RESULT = "SENTINEL-RESULT The launch moved to Friday.";
 
-// The transform run id is minted by randomUUID, so the harness reads it back from the first
-// helper command of the run, the way the fake helper would.
 function harness(opts: Options = {}) {
   const store = createStore({
     updates: {
@@ -161,7 +159,6 @@ function harness(opts: Options = {}) {
 
 const flush = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
 
-/** Presses the shortcut and lets the selection come back, so the engine call is in flight. */
 async function startGenerating(h: ReturnType<typeof harness>) {
   h.press();
   await flush(10);
@@ -281,7 +278,6 @@ describe("createTransforms", () => {
       outcome: { kind: "cancelled" },
     });
     expect(h.of("transform.end")).toHaveLength(1);
-    // A result that arrives after the cancel is dropped.
     run.resolve({ ok: true, text: RESULT });
     await flush(10);
     expect(h.of("insert")).toEqual([]);
@@ -524,7 +520,6 @@ describe("createTransforms", () => {
   });
 });
 
-// Wired as index.ts wires it: every store change goes through it with the previous state.
 function followed(opts: Options & { onDisk?: boolean } = {}) {
   const h = harness(opts);
   const calls: ("install" | "unload" | "follow")[] = [];

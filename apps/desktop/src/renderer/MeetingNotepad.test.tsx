@@ -336,7 +336,6 @@ describe("My thoughts in the notepad", () => {
     type("Old and new");
     push({ meeting: { ...meeting, notes: "Old" }, prompt: null });
     expect(thoughts().value).toBe("Old and new");
-    // Once main holds the typed text it follows main again.
     push({ meeting: { ...meeting, notes: "Old and new" }, prompt: null });
     push({ meeting: { ...meeting, notes: "Edited elsewhere" }, prompt: null });
     expect(thoughts().value).toBe("Edited elsewhere");
@@ -494,7 +493,6 @@ describe("My thoughts in the notepad", () => {
 
     await act(async () => vi.advanceTimersByTime(600));
     expect(api.updateMeetingNotes).toHaveBeenLastCalledWith(id, "Old");
-    // Unsaved thoughts outlive the editor, so they would carry over into the next test.
     await act(async () => outcomes[2]?.resolve());
   });
 

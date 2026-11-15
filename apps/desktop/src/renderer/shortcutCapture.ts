@@ -14,7 +14,6 @@ export type KeyboardLayout = ReadonlyMap<string, string>;
 export type KeyPress = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
 
 type Capture =
-  /** Tab or Shift+Tab, left to the browser so keyboard focus can leave the picker either way. */
   | { kind: "pass" }
   | { kind: "cancel" }
   | { kind: "clear" }

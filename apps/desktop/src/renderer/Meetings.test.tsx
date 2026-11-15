@@ -100,7 +100,6 @@ const transcript: TranscriptEntry[] = [
   },
 ];
 
-// Set up, with the summary model on disk, so only tests about those show them.
 const setUp: Snapshot = {
   microphones: { kind: "loading" },
   microphoneTest: { kind: "off" },
@@ -129,13 +128,11 @@ type Spied<T> = {
   [K in keyof T]: T[K] extends (...args: never[]) => unknown ? Mock<T[K]> : T[K];
 };
 
-/** Spies on every command, so tests can check what the page asked main for. */
 const spied = <T extends object>(api: T) =>
   Object.fromEntries(
     Object.entries(api).map(([name, command]) => [name, vi.fn(command)]),
   ) as Spied<T>;
 
-// The preview's fake main, with the sample transcript and spies on every command.
 function fakeMain(meetings: Meeting[], folders: Folder[] = []) {
   const main = fakeMeetingsMain({
     state: { meetings, folders, settings: DEFAULT_MEETINGS_SETTINGS },
@@ -701,7 +698,6 @@ describe("a meeting", () => {
     await click(byText("Live sync"));
     await click(byText("Transcript"));
     await waitForText("No transcript yet.");
-    // Main read the transcript file before the line was written, and answers after pushing it.
     const answers: (() => void)[] = [];
     const read = window.voice as HubApi;
     const getMeeting = read.getMeeting;
@@ -806,7 +802,6 @@ describe("a meeting", () => {
     expect(main.updateMeetingNotes).toHaveBeenCalledWith(id(1), "Ask about pricing");
     await vi.waitFor(() => expect(text()).not.toContain("Try again"));
 
-    // Saved, the held text no longer stands in for main's copy.
     const [synced] = sample();
     await act(async () => main.publish({ ...synced!, notes: "Edited in the notepad" }));
     expect(thoughts().value).toBe("Edited in the notepad");
@@ -1027,7 +1022,6 @@ describe("Folders", () => {
     await act(async () => folderButton().focus());
     expect(document.activeElement).toBe(folderButton());
     expect(folderButton().getAttribute("aria-expanded")).toBe("false");
-    // Enter or Space on a focused button is a click with no pointer.
     await act(async () => folderButton().click());
     await waitForText("New folder…");
     expect(folderButton().getAttribute("aria-expanded")).toBe("true");

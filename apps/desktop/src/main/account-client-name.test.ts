@@ -1,4 +1,3 @@
-// Load the Electron mock before the adapter and plugin storage.
 import {
   USER,
   http,

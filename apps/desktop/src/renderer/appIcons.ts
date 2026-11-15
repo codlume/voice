@@ -54,9 +54,6 @@ export function createIconLoader(fetch: (bundleIds: BundleId[]) => Promise<AppIc
     return pending;
   }
 
-  // `undefined` is a failed fetch, which keeps what is on show. An answer to a request made before
-  // the latest invalidation still shows, since it is never older than what it replaces, and the
-  // load goes on to ask for the current list.
   function settle(
     bundleId: BundleId,
     requested: number,

@@ -1,4 +1,3 @@
-// Load the Electron mock before the adapter and plugin storage.
 import {
   API,
   USER,
@@ -94,10 +93,8 @@ describe("createVoiceAuthClient", () => {
     const check = new AbortController();
     const stale = auth.checkAuthSession(check.signal);
     await vi.waitFor(() => expect(http.sent).toHaveLength(2));
-    // What the account module does when a sign-in starts during a check.
     check.abort();
     expect(await signIn(auth)).toEqual({ kind: "signedIn", user: GRACE });
-    // The server ended the old auth session, and its late answer clears the cookie.
     revoked.resolve(
       json(null, { headers: { "set-cookie": "better-auth.session_token=; Max-Age=0; Path=/" } }),
     );
@@ -275,7 +272,6 @@ describe("stored auth expiry through the account snapshot", () => {
   });
 });
 
-// What the plugin's storage holds for a signed-in channel: safeStorage ciphertext, base64.
 const storeCookie = (channel: UpdateChannel, value: string | null = "Y2lwaGVydGV4dA==") =>
   storage().setItem(authStorageKeys(channel).cookie, value);
 
@@ -288,7 +284,6 @@ describe("authSessionStored", () => {
     expect(authSessionStored(userData, "nightly")).toBe(false);
     storeCookie("nightly");
     expect(authSessionStored(userData, "nightly")).toBe(true);
-    // A renamed prefix would sign every user out on update.
     expect(JSON.parse(config())).toEqual({
       voice: { stable: { cookie: "Y2lwaGVydGV4dA==" }, nightly: { cookie: "Y2lwaGVydGV4dA==" } },
     });

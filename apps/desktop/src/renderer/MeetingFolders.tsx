@@ -87,7 +87,6 @@ const ruleText = (folder: Folder) =>
 
 const countText = (count: number) => (count === 1 ? "1 meeting" : `${count} meetings`);
 
-// Each open gets a fresh dialog, so a cancelled edit never carries into the next one.
 type Editing = { open: boolean; folder: Folder | null; key: string };
 type Deleting = { open: boolean; folder: Folder };
 

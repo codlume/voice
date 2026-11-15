@@ -1,6 +1,5 @@
 import { nativeImage, type NativeImage } from "electron";
 
-// Waveform with a text cursor ("GlyphOpen", idle) on a 36-unit grid: [x, y, width, height].
 const GRID = 36;
 const RADIUS = 1.5;
 const RECTS = [

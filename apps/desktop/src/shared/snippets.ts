@@ -15,7 +15,6 @@ export const EXPANSION_HTML_MAX_LENGTH = EXPANSION_MAX_LENGTH * 8;
 
 type SnippetProblem = { field: "trigger" | "expansion"; message: string };
 
-// `others` never contains the snippet being checked; callers filter it out.
 export function snippetProblem(
   snippet: Snippet,
   others: readonly Snippet[],
@@ -59,12 +58,10 @@ export function parseSnippets(raw: unknown): Snippet[] {
     if (typeof id !== "string" || typeof trigger !== "string" || typeof expansion !== "string") {
       continue;
     }
-    // Snippets saved before the on/off switch existed have no `enabled` and stay on.
     const snippet = {
       id,
       trigger: trigger.trim(),
       expansion,
-      // Formatting that cannot be pasted falls back to the plain text rather than losing the snippet.
       expansionHtml:
         typeof expansionHtml === "string" &&
         expansionHtml !== "" &&
@@ -74,8 +71,6 @@ export function parseSnippets(raw: unknown): Snippet[] {
           : null,
       enabled: enabled !== false,
     };
-    // Loading keeps a trigger that another snippet or a dictionary entry already has; only the
-    // pages refuse new ones, and the rewrite pass lets the later one win.
     if (kept.some((other) => other.id === id) || snippetProblem(snippet, [], [])) continue;
     kept.push(snippet);
   }

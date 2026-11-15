@@ -19,10 +19,8 @@ import {
   type Rewritten,
 } from "../shared/rewrite.ts";
 
-/** Which key started the session: held for its length, or tapped once to start and again to stop. */
 type DictationMode = "hold" | "toggle";
 
-/** The app a session's words went into, as Insights counts it. Never the website. */
 export type Destination = { bundleId: BundleId; category: Category };
 
 export type CleanupWork =
@@ -31,8 +29,6 @@ export type CleanupWork =
 
 export type Session =
   | { phase: "idle" }
-  // `released` is set once the user ended capture (the hold key's release or the second toggle
-  // tap) before capture started; the stop goes out when it does.
   | {
       phase: "starting";
       id: string;
@@ -61,15 +57,12 @@ export type Session =
       destination: Destination | null;
       copyToClipboard: boolean;
     }
-  // Insertion failed and the transcript is going to the clipboard; done waits for the write.
   | { phase: "copying"; id: string; reason: InsertFailure; source: NotInsertedSource }
   | { phase: "done"; id: string; outcome: Outcome };
 
 type Cleaning = Extract<Session, { phase: "cleaning" }>;
 type Inserting = Extract<Session, { phase: "inserting" }>;
 
-// `hotkeyUptimeMs` is the helper's clock at the key event, echoed on the capture command it
-// causes so the helper can measure the round trip. Absent for an event without one.
 type HotkeyTime = { hotkeyUptimeMs?: number | undefined };
 type Release = { at: number } & HotkeyTime;
 
@@ -100,10 +93,6 @@ export type SessionEvent =
   | { type: "timedOut"; id: string }
   | { type: "idleTimeout"; id: string };
 
-/**
- * What the helper is asked to do. It is waiting on these, so dictation sends them before it
- * updates the store, and fills in what capture.start takes from the settings.
- */
 export type Command =
   | ({ type: "capture.start"; id: string } & HotkeyTime)
   | ({ type: "capture.stop"; id: string; releasedAt: number } & HotkeyTime)
@@ -144,7 +133,6 @@ export const TRANSCRIBE_GAVE_UP_MESSAGE = "Transcription did not finish";
 
 export const idle: Session = { phase: "idle" };
 
-/** A session between the hotkey and its outcome, while the target app must keep focus. */
 export const dictating = (session: Session) => session.phase !== "idle" && session.phase !== "done";
 
 function finish(id: string, outcome: Outcome, ...effects: Effect[]): Step {
@@ -190,7 +178,6 @@ function start(
   };
 }
 
-/** The user ended capture. Before capture has started, the end is stamped and applied once it does. */
 function endCapture(
   state: Extract<Session, { phase: "starting" | "recording" }>,
   now: number,
@@ -249,7 +236,6 @@ function produced(
   const kept: Effect[] = [
     { type: "dictated", id, raw, insertedCleanup, dictionaryFixes, destination },
   ];
-  // A paste sent with keepOnClipboard already left the output on the clipboard.
   const pasted = outcome.kind === "inserted" && outcome.method === "paste";
   if (!copyToClipboard || pasted) {
     const settled: Outcome =
@@ -322,7 +308,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
     case "transcript": {
       const raw = event.text.trim();
       const current = state.phase !== "idle" && state.id === event.id;
-      // A second transcript for the session already being cleaned or inserted is a duplicate.
       if (
         current &&
         (state.phase === "cleaning" || state.phase === "inserting" || state.phase === "copying")
@@ -342,7 +327,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       }
       if (raw === "") return finish(state.id, { kind: "empty" });
       const rewritten = rewrite(raw, event.rewrites);
-      // A dictation that is only a trigger types the saved text verbatim; cleanup could only damage it.
       if (event.cleanup === null || rewritten.entireDictation) {
         return insert(
           inserting(state.id, raw, rewritten, null, event.destination, event.copyToClipboard),
@@ -432,7 +416,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
           send({ type: "capture.cancel", id: state.id }),
         );
       }
-      // A cancel makes the helper discard the audio, so the first deadline only tells the user.
       if (state.phase === "transcribing") {
         if (!state.overdue) return { state: { ...state, overdue: true }, effects: [] };
         return finish(
@@ -444,7 +427,6 @@ export function step(state: Session, event: SessionEvent, now: number): Step {
       if (state.phase === "inserting") {
         return produced(state, { kind: "notInserted", reason: "failed", source: "timeout" });
       }
-      // A write that never settles must not hold the session; the user is not told it copied.
       if (state.phase === "copying") {
         const { reason, source } = state;
         return finish(state.id, { kind: "notInserted", reason, source, copied: false });

@@ -10,14 +10,9 @@ import {
 export type RecordingCommand = "pause" | "resume" | "stop";
 export type PromptCommand = RecordingCommand | "keep" | "discard" | "dismiss" | "viewSummary";
 
-/**
- * How every surface names a status and which recording controls it offers. `recording` is the
- * only tone that says audio is being captured.
- */
 type StatusView = {
   tone: "recording" | "paused" | "busy" | "done";
   label: string;
-  /** In order. */
   controls: readonly RecordingCommand[];
 };
 
@@ -28,7 +23,6 @@ const statusViews: Record<MeetingStatus["kind"], StatusView> = {
   finishing: { tone: "busy", label: "Wrapping up…", controls: [] },
   confirmingShort: { tone: "busy", label: "Short recording", controls: [] },
   transcribing: { tone: "busy", label: "Transcribing…", controls: [] },
-  // Resume appends to the same meeting; a summary being written stops and can be updated after.
   summarizing: { tone: "done", label: "Writing summary…", controls: ["resume"] },
   ready: { tone: "done", label: "Saved to Meetings", controls: ["resume"] },
 };

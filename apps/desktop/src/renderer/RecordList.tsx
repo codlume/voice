@@ -64,10 +64,6 @@ export type Mode = "add" | "edit";
 
 type Problem<F extends string> = { field: F; message: string };
 
-// Only one dialog can be open. The record outlives `open` so the dialog keeps its content through
-// the exit animation. `key` is new on every open, so the next add or edit, even of the same
-// record, starts from the saved values instead of the closing dialog's draft. "deleted" is the
-// delete dialog after its confirm, when the row it would return focus to is going away.
 type Modal<T> = { kind: Mode | "delete" | "deleted"; record: T; open: boolean; key: string };
 
 export type Copy = {
@@ -83,22 +79,18 @@ export type Copy = {
 type RowText = {
   title: string;
   detail?: string;
-  // Fades the row and adds an Off label.
   off?: boolean;
 };
 
-/** What the editor dialog hands the page to render its fields and footer. */
 export type Editor<T, F extends string> = {
   draft: T;
   edit: (patch: Partial<T>) => void;
-  // The problem to show, once a save was attempted.
   shown: Problem<F> | null;
   message: (field: F) => string | undefined;
   submit: () => void;
   saveOnEnter: (event: KeyboardEvent) => void;
 };
 
-/** A settings page that lists records with Edit and Delete, an add/edit dialog, and a delete confirm. */
 export function RecordList<T extends { id: string }, F extends string>({
   copy,
   records,
@@ -117,9 +109,7 @@ export function RecordList<T extends { id: string }, F extends string>({
   records: readonly T[];
   save: (next: readonly T[]) => Promise<void>;
   blank: () => T;
-  // Names a record in `Edit <name>`, `Delete <name>`, and the delete confirmation.
   name: (record: T) => string;
-  // The one row shown while the list is empty.
   example: RowText;
   row: (record: T) => RowText;
   // The record as saved, from the draft: trimmed, with empty optional fields normalised.
@@ -127,7 +117,6 @@ export function RecordList<T extends { id: string }, F extends string>({
   // `others` never contains the record being checked.
   problem: (record: T, others: readonly T[]) => Problem<F> | null;
   renderFields: (editor: Editor<T, F>) => ReactNode;
-  // Rendered at the left of the editor's Cancel and Save buttons.
   renderFooter?: (editor: Editor<T, F>) => ReactNode;
   wide?: boolean;
 }) {
@@ -386,7 +375,6 @@ export function RecordEditor<T extends { id: string }, F extends string>({
   );
 }
 
-/** A labelled field with an n/max counter and the problem shown under it. */
 export function CountedField({
   label,
   length,

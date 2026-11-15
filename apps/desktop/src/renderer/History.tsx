@@ -110,7 +110,6 @@ const styles = stylex.create({
   more: { display: "flex", justifyContent: "center" },
 });
 
-// Rows mount all at once, so a long history shows its newest page and grows on request.
 const ROWS_PER_PAGE = 100;
 
 const storageLabels: Record<HistoryRetention, string> = {
@@ -127,8 +126,6 @@ const copiedLabels: Record<TranscriptVersion, string> = {
   raw: "Copied raw transcript",
 };
 
-// Memoized with callbacks that take the entry's id, so Show more, a search key or a new dictation
-// renders the rows that changed rather than every row shown.
 const Row = memo(function Row({
   entry,
   copied,
@@ -233,7 +230,6 @@ function Search({ query, onChange }: { query: string; onChange: (query: string) 
   );
 }
 
-// Home re-renders on every snapshot, several per dictation; the rows change only with the history.
 export const History = memo(function History({
   history: { entries, retention, saveFailed },
   today,
@@ -246,7 +242,6 @@ export const History = memo(function History({
   const [rowLimit, setRowLimit] = useState(ROWS_PER_PAGE);
   const copyAction = useAction();
   const deleteAction = useAction();
-  // The search box goes with the last entry, so its query must too, or it hides the next dictation.
   if (entries.length === 0 && query !== "") setQuery("");
   const { days, hidden } = useMemo(
     () => historyPage(entries, { query, limit: rowLimit, today }),

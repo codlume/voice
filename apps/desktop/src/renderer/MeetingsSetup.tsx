@@ -69,11 +69,9 @@ const styles = stylex.create({
   consent: { margin: 0, color: color.mutedForeground, fontSize: 11.5, lineHeight: 1.4 },
 });
 
-/** What a row says under its name: how to do it when nothing else says, else where it stands. */
 const hint = ({ status, actions, subtitle }: ChecklistRow) =>
   status.kind === "needed" && actions.length === 0 ? subtitle : status.text;
 
-/** "Set up Meetings" as a compact card, which sits in the sidebar beside the Meetings page. */
 export function MeetingsSetup({
   rows,
   consent,

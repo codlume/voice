@@ -112,7 +112,6 @@ export function restartPrompt(history: HistoryState): RestartPrompt {
       actions: [restartAction],
     };
   }
-  // A transcript that never reached its target exists nowhere else, so restarting must save it.
   const needsRecovery = atRiskOnQuit(history) !== null;
   const kept =
     retention === "memory"

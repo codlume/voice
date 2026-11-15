@@ -44,7 +44,6 @@ function mount(saved: Shortcut | null) {
   return { picker, onChange };
 }
 
-/** Dispatches a keydown and reports whether the picker let the browser act on it. */
 const press = (target: Element, init: KeyboardEventInit) => {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
   act(() => {
@@ -56,12 +55,10 @@ const recording = (picker: HTMLButtonElement) => picker.textContent === "Type a 
 
 test("focus alone does not start recording, so a later key press keeps the saved shortcut", () => {
   const { picker, onChange } = mount(controlOptionM);
-  // Tab in, or the window losing and regaining focus, which blurs and refocuses the picker.
   act(() => picker.focus());
   act(() => picker.blur());
   act(() => picker.focus());
   expect(recording(picker)).toBe(false);
-  // Command+2 jumps to another Settings page.
   expect(press(picker, { key: "2", code: "Digit2", metaKey: true })).toBe(true);
   expect(onChange).not.toHaveBeenCalled();
 });
@@ -80,7 +77,6 @@ test("Space or Enter on the focused picker starts recording", () => {
   for (const key of [" ", "Enter"]) {
     const { picker } = mount(controlOptionM);
     act(() => picker.focus());
-    // The browser turns an unprevented Space or Enter on a button into a click.
     expect(press(picker, { key, code: key === " " ? "Space" : "Enter" })).toBe(true);
     act(() => picker.click());
     expect(recording(picker)).toBe(true);

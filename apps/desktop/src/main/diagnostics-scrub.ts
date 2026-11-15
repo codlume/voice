@@ -33,7 +33,6 @@ export const SESSION_MEASUREMENTS = [
   "releaseToInsertMs",
 ] as const satisfies readonly (keyof SessionTimings)[];
 
-// Helper log lines that carry no parameters. Any other helper line stays on this machine.
 export const HELPER_LOGS = [
   "could not monitor microphone changes",
   "clipboard superseded by a later paste; not restoring previous contents",
@@ -49,7 +48,6 @@ export const HELPER_LOGS = [
 ] as const;
 type HelperLog = (typeof HELPER_LOGS)[number];
 
-// The only log messages that leave the machine, each with the attributes it may carry.
 const LOGS = {
   "dictation session finished": [...SESSION_ATTRIBUTES, ...SESSION_MEASUREMENTS],
   "helper ready": ["helper.protocol_version"],
@@ -91,14 +89,12 @@ export type DiagnosticLog = {
   };
 }[LogMessage];
 
-// Every message is printed locally; only an entry, when given, may leave the machine.
 export type Log = (message: string, entry?: DiagnosticLog) => void;
 
 const HELPER_LOG_MESSAGES: ReadonlySet<string> = new Set(HELPER_LOGS);
 export const isHelperLog = (message: string): message is HelperLog =>
   HELPER_LOG_MESSAGES.has(message);
 
-// An error name is code, not data, unless something rewrote it into free text.
 export const errorType = (error: unknown) =>
   error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name) ? error.name : "Error";
 
@@ -140,7 +136,6 @@ function record(value: unknown): Record<string, unknown> {
 
 type Loose<T> = { [K in keyof T]?: T[K] | undefined };
 
-// Keeps undefined out of the result so the scrubbed event holds only what was allowed.
 function compact<T extends object>(value: Loose<T>): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
@@ -168,7 +163,6 @@ function frame(value: StackFrame): StackFrame {
   });
 }
 
-// The exception value is dropped: an error message can quote whatever the code was handling.
 function exception(value: Exception): Exception {
   const mechanism = value.mechanism;
   const frames = value.stacktrace?.frames;
@@ -257,8 +251,6 @@ export function scrubEvent(event: Event): Event {
   });
 }
 
-// Describe the build, not the machine or the user. Everything else the SDK attaches to a log
-// (user, host, OS, device, process, message template and parameters) is dropped.
 const LOG_SDK_ATTRIBUTES: ReadonlySet<string> = new Set([
   "sentry.release",
   "sentry.environment",

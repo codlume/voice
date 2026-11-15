@@ -4,7 +4,6 @@ import type { Shortcut } from "./transforms.ts";
 export type MeetingId = string & { readonly __brand: "MeetingId" };
 export type FolderId = string & { readonly __brand: "FolderId" };
 
-// Ids name directories under userData, so anything but a UUID is refused before it reaches a path.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export const parseMeetingId = (value: unknown): MeetingId | null =>
@@ -107,7 +106,6 @@ export type TranscriptEntry = Segment | Marker;
 
 export type MeetingDetail = { meeting: Meeting; transcript: readonly TranscriptEntry[] };
 
-/** Rules read only what the meeting itself holds. Calendar-based rules are out of scope. */
 export type AutoRule = { kind: "titleContains"; text: string };
 
 export type FolderKind = { kind: "manual" } | { kind: "auto"; rule: AutoRule };
@@ -187,7 +185,7 @@ export function parseMeetingsSettingsPatch(raw: unknown): MeetingsSettingsPatch 
   return patch;
 }
 
-/** Meetings newest first, with folders and settings, which are small enough to send whole. */
+/** Meetings newest first, with folders and settings. */
 export type MeetingsState = {
   meetings: readonly Meeting[];
   folders: readonly Folder[];
@@ -381,7 +379,6 @@ export type PillMeeting = {
   prompt: MeetingPrompt | null;
 };
 
-/** Live transcript lines, pushed as they are written so an open meeting view can append them. */
 /** Lines appended to a transcript; `revision` is the meeting's `transcriptRevision` after them. */
 export type MeetingTranscriptChange = {
   id: MeetingId;
@@ -417,7 +414,6 @@ export const recordedMs = (meeting: Meeting, now: number): number =>
   closedMs(meeting) +
   (meeting.status.kind === "recording" ? Math.max(0, now - meeting.status.since) : 0);
 
-/** Spec 7: meetings of 5 minutes or less wait for a manual "Generate summary". */
 export const AUTO_SUMMARY_MIN_MS = 5 * 60_000;
 
 /** Whether the meeting's recording is long enough to be summarized after Stop without asking. */
@@ -519,7 +515,6 @@ export function refile(meeting: Meeting, folder: Folder, before: FolderKind | nu
   if (ruleMatches(meeting, folder)) {
     return inFolder ? meeting : { ...meeting, folderIds: [...meeting.folderIds, folder.id] };
   }
-  // A folder turned manual keeps what it holds.
   const left =
     inFolder && folder.kind === "auto" && before !== null && ruleMatches(meeting, before);
   return left
@@ -546,7 +541,6 @@ const FOLDED: Record<string, string> = { ł: "l", Ł: "l", ø: "o", Ø: "o", đ:
 
 const foldedChars = new Map<string, string>();
 
-/** One character lowercased without its accents. */
 function foldChar(char: string): string {
   let folded = foldedChars.get(char);
   if (folded === undefined) {
@@ -556,13 +550,8 @@ function foldChar(char: string): string {
   return folded;
 }
 
-/**
- * `text` folded as `fold` folds it, without the positions. ASCII has no accents and lowercases the
- * same alone or in a run, so a search reads whole transcripts without visiting each character.
- */
 const foldText = (text: string) => text.replace(/[^\0-\x7f]/gu, foldChar).toLocaleLowerCase();
 
-/** `text` lowercased without accents, and where each of its characters starts in `text`. */
 function fold(text: string): { folded: string; from: number[] } {
   let folded = "";
   const from: number[] = [];
@@ -578,7 +567,6 @@ function fold(text: string): { folded: string; from: number[] } {
   return { folded, from };
 }
 
-/** Summary Markdown as it reads on the page: names in, heading marks, bold and bullets out. */
 const summaryText = (markdown: string, speakers: readonly Speaker[]) =>
   resolveSpeakerTokens(markdown, speakers)
     .replace(/^#+\s*/gm, "")

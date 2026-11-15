@@ -130,8 +130,7 @@ const theme = {
 };
 
 const KEPT_FORMATS = IS_BOLD | IS_ITALIC;
-// Saved lists number from 1, so only "1. " starts one; "2024. " stays a year. The replace reads
-// the number from the second group.
+// Lexical's list replace reads the start number from the second group.
 const ORDERED_LIST_FROM_1: ElementTransformer = { ...ORDERED_LIST, regExp: /^(\s*)(1)\.\s/ };
 const shortcut = (key: string) => (IS_APPLE ? `⌘${key}` : `Ctrl+${key}`);
 const isShortcut = (event: KeyboardEvent | null): event is KeyboardEvent =>
@@ -280,7 +279,6 @@ function Toolbar({ onSave }: { onSave: () => void }) {
     const unregister = [
       editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves }) => {
         setFormats(editorState.read($readFormats));
-        // An edit or undo can delete the nodes the link row's saved selection points into.
         if (dirtyElements.size > 0 || dirtyLeaves.size > 0) setLinkRow(null);
       }),
       editor.registerCommand(
@@ -318,8 +316,6 @@ function Toolbar({ onSave }: { onSave: () => void }) {
     if (linkRow === null) return;
     editor.update(() => {
       if (linkRow.selectionAtOpen === null) {
-        // Opened before the editor ever had focus: a new link goes at the end, after any link
-        // already there.
         const end = $getRoot().selectEnd();
         $nearestLink(end.anchor.getNode())?.selectNext();
       } else {

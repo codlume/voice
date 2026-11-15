@@ -1,7 +1,6 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import * as NodePath from "node:path";
 
-// Writes of one file share its temp file, so they run one at a time, in the order they were asked.
 const pending = new Map<string, Promise<void>>();
 
 export function writeFileAtomic(
@@ -26,7 +25,6 @@ async function replace(file: string, text: string, options: { mode?: number }) {
     await writeFile(temp, text, { flush: true, ...options });
     await rename(temp, file);
   } catch (error) {
-    // A temp file that stays behind would keep the contents the caller meant to replace or drop.
     await rm(temp, { force: true }).catch(() => {});
     throw error;
   }

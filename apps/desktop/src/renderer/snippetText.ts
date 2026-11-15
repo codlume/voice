@@ -32,8 +32,6 @@ export function hrefFromInput(input: string): string | null {
   return allowedHref(`https://${trimmed}`);
 }
 
-// What the editor shows is what is saved, so a link gets the href the serializer would write,
-// and a link with none stops being a link.
 export function $storedLink(link: LinkNode): void {
   const href = hrefFromInput(link.getURL());
   if (href === null) {
@@ -44,8 +42,6 @@ export function $storedLink(link: LinkNode): void {
   }
 }
 
-// Saved lists are bulleted or number from 1, and have one level, so the editor shows them that
-// way: a pasted task list loses its checkboxes, and an indented item moves out to follow its parent.
 export function $storedList(list: ListNode): void {
   if (list.getListType() === "check") list.setListType("bullet");
   if (list.getStart() !== 1) list.setStart(1);
@@ -112,7 +108,6 @@ export function $readSnippetText(): SnippetText {
     if ($isListNode(block)) {
       formatted = true;
       const tag = block.getListType() === "number" ? "ol" : "ul";
-      // $storedList keeps every list one level deep, so each item is one line.
       const items = block
         .getChildren()
         .filter($isListItemNode)

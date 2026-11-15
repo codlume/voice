@@ -23,7 +23,6 @@ const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 31, 9, 0);
 const config: LifecycleConfig = DEFAULT_MEETINGS_SETTINGS;
 
-/** Folds `[event, ms after T0]` pairs from no meeting, or from `from`, keeping every effect. */
 function play(
   events: [MeetingEvent, number][],
   options: { config?: LifecycleConfig; from?: Meeting } = {},
@@ -44,7 +43,6 @@ const recording = (minutes: number): [MeetingEvent, number][] => [
   [{ type: "stop" }, minutes * MIN],
 ];
 
-/** The helper goes down and its replacement comes up. */
 const helperRestart: [MeetingEvent, number][] = [
   [{ type: "helperExited" }, 31 * MIN],
   [{ type: "helperReady" }, 31 * MIN],
@@ -71,7 +69,6 @@ function meetingAt(status: MeetingStatus, overrides: Partial<Meeting> = {}): Mee
   };
 }
 
-/** An event that moves a meeting on from `status` without deleting it. */
 const exit = (status: MeetingStatus): MeetingEvent => {
   switch (status.kind) {
     case "starting":
@@ -209,7 +206,6 @@ describe("meeting lifecycle", () => {
         expect(failed.meeting?.status).toEqual({ kind: from });
         expect(kinds(failed.effects)).toEqual(["stopCapture", "notify"]);
         expect(notices(failed.effects)).toEqual(["resumeFailed"]);
-        // A start that comes back late is stopped too.
         const late = step(
           failed.meeting,
           { type: "captureStarted", leg: 1 },
@@ -413,7 +409,6 @@ describe("meeting lifecycle", () => {
         failure.type === "finalizeFailed" ? failure.reason : "other",
       );
 
-      // meeting-summary.ts wrote the summary meanwhile.
       const summary = { markdown: "Overview.", coversUntilMs: 30 * MIN };
       const summarized = { ...meeting!, summary: { kind: "ready", summary } } satisfies Meeting;
       const retried = step(summarized, { type: "retryFinalPass" }, T0 + 40 * MIN, config);
@@ -478,7 +473,6 @@ describe("meeting lifecycle", () => {
     expect(meeting?.status.kind).toBe("summarizing");
     expect(meeting?.finalPassFailed).toBe("other");
 
-    // The user's retry is a new pass, with a restart of its own to spare.
     const retried = play(
       [[{ type: "retryFinalPass" }, 40 * MIN], ...helperRestart, [{ type: "finalized" }, 41 * MIN]],
       { from: { ...meeting!, status: { kind: "ready" } } },
@@ -499,7 +493,6 @@ describe("meeting lifecycle", () => {
       expect(kinds(effects), status.kind).toEqual(["drain", "watch", "finalize", "watch"]);
       expect(meeting?.status, status.kind).toEqual({ kind: "transcribing", step: "finalizing" });
 
-      // The final pass is a new step: the drain's exits do not count against it.
       const pass = play([[{ type: "helperReady" }, 32 * MIN], ...helperRestart], {
         from: meeting!,
       });
@@ -588,7 +581,6 @@ describe("meeting lifecycle", () => {
     }
   });
 
-  // One status of each kind; the Record makes a new kind fail to compile until it is listed.
   const everyStatus: Record<MeetingStatus["kind"], MeetingStatus[]> = {
     starting: [
       { kind: "starting", from: "new" },

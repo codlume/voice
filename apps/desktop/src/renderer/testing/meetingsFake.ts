@@ -31,7 +31,6 @@ const empty: MeetingFixtures = {
 const ok = (id: MeetingId): MeetingCommandResult => ({ kind: "ok", id });
 const refused = (message: string): MeetingCommandResult => ({ kind: "refused", message });
 
-/** Closes the open leg, as Pause and Stop do in main. */
 const closeLeg = (meeting: Meeting): Meeting =>
   meeting.status.kind === "recording"
     ? {
@@ -40,11 +39,6 @@ const closeLeg = (meeting: Meeting): Meeting =>
       }
     : meeting;
 
-/**
- * Main's side of the Meetings page in memory, for the preview harness and the tests. It holds
- * what the page sets, publishes every change the way main does, and moves a meeting through
- * recording, paused and ready, so live states can be shown and driven.
- */
 export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixtures = empty) {
   let state = initial;
   const listeners = new Set<(change: MeetingsChange) => void>();
@@ -62,7 +56,6 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
   const editFolders = (change: (folders: readonly Folder[]) => readonly Folder[]) =>
     set({ folders: change(state.folders) });
   const live = () => liveMeeting(state.meetings);
-  /** Moves the meeting on when `allowed` holds its status; refuses otherwise, as main does. */
   const step = (
     id: MeetingId,
     allowed: (meeting: Meeting) => boolean,
@@ -211,11 +204,9 @@ export function fakeMeetingsMain({ state: initial, transcripts }: MeetingFixture
 
   return {
     api,
-    /** Plays main publishing a new version of a meeting. */
     publish(changed: Meeting) {
       editMeeting(changed.id, () => changed);
     },
-    /** Plays main pushing a saved line or an unconfirmed one to the open meeting. */
     push(event: MeetingTranscriptChange | MeetingPartial) {
       if ("entries" in event) for (const listener of lineListeners) listener(event);
       else for (const listener of partialListeners) listener(event);

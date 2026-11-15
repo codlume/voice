@@ -162,8 +162,6 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
   return <RefreshGlyph checking={status.kind === "checking"} />;
 }
 
-// The history as it was when the prompt opened. The prompt describes that, stays mounted through
-// its fade-out, and is withdrawn when the live history would change what it says or offers.
 type RestartConfirm = { open: boolean; history: HistoryState };
 
 export function SidebarUpdates({

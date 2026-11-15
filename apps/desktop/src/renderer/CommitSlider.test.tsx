@@ -14,7 +14,6 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** A slider saved at 70 whose saves main has not answered yet. */
 function mount() {
   const commits: number[] = [];
   const answers: ((ok: boolean) => void)[] = [];
@@ -22,7 +21,6 @@ function mount() {
     commits.push(value);
     return new Promise<boolean>((resolve) => answers.push(resolve));
   };
-  // Each snapshot from main renders the slider again with the saved value.
   const publish = (saved: number) =>
     root?.render(
       <CommitSlider
@@ -52,7 +50,6 @@ function mount() {
     commits,
     press,
     shown: () => Number(thumb.getAttribute("aria-valuenow")),
-    // Main applies the save and pushes its snapshot, then answers the commit.
     land: (value: number, ok = true) =>
       act(async () => {
         if (ok) publish(value);
@@ -70,7 +67,6 @@ test("an older save landing under a newer pending commit does not move the thumb
   await slider.land(80);
   expect(slider.shown()).toBe(90);
   slider.press("ArrowLeft");
-  // Right, Right, Left from 70 is 80.
   expect(slider.commits.at(-1)).toBe(80);
 });
 

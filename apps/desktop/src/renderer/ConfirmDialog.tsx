@@ -14,7 +14,6 @@ export const dialogStyles = stylex.create({
   backdrop: {
     position: "fixed",
     inset: 0,
-    // The dark hub is already near black, so a light scrim would not separate the dialog.
     backgroundColor: { default: "rgb(0 0 0 / 32%)", [dark]: "rgb(0 0 0 / 60%)" },
     opacity: 1,
     transitionProperty: "opacity",
@@ -58,8 +57,6 @@ const styles = stylex.create({
     lineHeight: 1.45,
     color: color.mutedForeground,
   },
-  // Buttons do not shrink, so a row wider than the popup must wrap rather than spill out. The
-  // buttons wrap as a group, so a narrow row puts them under `footerStart` instead of splitting them.
   footer: {
     display: "flex",
     flexWrap: "wrap",
@@ -129,9 +126,6 @@ export function DialogFrame({
       >
         <Dialog.Title {...stylex.props(styles.title)}>{title}</Dialog.Title>
         {children}
-        {/* Cancel is the first button, so a dialog without fields opens on it and Enter cannot
-            destroy anything. `footerStart` precedes Cancel in tab order and would take that focus,
-            so pass it only in a dialog with fields. */}
         <div {...stylex.props(styles.footer)}>
           {footerStart}
           <div {...stylex.props(styles.actions)}>

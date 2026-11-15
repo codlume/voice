@@ -40,57 +40,40 @@ import type { HelperCommand, HelperEvent, MeetingCursor } from "./protocol.ts";
 
 export type MeetingRecorder = {
   start(): Promise<MeetingCommandResult>;
-  /** Stops the live meeting, or starts one; a meeting still starting is left to start. */
   toggle(): Promise<MeetingCommandResult>;
   pause(id: MeetingId): Promise<MeetingCommandResult>;
   resume(id: MeetingId): Promise<MeetingCommandResult>;
   stop(id: MeetingId): Promise<MeetingCommandResult>;
-  /** Answers "Started by mistake?". */
   keep(id: MeetingId): Promise<MeetingCommandResult>;
   discard(id: MeetingId): Promise<MeetingCommandResult>;
   generateSummary(id: MeetingId): Promise<MeetingCommandResult>;
-  /** Runs a failed final pass again over the audio it kept. */
   retryFinalPass(id: MeetingId): Promise<MeetingCommandResult>;
-  /** Deletes the audio a failed final pass kept; the live transcript stays. */
   deleteAudio(id: MeetingId): Promise<MeetingCommandResult>;
-  /** Answers "Still in a meeting?" with yes, so the recording does not stop. */
   keepRecording(id: MeetingId): void;
-  /** Deletes a meeting in any status, stopping its capture and its work first. */
   remove(id: MeetingId): Promise<void>;
   onHelperEvent(event: HelperEvent): void;
   helperExited(): void;
-  /** Finishes every meeting a crash or quit left unfinished, from its audio files. Never records. */
   recover(): Promise<void>;
   settled(): Promise<void>;
-  /** Stops summaries without writing anything, so a quit leaves them for the next launch. */
   dispose(): void;
 };
 
 export type MeetingRecorderDeps = {
   store: MeetingsStore;
-  /** The store's directory; each meeting's audio lives in its folder. */
   dir: string;
   send: (command: HelperCommand) => boolean;
   capture: () => { language: DictationLanguage; microphone: Microphone | null };
   systemAudioSupported: () => boolean;
   onTranscript: (change: MeetingTranscriptChange) => void;
-  /** Unconfirmed live text, passed straight on and never saved. */
   onPartial?: (partial: MeetingPartial) => void;
   onNotice: (id: MeetingId, notice: MeetingNotice) => void;
-  /** Writes summaries and titles to the meeting; its work is aborted when the meeting is deleted. */
   summarizer: Pick<MeetingSummarizer, "summarizeMeeting" | "generateTitle">;
   log: Log;
   now?: () => number;
 };
 
-/**
- * Without a word from the helper for this long, a start, drain or final pass counts as stalled.
- * Only the start counts from the command; the others count while speech recognition can run,
- * so a model still loading after a launch is not taken for a stall.
- */
 export const START_TIMEOUT_MS = 10_000;
 export const TRANSCRIBE_IDLE_MS = 60_000;
-/** The final pass reports only when done, for up to three hours of audio. */
 const FINAL_PASS_TIMEOUT_MS = 20 * 60_000;
 const WATCH_MS: Record<Watch, number> = {
   start: START_TIMEOUT_MS,
@@ -99,9 +82,7 @@ const WATCH_MS: Record<Watch, number> = {
 };
 
 const PCM_FILES = ["mic.pcm", "system.pcm"] as const;
-/** Deleted with the audio; `audio.json` goes separately, last. Older builds also wrote `output.ndjson` here. */
 const AUDIO_FILES = [...PCM_FILES, "output.ndjson"] as const;
-/** 16 kHz mono Int16. */
 const PCM_BYTES_PER_MS = 32;
 
 const REFUSALS: Partial<Record<MeetingEvent["type"], string>> = {
@@ -117,7 +98,6 @@ const REFUSALS: Partial<Record<MeetingEvent["type"], string>> = {
 
 const FAILED_START = "Recording could not start. Check your microphone, then try again.";
 
-/** After these the final pass, or the live transcript in its place, is the transcript. */
 const takesLiveLines = (meeting: Meeting) =>
   meeting.status.kind !== "summarizing" && meeting.status.kind !== "ready";
 
@@ -137,12 +117,6 @@ function failureOf(effect: MeetingEffect): MeetingEvent | null {
   }
 }
 
-/**
- * Executes `meeting-lifecycle.ts` against the helper: each event is stepped one at a time, the
- * meeting written, then its effects run. An effect that throws comes back as its failure event.
- * Audio is written by the helper into the meeting's folder; this module only names the folder,
- * tracks how far the transcript reaches, and deletes the audio once the transcript is final.
- */
 export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorder {
   const { store, log } = deps;
   const now = deps.now ?? Date.now;
@@ -150,26 +124,17 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const timers = new Map<MeetingId, Map<Timer, NodeJS.Timeout>>();
   const watchdogs = new Map<MeetingId, Watchdog>();
   const silence = new Map<MeetingId, NodeJS.Timeout>();
-  // Where the open leg's audio starts, from the helper's `meeting.started`.
   const legStart = new Map<MeetingId, number>();
-  // Whether every live line so far reached the transcript, once the saves under way have ended.
   const linesSaved = new Map<MeetingId, Promise<boolean>>();
-  // Meetings this run saw the live transcript finish, every line saved. Being left out of this set
-  // is the safe state: an empty final pass deletes the audio only for a meeting in it.
   const heardWhole = new Set<MeetingId>();
-  // False while speech recognition loads, as after a launch, when it cannot report yet.
   let recognizing = false;
   let queue: Promise<unknown> = Promise.resolve();
-  // Starts, resumes, toggles and the launch recovery run one at a time and each decides on the
-  // state the one before left, so two quick presses never record two meetings and a press during
-  // launch never stops a meeting recovery is about to finish.
   let decisions: Promise<unknown> = Promise.resolve();
   function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
     const decided = decisions.then(work);
     decisions = decided.catch(() => {});
     return decided;
   }
-  // Helper events start work outside the queue; `settled` waits for it too.
   const inflight = new Set<Promise<unknown>>();
 
   function background(what: string, work: Promise<unknown>) {
@@ -178,7 +143,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     void tracked.finally(() => inflight.delete(tracked));
   }
 
-  /** Summary and title work, one per meeting; a delete aborts it, and an abort ends it quietly. */
   async function summaryWork(id: MeetingId, work: (signal: AbortSignal) => Promise<unknown>) {
     summaries.get(id)?.abort();
     const controller = new AbortController();
@@ -195,7 +159,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   const folder = (id: MeetingId) => NodePath.join(deps.dir, id);
   const config = () => store.state().settings;
 
-  /** Resolves with whether the event changed anything. */
   function dispatch(id: MeetingId, event: MeetingEvent): Promise<boolean> {
     const next = queue.then(() => apply(id, event));
     queue = next.catch((error) => log(`meetings: ${event.type} failed (${String(error)})`));
@@ -203,7 +166,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   }
 
   async function apply(id: MeetingId, event: MeetingEvent): Promise<boolean> {
-    // Stepped inside the store's write, so a notes or folder edit queued meanwhile is not lost.
     let before = null as Meeting | null;
     let stepped: Step = { meeting: null, effects: [] };
     await store.upsert(id, (latest) => {
@@ -220,7 +182,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return meeting !== before || effects.length > 0;
   }
 
-  // A watchdog guards one status; leg timers and the silence prompt guard one recording.
   function statusChanged(id: MeetingId, before: Meeting | null, after: Meeting | null) {
     unwatch(id);
     const recording = after?.status.kind === "recording";
@@ -274,7 +235,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       case "stopCapture":
         deps.send({ type: "meeting.stop", id });
         return;
-      // A helper that is not running gets these again once it is ready.
       case "drain":
         if (meeting === null) return;
         deps.send({
@@ -401,7 +361,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       endMs: event.endMs,
       text: event.text,
     } as const;
-    // System audio is "Others" until the final pass tells its speakers apart.
     const entry: Segment =
       event.source === "mic"
         ? { ...base, source: "mic" }
@@ -431,13 +390,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return null;
   }
 
-  // A dictation mid-meeting: the helper records silence for it, and the transcript says why.
   async function dictated() {
     const meeting = store.state().meetings.find(({ status }) => status.kind === "recording");
     if (meeting) await mark(meeting, "dictated");
   }
 
-  /** The longer audio file's length in ms, or null while neither exists. */
   async function audioLength(id: MeetingId): Promise<number | null> {
     const sizes = await Promise.all(
       PCM_FILES.map((name) =>
@@ -451,11 +408,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return found.length === 0 ? null : Math.max(...found) / PCM_BYTES_PER_MS;
   }
 
-  /**
-   * Meeting time at the audio files' first byte. It is 0 until the audio is deleted after a final
-   * transcript; a resume after that starts new files after everything already transcribed, and
-   * `audio.json` remembers where.
-   */
   async function audioBase(meeting: Meeting): Promise<number> {
     if ((await audioLength(meeting.id)) === null) {
       return Math.max(recordedMs(meeting, now()), reach(await store.transcript(meeting.id)));
@@ -467,7 +419,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return typeof saved === "number" && Number.isFinite(saved) && saved >= 0 ? saved : 0;
   }
 
-  /** Meeting time at the end of the recorded audio, the time base segments use. */
   async function audioNow(meeting: Meeting): Promise<number> {
     const length = await audioLength(meeting.id);
     return (await audioBase(meeting)) + (length ?? 0);
@@ -483,7 +434,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     return reach;
   }
 
-  // `audio.json` goes last: without it, audio files left on disk would read as starting at 0.
   async function deleteAudio(id: MeetingId) {
     await Promise.all(
       AUDIO_FILES.map((name) => rm(NodePath.join(folder(id), name), { force: true })),
@@ -506,7 +456,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     }, WATCH_MS[watchdog.watch]);
   }
 
-  /** Word from the helper about what a watchdog guards starts its count again. */
   function progress(id: MeetingId) {
     const watchdog = watchdogs.get(id);
     if (watchdog?.timer) count(id, watchdog);
@@ -534,7 +483,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     timers.delete(id);
   }
 
-  // Ten minutes without a transcript segment from either source asks whether the meeting ended.
   function armSilence(id: MeetingId) {
     clearTimeout(silence.get(id));
     silence.set(
@@ -548,7 +496,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     );
   }
 
-  // Speech, or a yes to "Still in a meeting?", means the meeting goes on.
   function heard(id: MeetingId) {
     const legTimers = timers.get(id);
     clearTimeout(legTimers?.get("silenceStop"));
@@ -578,13 +525,11 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
     if (meetings.some(isLive)) {
       return { kind: "refused", message: "A meeting is already recording or paused." };
     }
-    // An unanswered "Started by mistake?" keeps its meeting rather than lose it.
     for (const meeting of meetings) {
       if (meeting.status.kind === "confirmingShort") await dispatch(meeting.id, { type: "keep" });
     }
     const id = randomUUID() as MeetingId;
     await dispatch(id, { type: "start", id });
-    // A start that failed before reaching the helper queued its failure behind the start.
     await queue;
     return store.get(id)
       ? { kind: "ok", id }
@@ -650,7 +595,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         case "meeting.started": {
           const id = event.id as MeetingId;
           const meeting = store.get(id);
-          // A start that came back after its meeting was given up on records for nothing.
           if (!meeting) {
             deps.send({ type: "meeting.cancel", id });
             return;
@@ -669,7 +613,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
           const id = event.id as MeetingId;
           const meeting = store.get(id);
           if (!meeting) return;
-          // The helper's error names devices and error codes, which help a log, not the user.
           log(`meetings: ${id} capture failed (${event.message})`);
           const failed = { type: "captureFailed", leg: meeting.spans.length } as const;
           background(event.type, dispatch(id, { ...failed, message: FAILED_START }));
@@ -717,7 +660,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
         }
         case "meeting.finalized":
         case "meeting.finalizeFailed": {
-          // The helper runs final passes one after another: one ending means the queue moved.
           for (const [id, watchdog] of watchdogs) if (watchdog.watch === "finalPass") progress(id);
           const id = event.id as MeetingId;
           if (event.type === "meeting.finalizeFailed") {
@@ -735,7 +677,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
       }
     },
     helperExited() {
-      // A new helper knows nothing of the old one's work; `ready` sends it again.
       setRecognizing(false);
       for (const id of watchdogs.keys()) unwatch(id);
       for (const meeting of store.state().meetings) {
@@ -764,7 +705,6 @@ export function createMeetingRecorder(deps: MeetingRecorderDeps): MeetingRecorde
   };
 }
 
-/** The latest meeting time the transcript holds anything at. */
 const reach = (transcript: readonly TranscriptEntry[]) =>
   Math.max(0, ...transcript.map((entry) => (entry.kind === "segment" ? entry.endMs : entry.atMs)));
 

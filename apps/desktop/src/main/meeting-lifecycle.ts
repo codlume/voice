@@ -22,14 +22,8 @@ export type LifecycleConfig = Pick<
 
 export type Timer = "maxLengthWarning" | "maxLength" | "silenceStop";
 
-/** What a watchdog guards: a capture start, the live transcript catching up, the final pass. */
 export type Watch = "start" | "drain" | "finalPass";
 
-/**
- * `leg` is the index of the recording leg an event is about, which is the meeting's span count
- * while that leg is open, so an event from an earlier leg changes nothing. A watchdog names what
- * it guarded, so one that fires after its phase ended changes nothing either.
- */
 export type MeetingEvent =
   | { type: "start"; id: MeetingId }
   | { type: "resume" }
@@ -40,16 +34,12 @@ export type MeetingEvent =
   | { type: "pause" }
   | { type: "stop" }
   | { type: "timer"; leg: number; timer: Timer }
-  /** Ten minutes without a transcript segment from either source. */
   | { type: "silence"; leg: number }
-  /** The live transcript caught up with the audio; `words` is the meeting's word count. */
   | { type: "drained"; words: number }
   | { type: "finalPass"; segments: readonly FinalSegment[] }
-  /** The final pass replaced the live transcript. */
   | { type: "finalized" }
   | { type: "finalizeFailed"; reason: FinalPassFailure }
   | { type: "stalled"; watch: Watch }
-  /** The helper (re)started: it knows nothing of the work it was doing. */
   | { type: "helperReady" }
   | { type: "helperExited" }
   | { type: "keep" }
@@ -59,26 +49,15 @@ export type MeetingEvent =
   | { type: "deleteAudio" }
   | { type: "generateSummary" }
   | { type: "summaryProgress"; progress: SummaryProgress }
-  /** `meeting-summary.ts` has written the summary, or the failure with the previous one, to the meeting. */
   | { type: "summarized" }
   | { type: "summaryFailed" }
-  /** A launch found the meeting unfinished. `lastAudioAt` closes a leg the crash left open. */
   | { type: "recover"; lastAudioAt: number; hasAudio: boolean };
 
-/**
- * The driver only executes these. It writes `meeting.json` whenever the step returns a different
- * meeting object, and ties its timers to statuses: a watchdog ends when the status it was armed
- * in does, leg timers when the recording does. A mark is placed at the end of the recorded audio,
- * which only the driver can read: segments are in audio time, so markers must be too.
- */
 export type MeetingEffect =
   | { type: "startCapture"; leg: number }
-  /** Ends the leg; the helper keeps transcribing what was recorded and reports `drained`. */
   | { type: "stopCapture" }
-  /** Transcribes what the transcript does not reach yet, without recording. */
   | { type: "drain" }
   | { type: "finalize" }
-  /** Writes the final pass in place of the live transcript, then reports `finalized`. */
   | { type: "applyFinalPass"; segments: readonly FinalSegment[] }
   | { type: "deleteAudio" }
   | { type: "watch"; watch: Watch }
@@ -86,26 +65,16 @@ export type MeetingEffect =
   | { type: "mark"; marker: MarkerKind }
   | { type: "summarize" }
   | { type: "cancelSummary" }
-  /** A meeting left without a summary still gets a title when its title is blank. */
   | { type: "generateTitle" }
-  /** Cancels whatever the helper does for the meeting, stops its work, and removes its folder. */
   | { type: "delete" }
   | { type: "notify"; notice: MeetingNotice };
 
 export type Step = { meeting: Meeting | null; effects: MeetingEffect[] };
 
-/** Wispr's lead: 2 minutes before a 30-minute limit, 5 before longer ones. */
 export const maxLengthWarningMs = (maxLength: MaxLength) => (maxLength === "30m" ? 2 : 5) * 60_000;
 export const SILENCE_PROMPT_MS = 10 * 60_000;
-/** An unanswered "Still in a meeting?" stops the recording after this long, as Wispr does. */
 export const SILENCE_STOP_MS = 30_000;
-/** Below this the user is asked "Started by mistake?" before anything else runs. */
 const SHORT_RECORDING_WORDS = 10;
-/**
- * A helper exit during a drain or final pass may have nothing to do with the meeting, so the work
- * is sent again once. A second exit in the same step is taken for the work's doing: each further
- * try would take dictation down with the helper, so the step ends as a stalled one does.
- */
 const HELPER_EXIT_LIMIT = 2;
 
 const notify = (notice: MeetingNotice): MeetingEffect => ({ type: "notify", notice });
@@ -139,7 +108,6 @@ const finalizing = (meeting: Meeting): Step => ({
   effects: [{ type: "finalize" }, watch("finalPass")],
 });
 
-/** Counts a helper exit against the drain or pass under way; at the limit the step is `lost`. */
 function helperExited(
   meeting: Meeting,
   status: Extract<MeetingStatus, { kind: "finishing" | "transcribing" }>,
@@ -155,8 +123,6 @@ const summarizing = (meeting: Meeting): Step => ({
   effects: [{ type: "summarize" }],
 });
 
-// A resumed meeting keeps its summary, which is now stale and offers "Update summary". The
-// summary writes a blank title; without one, the title is written on its own.
 function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
   if (meeting.summary.kind === "none" && summarizesOnStop(meeting)) {
     const next = summarizing(meeting);
@@ -166,7 +132,6 @@ function afterTranscript(meeting: Meeting, effects: MeetingEffect[]): Step {
   return { meeting: withStatus(meeting, { kind: "ready" }), effects: [...effects, ...title] };
 }
 
-// The live transcript stands in, and the audio stays for a retry.
 const finalPassFailed = (meeting: Meeting, reason: FinalPassFailure): Step =>
   afterTranscript({ ...meeting, finalPassFailed: reason }, [
     notify({ kind: "finalPassFailed", reason }),
@@ -204,13 +169,6 @@ function startFailure(event: MeetingEvent): string | null {
   }
 }
 
-/**
- * One meeting's lifecycle: starting, recording and paused, then finishing, an optional
- * "Started by mistake?" check, the final transcription pass, the summary, and ready. A null
- * meeting is one that does not exist: before a start, after a failed start, after a discard or
- * a delete. Only an explicit start or resume asks for capture; recovery only ever finalizes.
- * Every status has a way out, and a delete ends any of them.
- */
 export function step(
   meeting: Meeting | null,
   event: MeetingEvent,
@@ -385,7 +343,6 @@ export function step(
           return finishing(meeting, [{ type: "drain" }]);
         case "discard":
           return gone([]);
-        // A start that came back after it timed out: the meeting stays paused.
         case "captureStarted":
           return { meeting, effects: [{ type: "stopCapture" }] };
         default:
@@ -397,7 +354,6 @@ export function step(
           return event.words < SHORT_RECORDING_WORDS
             ? { meeting: withStatus(meeting, { kind: "confirmingShort" }), effects: [] }
             : finalizing(meeting);
-        // Without a word count the meeting is kept rather than asked about.
         case "stalled":
           return event.watch === "drain" ? finalizing(meeting) : same;
         case "helperExited":
@@ -469,7 +425,6 @@ export function step(
             effects: [notify({ kind: "summaryFailed", message })],
           };
         }
-        // The summary in progress gives way; the one before it, if any, is then stale.
         case "resume": {
           const next = resume(meeting, "ready", config);
           return next.meeting === meeting
@@ -499,7 +454,6 @@ export function step(
   }
 }
 
-// The live transcript becomes the meeting's transcript for good.
 const audioDeleted = (meeting: Meeting): Step =>
   meeting.finalPassFailed
     ? { meeting: { ...meeting, finalPassFailed: null }, effects: [{ type: "deleteAudio" }] }
