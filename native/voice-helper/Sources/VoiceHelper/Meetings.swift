@@ -130,6 +130,10 @@ final class MeetingTranscription {
     private var baseMs = 0.0
     private var language = DictationLanguage.auto
     private var cursor: [MeetingSource: Int] = [.mic: 0, .system: 0]
+    // The voice detector as it stands at each source's cursor, having heard the source up to
+    // there. None before the first window, and after a window no detector could tell about.
+    private var detectors: [MeetingSource: any VoiceDetector] = [:]
+    private var saidUnconfirmed = false
     // The sources the current leg records, none once it stopped.
     private var recording: Set<MeetingSource> = []
     private var loop: Task<Void, Never>?
@@ -152,6 +156,7 @@ final class MeetingTranscription {
     func update(dir: URL, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) {
         if baseMs != self.baseMs || dir.path != self.dir.path {
             cursor = [.mic: 0, .system: 0]
+            detectors = [:]
             partialEnd = [:]
         }
         self.dir = dir
@@ -259,11 +264,23 @@ final class MeetingTranscription {
             }
         }
         cursor[window.source] = window.offset + window.heard.samples.count
+        detectors[window.source] = window.heard.detector
         clearPartial(window.source)
     }
 
+    /// What to decode of `source` from its cursor on, heard by the detector that stands at the
+    /// cursor. Only a window that was transcribed moves that detector on. A partial, and a
+    /// window read again after a dictation or a failed decode, leave it where it stands, so the
+    /// window that follows hears the same audio the same way.
     private func listen(to source: MeetingSource, offset: Int, count: Int) async throws -> HeardAudio {
-        try await source.listen(in: dir, offset: offset, count: count, detector: await newDetector())
+        var detector = detectors[source]
+        if detector == nil { detector = await newDetector() }
+        let heard = try await source.listen(in: dir, offset: offset, count: count, detector: detector)
+        if source == .mic, heard.detector == nil, !saidUnconfirmed {
+            saidUnconfirmed = true
+            output.log(.error, "meeting \(id): no voice detector, so every sound on the mic is transcribed")
+        }
+        return heard
     }
 
     /// Audio after a source's cursor that no window takes yet because no pause has come, once at
@@ -344,8 +361,8 @@ final class MeetingFinalPass {
 
     func run(id: String, dir: URL, baseMs: Double, language: DictationLanguage) async {
         do {
-            let mic = try await words(of: .mic, in: dir, baseMs: baseMs, language: language)
-            let system = try await words(of: .system, in: dir, baseMs: baseMs, language: language)
+            let mic = try await words(of: .mic, id: id, in: dir, baseMs: baseMs, language: language)
+            let system = try await words(of: .system, id: id, in: dir, baseMs: baseMs, language: language)
             var turns: [SpeakerTurn]?
             if !system.isEmpty {
                 try await dictationDone()
@@ -365,17 +382,26 @@ final class MeetingFinalPass {
         }
     }
 
-    private func words(of source: MeetingSource, in dir: URL, baseMs: Double, language: DictationLanguage) async throws -> [TimedWord] {
+    private func words(of source: MeetingSource, id: String, in dir: URL, baseMs: Double, language: DictationLanguage) async throws -> [TimedWord] {
         let url = source.file(in: dir)
         let total = PcmFile.frames(at: url)
         var offset = 0
         var words: [TimedWord] = []
+        // The voice detector hears the source from the start of the file, window after window.
+        var detector: (any VoiceDetector)?
+        var saidUnconfirmed = false
         while offset < total {
             try await dictationDone()
             let samples = try PcmFile.read(at: url, offset: offset, count: MeetingChunker.finalWindowSamples)
             guard !samples.isEmpty else { break }
             let count = MeetingChunker.finalCut(samples)
-            let heard = try await source.listen(in: dir, offset: offset, count: count, detector: await newDetector())
+            if detector == nil { detector = await newDetector() }
+            let heard = try await source.listen(in: dir, offset: offset, count: count, detector: detector)
+            detector = heard.detector
+            if source == .mic, detector == nil, !saidUnconfirmed {
+                saidUnconfirmed = true
+                output.log(.error, "meeting \(id) final pass: no voice detector, so every sound on the mic is transcribed")
+            }
             for run in heard.runs {
                 // The gate and each decode suspend, so a dictation may have started since the last check.
                 try await dictationDone()
