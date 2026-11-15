@@ -50,6 +50,10 @@ private final class FakeTap: MeetingTap {
 
 private final class FakeWriter: MeetingAudioWriter {
     private(set) var samples: [Float] = []
+    /// The frames a power loss would leave. Like `PcmWriter`, the file flushes itself each time
+    /// it was handed 5 s.
+    private(set) var flushedFrames = 0
+    private var unflushed = 0
     var diskIsFull = false
 
     var frames: Int { samples.count }
@@ -58,6 +62,11 @@ private final class FakeWriter: MeetingAudioWriter {
     func append(_ samples: [Float]) throws {
         if diskIsFull { throw CocoaError(.fileWriteOutOfSpace) }
         self.samples += samples
+        unflushed += samples.count
+        if unflushed >= 5 * PcmFile.sampleRate {
+            flushedFrames = frames
+            unflushed = 0
+        }
     }
 
     func pad(to target: Int) throws {
@@ -186,6 +195,34 @@ private final class Leg {
         let theirs = try #require(leg.writers["system.pcm"]?.firstLoudFrame)
         let echoed = try #require(leg.writers["mic.pcm"]?.firstLoudFrame)
         #expect(echoed - theirs == heardLate, "the echo gate looks for the echo -100 to +600 ms after what played")
+    }
+
+    @Test func aPowerLossLeavesBothFilesEndingWithinAPumpOfEachOther() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        // The tap's pump comes round a little slower than the mic's, so its chunks are longer.
+        let pump = (mic: 1600, tap: 1700)
+        var next = (mic: 0, tap: 0)
+        var apart = 0
+        var unsaved = 0
+        while next.mic < 60 * PcmFile.sampleRate {
+            if next.mic <= next.tap {
+                leg.mic.deliver([Float](repeating: 0, count: pump.mic), at: t0 + .nanoseconds(next.mic * 62_500))
+                next.mic += pump.mic
+            } else {
+                leg.taps[0].deliver([Float](repeating: 0, count: pump.tap), at: t0 + .nanoseconds(next.tap * 62_500))
+                next.tap += pump.tap
+            }
+            let mic = try #require(leg.writers["mic.pcm"])
+            let system = try #require(leg.writers["system.pcm"])
+            apart = max(apart, abs(mic.flushedFrames - system.flushedFrames))
+            unsaved = max(unsaved, mic.frames - mic.flushedFrames)
+        }
+        leg.end()
+
+        #expect(apart <= pump.tap, "the echo gate has system audio for all the mic audio a power loss leaves, but one pump")
+        #expect(unsaved <= 5 * PcmFile.sampleRate + pump.tap, "and a power loss costs 5 s of the meeting at most")
     }
 
     @Test func aMicThatReopensAfterADeviceChangeLeavesSilenceForTheTimeItWasAway() throws {
