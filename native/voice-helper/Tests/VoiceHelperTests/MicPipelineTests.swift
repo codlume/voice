@@ -234,6 +234,38 @@ private func feed(
         #expect(abs(tail.capturedAt.uptimeMs - 5310) < 0.001, "nothing new was captured, so the tail follows the last chunk")
     }
 
+    /// A meeting file places each chunk at its capture time, so a steady stream must come out
+    /// stamped where its samples follow on, however much the resampler holds back per pull.
+    @Test(arguments: [512, 1024])
+    func chunksOfASteadyStreamAreStampedWhereTheirSamplesFollowOn(ioFrames: Int) throws {
+        let fixture = NoiseEndingInToneBurst(rate: 48_000, seconds: 20)
+        let format = try fixture.format()
+        let pipeline = try MicPipeline(hardware: format)
+        pipeline.start()
+        let quanta = fixture.quanta(of: ioFrames)
+        // The main-thread pump pulls every 100 ms or so, so each pull takes a few IO buffers more or less.
+        let pulls = [9, 10, 11, 10, 12, 8, 10, 9, 11].map { $0 * 512 / ioFrames }
+        var chunks: [AudioChunk] = []
+        var next = 0
+        for (index, buffers) in zip(0..., repeatElement(pulls, count: 100).joined()) where next < quanta.count {
+            for range in quanta[next..<min(next + buffers, quanta.count)] {
+                let buffer = try planarBuffer(fixture, range, format: format)
+                let capturedAtMs = 5000 + Double(range.lowerBound) / 48
+                pipeline.receive(buffer.audioBufferList, frames: range.count,
+                                 hostTime: AudioConvertNanosToHostTime(UInt64(capturedAtMs * 1_000_000)))
+            }
+            next += buffers
+            if let chunk = pipeline.pull() { chunks.append(chunk) } else { #expect(index == 0) }
+        }
+        var sampleMs = chunks[0].capturedAt.uptimeMs
+        var worst = 0.0
+        for chunk in chunks {
+            worst = max(worst, abs(chunk.capturedAt.uptimeMs - sampleMs))
+            sampleMs += Double(chunk.samples.count) / 16
+        }
+        #expect(worst < 1, "a chunk stamped \(worst) ms away from where its samples follow on")
+    }
+
     @Test func interleavedHardwareFormatIsRejected() throws {
         let interleaved = try #require(
             AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
