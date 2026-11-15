@@ -1,4 +1,3 @@
-// Load the Electron mock before the adapter and plugin storage.
 import {
   API,
   USER,
@@ -39,7 +38,6 @@ describe("an abandoned exchange through the real auth client", () => {
       const code = await signInCode(h, auth);
       const response = signedIn("late-token");
       const getHeader = response.headers.get.bind(response.headers);
-      // The user gives up as the answer arrives: Cancel, or the attempt's deadline.
       vi.spyOn(response.headers, "get").mockImplementation((name) => {
         if (name.toLowerCase() === "set-cookie" && h.state.kind === "signingIn") {
           if (ending === "cancel") h.account.cancelSignIn();
@@ -105,7 +103,6 @@ describe("an abandoned exchange through the real auth client", () => {
     http.answer = () => pending.promise;
     const late = auth.redeem(code, new AbortController().signal);
     await vi.waitFor(() => expect(http.sent).toHaveLength(1));
-    // What a newer sign-in does to whatever is stored before it opens the browser.
     auth.forget();
     pending.resolve(signedIn("late-token"));
     const result = await late;

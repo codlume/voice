@@ -18,22 +18,11 @@ export type {
   TransformResult,
 } from "@voice/cleanup/transform";
 
-/**
- * `run` and `generate` resolve with data for every failure the input caused and reject only on abort
- * (`signal.reason`), a model that is not installed, a load failure or a lost process.
- *
- * While `keepLoaded` holds, the model loads as soon as its weights are on disk and stays past the
- * idle wait. Call `follow` when `keepLoaded` may have changed. `unload` and `uninstall` still win.
- */
 export type TransformModel = {
   refresh(): Promise<void>;
   install(): Promise<void>;
   uninstall(): Promise<void>;
   run(request: TransformRequest): Promise<TransformResult>;
-  /**
-   * One step on the same loaded model, such as a meeting summary step. A Transform stops it and
-   * goes first, and the step then runs again, so it must be safe to repeat.
-   */
   generate(request: GenerateRequest): Promise<GenerateResult>;
   warm(): void;
   follow(): void;
@@ -56,7 +45,6 @@ export type TransformModule = Pick<
 type TransformModelOptions = {
   modelsDir: string;
   baseUrl?: string | undefined;
-  /** True while a transform runs after every dictation. Read whenever residency is decided. */
   keepLoaded: () => boolean;
   onStatus: (status: ModelStatus) => void;
   log: (message: string) => void;
@@ -204,8 +192,6 @@ export function createTransformModel(options: TransformModelOptions): TransformM
     return engine;
   }
 
-  // Called where weights arrive, never where a load fails, so a broken model cannot reload in a
-  // loop. The next run or warm retries.
   function loadIfKept() {
     if (options.keepLoaded() && state.phase === "installed") loadedEngine().catch(() => undefined);
   }

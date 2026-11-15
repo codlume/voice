@@ -13,11 +13,6 @@ import {
   type PillMeetingStatus,
 } from "../shared/meetings.ts";
 
-/**
- * The meeting the Flow Bar and the notepad follow, the last prompt a notice raised, and the
- * notices the Meetings page shows, newest first. Each stays until the user dismisses it or it no
- * longer applies; dismissing a notice in one place dismisses it in the other.
- */
 export type MeetingFocus = {
   current: CurrentMeeting | null;
   raised: Raised | null;
@@ -43,7 +38,6 @@ export const noMeetingFocus: MeetingFocus = {
 
 type CurrentMeeting = Meeting & { status: PillMeetingStatus };
 
-// A capture comes first, then an answer the user owes, then a meeting they can resume.
 const rank: Record<PillMeetingStatus["kind"], number> = {
   starting: 0,
   recording: 0,
@@ -54,7 +48,6 @@ const rank: Record<PillMeetingStatus["kind"], number> = {
 
 const isCurrent = (meeting: Meeting): meeting is CurrentMeeting => meeting.status.kind in rank;
 
-/** Meetings arrive newest first, so a tie goes to the newest. */
 export function currentMeeting(meetings: readonly Meeting[]): CurrentMeeting | null {
   let best: CurrentMeeting | null = null;
   for (const meeting of meetings) {
@@ -64,10 +57,6 @@ export function currentMeeting(meetings: readonly Meeting[]): CurrentMeeting | n
   return best;
 }
 
-/**
- * The prompt a notice raises where the user is. A failed start leaves no meeting to show it on,
- * and the final pass and a failed summary belong to the Voice window.
- */
 export function noticePrompt(notice: MeetingNotice, now: number): MeetingPrompt | null {
   switch (notice.kind) {
     case "silence":
@@ -100,8 +89,6 @@ function stillApplies(raised: Raised, meeting: Meeting): boolean {
   }
 }
 
-// A failed start has no meeting; it is moot once one records. A failed summary goes once it is
-// tried again, and a failed final pass once the pass is made or its audio deleted.
 function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   if (banner.kind === "startFailed") return !meetings.some(isCapturing);
   const meeting = meetings.find(({ id }) => id === banner.id);
@@ -122,7 +109,6 @@ function stillShown(banner: Banner, meetings: readonly Meeting[]): boolean {
   }
 }
 
-/** Follows the meetings: picks the current one and drops prompts and notices that stopped applying. */
 export function follow(focus: MeetingFocus, meetings: readonly Meeting[]): MeetingFocus {
   const current = currentMeeting(meetings);
   const { raised } = focus;
@@ -168,11 +154,9 @@ const noticeActions: Partial<Record<MeetingNotice["kind"], readonly MeetingNotic
   summaryReady: ["viewSummary"],
 };
 
-/** Answers the notepad's prompt, and takes the notice it came from off the Meetings page. */
 export const dismiss = (focus: MeetingFocus): MeetingFocus =>
   focus.raised ? dismissBanner(focus, focus.raised.key) : focus;
 
-/** Takes a notice off the Meetings page and the notepad; null is a prompt with no notice. */
 export function dismissBanner(focus: MeetingFocus, key: number | null): MeetingFocus {
   const raised = focus.raised && (key === null || focus.raised.key === key) ? null : focus.raised;
   const banners = key === null ? focus.banners : focus.banners.filter((b) => b.key !== key);
@@ -190,7 +174,6 @@ export function restartNotice(focus: MeetingFocus): MeetingBanner | null {
   return banner ? asBanner(banner) : null;
 }
 
-/** "Started by mistake?" holds the meeting, so it comes before anything a notice raised. */
 export function promptFor(meeting: Meeting, focus: MeetingFocus): MeetingPrompt | null {
   if (meeting.status.kind === "confirmingShort") return { kind: "startedByMistake" };
   return focus.raised?.id === meeting.id ? focus.raised.prompt : null;

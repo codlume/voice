@@ -49,7 +49,6 @@ afterEach(async () => {
 const envelope = (retention: HistoryRetention, entries: readonly unknown[]) =>
   JSON.stringify({ version: 1, retention, entries });
 
-// `retention` plays an earlier run that chose the window: the store reads it from the file.
 function harness(retention: HistoryRetention = "memory", options: { file?: string } = {}) {
   const path = options.file ?? file;
   if (retention !== "memory" && !existsSync(path)) writeFileSync(path, envelope(retention, []));

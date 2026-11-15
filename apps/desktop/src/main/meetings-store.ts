@@ -36,41 +36,19 @@ import {
 import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 
-/** A meeting a crash or quit left mid-lifecycle. `lastWriteAt` is the newest file in its folder. */
 type Unfinished = { meeting: Meeting; lastWriteAt: number };
 
 export type MeetingsStore = {
-  /** Resolves once the launch read is in and retention has run. */
   loaded(): Promise<void>;
   state(): MeetingsState;
   get(id: MeetingId): Meeting | null;
-  /** The transcript as its lines mean it; empty for a meeting with none. */
   transcript(id: MeetingId): Promise<TranscriptEntry[]>;
-  /**
-   * Changes the meeting, or makes it from null, against the latest copy after every write queued
-   * before it, so a change never overwrites one it did not see. Returning the same meeting or null
-   * writes nothing; a meeting deleted this run is not brought back.
-   *
-   * A meeting that already exists keeps the change when its write fails: memory and the hub move
-   * on, the failure is logged, and disk catches up with the meeting's next successful write. A
-   * failed write rejects, changing nothing, for a new meeting and for a change that `mustPersist`,
-   * which is any change the caller acts on in a way disk must know about, such as recording or
-   * deleting audio.
-   */
   upsert(
     id: MeetingId,
     change: (meeting: Meeting | null) => { meeting: Meeting | null; mustPersist: boolean },
   ): Promise<void>;
-  /** Resolves with the changed meeting, or null when there is no such meeting. */
   update(id: MeetingId, change: (meeting: Meeting) => Meeting): Promise<Meeting | null>;
-  /** Resolves with the meeting's `transcriptRevision` after the lines, or null when none landed. */
   append(id: MeetingId, entries: readonly TranscriptEntry[]): Promise<number | null>;
-  /**
-   * Swaps in a whole transcript and the meeting that goes with it, as the final pass does. The
-   * transcript is written first, atomically, so a crash between the two leaves a transcript
-   * whose new speakers read as Others and a meeting that runs the pass again. False when the
-   * meeting is gone.
-   */
   replaceTranscript(
     id: MeetingId,
     change: (
@@ -78,16 +56,13 @@ export type MeetingsStore = {
       transcript: TranscriptEntry[],
     ) => { meeting: Meeting; transcript: readonly TranscriptEntry[] },
   ): Promise<boolean>;
-  /** Deletes the meeting's folder: transcript, notes, summary and any audio. */
   remove(id: MeetingId): Promise<void>;
   createFolder(draft: FolderDraft): Promise<Folder>;
   updateFolder(id: FolderId, draft: FolderDraft): Promise<void>;
-  /** Removes the folder and takes every meeting out of it. Meetings stay. */
   removeFolder(id: FolderId): Promise<void>;
   setInFolder(meetingId: MeetingId, folderId: FolderId, inFolder: boolean): Promise<void>;
   updateSettings(patch: MeetingsSettingsPatch): Promise<void>;
   search(query: string): Promise<MeetingSearchHit[]>;
-  /** Deletes ready meetings older than the retention. The timer runs late after sleep, so wake-ups call this. */
   expire(): Promise<void>;
   unfinished(): Promise<Unfinished[]>;
   settled(): Promise<void>;
@@ -97,8 +72,6 @@ const VERSION = 1;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const MAX_TIMER_MS = 2 ** 31 - 1;
-// Typing asks again at each pause, and each search reads every transcript, so their text is kept
-// until this long after the last search.
 const SEARCH_KEEP_MS = 60_000;
 const SEARCH_SLICE_MS = 8;
 
@@ -144,18 +117,12 @@ export function createMeetingsStore(options: {
   const meetings = new Map<MeetingId, Meeting>();
   let folders: readonly Folder[] = [];
   let settings = DEFAULT_MEETINGS_SETTINGS;
-  // Files this run could not read are never overwritten, so their changes are refused instead.
   const leftAlone = new Set<"folders" | "settings">();
-  // Ids deleted this run, so a late segment or save does not bring the folder back.
   const tombstones = new Set<MeetingId>();
-  // Transcripts whose last line this run checked, so an append never joins a line a crash tore.
   const appendChecked = new Set<MeetingId>();
-  // Meetings this launch found unfinished. Recovery finishes them; retention waits a launch, so
-  // a meeting is never deleted the moment it comes back, before the user saw it.
   const recovered = new Set<MeetingId>();
   let ready = false;
   let expiry: NodeJS.Timeout | null = null;
-  // Spoken text by meeting while searches go on; a transcript write or a rename makes it stale.
   const searchable = new Map<
     MeetingId,
     { revision: number; speakers: readonly Speaker[]; text: string }
@@ -257,7 +224,6 @@ export function createMeetingsStore(options: {
     try {
       await rm(meetingDir(id), { recursive: true, force: true });
     } catch (error) {
-      // The meeting is still listed, so it has to keep taking edits and transcript lines.
       tombstones.delete(id);
       throw error;
     }
@@ -269,7 +235,6 @@ export function createMeetingsStore(options: {
       const cutoff = now();
       const old = [...meetings.values()].filter((meeting) => expiresAt(meeting) <= cutoff);
       let deleted = 0;
-      // One folder that will not delete must not fail the launch that every meeting action awaits.
       for (const { id } of old) {
         try {
           await removeNow(id);
@@ -312,7 +277,6 @@ export function createMeetingsStore(options: {
     ready = true;
   }).then(expire);
 
-  // Runs after the folders are written, so no meeting points at a folder that is not saved.
   async function refileMeetings(
     targets: readonly { folder: Folder; before: FolderKind | null }[],
   ): Promise<Meeting[]> {
@@ -372,8 +336,6 @@ export function createMeetingsStore(options: {
         appendChecked.add(id);
         const meeting = meetings.get(id);
         if (!meeting) return null;
-        // Neither written nor published: the caller sends the lines on with this revision, and
-        // the next write of the meeting carries it.
         const transcriptRevision = meeting.transcriptRevision + 1;
         meetings.set(id, { ...meeting, transcriptRevision });
         return transcriptRevision;
@@ -407,7 +369,6 @@ export function createMeetingsStore(options: {
       serial(async () => {
         const before = folders.find((folder) => folder.id === id);
         if (!before) return;
-        // Built from the draft alone, so a folder turned manual drops its old rule.
         const folder: Folder = { ...cleanDraft(draft), id, createdAt: before.createdAt };
         await writeFolders(folders.map((other) => (other.id === id ? folder : other)));
         publish(await refileMeetings([{ folder, before }]));
@@ -415,7 +376,6 @@ export function createMeetingsStore(options: {
     removeFolder: (id) =>
       serial(async () => {
         if (!folders.some((folder) => folder.id === id)) return;
-        // Meetings first: a failure there leaves the folder, so no meeting points at nothing.
         const members = [...meetings.values()].filter((meeting) => meeting.folderIds.includes(id));
         const changed: Meeting[] = [];
         for (const meeting of members) {
@@ -461,7 +421,6 @@ export function createMeetingsStore(options: {
       const hits: MeetingSearchHit[] = [];
       let slice = performance.now();
       for (const meeting of list()) {
-        // Kept text makes the whole search synchronous, so it gives way to shortcuts and IPC.
         if (performance.now() - slice > SEARCH_SLICE_MS) {
           await new Promise<void>((resolve) => setImmediate(resolve));
           slice = performance.now();
@@ -505,7 +464,6 @@ export function createMeetingsStore(options: {
   }
 }
 
-// A crash mid-append leaves a line with no newline; the next line must not join it.
 async function tornTail(file: string): Promise<boolean> {
   let handle;
   try {
@@ -561,7 +519,6 @@ function parseStatus(raw: unknown): MeetingStatus | null {
       return raw.step === "draining" || raw.step === "finalizing"
         ? { kind: "transcribing", step: raw.step }
         : null;
-    // Progress is only for the run that reported it.
     case "summarizing":
       return { kind: "summarizing", progress: null };
     case "paused":

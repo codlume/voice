@@ -97,7 +97,6 @@ function parseStyles(c: Record<string, unknown>): CategoryStyles {
   };
 }
 
-// Transforms had their shortcuts first, so a transform's shortcut stays the transform's.
 function parseMeetingShortcut(raw: unknown, transforms: TransformSettings): Shortcut | null {
   const shortcut = raw === undefined ? DEFAULT_MEETING_SHORTCUT : parseShortcut(raw);
   if (shortcut === null) return null;
@@ -117,14 +116,11 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
   return {
     microphone: Option.getOrNull(Schema.decodeUnknownOption(MicrophoneSchema)(r.microphone)),
     hotkey,
-    // One key cannot both hold and toggle, so taking it for holding turns toggling off.
     toggleHotkey: toggleHotkey === hotkey ? null : toggleHotkey,
     updateChannel: pick(UPDATE_CHANNELS, r.updateChannel, defaultChannel),
     dictationLanguage: parseDictationLanguage(r.dictationLanguage),
     theme: pick(THEMES, r.theme, DEFAULT_SETTINGS.theme),
     pageAnimationMs: pageAnimationMs(r.pageAnimationMs),
-    // Before the amount was adjustable, the switch was `muteWhileDictating` and it silenced
-    // outputs, so a user who had it on stays fully muted.
     lowerAudioWhileDictating: flag(
       r.lowerAudioWhileDictating,
       flag(r.muteWhileDictating, DEFAULT_SETTINGS.lowerAudioWhileDictating),
@@ -154,7 +150,6 @@ export function parseSettings(raw: unknown, defaultChannel: UpdateChannel = "sta
 
 const decodePatch = Schema.decodeUnknownOption(SettingsPatchSchema, { onExcessProperty: "error" });
 
-/** Parses a patch from the renderer, refusing the save rather than dropping what it cannot read. */
 export function parseSettingsPatch(raw: unknown): SettingsPatch {
   return Option.getOrThrowWith(decodePatch(raw), () => new Error("Could not save these settings."));
 }
@@ -173,21 +168,11 @@ export function applyPatch(
     },
     transforms: { ...settings.transforms, ...transforms },
   };
-  // Parsing again settles what one field cannot check alone, like a toggle key that is also the
-  // hold key.
   return parseSettings(next);
 }
 
 type SettingsFile = {
   settings: Settings;
-  /**
-   * Writes over the file's record, so top-level keys this build does not know survive a downgrade.
-   * A setting that did not change keeps its value on disk, so one this build could not read, like
-   * a newer build's hotkey or a dictionary word past this build's limit, outlives a save of
-   * another. A file that is not JSON, or that launch could not use, is set aside first so its
-   * bytes outlive the defaults that replace it. A file that cannot be read fails the save rather
-   * than being overwritten.
-   */
   save(next: Settings): Promise<void>;
 };
 
@@ -223,9 +208,6 @@ export function openSettings(
         ),
       );
       for (const key of kept) merged[key] = onDisk[key];
-      // A value kept from disk must read as it did before the save. One setting can depend on
-      // another, as the toggle key does on the hold key, so a kept value that would now read
-      // differently is written after all.
       while (kept.size > 0) {
         const reread: Record<string, unknown> = parseSettings(merged, defaultChannel);
         const stale = [...kept].filter((key) => !isDeepStrictEqual(wanted[key], reread[key]));
@@ -235,7 +217,6 @@ export function openSettings(
           kept.delete(key);
         }
       }
-      // Dictionary words and snippet expansions are the user's own text, kept like history.
       await writeFileAtomic(file, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
       saved = next;
     },

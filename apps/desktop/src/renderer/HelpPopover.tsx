@@ -22,7 +22,6 @@ import { pageStyles } from "./pageStyles.ts";
 import { shortcuts, withShortcut } from "./shortcuts.ts";
 import { color, font, radius, space } from "./tokens.stylex.ts";
 
-/** The list of the page's items, focusing the one a step returned from; or one item's step. */
 export type HelpState =
   | { kind: "closed" }
   | { kind: "list"; from?: number }
@@ -30,12 +29,10 @@ export type HelpState =
 
 export const helpClosed: HelpState = { kind: "closed" };
 
-/** Links each page's info button to the one popover the hub renders. */
 const helpHandle = Popover.createHandle();
 
 type HelpControl = {
   open: boolean;
-  /** The page's info button, which the popover sits beside and returns focus to. */
   placeButton: (element: HTMLButtonElement | null, page: AppPage) => void;
 };
 
@@ -185,11 +182,9 @@ const scroller = (element: Element) => {
 
 const controls = "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])";
 
-/** The control itself, or the first one inside a highlighted area. */
 const firstControl = (element: HTMLElement) =>
   element.matches(controls) ? element : element.querySelector<HTMLElement>(controls);
 
-/** Whether a container would cut off the ring drawn outside the control. */
 function clipped(element: Element): boolean {
   const ring = element.getBoundingClientRect();
   const reach = 5;
@@ -225,7 +220,6 @@ function tabIntoButton(event: FocusEvent<HTMLDivElement>) {
   button.focus();
 }
 
-/** A page's title, with the info button when the page has help. */
 export function HelpTitle({
   page,
   style,
@@ -277,9 +271,6 @@ export function HelpPopover({
 }) {
   const written = helpFor(page);
   const open = state.kind !== "closed" && written !== null && button !== null;
-  // Only items whose control is on the page now: Search, the list and the overview need meetings,
-  // and Insights draws its cards once its numbers load. Read after the page commits, so a page
-  // switch never reads the old page, and again whenever the page changes while help is open.
   const [onScreen, setOnScreen] = useState<readonly string[]>([]);
   useLayoutEffect(() => {
     if (!open) return;
@@ -330,8 +321,6 @@ export function HelpPopover({
     return () => target.removeAttribute("data-help-active");
   }, [target, button]);
 
-  // Focus follows each move between the list and a step. A page switch leaves focus on the page,
-  // including when the popover reopens because the new page drew its info button late.
   const wanted = state.kind !== "closed";
   const moved = state.kind === "step" ? state.index : state.kind;
   const focusedPage = useRef(page);
@@ -344,12 +333,10 @@ export function HelpPopover({
     }
     switchedPage.current = false;
     if (wanted) focusFirst.current?.focus({ preventScroll: true });
-    // moved is not read here; it is the change focus follows.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [wanted, moved, page]);
   const initialFocus = () => (switchedPage.current ? false : focusFirst.current);
 
-  // A point beside the info button, or beside the control when the button's side would cover it.
   const anchor = useMemo(
     () =>
       button && {
@@ -382,9 +369,7 @@ export function HelpPopover({
       open={open}
       triggerId={buttonId(page)}
       onOpenChange={(next, details) => {
-        // Help stays up while the user works the page and moves between pages; it closes on purpose.
         if (details.reason === "outside-press" || details.reason === "focus-out") return;
-        // Escape belongs to whatever has focus; on the page it might clear a search instead.
         const focused = document.activeElement;
         const inHelp =
           focused === button || document.getElementById(popupId)?.contains(focused) === true;
@@ -421,7 +406,6 @@ export function HelpPopover({
             }}
             {...stylex.props(styles.popup)}
           >
-            {/* Focus stays on Next while the steps change, so the step is read out from here. */}
             <p role="status" {...stylex.props(styles.srOnly)}>
               {step &&
                 state.kind === "step" &&
@@ -526,7 +510,6 @@ function Step({
   focusRef: RefObject<HTMLButtonElement | null>;
   onGo: (index: number) => void;
   onList: () => void;
-  /** Null when the highlighted part has nothing to use, like an Insights card. */
   onTry: (() => void) | null;
   onDone: () => void;
 }) {

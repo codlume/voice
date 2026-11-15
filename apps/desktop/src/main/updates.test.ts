@@ -23,10 +23,9 @@ const notesFor = (version: string, item: string) => ({
 });
 
 /**
- * Models electron-updater 6.8.9: a check compares the feed with the installed version, an
+ * Models electron-updater 6.8.11: a check compares the feed with the installed version, an
  * available check stores what it found, downloadUpdate stages that stored release, and a check
- * or download that fails emits "error" before it rejects. Tests disturb `check` and `download`;
- * the library-facing methods wrap them so that every rejection, mocked or not, emits.
+ * or download that fails emits "error" before it rejects.
  */
 class FakeUpdater extends EventEmitter {
   autoDownload = true;

@@ -397,7 +397,6 @@ describe("scrubLogs", () => {
     expect(logPayload).toEqual(before);
   });
 
-  // A helper line is matched by its exact text, so a reworded line would stop leaving silently.
   test("every allowlisted helper line is a literal in the helper source", () => {
     const sources = NodePath.join(import.meta.dirname, "../../../../native/voice-helper/Sources");
     const swift = readdirSync(sources, { recursive: true, encoding: "utf8" })

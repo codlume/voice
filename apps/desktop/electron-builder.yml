@@ -1,6 +1,5 @@
 appId: com.voice.app
 productName: Voice
-# The sign-in callback scheme. VOICE_URL_SCHEME in src/shared/api.ts must match; a test checks it.
 protocols:
   - name: Voice
     schemes:
@@ -38,7 +37,6 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Voice uses your microphone only while you dictate or during a meeting you start.
     NSAudioCaptureUsageDescription: Voice records sound from other apps only during a meeting you start, to transcribe what other participants say. It stays on your Mac.
-# These positions and iconSize drive build/background*.png. Rerun `pnpm -C apps/desktop brand` after changing them.
 dmg:
   title: Voice
   background: build/background.png

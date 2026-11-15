@@ -239,8 +239,6 @@ describe("transform run", () => {
     });
   });
 
-  // Every (state, event) pair that reaches done. The helper keeps Escape and the target shelf
-  // until transform.end, so a path that forgets endRun leaves Escape swallowed system-wide.
   const intoDone: [string, TransformRun, TransformEvent][] = [
     ["shortcut, model missing", idleRun, shortcut("r1", { state: "missing" })],
     ["selectionFailed", reading, { type: "selectionFailed", id: "r1", failure: "keysHeld" }],

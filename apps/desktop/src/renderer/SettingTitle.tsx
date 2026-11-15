@@ -8,7 +8,6 @@ import { color, radius } from "./tokens.stylex.ts";
 import { tooltipPopupClass, tooltipPositionerClass } from "./tooltip.ts";
 
 const styles = stylex.create({
-  // The slot stays when the button is absent, so the title line keeps its height.
   line: { display: "flex", alignItems: "center", gap: 6, minHeight: 20 },
   title: { display: "block", fontWeight: 500 },
   slot: { display: "grid", flexShrink: 0, width: 20, height: 20 },
@@ -28,7 +27,6 @@ const styles = stylex.create({
   },
 });
 
-// A composite control takes focus on the part a keyboard user acts on.
 const focusablePart: Record<string, string> = {
   radiogroup: '[role="radio"][aria-checked="true"]',
   group: 'input[type="range"]',

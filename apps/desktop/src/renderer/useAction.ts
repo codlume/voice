@@ -11,7 +11,6 @@ export function useAction() {
   const [error, setError] = useState("");
   const latest = useRef(0);
 
-  // Stable, so a memoized row can take a callback built on it.
   const run = useCallback(async (action: () => Promise<void>, fallback: string) => {
     const id = ++latest.current;
     setError("");

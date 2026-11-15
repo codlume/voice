@@ -270,8 +270,6 @@ describe("startHelper", () => {
   });
 
   test("restarts an exited helper with doubling backoff and reconfigures it", async () => {
-    // Only this process is faked; the fake helper is a real child. Its spawn time then never
-    // reaches the stamps, so each gap is exactly the restart delay.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const control = NodePath.join(tmpdir(), `voice-fake-backoff-${process.pid}.sock`);
     const h = boot({ control });

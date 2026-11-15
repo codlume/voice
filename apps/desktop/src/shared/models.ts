@@ -24,7 +24,6 @@ export const models = [
     vendor: "Superwhisper",
     size: "480 MB",
     lostUntilReinstalled: "Text cleanup stops",
-    // Dictation falls back to the raw transcript without it.
     busyDuring: null,
     cancelableDownload: true,
     wanted: (settings: Settings) => wantsCleanup(settings),

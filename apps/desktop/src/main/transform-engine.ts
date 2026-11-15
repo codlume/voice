@@ -33,7 +33,6 @@ const GenerateSchema = Schema.Struct({
   user: Schema.String,
   maxTokens: Schema.Int,
   temperature: Schema.Finite,
-  // node-llama-cpp validates the schema when it builds the grammar.
   jsonSchema: Schema.optionalKey(Schema.Unknown),
   budgetMs: Schema.Finite,
 });
@@ -107,7 +106,6 @@ export function createTransformProcess({
   fork: ForkEngine;
   onLost: (message: string) => void;
 }): TransformEngine {
-  // Each call decodes the reply as its own kind of result.
   const engine = createEngineProcess<typeof WorkSchema.Type, unknown>({
     name: "transform model",
     modelPath,

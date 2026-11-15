@@ -71,7 +71,6 @@ export function GeneralSettings({
     microphoneDetail = `Currently ${defaultName}. Changes apply to your next dictation.`;
   }
 
-  // The empty uid is the "System default" option, which saves no microphone.
   const microphoneUid = selected?.uid ?? "";
 
   function changeMicrophone(uid: string) {
@@ -194,7 +193,6 @@ export function GeneralSettings({
             title="Update channel"
             detail="Stable gets regular releases. Nightly gets early builds."
             disabled={updates.status.kind === "installing"}
-            // The default is the installed build's channel, not DEFAULT_SETTINGS.updateChannel.
             onReset={resetTo(updates.channel, updates.installedChannel, changeChannel)}
           >
             <Select

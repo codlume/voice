@@ -29,8 +29,6 @@ const MODEL_PATH = "/models/gemma.gguf";
 
 type Run = { request: Omit<TransformRequest, "signal">; finish(result: TransformResult): void };
 
-// One utility process: the real serve loop and process client over a MessageChannel, around a
-// fake engine.
 type FakeWorker = {
   modelPath: string;
   loads: number;
@@ -122,7 +120,6 @@ function harness({
             worker.generated.push(received);
             const answer = { ok: true, text: '{"answer": "no"}', truncated: false } as const;
             signal.addEventListener("abort", () => reject(signal.reason));
-            // A step slow to stop: it finishes only when the test says so.
             if (holdFirstGenerate && worker.generated.length === 1) {
               void heldStep.promise.then(() => resolve(answer));
               return;
@@ -276,7 +273,6 @@ describe("transform model", () => {
     const transformed = model.run(request());
     await vi.advanceTimersByTimeAsync(ABORT_GRACE_MS * 2);
 
-    // The engine in the process makes the step yield; preempting it here would have armed the kill.
     expect(await transformed).toEqual(RESULT);
     expect(workers[0]!.closed).toBe(false);
     finishStep();
@@ -304,7 +300,7 @@ describe("transform model", () => {
 
     const running = model.run(request({ budgetMs: 10_000 }));
     await vi.waitFor(() => expect(workers[0]?.loads).toBe(1));
-    // Three times the budget, and vi.waitFor moved the fake clock some more.
+    // vi.waitFor also advances fake timers while it polls.
     vi.advanceTimersByTime(30_000);
     release();
 
@@ -434,7 +430,6 @@ describe("transform model", () => {
     const started = nextRun();
     const first = model.run(request());
     await started;
-    // A warm while the run is in flight, then ten minutes into the run.
     model.warm();
     await vi.advanceTimersByTimeAsync(2 * IDLE_UNLOAD_MS);
     expect(workers[0]?.closed).toBe(false);

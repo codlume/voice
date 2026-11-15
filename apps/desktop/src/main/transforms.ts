@@ -202,7 +202,6 @@ export function createTransforms(options: TransformsOptions): Transforms {
   }
 
   function setLast(value: Omit<LastTransform, "finishedAt"> | null) {
-    // A run that outlives the switch-off, or dictation's auto-apply, must not leave text behind.
     if (value && !store.state.settings.transforms.enabled) return;
     last = value && { ...value, finishedAt: now() };
     options.onLastTransform(last);

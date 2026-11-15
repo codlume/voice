@@ -7,10 +7,8 @@ type Rendered = Extract<HelperEvent, { type: "icons.rendered" }>["icons"];
 
 export type InstalledApps = {
   list(): Promise<InstalledApp[]>;
-  /** Icons of apps from the latest list; callers need not list first. Leaves out any the helper could not render. */
   icons(bundleIds: readonly BundleId[]): Promise<AppIcons>;
   onHelperEvent(event: HelperEvent): void;
-  /** Settles every reply still awaited, since the exited helper will not send them. */
   helperExited(): void;
 };
 
@@ -27,7 +25,6 @@ export function createInstalledApps(options: {
   let renderId = 0;
   let inFlight: Promise<InstalledApp[]> | null = null;
 
-  // The scan can take seconds on the first launch of a new build, so there is no deadline.
   function reply<T>(wait: (resolve: (value: T | null) => void) => void, command: HelperCommand) {
     return new Promise<T | null>((resolve) => {
       wait(resolve);

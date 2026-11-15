@@ -72,7 +72,6 @@ describe("prompts", () => {
     const paused = meeting(1, { kind: "paused" });
     focus = follow(focus, [paused]);
     expect(promptFor(paused, focus)).toBeNull();
-    // Resuming later does not bring back a question about the earlier leg.
     expect(promptFor(live, follow(focus, [live]))).toBeNull();
   });
 
@@ -129,7 +128,6 @@ describe("prompts", () => {
       },
     ]);
     expect(meetingBanners(dismiss(focus))).toEqual([]);
-    // Recording again makes it moot.
     const resumed = follow(focus, [{ ...done, status: { kind: "recording", since: 0 } }]);
     expect(meetingBanners(resumed)).toEqual([]);
     expect(resumed.raised).toBeNull();

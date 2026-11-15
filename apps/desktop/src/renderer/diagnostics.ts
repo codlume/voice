@@ -1,5 +1,3 @@
-// Renderer errors travel to main over IPC and pass main's scrubber and consent gate. Only the
-// handlers that catch errors are kept: no breadcrumbs, request context, or scope sync.
 const INTEGRATIONS: ReadonlySet<string> = new Set([
   "InboundFilters",
   "FunctionToString",

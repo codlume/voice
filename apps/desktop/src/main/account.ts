@@ -18,7 +18,6 @@ export const API_URLS: Record<UpdateChannel, string> = {
 
 export const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 export const PASTE_CODE_MESSAGE = "Paste the whole code shown in the browser.";
-// The error row adds "Retry to sign in again.", so these name only what went wrong.
 export const SIGN_IN_ERRORS = {
   browser: "Could not open your browser to sign in.",
   offline: "Could not reach the Voice server. Check your connection.",
@@ -47,10 +46,6 @@ export const UPDATE_NAME_OFFLINE_MESSAGE =
 
 export type Identity = AccountIdentity & { id: string };
 
-/**
- * `offline` is a failed fetch; `rejected` is the API refusing the code. `abandoned` is an exchange
- * aborted while the API answered, or outlived by a forget: nothing of it was stored.
- */
 export type RedeemResult =
   | { kind: "signedIn"; user: Identity }
   | { kind: "offline" | "rejected"; error: unknown }
@@ -62,42 +57,23 @@ export type UpdateNameResult =
   | { kind: "updated" | "offline" | "failed" }
   | { kind: "ended"; status: number };
 
-/** What confirming a deletion came to: the API's answer, or a cookie that is another account's. */
 type DeletionOutcome = DeleteAccountResult | { kind: "otherAccount"; user: Identity };
 
-/** What the module needs from the Better Auth Electron client. The adapter owns the plugin details. */
 export type AuthClient = {
-  /** Resolves with the OAuth state of the sign-in it opened, which the code must carry back. */
   openBrowser(): Promise<{ state: string }>;
-  /**
-   * Exchanges the code for an auth session and stores it with its identity. Aborting abandons the
-   * exchange: nothing is stored, and a session the API created anyway is queued for server sign-out.
-   */
   redeem(code: string, signal: AbortSignal): Promise<RedeemResult>;
-  /** The identity of the last sign-in or `get-session`, kept encrypted for an offline launch. */
   cachedUser(): AccountIdentity | null;
-  /** Asks `get-session`. Aborted before its body is read, it answers `unreachable` and writes nothing. */
   checkAuthSession(signal: AbortSignal): Promise<AuthSessionCheck>;
-  /** Deletes this channel's stored auth session. */
   forget(): void;
-  /** Queues a complete Cookie header for revocation without changing the active session. */
   queueServerSignOut(cookie: string): void;
-  /** Whether local auth remains to check after the adapter reconciles stored sign-outs. */
   hasAuthSession(): boolean;
-  /** Queues the active cookie before clearing its cookie and identity through forget. */
   retireAuthSession(): void;
-  /** Retries queued sign-outs once; confirmed sessions leave the queue, failures stay for launch. */
   endServerSignOuts(): Promise<ServerSignOut[]>;
   deleteAccount(): Promise<DeleteAccountResult>;
   revokeOlderAuthSession(): Promise<void>;
-  /** Saves the identity's first and last name, then caches the identity. */
   updateName(user: AccountIdentity): Promise<UpdateNameResult>;
 };
 
-/**
- * What the API said about the stored auth session. Only `ended` means it is gone; the API could
- * not be reached (`unreachable`) or answered something that says nothing about it (`unknown`).
- */
 export type AuthSessionCheck =
   | { kind: "active"; user: Identity }
   | { kind: "ended"; status: number }
@@ -106,10 +82,8 @@ export type AuthSessionCheck =
 
 export type ServerSignOut = Exclude<AuthSessionCheck, { kind: "active" }>;
 
-/** A code as the landing page shows it, with the OAuth state it carries. */
 type SignInCode = { code: string; state: string };
 
-// The confirmation dialog names the account by email; a cached id is the stricter test when present.
 const sameAccount = (confirmed: AccountIdentity, live: Identity) =>
   confirmed.id === undefined ? confirmed.email === live.email : confirmed.id === live.id;
 
@@ -141,8 +115,6 @@ function parseHttpUrl(value: string): string | null {
   }
 }
 
-// A development build reads VOICE_API_URL only. A packaged build without release metadata is a
-// local build and must never reach production.
 export function resolveApiUrl({
   development,
   release,
@@ -183,7 +155,6 @@ export function parseSignInCode(value: string): SignInCode | null {
     : null;
 }
 
-/** A build starts unavailable or signed out. `restore` signs in from storage after launch. */
 function initialAccountState(
   apiUrl: string | null,
   development: boolean,
@@ -207,8 +178,6 @@ export function parseCallbackUrl(url: string): SignInCode | null {
   if (parsed.protocol !== `${VOICE_URL_SCHEME}:`) return null;
   if (`/${parsed.hostname}${parsed.pathname}` !== "/auth/callback") return null;
   if (!parsed.hash.startsWith("#token=")) return null;
-  // The landing page puts the cookie value in the fragment as is, so the token is the same
-  // string the user would paste.
   return parseSignInCode(parsed.hash.slice("#token=".length));
 }
 
@@ -232,16 +201,12 @@ export function parseAccountName(value: unknown): AccountName {
   return name;
 }
 
-/** A second copy of Voice hands its command line to the first; this finds a callback URL in it. */
 export function callbackUrlFromArgv(argv: readonly string[]): string | undefined {
   return argv.find((arg) => arg.startsWith(`${VOICE_URL_SCHEME}:`));
 }
 
-// One sign-in attempt. The client promise and the timer exist exactly while signing in, so a
-// late callback, a stale timer or a result from an older attempt has nothing to land on. The
-// plugin keeps every attempt's verifier, so the attempt also remembers its own OAuth state and
-// redeems only a code that carries it, once. The exchange of that code is aborted with the attempt,
-// so an answer that arrives after Cancel or the deadline stores nothing.
+// The plugin keeps every attempt's verifier, so an attempt redeems only a code that carries its
+// own OAuth state.
 type Attempt = {
   kind: "signingIn";
   attempt: number;
@@ -292,10 +257,7 @@ export function createAccount({
   let loadedClient: AuthClient | null = null;
   let lastCheck = Date.now();
   let restoreStarted = false;
-  // The get-session in flight. Its response would still write the cookie it carries, so anything
-  // that replaces the auth session aborts it first.
   let checking: AbortController | null = null;
-  // The name update in flight. A check sent meanwhile could answer with the old name and cache it.
   let saving = false;
 
   function abortCheck() {
@@ -330,8 +292,6 @@ export function createAccount({
 
   function requestDeletion() {
     if (state.kind !== "signedIn" || (state.deletion && state.deletion.kind !== "failed")) return;
-    // The UI disables Delete during a save. Publishing now would make the save's answer stale, so
-    // the saved name would never show.
     if (saving) return;
     abortCheck();
     publish({
@@ -396,7 +356,6 @@ export function createAccount({
     }
   }
 
-  /** Redeems a code for the attempt, or returns null when the code is not this attempt's. */
   function complete(current: Attempt, { code, state: oauthState }: SignInCode) {
     if (oauthState !== current.oauthState) {
       log("account: code from another sign-in ignored");
@@ -418,7 +377,6 @@ export function createAccount({
     } catch (error) {
       result = { kind: "rejected", error };
     }
-    // Only an attempt that already left, through Cancel or its deadline, abandons its exchange.
     if (result.kind === "abandoned") return;
     if (result.kind === "signedIn") {
       const { user } = result;
@@ -440,7 +398,6 @@ export function createAccount({
     }
   }
 
-  // Null when a sign-out, a sign-in, or dispose aborted it. Past the deadline, unreachable.
   async function askAuthSession(
     client: AuthClient,
     deadline?: AbortSignal,
@@ -456,8 +413,6 @@ export function createAccount({
     return deadline?.aborted ? { kind: "unreachable", error: deadline.reason } : answer;
   }
 
-  // The API no longer has the auth session, so the stored one is gone and only a fresh sign-in can
-  // show what is left.
   function forgetEndedAuthSession(client: AuthClient, status: number) {
     log("account auth session ended", {
       message: "account auth session ended",
@@ -468,8 +423,6 @@ export function createAccount({
     publish({ kind: "error", message: AUTH_SESSION_ENDED_MESSAGE });
   }
 
-  // A result lands only on the state it was started from, so a sign-in or a sign-out while the
-  // request is in flight is never overwritten.
   async function checkAuthSession(client: AuthClient) {
     const checked = state;
     lastCheck = Date.now();
@@ -509,10 +462,6 @@ export function createAccount({
     get state(): AccountState {
       return toAccountState(state);
     },
-    /**
-     * Signs in from the stored auth session, then asks the API whether it still holds. Runs once
-     * per launch; without a cached identity the API's answer alone decides.
-     */
     async restore() {
       if (restoreStarted) return;
       restoreStarted = true;
@@ -535,13 +484,11 @@ export function createAccount({
       if (user !== null) publish({ kind: "signedIn", ...user });
       await checkAuthSession(client);
     },
-    /** Called when the main window becomes visible. Checks at most once per interval. */
     async refresh() {
       if (state.kind !== "signedIn" || cachedClient === null) return;
       if (state.deletion || saving) return;
       if (Date.now() - lastCheck < checkIntervalMs) return;
       const refreshing = state;
-      // Claimed before the client resolves, so a show and a restore in one tick send one request.
       lastCheck = Date.now();
       const client = await cachedClient;
       if (state !== refreshing) return;
@@ -586,7 +533,6 @@ export function createAccount({
       publish(current);
       try {
         const opened = await client;
-        // Cancel or the deadline may have ended this attempt while the client loaded.
         if (state !== current) return;
         if (resumeAs === null) {
           opened.retireAuthSession();
@@ -608,7 +554,6 @@ export function createAccount({
       if (redeeming === null) throw new Error(STALE_CODE_MESSAGE);
       await redeeming;
     },
-    /** Whether the callback changed anything, so the caller knows whether to bring Voice forward. */
     handleCallbackUrl(url: string): "accepted" | "interrupted" | "ignored" {
       const code = parseCallbackUrl(url);
       if (code === null) {
@@ -617,9 +562,6 @@ export function createAccount({
       }
       if (state.kind === "signingIn")
         return complete(state, code) === null ? "ignored" : "accepted";
-      // This process never started a sign-in, so the browser finished one that a quit or an
-      // update restart cut short. Its verifier died with that process. A stored auth session
-      // means the last process was signed in instead, and restore is about to sign in again.
       if (attempts === 0 && state.kind === "signedOut" && !hasStoredAuthSession()) {
         log("account: sign-in was interrupted");
         publish({ kind: "error", message: SIGN_IN_ERRORS.interrupted });
@@ -642,7 +584,6 @@ export function createAccount({
       }
       if (state.deletion) throw new Error(UPDATE_NAME_DELETING_MESSAGE);
       if (saving) throw new Error(UPDATE_NAME_SAVING_MESSAGE);
-      // A get-session already in flight would answer with the old name, and cache it.
       abortCheck();
       const client = loadedClient;
       const started = state;
@@ -687,12 +628,8 @@ export function createAccount({
       try {
         const client = await loadClient(apiUrl);
         if (state !== deleting) return;
-        // The API deletes whichever account the stored cookie belongs to, and the cached identity
-        // can be another account's. The cookie's account is asked for and must be the confirmed one.
         const answer = await askAuthSession(client, AbortSignal.timeout(30_000));
         if (state !== deleting || answer === null) return;
-        // Revoked, or already deleted by a request whose receipt was lost. A failed deletion
-        // would only offer a retry that asks the same question again.
         if (answer.kind === "ended") {
           forgetEndedAuthSession(client, answer.status);
           return;

@@ -34,7 +34,6 @@ type Job = {
   aborted: Promise<void>;
 };
 
-// A wedged engine ignores abort and never finishes disposing.
 function fakeEngine({ wedged = false } = {}) {
   const calls = { modelPaths: [] as string[], loads: 0, disposes: 0, jobs: [] as Job[] };
   const jobStarted = deferred<Job>();

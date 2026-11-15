@@ -36,7 +36,6 @@ function ModelSection({
   const canUninstall = view.actions.some(
     ({ label, disabled }) => label === "Uninstall" && !disabled,
   );
-  // Dictation, a transform or a download can withdraw Uninstall while the dialog is open.
   if (confirmingUninstall && !canUninstall) setConfirmingUninstall(false);
 
   const run = (action: ModelAction) =>

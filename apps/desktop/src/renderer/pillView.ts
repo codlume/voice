@@ -128,7 +128,6 @@ export function pillView(session: PillState): PillView {
 const meeting = (look: MeetingLook, text: string) => ({ kind: "meeting", look, text }) as const;
 
 function promptText(prompt: PillMeeting["prompt"], now: number): string | null {
-  // The notepad carries a notice's full text and the answers; the Flow Bar only asks.
   switch (prompt?.kind) {
     case "startedByMistake":
     case "silence":
@@ -159,7 +158,6 @@ function meetingView({ status, closedMs, prompt }: PillMeeting, now: number): Pi
   }
 }
 
-/** Dictation and transforms show as usual mid-meeting, and the meeting comes back after them. */
 export function flowBarView(snapshot: PillSnapshot, now: number): PillView {
   return showsMeeting(snapshot) ? meetingView(snapshot.meeting, now) : pillView(snapshot.session);
 }

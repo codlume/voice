@@ -37,7 +37,6 @@ export function createInsights(options: {
 }): InsightsStore {
   const { file, log, onChange } = options;
   let generation = 0;
-  // Every method waits on current, so a load that throws must still settle.
   let current = load(file, log).catch(() => {
     log("insights: could not load the file, so nothing is recorded");
     return "unreadable" as const;
@@ -249,8 +248,7 @@ function parseCategories(raw: unknown): Record<Category, Usage> {
   return categories;
 }
 
-// A Map, not an object: an id like "__proto__" must become a plain key, and two spellings of
-// one id in a hand-edited file add up instead of the last one winning.
+// A Map, not an object: an id like "__proto__" must become a plain key.
 function parseApps(raw: unknown): Record<BundleId, number> {
   const apps = new Map<BundleId, number>();
   if (typeof raw !== "object" || raw === null) return {};

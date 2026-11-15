@@ -31,7 +31,6 @@ import {
   type TransformId,
 } from "./transforms.ts";
 
-// Parsing drops invalid items; refuse the save rather than lose text the user just typed.
 const everyItem = <T>(
   parse: (raw: unknown) => T[],
   isValid = (items: readonly unknown[], parsed: readonly T[]) => parsed.length === items.length,
@@ -78,7 +77,6 @@ export const SettingsPatchSchema = Schema.Struct({
       Schema.isMultipleOf(PAGE_ANIMATION_STEP_MS),
     ),
   ),
-  // A patch cannot replace the assignments; they change one edit at a time.
   cleanup: Schema.optionalKey(
     Schema.Struct({
       enabled: Schema.optionalKey(Schema.Boolean),

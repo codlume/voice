@@ -89,7 +89,6 @@ export type UpdateStatus =
   | { kind: "installing"; version: string }
   | { kind: "failed"; message: string };
 
-/** An update the user can read about before installing it. */
 export type PendingUpdate = Extract<UpdateStatus, { kind: "available" | "downloading" | "ready" }>;
 
 export function pendingUpdate(status: UpdateStatus): PendingUpdate | null {
@@ -108,7 +107,6 @@ export type UpdatesSnapshot = {
 /**
  * The URL scheme the browser uses to hand a sign-in back to Voice (RFC 8252 section 7.1).
  * Fixed reverse-DNS, not derived from the app id, because the project does not own voice.app.
- * `electron-builder.yml` repeats it under `protocols`; a test keeps the two in step.
  */
 export const VOICE_URL_SCHEME = "com.codlume.voice";
 
@@ -353,7 +351,6 @@ export type HubApi = WindowApi & {
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   updateSettings(patch: SettingsPatch): Promise<void>;
   requestPermission(kind: PermissionKind): Promise<void>;
-  /** Downloads the models that tell meeting speakers apart. */
   downloadSpeakerModel(): Promise<void>;
   /** True while Set up Meetings shows, so main keeps checking System Audio Recording. */
   watchMeetingPermissions(watching: boolean): Promise<void>;
@@ -447,7 +444,6 @@ export type HubApi = WindowApi & {
   onOpenMeeting(listener: (request: OpenMeetingRequest) => void): () => void;
 };
 
-/** The meeting commands the Voice window and the notepad share. */
 export type MeetingControls = Pick<
   HubApi,
   | "getMeeting"

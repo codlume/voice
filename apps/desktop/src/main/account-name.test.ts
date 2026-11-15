@@ -218,7 +218,6 @@ describe("updateName", () => {
     const { done: refreshed } = await refresh(h);
     const saving = h.account.updateName({ firstName: "Augusta", lastName: "King" });
     await flush();
-    // The real adapter answers an aborted get-session at once, before the update returns.
     h.checks[0]?.answer({
       kind: "unreachable",
       error: new DOMException("This operation was aborted", "AbortError"),

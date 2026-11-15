@@ -28,7 +28,6 @@ const styles = stylex.create({
     cursor: "pointer",
     userSelect: "none",
   },
-  // A control group owns the row's width cap; a percentage here would resolve against the group.
   grouped: { flexShrink: 1, maxWidth: 240 },
   disabled: { cursor: "default" },
   value: {

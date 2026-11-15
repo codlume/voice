@@ -52,8 +52,6 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   ) {
     return null;
   }
-  // Identities cached before first and last names have only `name`. Deploys apply migrations
-  // before the Worker, so in that window the old Worker can create users with an empty first name.
   const { firstName, lastName } =
     "firstName" in user &&
     typeof user.firstName === "string" &&
@@ -73,7 +71,6 @@ function cachedIdentityOf(user: unknown): AccountIdentity | null {
   return identity;
 }
 
-// Older encrypted caches contain only a name and email. Live responses must identify the account.
 function userOf(body: unknown): Identity | null {
   const user = cachedIdentityOf(
     typeof body === "object" && body !== null && "user" in body ? body.user : null,
@@ -119,9 +116,8 @@ function storedSessionToken(stored: unknown): string | null {
 type ElectronPlugin = Omit<ReturnType<typeof electronClient>, "fetchPlugins"> &
   Pick<BetterAuthClientPlugin, "fetchPlugins">;
 
-// The only file that loads Better Auth. It is imported lazily, on the first Sign in click or at
-// launch when an auth session is stored. The plugin encrypts what it stores with safeStorage and
-// keeps it in memory only when encryption is unavailable.
+// The plugin encrypts what it stores with safeStorage and keeps it in memory only when
+// encryption is unavailable.
 export function createVoiceAuthClient({
   apiUrl,
   installedChannel,
@@ -131,7 +127,6 @@ export function createVoiceAuthClient({
   apiUrl: string;
   installedChannel: UpdateChannel;
   log: Log;
-  /** Test mode: the plugin's `shell.openExternal` writes the sign-in URL here instead. */
   signInUrlFile?: string;
 }): AuthClient {
   const keys = authStorageKeys(installedChannel);
@@ -148,7 +143,6 @@ export function createVoiceAuthClient({
       storagePrefix: authStoragePrefix(installedChannel),
       storage: {
         getItem: store.getItem,
-        // A request started before local sign-out must not restore its cookie or identity.
         setItem: (key, value) => {
           if (current === generation) store.setItem(key, value);
         },
@@ -167,8 +161,6 @@ export function createVoiceAuthClient({
     });
   }
   let client = makeClient();
-  // Encrypted like the plugin's own items. Without encryption nothing is written, so the
-  // identity, like the auth session, lasts only until quit.
   const saveIdentity = (user: AccountIdentity) => {
     if (!safeStorage.isEncryptionAvailable()) return;
     store.setItem(
@@ -227,8 +219,6 @@ export function createVoiceAuthClient({
     client = makeClient();
   }
 
-  // A crash after enqueue but before forget finishes can leave its cookie or only its identity behind.
-  // A different stored credential belongs to a newer sign-in and must survive, even if expired.
   if (serverSignOuts.length) {
     const stored = store.getItem(keys.cookie);
     const token = storedSessionToken(stored);
@@ -243,7 +233,6 @@ export function createVoiceAuthClient({
   }
 
   // The plugin overwrites a supplied Cookie header and clears active storage on /sign-out.
-  // Raw fetch keeps revocation of an old cookie separate from the current signed-in session.
   async function endAuthSession(cookie: string): Promise<ServerSignOut> {
     const headers = { cookie, origin: `${VOICE_URL_SCHEME}:/`, "content-type": "application/json" };
     const request = (path: string, init: RequestInit = {}) =>
@@ -281,7 +270,6 @@ export function createVoiceAuthClient({
     const attempted = new Set<string>();
     const answers: ServerSignOut[] = [];
     let cookie: string | undefined;
-    // Pick up cookies queued during an await, but attempt each at most once in this drain.
     while ((cookie = serverSignOuts.find((value) => !attempted.has(value))) !== undefined) {
       attempted.add(cookie);
       const answer = await endAuthSession(cookie);
@@ -291,10 +279,8 @@ export function createVoiceAuthClient({
     return answers;
   }
   // The plugin generates the OAuth state inside requestAuth and only hands it to the browser,
-  // through `shell.openExternal`. Reading it off that URL is the one way to know which attempt a
-  // code belongs to; in test mode the same hook writes the URL for the script that plays the browser.
-  // The start must stay an external open: the API refuses one whose Sec-Fetch-Site is not `none`,
-  // which a navigation or fetch from a page would carry.
+  // through `shell.openExternal`, so reading it off that URL is the one way to know which
+  // attempt a code belongs to.
   const opened: URL[] = [];
   const apiOrigin = new URL(apiUrl).origin;
   const openExternal = shell.openExternal.bind(shell);
@@ -316,11 +302,7 @@ export function createVoiceAuthClient({
     },
     redeem: async (code, signal): Promise<RedeemResult> => {
       const started = generation;
-      // An abort starts a new generation at once, so the plugin's cookie write for this exchange
-      // is refused, and whatever it already stored is cleared.
       signal.addEventListener("abort", forget, { once: true });
-      // Read before the body, which an abort may cut short: a session the API created but Voice
-      // does not keep still has to be ended.
       let setCookie = null as string | null;
       let user: Identity | null = null;
       let error: unknown = null;
@@ -369,8 +351,6 @@ export function createVoiceAuthClient({
     },
     checkAuthSession: async (signal): Promise<AuthSessionCheck> => {
       const checkedGeneration = generation;
-      // Without encryption a restored cookie cannot be read, and the API would answer null to a
-      // request that carried none.
       if (!safeStorage.isEncryptionAvailable() && client.getCookie() === "") {
         return { kind: "unknown", status: 0 };
       }
@@ -390,7 +370,6 @@ export function createVoiceAuthClient({
       }
       // Better Auth 1.7.7 answers 200 with null for an auth session it no longer has.
       if (data === null) return { kind: "ended", status: 200 };
-      // A captive portal's HTML page also arrives as a 200, with a string for data.
       const user = userOf(data);
       if (user === null) return { kind: "unknown", status: 200 };
       if (!signal.aborted && checkedGeneration === generation) saveIdentity(user);
@@ -450,7 +429,6 @@ export function createVoiceAuthClient({
     revokeOlderAuthSession: async () => {
       if (refusedCookie === null) return;
       const cookie = refusedCookie;
-      // Persist before the request so Cancel or quit leaves revocation to launch's retry.
       queueServerSignOut(cookie);
       if ((await endAuthSession(cookie)).kind !== "ended") {
         throw new Error("Auth session revocation failed.");

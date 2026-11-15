@@ -7,8 +7,6 @@ import { hubApi } from "./voice.ts";
 export function useHistory(): HistoryState | null {
   const [history, setHistory] = useState<HistoryState | null>(null);
   useEffect(() => {
-    // Main sends its answer and its changes in order, so a patch that arrives before the answer
-    // is already in it and falls through, and the answer never replaces a list a change built.
     const unsubscribe = hubApi().onHistory((change) =>
       setHistory((current) => applyHistoryChange(current, change)),
     );

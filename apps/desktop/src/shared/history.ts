@@ -46,10 +46,8 @@ export type HistoryState = {
 };
 
 /**
- * What main tells the hub after a change. `all` carries the whole state: the first list of the
- * run, and one where more entries left than stayed, as after a clear. `patch` names only the
- * entries that moved since the last change, so a long history costs the main process nothing
- * per session; the hub applies it to the list it holds.
+ * What main tells the hub after a change. `all` carries the whole state. `patch` names only the
+ * entries that moved since the last change; the hub applies it to the list it holds.
  */
 export type HistoryChange =
   | { kind: "all"; state: HistoryState }

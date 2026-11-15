@@ -119,7 +119,6 @@ const pillScenes: Record<string, PillState> = {
   transformNotInserted: transformDone({ kind: "notInserted", reason: "noFocusedField" }),
 };
 
-// Fixed times, so a recording scene reads the same each load: 12 minutes in a closed leg.
 const meetingSince = Date.now() - 95_000;
 const pillMeetingScenes: Record<string, PillMeeting> = {
   "meeting-recording": {
@@ -198,8 +197,6 @@ const updateScenes: Record<string, UpdateStatus> = {
   disabled: { kind: "disabled", reason: "Updates are available in packaged builds." },
 };
 
-// A hub scene is the snapshot main would publish plus the history beside it, which defaults to
-// sampleHistory() with saving working.
 type HubScene = Snapshot & {
   meetings?: MeetingFixtures;
   history?: readonly HistoryEntry[];
@@ -455,7 +452,6 @@ function sampleHistory(newestStatus: HistoryStatus = "inserted"): HistoryEntry[]
   ];
 }
 
-// More rows than Home mounts at once, so the Show more button has something to reveal.
 function longHistory(): HistoryEntry[] {
   const first = Date.now();
   return Array.from({ length: 130 }, (_, i) => ({
@@ -869,7 +865,6 @@ const notepadPrompts: Record<string, MeetingPrompt | null> = {
   limit: { kind: "maxLengthSoon", endsAt: Date.now() + 2 * 60_000 },
 };
 
-// The notepad over the sample meeting that is recording, through the same fake main as the hub.
 function fakeNotepad(prompt: MeetingPrompt | null): NotepadApi {
   const fixtures = sampleMeetings({ recording: true });
   const { api } = fakeMeetingsMain(fixtures);

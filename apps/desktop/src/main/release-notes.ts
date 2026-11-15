@@ -20,7 +20,6 @@ export function notesSinceInstalled(feed: Feed, installedVersion: string): Relea
     .filter(({ version }) => gt(version, installedVersion))
     .map(({ version, notes }) => ({ version, items: releaseNoteItems(notes) }))
     .filter(({ items }) => items.length > 0);
-  // The publisher caps the history, so one that never reaches the installed version may be cut short.
   const truncated =
     recorded.length > 0 && recorded.every(({ version }) => gt(version, installedVersion));
   return {

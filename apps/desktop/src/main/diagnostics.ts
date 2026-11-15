@@ -22,7 +22,6 @@ type NodeOptions = SentryMain.NodeOptions;
 type StackFrame = SentryMain.StackFrame;
 type MakeTransport = NonNullable<NodeOptions["transport"]>;
 
-// Production loads @sentry/electron/main; tests pass @sentry/node, which shares the same client.
 type DiagnosticsSdk = Pick<
   typeof SentryMain,
   "startInactiveSpan" | "setMeasurement" | "captureEvent" | "logger" | "withActiveSpan" | "flush"
@@ -72,7 +71,6 @@ async function removeCrashDumps(dir: string) {
   );
 }
 
-// Model ids are left out: each release pins its models, so the release already names them.
 export function sessionSpan({ outcome, finishedAt, capture }: SessionReport) {
   const attributes: { [K in SessionAttribute]?: string | undefined } = {
     outcome: outcome.kind,
@@ -129,9 +127,7 @@ export function startDiagnostics(options: {
   findHelperCrash: (pid: number) => Promise<HelperCrash | undefined>;
 }): Diagnostics {
   const on = () => options.consent() === "on";
-  // Turning consent on takes effect at the next launch: the SDK can only start before ready.
-  // Dumps written while sharing was on must not be uploaded after a later opt-out and opt-in,
-  // so any left over are removed whenever the SDK does not start.
+  // The SDK can only start before ready, so turning consent on takes effect at the next launch.
   if (options.dsn === "" || !on()) {
     void removeCrashDumps(options.crashDumpsDir);
     return off;
@@ -172,8 +168,8 @@ export function startDiagnostics(options: {
   }
 
   const reportedExits = new Set<string>();
-  // Sharing off records nothing, not just sends nothing. The SDK buffers logs for seconds, and
-  // consent can return before the buffer reaches the transport.
+  // The SDK buffers logs for seconds, and consent can return before the buffer reaches the
+  // transport.
   return {
     active: true,
     sessionDone(report) {
@@ -197,7 +193,6 @@ export function startDiagnostics(options: {
       if (!on()) return;
       const tags = helperTags(exit);
       log({ message: "helper exited", level: "error", attributes: tags });
-      // A helper that keeps failing restarts every few seconds; one report per kind is enough.
       const key = JSON.stringify(tags);
       if (reportedExits.has(key)) return;
       reportedExits.add(key);

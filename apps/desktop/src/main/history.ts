@@ -16,41 +16,21 @@ import { writeFileAtomic } from "./atomic-file.ts";
 import type { Log } from "./diagnostics-scrub.ts";
 
 export type History = {
-  /** Adds the session's transcript, or replaces its text while the session is still on it. */
   remember(transcript: Transcript, at: number): void;
-  /** Ends a pending entry. A session that produced no transcript has none, and nothing happens. */
   settle(id: string, inserted: boolean): void;
   entries(): readonly HistoryEntry[];
   state(): HistoryState;
-  /** Resolves once the launch read of the file is in the list and the window is known. */
   loaded(): Promise<void>;
-  /** Drops entries whose window ended. The timer runs late after sleep, so wake-ups call this. */
+  /** The timer runs late after sleep, so wake-ups call this. */
   expire(): void;
-  /** Rejects, and keeps the entry, when the saved history could not be updated. */
   remove(id: string): Promise<void>;
-  /** Rejects, and keeps the entries, when the saved history could not be deleted. */
   clear(): Promise<void>;
-  /**
-   * Writes the window with the entries, or deletes the file for memory, and keeps the old window
-   * when that fails, so the published retention is what the file holds.
-   */
   setRetention(next: HistoryRetention): Promise<void>;
-  /**
-   * Drops expired entries, then resolves once every disk operation has finished, including the
-   * ones those operations queued, so the state afterwards says whether the list is on disk.
-   */
   settled(): Promise<void>;
 };
 
 type SavedRetention = Exclude<HistoryRetention, "memory">;
 
-/**
- * What the file is to this run. The file names the window: no file means memory. `loading` is
- * the launch read; nothing is written until it ends. `leftAlone` is a file this run could not
- * use, which it never overwrites or deletes on its own: the run keeps history in memory and says
- * saving failed, and `retention` is only what the user chose since. A switch to memory deletes the
- * file; a clear deletes it in memory, or replaces it with the chosen window's empty file.
- */
 type Disk =
   | { kind: "loading" }
   | { kind: "memory" }
@@ -78,25 +58,14 @@ export function createHistory(options: {
   const now = options.now ?? Date.now;
   const logSaveFailure = (error: unknown) => log(`history: save failed (${String(error)})`);
   let entries: readonly HistoryEntry[] = [];
-  // The list the file holds, by identity: every change makes a new list, so a sync writes until
-  // they are the same one. Null when the file holds nothing of the list, or something older.
   let fileHolds: readonly HistoryEntry[] | null = null;
   let disk: Disk = { kind: "loading" };
-  // A sweep could not remove a temp file, which may hold a transcript the user thinks is gone, so
-  // the hub hears about it until a sweep succeeds.
   let tempsLeft = false;
-  // Ids the user deleted this run, so a later transcript or refinement of the same session does
-  // not bring the entry back.
   const tombstones = new Set<string>();
-  // The ids each clear asked for but has not yet run covers. A load that finishes meanwhile adds
-  // what it read, since the clear covers the file too.
   const pendingClears: Set<string>[] = [];
   let expiry: NodeJS.Timeout | null = null;
-  // The hub hears nothing before the launch read: an early list would look complete.
   let ready = false;
   let published: Omit<HistoryState, "entries"> | null = null;
-  // The list the hub holds. Entries are immutable and an untouched one keeps its object, so a
-  // publish finds what moved by identity.
   let hubHolds: readonly HistoryEntry[] = [];
   let publishQueued = false;
   let syncQueued = false;
@@ -121,8 +90,6 @@ export function createHistory(options: {
       : list.filter((entry) => entry.at > cutoff);
   }
 
-  // Both run after the caller's turn and the I/O already queued, so a session's insert command
-  // reaches the helper before the hub gets the list or the file gets serialized.
   function publishSoon() {
     if (publishQueued || !ready) return;
     publishQueued = true;
@@ -136,19 +103,11 @@ export function createHistory(options: {
     });
   }
 
-  /**
-   * What moved since the last publish. Both lists are newest first and keep their untouched
-   * entries in the same order, so what moved sits between a shared head and a shared tail: there,
-   * an entry the hub does not hold as the same object is an upsert, and an id the hub holds that
-   * the list lost is a remove. The whole list goes instead before the first publish, and when
-   * more entries left than stayed, as after a clear.
-   */
   function changeSince(
     list: readonly HistoryEntry[],
     next: Omit<HistoryState, "entries">,
   ): HistoryChange | null {
     const held = hubHolds;
-    // A publish for the window or a save finds the same list and walks nothing.
     let head = held === list ? list.length : 0;
     while (head < list.length && head < held.length && list[head] === held[head]) head += 1;
     let tail = 0;
@@ -218,7 +177,6 @@ export function createHistory(options: {
     if (next.length !== entries.length) change(next);
   }
 
-  // Takes what a read found into the list. A clear asked for before the read covers it too.
   function merge(loaded: readonly HistoryEntry[]) {
     for (const doomed of pendingClears) for (const entry of loaded) doomed.add(entry.id);
     const known = new Set(entries.map((entry) => entry.id));
@@ -237,11 +195,6 @@ export function createHistory(options: {
       mode: 0o600,
     });
 
-  /**
-   * Writes `list` as the file. When the entries did not move on during the write, the file holds
-   * them: `list` is the entries themselves or their replacement, which becomes the entries. When
-   * they did move on, the change that moved them queued a sync that writes the newer list.
-   */
   async function persist(list: readonly HistoryEntry[], retention: SavedRetention) {
     const base = entries;
     await write(pruned(list, retention), retention);
@@ -255,7 +208,6 @@ export function createHistory(options: {
     if (writable(disk) && fileHolds !== entries) await save(disk.retention);
   }
 
-  // A write whose failure is the run's state rather than a caller's error.
   async function save(retention: SavedRetention) {
     try {
       await persist(entries, retention);
@@ -284,7 +236,6 @@ export function createHistory(options: {
     publishSoon();
   }
 
-  // Hygiene after a crash. It never gates a read or a clear of the list; a failure is reported.
   async function sweepTemps() {
     try {
       await removeTemps();
@@ -295,13 +246,11 @@ export function createHistory(options: {
     }
   }
 
-  // Temps go first: a failure there leaves the file in place, so the history is never half gone.
   async function removeFile() {
     await removeTemps();
     await rm(file, { force: true });
   }
 
-  /** The file's window and entries, null when there is no file. Throws LeftAlone for one not to touch. */
   async function load(): Promise<Envelope | null> {
     let text: string;
     try {
@@ -360,9 +309,6 @@ export function createHistory(options: {
       }
       const existing = entries[index]!;
       if (existing.status !== "pending") return;
-      // The file already holds the raw transcript or is writing it, so the cleaned text waits for
-      // the settle's write: a crash before it keeps the raw transcript and loses only the cleaned
-      // text.
       entries = entries.with(index, { ...existing, raw, text, status });
       publishSoon();
     },
@@ -390,7 +336,6 @@ export function createHistory(options: {
         pendingClears.shift();
         const retention = retentionNow();
         if (retention === "memory") {
-          // A file left alone is one the user asked to be rid of too.
           await rm(file, { force: true });
           await sweepTemps();
           setDisk({ kind: "memory" });
@@ -418,8 +363,6 @@ export function createHistory(options: {
           return;
         }
         if (disk.kind === "memory") {
-          // A file that appeared since launch is read before anything is written over it. The
-          // disk stays memory until the write lands, so a failure leaves nothing to undo.
           let found: Envelope | null;
           try {
             found = await load();
@@ -437,7 +380,6 @@ export function createHistory(options: {
       }),
     async settled() {
       expire();
-      // An entry still waiting to write on its settle is written now: a quit must not lose it.
       requestSync();
       let step: Promise<void>;
       do {

@@ -108,7 +108,6 @@ type PageView = {
   history: HistoryState;
   openPage: (id: AppPage) => void;
   openSettingsPage: (id: SettingsPage) => void;
-  /** The Meetings page's own settings dialog, which Settings can open too. */
   meetingSettings: { open: boolean; setOpen: (open: boolean) => void };
   /** The meeting main asked to show, until the user leaves Meetings; a new object each time. */
   openMeeting: OpenMeetingRequest | null;
@@ -207,7 +206,6 @@ const easing = "cubic-bezier(0.2, 0, 0, 1)";
 const styles = stylex.create({
   shell: {
     display: "grid",
-    // The last row is empty until the restart notice takes it, so `main` shrinks to make room.
     gridTemplateRows: "auto 1fr auto",
     gridTemplateColumns: "auto 1fr",
     height: "100vh",
@@ -365,7 +363,6 @@ const styles = stylex.create({
     transitionTimingFunction: easing,
   },
   footerHidden: { opacity: 0, visibility: "hidden" },
-  // One tooltip glides between the rail's triggers, resizing to each label.
   tooltipGlide: {
     width: "var(--positioner-width)",
     height: "var(--positioner-height)",
@@ -394,8 +391,6 @@ const styles = stylex.create({
     borderColor: color.border,
     borderRadius: radius.large,
   },
-  // Meetings sets its list beside an overview panel that runs the card's full height, so the page
-  // owns its block and right padding, and measures the card's height in cqh.
   mainWide: { paddingBlock: 0, paddingRight: 0, containerType: "size" },
   column: { maxWidth: 800, marginInline: "auto" },
   columnWide: { maxWidth: 1120 },
@@ -502,13 +497,11 @@ function NavItem({
   onClick: () => void;
 }) {
   const showHint = showShortcut && shortcut !== undefined;
-  // The row cannot fit the label, the badge and the hint, so the badge steps aside while Command is held.
   const showBadge = badge !== undefined && !showHint;
   return (
     <Tooltip.Trigger
       payload={shortcut === undefined ? label : withShortcut(label, shortcut)}
       type="button"
-      // One name, "Meetings, Beta", rather than the label and badge run together.
       aria-label={badge === undefined ? undefined : `${label}, ${badge}`}
       aria-current={current ? "page" : undefined}
       onClick={onClick}
@@ -611,7 +604,6 @@ function SettingsModal({
   useLayoutEffect(() => {
     scrollerRef.current?.scrollTo({ top: 0 });
     scrollerRef.current?.focus({ preventScroll: true });
-    // state.section is not read here: a new section is the signal to scroll back to the top.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [state.section]);
   const SectionView = settingsPageViews[state.section];
@@ -654,7 +646,6 @@ function SettingsModal({
           >
             <div {...stylex.props(styles.settingsNav)}>
               <Dialog.Title {...stylex.props(styles.settingsTitle)}>Settings</Dialog.Title>
-              {/* NavItem's tooltip trigger needs a root. It shows tooltips only when collapsed. */}
               <SidebarTooltip collapsed={false}>
                 <nav
                   aria-label="Settings"
@@ -700,7 +691,6 @@ export function HubShell({
 }: {
   snapshot: Snapshot;
   history: HistoryState;
-  /** The preview harness opens a scene's page directly. */
   initialPage?: AppPage;
 }) {
   const [appPage, setAppPage] = useState<AppPage>(initialPage);
@@ -709,7 +699,6 @@ export function HubShell({
     section: "general",
   });
   const [help, setHelp] = useState<HelpState>(helpClosed);
-  // The info button and the page it was on. A page still loading shows no button yet.
   const [helpButtonOn, setHelpButtonOn] = useState<{
     element: HTMLButtonElement | null;
     page: AppPage;
@@ -746,13 +735,9 @@ export function HubShell({
   const [shown, setShown] = useState({ page: appPage, rises: false });
   if (shown.page !== appPage) {
     setShown({ page: appPage, rises: true });
-    // Open help follows the user to the next page, and closes on a page that has none.
     if (help.kind !== "closed") setHelp(helpFor(appPage) ? { kind: "list" } : helpClosed);
-    // Main's request opens its meeting once. Clearing it only on the way out leaves an open
-    // MeetingDetail alone when the user clicks Meetings again.
     if (appPage !== "meetings") setOpenMeeting(null);
   }
-  // A page can drop its title, as Meetings does while a meeting is open; help goes with it.
   if (help.kind !== "closed" && helpButton === null && helpButtonOn?.page === appPage) {
     setHelp(helpClosed);
   }
@@ -761,14 +746,11 @@ export function HubShell({
   const mainRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-    // appPage is not read here: a new page is the signal to scroll back to the top.
     // eslint-disable-next-line react/exhaustive-effect-dependencies
   }, [appPage]);
   // The card is the only scroller, and PageDown or Space only scroll a focused scroller.
   const focusMain = () => mainRef.current?.focus({ preventScroll: true });
   useEffect(focusMain, []);
-  // A sign-in error can arrive from the browser while another page shows, or before the hub
-  // opens, as when the browser finishes a sign-in that a quit cut short.
   const accountKind = snapshot.account.kind;
   const [shownAccountKind, setShownAccountKind] = useState<typeof accountKind | null>(null);
   if (accountKind !== shownAccountKind) {
@@ -801,7 +783,6 @@ export function HubShell({
           { shortcut: shortcuts.toggleSidebar, run: toggleSidebar },
           { shortcut: shortcuts.openSettings, run: () => openSettings("general") },
           ...(helpButton ? [{ shortcut: shortcuts.help, run: toggleHelp }] : []),
-          // selectAppPage focuses main through a ref, but jumpBindings only wraps it for keydown.
           // eslint-disable-next-line react/refs
           ...jumpBindings(appPages, selectAppPage),
         ],

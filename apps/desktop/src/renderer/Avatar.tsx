@@ -43,7 +43,6 @@ const styles = stylex.create({
   },
 });
 
-// The initials stay underneath, so they show while the picture loads.
 export function Avatar({ identity, size }: { identity: AccountIdentity; size: number }) {
   const { image } = identity;
   const [failed, setFailed] = useState<string | null>(null);

@@ -1,9 +1,7 @@
 import { zoomFactor } from "../shared/zoom.ts";
 
 const defaultSize = { width: 1350, height: 850 };
-// The smallest page the hub's layout supports, in CSS px. The window's minimum grows with zoom.
 const minimumPage = { width: 720, height: 480 };
-// Keeps the window clear of the screen edges on displays smaller than the default.
 const workAreaMargin = 20;
 
 export function hubMinimumSize(zoomLevel: number) {

@@ -7,12 +7,10 @@ type Action = "down" | "up" | "cancel" | "exit" | "stall";
 type Config = {
   transcript?: string;
   startMs?: number;
-  // How long the transcript takes after capture stops. Default 40 ms.
   transcriptMs?: number;
   script?: { at: number; action: Action }[];
   control?: string;
   version?: number;
-  // What selection.read answers. Default: failed with reason failed, like a helper without stubs.
   selection?:
     | { outcome: "selected"; text: string; via?: "accessibility" | "copy" }
     | {

@@ -7,12 +7,6 @@ import { useAction } from "./useAction.ts";
 const SAVE_DELAY_MS = 600;
 const SAVE_FAILED = "Could not save your thoughts.";
 
-/**
- * Thoughts typed in this window that main has not confirmed, by meeting. They outlive the editor,
- * which a tab switch or leaving the meeting unmounts, and live in memory only. `error` is why
- * their last save failed. An editor that only shows such text again never sends it: the other
- * window may have saved newer notes since, so it waits for Try again or more typing.
- */
 const unsaved = new Map<MeetingId, { text: string; error: string }>();
 
 /**
@@ -25,7 +19,6 @@ const unsaved = new Map<MeetingId, { text: string; error: string }>();
 export function useThoughts(meeting: Meeting, save: (notes: string) => Promise<void>) {
   const { id } = meeting;
   const [draft, setDraft] = useState(() => unsaved.get(id)?.text ?? null);
-  // Left by an editor this one replaces.
   const [restoredError, setRestoredError] = useState(() => unsaved.get(id)?.error ?? "");
   const [sent, setSent] = useState<string | null>(null);
   const inFlight = useRef(0);
