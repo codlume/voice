@@ -212,15 +212,16 @@ export async function prepareAsr(helper, { download = false } = {}) {
   return performance.now() - startedAt;
 }
 
+const detectorSettled = (event) =>
+  event.type === "log" && /^voice detector (ready|unavailable)/.test(event.message);
+
 // The voice detector a meeting hears its mic with. It comes with the speech model, so `prepareAsr`
 // has asked for it, and it has no status of its own: its log line says how that went, and may
 // come before `asr.status` is ready.
 export async function prepareVoiceDetector(helper) {
-  const settled = (event) =>
-    event.type === "log" && /^voice detector (ready|unavailable)/.test(event.message);
   const log =
-    helper.events.find(settled) ??
-    (await helper.waitFor(settled, { timeoutMs: 60_000, label: "voice detector ready" }));
+    helper.events.find(detectorSettled) ??
+    (await helper.waitFor(detectorSettled, { timeoutMs: 60_000, label: "voice detector ready" }));
   assert(log.message === "voice detector ready", log.message);
 }
 
