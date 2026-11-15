@@ -15,8 +15,11 @@ import Foundation
 public enum EchoGate {
     /// Audio before a block that the gate reads to learn the echo path.
     public static let contextSamples = 8 * PcmFile.sampleRate
-    /// A long stretch is gated one live window at a time, each with its own lag: a Bluetooth
-    /// reconnect or clock drift moves the lag mid-call.
+    /// Audio after a block that the gate reads when both files hold it. A lag that moves just
+    /// before the block ends shows only in what follows.
+    static let lookaheadSamples = correlationBlock
+    /// A long stretch is gated one live window at a time, so a clock that drifts never carries
+    /// the lag far within one.
     static let blockSamples = MeetingChunker.windowSamples
     /// How much later the mic may hear what system audio recorded. The built-in mic and
     /// speakers capture -50 to +300 ms apart; Bluetooth or USB speakers play a few hundred ms late.
@@ -28,6 +31,18 @@ public enum EchoGate {
     /// same. A voice that plays nothing above 1.8 kHz left four bins in five like that, and
     /// they outvoted the echo for a lag of exactly zero.
     static let unplayedPower: Float = 1e-3
+    /// Each two-second block fades in and out over 32 ms before its lag is looked for, so no
+    /// block ends on a step. Left in, the step showed as a lag of zero in single blocks of the
+    /// meeting fixtures, up to 16 times the correlation's rms.
+    private static let fade = (0..<frameSize).map { 0.5 - 0.5 * cos(Float.pi * (Float($0) + 0.5) / Float(frameSize)) }
+    /// A block shows a lag when its correlation peaks this many times its rms. Through
+    /// speakers, on a MacBook Air and the meeting fixtures, 99 blocks in 100 peaked over 20
+    /// times it. On headphones, with no echo to find, none of 694 blocks reached 12.
+    static let clearPeak: Float = 16
+    /// A block's lag this close to the last block's is the same echo path, not a move: 4 ms. A
+    /// MacBook Air's echo peaked 2 ms late in a block that held little of it, and a clock 500
+    /// parts per million fast carries the lag 1 ms a block.
+    static let lagSlack = PcmFile.frames(milliseconds: 4)
     static let frameSize = 512
     static let hop = frameSize / 2
     static let bins = frameSize / 2 + 1
@@ -75,26 +90,59 @@ public enum EchoGate {
     public static func read(mic: URL, system: URL, offset: Int, count: Int) throws -> [Float] {
         let end = min(offset + count, PcmFile.frames(at: mic))
         let hasSystem = FileManager.default.fileExists(atPath: system.path)
+        let systemEnd = PcmFile.frames(at: system)
         var out: [Float] = []
         for at in stride(from: offset, to: end, by: blockSamples) {
             let start = max(0, at - contextSamples)
-            let heard = try PcmFile.read(at: mic, offset: start, count: min(at + blockSamples, end) - start)
-            let block = Array(heard.dropFirst(at - start))
-            guard hasSystem, MeetingChunker.speech(in: block) != nil else {
-                out += block
+            let blockEnd = min(at + blockSamples, end)
+            let heard = try PcmFile.read(at: mic, offset: start, count: max(blockEnd, min(blockEnd + lookaheadSamples, systemEnd)) - start)
+            let block = at - start..<blockEnd - start
+            guard hasSystem, MeetingChunker.speech(in: Array(heard[block])) != nil else {
+                out += heard[block]
                 continue
             }
-            out += gate(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count)).dropFirst(at - start)
+            out += gate(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count))[block]
         }
         return out
     }
 
-    /// `mic` with what `system`, the same stretch of the meeting, explains muted.
+    /// `mic` with what `system`, the same stretch of the meeting, explains muted. An output
+    /// device that changes mid-call moves the lag and the echo's path with it, so each stretch
+    /// of one lag is gated on its own, from what it alone heard.
     public static func gate(mic: [Float], system: [Float]) -> [Float] {
         guard !mic.isEmpty, !system.isEmpty, vDSP.maximumMagnitude(system) > 0 else { return mic }
         let played = Array(system.prefix(mic.count)) + [Float](repeating: 0, count: max(0, mic.count - system.count))
+        let stretches = stretches(mic: mic, system: played)
+        // The lag moved inside the last block that shows the old one or the first that shows
+        // the new: where going from the old lag's gating to the new one's leaves the least of
+        // the mic, since the wrong lag leaves the echo.
+        var moves: [ClosedRange<Int>] = []
+        for (old, new) in zip(stretches, stretches.dropFirst()) {
+            let around = new.range.lowerBound - correlationBlock..<min(mic.count, new.range.lowerBound + correlationBlock)
+            let before = gate(mic: mic, played: played, range: old.range.lowerBound..<around.upperBound, lag: old.lag)
+            let after = gate(mic: mic, played: played, range: around.lowerBound..<new.range.upperBound, lag: new.lag)
+            let handover = handover(from: before.suffix(around.count), to: after.prefix(around.count))
+            let earliest = max(moves.last?.upperBound ?? 0, around.lowerBound + handover.lowerBound)
+            moves.append(earliest...max(earliest, around.lowerBound + handover.upperBound))
+        }
+        let starts = [0] + moves.map(\.lowerBound) + [mic.count]
+        var out: [Float] = []
+        for (index, stretch) in stretches.enumerated() where starts[index] < starts[index + 1] {
+            out += gate(mic: mic, played: played, range: starts[index]..<starts[index + 1], lag: stretch.lag)
+        }
+        // Neither gating leaves anything to hear where the move may be, and the frames at its
+        // ends hold echo at both lags.
+        for move in moves {
+            let torn = max(0, move.lowerBound - frameSize)..<min(out.count, move.upperBound + frameSize)
+            out.replaceSubrange(torn, with: repeatElement(0, count: torn.count))
+        }
+        return out
+    }
+
+    /// `mic[range]` with what system audio explains muted, heard `lag` samples after it `played`.
+    static func gate(mic: [Float], played: [Float], range: Range<Int>, lag: Int) -> [Float] {
+        let mic = Array(mic[range])
         let pad = [Float](repeating: 0, count: frameSize)
-        let lag = lag(mic: mic, system: played)
         let heard = Spectrogram(pad + mic + pad)
         let frames = heard.frames
         let power = heard.power
@@ -114,12 +162,12 @@ public enum EchoGate {
         // however the speakers colour what they play. A speaker on another clock, or a lag that
         // moves, has no one path. The mic then hears the echo at another level than the filter
         // predicts, and the echo is taken to be what played, at one level for every bin.
-        let ahead = shift(played, by: lag - pathLead)
+        let ahead = Array(shift(played, by: lag - pathLead)[range])
         var echo = Spectrogram(pad + filtered(ahead, through: echoPath(from: ahead, to: mic)) + pad)
         var level = levelHeard(of: echo)
         let pathHolds = (1 / pathTolerance...pathTolerance).contains(level)
         if !pathHolds {
-            echo = Spectrogram(pad + shift(played, by: lag) + pad)
+            echo = Spectrogram(pad + Array(shift(played, by: lag)[range]) + pad)
             level = levelHeard(of: echo)
         }
 
@@ -183,37 +231,103 @@ public enum EchoGate {
         return windowEnergy * oneSidedSpectrumGain * rms * rms
     }
 
-    /// Samples by which the mic trails system audio: the peak of their phase-only
-    /// cross-correlation within `lagRange`, summed over two-second blocks.
-    static func lag(mic: [Float], system: [Float]) -> Int {
-        let (crossRe, crossIm, power) = spectra(mic: mic, system: system)
+    /// The stretches of `mic` whose blocks show one lag behind system audio each, in order.
+    static func stretches(mic: [Float], system: [Float]) -> [(range: Range<Int>, lag: Int)] {
+        let blocks = blockSpectra(mic: faded(mic), system: faded(system))
+        var starts = [0]
+        var held: Int?
+        for (index, block) in blocks.enumerated() {
+            let correlation = correlation(block)
+            let (peakAt, peak) = vDSP.indexOfMaximum(correlation)
+            guard peak > clearPeak * vDSP.rootMeanSquare(correlation) else { continue }
+            let lag = Int(peakAt) + lagRange.lowerBound
+            if let held, abs(lag - held) > lagSlack { starts.append(index) }
+            held = lag
+        }
+        return starts.indices.map { stretch in
+            let first = starts[stretch]
+            let last = stretch + 1 < starts.count ? starts[stretch + 1] : blocks.count
+            return (first * correlationBlock..<min(mic.count, last * correlationBlock), lag(sum(blocks[first..<last])))
+        }
+    }
+
+    /// Where to go from `before` to `after`, two gatings of the same samples: the counts taken
+    /// from `before` that leave the least to hear, to the hop. A hop the chunker counts as
+    /// quiet leaves nothing.
+    static func handover(from before: ArraySlice<Float>, to after: ArraySlice<Float>) -> ClosedRange<Int> {
+        let quiet = Float(hop) * MeetingChunker.quietRms * MeetingChunker.quietRms
+        func heard(_ samples: ArraySlice<Float>, from start: Int) -> Float {
+            let energy = vDSP.sumOfSquares(samples.dropFirst(start).prefix(hop))
+            return energy > quiet ? energy : 0
+        }
+        var best = (counts: 0...0, saved: Float(0))
+        var saved: Float = 0
+        for start in stride(from: 0, to: before.count, by: hop) {
+            saved += heard(after, from: start) - heard(before, from: start)
+            let count = min(start + hop, before.count)
+            if saved > best.saved { best = (count...count, saved) }
+            if saved == best.saved { best.counts = best.counts.lowerBound...count }
+        }
+        return best.counts
+    }
+
+    /// `samples` with each two-second block faded in and out.
+    static func faded(_ samples: [Float]) -> [Float] {
+        var out = samples
+        for start in stride(from: 0, to: samples.count, by: correlationBlock) {
+            let end = min(start + correlationBlock, samples.count)
+            let ramp = fade.prefix((end - start) / 2)
+            out.replaceSubrange(start..<start + ramp.count, with: vDSP.multiply(ramp, samples[start..<start + ramp.count]))
+            out.replaceSubrange(end - ramp.count..<end, with: vDSP.multiply(ramp.reversed(), samples[end - ramp.count..<end]))
+        }
+        return out
+    }
+
+    typealias Spectra = (crossRe: [Float], crossIm: [Float], power: [Float])
+
+    /// Samples by which the mic trails system audio: the peak of their correlation.
+    static func lag(_ spectra: Spectra) -> Int {
+        Int(vDSP.indexOfMaximum(correlation(spectra)).0) + lagRange.lowerBound
+    }
+
+    /// How well each lag in `lagRange` lines the mic up with system audio: the size of their
+    /// phase-only cross-correlation, over the bins the other side played.
+    static func correlation(_ spectra: Spectra) -> [Float] {
+        let (crossRe, crossIm, power) = spectra
         let magnitude = vDSP.add(1e-12, vForce.sqrt(vDSP.add(vDSP.square(crossRe), vDSP.square(crossIm))))
         // 1 where the other side played, 0 where it did not.
         let played = vDSP.add(0.5, vDSP.threshold(power, to: unplayedPower * vDSP.mean(power), with: .signedConstant(0.5)))
         let phase = vDSP.divide(played, magnitude)
         let correlation = correlationFFT.inverse(re: vDSP.multiply(crossRe, phase), im: vDSP.multiply(crossIm, phase))
         // Negative lags wrap around to the end.
-        let candidates = vDSP.absolute(Array(correlation.suffix(-lagRange.lowerBound) + correlation.prefix(lagRange.upperBound + 1)))
-        return Int(vDSP.indexOfMaximum(candidates).0) + lagRange.lowerBound
+        return vDSP.absolute(Array(correlation.suffix(-lagRange.lowerBound) + correlation.prefix(lagRange.upperBound + 1)))
     }
 
     /// The mic's cross-spectrum with system audio and system audio's own power spectrum, summed
     /// over two-second blocks.
-    static func spectra(mic: [Float], system: [Float]) -> (crossRe: [Float], crossIm: [Float], power: [Float]) {
+    static func spectra(mic: [Float], system: [Float]) -> Spectra {
+        sum(blockSpectra(mic: mic, system: system)[...])
+    }
+
+    static func sum(_ blocks: ArraySlice<Spectra>) -> Spectra {
+        blocks.dropFirst().reduce(blocks.first!) {
+            (vDSP.add($0.crossRe, $1.crossRe), vDSP.add($0.crossIm, $1.crossIm), vDSP.add($0.power, $1.power))
+        }
+    }
+
+    /// For each two-second block, the mic's cross-spectrum with system audio and system audio's
+    /// own power spectrum.
+    static func blockSpectra(mic: [Float], system: [Float]) -> [Spectra] {
         let block = correlationBlock
-        var crossRe = [Float](repeating: 0, count: block + 1)
-        var crossIm = crossRe
-        var power = crossRe
-        for start in stride(from: 0, to: mic.count, by: block) {
+        return stride(from: 0, to: mic.count, by: block).map { start in
             let end = min(start + block, mic.count)
             let zeros = [Float](repeating: 0, count: 2 * block - (end - start))
             let m = correlationFFT.forward(Array(mic[start..<end]) + zeros)
             let s = correlationFFT.forward(Array(system[start..<end]) + zeros)
-            crossRe = vDSP.add(crossRe, vDSP.add(vDSP.multiply(m.re, s.re), vDSP.multiply(m.im, s.im)))
-            crossIm = vDSP.add(crossIm, vDSP.subtract(vDSP.multiply(m.im, s.re), vDSP.multiply(m.re, s.im)))
-            power = vDSP.add(power, vDSP.add(vDSP.square(s.re), vDSP.square(s.im)))
+            return (vDSP.add(vDSP.multiply(m.re, s.re), vDSP.multiply(m.im, s.im)),
+                    vDSP.subtract(vDSP.multiply(m.im, s.re), vDSP.multiply(m.re, s.im)),
+                    vDSP.add(vDSP.square(s.re), vDSP.square(s.im)))
         }
-        return (crossRe, crossIm, power)
     }
 
     /// The filter of `pathSamples` taps that brings `played` closest to `mic`, by least squares.
