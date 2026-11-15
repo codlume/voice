@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import VoiceHelperCore
 @testable import VoiceHelper
@@ -355,6 +356,25 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
     }
 }
 
+/// Hears a voice in everything, and once armed holds the next hearing until released, so a
+/// test can change the files while the live loop is between gating a window and deciding on it.
+private final class PausingDetector: VoiceDetector, @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: (armed: false, paused: false, released: false))
+    var paused: Bool { state.withLock { $0.paused } }
+    func arm() { state.withLock { $0.armed = true } }
+    func release() { state.withLock { $0.released = true } }
+
+    func hear(_ samples: [Float]) async -> (probabilities: [Float], next: any VoiceDetector)? {
+        let holds = state.withLock { state in
+            guard state.armed, !state.released else { return false }
+            state.paused = true
+            return true
+        }
+        while holds, !state.withLock({ $0.released }) { try? await Task.sleep(for: .milliseconds(2)) }
+        return ([Float](repeating: 1, count: (samples.count + VoiceActivity.chunkSamples - 1) / VoiceActivity.chunkSamples), self)
+    }
+}
+
 @MainActor
 @Suite struct MeetingLiveGateTests {
     let lines = EmittedLines()
@@ -545,6 +565,33 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         let seen = looks
         try await until { looks >= seen + 4 }
         #expect(micEvents() == [], "the user said nothing")
+    }
+
+    /// The rest of the meeting arrives and the leg ends while the gate still reads a window from
+    /// files that end 1.6 s after the lag moved.
+    @Test func anEchoGatedBeforeTheLagMoveShowedWaitsWhenTheLegEndsMeanwhile() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let theirs = talk(9) + silence(0.7) + talk(6)
+        let moveAt = Int(8.3 * 16_000)
+        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
+        let live = Int(9.9 * 16_000)
+        try write(Array(theirs.prefix(live)), .system, in: dir)
+        try write(Array(mic.prefix(live)), .mic, in: dir)
+        let pause = PausingDetector()
+        let job = job(newDetector: { pause })
+        defer { job.cancel() }
+        job.record([.mic, .system])
+        try await until { lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "system" } }
+        pause.arm()
+        try await until { pause.paused }
+
+        try write(Array(theirs.dropFirst(live)), .system, in: dir)
+        try write(Array(mic.dropFirst(live)), .mic, in: dir)
+        job.drain()
+        pause.release()
+        _ = try await lines.wait(for: "meeting.drained")
+        #expect(micSegments() == [], "the user said nothing")
+        #expect(micEvents() == [])
     }
 
     /// The echo's lag has not moved, so the gate already told the user's voice from the other side.
