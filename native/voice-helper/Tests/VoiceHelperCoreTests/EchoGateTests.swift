@@ -76,6 +76,30 @@ private func throughAMacBookAir(_ played: [Float], lagMs: Double) -> [Float] {
     return throughTheSpeakers(coloured, lagMs: lagMs, gain: pow(10, -10.8 / 20), taps: reflections)
 }
 
+/// What louder speakers add of their own: a buzz at 2.5 kHz in step with what plays, `decibels`
+/// under the echo where it is loud. On a MacBook Air at 60% the echo of a loud vowel held energy
+/// at 2 to 3 kHz, where the played audio held 15 to 30 dB less, that came to 9.6 to 11 dB under
+/// the echo.
+private func buzz(of echo: [Float], decibels: Float) -> [Float] {
+    let reach = 160
+    let smoothed = vDSP.convolve([Float](repeating: 0, count: reach) + echo.map { $0 * $0 } + [Float](repeating: 0, count: reach + 1),
+                                 withKernel: [Float](repeating: 1 / Float(2 * reach + 1), count: 2 * reach + 1))
+    let envelope = vForce.sqrt(Array(smoothed.prefix(echo.count)))
+    let t = vDSP.ramp(withInitialValue: Float(0), increment: 2 * .pi * 2500 / Float(rate), count: echo.count)
+    return vDSP.multiply(sqrt(2) * pow(10, decibels / 20), vDSP.multiply(envelope, vForce.sin(t)))
+}
+
+/// A faint sound 15 ms before each syllable the mic hears of `played` at `lagMs`, 25 dB under its
+/// echo: on a MacBook Air the mic heard one ahead of most words the other side said.
+private func ticks(before played: [Float], lagMs: Double) -> [Float] {
+    var out = [Float](repeating: 0, count: played.count)
+    let lead = Int((lagMs - 15) * Double(rate) / 1000)
+    for at in 1..<played.count where played[at - 1] == 0 && played[at] != 0 && at + lead >= 0 && at + lead + 80 < out.count {
+        for i in 0..<80 { out[at + lead + i] = 0.006 * sin(Float(i) * 0.9) }
+    }
+    return out
+}
+
 /// The room's hiss, about -60 dBFS.
 private func roomNoise(_ seconds: Double) -> [Float] {
     var state: UInt32 = 7
@@ -146,6 +170,17 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
         #expect(MeetingChunker.speech(in: gated) == nil, "nothing is loud enough to be decoded as the user's words")
         #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
+    }
+
+    @Test func aFaintSoundJustBeforeTheOtherSidesWordsLetsNoneOfTheirEchoThrough() {
+        let system = voice(8, pitch: 110, seed: 1, level: 0.5)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let faint = ticks(before: system, lagMs: 120)
+        #expect(MeetingChunker.speech(in: add(faint, roomNoise(8))) == nil, "the faint sounds alone are no speech")
+        #expect(MeetingChunker.speech(in: EchoGate.gate(mic: add(echo, buzz(of: echo, decibels: -15), roomNoise(8)), system: system)) == nil)
+        let mic = add(echo, buzz(of: echo, decibels: -15), faint, roomNoise(8))
+        let gated = EchoGate.gate(mic: mic, system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "a sound far quieter than the echo beside it is no voice to keep that echo for")
     }
 
     @Test(arguments: [-50.0, 120, 300, 550])
