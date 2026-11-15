@@ -123,10 +123,11 @@ public enum EchoGate {
     /// the lag moved, it holds until the system file has `lookaheadSamples` after the sound.
     public static func settled(_ gated: [Float], offset: Int, mic: URL, system: URL) throws -> Int {
         guard FileManager.default.fileExists(atPath: system.path) else { return gated.count }
-        let systemEnd = PcmFile.frames(at: system)
+        // The gate sees a move only where both files hold audio, and either can be ahead.
+        let heardEnd = min(PcmFile.frames(at: mic), PcmFile.frames(at: system))
         let runs = MeetingChunker.speechRuns(in: gated)
         func firstSound(inTheLast newest: Int) throws -> Int? {
-            let unplaced = systemEnd - newest
+            let unplaced = heardEnd - newest
             for run in runs where offset + run.upperBound > unplaced {
                 // The mic hears what played anywhere in the lag's range around a sound.
                 let sound = max(offset + run.lowerBound, unplaced)
@@ -141,7 +142,7 @@ public enum EchoGate {
         guard let sound = try firstSound(inTheLast: lookaheadSamples) else { return gated.count }
         // The lags in what the gate read for this window: its context, and the files to their end.
         let start = max(0, offset - contextSamples)
-        let heard = try PcmFile.read(at: mic, offset: start, count: systemEnd - start)
+        let heard = try PcmFile.read(at: mic, offset: start, count: heardEnd - start)
         let lags = stretches(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count))
         // The lag may have moved up to a block after the start of the first block that shows the new one.
         let moved = lags.count > 1 && heard.count - lags.last!.range.lowerBound < lookaheadSamples + correlationBlock
