@@ -50,10 +50,8 @@ private final class FakeTap: MeetingTap {
 
 private final class FakeWriter: MeetingAudioWriter {
     private(set) var samples: [Float] = []
-    /// The frames a power loss would leave. Like `PcmWriter`, the file flushes itself each time
-    /// it was handed 5 s.
+    /// The frames a power loss would leave.
     private(set) var flushedFrames = 0
-    private var unflushed = 0
     var diskIsFull = false
 
     var frames: Int { samples.count }
@@ -62,15 +60,14 @@ private final class FakeWriter: MeetingAudioWriter {
     func append(_ samples: [Float]) throws {
         if diskIsFull { throw CocoaError(.fileWriteOutOfSpace) }
         self.samples += samples
-        unflushed += samples.count
-        if unflushed >= 5 * PcmFile.sampleRate {
-            flushedFrames = frames
-            unflushed = 0
-        }
     }
 
     func pad(to target: Int) throws {
         if target > frames { try append([Float](repeating: 0, count: target - frames)) }
+    }
+
+    func synchronize() throws {
+        flushedFrames = frames
     }
 
     func close() throws {}

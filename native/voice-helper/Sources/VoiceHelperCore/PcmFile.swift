@@ -35,13 +35,10 @@ public enum PcmFile {
 
 public final class PcmWriter {
     private let handle: FileHandle
-    private let syncEvery: Int
-    private var unsynced = 0
     public private(set) var frames: Int
 
-    /// Opens for appending, creating the file owner-only. `syncEvery` frames are flushed to disk
-    /// at a time, so a power loss costs at most that much audio.
-    public init(url: URL, syncEvery: Int = 5 * PcmFile.sampleRate) throws {
+    /// Opens for appending, creating the file owner-only.
+    public init(url: URL) throws {
         if !FileManager.default.fileExists(atPath: url.path) {
             guard FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
@@ -53,7 +50,6 @@ public final class PcmWriter {
         let whole = end - end % UInt64(PcmFile.bytesPerFrame)
         if whole != end { try handle.truncate(atOffset: whole) }
         frames = Int(whole) / PcmFile.bytesPerFrame
-        self.syncEvery = syncEvery
     }
 
     public func append(_ samples: [Float]) throws {
@@ -67,17 +63,18 @@ public final class PcmWriter {
         }
         try handle.write(contentsOf: data)
         frames += samples.count
-        unsynced += samples.count
-        if unsynced >= syncEvery {
-            try handle.synchronize()
-            unsynced = 0
-        }
     }
 
     /// Appends silence up to `target` frames, which keeps the meeting's files on one timeline.
     public func pad(to target: Int) throws {
         guard target > frames else { return }
         try append([Float](repeating: 0, count: target - frames))
+    }
+
+    /// Flushes what was appended to disk. Until then it survives the helper's crash, but not a
+    /// power loss.
+    public func synchronize() throws {
+        try handle.synchronize()
     }
 
     public func close() throws {
