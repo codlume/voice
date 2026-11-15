@@ -22,6 +22,12 @@ public enum EchoGate {
     /// speakers capture -50 to +300 ms apart; Bluetooth or USB speakers play a few hundred ms late.
     static let lagRange = -PcmFile.frames(milliseconds: 100)...PcmFile.frames(milliseconds: 600)
     static let correlationBlock = 1 << 15
+    /// A bin where system audio has under a thousandth of its average power says nothing about
+    /// the lag. All it holds is the step each two-second block is cut off with, at one sample in
+    /// the mic and in system audio alike, and a phase-only correlation counts every bin the
+    /// same. A voice that plays nothing above 1.8 kHz left four bins in five like that, and
+    /// they outvoted the echo for a lag of exactly zero.
+    static let unplayedPower: Float = 1e-3
     static let frameSize = 512
     static let hop = frameSize / 2
     static let bins = frameSize / 2 + 1
@@ -180,9 +186,12 @@ public enum EchoGate {
     /// Samples by which the mic trails system audio: the peak of their phase-only
     /// cross-correlation within `lagRange`, summed over two-second blocks.
     static func lag(mic: [Float], system: [Float]) -> Int {
-        let (crossRe, crossIm, _) = spectra(mic: mic, system: system)
+        let (crossRe, crossIm, power) = spectra(mic: mic, system: system)
         let magnitude = vDSP.add(1e-12, vForce.sqrt(vDSP.add(vDSP.square(crossRe), vDSP.square(crossIm))))
-        let correlation = correlationFFT.inverse(re: vDSP.divide(crossRe, magnitude), im: vDSP.divide(crossIm, magnitude))
+        // 1 where the other side played, 0 where it did not.
+        let played = vDSP.add(0.5, vDSP.threshold(power, to: unplayedPower * vDSP.mean(power), with: .signedConstant(0.5)))
+        let phase = vDSP.divide(played, magnitude)
+        let correlation = correlationFFT.inverse(re: vDSP.multiply(crossRe, phase), im: vDSP.multiply(crossIm, phase))
         // Negative lags wrap around to the end.
         let candidates = vDSP.absolute(Array(correlation.suffix(-lagRange.lowerBound) + correlation.prefix(lagRange.upperBound + 1)))
         return Int(vDSP.indexOfMaximum(candidates).0) + lagRange.lowerBound
