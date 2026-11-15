@@ -235,6 +235,11 @@ final class MeetingTranscription {
         let heard: HeardAudio
     }
 
+    private struct Partial {
+        let source: MeetingSource
+        let samples: [Float]
+    }
+
     // The source further behind goes first, so the two transcripts advance together.
     private func nextWindow() async throws -> Window? {
         let sources = [MeetingSource.mic, .system].sorted { (cursor[$0] ?? 0) < (cursor[$1] ?? 0) }
@@ -246,7 +251,10 @@ final class MeetingTranscription {
             else { continue }
             let final = recording.isEmpty && available <= raw.count
             if let cut = MeetingChunker.cut(raw, final: final) {
-                return Window(source: source, offset: offset, heard: try await listen(to: source, offset: offset, count: cut))
+                let heard = try await listen(to: source, offset: offset, count: cut)
+                // A window that is not settled yet is read again once more audio follows it.
+                guard try settled(heard, of: source, offset: offset) == heard.samples.count else { continue }
+                return Window(source: source, offset: offset, heard: heard)
             }
         }
         return nil
@@ -283,18 +291,28 @@ final class MeetingTranscription {
         return heard
     }
 
+    /// How much of `heard`, `source` from `offset` on, can be transcribed now. While a leg
+    /// records system audio, mic sound that may be the other side's echo at a lag that just
+    /// moved waits for the audio that follows it, which shows the gate the move.
+    private func settled(_ heard: HeardAudio, of source: MeetingSource, offset: Int) throws -> Int {
+        guard source == .mic, recording.contains(.system), heard.speech != nil else { return heard.samples.count }
+        return try EchoGate.settled(heard.samples, offset: offset, mic: source.file(in: dir), system: MeetingSource.system.file(in: dir))
+    }
+
     /// Audio after a source's cursor that no window takes yet because no pause has come, once at
-    /// least `partialSamples` of it are new since the last partial. Where the echo gate fails, the
-    /// partial is skipped rather than shown ungated.
-    private func nextPartial() async -> Window? {
+    /// least `partialSamples` of it are new since the last partial, as far as it is settled.
+    /// Where the echo gate fails, the partial is skipped rather than shown ungated.
+    private func nextPartial() async -> Partial? {
         for source in [MeetingSource.mic, .system] {
             let offset = cursor[source] ?? 0
             let end = end(of: source)
             guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples else { continue }
             let count = min(end - offset, MeetingChunker.windowSamples)
             partialEnd[source] = offset + count
-            guard let heard = try? await listen(to: source, offset: offset, count: count), heard.speech != nil else { continue }
-            return Window(source: source, offset: offset, heard: heard)
+            guard let heard = try? await listen(to: source, offset: offset, count: count), let speech = heard.speech,
+                  let upTo = try? settled(heard, of: source, offset: offset), speech.lowerBound < upTo
+            else { continue }
+            return Partial(source: source, samples: Array(heard.samples.prefix(upTo)))
         }
         return nil
     }
@@ -310,11 +328,11 @@ final class MeetingTranscription {
     private static let partialSamples = PcmFile.sampleRate
 
     /// Text that may still change, for the live view only; it is never saved.
-    private func showPartial(_ window: Window) async {
-        guard let words = try? await decode(window.heard.samples, language), !Task.isCancelled, !words.isEmpty else { return }
+    private func showPartial(_ partial: Partial) async {
+        guard let words = try? await decode(partial.samples, language), !Task.isCancelled, !words.isEmpty else { return }
         let text = Self.text(words)
-        showing.insert(window.source)
-        output.emit(.meetingPartial(id: id, source: window.source, text: text))
+        showing.insert(partial.source)
+        output.emit(.meetingPartial(id: id, source: partial.source, text: text))
     }
 
     private func clearPartial(_ source: MeetingSource) {

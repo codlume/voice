@@ -20,6 +20,12 @@ public enum EchoGate {
     /// to 4 s after a move of a MacBook Air's or a laptop's echo, 13 kept echo with 2 s after
     /// them, 7 with 2.5 s, and none with 3 s.
     static let lookaheadSamples = 3 * PcmFile.sampleRate
+    /// The newest audio of the files, in which a lag that just moved shows in no block yet:
+    /// three quarters of a second. Of 448 simulated live windows that end 0.5 to 3 s after a
+    /// move, the live loop showed echo from 4 when it held no such audio back, and from none
+    /// with half a second. Of 256 that end 0.1 to 0.4 s after a move it showed echo from 77,
+    /// from 8 with half a second, and from 2 with three quarters.
+    static let newestSamples = 3 * PcmFile.sampleRate / 4
     /// A long stretch is gated one live window at a time, so a clock that drifts never carries
     /// the lag far within one.
     static let blockSamples = MeetingChunker.windowSamples
@@ -106,6 +112,40 @@ public enum EchoGate {
             out += gate(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count))[block]
         }
         return out
+    }
+
+    /// How much of `gated` is safe to transcribe while the files still grow: the count of its
+    /// samples before the first sound that may still be the other side's echo, or all of them.
+    /// `gated` is the mic from `offset` on, as `read` returned it. The gate places a lag that
+    /// moved from the audio that follows the move, so a sound it left where the other side
+    /// played may be their echo at a new lag as much as the user's voice. That holds for the
+    /// newest `newestSamples` of the files, where no move shows yet. Once the mic shows that
+    /// the lag moved, it holds until the system file has `lookaheadSamples` after the sound.
+    public static func settled(_ gated: [Float], offset: Int, mic: URL, system: URL) throws -> Int {
+        guard FileManager.default.fileExists(atPath: system.path) else { return gated.count }
+        let systemEnd = PcmFile.frames(at: system)
+        let runs = MeetingChunker.speechRuns(in: gated)
+        func firstSound(inTheLast newest: Int) throws -> Int? {
+            let unplaced = systemEnd - newest
+            for run in runs where offset + run.upperBound > unplaced {
+                // The mic hears what played anywhere in the lag's range around a sound.
+                let sound = max(offset + run.lowerBound, unplaced)
+                let from = max(0, sound - lagRange.upperBound)
+                let played = try PcmFile.read(at: system, offset: from, count: offset + run.upperBound - lagRange.lowerBound - from)
+                if let first = MeetingChunker.speech(in: played)?.lowerBound {
+                    return max(sound, from + first + lagRange.lowerBound) - offset
+                }
+            }
+            return nil
+        }
+        guard let sound = try firstSound(inTheLast: lookaheadSamples) else { return gated.count }
+        // The lags in what the gate read for this window: its context, and the files to their end.
+        let start = max(0, offset - contextSamples)
+        let heard = try PcmFile.read(at: mic, offset: start, count: systemEnd - start)
+        let lags = stretches(mic: heard, system: try PcmFile.read(at: system, offset: start, count: heard.count))
+        // The lag may have moved up to a block after the start of the first block that shows the new one.
+        let moved = lags.count > 1 && heard.count - lags.last!.range.lowerBound < lookaheadSamples + correlationBlock
+        return try moved ? sound : firstSound(inTheLast: newestSamples) ?? gated.count
     }
 
     /// `mic` with what `system`, the same stretch of the meeting, explains muted. An output
