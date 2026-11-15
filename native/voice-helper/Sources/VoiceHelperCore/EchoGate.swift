@@ -121,10 +121,10 @@ public enum EchoGate {
     /// played may be their echo at a new lag as much as the user's voice. That holds for the
     /// newest `newestSamples` of the files, where no move shows yet. Once the mic shows that
     /// the lag moved, it holds until the system file has `lookaheadSamples` after the sound.
-    public static func settled(_ gated: [Float], offset: Int, mic: URL, system: URL) throws -> Int {
+    /// `heardEnd` is where both files ended before the gate read them: the gate sees a move only
+    /// where both hold audio, and either file can be ahead.
+    public static func settled(_ gated: [Float], offset: Int, heardEnd: Int, mic: URL, system: URL) throws -> Int {
         guard FileManager.default.fileExists(atPath: system.path) else { return gated.count }
-        // The gate sees a move only where both files hold audio, and either can be ahead.
-        let heardEnd = min(PcmFile.frames(at: mic), PcmFile.frames(at: system))
         let runs = MeetingChunker.speechRuns(in: gated)
         func firstSound(inTheLast newest: Int) throws -> Int? {
             let unplaced = heardEnd - newest

@@ -245,15 +245,17 @@ final class MeetingTranscription {
         let sources = [MeetingSource.mic, .system].sorted { (cursor[$0] ?? 0) < (cursor[$1] ?? 0) }
         for source in sources {
             let offset = cursor[source] ?? 0
-            let available = end(of: source) - offset
+            let end = end(of: source)
+            let available = end - offset
             guard available > 0,
                   let raw = try? PcmFile.read(at: source.file(in: dir), offset: offset, count: min(available, MeetingChunker.windowSamples))
             else { continue }
             let final = recording.isEmpty && available <= raw.count
             if let cut = MeetingChunker.cut(raw, final: final) {
+                let settle = settleBound(of: source, end: end)
                 let heard = try await listen(to: source, offset: offset, count: cut)
                 // A window that is not settled yet is read again once more audio follows it.
-                guard try settled(heard, of: source, offset: offset) == heard.samples.count else { continue }
+                guard try settled(heard, offset: offset, before: settle) == heard.samples.count else { continue }
                 return Window(source: source, offset: offset, heard: heard)
             }
         }
@@ -291,12 +293,20 @@ final class MeetingTranscription {
         return heard
     }
 
-    /// How much of `heard`, `source` from `offset` on, can be transcribed now. While a leg
-    /// records system audio, mic sound that may be the other side's echo at a lag that just
-    /// moved waits for the audio that follows it, which shows the gate the move.
-    private func settled(_ heard: HeardAudio, of source: MeetingSource, offset: Int) throws -> Int {
-        guard source == .mic, recording.contains(.system), heard.speech != nil else { return heard.samples.count }
-        return try EchoGate.settled(heard.samples, offset: offset, mic: source.file(in: dir), system: MeetingSource.system.file(in: dir))
+    /// Where `source`, at `end` before it is gated, has to settle: while a leg records system
+    /// audio, mic sound that may be the other side's echo at a lag that just moved waits for the
+    /// audio that follows it, which shows the gate the move. Taken before the gate reads, since
+    /// the files may grow and the leg may end while it does.
+    private func settleBound(of source: MeetingSource, end: Int) -> Int? {
+        source == .mic && recording.contains(.system) ? end : nil
+    }
+
+    /// How much of `heard`, from `offset` on, can be transcribed now, given the `settleBound`
+    /// taken before it was gated.
+    private func settled(_ heard: HeardAudio, offset: Int, before bound: Int?) throws -> Int {
+        guard let bound, heard.speech != nil else { return heard.samples.count }
+        return try EchoGate.settled(heard.samples, offset: offset, heardEnd: bound,
+                                    mic: MeetingSource.mic.file(in: dir), system: MeetingSource.system.file(in: dir))
     }
 
     /// Audio after a source's cursor that no window takes yet because no pause has come, once at
@@ -309,8 +319,9 @@ final class MeetingTranscription {
             guard end - max(offset, partialEnd[source] ?? 0) >= Self.partialSamples else { continue }
             let count = min(end - offset, MeetingChunker.windowSamples)
             partialEnd[source] = offset + count
+            let settle = settleBound(of: source, end: end)
             guard let heard = try? await listen(to: source, offset: offset, count: count), let speech = heard.speech,
-                  let upTo = try? settled(heard, of: source, offset: offset), speech.lowerBound < upTo
+                  let upTo = try? settled(heard, offset: offset, before: settle), speech.lowerBound < upTo
             else { continue }
             return Partial(source: source, samples: Array(heard.samples.prefix(upTo)))
         }
