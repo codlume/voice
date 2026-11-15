@@ -172,6 +172,13 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         #expect(gated.filter { $0 == 0 }.count > gated.count * 9 / 10, "silence, not residue for the model to make words of")
     }
 
+    @Test func speakersThatBuzzWhereNothingPlayedLeaveNothingToTranscribe() {
+        let system = voice(8, pitch: 110, seed: 1, level: 0.5)
+        let echo = throughAMacBookAir(system, lagMs: 120)
+        let gated = EchoGate.gate(mic: add(echo, buzz(of: echo, decibels: -10.5), roomNoise(8)), system: system)
+        #expect(MeetingChunker.speech(in: gated) == nil, "the buzz is the other side's, not the user's words")
+    }
+
     @Test func aFaintSoundJustBeforeTheOtherSidesWordsLetsNoneOfTheirEchoThrough() {
         let system = voice(8, pitch: 110, seed: 1, level: 0.5)
         let echo = throughAMacBookAir(system, lagMs: 120)
