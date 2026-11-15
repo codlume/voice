@@ -29,6 +29,10 @@ final class MicPipeline {
     /// Host time of the frame after the last one drained, which stamps a converter tail that
     /// follows no new frames.
     private var drainedUntil: UInt64 = 0
+    /// Seconds of audio the converter took and gave since it was last reset. It holds back a
+    /// share of each pull that swings by up to 44 ms, and the next chunk starts with that share.
+    private var convertedIn: Double = 0
+    private var convertedOut: Double = 0
     private(set) var droppedFrames = 0
 
     init(hardware: AVAudioFormat, pendingSeconds: Double = 10) throws(CaptureError) {
@@ -84,13 +88,13 @@ final class MicPipeline {
 
     func finish() -> AudioChunk? {
         let tail = drain(closingIntake: true) { convert($0, endOfStream: true) }
-        converter.reset()
+        resetConverter()
         return tail
     }
 
     func discard() {
         drain(closingIntake: true) { _ in [] }
-        converter.reset()
+        resetConverter()
         droppedFrames = 0
     }
 
@@ -107,19 +111,31 @@ final class MicPipeline {
             return (pending.dropped, pending.firstHostTime)
         }
         droppedFrames += dropped
-        let first = frames.isEmpty ? drainedUntil : firstHostTime
-        drainedUntil = first + AudioConvertNanosToHostTime(UInt64(Double(frames.count) / hardware.sampleRate * 1e9))
+        // The chunk starts with the audio the converter still holds, so it is stamped that much
+        // before the first new frame; after a drop, the new frames keep their own time.
+        let next = frames.isEmpty ? drainedUntil : firstHostTime
+        let held = AudioConvertNanosToHostTime(UInt64(max(0, convertedIn - convertedOut) * 1e9))
+        let first = next - min(next, held)
+        drainedUntil = next + AudioConvertNanosToHostTime(UInt64(Double(frames.count) / hardware.sampleRate * 1e9))
         let converted = body(frames)
+        convertedOut += Double(converted.count) / target.sampleRate
         frames.removeAll(keepingCapacity: true)
         swap(&frames, &spare)
         guard !converted.isEmpty else { return nil }
         return AudioChunk(samples: converted, capturedAt: DispatchTime(uptimeNanoseconds: AudioConvertHostTimeToNanos(first)))
     }
 
+    private func resetConverter() {
+        converter.reset()
+        convertedIn = 0
+        convertedOut = 0
+    }
+
     private func convert(_ frames: [Float], endOfStream: Bool) -> [Float] {
         guard let input = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: AVAudioFrameCount(max(frames.count, 1)))
         else { return [] }
         input.frameLength = AVAudioFrameCount(frames.count)
+        convertedIn += Double(frames.count) / hardware.sampleRate
         if let channel = input.floatChannelData?[0] {
             frames.withUnsafeBufferPointer { source in
                 if let base = source.baseAddress { channel.update(from: base, count: frames.count) }

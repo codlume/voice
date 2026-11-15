@@ -226,12 +226,15 @@ private func feed(
         #expect(abs(first.capturedAt.uptimeMs - 5000) < 0.001)
         #expect(pipeline.droppedFrames == 4800, "the ten buffers past capacity")
 
+        // The resampler held back the end of the first chunk's audio, and the next chunk starts with it.
+        let heldMs = 200 - Double(first.samples.count) / 16
         try receive(30)
         let afterTheDrop = try #require(pipeline.pull())
-        #expect(abs(afterTheDrop.capturedAt.uptimeMs - 5300) < 0.001, "the first buffer accepted, not the end of the last chunk")
+        #expect(abs(afterTheDrop.capturedAt.uptimeMs + heldMs - 5300) < 0.001, "the first buffer accepted, not the end of the last chunk")
 
         let tail = try #require(pipeline.finish(), "the resampler held back the end of the last buffer")
-        #expect(abs(tail.capturedAt.uptimeMs - 5310) < 0.001, "nothing new was captured, so the tail follows the last chunk")
+        let tailEndMs = tail.capturedAt.uptimeMs + Double(tail.samples.count) / 16
+        #expect(abs(tailEndMs - 5310) < 0.001, "nothing new was captured, so the tail ends where the last buffer does")
     }
 
     /// A meeting file places each chunk at its capture time, so a steady stream must come out
