@@ -33,7 +33,6 @@ enum CaptureState {
     case starting(CaptureSession)
     case recording(Recording)
     case transcribing(Recording)
-    /// `started` flips on the first chunk, so a test never reports audio that has not flowed.
     case testing(id: String, started: Bool)
 }
 
@@ -46,8 +45,6 @@ let asrSampleRate = 16_000.0
 private let chunkFrames = 1600
 private let silenceFloor = 1e-4 as Float
 
-/// Owned by the main thread. `isActive` is the one reader on another thread: the hotkey tap
-/// asks it before consuming Escape.
 final class Capture {
     private let output: Output
     private let transcriber: any Transcribing
@@ -107,8 +104,6 @@ final class Capture {
 
     var isActive: Bool { activeFlag.withLock { $0 } }
 
-    /// True from a dictation's start until its transcript, so meetings keep the speech model clear
-    /// of it.
     var isDictating: Bool {
         switch state {
         case .starting, .recording, .transcribing: true
@@ -116,8 +111,6 @@ final class Capture {
         }
     }
 
-    /// True while a dictation takes in audio, so meetings keep its words out of their mic. Once
-    /// the key is released, what the user says belongs to the meeting again.
     var isCapturingDictation: Bool {
         switch state {
         case .starting, .recording: true
@@ -125,13 +118,9 @@ final class Capture {
         }
     }
 
-    /// False when no session began, so the caller schedules nothing for it. `hotkeyUptimeMs` is the
-    /// press main answered with this command, when one did.
     @discardableResult
     func start(id: String, language: DictationLanguage, target: InsertTarget, receivedAt: DispatchTime, hotkeyUptimeMs: Double? = nil,
                outputVolumeScale: Float?, microphone: Microphone?) -> Bool {
-        // Dictation preempts a test. The mic keeps running so dictation gets audio without an
-        // engine restart.
         if case .testing(let testId, _) = state {
             file?.stop()
             file = nil
@@ -181,7 +170,6 @@ final class Capture {
         return false
     }
 
-    // Main sends capture.stop only after capture.started, so a stop never meets `.starting`.
     func stop(id: String, receivedAt: DispatchTime, hotkeyUptimeMs: Double? = nil) {
         guard case .recording(let recording) = state, recording.session.id == id else {
             output.log(.error, "capture.stop \(id) ignored: no such active session")
@@ -191,8 +179,6 @@ final class Capture {
         transcribe(recording)
     }
 
-    /// The hop through main: hotkey event out, its command back. Nil without a hotkey, or for an
-    /// echo from before boot or after the command arrived, which no real press produces.
     private func relayMs(from hotkeyUptimeMs: Double?, to receivedAt: DispatchTime) -> Double? {
         guard let hotkeyUptimeMs, hotkeyUptimeMs >= 0, hotkeyUptimeMs <= receivedAt.uptimeMs else { return nil }
         return receivedAt.uptimeMs - hotkeyUptimeMs
@@ -328,7 +314,6 @@ final class Capture {
         }
     }
 
-    /// Only while no engine runs: a warm engine on another device is dropped, not stopped.
     private func adopt(_ microphone: Microphone?) {
         self.microphone = microphone
         if mic?.preference?.uid != microphone?.uid { disposeMic() }
@@ -464,7 +449,6 @@ final class Capture {
                 recording.pauseDecode?.cancel()
                 recording.pauseDecode = nil
             } else if paused, recording.pauseDecode?.finished != false {
-                // A decode still running would only delay this one and the release decode behind it.
                 recording.pauseDecode = transcriber.decodeAhead(recording.samples, language: session.language)
             }
         default:
@@ -486,8 +470,7 @@ final class Capture {
         mic = nil
     }
 
-    // The engine stops delivering audio on a configuration change. Mid-recording the samples so
-    // far are still the user's words, so the change ends the session like a key release.
+    // The engine stops delivering audio on a configuration change.
     private func micInvalidated(_ changed: MicSource) {
         guard changed === mic else { return }
         switch state {
@@ -665,8 +648,6 @@ final class MicSource {
     private func startPump() {
         stopPump()
         let pump = DispatchSource.makeTimerSource(queue: .main)
-        // Polls fast until the first audio arrives, so capture.started and the listening pill are not
-        // held back by the steady 100 ms cadence.
         pumpSettled = false
         pump.schedule(deadline: .now(), repeating: 0.005, leeway: .milliseconds(1))
         pump.setEventHandler { [weak self] in self?.tick() }
@@ -689,9 +670,6 @@ final class MicSource {
     }
 }
 
-/// Plays a test fixture in 100 ms ticks; `speed` above 1 delivers that many ticks' audio per tick.
-/// Each chunk is stamped in fixture time, its offset into the file after the start, not when the
-/// tick ran, so two fixtures started at one time stay aligned at any `speed`.
 final class FileSource {
     private let samples: [Float]
     private let framesPerTick: Int

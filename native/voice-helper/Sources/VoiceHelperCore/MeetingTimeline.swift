@@ -1,6 +1,6 @@
 /// Where a chunk of meeting audio goes in its file. A leg writes both of its files by this rule,
 /// from the frame each chunk's capture time maps to, so audio captured at one moment sits at one
-/// frame in both. `EchoGate` finds the other side's echo in the mic only when that holds.
+/// frame in both.
 public enum MeetingTimeline {
     /// A chunk this close to the file's end follows it as it is. Covers the resampler's latency,
     /// timestamp jitter and one dropped IO buffer, so steady capture is never cut or padded.

@@ -12,7 +12,6 @@ private func destination(
     KeystrokeDestination(presses: presses, frontmostPid: frontmostPid, secureInput: secureInput)
 }
 
-/// A paste whose clipboard save takes long enough for `duringSave` to happen.
 private func paste(duringSave: (inout KeystrokeDestination) -> Void) -> (attempt: PasteAttempt<Int>, steps: [String]) {
     var now = destination()
     var steps: [String] = []

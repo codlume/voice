@@ -3,8 +3,6 @@
 /// format changes and stalls a long meeting brings.
 public struct TapRestarts: Sendable {
     public static let limit = 3
-    /// A stalled tap is noticed and recreated within about five seconds, so a tap that went this
-    /// long without a restart recorded for most of it.
     public static let settledMs = 30_000.0
 
     private var inARow = 0

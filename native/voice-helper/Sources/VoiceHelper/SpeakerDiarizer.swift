@@ -2,16 +2,11 @@ import FluidAudio
 import Foundation
 import VoiceHelperCore
 
-/// Why a final pass stopped, with the reason main shows.
 struct MeetingFinalizeError: Error {
     let reason: MeetingFinalizeFailure
     let message: String
 }
 
-/// Tells apart the voices in a meeting's system audio with FluidAudio's offline diarizer
-/// (pyannote segmentation, WeSpeaker embeddings, VBx clustering). Its 21 MB of models download
-/// into the models folder only on `meeting.models.download`, never during a final pass. They load
-/// for each run and are released after it, so the memory a run takes is held only while it runs.
 @MainActor
 final class SpeakerDiarizer {
     private let directory: URL
@@ -22,7 +17,6 @@ final class SpeakerDiarizer {
     private var failure: String?
 
     init(modelsDir: URL, output: Output) {
-        // FluidAudio must never list, purge or fetch: bytes reach a load only through `cache`.
         ModelHub.offlineMode = true
         directory = modelsDir
         cache = ModelCache(release: ModelManifest.diarizer, modelsDirectory: modelsDir)
@@ -76,13 +70,11 @@ final class SpeakerDiarizer {
         reportStatus()
     }
 
-    /// Turns in ms from the start of the file, or nil on a Mac that cannot tell voices apart.
     func turns(in url: URL) async throws -> [SpeakerTurn]? {
         guard Self.supported else {
             output.log(.info, "meeting speakers left as one voice: diarization needs macOS 15")
             return nil
         }
-        // A blocked cache has its files, so it goes on to `prepare`, which says what blocks it.
         guard downloading == nil, (try? cache.presence())?.missing.isEmpty == true else {
             throw MeetingFinalizeError(reason: .speakerModels, message: "speaker detection is not downloaded")
         }
@@ -126,7 +118,6 @@ final class SpeakerDiarizer {
     }
 }
 
-/// A meeting's PCM file read on demand, so diarizing an hour does not hold it all in memory.
 private struct PcmSampleSource: AudioSampleSource {
     let url: URL
     let sampleCount: Int

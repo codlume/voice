@@ -75,8 +75,6 @@ final class SelectionReader {
     @MainActor
     private func copySelection(id: String, into target: InsertTarget) async throws -> SelectionResult {
         let postedAt = DispatchTime.now()
-        // The reads before this can take seconds, and Cmd+C goes to whichever app is in front
-        // by now. Another app's selection must not be read as this target's.
         let outcome = await pasteboard.copyFromFocusedApp(unless: {
             NSWorkspace.shared.frontmostApplication?.processIdentifier != target.pid || IsSecureEventInputEnabled()
         })
@@ -123,7 +121,6 @@ final class SelectionReader {
 
     @MainActor
     func settledFocus(of target: InsertTarget) async throws -> TargetFocus<FocusElement>? {
-        // A read that gives up or is ended with the baseline still pending never uses the target.
         defer { if case .pending = target.focus { target.cancel() } }
         let startedAt = DispatchTime.now()
         while true {
@@ -140,6 +137,5 @@ final class SelectionReader {
 
 let focusDeadline: TimeInterval = 2
 
-/// The longest a read can take before it answers; main's read watchdog must outlast it.
 let selectionReadMaxDuration = ReleaseWait.deadline + focusDeadline + 3 * TimeInterval(axMessagingTimeout)
     + CopyWait.deadline

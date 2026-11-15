@@ -226,7 +226,6 @@ private func feed(
         #expect(abs(first.capturedAt.uptimeMs - 5000) < 0.001)
         #expect(pipeline.droppedFrames == 4800, "the ten buffers past capacity")
 
-        // The resampler held back the end of the first chunk's audio, and the next chunk starts with it.
         let heldMs = 200 - Double(first.samples.count) / 16
         try receive(30)
         let afterTheDrop = try #require(pipeline.pull())
@@ -237,8 +236,6 @@ private func feed(
         #expect(abs(tailEndMs - 5310) < 0.001, "nothing new was captured, so the tail ends where the last buffer does")
     }
 
-    /// A meeting file places each chunk at its capture time, so a steady stream must come out
-    /// stamped where its samples follow on, however much the resampler holds back per pull.
     @Test(arguments: [512, 1024])
     func chunksOfASteadyStreamAreStampedWhereTheirSamplesFollowOn(ioFrames: Int) throws {
         let fixture = NoiseEndingInToneBurst(rate: 48_000, seconds: 20)
@@ -246,7 +243,6 @@ private func feed(
         let pipeline = try MicPipeline(hardware: format)
         pipeline.start()
         let quanta = fixture.quanta(of: ioFrames)
-        // The main-thread pump pulls every 100 ms or so, so each pull takes a few IO buffers more or less.
         let pulls = [9, 10, 11, 10, 12, 8, 10, 9, 11].map { $0 * 512 / ioFrames }
         var chunks: [AudioChunk] = []
         var next = 0

@@ -4,8 +4,6 @@ import { assert, dictateFixture, fixture, prepareAsr, withHelper } from "./helpe
 ensureFixtures();
 await withHelper({}, async (helper) => {
   await prepareAsr(helper);
-  // 140 levels into long.wav the sliding window is streaming; 17 levels into pauses.wav the decode
-  // started at its first pause is running or just done.
   for (const { id, name, levels, stopFirst } of [
     { id: "cancel-recording", name: "long.wav", levels: 140, stopFirst: false },
     { id: "cancel-finalization", name: "long.wav", levels: 140, stopFirst: true },

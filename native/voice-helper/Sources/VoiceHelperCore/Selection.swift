@@ -67,8 +67,7 @@ public func writeVerdict(origin: SelectionOrigin, readAX: () -> AXSelectionAnswe
 }
 
 /// Before anything is posted, the shortcut's key and every modifier must be up. A leaked Option
-/// turns the synthetic Cmd+C into Option+Cmd+C, and repeats of the held key move the input stamp
-/// the target record and the write guard depend on.
+/// turns the synthetic Cmd+C into Option+Cmd+C.
 public enum ReleaseWait {
     public static let deadline: TimeInterval = 1.0
 

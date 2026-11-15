@@ -4,8 +4,6 @@ import VoiceHelperCore
 import os
 @testable import VoiceHelper
 
-/// Answers each pause decode with its ordinal, held open while `hold` is set, and the release
-/// decode with "full decode" when no pause decode was handed to it.
 @MainActor
 private final class FakeTranscriber: Transcribing {
     var hold = false

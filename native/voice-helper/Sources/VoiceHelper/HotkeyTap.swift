@@ -3,12 +3,9 @@ import Foundation
 import VoiceHelperCore
 import os
 
-/// Owns the CGEventTap on a thread of its own. The system disables a tap whose callback
-/// stalls, and a disabled tap loses the key release that ends recording, so nothing that can
-/// block (AX calls, engine start, pasteboard IO) may share this thread. Every stored property
-/// below the run loop is touched only on that thread; `configure` and `install` hop onto it.
-/// A stdout write can wait behind another producer's large line or a slow reader, so events
-/// leave this thread through `send` and are written in order on `outbox`.
+/// The system disables an event tap whose callback stalls, and a disabled tap loses the key
+/// release that ends recording, so nothing that can block (AX calls, engine start, pasteboard IO)
+/// may share the tap's thread.
 final class HotkeyTap {
     private let output: Output
     private let outbox = DispatchQueue(label: "hotkey-tap.output", qos: .userInteractive)
@@ -71,8 +68,6 @@ final class HotkeyTap {
         perform { self.installOnTapThread() }
     }
 
-    /// For a helper that is exiting. It can stay up to a second for the clipboard to settle, and
-    /// a tap left installed would keep consuming shortcut keys that nothing acts on any more.
     func remove() {
         perform {
             self.retry?.invalidate()
@@ -170,7 +165,6 @@ final class HotkeyTap {
             keycode: keycode,
             flags: event.flags.rawValue,
             isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
-            // Only a toggle key's tap is judged by it, at that key's own press and release.
             pointerPresses: kind == .flagsChanged && keycode == toggleKey?.keycode ? pointerPresses() : 0
         )
         let decision = hotkeys.handle(keyEvent, activity: activity())
@@ -222,11 +216,6 @@ private func currentFlags() -> UInt64 {
     CGEventSource.flagsState(.combinedSessionState).rawValue
 }
 
-/// Pointer buttons never reach the tap, so their use is read from the session's event counters.
-/// A read costs under 4 ns, measured, so it is no call out of the process and may run in the tap
-/// callback. Releases count as well as presses: a drag begun before the key went down and
-/// dropped while it was held is not a tap either. Motion and scrolling are left out, because a
-/// page still coasting would swallow a deliberate tap.
 private func pointerPresses() -> UInt32 {
     let session = CGEventSourceStateID.combinedSessionState
     return CGEventSource.counterForEventType(session, eventType: .leftMouseDown)

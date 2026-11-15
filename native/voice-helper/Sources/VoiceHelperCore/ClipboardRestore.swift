@@ -31,8 +31,8 @@ public enum RestoreOutcome<Contents> {
 extension RestoreOutcome: Equatable where Contents: Equatable {}
 
 /// Tracks the user's clipboard across paste insertions, keyed by the pasteboard `changeCount`
-/// each paste's own write produced. Only the latest paste can restore: an earlier paste's
-/// restore finds the clipboard changed and backs off.
+/// each paste's own write produced. Only the latest paste can restore; an earlier paste's
+/// restore is superseded.
 public struct ClipboardRestore<Contents> {
     private var pending: (write: Int, saved: Contents)?
     private var kept: (write: Int, contents: Contents)?
@@ -40,11 +40,10 @@ public struct ClipboardRestore<Contents> {
     public init() {}
 
     /// What a paste about to overwrite the clipboard must put back later. While an earlier
-    /// paste's write is still on the clipboard, the clipboard holds our transcript rather than
-    /// the user's contents, so the earlier paste's saved contents carry over.
+    /// paste's write or a kept transcript is still on the clipboard, its saved contents carry
+    /// over instead of the current ones.
     public func contentsToSave(changeCount: Int, current: () -> Contents) -> Contents {
         if let pending, pending.write == changeCount { return pending.saved }
-        // Our own kept transcript carries the concealed marker, which would read as a password.
         if let kept, kept.write == changeCount { return kept.contents }
         return current()
     }

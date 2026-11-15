@@ -29,7 +29,6 @@ struct VoiceDetectionTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
     }
 
-    /// A file where the model's folder belongs is not Voice's to replace, so nothing is fetched.
     @Test func aModelThatCannotBeUsedGivesNoDetectorAndSaysWhy() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
         let folder = dir.appendingPathComponent(ModelManifest.voiceDetector.folderName)
@@ -48,8 +47,6 @@ struct VoiceDetectionTests {
     }
 }
 
-/// With the real model, where the smoke scripts' models folder holds it (scripts/helper.mjs
-/// `modelsDir`).
 @MainActor
 struct SileroDetectorTests {
     private static let models = URL(
@@ -59,7 +56,6 @@ struct SileroDetectorTests {
         FileManager.default.fileExists(atPath: models.appendingPathComponent(ModelManifest.voiceDetector.folderName).appendingPathComponent($0.path).path)
     }
 
-    /// Seeded noise that swells and fades, so the model's memory has something to carry.
     private func sound(seconds: Double, seed: UInt64) -> [Float] {
         var state = seed
         return (0..<Int(seconds * 16_000)).map { index in
@@ -75,8 +71,6 @@ struct SileroDetectorTests {
         return try #require(await detection.detector())
     }
 
-    // The passes rely on this: a partial hears audio ahead of its window and a failed decode
-    // hears a window twice, and neither may change what the detector says afterwards.
     @Test(.enabled(if: installed, "needs the voice detector, which the smoke scripts download"))
     func hearingLeavesTheDetectorItWasAskedOfAsItWas() async throws {
         let new = try await detector()

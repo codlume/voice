@@ -1,8 +1,7 @@
 /// Reduces a page URL to its host so the full URL never leaves the helper: http(s) only, no
 /// userinfo, port, path, query, fragment, or trailing dot. `isRFC1123Hostname` keeps non-hosts
 /// (spaces, percent-encoding, IPv6 brackets) off the wire; an IPv4 literal passes because it is
-/// valid hostname syntax. Main parses the host again at its protocol boundary and owns the rule
-/// for what classification may key on.
+/// valid hostname syntax.
 public func pageHost(_ url: String) -> String? {
     guard let schemeEnd = url.range(of: "://") else { return nil }
     let scheme = url[..<schemeEnd.lowerBound].lowercased()
@@ -27,8 +26,7 @@ private func isRFC1123Hostname(_ host: String) -> Bool {
     }
 }
 
-/// The page host of a session's target. The read runs off main after the focus snapshot and
-/// publishes here; the transcript takes whatever is known when it goes out.
+/// The page host of a session's target.
 public enum HostRead: Equatable, Sendable {
     case pending
     case read(String?)

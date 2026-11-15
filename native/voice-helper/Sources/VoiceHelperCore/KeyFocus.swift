@@ -14,11 +14,10 @@ public enum KeyFocusHolder: Equatable, Sendable {
 public enum KeyFocusRefusal: String, Equatable, Sendable {
     case moved
     /// The selection was read by accessibility from the target app, and that app is not named
-    /// as holding key focus. A keystroke would paste the transform over another window's text.
+    /// as holding key focus.
     case selectionNotKeyFocus
 }
 
-/// How an insert can reach the text the user is typing in.
 public enum KeyFocusRoute: Equatable, Sendable {
     /// The target app holds key focus, so a write into its focused element lands where the
     /// user types.

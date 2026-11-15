@@ -46,7 +46,6 @@ public final class PcmWriter {
         }
         handle = try FileHandle(forWritingTo: url)
         let end = try handle.seekToEnd()
-        // A crash mid-write can leave half a frame, which would shift every later sample.
         let whole = end - end % UInt64(PcmFile.bytesPerFrame)
         if whole != end { try handle.truncate(atOffset: whole) }
         frames = Int(whole) / PcmFile.bytesPerFrame
@@ -65,7 +64,6 @@ public final class PcmWriter {
         frames += samples.count
     }
 
-    /// Appends silence up to `target` frames, which keeps the meeting's files on one timeline.
     public func pad(to target: Int) throws {
         guard target > frames else { return }
         try append([Float](repeating: 0, count: target - frames))

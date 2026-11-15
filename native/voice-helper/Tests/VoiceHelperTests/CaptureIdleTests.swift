@@ -35,8 +35,6 @@ struct CaptureIdleTests {
         }
 
         capture.prepareIdleMic()
-        // The probe runs at utility QoS, which parallel test load on CI's three cores can hold
-        // back for seconds; the order below is what this test asserts, not how soon it starts.
         #expect(await XCTWaiter.fulfillment(of: [probing], timeout: 30) == .completed)
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async {

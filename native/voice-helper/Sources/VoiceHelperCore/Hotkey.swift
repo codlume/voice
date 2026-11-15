@@ -71,8 +71,7 @@ extension HotkeyKey {
     }
 
     /// Bits that must all be clear in the live modifier state before the key is known to be
-    /// up. The generic option/command bit is included so a poll never declares a release on
-    /// evidence weaker than the flagsChanged event would carry.
+    /// up.
     public var releasedMask: UInt64 {
         switch self {
         case .fn: return flagMask
@@ -123,8 +122,7 @@ public struct Hotkeys: Sendable {
         return hold.reconcile(flags: flags)
     }
 
-    /// At most one action per event: settings keep the two keys distinct, so a flagsChanged
-    /// event belongs to one of them, and a keyDown chord speaks only for the hold key.
+    /// At most one action per event.
     public mutating func handle(_ event: KeyEvent, activity: HelperActivity) -> HotkeyDecision {
         if event.kind == .keyDown, event.keycode == escapeKeycode {
             guard activity != .idle else {
@@ -150,7 +148,6 @@ public struct Hotkeys: Sendable {
             return HotkeyDecision(emit: .transform(shortcut.id), consume: true)
         }
         if event.kind == .keyDown, matchesMeeting(event) {
-            // Holding the shortcut must not start and stop a meeting over and over.
             if event.isRepeat { return HotkeyDecision(emit: .nothing, consume: true) }
             swallowed.insert(event.keycode)
             return HotkeyDecision(emit: .meeting, consume: true)
@@ -158,9 +155,6 @@ public struct Hotkeys: Sendable {
         if event.kind == .keyDown, event.isRepeat, swallowed.contains(event.keycode) {
             return HotkeyDecision(emit: .nothing, consume: true)
         }
-        // A tap is clean only if nothing else happened while the toggle key was down. Another
-        // modifier or a pointer button makes the press a shortcut (Right Command + click), and
-        // neither reaches the tap as a keyDown.
         if event.kind == .flagsChanged, event.keycode != toggle?.key.keycode { toggle?.cancel() }
         let toggled = toggle?.handle(event)
         if toggled == .down { togglePointerPresses = event.pointerPresses }
@@ -175,8 +169,6 @@ public struct Hotkeys: Sendable {
         return shortcuts.first { $0.keycode == event.keycode && Set($0.modifiers) == families }
     }
 
-    /// A meeting runs beside dictation, so the shortcut also fires while a toggled dictation
-    /// records. While a dictation key is down the press stays that dictation's chord.
     private func matchesMeeting(_ event: KeyEvent) -> Bool {
         guard let meeting, !awaitingRelease else { return false }
         return meeting.keycode == event.keycode && Set(meeting.modifiers) == modifierFamilies(flags: event.flags)
@@ -203,7 +195,6 @@ private struct KeyHold: Sendable {
         return wasHeld ? .up : nil
     }
 
-    /// The session ended while the key is down, so its release must stay silent.
     mutating func cancel() {
         if state == .held { state = .heldCancelled }
     }

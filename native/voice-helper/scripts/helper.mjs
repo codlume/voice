@@ -85,14 +85,11 @@ export function refuseIfVoiceIsRunning() {
 
 export class Helper {
   events = [];
-  // `performance.now()` when the line behind `events[i]` was parsed.
   receivedAt = [];
   #cursor = 0;
   #waiters = [];
   #trace;
 
-  // `launcher` runs the helper under another command, such as `/usr/bin/time -l`. `trace: false`
-  // keeps the wire log off stderr, where a benchmark prints its own table.
   constructor({
     env = {},
     binary = helperBinary(),
@@ -215,9 +212,6 @@ export async function prepareAsr(helper, { download = false } = {}) {
 const detectorSettled = (event) =>
   event.type === "log" && /^voice detector (ready|unavailable)/.test(event.message);
 
-// The voice detector a meeting hears its mic with. It comes with the speech model, so `prepareAsr`
-// has asked for it, and it has no status of its own: its log line says how that went, and may
-// come before `asr.status` is ready.
 export async function prepareVoiceDetector(helper) {
   const log =
     helper.events.find(detectorSettled) ??
@@ -225,7 +219,6 @@ export async function prepareVoiceDetector(helper) {
   assert(log.message === "voice detector ready", log.message);
 }
 
-// The speaker detection models a meeting's final pass needs; below macOS 15 there are none.
 export async function prepareSpeakerModels(helper) {
   helper.send({ type: "meeting.models.download" });
   const status = await helper.waitFor(

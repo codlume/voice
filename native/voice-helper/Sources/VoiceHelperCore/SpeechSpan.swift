@@ -1,6 +1,6 @@
 public struct SpeechSpan: Sendable {
-    private static let speechWithinPeak: Float = 0.0316  // -30 dB
-    private static let speechFloor: Float = 0.00178  // -55 dBFS
+    private static let speechWithinPeak: Float = 0.0316
+    private static let speechFloor: Float = 0.00178
     private static let paddingSeconds = 0.2
 
     private var frames: [Int] = []

@@ -11,10 +11,8 @@ public struct AXTextRange: Equatable, Sendable {
     }
 }
 
-/// What the focused element reports around an `AXSelectedText` write. Either field is nil when
-/// the app does not expose it. The text length in UTF-16 units stands in for the text itself:
-/// the verdict only needs to know whether anything moved, and copying a long document on every
-/// insert is slow.
+/// What the focused element reports around an `AXSelectedText` write. `length` is in UTF-16
+/// units. Either field is nil when the app does not expose it.
 public struct AXTextState: Equatable, Sendable {
     public var length: Int?
     public var selection: AXTextRange?
@@ -27,10 +25,7 @@ public struct AXTextState: Equatable, Sendable {
     public var isObservable: Bool { length != nil && selection != nil }
 }
 
-/// Whether a write the app reported as a success actually took. The write is doubted only when
-/// the element was fully observable on both sides and nothing at all moved. Dictating the text
-/// that was already selected leaves the value alone but collapses the selection, so it counts
-/// as inserted; pasting it again would double the text.
+/// Whether a write the app reported as a success actually took.
 public enum AXWriteVerdict: Equatable, Sendable {
     case inserted
     case unchanged
@@ -40,7 +35,6 @@ public enum AXWriteVerdict: Equatable, Sendable {
     }
 }
 
-/// How the app answered the `AXSelectedText` write call itself.
 public enum AXWriteAnswer: Equatable, Sendable {
     case succeeded
     case refused
@@ -62,7 +56,6 @@ public enum AXWriteAnswer: Equatable, Sendable {
     }
 }
 
-/// What an insert does once the write call has returned.
 public enum AXWritePlan: Equatable, Sendable {
     case inserted(AccessibilityRoute)
     case paste(PasteRoute)
@@ -73,8 +66,7 @@ public enum AXWritePlan: Equatable, Sendable {
     /// now could insert the text twice.
     case unknown
 
-    /// `after` is read only when it can change the plan, because each read of a busy app can
-    /// cost the insert a messaging timeout on main.
+    /// `after` is called only when it can change the plan.
     public init(answer: AXWriteAnswer, before: AXTextState, after: () -> AXTextState) {
         switch answer {
         case .refused:
@@ -82,8 +74,6 @@ public enum AXWritePlan: Equatable, Sendable {
         case .succeeded:
             self = AXWriteVerdict(before: before, after: after()) == .inserted ? .inserted(.direct) : .reread
         case .timedOut:
-            // An accepted write counts unless a no-op is proven. An unanswered one counts only
-            // when the text is seen to move.
             guard before.isObservable else {
                 self = .unknown
                 return

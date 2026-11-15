@@ -3,8 +3,6 @@ import Testing
 
 private let composer = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Conversation A")
 
-/// The page URL search costs the insert up to 100 ms on main, so only the tests about an
-/// accessibility switch supply one.
 private extension CapturedFocus where Element == String {
     func validate(_ current: FocusReread<String>, comparingTitle: Bool) -> FocusValidation {
         validate(current, comparingTitle: comparingTitle, pageURL: { _ in
@@ -75,8 +73,6 @@ private extension CapturedFocus where Element == String {
         #expect(CapturedFocus.captured(page).validate(.focused(now), comparingTitle: false, pageURL: { pages[$0] }) == .unchanged)
     }
 
-    /// A page URL lookup that gave up reads the same as an app with no URL, and a swipe back can
-    /// then put the previous page's field in the same window with no press.
     @Test func aWindowOnlyTargetWithNoURLRefusesAFieldThatAppears() {
         let app = TargetFocus<String>(anchor: .windowOnly(pageURL: nil), window: "window-a", title: "Inbox (3)")
         let field = TargetFocus(anchor: .element("composer-a"), window: "window-a", title: "Inbox (3)")

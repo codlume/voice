@@ -1,7 +1,6 @@
 // Release-to-transcript latency per fixture. With BASELINE_BIN set, a second helper built from
-// another commit runs beside the candidate and sessions alternate baseline, candidate, baseline...
-// so background load on the machine lands on both; the report then also says whether the
-// candidate's text matches the baseline's on every run.
+// another commit runs beside the candidate, and the report also says whether the candidate's text
+// matches the baseline's on every run.
 import { ensureFixtures } from "../../../scripts/fixtures.mjs";
 import { Helper, assert, dictateFixture, prepareAsr } from "./helper.mjs";
 

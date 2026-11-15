@@ -27,8 +27,6 @@ protocol MeetingAudioWriter: AnyObject {
 extension PcmWriter: MeetingAudioWriter {}
 
 extension MeetingAudioWriter {
-    /// Lands `samples` so the first sits at `frame`, as `MeetingTimeline.place` says. The file
-    /// stays append-only.
     func write(_ samples: [Float], at frame: Int) throws {
         switch MeetingTimeline.place(target: frame, written: frames, count: samples.count) {
         case .append:
@@ -42,14 +40,10 @@ extension MeetingAudioWriter {
     }
 }
 
-/// What a leg takes from the Mac: TCC's answers, the microphone, the system tap and the files.
-/// Tests pass fakes, so none of them opens a microphone or a process tap, or asks TCC.
 struct MeetingHardware {
     var micAllowed: @Sendable () -> Bool
-    /// False only once the user refused system audio; until then the first tap start asks.
     var systemAllowed: @Sendable () -> Bool
     var openMic: (AudioInputDevices, Microphone?, _ onChange: @escaping (MeetingMic) -> Void) throws(CaptureError) -> MeetingMic
-    /// nil on a macOS without process taps.
     var openTap: (() throws(CaptureError) -> MeetingTap)?
     var openWriter: (URL) throws -> MeetingAudioWriter
 
@@ -68,13 +62,6 @@ struct MeetingHardware {
     }
 }
 
-/// One recording leg of a meeting: the microphone into `mic.pcm` and system audio into
-/// `system.pcm`. Both files share one timeline, the leg's clock: every chunk is written at the
-/// frame its capture time maps to, counted from `startedAt` at `startFrames`. A source that
-/// starts late, reopens or drops audio leaves silence where it recorded nothing, and stopping
-/// pads both files to the same end.
-/// Independent of dictation's capture, so dictating mid-meeting keeps working; while it runs the
-/// meeting mic records silence instead of the dictated words.
 final class MeetingCapture {
     private let output: Output
     private let devices: AudioInputDevices
@@ -96,11 +83,8 @@ final class MeetingCapture {
     private var fixtures: [FileSource] = []
     private var stopped = false
     let startedAt = DispatchTime.now()
-    /// Where this leg's audio starts in the files.
     private(set) var startFrames = 0
-    /// A power loss costs at most this much of the meeting.
     private static let flushFrames = 5 * PcmFile.sampleRate
-    /// How long the files were when both were last flushed to disk.
     private var flushedFrames = 0
 
     init(dir: URL, microphone: Microphone?, source: MeetingAudioSource, output: Output, devices: AudioInputDevices,
@@ -118,8 +102,6 @@ final class MeetingCapture {
         self.onLost = onLost
     }
 
-    /// Starts both sources; throws only when the microphone cannot record, since a meeting
-    /// without the user's voice is not one. System audio that cannot record is reported instead.
     func start() throws(CaptureError) -> (mic: MeetingSourceState, system: MeetingSourceState) {
         startFrames = max(PcmFile.frames(at: micURL), PcmFile.frames(at: systemURL))
         flushedFrames = startFrames
@@ -149,7 +131,6 @@ final class MeetingCapture {
         }
     }
 
-    /// Delivers what the sources still hold, pads both files to one end and closes them.
     func stop() {
         guard !stopped else { return }
         stopped = true
@@ -206,8 +187,7 @@ final class MeetingCapture {
         lastMicAudio = .now()
     }
 
-    // A device change stops the engine. Unlike dictation, a meeting keeps going on whatever input
-    // is now current, with silence for the moments it took to switch.
+    // A device change stops the engine.
     private func micChanged(_ changed: MeetingMic) {
         guard changed === micSource, !stopped else { return }
         changed.finish()
@@ -258,12 +238,9 @@ final class MeetingCapture {
         systemSource = source
     }
 
-    // A tap that stopped delivering, or whose sample rate changed, is recreated in place; the
-    // file gets silence for the moments it missed. A tap that keeps stalling ends the leg.
     private func restartSystem(because reason: String) {
         guard !stopped, let old = systemSource, let openTap = hardware.openTap else { return }
         old.stop()
-        // The old tap hands over its tail as it stops, and a tail the disk cannot take ends the leg.
         guard !stopped else { return }
         systemSource = nil
         guard systemRestarts.allows(restartAtMs: startedAt.millisecondsToNow()) else {
@@ -319,7 +296,6 @@ final class MeetingCapture {
 
     private func receiveMic(_ chunk: AudioChunk) {
         lastMicAudio = .now()
-        // Dictated words belong to wherever they were inserted, not to the meeting.
         let samples = isCapturingDictation() ? [Float](repeating: 0, count: chunk.samples.count) : chunk.samples
         write(samples, capturedAt: chunk.capturedAt, to: mic)
     }
@@ -328,8 +304,6 @@ final class MeetingCapture {
         write(chunk.samples, capturedAt: chunk.capturedAt, to: system)
     }
 
-    // Keyed on the writer, not `stopped`: `stop` flushes the sources' tails through here before
-    // it closes the files.
     private func write(_ samples: [Float], capturedAt: DispatchTime, to writer: MeetingAudioWriter?) {
         guard let writer else { return }
         do {
@@ -340,9 +314,6 @@ final class MeetingCapture {
         }
     }
 
-    // Both files reach the disk at one moment: mic audio that a power loss leaves without the
-    // system audio that played under it cannot be gated. System audio goes first, so a flush
-    // cut short leaves none either.
     private func flushIfDue() throws {
         let written = max(mic?.frames ?? 0, system?.frames ?? 0)
         guard written - flushedFrames >= Self.flushFrames else { return }

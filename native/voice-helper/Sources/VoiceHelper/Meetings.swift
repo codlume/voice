@@ -1,9 +1,6 @@
 import Foundation
 import VoiceHelperCore
 
-/// Meeting commands: recording legs and the transcription that follows their files. At most one
-/// leg per meeting records at a time; a meeting's transcription outlives its legs, so a resume
-/// carries on from where the last leg's transcript ended.
 @MainActor
 final class Meetings {
     private let output: Output
@@ -17,7 +14,6 @@ final class Meetings {
     private var legs: [String: MeetingCapture] = [:]
     private var jobs: [String: MeetingTranscription] = [:]
     private var finals: [String: Task<Void, Never>] = [:]
-    // Final passes run one after another, so two meetings never hold two diarizers at once.
     private var lastFinal: Task<Void, Never>?
 
     init(output: Output, devices: AudioInputDevices, source: MeetingAudioSource, decode: @escaping MeetingTranscription.Decode,
@@ -77,7 +73,6 @@ final class Meetings {
         if legs[id] == nil { job.drain() }
     }
 
-    /// A second request while this meeting's pass runs starts no second pass.
     func finalize(id: String, dir: String, baseMs: Double, language: DictationLanguage) {
         guard finals[id] == nil else { return }
         let previous = lastFinal
@@ -109,14 +104,9 @@ final class Meetings {
     }
 }
 
-/// Transcribes a meeting's `mic.pcm` and `system.pcm` from where its transcript ends to where the
-/// audio ends, following the files while a leg records into them. Dictation comes first: no
-/// window starts decoding while a dictation runs.
 @MainActor
 final class MeetingTranscription {
-    /// The words in `samples`, with times in ms into them.
     typealias Decode = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
-    /// A voice detector that has heard nothing yet, or nil when there is none to ask.
     typealias NewDetector = () async -> (any VoiceDetector)?
 
     private let id: String
@@ -130,14 +120,10 @@ final class MeetingTranscription {
     private var baseMs = 0.0
     private var language = DictationLanguage.auto
     private var cursor: [MeetingSource: Int] = [.mic: 0, .system: 0]
-    // The voice detector as it stands at each source's cursor, having heard the source up to
-    // there. None before the first window, and after a window no detector could tell about.
     private var detectors: [MeetingSource: any VoiceDetector] = [:]
     private var saidUnconfirmed = false
-    // The sources the current leg records, none once it stopped.
     private var recording: Set<MeetingSource> = []
     private var loop: Task<Void, Never>?
-    // Where each source's last partial check ended, and the sources showing a partial.
     private var partialEnd: [MeetingSource: Int] = [:]
     private var showing: Set<MeetingSource> = []
 
@@ -152,7 +138,6 @@ final class MeetingTranscription {
         self.retry = retry
     }
 
-    /// `baseMs` changes only when the files were deleted and a new leg started them over.
     func update(dir: URL, baseMs: Double, fromMs: MeetingCursor, language: DictationLanguage) {
         if baseMs != self.baseMs || dir.path != self.dir.path {
             cursor = [.mic: 0, .system: 0]
@@ -172,7 +157,6 @@ final class MeetingTranscription {
         run()
     }
 
-    /// No more audio is coming for now: transcribe the rest, then report `meeting.drained`.
     func drain() {
         recording = []
         run()
@@ -211,7 +195,6 @@ final class MeetingTranscription {
                     output.emit(.meetingDrained(id: id, failure: nil))
                     return
                 }
-                // The echo gate suspends the read, so a dictation may have started since the check above.
                 try Task.checkCancellation()
                 if isDictating() { continue }
                 try await transcribe(window)
@@ -240,7 +223,6 @@ final class MeetingTranscription {
         let samples: [Float]
     }
 
-    // The source further behind goes first, so the two transcripts advance together.
     private func nextWindow() async throws -> Window? {
         let sources = [MeetingSource.mic, .system].sorted { (cursor[$0] ?? 0) < (cursor[$1] ?? 0) }
         for source in sources {
@@ -254,7 +236,6 @@ final class MeetingTranscription {
             if let cut = MeetingChunker.cut(raw, final: final) {
                 let settle = settleBound(of: source, end: end)
                 let heard = try await listen(to: source, offset: offset, count: cut)
-                // A window that is not settled yet is read again once more audio follows it.
                 guard try settled(heard, offset: offset, before: settle) == heard.samples.count else { continue }
                 return Window(source: source, offset: offset, heard: heard)
             }
@@ -268,7 +249,6 @@ final class MeetingTranscription {
             let words = try await decode(window.heard.samples, language).map { $0.shifted(by: startMs) }
             try Task.checkCancellation()
             if !words.isEmpty {
-                // The segment goes out before its partial clears, so the line never blinks out.
                 output.emit(.meetingSegment(id: id, source: window.source, startMs: meetingMs(window.offset + speech.lowerBound),
                                             endMs: meetingMs(window.offset + speech.upperBound), text: Self.text(words)))
             }
@@ -278,10 +258,6 @@ final class MeetingTranscription {
         clearPartial(window.source)
     }
 
-    /// What to decode of `source` from its cursor on, heard by the detector that stands at the
-    /// cursor. Only a window that was transcribed moves that detector on. A partial, and a
-    /// window read again after a dictation or a failed decode, leave it where it stands, so the
-    /// window that follows hears the same audio the same way.
     private func listen(to source: MeetingSource, offset: Int, count: Int) async throws -> HeardAudio {
         var detector = detectors[source]
         if detector == nil { detector = await newDetector() }
@@ -293,25 +269,16 @@ final class MeetingTranscription {
         return heard
     }
 
-    /// Where `source`, at `end` before it is gated, has to settle: while a leg records system
-    /// audio, mic sound that may be the other side's echo at a lag that just moved waits for the
-    /// audio that follows it, which shows the gate the move. Taken before the gate reads, since
-    /// the files may grow and the leg may end while it does.
     private func settleBound(of source: MeetingSource, end: Int) -> Int? {
         source == .mic && recording.contains(.system) ? end : nil
     }
 
-    /// How much of `heard`, from `offset` on, can be transcribed now, given the `settleBound`
-    /// taken before it was gated.
     private func settled(_ heard: HeardAudio, offset: Int, before bound: Int?) throws -> Int {
         guard let bound, heard.speech != nil else { return heard.samples.count }
         return try EchoGate.settled(heard.samples, offset: offset, heardEnd: bound,
                                     mic: MeetingSource.mic.file(in: dir), system: MeetingSource.system.file(in: dir))
     }
 
-    /// Audio after a source's cursor that no window takes yet because no pause has come, once at
-    /// least `partialSamples` of it are new since the last partial, as far as it is settled.
-    /// Where the echo gate fails, the partial is skipped rather than shown ungated.
     private func nextPartial() async -> Partial? {
         for source in [MeetingSource.mic, .system] {
             let offset = cursor[source] ?? 0
@@ -328,8 +295,6 @@ final class MeetingTranscription {
         return nil
     }
 
-    /// Where `source` can be heard up to now. While a leg records system audio, the mic waits for
-    /// the system file, which trails it by up to a pump's worth: the gate needs what played.
     private func end(of source: MeetingSource) -> Int {
         let frames = PcmFile.frames(at: source.file(in: dir))
         guard source == .mic, recording.contains(.system) else { return frames }
@@ -338,7 +303,6 @@ final class MeetingTranscription {
 
     private static let partialSamples = PcmFile.sampleRate
 
-    /// Text that may still change, for the live view only; it is never saved.
     private func showPartial(_ partial: Partial) async {
         guard let words = try? await decode(partial.samples, language), !Task.isCancelled, !words.isEmpty else { return }
         let text = Self.text(words)
@@ -360,15 +324,9 @@ final class MeetingTranscription {
     }
 }
 
-/// The more accurate pass after Stop: both files transcribed again in long windows with word
-/// times, then the system file diarized. The two run one after the other, so the diarizer never
-/// shares memory with a decode. Dictation comes first: no window or diarization starts while a
-/// dictation runs.
 @MainActor
 final class MeetingFinalPass {
     typealias DecodeWords = (_ samples: [Float], _ language: DictationLanguage) async throws -> [TimedWord]
-    /// Speaker turns in ms from the start of the file, or nil on a Mac that cannot tell voices
-    /// apart. Throws `MeetingFinalizeError` when it could have and did not.
     typealias Diarize = (_ url: URL) async throws -> [SpeakerTurn]?
 
     private let output: Output
@@ -416,7 +374,6 @@ final class MeetingFinalPass {
         let total = PcmFile.frames(at: url)
         var offset = 0
         var words: [TimedWord] = []
-        // The voice detector hears the source from the start of the file, window after window.
         var detector: (any VoiceDetector)?
         var saidUnconfirmed = false
         while offset < total {
@@ -432,7 +389,6 @@ final class MeetingFinalPass {
                 output.log(.error, "meeting \(id) final pass: no voice detector, so every sound on the mic is transcribed")
             }
             for run in heard.runs {
-                // The gate and each decode suspend, so a dictation may have started since the last check.
                 try await dictationDone()
                 let startMs = baseMs + PcmFile.milliseconds(offset + run.lowerBound)
                 words += try await decode(Array(heard.samples[run]), language).map { $0.shifted(by: startMs) }

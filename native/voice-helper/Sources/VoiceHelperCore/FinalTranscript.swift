@@ -49,14 +49,9 @@ public struct FinalSegment: Equatable, Sendable {
     }
 }
 
-/// Builds the final transcript from both streams' timed words and the system stream's speaker
-/// turns: words become segments at pauses, long runs and speaker changes.
 public enum FinalTranscript {
-    /// A pause this long between two words starts a new segment.
     static let pauseMs = 800.0
-    /// A segment this long ends at its next sentence end, and never runs past twice this.
     static let longMs = 30_000.0
-    /// A word no turn covers takes the nearest turn this close.
     static let nearMs = 1000.0
 
     /// The longest a token is taken to sound. A token the model gave no duration otherwise ends
@@ -80,7 +75,6 @@ public enum FinalTranscript {
                 boundary = true
                 continue
             }
-            // A symbol after a space, as in "is $42", opens a word; one that closes a word never does.
             let opens = (boundary || token.text.hasPrefix(" ")) && !piece.allSatisfy { Self.closing.contains($0) }
             let punctuation = !piece.contains { $0.isLetter || $0.isNumber } && !opens
             if let last = words.last, punctuation {
@@ -116,7 +110,6 @@ public enum FinalTranscript {
         let startMs: Double
         let endMs: Double
         let text: String
-        /// The diarizer cluster on system audio, nil where none covers it and on the mic.
         let speaker: String?
     }
 
@@ -145,8 +138,6 @@ public enum FinalTranscript {
         return runs
     }
 
-    // Each word takes the turn it overlaps most, else the nearest close turn, else the speaker
-    // before it, so a word the diarizer missed does not split its sentence.
     private static func assign(_ words: [TimedWord], to turns: [SpeakerTurn]) -> [String?] {
         var previous: String?
         return words.map { word in

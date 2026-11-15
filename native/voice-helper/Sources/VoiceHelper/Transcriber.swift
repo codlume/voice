@@ -10,7 +10,6 @@ struct TranscribeError: Error {
     let message: String
 }
 
-/// What capture needs from the speech model, so tests can stand in a fake.
 @MainActor
 protocol Transcribing: AnyObject {
     var sessionState: AsrSessionState { get }
@@ -21,11 +20,6 @@ protocol Transcribing: AnyObject {
     ) async throws -> (text: String, asrMs: Double)
 }
 
-/// A decode of the capture so far, started at a pause. The model is an actor that runs each
-/// decode to completion, so a second decode started while one runs would queue behind it, and
-/// so would the release decode: `finished` tells capture whether another may start. `stale` is
-/// set by capture once speech follows the decoded samples. Both flags live on the main thread
-/// with Capture.
 final class PauseDecode {
     private(set) var task: Task<String, Error>!
     private(set) var finished = false
@@ -66,8 +60,6 @@ final class Transcriber: Transcribing {
     private var meetingManager: Task<AsrManager, Error>?
     private static let warmSeconds = 300.0
 
-    /// A model that has not decoded for a while may pay a reload on its next decode, and the
-    /// session metrics alone cannot tell that from a slow decode.
     var sessionState: AsrSessionState {
         switch load {
         case .ready:
@@ -81,7 +73,6 @@ final class Transcriber: Transcribing {
     }
 
     init(modelsDir: URL, output: Output) {
-        // FluidAudio must never list, purge or fetch: bytes reach a load only through `cache`.
         ModelHub.offlineMode = true
         cache = ModelCache(release: ModelManifest.parakeetV3, modelsDirectory: modelsDir)
         directory = cache.folder
@@ -225,10 +216,6 @@ final class Transcriber: Transcribing {
         return StreamingTranscription(models: ready.models, language: language.asrLanguage)
     }
 
-    /// Decodes the capture so far during a pause. If the user releases without speaking again,
-    /// the result is the transcript a release 0.3 s after the last word would have produced; the
-    /// extra trailing silence the model did not see carries no words, though it can shift a
-    /// punctuation choice the same way the release delay already does.
     func decodeAhead(_ samples: [Float], language: DictationLanguage) -> PauseDecode? {
         guard case .ready(let ready) = load else { return nil }
         let manager = ready.manager
@@ -236,7 +223,6 @@ final class Transcriber: Transcribing {
         return PauseDecode { try await Self.decode(samples, with: manager, language: asrLanguage) }
     }
 
-    /// `pauseDecode` is a `decodeAhead` that nothing but silence followed.
     func transcribe(
         _ samples: [Float], language: DictationLanguage, stream: StreamingTranscription?, pauseDecode: PauseDecode?
     ) async throws -> (text: String, asrMs: Double) {
@@ -256,7 +242,6 @@ final class Transcriber: Transcribing {
         do {
             return (try await decodeComplete(samples, language: language, pauseDecode: pauseDecode), started.millisecondsToNow())
         } catch let error as TranscribeError {
-            // Text that misses part of the capture still beats losing the whole session.
             guard let streamed, !streamed.isEmpty else { throw error }
             output.log(.error, "complete-capture ASR failed; keeping the incomplete streamed text")
             return (streamed, started.millisecondsToNow())
@@ -299,9 +284,6 @@ final class Transcriber: Transcribing {
         }
     }
 
-    /// Decodes a meeting window into words, with times in ms into `samples`, on its own manager at
-    /// utility priority, so a dictation decode never queues behind meeting audio on the model
-    /// actor. Waits for a model that is loading.
     func decodeMeeting(_ samples: [Float], language: DictationLanguage) async throws -> [TimedWord] {
         let manager = try await meetingAsr()
         let asrLanguage = language.asrLanguage
@@ -352,8 +334,6 @@ final class Transcriber: Transcribing {
     }
 }
 
-/// `incomplete` carries the text the stream produced, if any, for when no complete decode can
-/// replace it.
 enum StreamingResult {
     case complete(String)
     case incomplete(partial: String?)

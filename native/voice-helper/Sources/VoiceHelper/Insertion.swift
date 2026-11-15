@@ -15,7 +15,6 @@ final class InsertTarget {
     let bundleId: String?
     let pressStamp = focusInputStamp()
     var focus = CapturedFocus<FocusElement>.pending
-    /// Who held key focus when the session began. It settles together with `focus`.
     var keyFocus = KeyFocusHolder.noAnswer
     var origin: SelectionOrigin?
     let host: OSAllocatedUnfairLock<HostRead>
@@ -37,7 +36,6 @@ final class InsertTarget {
         host.withLock { $0.settle() }
     }
 
-    /// Ends the reads still running for a target that no insert will use.
     func cancel() {
         cancelled.withLock { $0 = true }
         settleHost()
@@ -91,7 +89,6 @@ final class Insertion {
             pageURL: { pageURL(below: $0.value) },
             pause: { Thread.sleep(forTimeInterval: focusSnapshotRetryDelay) })
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            // Read before the baseline, whose retries can end well after the press.
             let keyFocus = readKeyFocus()
             let (focus, attempt) = snapshot.take()
             DispatchQueue.main.async { [self] in
@@ -118,8 +115,6 @@ final class Insertion {
         output.log(.info, "target focus \(id): \(outcome), attempt \(attempt)")
     }
 
-    /// Every insert ends here, so each result has one log line naming its branch. The line holds
-    /// the session id and enum names, never the transcript, a title, a URL, or the clipboard.
     private func finish(_ id: String, _ outcome: InsertOutcome, why: String? = nil) {
         output.emit(.insertResult(id: id, outcome: outcome))
         let branch: String
@@ -133,9 +128,7 @@ final class Insertion {
 
     func insert(id: String, text: String, html: String?, keepOnClipboard: Bool, target: InsertTarget?) {
         dispatchPrecondition(condition: .onQueue(.main))
-        // An insert spends its target, so a baseline still retrying has no one left to read for.
         defer { target?.cancel() }
-        // Taken before the checks, so a press while they run still refuses the paste keystroke.
         let checked = focusInputStamp()
         let focused: AXUIElement?
         let pasteOnly: String?
@@ -167,8 +160,6 @@ final class Insertion {
         case .notEditable:
             finish(id, .refused(.noFocusedField), why: "element takes no text")
         case .unknown:
-            // Without this an app whose writes always time out would refuse every insert. The
-            // next one pastes with no write, so it cannot land twice either.
             if let bundleId = target?.bundleId { pasteOnlyApps.insert(bundleId) }
             finish(id, .refused(.failed), why: "write timed out")
         case .paste(let route):
@@ -192,9 +183,6 @@ final class Insertion {
     }
 
     private enum TargetCheck {
-        /// `pasteOnly` is nil when the target app holds key focus. Otherwise it says who does,
-        /// and only a keystroke may deliver the text: a write into `focused` could land behind
-        /// the window the user is typing in.
         case ready(focused: AXUIElement?, pasteOnly: String?)
         case refused(InsertFailure, why: String)
     }
@@ -223,18 +211,13 @@ final class Insertion {
             if let origin = destination.origin, selectionMoved(origin, element: captured.anchor.element?.value) {
                 return .refused(.selectionChanged, why: "selection moved")
             }
-            // A window-only baseline names no element. Once the reread does, that element says
-            // whether the focus takes text, so a focused button is refused instead of pasted at.
             let element = captured.anchor.element?.value ?? current.focus?.anchor.element?.value
-            // Asked last: it waits on the app holding key focus, and a target that hangs has
-            // already spent one timeout in the reread above.
             let keyFocus = KeyFocus(target: pid)
             let holder = readKeyFocus()
             let holders = "key focus \(keyFocus.describe(destination.keyFocus)) then \(keyFocus.describe(holder))"
             switch keyFocus.route(atStart: destination.keyFocus, now: holder, selection: destination.origin) {
             case .write: return .ready(focused: element, pasteOnly: nil)
             case .keystroke: return .ready(focused: element, pasteOnly: holders)
-            // The keystroke goes to the panel, so its element says whether the focus takes text.
             case .panel(let panel): return .ready(focused: focusedElement(of: panel), pasteOnly: holders)
             case .refused(let refusal): return .refused(.focusChanged, why: "\(holders), \(refusal.rawValue)")
             }
@@ -294,9 +277,6 @@ final class Insertion {
         return AXTextState(length: textLength(of: element), selection: selection)
     }
 
-    // The count answers without copying the document. An element that has no count still gets
-    // the value read, so one that was observable before the write stays observable after it and
-    // a silent no-op still reaches the paste fallback.
     private func textLength(of element: AXUIElement) -> Int? {
         if case .value(let count) = focusAttribute(element, kAXNumberOfCharactersAttribute), let length = count as? Int {
             return length
@@ -334,10 +314,6 @@ final class Insertion {
         case .posted(let posted):
             write = posted
         }
-        // The target handles Cmd+V asynchronously and nothing here can observe it land, so the
-        // result reports the keystroke, not the insertion. The restore only protects the user's
-        // clipboard. A slow target (Electron under load, a remote desktop) can read the
-        // pasteboard well after the keystroke, so the restore waits a full second.
         finish(id, .paste(route, clipboardSaveMs: clipboardSaveMs), why: why)
         guard !keepOnClipboard else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Pasteboard.pasteRestoreDelay) { [pasteboard] in
@@ -348,17 +324,8 @@ final class Insertion {
 
 let axMessagingTimeout: Float = 0.3
 
-/// A transient miss gets two more snapshots while the user is still speaking, if the session's
-/// first read named a target. The spacing is an estimate of how long Chromium takes to build its
-/// tree, not a measurement. An app that never answers gets no retry and settles the baseline
-/// after one timeout. One that answers each call just inside its timeout can take seconds, so
-/// the selection reader still relies on its own `focusDeadline`, and an insert that arrives
-/// first refuses with the baseline pending.
 private let focusSnapshotRetryDelay: TimeInterval = 0.2
 
-/// Only presses can move focus. Pointer motion, scrolling, and releases keep arriving while the
-/// shortcut is held, and the snapshot can wait behind microphone start on main, so counting them
-/// would refuse insertions whose focus never changed.
 func focusInputStamp() -> PressStamp {
     PressStamp(counts: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
         CGEventSource.counterForEventType(.combinedSessionState, eventType: $0)
@@ -406,11 +373,10 @@ func readAXSelection(_ element: AXUIElement?) -> AXSelectionAnswer {
     return .text(text, range: range)
 }
 
-/// One round trip to the app that holds key focus, so it can cost that app's timeout.
 func readKeyFocus() -> KeyFocusHolder {
     let system = AXUIElementCreateSystemWide()
-    // On the system-wide element this is the process default, for elements given no timeout
-    // of their own. Every element the helper reads is given this same one.
+    // On the system-wide element this sets the process default, for elements given no timeout
+    // of their own.
     AXUIElementSetMessagingTimeout(system, axMessagingTimeout)
     var value: CFTypeRef?
     switch AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &value) {
@@ -472,8 +438,6 @@ func currentLayoutData() -> Data? {
     return Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
 }
 
-/// Presses and releases the key that types `character` under Command in the current layout,
-/// with Command as the only flag: a modifier the user still holds must not ride along.
 func postCommand(typing character: Character, fallback: CGKeyCode) {
     let source = CGEventSource(stateID: .combinedSessionState)
     let key = currentLayoutData().flatMap { PasteKey.keycode(typing: character, in: $0) } ?? fallback

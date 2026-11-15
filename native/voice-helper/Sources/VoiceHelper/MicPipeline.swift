@@ -5,16 +5,12 @@ import os
 let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatFloat32, sampleRate: asrSampleRate, channels: 1, interleaved: false)
 
-/// Audio a source pulled: 16 kHz mono, and the host time its first sample was captured. The time
-/// comes from the IO callback, not from when main pulled it.
 struct AudioChunk {
     let samples: [Float]
     let capturedAt: DispatchTime
 }
 
 extension AudioTimeStamp {
-    /// IO-thread safe. A timestamp without a valid host time falls back to now, which is late by
-    /// one IO buffer.
     var hostTimeOrNow: UInt64 { mFlags.contains(.hostTimeValid) ? mHostTime : mach_absolute_time() }
 }
 
@@ -26,8 +22,6 @@ final class MicPipeline {
     private let capacity: Int
     private let pending: OSAllocatedUnfairLock<Pending>
     private var spare: [Float]
-    /// Host time of the frame after the last one drained, which stamps a converter tail that
-    /// follows no new frames.
     private var drainedUntil: UInt64 = 0
     /// Seconds of audio the converter took and gave since it was last reset. It holds back a
     /// share of each pull that swings by up to 44 ms, and the next chunk starts with that share.
@@ -55,7 +49,6 @@ final class MicPipeline {
     }
 
     /// IO thread. No allocation (both buffers are reserved on main), no logging, no dispatch.
-    /// `hostTime` is when the first of `frames` was captured.
     func receive(_ list: UnsafePointer<AudioBufferList>, frames: Int, hostTime: UInt64) {
         guard frames > 0 else { return }
         pending.withLockUnchecked { pending in
@@ -81,7 +74,6 @@ final class MicPipeline {
         pending.withLockUnchecked { $0.accepting = true }
     }
 
-    /// nil when nothing new was captured.
     func pull() -> AudioChunk? {
         drain { $0.isEmpty ? [] : convert($0, endOfStream: false) }
     }
@@ -98,8 +90,6 @@ final class MicPipeline {
         droppedFrames = 0
     }
 
-    /// Swaps the two buffers so the IO thread keeps writing into pages it has touched before, and hands
-    /// the frames that arrived to `body` before the buffer is emptied for reuse.
     @discardableResult
     private func drain(closingIntake: Bool = false, _ body: ([Float]) -> [Float]) -> AudioChunk? {
         var frames: [Float] = []
@@ -111,8 +101,6 @@ final class MicPipeline {
             return (pending.dropped, pending.firstHostTime)
         }
         droppedFrames += dropped
-        // The chunk starts with the audio the converter still holds, so it is stamped that much
-        // before the first new frame; after a drop, the new frames keep their own time.
         let next = frames.isEmpty ? drainedUntil : firstHostTime
         let held = AudioConvertNanosToHostTime(UInt64(max(0, convertedIn - convertedOut) * 1e9))
         let first = next - min(next, held)
@@ -156,7 +144,6 @@ final class MicPipeline {
 
     private struct Pending {
         var frames: [Float]
-        /// Host time of `frames[0]`.
         var firstHostTime: UInt64 = 0
         var dropped = 0
         var accepting = false

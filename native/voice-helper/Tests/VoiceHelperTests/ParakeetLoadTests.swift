@@ -6,7 +6,6 @@ import VoiceHelperCore
 @testable import VoiceHelper
 
 struct ParakeetLoadTests {
-    /// Where the smoke scripts keep the downloaded model (scripts/helper.mjs `modelsDir`).
     private static let folder = URL(
         fileURLWithPath: ProcessInfo.processInfo.environment["VOICE_TEST_MODELS_DIR"]
             ?? NSHomeDirectory() + "/Library/Caches/Voice Development/test-models"
@@ -15,7 +14,6 @@ struct ParakeetLoadTests {
         FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.path).path)
     }
 
-    // A transcript can only stay the same if these are the models FluidAudio's own loader builds.
     @Test(.enabled(if: installed, "needs the speech model, which the smoke scripts download"))
     func loadingTheEncoderBesideTheRestGivesWhatFluidAudioLoads() async throws {
         ModelHub.offlineMode = true

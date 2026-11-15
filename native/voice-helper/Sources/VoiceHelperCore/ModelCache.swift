@@ -2,7 +2,6 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// Why a model cannot be used, with the text the UI shows.
 public struct ModelCacheError: LocalizedError, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case invalidManifest(String)
@@ -109,8 +108,6 @@ public struct ModelCache: Sendable {
                 }
                 try install(staged, at: file.path)
             }
-            // A fetched file has no record yet, so this reads it from disk: the stream hash says
-            // what arrived, not what is stored. Files the first audit passed keep their records.
             (report, verified) = try inspect(hashing: true, trusting: Stamp(revision: release.revision, files: verified))
             if let path = report.blocked.first { throw error(.blocked(path: path)) }
             guard report.isComplete else { throw error(.damaged(count: report.missing.count + report.invalid.count)) }

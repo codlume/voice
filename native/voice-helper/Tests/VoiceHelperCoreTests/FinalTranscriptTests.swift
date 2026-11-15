@@ -49,7 +49,6 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
 
     @Test func diarizedSystemVoicesNumberInTheOrderTheyFirstSpeak() {
         let system = said("Morning all", at: 1000) + said("Hi Ada", at: 2000) + said("Shall we start", at: 5000)
-        // The diarizer's own names say nothing about order.
         let turns = [
             SpeakerTurn(speaker: "S7", startMs: 900, endMs: 1700),
             SpeakerTurn(speaker: "S2", startMs: 1900, endMs: 2700),
@@ -70,7 +69,6 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
     }
 
     @Test func aWordNoTurnCoversKeepsTheSpeakerBeforeIt() {
-        // "two" is near the turn, "three" is too far from any and keeps the speaker before it.
         let system = said("one two three", at: 0, wordMs: 1200)
         let turns = [SpeakerTurn(speaker: "A", startMs: 0, endMs: 1000), SpeakerTurn(speaker: "B", startMs: 9000, endMs: 10_000)]
         let segments = FinalTranscript.segments(mic: [], system: system, turns: turns)
@@ -87,7 +85,6 @@ private func said(_ text: String, at startMs: Double, wordMs: Double = 300) -> [
     @Test func pausesAndLongRunsEndSegments() {
         let words = said("first part", at: 0) + said("after a pause", at: 2000)
         #expect(FinalTranscript.segments(mic: words, system: [], turns: nil).map(\.text) == ["first part", "after a pause"])
-        // 40 s of words with no pause: the run ends at the first sentence end past 30 s.
         let long = (0..<100).map { TimedWord(text: $0 == 79 ? "end." : "word", startMs: Double($0) * 400, endMs: Double($0) * 400 + 350) }
         let split = FinalTranscript.segments(mic: long, system: [], turns: nil)
         #expect(split.count == 2)

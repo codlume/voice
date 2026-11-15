@@ -89,9 +89,6 @@ final class AudioInputDevices {
         }
     }
 
-    /// A device that cannot be read is left out and the rest of the list stands. One removed
-    /// after its id was listed fails every read, and so does a broken driver; neither is a
-    /// reason to refuse the microphones that work.
     static func devices(ids: [AudioDeviceID], onUnreadable: (Error) -> Void = { _ in },
                         describe: (AudioDeviceID) throws -> Device?) -> [Device] {
         ids.compactMap { id in

@@ -7,15 +7,11 @@ import VoiceHelperCore
 // AppKit also brings in Carbon's `Pasteboard`.
 private typealias Pasteboard = VoiceHelper.Pasteboard
 
-/// A `Pasteboard` over a scratch board of its own. The user's clipboard is never read or
-/// written, and the synthetic Cmd+C is a callback, so no keystroke is posted.
 @MainActor
 private final class ScratchClipboard {
     let board = NSPasteboard.withUniqueName()
     private(set) var pasteboard: Pasteboard!
     var onCopyPosted: () -> Void = {}
-    /// Runs once, when a copy wait gives up. The helper reads the press counters at that
-    /// moment and not before, so the first read marks it without a timer.
     var onCopyDeadline: () -> Void = {}
     private var closed = false
 
@@ -33,14 +29,12 @@ private final class ScratchClipboard {
 
     var text: String? { board.string(forType: .string) }
 
-    /// A write by anyone but the helper: the user's own copy, or the target answering Cmd+C.
     func holds(_ text: String) {
         guard !closed else { return }
         board.clearContents()
         board.setString(text, forType: .string)
     }
 
-    /// What `Insertion` does around its Cmd+V, without the keystroke.
     func paste(_ text: String, keepOnClipboard: Bool = false) -> Int {
         pasteboard.write(text: text, html: nil, saved: keepOnClipboard ? nil : pasteboard.save())
     }
@@ -140,7 +134,6 @@ private final class ScratchClipboard {
         defer { clipboard.close() }
         clipboard.holds("user")
         var posted = false
-        // An app in front that is not the target answers the keystroke with its own selection.
         clipboard.onCopyPosted = {
             posted = true
             clipboard.holds("another app's selection")
@@ -208,7 +201,6 @@ private final class ScratchClipboard {
         #expect(clipboard.text == "user")
     }
 
-    /// Both waits read state that main writes: the target's focus, and the held shortcut key.
     @Test func theSelectionReadersWaitsAreIsolatedToTheMainActor() {
         let clipboard = ScratchClipboard()
         defer { clipboard.close() }

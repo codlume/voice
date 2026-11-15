@@ -4,7 +4,6 @@ import Foundation
 import VoiceHelperCore
 
 final class Permissions {
-    /// The three grants as macOS reports them now, given whether this process has asked for Accessibility.
     typealias Read = @Sendable (_ accessibilityRequested: Bool) -> HelperEvent
 
     private let output: Output
@@ -14,9 +13,6 @@ final class Permissions {
     // request issued by this process is the only signal we have.
     private var accessibilityRequested = false
     private var poll: DispatchSourceTimer?
-    // The grants are read over XPC, about 25 ms for the first read in a process. At launch main
-    // sends `asr.prepare` right behind the check, so on the main thread that read delayed the
-    // model load. One serial queue keeps the answers in the order the checks were made.
     private let reads = DispatchQueue(label: "voice.permissions", qos: .userInitiated)
 
     init(output: Output, read: @escaping Read = Permissions.readSystem(accessibilityRequested:), onAccessibilityGranted: @escaping () -> Void) {

@@ -273,7 +273,6 @@ public struct ModelFetcher: Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             let outcome: Outcome = lock.withLock {
                 if let failure { return .failed(failure, retryAfter: retryAfter) }
-                // Every byte arrived, so a late transport error costs nothing: the hash decides.
                 if received == size { return .complete }
                 if let error {
                     let code = (error as? URLError)?.code ?? .unknown

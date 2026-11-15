@@ -3,18 +3,11 @@ import FluidAudio
 import Foundation
 import VoiceHelperCore
 
-/// The voice detector a meeting hears its mic with: Silero VAD, 1 MB, pinned in
-/// `ModelManifest.voiceDetector`. It comes and goes with the speech model and has no status of
-/// its own, so nothing here can fail a dictation or change `asr.status`. While it is absent or
-/// broken, a meeting transcribes every sound on the mic, as it did before there was a detector.
 @MainActor
 final class VoiceDetection {
     private enum Load {
         case absent
-        /// The files are being checked and loaded, which takes tens of milliseconds, so a
-        /// meeting waits. The task gives nil when files are missing or altered.
         case loading(Task<VadManager?, Error>)
-        /// The files are on their way. A meeting does not wait on the network.
         case fetching
         case ready(VadManager)
         case failed
@@ -35,9 +28,6 @@ final class VoiceDetection {
         self.output = output
     }
 
-    /// Checks the files against the manifest, fetches the ones missing or altered, and loads
-    /// the model. Does nothing while that runs or once it is loaded, and tries again after a
-    /// failure.
     func prepare() {
         switch load {
         case .loading, .fetching, .ready: return
@@ -80,7 +70,6 @@ final class VoiceDetection {
 
     nonisolated private static func loadModel(from folder: URL) async throws -> VadManager {
         let configuration = MLModelConfiguration()
-        // The compute units `VoiceActivity.voice` was measured on.
         configuration.computeUnits = .cpuAndNeuralEngine
         let model = try MLModel(contentsOf: folder.appendingPathComponent(ModelNames.VAD.sileroVadFile), configuration: configuration)
         let manager = VadManager(vadModel: model)
@@ -89,8 +78,6 @@ final class VoiceDetection {
         return manager
     }
 
-    /// Deletes the model, when the speech model it came with is deleted. Ignored while a
-    /// prepare runs, as the speech model's removal is.
     func remove() {
         switch load {
         case .loading, .fetching: return output.log(.info, "voice detector kept: it is still being prepared")
@@ -105,7 +92,6 @@ final class VoiceDetection {
         }
     }
 
-    /// A detector that has heard nothing yet, or nil while there is no model to ask.
     func detector() async -> (any VoiceDetector)? {
         let manager: VadManager
         switch load {
@@ -129,7 +115,6 @@ final class VoiceDetection {
     }
 }
 
-/// Silero at one point of a stream: the model, which holds no state, and what it remembers.
 private struct SileroDetector: VoiceDetector {
     let manager: VadManager
     var state = VadStreamState.initial()

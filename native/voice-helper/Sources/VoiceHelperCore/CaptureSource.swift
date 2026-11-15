@@ -10,11 +10,10 @@ public enum CaptureSource: Equatable, Sendable {
     }
 }
 
-/// Where meeting audio comes from. Test mode never opens the microphone or a system tap: it plays
-/// fixture files, `speed` times faster than real time, or refuses to record.
 public enum MeetingAudioSource: Equatable, Sendable {
     case live
-    /// An empty `system` path records the meeting as if system audio were unavailable.
+    /// `speed` is a multiple of real time. An empty `system` path records the meeting as if
+    /// system audio were unavailable.
     case fixture(mic: String, system: String, speed: Double)
     case disabled
 
@@ -26,8 +25,6 @@ public enum MeetingAudioSource: Equatable, Sendable {
     }
 }
 
-/// Why a meeting source stopped mid-leg: the user took the permission away, or the device
-/// stopped delivering audio.
 public enum MeetingLossReason: String, Codable, Sendable { case permission, device }
 
 public struct AudioLoss: Equatable, Sendable {
@@ -40,10 +37,8 @@ public struct AudioLoss: Equatable, Sendable {
     }
 }
 
-/// What a recording leg checks every few seconds, so a revoked permission or a dead microphone
-/// pauses the meeting instead of recording silence that looks like a quiet room. The microphone
-/// and the system tap both deliver frames through silence, so a source with no frames for a
-/// while has stalled; a stalled tap is recreated, a stalled microphone ends the leg.
+/// The microphone and the system tap both deliver frames through silence, so a source with no
+/// frames for a while has stalled.
 public enum MeetingWatch {
     public static let micStallMs = 5000.0
     public static let systemStallMs = 3000.0
