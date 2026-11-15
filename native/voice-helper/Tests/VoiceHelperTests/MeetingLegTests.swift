@@ -39,8 +39,6 @@ private final class FakeTap: MeetingTap {
         heldFrom = time + .nanoseconds(samples.count * 1_000_000_000 / PcmFile.sampleRate)
     }
 
-    /// Hands over the audio it still holds, captured right after what it last delivered, as
-    /// `SystemAudioSource` does.
     func stop() {
         guard running else { return }
         running = false
@@ -160,8 +158,6 @@ private final class Leg {
         let leg = Leg()
         _ = try leg.capture.start()
         let t0 = leg.capture.startedAt
-        // The mic records from the start; the tap's first audio was captured a second later, as
-        // when creating the tap stalls on main.
         for k in 0..<20 {
             let at = t0 + .milliseconds(100 * k)
             leg.mic.deliver(k == 15 ? .marked : .quiet, at: at)
@@ -178,8 +174,6 @@ private final class Leg {
         let leg = Leg()
         _ = try leg.capture.start()
         let t0 = leg.capture.startedAt
-        // The user says nothing. The consent prompt holds the tap for 20 s, the other side speaks
-        // a second later, and the mic hears the speakers 40 ms after the tap does.
         let heardLate = PcmFile.frames(milliseconds: 40)
         let echo = [Float](repeating: 0, count: heardLate) + [Float](repeating: 0.5, count: 1600 - heardLate)
         for k in 0..<220 {
@@ -224,8 +218,6 @@ private final class Leg {
         let leg = Leg()
         _ = try leg.capture.start()
         let t0 = leg.capture.startedAt
-        // Main stalls for 20 s. The mic's pipeline keeps the first 10 s of it and drops the rest,
-        // so the next chunk starts 10 s after the last one ended.
         leg.mic.deliver([Float](repeating: 0, count: 10 * PcmFile.sampleRate), at: t0)
         leg.mic.deliver(.marked, at: t0 + .seconds(20))
         leg.end()
@@ -239,7 +231,6 @@ private final class Leg {
         let t0 = leg.capture.startedAt
         for k in 0..<10 { leg.mic.deliver(.quiet, at: t0 + .milliseconds(100 * k)) }
 
-        // Half a second behind is no clock drift. The timestamp is wrong, and the audio is the user's.
         leg.mic.deliver(.marked, at: t0 + .milliseconds(500))
         leg.end()
 

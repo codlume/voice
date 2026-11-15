@@ -185,7 +185,6 @@ private func silence(seconds: Double) -> [Float] {
 
     @Test func aChunkCapturedAfterAGapGetsSilenceForTheGap() {
         #expect(place(ahead: slack + 1) == .pad(silence: slack + 1))
-        // A tap that the consent prompt held for 20 s.
         #expect(MeetingTimeline.place(target: 320_000, written: 0, count: 1600) == .pad(silence: 320_000))
     }
 

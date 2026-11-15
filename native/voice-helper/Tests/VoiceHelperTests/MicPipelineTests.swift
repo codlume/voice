@@ -214,7 +214,6 @@ private func feed(
         let format = try fixture.format()
         let pipeline = try MicPipeline(hardware: format, pendingSeconds: 0.2)
         pipeline.start()
-        // 10 ms buffers, the first captured 5 s after boot. The pipeline holds twenty.
         let quanta = fixture.quanta(of: 480)
         func receive(_ index: Int) throws {
             let buffer = try planarBuffer(fixture, quanta[index], format: format)

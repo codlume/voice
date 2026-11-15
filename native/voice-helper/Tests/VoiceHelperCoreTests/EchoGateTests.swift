@@ -7,7 +7,6 @@ private let rate = 16_000
 
 /// A voice-like signal from `start` to `end` seconds of a `seconds`-long track: a harmonic
 /// series on a gliding pitch, in syllables or held steady, with a timbre fixed by `seed`.
-/// 14 harmonics of a 120 Hz pitch stop under 2 kHz; 58 fill the band to 8 kHz.
 /// Built with Accelerate because a debug build of the per-sample loop slowed CI's test run.
 private func voice(_ seconds: Double, from start: Double = 0, to end: Double? = nil, pitch: Float, seed: Float, level: Float = 0.2, syllables: Bool = true, harmonics: Int = 14) -> [Float] {
     let count = Int(seconds * Double(rate))
@@ -62,7 +61,6 @@ private func throughAMacBookAir(_ played: [Float], lagMs: Double) -> [Float] {
     let bands: [(from: Float, to: Float, decibels: Float)] = [(50, 500, -0.3), (500, 1000, 2), (1000, 2000, -3.7), (2000, 4000, -8), (4000, 8000, 2.5)]
     let reach = 127
     let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: 2 * reach + 1, isHalfWindow: false)
-    // One windowed-sinc band-pass per band, each at its band's level.
     let colour = (-reach...reach).map { n -> Float in
         bands.reduce(0) { sum, band in
             let (low, high) = (2 * band.from / Float(rate), 2 * band.to / Float(rate))
@@ -143,7 +141,6 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
     }
 
     @Test func theOtherSideThroughAMacBookAirsOwnSpeakersLeavesNothingToTranscribe() {
-        // As loud as the meeting that was measured: system audio at -16 dBFS, its echo at -27.
         let system = voice(8, pitch: 120, seed: 1, level: 0.5, harmonics: 58)
         let echo = throughAMacBookAir(system, lagMs: 120)
         let gated = EchoGate.gate(mic: add(echo, roomNoise(8)), system: system)
