@@ -76,7 +76,7 @@ final class MeetingCapture {
     private var systemRestarts = TapRestarts()
     private var fixtures: [FileSource] = []
     private var stopped = false
-    private let startedAt = DispatchTime.now()
+    let startedAt = DispatchTime.now()
     /// Where this leg's audio starts in the files.
     private(set) var startFrames = 0
 

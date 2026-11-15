@@ -51,12 +51,15 @@ private final class FakeTap: MeetingTap {
 }
 
 private final class FakeWriter: MeetingAudioWriter {
-    private(set) var frames = 0
+    private(set) var samples: [Float] = []
     var diskIsFull = false
+
+    var frames: Int { samples.count }
+    var firstLoudFrame: Int? { samples.firstIndex { abs($0) > 0.25 } }
 
     func append(_ samples: [Float]) throws {
         if diskIsFull { throw CocoaError(.fileWriteOutOfSpace) }
-        frames += samples.count
+        self.samples += samples
     }
 
     func pad(to target: Int) throws {
@@ -64,6 +67,11 @@ private final class FakeWriter: MeetingAudioWriter {
     }
 
     func close() throws {}
+}
+
+private extension [Float] {
+    static var quiet: [Float] { [Float](repeating: 0, count: 1600) }
+    static var marked: [Float] { [Float](repeating: 0.5, count: 1600) }
 }
 
 /// A live leg on fakes: no microphone, no process tap, no TCC, no files.
@@ -140,6 +148,44 @@ private final class Leg {
         #expect(leg.losses == [AudioLoss(source: .system, reason: .device)])
         #expect(leg.runningTaps == 0)
         #expect(!leg.mic.running)
+    }
+
+    @Test func audioCapturedAtOneMomentLandsAtOneFrameInBothFiles() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        // The mic records from the start; the tap's first audio was captured a second later, as
+        // when creating the tap stalls on main.
+        for k in 0..<20 {
+            let at = t0 + .milliseconds(100 * k)
+            leg.mic.deliver(k == 15 ? .marked : .quiet, at: at)
+            if k >= 10 { leg.taps[0].deliver(k == 15 ? .marked : .quiet, at: at) }
+        }
+        leg.end()
+
+        let mark = PcmFile.frames(milliseconds: 1500)
+        #expect(leg.writers["mic.pcm"]?.firstLoudFrame == mark)
+        #expect(leg.writers["system.pcm"]?.firstLoudFrame == mark)
+    }
+
+    @Test func aRemoteVoiceAndItsEchoInTheMicStayAsFarApartAsTheyWereCaptured() throws {
+        let leg = Leg()
+        _ = try leg.capture.start()
+        let t0 = leg.capture.startedAt
+        // The user says nothing. The consent prompt holds the tap for 20 s, the other side speaks
+        // a second later, and the mic hears the speakers 40 ms after the tap does.
+        let heardLate = PcmFile.frames(milliseconds: 40)
+        let echo = [Float](repeating: 0, count: heardLate) + [Float](repeating: 0.5, count: 1600 - heardLate)
+        for k in 0..<220 {
+            let at = t0 + .milliseconds(100 * k)
+            leg.mic.deliver(k == 210 ? echo : .quiet, at: at)
+            if k >= 200 { leg.taps[0].deliver(k == 210 ? .marked : .quiet, at: at) }
+        }
+        leg.end()
+
+        let theirs = try #require(leg.writers["system.pcm"]?.firstLoudFrame)
+        let echoed = try #require(leg.writers["mic.pcm"]?.firstLoudFrame)
+        #expect(echoed - theirs == heardLate, "the echo gate looks for the echo -100 to +600 ms after what played")
     }
 
     @Test func theWatchAsksTCCOffMainAndARevokedMicrophoneStillEndsTheLeg() async throws {
