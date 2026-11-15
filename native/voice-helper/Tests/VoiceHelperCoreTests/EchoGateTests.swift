@@ -204,19 +204,28 @@ private func record(mic: [Float], system: [Float], in dir: URL) throws -> (mic: 
         #expect(EchoGate.gate(mic: mic, system: [Float](repeating: 0, count: mic.count)) == mic)
     }
 
-    @Test func theEchoStaysMutedWhenItsLagMovesMidCall() throws {
+    @Test(arguments: [(80.0, 300.0), (300.0, 80.0)])
+    func theEchoStaysMutedWhenItsLagMovesMidCall(from: Double, to: Double) throws {
         let dir = try meetingDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let system = voice(28, pitch: 120, seed: 1)
-        let moveAt = EchoGate.blockSamples
-        let echo = zip(throughTheSpeakers(system, lagMs: 80), throughTheSpeakers(system, lagMs: 300)).enumerated()
-            .map { $0.offset < moveAt ? $0.element.0 : $0.element.1 }
-        let (micURL, systemURL) = try record(mic: add(echo, roomNoise(28)), system: system, in: dir)
-        let gated = try EchoGate.read(mic: micURL, system: systemURL, offset: 0, count: system.count)
-        let before = 1.0...13.0
-        let after = Double(moveAt) / Double(rate) + 1...27.0
-        #expect(decibels(energy(seconds(gated, before)), over: energy(seconds(echo, before))) < -20)
-        #expect(decibels(energy(seconds(gated, after)), over: energy(seconds(echo, after))) < -20, "a block after the move, the gate has the new lag")
+        let system = voice(30, pitch: 120, seed: 1, level: 0.5, harmonics: 58)
+        // As when the sound moves to another output device, partway through a gate block.
+        let moveAt = 20 * rate + 5000
+        let echo = Array(throughAMacBookAir(system, lagMs: from).prefix(moveAt)) + throughAMacBookAir(system, lagMs: to).dropFirst(moveAt)
+        let mic = add(echo, roomNoise(30))
+
+        let whole = try record(mic: mic, system: system, in: dir)
+        let final = try EchoGate.read(mic: whole.mic, system: whole.system, offset: 0, count: mic.count)
+        #expect(MeetingChunker.speech(in: final) == nil, "the final pass hears nothing on either side of the move")
+
+        // A live window is gated when the files end with it: one the move falls in, and the next.
+        for start in [moveAt - 3 * rate / 2, moveAt + 3 * rate / 2] {
+            let end = start + 3 * rate
+            for url in [whole.mic, whole.system] { try FileManager.default.removeItem(at: url) }
+            let live = try record(mic: Array(mic.prefix(end)), system: Array(system.prefix(end)), in: dir)
+            let window = try EchoGate.read(mic: live.mic, system: live.system, offset: start, count: 3 * rate)
+            #expect(MeetingChunker.speech(in: window) == nil, "the live window \(Double(start - moveAt) / Double(rate)) s after the move")
+        }
     }
 
     @Test func readsAWindowGatedWithTheAudioBeforeItAndAsRecordedWithoutASystemFile() throws {
