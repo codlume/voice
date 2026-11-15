@@ -525,6 +525,28 @@ private func writeMeeting(in dir: URL, micHearsTheSpeakers: Bool = false, system
         #expect(micEvents() == [])
     }
 
+    /// Either file can be a pump or a stall ahead of the other. Here the system file holds what
+    /// played long after the lag moved, but the mic file ends 1.6 s after the move.
+    @Test func anEchoWhoseLagJustMovedWaitsForTheMicWhenSystemAudioIsAhead() async throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let theirs = talk(9) + silence(0.7) + talk(6)
+        let moveAt = Int(8.3 * 16_000)
+        let mic = Array(throughTheSpeakers(theirs, lagMs: 80).prefix(moveAt)) + throughTheSpeakers(theirs, lagMs: 300).dropFirst(moveAt)
+        try write(theirs, .system, in: dir)
+        try write(Array(mic.prefix(Int(9.9 * 16_000))), .mic, in: dir)
+        var looks = 0
+        let job = job(isDictating: {
+            looks += 1
+            return false
+        })
+        defer { job.cancel() }
+        job.record([.mic, .system])
+        try await until { lines.snapshot().contains { $0["type"] as? String == "meeting.segment" && $0["source"] as? String == "system" } }
+        let seen = looks
+        try await until { looks >= seen + 4 }
+        #expect(micEvents() == [], "the user said nothing")
+    }
+
     /// The echo's lag has not moved, so the gate already told the user's voice from the other side.
     @Test func anAnswerRightAfterTheOtherSideShowsWithoutWaiting() async throws {
         defer { try? FileManager.default.removeItem(at: dir) }
