@@ -79,10 +79,11 @@ public enum EchoGate {
     /// 11 dB under.
     static let pathTolerance: Float = 1.6
     /// What no path predicts of an echo, the speakers' distortion and the ringing past the
-    /// filter's end, stays under a sixteenth of it: 21 dB under on a MacBook Air at half volume
-    /// and 16.5 dB under on a MacBook Pro at 60%. Over a sweep of echo paths with only the other
-    /// side talking, 1/32 left 84 of 20549 frames loud enough to transcribe; 1/16 and 1/8 left 5.
-    static let distortion: Float = 1 / 16
+    /// filter's end, stays under an eighth of it. A MacBook Air at 60% put 9.6 to 11 dB of its
+    /// own under a loud vowel, at 2 to 3 kHz where the played audio held 15 to 30 dB less, and a
+    /// sixteenth let those frames through as words. On the meeting fixtures through the real
+    /// model, an eighth costs 7 of the user's 6492 words over a sixteenth.
+    static let distortion: Float = 1 / 8
     /// A frame that keeps four times what would silence it holds the user's voice, and so do
     /// the frames beside it: speech runs on where residue comes and goes. On a spoken Polish
     /// meeting where both sides share one voice, silencing by the residue alone lost 14 of the
